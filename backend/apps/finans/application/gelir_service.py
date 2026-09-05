@@ -206,23 +206,66 @@ class GelirService:
         return gelir, None
 
     @transaction.atomic
-    def iptal_et(self, gelir_id: int):
-        """Gelir kaydını iptal eder ve cari bakiyeyi düzeltir."""
+    def onay_kaldir(self, gelir_id: int):
+        """Onayı kaldırır → taslak. Tahsilatı olan kayda uygulanmaz."""
         gelir = self.gelir_repo.get_by_id(gelir_id)
         if not gelir:
             return None, {'genel': 'Gelir kaydı bulunamadı.'}
 
-        if not gelir.iptal_edilebilir_mi:
-            return None, {'genel': 'Bu gelir kaydı iptal edilemez.'}
+        if gelir.durum != GelirDurum.ONAYLANDI:
+            return None, {'genel': 'Onay yalnızca "Onaylandı" durumundaki kayıttan kaldırılabilir.'}
 
         if gelir.tahsil_edilen > Decimal('0'):
+            return None, {'genel': 'Tahsilatı olan gelirin onayı kaldırılamaz. Önce tahsilatları iptal edin.'}
+
+        self.cari_hareket_service.hareket_olustur(
+            cari_hesap_id=gelir.cari_hesap_id,
+            kurum_id=gelir.kurum_id,
+            tutar=gelir.net_tutar,
+            yon=CariHareketYonu.ALACAK,
+            islem_turu=CariHareketTuru.IADE,
+            islem_tarihi=gelir.fatura_tarihi,
+            sube_id=gelir.sube_id,
+            egitim_yili_id=gelir.egitim_yili_id,
+            kaynak_tip='GelirKaydi',
+            kaynak_id=gelir.pk,
+            aciklama=f'Gelir onay kaldırma: {gelir.fatura_no or "Belgesiz"}',
+        )
+        gelir = self.gelir_repo.update(gelir, {'durum': GelirDurum.TASLAK})
+        return gelir, None
+
+    @transaction.atomic
+    def iptal_et(self, gelir_id: int, *, force=False):
+        """Gelir kaydını iptal eder. force=True: önce aktif tahsilatları iptal eder."""
+        gelir = self.gelir_repo.get_by_id(gelir_id)
+        if not gelir:
+            return None, {'genel': 'Gelir kaydı bulunamadı.'}
+
+        if gelir.durum == GelirDurum.IPTAL:
+            return None, {'genel': 'Bu gelir kaydı zaten iptal edilmiş.'}
+
+        if force and gelir.tahsil_edilen > Decimal('0'):
+            from apps.finans.application.gelir_tahsilat_service import GelirTahsilatService
+            from apps.finans.constants.gider_types import OdemeDurum
+            tahsilat_svc = GelirTahsilatService()
+            aktif = list(gelir.tahsilatlar.filter(durum=OdemeDurum.TAMAMLANDI))
+            for th in aktif:
+                _, err = tahsilat_svc.tahsilat_iptal(th.pk)
+                if err:
+                    return None, err
+            gelir.refresh_from_db()
+
+        if not force and not gelir.iptal_edilebilir_mi:
+            return None, {'genel': 'Bu gelir kaydı iptal edilemez.'}
+
+        if not force and gelir.tahsil_edilen > Decimal('0'):
             return None, {'genel': 'Tahsilatı olan gelir iptal edilemez. Önce tahsilatları iptal edin.'}
 
         onceki_durum = gelir.durum
         gelir = self.gelir_repo.update(gelir, {'durum': GelirDurum.IPTAL})
 
         # Eğer onaylanmıştı ise cari borç düzeltmesi (ALACAK hareketi)
-        if onceki_durum in [GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL]:
+        if onceki_durum in [GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL, GelirDurum.TAHSIL_EDILDI]:
             self.cari_hareket_service.hareket_olustur(
                 cari_hesap_id=gelir.cari_hesap_id,
                 kurum_id=gelir.kurum_id,
@@ -239,14 +282,19 @@ class GelirService:
 
         return gelir, None
 
-    def soft_delete(self, gelir_id: int):
-        """Soft delete — sadece taslak gelirler silinebilir."""
+    def soft_delete(self, gelir_id: int, *, force=False):
+        """Soft delete — taslak; force ile önce iptal sonra silinir."""
         gelir = self.gelir_repo.get_by_id(gelir_id)
         if not gelir:
             return None, {'genel': 'Gelir kaydı bulunamadı.'}
 
         if gelir.durum != GelirDurum.TASLAK:
-            return None, {'genel': 'Sadece taslak durumdaki gelirler silinebilir.'}
+            if not force:
+                return None, {'genel': 'Sadece taslak durumdaki gelirler silinebilir.'}
+            if gelir.durum != GelirDurum.IPTAL:
+                gelir, err = self.iptal_et(gelir_id, force=True)
+                if err:
+                    return None, err
 
         gelir = self.gelir_repo.soft_delete(gelir)
         return gelir, None

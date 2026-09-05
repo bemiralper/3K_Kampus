@@ -57,6 +57,14 @@ class GiderOdeme(models.Model):
     )
 
     # ─── Ödeme Bilgileri ─────────────────────────
+    odeme_belge_no = models.CharField(
+        'Ödeme Belge No',
+        max_length=30,
+        blank=True,
+        default='',
+        db_index=True,
+        help_text='Yalnızca gerçekleşen ödeme için: ODM-YYYY-000001',
+    )
     tutar = models.DecimalField(
         'Ödeme Tutarı',
         max_digits=15,

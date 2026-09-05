@@ -19,7 +19,7 @@ import type {
   ScopeCompletionMap,
   RoutineQuotaKind,
 } from '@/app/admin/odev/ver/types';
-import { isRoutineQuotaResource, routineQuotaKindOf } from '@/app/admin/odev/ver/types';
+import { isRoutineQuotaResource, quotaTopicId, routineQuotaKindOf } from '@/app/admin/odev/ver/types';
 import {
   fetchOgrenciList,
   fetchStudentResourcesByStudent,
@@ -27,6 +27,8 @@ import {
   fetchContentTaskHistory,
   fetchBookStructure,
   createAssignment,
+  updateAssignment,
+  fetchAssignmentDetail,
   fetchAssignmentPackage,
   fetchAssignments,
   incrementPackageUsage,
@@ -41,6 +43,7 @@ import { fetchCoachStudents } from '@/lib/coach-api';
 import AssignmentNotifySendModal from '@/components/odev/AssignmentNotifySendModal';
 import {
   buildCompletionNote,
+  isAutoCompletionNote,
   isIncompleteHistory,
   stripCompletionTitleSuffix,
 } from '@/components/odev/odevCompletionHelpers';
@@ -53,6 +56,14 @@ import {
 import {
   datesFromHomework,
 } from '@/components/coaching/study-program/programDateUtils';
+import { calendarDateInAppTz } from '@/lib/format-date';
+import {
+  k3TopicKey,
+  parseK3Mode,
+  topicK3FromItems,
+  type K3Mode,
+  type TopicK3Map,
+} from '@/lib/k3-mode';
 
 export type OdevVerVariant = 'admin' | 'coach';
 
@@ -84,13 +95,12 @@ function getPhotoUrl(path?: string | null): string | undefined {
 
 /* ─── Auto weekly title helper ─── */
 function generateWeeklyTitle(): string {
-  const now = new Date();
+  const { monthIndex, day } = calendarDateInAppTz();
   const months = [
     'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
   ];
-  const month = months[now.getMonth()];
-  const day = now.getDate();
+  const month = months[monthIndex];
   const weekNum = Math.ceil(day / 7);
   return `${month} Ayı ${weekNum}. Hafta Ödevi`;
 }
@@ -109,8 +119,8 @@ function formatLocalDate(d: Date): string {
  * (Yerel takvim; UTC toISOString kullanma.)
  */
 function getDefaultDueDate(): string {
-  const d = new Date();
-  d.setHours(12, 0, 0, 0);
+  const { year, monthIndex, day } = calendarDateInAppTz();
+  const d = new Date(year, monthIndex, day, 12, 0, 0, 0);
   d.setDate(d.getDate() + 7);
   return formatLocalDate(d);
 }
@@ -143,7 +153,7 @@ function buildQuotaCartItem(
     contentId: 0,
     contentName: `${label} — ${weekly} soru`,
     contentType: 'QUOTA',
-    topicId: kind === 'PARAGRAF' ? -1 : -2,
+    topicId: quotaTopicId(kind),
     topicName: label,
     unitId: 0,
     unitName: '',
@@ -156,6 +166,64 @@ function buildQuotaCartItem(
     quotaKind: kind,
     dailyQuestionCount: daily,
   };
+}
+
+function dueDateFromApi(raw?: string | null): string {
+  if (!raw) return getDefaultDueDate();
+  const day = raw.slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(day) ? day : getDefaultDueDate();
+}
+
+function taskTypeToContentType(taskType: string, quotaKind?: string): string {
+  if (quotaKind) return 'QUOTA';
+  if (taskType === 'SOLVE_TEST') return 'TEST_SET';
+  if (taskType === 'SOLVE_PDF') return 'PAGE_RANGE';
+  if (taskType === 'WATCH_VIDEO') return 'VIDEO';
+  return 'REVIEW_TOPIC';
+}
+
+function mapAssignmentLessonsToCart(assignment: ManualAssignment): {
+  cart: SelectedContent[];
+  contentNotes: Record<number, string>;
+} {
+  const cart: SelectedContent[] = [];
+  const contentNotes: Record<number, string> = {};
+  for (const lesson of assignment.lessons || []) {
+    const k3Mode = parseK3Mode(lesson.k3_mode);
+    for (const task of lesson.tasks || []) {
+      const quotaKind = (task.quota_kind === 'PARAGRAF' || task.quota_kind === 'PROBLEM')
+        ? task.quota_kind
+        : undefined;
+      const id = quotaKind
+        ? quotaCartId(quotaKind, lesson.resource_book)
+        : (task.content_id || task.id);
+      cart.push({
+        id,
+        contentId: quotaKind ? 0 : (task.content_id || 0),
+        contentName: task.title,
+        contentType: taskTypeToContentType(task.task_type, quotaKind),
+        topicId: quotaKind ? quotaTopicId(quotaKind) : (task.content_topic_id || 0),
+        topicName: lesson.topic_name || task.content_topic_name || '',
+        unitId: task.content_unit_id || 0,
+        unitName: task.content_unit_name || '',
+        bookId: lesson.resource_book,
+        bookName: lesson.resource_book_name || '',
+        lessonId: lesson.lesson || 0,
+        lessonName: lesson.lesson_name || '',
+        questionCount: task.question_count,
+        pageCount: task.page_count,
+        contentSira: task.content_sira,
+        k3Mode: k3Mode || undefined,
+        k3TargetMinutes: lesson.k3_target_minutes ?? null,
+        quotaKind,
+      });
+      const desc = (task.description || '').trim();
+      if (desc && !isAutoCompletionNote(desc)) {
+        contentNotes[id] = task.description;
+      }
+    }
+  }
+  return { cart, contentNotes };
 }
 
 function mapPackageItemsToCart(items: AssignmentPackageItem[]): SelectedContent[] {
@@ -179,7 +247,19 @@ function mapPackageItemsToCart(items: AssignmentPackageItem[]): SelectedContent[
     pageCount: item.page_start && item.page_end ? item.page_end - item.page_start + 1 : null,
     startPage: item.page_start || null,
     endPage: item.page_end || null,
+    k3Mode: parseK3Mode(item.k3_mode) || undefined,
+    k3TargetMinutes: item.k3_target_minutes ?? null,
   }));
+}
+
+function applyK3ToItem(item: SelectedContent, map: TopicK3Map): SelectedContent {
+  const rec = map[k3TopicKey(item.bookId, item.topicId)];
+  if (!rec) return item;
+  return {
+    ...item,
+    k3Mode: rec.mode,
+    k3TargetMinutes: rec.mode === 'HIZLAN' ? rec.targetMinutes ?? null : null,
+  };
 }
 
 /* ─── Step Definitions ─── */
@@ -208,6 +288,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const [selectedResource, setSelectedResource] = useState<StudentResource | null>(null);
   const [bookDetails, setBookDetails] = useState<BookDetails | null>(null);
   const [cart, setCart] = useState<SelectedContent[]>([]);
+  const [topicK3, setTopicK3] = useState<TopicK3Map>({});
   const [contentNotes, setContentNotes] = useState<Record<number, string>>({});
   const [resLoading, setResLoading] = useState(false);
   const [bookLoading, setBookLoading] = useState(false);
@@ -346,7 +427,13 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const searchParams = useSearchParams();
   const preselectedStudentId = searchParams.get('student');
   const packageIdParam = searchParams.get('package_id');
+  const editIdParam = searchParams.get('edit');
+  const editingAssignmentId = useMemo(() => {
+    const n = parseInt(editIdParam || '', 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  }, [editIdParam]);
   const fromKontrol = searchParams.get('from') === 'kontrol';
+  const fromDraft = searchParams.get('from') === 'draft';
   const kontrolDone = searchParams.get('kontrol_done') === '1';
   const kontrolIdParam = searchParams.get('kontrol_id');
   const kontrolListPath = isCoach ? '/coach/odev/kontrol' : '/admin/odev/kontrol';
@@ -356,7 +443,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     searchParams.get('return') ||
     (kontrolIdParam ? `${kontrolListPath}/${kontrolIdParam}` : null) ||
     (fromKontrol ? kontrolListPath : null);
-  const studentLocked = searchParams.get('locked') === '1' || (isCoach && !!preselectedStudentId);
+  const studentLocked = searchParams.get('locked') === '1' || (isCoach && !!preselectedStudentId) || !!editingAssignmentId;
   const sourceKontrolAssignmentId = useMemo(() => {
     if (kontrolIdParam) {
       const n = parseInt(kontrolIdParam, 10);
@@ -384,6 +471,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     return Number.isNaN(n) ? null : n;
   })();
   const [autoSelected, setAutoSelected] = useState(false);
+  const [editHydrated, setEditHydrated] = useState(false);
   const [packageLoaded, setPackageLoaded] = useState(false);
   const [resourcePrefillDone, setResourcePrefillDone] = useState(false);
   /** Draft restore tamamlanmadan sessionStorage'a boş yazma */
@@ -438,6 +526,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           return;
         }
         const cartItems = mapPackageItemsToCart(result.data.items);
+        setTopicK3(topicK3FromItems(cartItems));
         setPendingPackageCart(cartItems);
         setPendingPackageTitle(result.data.name);
         setPackageTemplateId(id);
@@ -448,6 +537,46 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       }
     })();
   }, [packageIdParam, packageLoaded]);
+
+  /* ─── Taslak ödevi düzenleme: mevcut içeriği sepete yükle ─── */
+  useEffect(() => {
+    if (!editingAssignmentId || editHydrated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const result = await fetchAssignmentDetail(editingAssignmentId);
+        if (cancelled) return;
+        if (!result.success || !result.data) {
+          flash('❌ Taslak yüklenemedi');
+          setEditHydrated(true);
+          return;
+        }
+        if (result.data.status !== 'DRAFT') {
+          flash('Yalnızca taslak ödevler düzenlenebilir');
+          setEditHydrated(true);
+          return;
+        }
+        const mapped = mapAssignmentLessonsToCart(result.data);
+        setCart(mapped.cart);
+        setContentNotes(mapped.contentNotes);
+        setTopicK3(topicK3FromItems(mapped.cart));
+        setTitle(stripCompletionTitleSuffix(result.data.title) || generateWeeklyTitle());
+        setNotes(result.data.description || '');
+        setDueDate(dueDateFromApi(result.data.due_date));
+        if (result.data.priority) setPriority(result.data.priority);
+        setCurrentStep(2);
+        draftReadyRef.current = true;
+        setEditHydrated(true);
+        flash(`Taslak yüklendi · ${mapped.cart.length} içerik — ekleyip çıkarabilirsiniz`);
+      } catch {
+        if (!cancelled) {
+          flash('❌ Taslak yüklenemedi');
+          setEditHydrated(true);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [editingAssignmentId, editHydrated]);
 
   /* ─── URL'den gelen student parametresiyle oto-seçim ─── */
   useEffect(() => {
@@ -593,7 +722,9 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   /* ─── Handlers ─── */
   const pickStudent = (s: Student) => {
-    draftReadyRef.current = false;
+    if (!editingAssignmentId) {
+      draftReadyRef.current = false;
+    }
     setSelectedStudent(s);
     setSelectedStudents([s]);
     setMultiSelect(false);
@@ -608,9 +739,15 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       new Map([[s.id, `${s.ad} ${s.soyad}`.trim()]]),
     );
 
+    if (editingAssignmentId) {
+      setCurrentStep(2);
+      return;
+    }
+
     // Paketten gelen bekleyen veriler varsa cart'a yükle
     if (pendingPackageCart && pendingPackageCart.length > 0) {
       setCart(pendingPackageCart);
+      setTopicK3(topicK3FromItems(pendingPackageCart));
       setContentNotes({});
       if (pendingPackageTitle) {
         setTitle(pendingPackageTitle);
@@ -626,6 +763,9 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     const draft = loadOdevVerDraft(s.id);
     if (draft && draft.cart.length > 0) {
       setCart(draft.cart);
+      setTopicK3(draft.topicK3 && Object.keys(draft.topicK3).length
+        ? draft.topicK3
+        : topicK3FromItems(draft.cart));
       setContentNotes(draft.contentNotes || {});
       if (draft.title) setTitle(draft.title);
       setNotes(draft.notes || '');
@@ -638,6 +778,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     }
 
     setCart([]);
+    setTopicK3({});
     setContentNotes({});
     setCurrentStep(2);
     draftReadyRef.current = true;
@@ -667,6 +808,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       // Paketten gelen bekleyen veriler varsa ilk öğrenci eklendiğinde cart'a yükle
       if (!exists && pendingPackageCart && pendingPackageCart.length > 0) {
         setCart(pendingPackageCart);
+        setTopicK3(topicK3FromItems(pendingPackageCart));
         if (pendingPackageTitle) {
           setTitle(pendingPackageTitle);
         }
@@ -709,7 +851,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const addQuotaToCart = (resource: StudentResource, daily: number) => {
     const item = buildQuotaCartItem(resource, daily);
     if (!item || !item.quotaKind) return;
-    setCart((prev) => [...prev.filter((c) => c.quotaKind !== item.quotaKind), item]);
+    setCart((prev) => {
+      const stamped = applyK3ToItem(item, topicK3);
+      return [...prev.filter((c) => c.quotaKind !== item.quotaKind), stamped];
+    });
     flash(`${item.topicName} ödevi sepete eklendi (${item.questionCount} soru)`);
   };
 
@@ -740,6 +885,26 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [resources, resLoading, preselectedBookId, preselectedLessonId, resourcePrefillDone]);
 
+  const handleTopicK3Change = useCallback((
+    bookId: number,
+    topicId: number,
+    mode: K3Mode | null,
+    targetMinutes: number | null,
+  ) => {
+    const key = k3TopicKey(bookId, topicId);
+    setTopicK3((prev) => {
+      const next = { ...prev };
+      if (!mode) delete next[key];
+      else next[key] = { mode, targetMinutes: mode === 'HIZLAN' ? targetMinutes : null };
+      return next;
+    });
+    setCart((prev) => prev.map((item) => {
+      if (item.bookId !== bookId || item.topicId !== topicId) return item;
+      if (!mode) return { ...item, k3Mode: undefined, k3TargetMinutes: null };
+      return { ...item, k3Mode: mode, k3TargetMinutes: mode === 'HIZLAN' ? targetMinutes : null };
+    }));
+  }, []);
+
   const applyCompletionNotes = useCallback((items: SelectedContent[]) => {
     if (!items.length) return;
     setContentNotes((prev) => {
@@ -769,9 +934,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       contentSira: c.sira ?? null,
       startPage: c.start_page || c.page_start, endPage: c.end_page || c.page_end,
     };
-    setCart(prev => [...prev, item]);
-    applyCompletionNotes([item]);
-  }, [bookDetails, selectedResource, cart, applyCompletionNotes]);
+    const stamped = applyK3ToItem(item, topicK3);
+    setCart(prev => [...prev, stamped]);
+    applyCompletionNotes([stamped]);
+  }, [bookDetails, selectedResource, cart, applyCompletionNotes, topicK3]);
 
   const removeContents = (ids: number[]) => {
     const idSet = new Set(ids);
@@ -814,11 +980,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       }
     }));
     if (newItems.length) {
-      setCart(prev => [...prev, ...newItems]);
-      applyCompletionNotes(newItems);
-      flash(`${newItems.length} görev eklendi`);
+      const stamped = newItems.map((item) => applyK3ToItem(item, topicK3));
+      setCart(prev => [...prev, ...stamped]);
+      applyCompletionNotes(stamped);
+      flash(`${newItems.length} test eklendi`);
     }
-  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes, topicK3]);
 
   const selectAllTopic = useCallback((topic: Topic, unit: Unit) => {
     if (!bookDetails || !selectedResource) return;
@@ -842,11 +1009,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       }
     });
     if (newItems.length) {
-      setCart(prev => [...prev, ...newItems]);
-      applyCompletionNotes(newItems);
-      flash(`${newItems.length} görev eklendi`);
+      const stamped = newItems.map((item) => applyK3ToItem(item, topicK3));
+      setCart(prev => [...prev, ...stamped]);
+      applyCompletionNotes(stamped);
+      flash(`${newItems.length} test eklendi`);
     }
-  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes, topicK3]);
 
   const selectIncompleteFromUnit = useCallback((unit: Unit) => {
     if (!bookDetails || !selectedResource) return;
@@ -868,13 +1036,14 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       });
     }));
     if (newItems.length) {
-      setCart(prev => [...prev, ...newItems]);
-      applyCompletionNotes(newItems);
-      flash(`${newItems.length} eksik/yapılmayan görev eklendi`);
+      const stamped = newItems.map((item) => applyK3ToItem(item, topicK3));
+      setCart(prev => [...prev, ...stamped]);
+      applyCompletionNotes(stamped);
+      flash(`${newItems.length} eksik/yapılmayan test eklendi`);
     } else {
       flash('Bu ünitede eklenecek eksik yok');
     }
-  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes, topicK3]);
 
   const selectIncompleteFromTopic = useCallback((topic: Topic, unit: Unit) => {
     if (!bookDetails || !selectedResource) return;
@@ -896,23 +1065,26 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       });
     });
     if (newItems.length) {
-      setCart(prev => [...prev, ...newItems]);
-      applyCompletionNotes(newItems);
-      flash(`${newItems.length} eksik/yapılmayan görev eklendi`);
+      const stamped = newItems.map((item) => applyK3ToItem(item, topicK3));
+      setCart(prev => [...prev, ...stamped]);
+      applyCompletionNotes(stamped);
+      flash(`${newItems.length} eksik/yapılmayan test eklendi`);
     } else {
       flash('Bu konuda eklenecek eksik yok');
     }
-  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes]);
+  }, [bookDetails, selectedResource, cart, taskHistory, applyCompletionNotes, topicK3]);
 
   const clearCart = () => { setCart([]); setContentNotes({}); };
 
   /* ─── Kontrolden dönüşte sepet kalıcılığı ─── */
   useEffect(() => {
+    if (editingAssignmentId) return;
     if (!draftReadyRef.current || !selectedStudent || multiSelect) return;
     saveOdevVerDraft({
       studentId: selectedStudent.id,
       cart,
       contentNotes,
+      topicK3,
       title,
       notes,
       dueDate,
@@ -920,7 +1092,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       currentStep,
       updatedAt: Date.now(),
     });
-  }, [selectedStudent, multiSelect, cart, contentNotes, title, notes, dueDate, priority, currentStep]);
+  }, [editingAssignmentId, selectedStudent, multiSelect, cart, contentNotes, topicK3, title, notes, dueDate, priority, currentStep]);
 
   const isDirty = useMemo(() => {
     const hasEdits =
@@ -950,7 +1122,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   const { leaveDialogProps, markClean, forceNavigate } = useUnsavedChangesGuard({
     isDirty,
     // Kontrolden gelindiğinde geri dönüşü engelleme; normal Ödev Ver'de uyarı kalsın
-    enabled: !fromKontrol,
+    enabled: !fromKontrol && !fromDraft,
     safeHrefs: returnHref ? [returnHref] : [],
     title: 'Ödev Ekranından Ayrıl',
     message:
@@ -959,11 +1131,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   const goBackToKontrol = () => {
     if (!returnHref) return;
-    if (selectedStudent && !multiSelect) {
+    if (selectedStudent && !multiSelect && !editingAssignmentId) {
       saveOdevVerDraft({
         studentId: selectedStudent.id,
         cart,
         contentNotes,
+        topicK3,
         title,
         notes,
         dueDate,
@@ -990,6 +1163,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         studentId: selectedStudent.id,
         cart,
         contentNotes,
+        topicK3,
         title,
         notes,
         dueDate,
@@ -1011,6 +1185,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     multiSelect,
     cart,
     contentNotes,
+    topicK3,
     title,
     notes,
     dueDate,
@@ -1114,7 +1289,9 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     status: 'PUBLISHED' | 'DRAFT',
     options?: { openWhatsApp?: boolean; keepPrintOpen?: boolean },
   ) => {
-    const targetStudents = multiSelect ? selectedStudents : (selectedStudent ? [selectedStudent] : []);
+    const targetStudents = editingAssignmentId
+      ? (selectedStudent ? [selectedStudent] : [])
+      : (multiSelect ? selectedStudents : (selectedStudent ? [selectedStudent] : []));
     if (targetStudents.length === 0 || cart.length === 0) return;
     if (savingRef.current) return;
     savingRef.current = true;
@@ -1138,6 +1315,15 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           resource_book: first.bookId,
           topic_name: first.topicName,
           content_mode: 'TOPIC',
+          k3_mode: topicK3[k3TopicKey(first.bookId, first.topicId)]?.mode
+            || first.k3Mode
+            || '',
+          k3_target_minutes: (() => {
+            const rec = topicK3[k3TopicKey(first.bookId, first.topicId)];
+            const mode = rec?.mode || first.k3Mode;
+            if (mode !== 'HIZLAN') return null;
+            return rec?.targetMinutes ?? first.k3TargetMinutes ?? null;
+          })(),
           notes: '',
           order: lessonOrder,
           tasks: contents.map((c, taskOrder) => {
@@ -1198,18 +1384,21 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           due_date: dueDateToApi(dueDate || getDefaultDueDate()),
           status: backendStatus,
           lessons,
-          ...(packageTemplateId ? { template_id: packageTemplateId } : {}),
-          ...(sourceAssignmentId ? { source_assignment: sourceAssignmentId } : {}),
+          ...(packageTemplateId && !editingAssignmentId ? { template_id: packageTemplateId } : {}),
+          ...(sourceAssignmentId && !editingAssignmentId ? { source_assignment: sourceAssignmentId } : {}),
         };
         try {
-          const result = await createAssignment(body);
+          const result = editingAssignmentId
+            ? await updateAssignment(editingAssignmentId, body)
+            : await createAssignment(body);
           if (result.success) {
             successCount++;
             const createdId = extractAssignmentId(result.data) ?? extractAssignmentId(result);
-            if (createdId) {
-              lastCreatedId = createdId;
+            const savedId = createdId || editingAssignmentId;
+            if (savedId) {
+              lastCreatedId = savedId;
               lastStudentName = `${student.ad} ${student.soyad}`.trim();
-              createdSends.push({ id: createdId, name: lastStudentName });
+              createdSends.push({ id: savedId, name: lastStudentName });
             }
             await Promise.all(quotaItems.map((item) => {
               const daily = item.dailyQuestionCount
@@ -1231,7 +1420,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         }
       }
 
-      if (failCount === 0 && successCount > 0 && packageTemplateId) {
+      if (failCount === 0 && successCount > 0 && packageTemplateId && !editingAssignmentId) {
         await incrementPackageUsage(packageTemplateId).catch(() => undefined);
       }
 
@@ -1240,7 +1429,9 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           ? `${targetStudents[0].ad} ${targetStudents[0].soyad}`
           : `${successCount} öğrenci`;
         const msg = status === 'DRAFT'
-          ? `✅ Taslak kaydedildi — ${studentNames}`
+          ? (editingAssignmentId
+            ? `✅ Taslak güncellendi — ${studentNames}`
+            : `✅ Taslak kaydedildi — ${studentNames}`)
           : openWhatsApp && lastCreatedId
             ? (targetStudents.length > 1
               ? `✅ ${successCount} ödev kaydedildi — WhatsApp için son öğrenci açılıyor`
@@ -1283,6 +1474,9 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           // WhatsApp yoksa doğrudan çalışma programı teklifi
           setShowPrint(false);
           setShowStudyProgramOffer(true);
+        } else if (editingAssignmentId && returnHref && !openWhatsApp) {
+          markClean();
+          forceNavigate(returnHref, { hard: true });
         } else if (lastCreatedId && kontrolDone && returnHref) {
           const sep = returnHref.includes('?') ? '&' : '?';
           forceNavigate(`${returnHref}${sep}notify=report`, { hard: true });
@@ -1313,6 +1507,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     }
     draftReadyRef.current = false;
     setCart([]);
+    setTopicK3({});
     setSelectedResource(null);
     setBookDetails(null);
     setTitle(generateWeeklyTitle());
@@ -1407,7 +1602,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
             </svg>
           </div>
           <div className="hero-text">
-            <h1>Ödev Oluştur</h1>
+            <h1>{editingAssignmentId ? 'Taslak Düzenle' : 'Ödev Oluştur'}</h1>
             <div className="hero-breadcrumb">
               {isCoach ? (
                 <>
@@ -1415,7 +1610,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
                   <span>/</span>
                   <Link href="/coach/odev/kontrol">Ödev</Link>
                   <span>/</span>
-                  <span>Ödev Oluştur</span>
+                  <span>{editingAssignmentId ? 'Taslak Düzenle' : 'Ödev Oluştur'}</span>
                 </>
               ) : (
                 <>
@@ -1423,7 +1618,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
                   <span>/</span>
                   <span>Koçluk</span>
                   <span>/</span>
-                  <span>Ödev Oluştur</span>
+                  <span>{editingAssignmentId ? 'Taslak Düzenle' : 'Ödev Oluştur'}</span>
                 </>
               )}
             </div>
@@ -1464,9 +1659,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
                 fontSize: 13, fontWeight: 500, cursor: 'pointer',
               }}
             >
-              ← Kontrole dön
+              ← {fromDraft ? 'Taslağa dön' : 'Kontrole dön'}
             </button>
           )}
+          {!editingAssignmentId && (
           <button
             type="button"
             onClick={() => resetAll()}
@@ -1482,6 +1678,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           >
             ↻ Sıfırla
           </button>
+          )}
         </div>
       </div>
 
@@ -1523,6 +1720,25 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
       {/* Step Content */}
       <div className="wizard-content" style={{ minHeight: 280 }}>
+        {fromDraft && currentStep === 2 && (
+          <div
+            role="status"
+            style={{
+              marginBottom: 16,
+              padding: '14px 16px',
+              borderRadius: 12,
+              border: '1.5px solid #93c5fd',
+              background: 'linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)',
+            }}
+          >
+            <div style={{ fontSize: 14, fontWeight: 700, color: '#1e40af', marginBottom: 4 }}>
+              Taslak ödev düzenleniyor
+            </div>
+            <p style={{ margin: 0, fontSize: 13, color: '#1e3a8a', lineHeight: 1.45 }}>
+              Kitap ağacından içerik ekleyebilir veya sepetten çıkarabilirsiniz. Kaydettiğinizde bu taslak güncellenir; yeni ödev oluşmaz.
+            </p>
+          </div>
+        )}
         {fromKontrol && currentStep === 2 && (
           <div
             role="status"
@@ -1706,6 +1922,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               onClearCart={clearCart}
               onNoteChange={(id: number, v: string) => setContentNotes(p => ({ ...p, [id]: v }))}
               isSelected={isContentSelected}
+              topicK3={topicK3}
+              onTopicK3Change={handleTopicK3Change}
             />
           )}
 
@@ -1733,6 +1951,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
               onSave={handleSave}
               onPrint={() => setShowPrint(true)}
               getPhotoUrl={getPhotoUrl}
+              topicK3={topicK3}
+              editingDraft={!!editingAssignmentId}
             />
           )}
         </div>

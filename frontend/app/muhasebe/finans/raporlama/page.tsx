@@ -1,1 +1,5 @@
-export { default } from '@/app/finans/raporlama/page';
+import { redirect } from "next/navigation";
+
+export default function MuhasebeFinansRaporlamaRedirect() {
+  redirect("/muhasebe/finans/tahsilat-raporlar?tab=mali-analiz");
+}

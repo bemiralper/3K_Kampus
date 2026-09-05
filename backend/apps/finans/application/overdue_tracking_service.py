@@ -7,7 +7,9 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any
 
-from django.db.models import Count, Max, Q, QuerySet, Sum
+from collections import defaultdict
+
+from django.db.models import Count, Max, Min, Q, QuerySet, Sum
 from django.utils import timezone
 
 from apps.communication.application.integration_hooks import (
@@ -64,6 +66,7 @@ OVERDUE_EXPORT_COLUMNS = [
     {'key': 'toplam_odenen', 'label': 'Toplam Ödenen'},
     {'key': 'toplam_kalan_borc', 'label': 'Toplam Kalan Borç'},
     {'key': 'son_tahsilat_tutari', 'label': 'Son Ödeme Tutarı'},
+    {'key': 'toplam_gecikmis_tutar', 'label': 'Geciken Toplam Tutar'},
     {'key': 'kalan_tutar', 'label': 'Kalan Borç'},
     {'key': 'son_tahsilat_tarihi', 'label': 'Son Tahsilat'},
     {'key': 'durum_label', 'label': 'Durum'},
@@ -292,13 +295,21 @@ class OverdueTrackingService:
 
     def list_page(self, params: OverdueTrackingParams) -> dict[str, Any]:
         qs = self.build_queryset(params)
-        total = qs.count()
+        liste_toplam = qs.aggregate(toplam=Sum('kalan_tutar'))
+        groups = self._student_groups(qs)
+        groups = self._sort_student_groups(groups, params.ordering)
+
+        total = len(groups)
         page = max(1, params.page)
         page_size = min(max(1, params.page_size), 500)
         start = (page - 1) * page_size
-        taksitler = list(qs[start:start + page_size])
+        page_groups = groups[start:start + page_size]
+        ogrenci_ids = [g['sozlesme__ogrenci_id'] for g in page_groups]
+        taksitler = list(qs.filter(sozlesme__ogrenci_id__in=ogrenci_ids)) if ogrenci_ids else []
 
-        rows = self._serialize_rows(taksitler, params.kurum_id, params.durum)
+        rows = self._serialize_grouped_rows(
+            taksitler, page_groups, params.kurum_id, params.durum,
+        )
         total_pages = max(1, (total + page_size - 1) // page_size) if total else 1
 
         return {
@@ -307,8 +318,53 @@ class OverdueTrackingService:
             'page': page,
             'page_size': page_size,
             'total_pages': total_pages,
+            'liste_toplam_geciken_tutar': int(liste_toplam['toplam'] or 0),
             'results': rows,
         }
+
+    @staticmethod
+    def _student_groups(qs: QuerySet) -> list[dict]:
+        return list(
+            qs.order_by().values('sozlesme__ogrenci_id').annotate(
+                taksit_sayisi=Count('id'),
+                grup_kalan=Sum('kalan_tutar'),
+                min_vade=Min('vade_tarihi'),
+                max_vade=Max('vade_tarihi'),
+                min_taksit_id=Min('id'),
+                ogrenci_ad=Max('sozlesme__ogrenci__ad'),
+                ogrenci_soyad=Max('sozlesme__ogrenci__soyad'),
+            )
+        )
+
+    @staticmethod
+    def _sort_student_groups(groups: list[dict], ordering: str) -> list[dict]:
+        ordering = ordering or '-gecikme_gun'
+        reverse = ordering.startswith('-')
+        key = ordering[1:] if reverse else ordering
+
+        if key == 'gecikme_gun':
+            # En çok geciken = en eski vade. -gecikme_gun → min_vade artan.
+            return sorted(
+                groups,
+                key=lambda g: g.get('min_vade') or date.max,
+                reverse=not reverse,
+            )
+
+        def sort_key(g: dict):
+            if key == 'vade_tarihi':
+                return g.get('min_vade') or date.max
+            if key == 'kalan_tutar':
+                return g.get('grup_kalan') or 0
+            if key == 'ogrenci_adi':
+                return (
+                    (g.get('ogrenci_ad') or '').casefold(),
+                    (g.get('ogrenci_soyad') or '').casefold(),
+                )
+            if key == 'taksit_no':
+                return g.get('min_taksit_id') or 0
+            return g.get('min_vade') or date.max
+
+        return sorted(groups, key=sort_key, reverse=reverse)
 
     def export_rows(self, params: OverdueTrackingParams) -> list[dict]:
         qs = self.build_queryset(params)
@@ -401,7 +457,7 @@ class OverdueTrackingService:
                 son_tahsilat_tutar_map[tah.sozlesme_id] = int(tah.tutar or 0)
 
         coach_map = self._coach_map(ogrenci_ids)
-        veli_totals = self._veli_totals(taksitler)
+        sozlesme_overdue_totals = self._sozlesme_overdue_totals(sozlesme_ids, kurum_id)
 
         rows = []
         for t in taksitler:
@@ -457,7 +513,9 @@ class OverdueTrackingService:
                 'gecikme_gun': gecikme,
                 'son_tahsilat_tarihi': son_tah.isoformat() if son_tah else None,
                 'son_tahsilat_tutari': son_tahsilat_tutar_map.get(t.sozlesme_id),
-                'toplam_gecikmis_tutar': veli_totals.get(veli_id, int(t.kalan_tutar or 0)),
+                'toplam_gecikmis_tutar': sozlesme_overdue_totals.get(
+                    t.sozlesme_id, int(t.kalan_tutar or 0),
+                ),
                 'durum_label': _durum_label(gecikme, liste_durumu=liste_durumu),
                 'durum_renk': _durum_renk(gecikme, liste_durumu=liste_durumu),
                 'liste_durumu': liste_durumu,
@@ -465,6 +523,104 @@ class OverdueTrackingService:
                 'already_sent_24h': already_24h,
                 'cari_hesap_id': None,
             })
+        return rows
+
+    def _serialize_grouped_rows(
+        self,
+        taksitler: list[Taksit],
+        page_groups: list[dict],
+        kurum_id: int,
+        liste_durumu: str,
+    ) -> list[dict]:
+        """Aynı öğrencinin geciken taksitlerini tek satırda birleştirir."""
+        if not taksitler or not page_groups:
+            return []
+
+        today = timezone.localdate()
+        by_ogrenci: dict[int, list[Taksit]] = defaultdict(list)
+        for t in taksitler:
+            by_ogrenci[t.sozlesme.ogrenci_id or 0].append(t)
+
+        ordered_groups: list[tuple[int, list[Taksit]]] = []
+        for g in page_groups:
+            oid = g.get('sozlesme__ogrenci_id') or 0
+            group = by_ogrenci.get(oid) or []
+            if not group:
+                continue
+            group_sorted = sorted(
+                group,
+                key=lambda t: (t.vade_tarihi or date.max, t.id),
+            )
+            ordered_groups.append((oid, group_sorted))
+
+        representatives = [group[0] for _, group in ordered_groups]
+        serialized = {
+            row['taksit_id']: row
+            for row in self._serialize_rows(representatives, kurum_id, liste_durumu)
+        }
+
+        from apps.finans.application.overdue_reminder_service import OverdueReminderService
+
+        rows = []
+        for oid, group in ordered_groups:
+            rep = group[0]
+            row = dict(serialized.get(rep.id) or {})
+            if not row:
+                continue
+            tids = [t.id for t in group]
+            grup_kalan = sum(int(t.kalan_tutar or 0) for t in group)
+            grup_tutar = sum(int(t.tutar or 0) for t in group)
+            seen_soz: set[int] = set()
+            sozlesme_kalan = 0
+            sozlesme_net = 0
+            sozlesme_odenen = 0
+            for t in group:
+                if t.sozlesme_id in seen_soz:
+                    continue
+                seen_soz.add(t.sozlesme_id)
+                sozlesme_kalan += int(t.sozlesme.kalan_borc or 0)
+                sozlesme_net += int(t.sozlesme.net_tutar or 0)
+                sozlesme_odenen += int(t.sozlesme.toplam_odenen or 0)
+
+            if liste_durumu == 'bugun_vadeli':
+                gecikme = 0
+            elif liste_durumu == 'yaklasan':
+                gecikme = max(
+                    (max(0, (t.vade_tarihi - today).days) if t.vade_tarihi else 0)
+                    for t in group
+                )
+            else:
+                gecikme = max(gecikme_gunu(t) for t in group)
+
+            already_24h = False
+            if oid:
+                source_id = OverdueReminderService._source_id(oid, tids)
+                veli = group[0].sozlesme.veli
+                veli_id = veli.id if veli else None
+                if veli_id:
+                    already_24h = (
+                        already_sent(kurum_id, SOURCE_ODEME, source_id, veli_id=veli_id)
+                        or recently_sent_within_hours(
+                            kurum_id, SOURCE_ODEME, source_id, veli_id=veli_id, hours=24,
+                        )
+                    )
+
+            row.update({
+                'taksit_ids': tids,
+                'taksit_sayisi': len(group),
+                'kalan_tutar': grup_kalan,
+                'taksit_tutari': grup_tutar,
+                'toplam_gecikmis_tutar': grup_kalan,
+                'toplam_kalan_borc': sozlesme_kalan,
+                'sozlesme_tutari': sozlesme_net,
+                'toplam_odenen': sozlesme_odenen,
+                'vade_tarihi': rep.vade_tarihi.isoformat() if rep.vade_tarihi else '',
+                'gecikme_gun': gecikme,
+                'durum_label': _durum_label(gecikme, liste_durumu=liste_durumu),
+                'durum_renk': _durum_renk(gecikme, liste_durumu=liste_durumu),
+                'already_sent_24h': already_24h,
+            })
+            rows.append(row)
         return rows
 
     @staticmethod
@@ -487,12 +643,17 @@ class OverdueTrackingService:
         return result
 
     @staticmethod
-    def _veli_totals(taksitler: list[Taksit]) -> dict[int | None, int]:
-        totals: dict[int | None, int] = {}
-        for t in taksitler:
-            vid = t.sozlesme.veli_id
-            totals[vid] = totals.get(vid, 0) + int(t.kalan_tutar or 0)
-        return totals
+    def _sozlesme_overdue_totals(sozlesme_ids: set[int], kurum_id: int) -> dict[int, int]:
+        """Sözleşmenin tüm geciken taksit kalanları (sayfa dışı kayıtlar dahil)."""
+        if not sozlesme_ids:
+            return {}
+        rows = (
+            get_overdue_taksit_queryset(kurum_id=kurum_id)
+            .filter(sozlesme_id__in=sozlesme_ids)
+            .values('sozlesme_id')
+            .annotate(toplam=Sum('kalan_tutar'))
+        )
+        return {row['sozlesme_id']: int(row['toplam'] or 0) for row in rows}
 
     @staticmethod
     def _communication_history(taksit_id: int, kurum_id: int, veli_id: int | None) -> dict:

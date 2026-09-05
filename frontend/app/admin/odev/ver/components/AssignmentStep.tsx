@@ -12,6 +12,8 @@ import { isEmptyNoteHtml } from '@/lib/note-html';
 import NoteRichEditor from '@/components/odev/NoteRichEditor';
 import NoteHtml from '@/components/odev/NoteHtml';
 import QuotaAssignCards from './QuotaAssignCards';
+import K3ModePicker, { K3ModeBadge } from '@/components/odev/K3ModePicker';
+import { k3TopicKey, type K3Mode, type TopicK3Map } from '@/lib/k3-mode';
 import '../odev-ver.css';
 
 type HistoryFilter = 'all' | 'partial' | 'not_done' | 'never';
@@ -32,7 +34,7 @@ function ScopePct({
   const color = pct >= 75 ? '#059669' : pct >= 40 ? '#d97706' : '#dc2626';
   const detail = wholeBook && progress.total
     ? `${progress.assigned}/${progress.total} içerik ödevlenmiş · kitap geneli`
-    : `${progress.assigned} görev`;
+    : `${progress.assigned} test`;
   return (
     <span
       title={`${titlePrefix}: %${pct} · ${detail}`}
@@ -76,6 +78,8 @@ interface AssignmentStepProps {
   onClearCart: () => void;
   onNoteChange: (id: number, note: string) => void;
   isSelected: (id: number) => boolean;
+  topicK3?: TopicK3Map;
+  onTopicK3Change?: (bookId: number, topicId: number, mode: K3Mode | null, targetMinutes: number | null) => void;
 }
 
 export default function AssignmentStep({
@@ -87,6 +91,7 @@ export default function AssignmentStep({
   onToggleContent, onSelectAllUnit, onSelectAllTopic,
   onSelectIncompleteUnit, onSelectIncompleteTopic,
   onRemoveContent, onRemoveContents, onClearCart, onNoteChange, isSelected,
+  topicK3 = {}, onTopicK3Change,
 }: AssignmentStepProps) {
   const [openLessons, setOpenLessons] = useState<Record<number, boolean>>({});
   const [openTypes, setOpenTypes] = useState<Record<string, boolean>>({});
@@ -292,6 +297,8 @@ export default function AssignmentStep({
         resources={resources}
         cart={cart}
         lastDefaults={lastQuotaDefaults}
+        topicK3={topicK3}
+        onTopicK3Change={onTopicK3Change}
         onAdd={onAddQuota}
         onRemove={onRemoveContent}
       />
@@ -434,7 +441,7 @@ export default function AssignmentStep({
             <div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-color)' }}>
-                  {bookDetails ? `📖 ${bookDetails.name || bookDetails.ad}` : '📖 Görevler'}
+                  {bookDetails ? `📖 ${bookDetails.name || bookDetails.ad}` : '📖 Testler'}
                 </div>
                 {bookDetails && (
                   <ScopePct progress={bookProgress[bookDetails.id]} titlePrefix="Kitap bitirme" wholeBook />
@@ -609,6 +616,13 @@ export default function AssignmentStep({
                             </span>
                           )}
                         </div>
+                        {onTopicK3Change && bookDetails && (
+                          <K3ModePicker
+                            value={topicK3[k3TopicKey(bookDetails.id, topic.id)]?.mode || null}
+                            targetMinutes={topicK3[k3TopicKey(bookDetails.id, topic.id)]?.targetMinutes}
+                            onChange={(mode, minutes) => onTopicK3Change(bookDetails.id, topic.id, mode, minutes)}
+                          />
+                        )}
                         <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                           {historyFilter === 'all' ? (topic.contents?.length || 0) : contents.length}
                         </span>
@@ -817,7 +831,7 @@ export default function AssignmentStep({
                 🛒 Sepet
               </div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                {cart.length} görev seçildi
+                {cart.length} test seçildi
                 {cartCompletionCount > 0 && (
                   <span style={{ color: '#2563eb', fontWeight: 600 }}> · {cartCompletionCount} tekrar</span>
                 )}
@@ -939,6 +953,31 @@ export default function AssignmentStep({
                                 </span>
                               )}
                             </button>
+                            {onTopicK3Change && topic.items[0] && (
+                              <K3ModePicker
+                                value={
+                                  topicK3[k3TopicKey(topic.items[0].content.bookId, topic.topicId)]?.mode
+                                  || topic.items[0].content.k3Mode
+                                  || null
+                                }
+                                targetMinutes={
+                                  topicK3[k3TopicKey(topic.items[0].content.bookId, topic.topicId)]?.targetMinutes
+                                  ?? topic.items[0].content.k3TargetMinutes
+                                }
+                                onChange={(mode, minutes) => onTopicK3Change(
+                                  topic.items[0].content.bookId,
+                                  topic.topicId,
+                                  mode,
+                                  minutes,
+                                )}
+                              />
+                            )}
+                            {!onTopicK3Change && (
+                              <K3ModeBadge
+                                mode={topic.items[0]?.content.k3Mode}
+                                targetMinutes={topic.items[0]?.content.k3TargetMinutes}
+                              />
+                            )}
                             <button
                               type="button"
                               onClick={() => onRemoveContents(topic.items.map((i) => i.content.id))}
@@ -1034,7 +1073,7 @@ export default function AssignmentStep({
             }}>
               <div style={{ textAlign: 'center' }}>
                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--primary)' }}>{cart.length}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Görev</div>
+                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>Test</div>
               </div>
               {cartCompletionCount > 0 && (
                 <div style={{ textAlign: 'center' }}>

@@ -100,6 +100,7 @@ class GiderOdemeService:
             'bakiyeden_mahsup': False,
         }
         odeme = self.odeme_repo.create(odeme_data)
+        self._assign_odeme_belge_no(odeme, gider)
 
         # 2. BakiyeHareketi oluştur (ÇIKIŞ — hesaptan para çıkıyor)
         aciklama = f"Gider ödemesi: {gider.cari_hesap} - {gider.fatura_no or 'Belgesiz'}"
@@ -185,6 +186,7 @@ class GiderOdemeService:
             'bakiyeden_mahsup': True,
         }
         odeme = self.odeme_repo.create(odeme_data)
+        self._assign_odeme_belge_no(odeme, gider)
 
         # 2. BakiyeHareketi OLUŞTURULMAZ — kasadan/bankadan para çıkmıyor!
 
@@ -306,6 +308,13 @@ class GiderOdemeService:
         )
 
         return odeme, None
+
+    @staticmethod
+    def _assign_odeme_belge_no(odeme, gider):
+        """Gerçekleşen ödemeye ODM-YYYY-000001 numarası verir."""
+        from apps.finans.application.gider_belge_service import generate_odeme_belge_no
+        odeme.odeme_belge_no = generate_odeme_belge_no(gider.kurum_id)
+        odeme.save(update_fields=['odeme_belge_no'])
 
     # ─── Validasyon ──────────────────────────────
 

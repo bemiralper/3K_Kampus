@@ -52,7 +52,7 @@ import {
 import GecikenDetayDrawer from "./GecikenDetayDrawer";
 
 const { RangePicker } = DatePicker;
-const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v3";
+const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v4";
 
 type ColDef = {
   key: GecikenColumnKey;
@@ -63,7 +63,19 @@ type ColDef = {
 };
 
 const ALL_COLUMNS: ColDef[] = [
-  { key: "ogrenci", label: "Öğrenci", sortField: "ogrenci_adi", render: (i) => <span style={{ fontWeight: 600, color: "#0f172a" }}>{i.ogrenci_adi}</span> },
+  {
+    key: "ogrenci",
+    label: "Öğrenci",
+    sortField: "ogrenci_adi",
+    render: (i) => (
+      <span style={{ fontWeight: 600, color: "#0f172a" }}>
+        {i.ogrenci_adi}
+        {(i.taksit_sayisi ?? 1) > 1 && (
+          <Tag color="default" style={{ marginLeft: 8, fontWeight: 600 }}>{i.taksit_sayisi} taksit</Tag>
+        )}
+      </span>
+    ),
+  },
   { key: "veli", label: "Veli", render: (i) => i.veli_adi || "—" },
   { key: "telefon", label: "Telefon", render: (i) => i.veli_telefon || "—" },
   { key: "sube", label: "Şube", render: (i) => i.sube_ad || "—" },
@@ -74,6 +86,7 @@ const ALL_COLUMNS: ColDef[] = [
   { key: "taksit_tutari", label: "Taksit Tutarı", align: "right", render: (i) => fmtTL(i.taksit_tutari) },
   { key: "sozlesme_tutari", label: "Toplam Sözleşme", align: "right", render: (i) => fmtTL(i.sozlesme_tutari) },
   { key: "son_odeme", label: "Son Ödeme", align: "right", render: (i) => (i.son_tahsilat_tutari != null ? fmtTL(i.son_tahsilat_tutari) : "—") },
+  { key: "toplam_gecikmis", label: "Geciken Toplam Tutar", align: "right", render: (i) => <span style={{ fontWeight: 700, color: "#b91c1c" }}>{fmtTL(i.toplam_gecikmis_tutar)}</span> },
   { key: "toplam_kalan", label: "Toplam Kalan Borç", sortField: "toplam_kalan_borc", align: "right", render: (i) => <span style={{ fontWeight: 700, color: "#dc2626" }}>{fmtTL(i.toplam_kalan_borc)}</span> },
   { key: "kalan", label: "Taksit Kalan", sortField: "kalan_tutar", align: "right", render: (i) => fmtTL(i.kalan_tutar) },
   { key: "son_tahsilat", label: "Son Tahsilat", render: (i) => (i.son_tahsilat_tarihi ? fmtDate(i.son_tahsilat_tarihi) : "—") },
@@ -82,7 +95,7 @@ const ALL_COLUMNS: ColDef[] = [
 
 const DEFAULT_VISIBLE: GecikenColumnKey[] = [
   "ogrenci", "veli", "telefon",
-  "vade", "gecikme", "sozlesme_tutari", "son_odeme", "toplam_kalan", "son_tahsilat", "durum",
+  "vade", "gecikme", "sozlesme_tutari", "son_odeme", "toplam_gecikmis", "toplam_kalan", "son_tahsilat", "durum",
 ];
 
 const VALID_KEYS = new Set<GecikenColumnKey>(ALL_COLUMNS.map((c) => c.key));
@@ -106,6 +119,10 @@ function loadVisibleColumns(): GecikenColumnKey[] {
   return DEFAULT_VISIBLE;
 }
 
+function rowSelectKey(item: OverduePaymentItem): number {
+  return item.ogrenci_id ?? item.taksit_id;
+}
+
 function exportKeysFromVisible(visible: GecikenColumnKey[]): string[] {
   const keys: string[] = [];
   for (const col of ALL_COLUMNS) {
@@ -122,6 +139,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
 
   const [items, setItems] = useState<OverduePaymentItem[]>([]);
   const [ozet, setOzet] = useState<OverduePaymentsSummary | null>(null);
+  const [listeToplam, setListeToplam] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -174,6 +192,11 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
       const data = await overdueService.list(filterParams);
       setItems(data.results || []);
       setOzet(data.ozet);
+      setListeToplam(
+        data.liste_toplam_geciken_tutar
+          ?? data.ozet?.toplam_geciken_tutar
+          ?? null,
+      );
       setCount(data.count);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Liste yüklenemedi");
@@ -261,7 +284,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
             <Button size="small" type="text" icon={<DollarOutlined />} onClick={() => setTahsilatHedef({ sozlesmeId: item.sozlesme_id, taksitId: item.taksit_id })} />
           </Tooltip>
           <Tooltip title="WhatsApp">
-            <Button size="small" type="text" icon={<WhatsAppOutlined />} style={{ color: "#25D366" }} onClick={() => { setSelectedKeys([item.taksit_id]); setShowBulkModal(true); }} />
+            <Button size="small" type="text" icon={<WhatsAppOutlined />} style={{ color: "#25D366" }} onClick={() => { setSelectedKeys([rowSelectKey(item)]); setShowBulkModal(true); }} />
           </Tooltip>
           <Tooltip title="Ara">
             <Button size="small" type="text" icon={<PhoneOutlined />} onClick={() => handleCall(item.veli_telefon)} />
@@ -292,7 +315,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
     if (pag.pageSize) setPageSize(pag.pageSize);
   };
 
-  const selectedItems = items.filter((i) => selectedKeys.includes(i.taksit_id));
+  const selectedItems = items.filter((i) => selectedKeys.includes(rowSelectKey(i)));
   const exportColumnKeys = exportKeysFromVisible(visibleCols);
 
   if (!activeKurum) {
@@ -389,6 +412,37 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
         <Button size="small" onClick={clearFilters}>Temizle</Button>
       </Space>
 
+      {listeToplam != null && !loading && !error && (
+        <div
+          style={{
+            marginBottom: 10,
+            padding: "10px 14px",
+            borderRadius: 10,
+            background: "#fef2f2",
+            border: "1px solid #fecaca",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: 12,
+            flexWrap: "wrap",
+          }}
+        >
+          <span style={{ fontSize: 13, color: "#7f1d1d", fontWeight: 600 }}>
+            {durum === "bugun_vadeli"
+              ? "Listede bugün vadeli toplam"
+              : durum === "yaklasan"
+                ? "Listede yaklaşan toplam"
+                : "Listede geciken toplam tutar"}
+          </span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: "#b91c1c" }}>
+            {fmtTL(listeToplam)}
+            <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, color: "#991b1b" }}>
+              ({count.toLocaleString("tr-TR")} öğrenci)
+            </span>
+          </span>
+        </div>
+      )}
+
       <Card size="small" styles={{ body: { padding: 0 } }}>
         {loading ? (
           <div style={{ padding: 80, textAlign: "center" }}><Spin size="large" /></div>
@@ -399,7 +453,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
           </div>
         ) : (
           <Table
-            rowKey="taksit_id"
+            rowKey={(item) => rowSelectKey(item)}
             size="small"
             columns={columns}
             dataSource={items}
@@ -413,7 +467,10 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
               total: count,
               showSizeChanger: true,
               pageSizeOptions: [25, 50, 100, 200],
-              showTotal: (t) => `Toplam ${t.toLocaleString("tr-TR")} kayıt`,
+              showTotal: (t) =>
+                listeToplam != null
+                  ? `Toplam ${t.toLocaleString("tr-TR")} öğrenci · Geciken ${fmtTL(listeToplam)}`
+                  : `Toplam ${t.toLocaleString("tr-TR")} öğrenci`,
             }}
             scroll={{ x: "max-content" }}
           />
@@ -429,7 +486,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
           homeHref={homeHref}
           onClose={() => { setDetailItem(null); setDetailData(null); }}
           onTahsilat={() => setTahsilatHedef({ sozlesmeId: detailItem.sozlesme_id, taksitId: detailItem.taksit_id })}
-          onWhatsapp={() => { setSelectedKeys([detailItem.taksit_id]); setShowBulkModal(true); }}
+          onWhatsapp={() => { setSelectedKeys([rowSelectKey(detailItem)]); setShowBulkModal(true); }}
           onCall={() => handleCall(detailItem.veli_telefon)}
           onNotEkle={() => { const n = window.prompt("Not girin:"); if (n?.trim()) message.success("Not kaydedildi (yerel)"); }}
         />
@@ -437,7 +494,7 @@ function GecikmisOdemelerInner({ embedded = false }: { embedded?: boolean }) {
 
       {showBulkModal && (
         <TopluGecikmeMesajModal
-          selectedItems={selectedItems.length ? selectedItems : items.filter((i) => selectedKeys.includes(i.taksit_id))}
+          selectedItems={selectedItems.length ? selectedItems : items.filter((i) => selectedKeys.includes(rowSelectKey(i)))}
           kurumAd={activeKurum.ad}
           onClose={() => setShowBulkModal(false)}
           onSent={(sent) => message.success(`${sent} kişiye mesaj gönderildi`)}

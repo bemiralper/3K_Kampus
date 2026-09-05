@@ -28,28 +28,9 @@ class GiderService:
 
     @staticmethod
     def _generate_fatura_no(kurum_id):
-        """
-        Otomatik fatura numarası üret.
-        Format: GDR-YYYYMM-NNN  (ör. GDR-202603-001)
-        """
-        from apps.finans.domain.gider_kaydi import GiderKaydi
-        now = timezone.now()
-        prefix = f"GDR-{now.strftime('%Y%m')}-"
-        son_kayit = (
-            GiderKaydi.objects
-            .filter(kurum_id=kurum_id, fatura_no__startswith=prefix)
-            .order_by('-fatura_no')
-            .values_list('fatura_no', flat=True)
-            .first()
-        )
-        if son_kayit:
-            try:
-                son_sira = int(son_kayit.split('-')[-1])
-            except (ValueError, IndexError):
-                son_sira = 0
-        else:
-            son_sira = 0
-        return f"{prefix}{son_sira + 1:03d}"
+        """Eski çağrılar için: Gider İşlem Belge No üretir (GDR-YYYY-000001)."""
+        from apps.finans.application.gider_belge_service import generate_gider_islem_belge_no
+        return generate_gider_islem_belge_no(kurum_id)
 
     @staticmethod
     def _sync_gider_cek_senet(gider):
@@ -72,12 +53,8 @@ class GiderService:
         if errors:
             return None, errors
 
-        # Fatura no boşsa otomatik üret
-        if not data.get('fatura_no'):
-            data['fatura_no'] = self._generate_fatura_no(data.get('kurum_id'))
-        if not data.get('islem_belge_no'):
-            belge = data.get('fatura_no') or self._generate_fatura_no(data.get('kurum_id'))
-            data['islem_belge_no'] = str(belge)[:30]
+        from apps.finans.application.gider_belge_service import generate_gider_islem_belge_no
+        data['islem_belge_no'] = generate_gider_islem_belge_no(data.get('kurum_id'))
 
         # KDV hesapla (moda göre: haric | dahil | muaf)
         girilen = data.get('brut_tutar', Decimal('0'))
@@ -296,20 +273,68 @@ class GiderService:
         return gider, None
 
     @transaction.atomic
-    def iptal_et(self, gider_id: int):
+    def onay_kaldir(self, gider_id: int):
+        """Onayı kaldırır → taslak. Ödemesi olan kayda uygulanmaz."""
+        gider = self.gider_repo.get_by_id(gider_id)
+        if not gider:
+            return None, {'genel': 'Gider kaydı bulunamadı.'}
+
+        if gider.durum != GiderDurum.ONAYLANDI:
+            return None, {'genel': 'Onay yalnızca "Onaylandı" durumundaki kayıttan kaldırılabilir.'}
+
+        if gider.odenen_toplam > Decimal('0'):
+            return None, {'genel': 'Ödemesi olan giderin onayı kaldırılamaz. Önce ödemeleri iptal edin.'}
+
+        self.cari_hareket_service.hareket_olustur(
+            cari_hesap_id=gider.cari_hesap_id,
+            kurum_id=gider.kurum_id,
+            tutar=gider.net_tutar,
+            yon=CariHareketYonu.BORC,
+            islem_turu=CariHareketTuru.IADE,
+            islem_tarihi=gider.fatura_tarihi,
+            sube_id=gider.sube_id,
+            egitim_yili_id=gider.egitim_yili_id,
+            kaynak_tip='GiderKaydi',
+            kaynak_id=gider.pk,
+            aciklama=f'Gider onay kaldırma: {gider.fatura_no or "Belgesiz"}',
+        )
+        gider.taksitler.all().delete()
+        gider = self.gider_repo.update(gider, {
+            'durum': GiderDurum.TASLAK,
+            'onaylayan': None,
+            'onay_tarihi': None,
+        })
+        return gider, None
+
+    @transaction.atomic
+    def iptal_et(self, gider_id: int, *, force=False):
         """
         Gider kaydını iptal eder.
-        Ödemesi yapılmış gider iptal edilemez.
-        Returns: (GiderKaydi, None) veya (None, error_dict)
+        Ödemesi yapılmış gider varsayılan olarak iptal edilemez.
+        force=True (süper yönetici): önce aktif ödemeleri iptal eder.
         """
         gider = self.gider_repo.get_by_id(gider_id)
         if not gider:
             return None, {'genel': 'Gider kaydı bulunamadı.'}
 
-        if not gider.iptal_edilebilir_mi:
+        if gider.durum == GiderDurum.IPTAL:
+            return None, {'genel': 'Bu gider kaydı zaten iptal edilmiş.'}
+
+        if force and gider.odenen_toplam > Decimal('0'):
+            from apps.finans.application.gider_odeme_service import GiderOdemeService
+            from apps.finans.constants.gider_types import OdemeDurum
+            odeme_svc = GiderOdemeService()
+            aktif = list(gider.odemeler.filter(durum=OdemeDurum.TAMAMLANDI))
+            for odeme in aktif:
+                _, err = odeme_svc.odeme_iptal(odeme.pk)
+                if err:
+                    return None, err
+            gider.refresh_from_db()
+
+        if not force and not gider.iptal_edilebilir_mi:
             return None, {'genel': f'Bu gider kaydı iptal edilemez (durum: {gider.get_durum_display()}).'}
 
-        if gider.odenen_toplam > Decimal('0'):
+        if not force and gider.odenen_toplam > Decimal('0'):
             return None, {'genel': 'Ödemesi olan gider iptal edilemez. Önce ödemeleri iptal edin.'}
 
         onceki_durum = gider.durum
@@ -321,7 +346,7 @@ class GiderService:
         gider = self.gider_repo.update(gider, {'durum': GiderDurum.IPTAL})
 
         # Eğer onaylanmıştı ise cari alacak düzeltmesi (BORÇ hareketi — ters kayıt)
-        if onceki_durum in [GiderDurum.ONAYLANDI, GiderDurum.KISMI_ODENDI]:
+        if onceki_durum in [GiderDurum.ONAYLANDI, GiderDurum.KISMI_ODENDI, GiderDurum.ODENDI]:
             self.cari_hareket_service.hareket_olustur(
                 cari_hesap_id=gider.cari_hesap_id,
                 kurum_id=gider.kurum_id,
@@ -338,14 +363,19 @@ class GiderService:
 
         return gider, None
 
-    def soft_delete(self, gider_id: int):
-        """Soft delete — sadece taslak giderler silinebilir."""
+    def soft_delete(self, gider_id: int, *, force=False):
+        """Soft delete — taslak; force ile önce iptal (ödemeler dahil) sonra silinir."""
         gider = self.gider_repo.get_by_id(gider_id)
         if not gider:
             return None, {'genel': 'Gider kaydı bulunamadı.'}
 
         if gider.durum != GiderDurum.TASLAK:
-            return None, {'genel': 'Sadece taslak durumdaki giderler silinebilir.'}
+            if not force:
+                return None, {'genel': 'Sadece taslak durumdaki giderler silinebilir.'}
+            if gider.durum != GiderDurum.IPTAL:
+                gider, err = self.iptal_et(gider_id, force=True)
+                if err:
+                    return None, err
 
         gider = self.gider_repo.soft_delete(gider)
         return gider, None
@@ -409,7 +439,7 @@ class GiderService:
             qs = qs.filter(Q(sube_id=sube_id) | Q(sube_id__isnull=True))
         for gider in qs.iterator():
             stale = gider.taksitler.filter(
-                durum__in=[GiderTaksitDurum.BEKLEMEDE, GiderTaksitDurum.KISMI_ODENDI],
+                durum__in=list(GiderTaksitDurum.ACIK),
             ).exists()
             if stale:
                 self.taksitleri_odeme_ile_hizala(gider)

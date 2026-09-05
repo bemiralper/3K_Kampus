@@ -38,16 +38,23 @@ export default function DashboardShortcuts() {
     <section className="fdash-block">
       <h2 className="fdash-block-label">Kısayollar</h2>
       <div className="fdash-shortcut-grid">
-        {items.map((item) => (
-          <Link
-            key={item.label}
-            href={item.href}
-            className={`fdash-shortcut fdash-shortcut--${item.tone}`}
-          >
-            <div className="fdash-shortcut__label">{item.label}</div>
-            <div className="fdash-shortcut__desc">{item.desc}</div>
-          </Link>
-        ))}
+        {items.map((item) => {
+          const className = `fdash-shortcut fdash-shortcut--${item.tone}`;
+          if (item.label === "Raporlar") {
+            return (
+              <a key={item.label} href={item.href} className={className}>
+                <div className="fdash-shortcut__label">{item.label}</div>
+                <div className="fdash-shortcut__desc">{item.desc}</div>
+              </a>
+            );
+          }
+          return (
+            <Link key={item.label} href={item.href} className={className}>
+              <div className="fdash-shortcut__label">{item.label}</div>
+              <div className="fdash-shortcut__desc">{item.desc}</div>
+            </Link>
+          );
+        })}
       </div>
     </section>
   );

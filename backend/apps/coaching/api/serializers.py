@@ -5,6 +5,15 @@ from rest_framework import serializers
 from apps.coaching.models import CoachProfile, CoachStudentAssignment, CoachingEvent
 
 
+def student_profil_foto_url(student, request=None):
+    if not student or not getattr(student, 'profil_foto', None):
+        return None
+    url = student.profil_foto.url
+    if request:
+        return request.build_absolute_uri(url)
+    return url
+
+
 class CoachProfileSerializer(serializers.ModelSerializer):
     """Koç Profili Serializer - Listeleme ve Detay için"""
     
@@ -221,13 +230,15 @@ class AssignmentListSerializer(serializers.ModelSerializer):
     student_soyad = serializers.CharField(source='student.soyad', read_only=True)
     student_full_name = serializers.SerializerMethodField()
     student_sinif = serializers.SerializerMethodField()
+    student_profil_foto = serializers.SerializerMethodField()
     
     class Meta:
         model = CoachStudentAssignment
         fields = [
             'id',
             'coach', 'coach_id', 'coach_full_name', 'coach_capacity', 'coach_current_count',
-            'student', 'student_id', 'student_ad', 'student_soyad', 'student_full_name', 'student_sinif',
+            'student', 'student_id', 'student_ad', 'student_soyad', 'student_full_name',
+            'student_sinif', 'student_profil_foto',
             'start_date', 'end_date', 'is_primary', 'is_active',
             'created_at', 'updated_at',
         ]
@@ -253,6 +264,9 @@ class AssignmentListSerializer(serializers.ModelSerializer):
         except Exception:
             pass
         return None
+
+    def get_student_profil_foto(self, obj):
+        return student_profil_foto_url(obj.student, self.context.get('request'))
 
 
 class AssignmentCreateSerializer(serializers.ModelSerializer):
@@ -379,6 +393,7 @@ class AvailableStudentSerializer(serializers.Serializer):
     full_name = serializers.SerializerMethodField()
     sinif = serializers.CharField(allow_null=True)
     seviye = serializers.CharField(allow_null=True)
+    profil_foto = serializers.CharField(allow_null=True, required=False)
     
     def get_full_name(self, obj):
         return f"{obj.get('ad', '')} {obj.get('soyad', '')}"

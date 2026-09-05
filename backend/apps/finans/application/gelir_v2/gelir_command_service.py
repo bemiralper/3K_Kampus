@@ -87,8 +87,22 @@ class GelirCommandService:
         return gelir, None
 
     @transaction.atomic
-    def iptal_et(self, gelir_id, *, islem_yapan=None, ip_adresi=None):
-        gelir, errors = self.base.iptal_et(gelir_id)
+    def onay_kaldir(self, gelir_id, *, islem_yapan=None, ip_adresi=None):
+        gelir, errors = self.base.onay_kaldir(gelir_id)
+        if errors:
+            return None, errors
+        FinansAuditService.log(
+            kurum_id=gelir.kurum_id, sube_id=gelir.sube_id,
+            modul=FinansModul.GELIR, eylem=FinansEylem.GUNCELLE,
+            kayit_tip='GelirKaydi', kayit_id=gelir.pk,
+            aciklama=f'Gelir onayı kaldırıldı: {gelir.fatura_no}',
+            tutar=gelir.net_tutar, kullanici=islem_yapan, ip_adresi=ip_adresi,
+        )
+        return gelir, None
+
+    @transaction.atomic
+    def iptal_et(self, gelir_id, *, islem_yapan=None, ip_adresi=None, force=False):
+        gelir, errors = self.base.iptal_et(gelir_id, force=force)
         if errors:
             return None, errors
         FinansAuditService.log(
@@ -100,8 +114,8 @@ class GelirCommandService:
         )
         return gelir, None
 
-    def soft_delete(self, gelir_id, *, islem_yapan=None, ip_adresi=None):
-        gelir, errors = self.base.soft_delete(gelir_id)
+    def soft_delete(self, gelir_id, *, islem_yapan=None, ip_adresi=None, force=False):
+        gelir, errors = self.base.soft_delete(gelir_id, force=force)
         if errors:
             return None, errors
         FinansAuditService.log(

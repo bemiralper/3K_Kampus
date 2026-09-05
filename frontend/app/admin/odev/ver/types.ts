@@ -1,4 +1,5 @@
 import type { ScopeCompletionProgress as ScopeProgress } from '@/lib/resources-api';
+import type { K3Mode } from '@/lib/k3-mode';
 
 export type {
   ContentTaskHistoryItem,
@@ -32,6 +33,11 @@ export interface StudentResource {
 }
 
 export type RoutineQuotaKind = 'PARAGRAF' | 'PROBLEM';
+
+/** Sepet / 3K anahtarı — paragraf ve problem konu ağacında olmadığı için sabit id */
+export function quotaTopicId(kind: RoutineQuotaKind): number {
+  return kind === 'PARAGRAF' ? -1 : -2;
+}
 
 export function isRoutineQuotaResource(r: Pick<StudentResource, 'resource_type_kod' | 'resource_type'>): boolean {
   const kod = (r.resource_type_kod || '').toUpperCase();
@@ -123,6 +129,8 @@ export interface SelectedContent {
   quotaKind?: RoutineQuotaKind;
   quotaPlanId?: number;
   dailyQuestionCount?: number;
+  k3Mode?: K3Mode;
+  k3TargetMinutes?: number | null;
 }
 
 export interface SavedAssignment {

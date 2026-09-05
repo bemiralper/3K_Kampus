@@ -7,6 +7,8 @@ import { parseNotesList, serializeNotesList } from '../notesList';
 import { isEmptyNoteHtml } from '@/lib/note-html';
 import NoteRichEditor from '@/components/odev/NoteRichEditor';
 import NoteHtml from '@/components/odev/NoteHtml';
+import { K3ModeBadge } from '@/components/odev/K3ModePicker';
+import { k3TopicKey, type TopicK3Map } from '@/lib/k3-mode';
 import '../odev-ver.css';
 
 interface ReviewStepProps {
@@ -31,6 +33,8 @@ interface ReviewStepProps {
   onSave: (status: 'PUBLISHED' | 'DRAFT') => void;
   onPrint: () => void;
   getPhotoUrl: (path?: string | null) => string | undefined;
+  topicK3?: TopicK3Map;
+  editingDraft?: boolean;
 }
 
 function GeneralNotesEditor({ notes, onChange }: { notes: string; onChange: (v: string) => void }) {
@@ -218,7 +222,9 @@ const PRIORITY_OPTIONS = [
 export default function ReviewStep({
   student, selectedStudents = [], cart, contentNotes, title, notes, dueDate, priority, coachName,
   saving, taskHistory = {}, onTitleChange, onNotesChange, onDueDateChange, onPriorityChange, onRemove,
-  onRemoveMany, onNoteChange, onSave, onPrint, getPhotoUrl,
+  onRemoveMany, onNoteChange,   onSave, onPrint, getPhotoUrl,
+  topicK3 = {},
+  editingDraft = false,
 }: ReviewStepProps) {
   const [editingContentNoteId, setEditingContentNoteId] = useState<number | null>(null);
   /* ─── Cart grouped by lesson ─── */
@@ -589,6 +595,16 @@ export default function ReviewStep({
                                     {topicQuestions} soru
                                   </span>
                                 )}
+                                <K3ModeBadge
+                                  mode={
+                                    topicK3[k3TopicKey(topic.items[0]?.content.bookId || 0, topic.topicId)]?.mode
+                                    || topic.items[0]?.content.k3Mode
+                                  }
+                                  targetMinutes={
+                                    topicK3[k3TopicKey(topic.items[0]?.content.bookId || 0, topic.topicId)]?.targetMinutes
+                                    ?? topic.items[0]?.content.k3TargetMinutes
+                                  }
+                                />
                               </button>
                               <button
                                 type="button"
@@ -820,8 +836,18 @@ export default function ReviewStep({
                           paddingLeft: 10, marginBottom: 3,
                           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                         }}>
-                          <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-color)' }}>
+                          <span style={{ fontSize: 11, fontWeight: 500, color: 'var(--text-color)', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                             📂 {topic.topicName}
+                            <K3ModeBadge
+                              mode={
+                                topicK3[k3TopicKey(topic.items[0]?.content.bookId || 0, topic.topicId)]?.mode
+                                || topic.items[0]?.content.k3Mode
+                              }
+                              targetMinutes={
+                                topicK3[k3TopicKey(topic.items[0]?.content.bookId || 0, topic.topicId)]?.targetMinutes
+                                ?? topic.items[0]?.content.k3TargetMinutes
+                              }
+                            />
                           </span>
                           <span style={{ fontSize: 10, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                             {topicQ > 0 ? `${topicQ}s` : ''}
@@ -870,7 +896,7 @@ export default function ReviewStep({
                 <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
                 <polyline points="17 21 17 13 7 13 7 21" />
               </svg>
-              Taslak Kaydet
+              {editingDraft ? 'Taslağı Güncelle' : 'Taslak Kaydet'}
             </button>
 
             <button

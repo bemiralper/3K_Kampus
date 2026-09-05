@@ -6,7 +6,9 @@ from __future__ import annotations
 from django.db.models import Q
 
 from apps.finans.domain.gider_kaydi import GiderKaydi
-from apps.finans.constants.gider_types import GiderDurum
+from apps.finans.constants.gider_types import GiderDurum, GiderOdemeDurumu
+from apps.finans.application.gider_odeme_durumu import compute_odeme_durumu
+from apps.finans.application.gider_belge_service import list_ekler
 from apps.finans.application.finans_v2.filters import (
     parse_bool,
     parse_date_safe,
@@ -37,7 +39,7 @@ class GiderQueryService:
         return qs.select_related(
             'cari_hesap', 'gider_kategorisi', 'maliyet_merkezi', 'proje',
             'odeme_yontemi', 'olusturan', 'mali_hesap',
-        ).prefetch_related('etiketler')
+        ).prefetch_related('etiketler', 'taksitler')
 
     def _apply_filters(self, qs, f):
         f = f or {}
@@ -54,6 +56,7 @@ class GiderQueryService:
         if arama:
             qs = qs.filter(
                 Q(fatura_no__icontains=arama)
+                | Q(islem_belge_no__icontains=arama)
                 | Q(aciklama__icontains=arama)
                 | Q(cari_hesap__unvan__icontains=arama)
                 | Q(gider_kategorisi__ad__icontains=arama)
@@ -78,7 +81,10 @@ class GiderQueryService:
         if f.get('etiket_id'):
             qs = qs.filter(etiketler__id=f['etiket_id'])
         if f.get('belge_no'):
-            qs = qs.filter(fatura_no__icontains=f['belge_no'])
+            qs = qs.filter(
+                Q(fatura_no__icontains=f['belge_no'])
+                | Q(islem_belge_no__icontains=f['belge_no'])
+            )
 
         bas = parse_date_safe(f.get('baslangic'))
         if bas:
@@ -103,12 +109,23 @@ class GiderQueryService:
             qs = qs.filter(kdv_orani=f['kdv_orani'])
 
         odeme = f.get('odeme_durumu')
+        from django.utils import timezone
+        bugun = timezone.localdate()
         if odeme == 'bekleyen':
             qs = qs.filter(durum__in=[GiderDurum.ONAYLANDI, GiderDurum.KISMI_ODENDI])
         elif odeme == 'tamamlanan':
             qs = qs.filter(durum=GiderDurum.ODENDI)
         elif odeme == 'kismi':
             qs = qs.filter(durum=GiderDurum.KISMI_ODENDI)
+        elif odeme == 'ileri_tarihli':
+            qs = qs.filter(
+                durum=GiderDurum.ONAYLANDI, odenen_toplam=0, vade_tarihi__gt=bugun,
+            )
+        elif odeme == 'gecikti':
+            qs = qs.filter(
+                durum__in=[GiderDurum.ONAYLANDI, GiderDurum.KISMI_ODENDI],
+                vade_tarihi__lt=bugun,
+            )
 
         return qs.distinct()
 
@@ -125,9 +142,13 @@ class GiderQueryService:
 
     @staticmethod
     def serialize(g: GiderKaydi):
+        odeme_durumu = compute_odeme_durumu(g)
+        has_odeme = g.odenen_toplam > 0
         return {
             'id': g.id,
             'fatura_no': g.fatura_no,
+            'islem_belge_no': g.islem_belge_no,
+            'belge_no': g.islem_belge_no or g.fatura_no or '',
             'fatura_tarihi': g.fatura_tarihi.isoformat() if g.fatura_tarihi else None,
             'vade_tarihi': g.vade_tarihi.isoformat() if g.vade_tarihi else None,
             'aciklama': g.aciklama,
@@ -161,6 +182,10 @@ class GiderQueryService:
             'taksit_sayisi': g.taksit_sayisi,
             'durum': g.durum,
             'durum_label': _DURUM_LABEL.get(g.durum, g.durum),
+            'odeme_durumu': odeme_durumu,
+            'odeme_durumu_label': GiderOdemeDurumu.LABEL.get(odeme_durumu, odeme_durumu),
+            'has_odeme': has_odeme,
+            'has_odeme_plani': (g.taksit_sayisi or 1) > 1 or odeme_durumu == GiderOdemeDurumu.ILERI_TARIHLI,
             'etiketler': [
                 {'id': e.id, 'ad': e.ad, 'renk': e.renk}
                 for e in g.etiketler.all()
@@ -175,3 +200,24 @@ class GiderQueryService:
             'odenebilir_mi': g.odenebilir_mi,
             'created_at': g.created_at.isoformat() if g.created_at else None,
         }
+
+    @classmethod
+    def serialize_detail(cls, g: GiderKaydi):
+        from apps.finans.interfaces.serializers.gider_serializer import GiderTaksitListSerializer
+        from apps.finans.interfaces.serializers.gider_odeme_serializer import GiderOdemeListSerializer
+        from apps.finans.constants.gider_types import OdemeDurum
+
+        data = cls.serialize(g)
+        taksitler = list(g.taksitler.all().order_by('taksit_no'))
+        odemeler = list(g.odemeler.filter(durum=OdemeDurum.TAMAMLANDI).order_by('-odeme_tarihi', '-id'))
+        data.update({
+            'sube': {'id': g.sube_id, 'ad': g.sube.ad if g.sube_id else None},
+            'mali_hesap': {
+                'id': g.mali_hesap_id,
+                'ad': g.mali_hesap.ad if g.mali_hesap_id else None,
+            },
+            'taksitler': GiderTaksitListSerializer(taksitler, many=True).data,
+            'odemeler': GiderOdemeListSerializer(odemeler, many=True).data,
+            'ekli_belgeler': list_ekler(g),
+        })
+        return data

@@ -14,9 +14,85 @@ import {
 import CoachCapacityBar from '@/components/admin/coaching/CoachCapacityBar';
 import CoachAvatar from '@/components/admin/coaching/CoachAvatar';
 import CoachChangeModal, { type CoachChangeTarget } from '@/components/admin/coaching/CoachChangeModal';
+import CoachPhotoLightbox from '@/components/coach/CoachPhotoLightbox';
+import { resolveCoachPhotoUrl } from '@/lib/coach-media';
 import OgrenciExportModal, { type OgrenciExportContext } from '@/app/ogrenciler/components/OgrenciExportModal';
 import type { OgrenciListFilters } from '@/app/ogrenciler/lib/ogrenci-list-utils';
 import '@/app/ogrenciler/ogrenci-list.css';
+
+function AssignmentStudentPhoto({
+  photo,
+  ad,
+  soyad,
+  name,
+  selected = false,
+}: {
+  photo?: string | null;
+  ad?: string | null;
+  soyad?: string | null;
+  name: string;
+  selected?: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const src = resolveCoachPhotoUrl(photo);
+  const initials = `${ad?.trim()?.[0] ?? ''}${soyad?.trim()?.[0] ?? ''}`.toUpperCase() || '?';
+
+  if (!src) {
+    return (
+      <div
+        style={{
+          width: 32,
+          height: 32,
+          borderRadius: '50%',
+          backgroundColor: selected ? '#3b82f6' : '#eff6ff',
+          color: selected ? '#fff' : '#3b82f6',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontSize: 12,
+          fontWeight: 600,
+          flexShrink: 0,
+        }}
+      >
+        {initials}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        title="Fotoğrafı büyüt"
+        aria-label={`${name} — fotoğrafı büyüt`}
+        style={{
+          width: 32,
+          height: 32,
+          padding: 0,
+          border: 'none',
+          borderRadius: '50%',
+          overflow: 'hidden',
+          cursor: 'zoom-in',
+          flexShrink: 0,
+          background: '#e5e7eb',
+        }}
+      >
+        <img
+          src={src}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      </button>
+      {open && (
+        <CoachPhotoLightbox photoUrl={src} alt={name} onClose={() => setOpen(false)} />
+      )}
+    </>
+  );
+}
 
 function coachExportFilePrefix(coach: Coach): string {
   const slug = coach.teacher_full_name
@@ -471,22 +547,12 @@ export default function AssignmentsPage() {
                         <tr key={assignment.id} style={{ borderBottom: '1px solid #f3f4f6' }}>
                           <td style={tdStyle}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <div
-                                style={{
-                                  width: 32,
-                                  height: 32,
-                                  borderRadius: '50%',
-                                  backgroundColor: '#eff6ff',
-                                  color: '#3b82f6',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                  fontSize: 12,
-                                  fontWeight: 600,
-                                }}
-                              >
-                                {assignment.student_ad?.charAt(0)}{assignment.student_soyad?.charAt(0)}
-                              </div>
+                              <AssignmentStudentPhoto
+                                photo={assignment.student_profil_foto}
+                                ad={assignment.student_ad}
+                                soyad={assignment.student_soyad}
+                                name={assignment.student_full_name}
+                              />
                               <span style={{ fontWeight: 500 }}>{assignment.student_full_name}</span>
                             </div>
                           </td>
@@ -695,22 +761,13 @@ export default function AssignmentsPage() {
                           onChange={() => {}}
                           style={{ width: 18, height: 18, accentColor: '#3b82f6' }}
                         />
-                        <div
-                          style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: '50%',
-                            backgroundColor: isSelected ? '#3b82f6' : '#e5e7eb',
-                            color: isSelected ? '#fff' : '#6b7280',
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            fontSize: 12,
-                            fontWeight: 600,
-                          }}
-                        >
-                          {student.ad?.charAt(0)}{student.soyad?.charAt(0)}
-                        </div>
+                        <AssignmentStudentPhoto
+                          photo={student.profil_foto}
+                          ad={student.ad}
+                          soyad={student.soyad}
+                          name={student.full_name}
+                          selected={isSelected}
+                        />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 500, fontSize: 14, color: '#111827' }}>
                             {student.full_name}

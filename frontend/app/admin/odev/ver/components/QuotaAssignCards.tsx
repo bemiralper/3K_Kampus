@@ -3,7 +3,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { LastQuotaDefault } from '@/lib/resources-api';
 import type { StudentResource, SelectedContent, RoutineQuotaKind } from '../types';
-import { routineQuotaKindOf } from '../types';
+import { quotaTopicId, routineQuotaKindOf } from '../types';
+import K3ModePicker from '@/components/odev/K3ModePicker';
+import { k3TopicKey, type K3Mode, type TopicK3Map } from '@/lib/k3-mode';
 
 const PRESETS = [10, 15, 20, 25, 30];
 
@@ -21,6 +23,8 @@ function QuotaKindCard({
   books,
   lastDefault,
   cartItem,
+  topicK3,
+  onTopicK3Change,
   onAdd,
   onRemove,
 }: {
@@ -28,6 +32,8 @@ function QuotaKindCard({
   books: StudentResource[];
   lastDefault: LastQuotaDefault | null;
   cartItem?: SelectedContent;
+  topicK3: TopicK3Map;
+  onTopicK3Change?: (bookId: number, topicId: number, mode: K3Mode | null, targetMinutes: number | null) => void;
   onAdd: (resource: StudentResource, daily: number) => void;
   onRemove: (id: number) => void;
 }) {
@@ -53,6 +59,13 @@ function QuotaKindCard({
   const weekly = dailyNum * 7;
   const selected = books.find((b) => String(b.resource_book) === bookId);
   const inCart = Boolean(cartItem);
+  const topicId = quotaTopicId(kind);
+  const activeBookId = selected?.resource_book || cartItem?.bookId || 0;
+  const k3Rec = activeBookId
+    ? topicK3[k3TopicKey(activeBookId, topicId)]
+    : undefined;
+  const k3Mode = k3Rec?.mode || cartItem?.k3Mode || null;
+  const k3Minutes = k3Rec?.targetMinutes ?? cartItem?.k3TargetMinutes ?? null;
 
   return (
     <div
@@ -70,7 +83,16 @@ function QuotaKindCard({
               : 'İstediğiniz hafta ekleyin — zorunlu değil'}
           </div>
         </div>
-        {inCart && <span className="odev-quota-chip">Sepette</span>}
+        <div className="odev-quota-card-tools">
+          {onTopicK3Change && books.length > 0 && activeBookId > 0 && (
+            <K3ModePicker
+              value={k3Mode}
+              targetMinutes={k3Minutes}
+              onChange={(mode, minutes) => onTopicK3Change(activeBookId, topicId, mode, minutes)}
+            />
+          )}
+          {inCart && <span className="odev-quota-chip">Sepette</span>}
+        </div>
       </div>
 
       {books.length === 0 ? (
@@ -83,7 +105,17 @@ function QuotaKindCard({
           <select
             className="odev-quota-select"
             value={bookId}
-            onChange={(e) => setBookId(e.target.value)}
+            onChange={(e) => {
+              const nextId = e.target.value;
+              const prevId = bookId;
+              setBookId(nextId);
+              if (!onTopicK3Change || !prevId || !nextId || prevId === nextId) return;
+              const prev = topicK3[k3TopicKey(Number(prevId), topicId)];
+              const next = topicK3[k3TopicKey(Number(nextId), topicId)];
+              if (prev?.mode && !next?.mode) {
+                onTopicK3Change(Number(nextId), topicId, prev.mode, prev.targetMinutes ?? null);
+              }
+            }}
           >
             {books.map((book) => (
               <option key={book.resource_book} value={book.resource_book}>
@@ -159,12 +191,16 @@ export default function QuotaAssignCards({
   resources,
   cart,
   lastDefaults,
+  topicK3 = {},
+  onTopicK3Change,
   onAdd,
   onRemove,
 }: {
   resources: StudentResource[];
   cart: SelectedContent[];
   lastDefaults: Partial<Record<RoutineQuotaKind, LastQuotaDefault | null>>;
+  topicK3?: TopicK3Map;
+  onTopicK3Change?: (bookId: number, topicId: number, mode: K3Mode | null, targetMinutes: number | null) => void;
   onAdd: (resource: StudentResource, daily: number) => void;
   onRemove: (id: number) => void;
 }) {
@@ -186,6 +222,8 @@ export default function QuotaAssignCards({
           books={byKind[kind]}
           lastDefault={lastDefaults[kind] || null}
           cartItem={cart.find((c) => c.quotaKind === kind)}
+          topicK3={topicK3}
+          onTopicK3Change={onTopicK3Change}
           onAdd={onAdd}
           onRemove={onRemove}
         />

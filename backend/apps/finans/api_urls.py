@@ -173,6 +173,7 @@ from apps.finans.interfaces.views.gelir_v2_views import (
     GelirV2ListCreateView,
     GelirV2DetailView,
     GelirV2OnaylaView,
+    GelirV2OnayKaldirView,
     GelirV2IptalView,
     GelirV2DashboardView,
 )
@@ -180,8 +181,18 @@ from apps.finans.interfaces.views.gider_v2_views import (
     GiderV2ListCreateView,
     GiderV2DetailView,
     GiderV2OnaylaView,
+    GiderV2OnayKaldirView,
     GiderV2IptalView,
     GiderV2DashboardView,
+    GiderV2OdemeTakibiView,
+)
+from apps.finans.interfaces.views.gider_belge_views import (
+    GiderV2DetayView,
+    GiderV2IslemBelgesiView,
+    GiderV2OdemePlaniBelgesiView,
+    GiderV2OdemeBelgesiView,
+    GiderV2EklerView,
+    GiderV2EkSilView,
 )
 from apps.finans.interfaces.views.gelir_gider_v2_common_views import (
     GelirGiderV2ReportView,
@@ -477,13 +488,22 @@ urlpatterns = [
     path('gelir/v2/dashboard/', GelirV2DashboardView.as_view(), name='gelir-v2-dashboard'),
     path('gelir/v2/kayitlar/<int:pk>/', GelirV2DetailView.as_view(), name='gelir-v2-detail'),
     path('gelir/v2/kayitlar/<int:pk>/onayla/', GelirV2OnaylaView.as_view(), name='gelir-v2-onayla'),
+    path('gelir/v2/kayitlar/<int:pk>/onay-kaldir/', GelirV2OnayKaldirView.as_view(), name='gelir-v2-onay-kaldir'),
     path('gelir/v2/kayitlar/<int:pk>/iptal/', GelirV2IptalView.as_view(), name='gelir-v2-iptal'),
 
     # ═══ Gider v2 (Yeni Modül) ══════════════════
     path('gider/v2/kayitlar/', GiderV2ListCreateView.as_view(), name='gider-v2-list-create'),
     path('gider/v2/dashboard/', GiderV2DashboardView.as_view(), name='gider-v2-dashboard'),
+    path('gider/v2/odeme-takibi/', GiderV2OdemeTakibiView.as_view(), name='gider-v2-odeme-takibi'),
     path('gider/v2/kayitlar/<int:pk>/', GiderV2DetailView.as_view(), name='gider-v2-detail'),
+    path('gider/v2/kayitlar/<int:pk>/detay/', GiderV2DetayView.as_view(), name='gider-v2-detay'),
+    path('gider/v2/kayitlar/<int:pk>/belgeler/gider/', GiderV2IslemBelgesiView.as_view(), name='gider-v2-belge-gider'),
+    path('gider/v2/kayitlar/<int:pk>/belgeler/odeme-plani/', GiderV2OdemePlaniBelgesiView.as_view(), name='gider-v2-belge-plan'),
+    path('gider/v2/kayitlar/<int:pk>/belgeler/odeme/<int:odeme_id>/', GiderV2OdemeBelgesiView.as_view(), name='gider-v2-belge-odeme'),
+    path('gider/v2/kayitlar/<int:pk>/ekler/', GiderV2EklerView.as_view(), name='gider-v2-ekler'),
+    path('gider/v2/kayitlar/<int:pk>/ekler/<int:ek_id>/', GiderV2EkSilView.as_view(), name='gider-v2-ek-sil'),
     path('gider/v2/kayitlar/<int:pk>/onayla/', GiderV2OnaylaView.as_view(), name='gider-v2-onayla'),
+    path('gider/v2/kayitlar/<int:pk>/onay-kaldir/', GiderV2OnayKaldirView.as_view(), name='gider-v2-onay-kaldir'),
     path('gider/v2/kayitlar/<int:pk>/iptal/', GiderV2IptalView.as_view(), name='gider-v2-iptal'),
 
     # ═══ Gelir & Gider v2 ortak ═════════════════

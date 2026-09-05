@@ -1,4 +1,5 @@
 import type { SelectedContent } from '@/app/admin/odev/ver/types';
+import type { TopicK3Map } from '@/lib/k3-mode';
 
 const STORAGE_PREFIX = 'odev-ver-draft:v1:';
 
@@ -6,6 +7,7 @@ export type OdevVerDraft = {
   studentId: number;
   cart: SelectedContent[];
   contentNotes: Record<number, string>;
+  topicK3?: TopicK3Map;
   title: string;
   notes: string;
   dueDate: string;

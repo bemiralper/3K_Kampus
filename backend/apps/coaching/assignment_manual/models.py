@@ -210,6 +210,27 @@ class ManualAssignment(models.Model):
         verbose_name='Maksimum Erteleme',
         help_text='Kaç kez ertelenebilir'
     )
+
+    # Yönetici, kontrol tarihi geçmiş ödevi koça açar; koç yeni kontrol tarihi belirler.
+    control_opened_for_coach = models.BooleanField(
+        default=False,
+        db_index=True,
+        verbose_name='Koça açıldı',
+        help_text='Kontrol tarihi geçmiş ödev yönetici tarafından koça açıldıysa True.',
+    )
+    control_opened_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Koça açılma tarihi',
+    )
+    control_opened_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='manual_assignments_opened_for_coach',
+        verbose_name='Koça açan kullanıcı',
+    )
     
     # Geç Teslim Bilgileri
     late_submission_note = models.TextField(
@@ -423,6 +444,29 @@ class AssignmentLesson(models.Model):
         max_length=50,
         blank=True,
         verbose_name='Test Numarası'
+    )
+
+    class K3Mode(models.TextChoices):
+        OGREN = 'OGREN', 'ÖĞREN'
+        PEKISTIR = 'PEKISTIR', 'PEKİŞTİR'
+        TEKRARLA = 'TEKRARLA', 'TEKRARLA'
+        HIZLAN = 'HIZLAN', 'HIZLAN'
+        TAMAMLA = 'TAMAMLA', 'TAMAMLA'
+
+    k3_mode = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        choices=K3Mode.choices,
+        verbose_name='3K Modu',
+        help_text='Konu bloğundaki tüm testlerin çalışma amacı. Test türü değildir.',
+    )
+
+    k3_target_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='Hedef Süre (dk)',
+        help_text='HIZLAN modu için isteğe bağlı hedef süre. Zorlama yok.',
     )
     
     # Notlar
@@ -719,6 +763,18 @@ class AssignmentPackageItem(models.Model):
     question_count = models.PositiveIntegerField(null=True, blank=True, verbose_name='Soru Sayısı')
     page_start = models.PositiveIntegerField(null=True, blank=True, verbose_name='Başlangıç Sayfası')
     page_end = models.PositiveIntegerField(null=True, blank=True, verbose_name='Bitiş Sayfası')
+    k3_mode = models.CharField(
+        max_length=20,
+        blank=True,
+        default='',
+        choices=AssignmentLesson.K3Mode.choices,
+        verbose_name='3K Modu',
+    )
+    k3_target_minutes = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        verbose_name='Hedef Süre (dk)',
+    )
     order = models.PositiveIntegerField(default=0, verbose_name='Sıra')
 
     class Meta:

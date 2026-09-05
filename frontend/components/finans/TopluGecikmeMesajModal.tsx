@@ -51,7 +51,10 @@ export default function TopluGecikmeMesajModal({
     }
   }, []);
 
-  const taksitIds = useMemo(() => selectedItems.map((i) => i.taksit_id), [selectedItems]);
+  const taksitIds = useMemo(
+    () => selectedItems.flatMap((i) => (i.taksit_ids?.length ? i.taksit_ids : [i.taksit_id])),
+    [selectedItems],
+  );
 
   const loadPreview = useCallback(async () => {
     setLoading(true);

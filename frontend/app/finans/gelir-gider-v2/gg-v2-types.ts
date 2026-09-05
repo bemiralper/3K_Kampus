@@ -15,9 +15,26 @@ export interface GGEtiket {
   renk: string;
 }
 
+export interface GGEkliBelge {
+  id: number | null;
+  legacy?: boolean;
+  dosya_adi: string;
+  dosya_turu: string;
+  dosya_turu_display: string;
+  dosya_url: string | null;
+  aciklama: string;
+  dosya_boyutu: number;
+  dosya_boyutu_fmt: string;
+  yukleyen_adi: string | null;
+  created_at: string | null;
+  sistem_belgesi_degil: boolean;
+}
+
 export interface GGListItem {
   id: number;
   fatura_no: string | null;
+  islem_belge_no?: string | null;
+  belge_no?: string | null;
   fatura_tarihi: string | null;
   vade_tarihi: string | null;
   aciklama: string | null;
@@ -43,6 +60,10 @@ export interface GGListItem {
   taksit_sayisi?: number;
   durum: string;
   durum_label: string;
+  odeme_durumu?: string;
+  odeme_durumu_label?: string;
+  has_odeme?: boolean;
+  has_odeme_plani?: boolean;
   etiketler: GGEtiket[];
   olusturan: string | null;
   duzenlenebilir_mi: boolean;
@@ -68,6 +89,7 @@ export interface GGOdeme {
   durum_display: string;
   bakiyeden_mahsup: boolean;
   islem_yapan_adi: string | null;
+  odeme_belge_no?: string | null;
   created_at: string | null;
 }
 
@@ -100,6 +122,10 @@ export interface GGTaksit {
   aciklama?: string;
   durum: string;
   durum_display: string;
+  odeme_tarihi?: string | null;
+  mali_hesap_id?: number | null;
+  mali_hesap_adi?: string | null;
+  odeme_yontemi_adi?: string | null;
 }
 
 // Form içi manuel taksit satırı (henüz kaydedilmemiş plan)
@@ -176,6 +202,7 @@ export interface GGDropdown {
   }[];
   kategoriler: { id: number; ad: string; parent_id: number | null }[];
   durumlar: { value: string; label: string }[];
+  odeme_durumlari?: { value: string; label: string }[];
   gelir_kaynaklari?: { id: number; ad: string }[];
   maliyet_merkezleri?: { id: number; ad: string }[];
   aciklama_sablonlari?: { id: number; ad: string; icerik: string }[];
@@ -240,3 +267,51 @@ export const TL = (n: number | string | null | undefined) =>
 
 export const DATE = (s: string | null | undefined) =>
   s ? new Date(s).toLocaleDateString("tr-TR") : "—";
+
+export interface GGGiderDetay extends GGListItem {
+  sube?: Ref;
+  mali_hesap?: Ref;
+  taksitler: GGTaksit[];
+  odemeler: GGOdeme[];
+  ekli_belgeler: GGEkliBelge[];
+}
+
+export interface GGOdemeTakibiSatir {
+  taksit_id: number;
+  gider_id: number;
+  vade_tarihi: string | null;
+  gider_adi: string;
+  aciklama: string;
+  aciklama_kaynak: "odeme" | "gider";
+  taksit_no: number;
+  taksit_sayisi: number;
+  taksit_label: string | null;
+  tutar: string;
+  odenen_tutar: string;
+  kalan_tutar: string;
+  durum: string;
+  durum_label: string;
+  odenebilir_mi: boolean;
+  gider: GGListItem;
+}
+
+export interface GGOdemeTakibiResponse {
+  results: GGOdemeTakibiSatir[];
+  page: number;
+  page_size: number;
+  total: number;
+  total_pages: number;
+  toplam_tutar?: string;
+}
+
+export function odemeDurumRenk(durum?: string): string {
+  if (!durum) return "default";
+  if (durum === "bugun") return "magenta";
+  if (durum.includes("yaklas")) return "cyan";
+  if (durum === "odendi" || (durum.includes("odendi") && !durum.includes("kismi"))) return "green";
+  if (durum.includes("kismi")) return "gold";
+  if (durum.includes("gecik")) return "red";
+  if (durum.includes("ileri")) return "blue";
+  if (durum.includes("iptal")) return "default";
+  return "orange";
+}

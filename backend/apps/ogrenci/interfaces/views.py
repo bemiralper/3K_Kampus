@@ -83,7 +83,7 @@ def _sync_term_placement_from_kayit(ogrenci, sinif_id):
 
 def _normalize_sms_bildirimleri(raw, *, default_on_create: bool = False) -> list[str]:
     if raw is None:
-        return ['duyuru', 'devamsizlik'] if default_on_create else []
+        return ['duyuru', 'devamsizlik', 'odeme'] if default_on_create else []
     if not isinstance(raw, list):
         return ['duyuru']
     return [

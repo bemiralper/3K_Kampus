@@ -234,14 +234,25 @@ export default function MuhasebeSidebar({
           setSubDragOver({ parentId, id: child.id });
         }}
       >
-        <Link
-          href={child.href}
-          className={`muhasebe-nav-sublink${childActive ? " is-active" : ""}`}
-          aria-current={childActive ? "page" : undefined}
-          onClick={closeMobileIfNeeded}
-        >
-          {child.label}
-        </Link>
+        {child.hardNav ? (
+          <a
+            href={child.href}
+            className={`muhasebe-nav-sublink${childActive ? " is-active" : ""}`}
+            aria-current={childActive ? "page" : undefined}
+            onClick={closeMobileIfNeeded}
+          >
+            {child.label}
+          </a>
+        ) : (
+          <Link
+            href={child.href}
+            className={`muhasebe-nav-sublink${childActive ? " is-active" : ""}`}
+            aria-current={childActive ? "page" : undefined}
+            onClick={closeMobileIfNeeded}
+          >
+            {child.label}
+          </Link>
+        )}
       </li>
     );
   };
@@ -347,11 +358,24 @@ export default function MuhasebeSidebar({
                 <div className="muhasebe-nav-submenu-tooltip-title">{item.label}</div>
                 {item.children!.map((child) => {
                   const childActive = isMuhasebeNavChildActive(pathname, child, item.children);
+                  const className = `muhasebe-nav-sublink${childActive ? " is-active" : ""}`;
+                  if (child.hardNav) {
+                    return (
+                      <a
+                        key={child.id}
+                        href={child.href}
+                        className={className}
+                        onClick={closeMobileIfNeeded}
+                      >
+                        {child.label}
+                      </a>
+                    );
+                  }
                   return (
                     <Link
                       key={child.id}
                       href={child.href}
-                      className={`muhasebe-nav-sublink${childActive ? " is-active" : ""}`}
+                      className={className}
                       onClick={closeMobileIfNeeded}
                     >
                       {child.label}

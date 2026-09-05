@@ -149,7 +149,73 @@ class FinansExpansionTest(TestCase):
         self.assertEqual(item['veli_adi'], self.veli.tam_ad)
         self.assertEqual(item['veli_telefon'], self.veli.telefon)
         self.assertEqual(item['toplam_gecikmis_tutar'], 5000)
+        self.assertEqual(response.data['liste_toplam_geciken_tutar'], 5000)
         self.assertIn('already_sent_24h', item)
+
+    def test_overdue_payments_sozlesme_total_sums_all_overdue(self):
+        extra = Taksit.objects.create(
+            sozlesme=self.sozlesme,
+            taksit_no=3,
+            vade_tarihi=timezone.localdate() - timedelta(days=3),
+            tutar=2500,
+            odenen_tutar=0,
+            kalan_tutar=2500,
+            durum=TaksitDurum.BEKLEMEDE,
+        )
+        response = self.client.get(
+            '/finans/api/overdue-payments/',
+            {'kurum_id': self.kurum.id, 'sube_id': self.sube.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['liste_toplam_geciken_tutar'], 7500)
+        self.assertEqual(response.data['count'], 1)
+        self.assertEqual(len(response.data['results']), 1)
+        item = response.data['results'][0]
+        self.assertEqual(item['toplam_gecikmis_tutar'], 7500)
+        self.assertEqual(item['taksit_sayisi'], 2)
+        self.assertEqual(sorted(item['taksit_ids']), sorted([self.overdue_taksit.id, extra.id]))
+
+    def test_overdue_payments_keeps_separate_students(self):
+        other = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Berk',
+            soyad='Test',
+            aktif_mi=True,
+        )
+        other_soz = Sozlesme.objects.create(
+            sozlesme_no='SZ-FEXP-002',
+            ogrenci=other,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=self.sube,
+            veli=self.veli,
+            baslangic_tarihi=timezone.localdate(),
+            bitis_tarihi=timezone.localdate() + timedelta(days=365),
+            brut_tutar=4000,
+            net_tutar=4000,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        Taksit.objects.create(
+            sozlesme=other_soz,
+            taksit_no=1,
+            vade_tarihi=timezone.localdate() - timedelta(days=4),
+            tutar=4000,
+            odenen_tutar=0,
+            kalan_tutar=4000,
+            durum=TaksitDurum.BEKLEMEDE,
+        )
+        response = self.client.get(
+            '/finans/api/overdue-payments/',
+            {'kurum_id': self.kurum.id, 'sube_id': self.sube.id},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['count'], 2)
+        self.assertEqual(len(response.data['results']), 2)
+        self.assertEqual(
+            {item['ogrenci_id'] for item in response.data['results']},
+            {self.ogrenci.id, other.id},
+        )
 
     def test_overdue_payments_kurum_from_header(self):
         response = self.client.get(

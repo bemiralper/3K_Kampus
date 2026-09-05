@@ -84,7 +84,10 @@ from apps.coaching.interfaces.sube_context import (
 )
 from .lock_utils import (
     CONTROL_LOCK_MESSAGE,
+    apply_new_control_date,
+    assignment_control_date_passed,
     can_override_assignment_control_lock,
+    can_set_new_control_date,
     is_assignment_control_locked,
 )
 from shared.context import get_secili_kurum_id
@@ -278,13 +281,13 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     def get_serializer_class(self):
         if self.action == 'list':
             return ManualAssignmentListSerializer
-        elif self.action == 'create':
+        if self.action in ('create', 'update', 'partial_update'):
             return ManualAssignmentCreateSerializer
         return ManualAssignmentDetailSerializer
     
     def get_queryset(self):
         queryset = ManualAssignment.objects.select_related(
-            'coach', 'student'
+            'coach', 'student', 'control_opened_by'
         ).prefetch_related(
             Prefetch(
                 'lessons',
@@ -337,6 +340,10 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 .annotate(due_day=TruncDate('due_date', tzinfo=tz))
                 .filter(due_day=today)
             )
+
+        opened_for_coach = (self.request.query_params.get('opened_for_coach') or '').lower()
+        if opened_for_coach in ('1', 'true', 'yes'):
+            queryset = queryset.filter(control_opened_for_coach=True)
 
         # Takvim birleşimi: kontrol günü aralığı (YYYY-MM-DD)
         due_from = (self.request.query_params.get('due_from') or '').strip()
@@ -586,9 +593,15 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         )
         if print_token:
             instance = self._get_assignment_for_print_token(kwargs['pk'], expected_type='plan')
-            serializer = self.get_serializer(instance)
+            serializer = ManualAssignmentDetailSerializer(
+                instance, context=self.get_serializer_context(),
+            )
             return Response({'success': True, 'data': serializer.data})
-        return super().retrieve(request, *args, **kwargs)
+        instance = self.get_object()
+        serializer = ManualAssignmentDetailSerializer(
+            instance, context=self.get_serializer_context(),
+        )
+        return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def stats(self, request):
@@ -631,6 +644,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             .filter(due_day=today)
             .count()
         )
+        opened_for_coach = queryset.filter(control_opened_for_coach=True).count()
 
         return Response({
             'success': True,
@@ -643,6 +657,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'overdue': queryset.filter(status=ManualAssignment.Status.OVERDUE).count(),
                 'at_risk': queryset.filter(risk_status=ManualAssignment.RiskStatus.AT_RISK).count(),
                 'due_today': due_today,
+                'opened_for_coach': opened_for_coach,
             },
         })
 
@@ -1291,30 +1306,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'error': 'Yeni kontrol günü bugünden önce olamaz',
             }, status=status.HTTP_400_BAD_REQUEST)
 
-        if not assignment.original_due_date:
-            assignment.original_due_date = assignment.due_date
-
-        assignment.due_date = parsed_date
-        if reason:
-            assignment.postpone_reason = reason
-
-        if assignment.status in (
-            ManualAssignment.Status.COMPLETED,
-            ManualAssignment.Status.OVERDUE,
-            ManualAssignment.Status.CANCELLED,
-        ):
-            assignment.status = (
-                ManualAssignment.Status.IN_PROGRESS
-                if assignment.completion_percent > 0
-                else ManualAssignment.Status.ASSIGNED
-            )
-            if assignment.completed_date:
-                assignment.completed_date = None
-
-        if assignment.non_submission_reason:
-            assignment.non_submission_reason = ''
-            assignment.non_submission_note = ''
-
+        apply_new_control_date(assignment, parsed_date, reason)
         assignment.save()
         self._sync_to_calendar(assignment, request.user.id)
 
@@ -1324,6 +1316,107 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 assignment, context={'request': request},
             ).data,
             'message': 'Ödev yeniden aktif edildi. Kontrol günü güncellendi.',
+        })
+
+    @action(detail=True, methods=['post'])
+    def open_for_coach(self, request, pk=None):
+        """
+        Kontrol tarihi geçmiş ödevi yönetici koça açar.
+        Koç yeni kontrol tarihi belirleyebilir; değerlendirme kilidi durur.
+
+        POST /api/coaching/manual-assignments/assignments/{id}/open_for_coach/
+        """
+        assignment = self.get_object()
+        if not can_override_assignment_control_lock(request.user):
+            return Response({
+                'success': False,
+                'error': 'Kontrol tarihi geçmiş ödevi yalnızca yönetici koça açabilir.',
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        if assignment.control_opened_for_coach:
+            return Response({
+                'success': True,
+                'data': ManualAssignmentDetailSerializer(
+                    assignment, context={'request': request},
+                ).data,
+                'message': 'Ödev zaten koça açık.',
+            })
+
+        if not assignment_control_date_passed(assignment):
+            return Response({
+                'success': False,
+                'error': 'Kontrol tarihi henüz geçmemiş ödev koça açılamaz.',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        assignment.control_opened_for_coach = True
+        assignment.control_opened_at = timezone.now()
+        assignment.control_opened_by = request.user
+        assignment.save(update_fields=[
+            'control_opened_for_coach',
+            'control_opened_at',
+            'control_opened_by',
+            'updated_at',
+        ])
+
+        return Response({
+            'success': True,
+            'data': ManualAssignmentDetailSerializer(
+                assignment, context={'request': request},
+            ).data,
+            'message': 'Ödev koça açıldı. Koç yeni kontrol tarihi belirleyebilir.',
+        })
+
+    @action(detail=True, methods=['post'])
+    def set_control_date(self, request, pk=None):
+        """
+        Gecikmiş / koça açılmış ödev için yeni kontrol tarihi.
+        Erteleme hakkını tüketmez.
+
+        POST /api/coaching/manual-assignments/assignments/{id}/set_control_date/
+        Body: {"new_due_date": "2026-08-29T23:59:00", "reason": "..."}
+        """
+        assignment = self.get_object()
+        if not can_set_new_control_date(assignment, request.user):
+            return Response({
+                'success': False,
+                'error': (
+                    'Yeni kontrol tarihi belirlemek için yöneticinin '
+                    'bu ödevi koça açması gerekir.'
+                ),
+            }, status=status.HTTP_403_FORBIDDEN)
+
+        new_due_date = request.data.get('new_due_date')
+        reason = (request.data.get('reason') or '').strip()
+        if not new_due_date:
+            return Response({
+                'success': False,
+                'error': 'Yeni kontrol günü gerekli',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        parsed_date, parse_error = _parse_assignment_due_datetime(new_due_date)
+        if parse_error:
+            return Response({
+                'success': False,
+                'error': parse_error,
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        parsed_local = timezone.localtime(parsed_date)
+        if parsed_local.date() < timezone.localdate():
+            return Response({
+                'success': False,
+                'error': 'Yeni kontrol günü bugünden önce olamaz',
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        apply_new_control_date(assignment, parsed_date, reason)
+        assignment.save()
+        self._sync_to_calendar(assignment, request.user.id)
+
+        return Response({
+            'success': True,
+            'data': ManualAssignmentDetailSerializer(
+                assignment, context={'request': request},
+            ).data,
+            'message': 'Yeni kontrol tarihi kaydedildi.',
         })
     
     @action(detail=True, methods=['post'])
@@ -2394,6 +2487,8 @@ class AssignmentPackageViewSet(viewsets.ModelViewSet):
                     question_count=item.question_count,
                     page_start=item.page_start,
                     page_end=item.page_end,
+                    k3_mode=item.k3_mode,
+                    k3_target_minutes=item.k3_target_minutes,
                     order=item.order,
                 )
         return Response({

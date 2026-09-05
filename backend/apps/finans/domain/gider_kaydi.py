@@ -140,6 +140,7 @@ class GiderKaydi(models.Model):
         max_length=50,
         blank=True,
         default='',
+        help_text='Tedarikçinin fatura / fiş numarası (opsiyonel)',
     )
     fatura_tarihi = models.DateField(
         'Fatura Tarihi',
@@ -298,10 +299,11 @@ class GiderKaydi(models.Model):
             models.Index(fields=['fatura_tarihi']),
             models.Index(fields=['vade_tarihi']),
             models.Index(fields=['gider_kategorisi']),
+            models.Index(fields=['kurum', 'islem_belge_no']),
         ]
 
     def __str__(self):
-        return f"{self.cari_hesap} - {self.fatura_no or 'Belgesiz'} ({self.net_tutar} ₺)"
+        return f"{self.cari_hesap} - {self.islem_belge_no or self.fatura_no or 'Belgesiz'} ({self.net_tutar} ₺)"
 
     @property
     def kalan_tutar(self):
@@ -333,6 +335,20 @@ class GiderKaydi(models.Model):
         if self.durum == GiderDurum.ONAYLANDI and self.odenen_toplam == Decimal('0'):
             return True
         return False
+
+    @property
+    def odeme_durumu(self):
+        from apps.finans.application.gider_odeme_durumu import compute_odeme_durumu
+        return compute_odeme_durumu(self)
+
+    @property
+    def odeme_durumu_label(self):
+        from apps.finans.constants.gider_types import GiderOdemeDurumu
+        return GiderOdemeDurumu.LABEL.get(self.odeme_durumu, self.odeme_durumu)
+
+    @property
+    def gorunen_belge_no(self):
+        return self.islem_belge_no or self.fatura_no or ''
 
     def kdv_hesapla(self):
         """Brüt tutar ve KDV oranından otomatik hesaplama yapar."""

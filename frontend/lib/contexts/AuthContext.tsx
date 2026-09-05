@@ -242,6 +242,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useIdleTimeout(handleIdleLogout, !!user);
 
+  // Tek bir uç noktanın geçici 401'i (worker timeout, rapor widget'ı, yarış durumu)
+  // tüm oturumu düşürmesin: çıkıştan önce /auth/api/me/ ile gerçekten bitmiş mi doğrula.
+  const isSessionTrulyExpired = useCallback(async (): Promise<boolean> => {
+    try {
+      const response = await fetch(`${apiBaseUrl}/auth/api/me/`, {
+        method: "GET",
+        credentials: "include",
+        headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
+      });
+      if (!response.ok) return response.status === 401;
+      const data = await response.json();
+      return !(data.authenticated && data.user);
+    } catch {
+      // Ağ hatasında oturumu düşürme — kullanıcı çalışmaya devam edebilsin.
+      return false;
+    }
+  }, [apiBaseUrl]);
+
   useEffect(() => {
     const onExpired = () => {
       // Tam DB restore oturum tablosunu siler; polling 401'i "oturum bitti" sanıp
@@ -257,11 +275,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       } catch {
         /* ignore */
       }
-      void handleIdleLogout();
+      void isSessionTrulyExpired().then((expired) => {
+        if (expired) void handleIdleLogout();
+      });
     };
     window.addEventListener("3k:session-expired", onExpired);
     return () => window.removeEventListener("3k:session-expired", onExpired);
-  }, [handleIdleLogout]);
+  }, [handleIdleLogout, isSessionTrulyExpired]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;

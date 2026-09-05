@@ -4,6 +4,8 @@ from django.test import SimpleTestCase
 from apps.ogrenci.interfaces.list_helpers import (
     EXPORT_GROUP_BY_VALUES,
     SORT_MAP,
+    _normalize_export_keys,
+    _prepare_export_rows,
     group_export_rows,
 )
 
@@ -42,3 +44,18 @@ class ExportGroupSortHelpersTest(SimpleTestCase):
         groups = group_export_rows(rows, 'none')
         self.assertEqual(len(groups), 1)
         self.assertEqual(groups[0]['title'], 'Tüm Liste')
+
+    def test_export_keys_always_start_with_sira(self):
+        keys = _normalize_export_keys(['tam_ad', 'sira', 'koc_adi'])
+        self.assertEqual(keys[0], 'sira')
+        self.assertEqual(keys[1:], ['tam_ad', 'koc_adi'])
+
+    def test_prepare_export_rows_numbers_each_row(self):
+        rows = [
+            {'tam_ad': 'Ayşe Yılmaz', 'aktif_mi': True},
+            {'tam_ad': 'Mehmet Demir', 'aktif_mi': False},
+        ]
+        prepared = _prepare_export_rows(rows, ['tam_ad', 'aktif_mi'])
+        self.assertEqual([row['sira'] for row in prepared], [1, 2])
+        self.assertEqual(prepared[0]['tam_ad'], 'Ayşe Yılmaz')
+        self.assertEqual(prepared[1]['aktif_mi'], 'Pasif')

@@ -27,6 +27,7 @@ class GiderTaksitListSerializer(serializers.ModelSerializer):
             'kalan_tutar', 'aciklama', 'durum', 'durum_display',
             'cari_hesap_adi', 'fatura_no', 'aciklama',
             'odeme_yontemi_id', 'odeme_yontemi_adi', 'odeme_yontemi_tip',
+            'mali_hesap_id', 'odeme_tarihi',
         ]
 
     def get_odeme_yontemi_adi(self, obj):

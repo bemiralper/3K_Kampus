@@ -169,6 +169,26 @@ class GelirGiderV2Test(TestCase):
         self.assertTrue(FinansIslemLog.objects.filter(
             modul='gelir', eylem='iptal', kayit_id=gelir.id).exists())
 
+    def test_gider_onay_kaldir_ve_taslak_sil(self):
+        from apps.finans.constants.gider_types import GiderDurum
+        gider, err = GiderCommandService().create(self._gider_data('500'))
+        self.assertIsNone(err)
+        self.assertEqual(gider.durum, GiderDurum.ONAYLANDI)
+        gider, err = GiderCommandService().onay_kaldir(gider.id)
+        self.assertIsNone(err)
+        self.assertEqual(gider.durum, GiderDurum.TASLAK)
+        _, err = GiderCommandService().soft_delete(gider.id)
+        self.assertIsNone(err)
+
+    def test_gelir_onay_kaldir(self):
+        from apps.finans.constants.cari_types import GelirDurum
+        gelir, err = GelirCommandService().create(self._gelir_data('1000'))
+        self.assertIsNone(err)
+        self.assertEqual(gelir.durum, GelirDurum.ONAYLANDI)
+        gelir, err = GelirCommandService().onay_kaldir(gelir.id)
+        self.assertIsNone(err)
+        self.assertEqual(gelir.durum, GelirDurum.TASLAK)
+
 
 class GelirGiderV2ApiTests(TestCase):
     @classmethod

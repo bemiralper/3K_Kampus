@@ -47,16 +47,64 @@ function arrayBufferToBase64(buf: ArrayBuffer): string {
   return btoa(binary);
 }
 
+function isOpenTypeFont(buf: ArrayBuffer): boolean {
+  if (buf.byteLength < 12) return false;
+  const tag = String.fromCharCode(...new Uint8Array(buf, 0, 4));
+  return tag === '\x00\x01\x00\x00' || tag === 'OTTO' || tag === 'true' || tag === 'typ1';
+}
+
+async function fetchFontBuffer(url: string): Promise<ArrayBuffer> {
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    throw new Error(`PDF yazı tipi yüklenemedi (${url}): ${resp.status}`);
+  }
+  const buf = await resp.arrayBuffer();
+  if (!isOpenTypeFont(buf)) {
+    throw new Error(`PDF yazı tipi geçersiz veya eksik: ${url}`);
+  }
+  return buf;
+}
+
 async function loadFonts() {
   if (fontPromise) return fontPromise;
   fontPromise = (async () => {
     const [regularBuf, boldBuf] = await Promise.all([
-      fetch('/fonts/Roboto-Regular.ttf').then((r) => r.arrayBuffer()),
-      fetch('/fonts/Roboto-Bold.ttf').then((r) => r.arrayBuffer()),
+      fetchFontBuffer('/fonts/Roboto-Regular.ttf'),
+      fetchFontBuffer('/fonts/Roboto-Bold.ttf'),
     ]);
     return { regular: arrayBufferToBase64(regularBuf), bold: arrayBufferToBase64(boldBuf) };
   })();
   return fontPromise;
+}
+
+function rasterizeToPng(dataUri: string): Promise<string | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.naturalWidth || img.width;
+      const h = img.naturalHeight || img.height;
+      if (!w || !h) {
+        resolve(null);
+        return;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve(null);
+        return;
+      }
+      ctx.drawImage(img, 0, 0);
+      try {
+        resolve(canvas.toDataURL('image/png'));
+      } catch {
+        resolve(null);
+      }
+    };
+    img.onerror = () => resolve(null);
+    img.src = dataUri;
+  });
 }
 
 async function loadLogoDataUri(url: string | null | undefined): Promise<string | null> {
@@ -65,8 +113,10 @@ async function loadLogoDataUri(url: string | null | undefined): Promise<string |
     const resp = await fetch(url, { credentials: 'include' });
     if (!resp.ok) return null;
     const buf = await resp.arrayBuffer();
-    const ct = resp.headers.get('content-type') || 'image/png';
-    return `data:${ct};base64,${arrayBufferToBase64(buf)}`;
+    const ct = (resp.headers.get('content-type') || 'image/png').split(';')[0].trim();
+    const raw = `data:${ct};base64,${arrayBufferToBase64(buf)}`;
+    if (/^data:image\/(png|jpe?g)/i.test(raw)) return raw;
+    return (await rasterizeToPng(raw)) || raw;
   } catch {
     return null;
   }
@@ -140,6 +190,10 @@ function registerFonts(doc: jsPDF, fonts: { regular: string; bold: string }) {
   doc.addFont('Roboto-Regular.ttf', 'Roboto', 'normal');
   doc.addFileToVFS('Roboto-Bold.ttf', fonts.bold);
   doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
+  const registered = doc.getFontList()?.Roboto || [];
+  if (!registered.includes('normal') || !registered.includes('bold')) {
+    throw new Error('PDF yazı tipi kaydedilemedi');
+  }
   doc.setFont('Roboto', 'normal');
 }
 
@@ -265,29 +319,28 @@ function drawHeader(
   return bandH + 7;
 }
 
+const INDEX_COL_W = 12;
+const CHECK_COL_W = 20;
+
+function dataColumnKeys(columnKeys: string[]): string[] {
+  return columnKeys.filter((key) => key !== 'sira');
+}
+
 function buildColumnStyles(
-  doc: jsPDF,
-  dataColCount: number,
+  keys: string[],
   checkboxIndexes?: Set<number>,
-): Record<number, { cellWidth: number; halign: 'left' | 'center' | 'right' }> {
-  const pageW = doc.internal.pageSize.getWidth();
-  const tableW = pageW - 20;
-  const idxW = 8;
-  const checkW = 22;
-  const checkCount = checkboxIndexes?.size || 0;
-  const textCount = Math.max(0, dataColCount - checkCount);
-  const remaining = Math.max(40, tableW - idxW - checkCount * checkW);
-  const textW = textCount > 0 ? remaining / textCount : remaining;
-  const styles: Record<number, { cellWidth: number; halign: 'left' | 'center' | 'right' }> = {
-    0: { cellWidth: idxW, halign: 'center' },
+): Record<number, { minCellWidth?: number; halign: 'left' | 'center' | 'right' }> {
+  const styles: Record<number, { minCellWidth?: number; halign: 'left' | 'center' | 'right' }> = {
+    0: { minCellWidth: INDEX_COL_W, halign: 'center' },
   };
-  for (let i = 1; i <= dataColCount; i++) {
-    const isCheck = checkboxIndexes?.has(i);
-    styles[i] = {
-      cellWidth: isCheck ? checkW : textW,
-      halign: isCheck ? 'center' : 'left',
-    };
-  }
+  keys.forEach((_, i) => {
+    const index = i + 1;
+    if (checkboxIndexes?.has(index)) {
+      styles[index] = { minCellWidth: CHECK_COL_W, halign: 'center' };
+    } else {
+      styles[index] = { halign: 'left' };
+    }
+  });
   return styles;
 }
 
@@ -350,10 +403,66 @@ function formatPdfCell(value: unknown, isCheckbox: boolean): string {
 }
 
 function fontSizeForColumns(colCount: number, orientation: PdfOrientation): number {
-  if (colCount > 12) return orientation === 'landscape' ? 6 : 5.5;
-  if (colCount > 9) return orientation === 'landscape' ? 6.5 : 6;
-  if (colCount > 6) return orientation === 'landscape' ? 7 : 6.5;
-  return orientation === 'landscape' ? 8 : 7.5;
+  if (colCount > 10) return orientation === 'landscape' ? 8 : 7.5;
+  if (colCount > 6) return 9;
+  return 10;
+}
+
+function needsHorizontalPageBreak(colCount: number, orientation: PdfOrientation): boolean {
+  return colCount > (orientation === 'landscape' ? 10 : 7);
+}
+
+function tableLayoutOptions(
+  keys: string[],
+  orientation: PdfOrientation,
+  primary: [number, number, number],
+  checkboxIndexes: Set<number>,
+) {
+  const totalCols = keys.length + 1;
+  const tableFontSize = fontSizeForColumns(totalCols, orientation);
+  const wide = needsHorizontalPageBreak(totalCols, orientation);
+  const nameIndex = keys.findIndex((key) => key === 'tam_ad' || key === 'ogrenci');
+  return {
+    showHead: 'everyPage' as const,
+    rowPageBreak: 'auto' as const,
+    horizontalPageBreak: wide,
+    horizontalPageBreakRepeat: wide ? (nameIndex >= 0 ? [0, nameIndex + 1] : [0]) : undefined,
+    styles: {
+      font: 'Roboto',
+      fontStyle: 'normal' as const,
+      fontSize: tableFontSize,
+      cellPadding: 2,
+      overflow: 'linebreak' as const,
+      valign: 'middle' as const,
+      textColor: DARK,
+      lineColor: [226, 232, 240] as [number, number, number],
+      lineWidth: 0.2,
+    },
+    headStyles: {
+      font: 'Roboto',
+      fontStyle: 'bold' as const,
+      fillColor: primary,
+      textColor: WHITE,
+      fontSize: tableFontSize,
+      halign: 'center' as const,
+      valign: 'middle' as const,
+      overflow: 'linebreak' as const,
+      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 5),
+    },
+    bodyStyles: {
+      font: 'Roboto',
+      fontStyle: 'normal' as const,
+      overflow: 'linebreak' as const,
+      valign: 'middle' as const,
+      // NOT: `minCellHeight: undefined` autotable içinde Math.max(h, undefined) = NaN
+      // üretip satır yüksekliklerini bozuyor; değer yoksa anahtarı hiç ekleme.
+      ...(checkboxIndexes.size ? { minCellHeight: 9 } : {}),
+    },
+    alternateRowStyles: { fillColor: ROW_ALT },
+    columnStyles: buildColumnStyles(keys, checkboxIndexes),
+    margin: { left: 10, right: 10, top: 36, bottom: 14 },
+    ...checkboxHooks(checkboxIndexes, primary),
+  };
 }
 
 export async function exportGroupedOgrenciListPdf(options: {
@@ -385,10 +494,15 @@ export async function exportGroupedOgrenciListPdf(options: {
     checkboxKeys,
   } = options;
 
-  const labels =
+  const keys = dataColumnKeys(columnKeys);
+  const sourceLabels =
     columnLabels && columnLabels.length === columnKeys.length
       ? columnLabels
       : columnKeys.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
+  const labels = columnKeys
+    .map((key, i) => ({ key, label: sourceLabels[i] }))
+    .filter((col) => col.key !== 'sira')
+    .map((col) => col.label);
 
   const totalRows = sections.reduce((n, s) => n + s.rows.length, 0);
   const metaCount = totalRecordsLabel ?? `${totalRows} kayıt`;
@@ -408,11 +522,8 @@ export async function exportGroupedOgrenciListPdf(options: {
   });
   registerFonts(doc, fonts);
 
-  const tableWidth = doc.internal.pageSize.getWidth() - 20;
-  const checkboxIndexes = checkboxIndexSet(columnKeys, checkboxKeys);
-  const columnStyles = buildColumnStyles(doc, labels.length, checkboxIndexes);
-  const tableFontSize = fontSizeForColumns(labels.length + 1, orientation);
-  const checkHooks = checkboxHooks(checkboxIndexes, primary);
+  const checkboxIndexes = checkboxIndexSet(keys, checkboxKeys);
+  const tableOptions = tableLayoutOptions(keys, orientation, primary, checkboxIndexes);
 
   // Ayrı sayfalarda her bölüm kendi başlığını çizer (ölçüt adı: 12. Sınıf / 12/Loca 4)
   let startY = pageBreakBetweenSections
@@ -424,41 +535,6 @@ export async function exportGroupedOgrenciListPdf(options: {
         filterSummary,
         meta: metaCount,
       });
-
-  const tableOptions = {
-    tableWidth,
-    showHead: 'firstPage' as const,
-    rowPageBreak: 'auto' as const,
-    styles: {
-      font: 'Roboto',
-      fontSize: tableFontSize,
-      cellPadding: { top: 2, right: 1.5, bottom: 2, left: 1.5 },
-      overflow: 'linebreak' as const,
-      valign: 'middle' as const,
-      textColor: DARK,
-      lineColor: [226, 232, 240] as [number, number, number],
-      lineWidth: 0.2,
-    },
-    headStyles: {
-      fillColor: primary,
-      textColor: WHITE,
-      fontStyle: 'bold' as const,
-      fontSize: tableFontSize,
-      halign: 'center' as const,
-      valign: 'middle' as const,
-      overflow: 'linebreak' as const,
-      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 4),
-    },
-    bodyStyles: {
-      overflow: 'linebreak' as const,
-      valign: 'middle' as const,
-      minCellHeight: checkboxIndexes.size ? 9 : undefined,
-    },
-    alternateRowStyles: { fillColor: ROW_ALT },
-    columnStyles,
-    margin: { left: 10, right: 10, top: 36, bottom: 14 },
-    ...checkHooks,
-  };
 
   for (let si = 0; si < sections.length; si++) {
     const section = sections[si];
@@ -499,13 +575,13 @@ export async function exportGroupedOgrenciListPdf(options: {
 
     const body = section.rows.map((row, idx) => [
       String(idx + 1),
-      ...columnKeys.map((k) => formatPdfCell(row[k], checkboxIndexes.has(columnKeys.indexOf(k) + 1))),
+      ...keys.map((k) => formatPdfCell(row[k], checkboxIndexes.has(keys.indexOf(k) + 1))),
     ]);
 
     autoTable(doc, {
       ...tableOptions,
       startY,
-      head: [['#', ...labels]],
+      head: [['Sıra', ...labels]],
       body,
     });
 
@@ -529,18 +605,20 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
     checkboxKeys,
   } = options;
 
-  const labels =
+  const keys = dataColumnKeys(columnKeys);
+  const sourceLabels =
     columnLabels && columnLabels.length === columnKeys.length
       ? columnLabels
       : columnKeys.map((k) => EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
-  const checkboxIndexes = checkboxIndexSet(columnKeys, checkboxKeys);
+  const labels = columnKeys
+    .map((key, i) => ({ key, label: sourceLabels[i] }))
+    .filter((col) => col.key !== 'sira')
+    .map((col) => col.label);
+  const checkboxIndexes = checkboxIndexSet(keys, checkboxKeys);
   const body = rows.map((row, idx) => [
     String(idx + 1),
-    ...columnKeys.map((k) => formatPdfCell(row[k], checkboxIndexes.has(columnKeys.indexOf(k) + 1))),
+    ...keys.map((k) => formatPdfCell(row[k], checkboxIndexes.has(keys.indexOf(k) + 1))),
   ]);
-
-  const totalCols = labels.length + 1;
-  const tableFontSize = fontSizeForColumns(totalCols, orientation);
 
   const [fonts, logoData] = await Promise.all([
     loadFonts(),
@@ -557,10 +635,6 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
   });
   registerFonts(doc, fonts);
 
-  const tableWidth = doc.internal.pageSize.getWidth() - 20;
-  const columnStyles = buildColumnStyles(doc, labels.length, checkboxIndexes);
-  const checkHooks = checkboxHooks(checkboxIndexes, primary);
-
   const startY = drawHeader(doc, primary, logoData, {
     documentTitle,
     kurumAd: branding.kurumAd || 'Kurum',
@@ -571,40 +645,9 @@ export async function exportOgrenciListPdf(options: OgrenciListPdfOptions): Prom
 
   autoTable(doc, {
     startY,
-    tableWidth,
-    head: [['#', ...labels]],
+    head: [['Sıra', ...labels]],
     body,
-    showHead: 'everyPage',
-    rowPageBreak: 'auto',
-    styles: {
-      font: 'Roboto',
-      fontSize: tableFontSize,
-      cellPadding: { top: 2, right: 1.5, bottom: 2, left: 1.5 },
-      overflow: 'linebreak',
-      valign: 'middle',
-      textColor: DARK,
-      lineColor: [226, 232, 240],
-      lineWidth: 0.2,
-    },
-    headStyles: {
-      fillColor: primary,
-      textColor: WHITE,
-      fontStyle: 'bold',
-      fontSize: tableFontSize,
-      halign: 'center',
-      valign: 'middle',
-      overflow: 'linebreak',
-      minCellHeight: tableFontSize + (checkboxIndexes.size ? 8 : 4),
-    },
-    bodyStyles: {
-      overflow: 'linebreak',
-      valign: 'middle',
-      minCellHeight: checkboxIndexes.size ? 9 : undefined,
-    },
-    alternateRowStyles: { fillColor: ROW_ALT },
-    columnStyles,
-    margin: { left: 10, right: 10, top: 36, bottom: 14 },
-    ...checkHooks,
+    ...tableLayoutOptions(keys, orientation, primary, checkboxIndexes),
   });
 
   addFooter(doc, brandLine);

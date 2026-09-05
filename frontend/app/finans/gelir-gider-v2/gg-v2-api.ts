@@ -1,14 +1,17 @@
 // ─── Gelir & Gider v2 — API Service ─────────────────────────────
-import { finansDownload, finansRequest } from "../services/finans-http";
+import { finansDownload, finansFormUpload, finansRequest } from "../services/finans-http";
 import {
   GGDashboard,
   GGDropdown,
+  GGEkliBelge,
   GGFilters,
+  GGGiderDetay,
   GGListItem,
   GGListResponse,
   GGLogItem,
   GGModul,
   GGOdeme,
+  GGOdemeTakibiResponse,
   GGTahsilat,
   GGTaksit,
   GGReport,
@@ -87,6 +90,10 @@ export const ggService = {
     return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/onayla/`, { method: "POST" });
   },
 
+  onayKaldir(modul: GGModul, id: number): Promise<GGListItem> {
+    return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/onay-kaldir/`, { method: "POST" });
+  },
+
   iptal(modul: GGModul, id: number): Promise<GGListItem> {
     return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/iptal/`, { method: "POST" });
   },
@@ -109,6 +116,73 @@ export const ggService = {
 
   giderTaksitler(giderId: number): Promise<GGTaksit[]> {
     return request<GGTaksit[]>(`/giderler/${giderId}/taksitler/`);
+  },
+
+  odemeTakibi(args: {
+    kurum_id: number;
+    sube_id?: number | null;
+    page?: number;
+    page_size?: number;
+    arama?: string;
+    durum?: string;
+    include_odenen?: boolean;
+    donem?: string;
+    odeme_tipi?: string;
+    filtre_sube_id?: string | number;
+    baslangic?: string;
+    bitis?: string;
+    cari_hesap_id?: number | string;
+    gider_kategorisi_id?: number | string;
+  }): Promise<GGOdemeTakibiResponse> {
+    const qs = buildParams({
+      kurum_id: args.kurum_id,
+      sube_id: args.sube_id ?? undefined,
+      page: args.page ?? 1,
+      page_size: args.page_size ?? 25,
+      arama: args.arama,
+      durum: args.durum,
+      include_odenen: args.include_odenen ? "true" : undefined,
+      donem: args.donem,
+      odeme_tipi: args.odeme_tipi,
+      filtre_sube_id: args.filtre_sube_id,
+      baslangic: args.baslangic,
+      bitis: args.bitis,
+      cari_hesap_id: args.cari_hesap_id,
+      gider_kategorisi_id: args.gider_kategorisi_id,
+    });
+    return request<GGOdemeTakibiResponse>(`/gider/v2/odeme-takibi/?${qs}`);
+  },
+
+  giderDetay(giderId: number): Promise<GGGiderDetay> {
+    return request<GGGiderDetay>(`/gider/v2/kayitlar/${giderId}/detay/`);
+  },
+
+  giderBelge(
+    giderId: number,
+    tip: "gider" | "odeme-plani",
+    fmt: "pdf" | "html" = "pdf",
+  ): Promise<{ blob: Blob; filename: string }> {
+    return finansDownload(`/gider/v2/kayitlar/${giderId}/belgeler/${tip}/?fmt=${fmt}`);
+  },
+
+  odemeBelge(
+    giderId: number,
+    odemeId: number,
+    fmt: "pdf" | "html" = "pdf",
+  ): Promise<{ blob: Blob; filename: string }> {
+    return finansDownload(`/gider/v2/kayitlar/${giderId}/belgeler/odeme/${odemeId}/?fmt=${fmt}`);
+  },
+
+  giderEkYukle(giderId: number, file: File, aciklama = ""): Promise<GGEkliBelge> {
+    const fd = new FormData();
+    fd.append("dosya", file);
+    fd.append("dosya_turu", "fatura_fis");
+    if (aciklama) fd.append("aciklama", aciklama);
+    return finansFormUpload<GGEkliBelge>(`/gider/v2/kayitlar/${giderId}/ekler/`, fd);
+  },
+
+  giderEkSil(giderId: number, ekId: number): Promise<{ detail: string }> {
+    return request(`/gider/v2/kayitlar/${giderId}/ekler/${ekId}/`, { method: "DELETE" });
   },
 
   // ─── Gelir tahsilat (mevcut v1 uçları) ────────────────────────

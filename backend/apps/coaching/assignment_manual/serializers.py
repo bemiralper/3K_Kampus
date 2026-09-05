@@ -1,6 +1,8 @@
 """
 Manuel Ödev Atama - Serializers
 """
+from copy import deepcopy
+
 from django.utils import timezone
 from rest_framework import serializers
 from .models import (
@@ -105,6 +107,7 @@ class AssignmentLessonSerializer(serializers.ModelSerializer):
     """Ders Bloğu Serializer"""
     tasks = AssignmentTaskSerializer(many=True, read_only=True)
     content_mode_display = serializers.CharField(source='get_content_mode_display', read_only=True)
+    k3_mode_display = serializers.SerializerMethodField()
     lesson_name = serializers.SerializerMethodField()
     resource_book_name = serializers.CharField(source='resource_book.ad', read_only=True, allow_null=True)
     
@@ -114,10 +117,15 @@ class AssignmentLessonSerializer(serializers.ModelSerializer):
             'id', 'assignment', 'lesson', 'lesson_name', 'order',
             'resource_book', 'resource_book_name',
             'content_mode', 'content_mode_display',
+            'k3_mode', 'k3_mode_display', 'k3_target_minutes',
             'topic_name', 'page_start', 'page_end', 'test_number',
             'notes', 'tasks', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_k3_mode_display(self, obj):
+        # Boş/NULL değer get_*_display() ile None dönebilir; CharField bunu 500 yapar.
+        return obj.get_k3_mode_display() or ''
 
     def get_lesson_name(self, obj):
         _lesson_id, name = _effective_lesson_from_block(obj)
@@ -147,6 +155,8 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
     is_due_today = serializers.SerializerMethodField()
     is_control_locked = serializers.SerializerMethodField()
     can_override_control_lock = serializers.SerializerMethodField()
+    can_open_for_coach = serializers.SerializerMethodField()
+    can_set_control_date = serializers.SerializerMethodField()
     
     class Meta:
         model = ManualAssignment
@@ -158,7 +168,8 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
             'lesson_count', 'task_count', 'pending_task_count', 'evaluated_task_count',
             'postpone_count', 'non_submission_reason', 'non_submission_reason_display',
             'is_overdue', 'is_due_today', 'is_control_locked',
-            'can_override_control_lock', 'created_at'
+            'can_override_control_lock', 'control_opened_for_coach',
+            'can_open_for_coach', 'can_set_control_date', 'created_at'
         ]
     
     def get_coach_name(self, obj):
@@ -236,6 +247,16 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         return can_override_assignment_control_lock(getattr(request, 'user', None))
 
+    def get_can_open_for_coach(self, obj):
+        from .lock_utils import can_open_assignment_for_coach
+        request = self.context.get('request')
+        return can_open_assignment_for_coach(obj, getattr(request, 'user', None))
+
+    def get_can_set_control_date(self, obj):
+        from .lock_utils import can_set_new_control_date
+        request = self.context.get('request')
+        return can_set_new_control_date(obj, getattr(request, 'user', None))
+
     def to_representation(self, instance):
         data = super().to_representation(instance)
         data['title'] = strip_completion_title_suffix(data.get('title'))
@@ -282,6 +303,9 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
     late_days = serializers.IntegerField(read_only=True)
     is_control_locked = serializers.SerializerMethodField()
     can_override_control_lock = serializers.SerializerMethodField()
+    can_open_for_coach = serializers.SerializerMethodField()
+    can_set_control_date = serializers.SerializerMethodField()
+    control_opened_by_name = serializers.SerializerMethodField()
     has_been_notified = serializers.SerializerMethodField()
     deletion_audit = serializers.SerializerMethodField()
 
@@ -300,6 +324,8 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
             'non_submission_reason', 'non_submission_note',
             'template_id', 'coach_notes', 'student_notes', 'lessons',
             'report_summary', 'is_control_locked', 'can_override_control_lock',
+            'control_opened_for_coach', 'control_opened_at', 'control_opened_by_name',
+            'can_open_for_coach', 'can_set_control_date',
             'has_been_notified', 'deletion_audit',
             'is_active', 'created_at', 'updated_at'
         ]
@@ -346,6 +372,22 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
         from .lock_utils import can_override_assignment_control_lock
         request = self.context.get('request')
         return can_override_assignment_control_lock(getattr(request, 'user', None))
+
+    def get_can_open_for_coach(self, obj):
+        from .lock_utils import can_open_assignment_for_coach
+        request = self.context.get('request')
+        return can_open_assignment_for_coach(obj, getattr(request, 'user', None))
+
+    def get_can_set_control_date(self, obj):
+        from .lock_utils import can_set_new_control_date
+        request = self.context.get('request')
+        return can_set_new_control_date(obj, getattr(request, 'user', None))
+
+    def get_control_opened_by_name(self, obj):
+        opener = getattr(obj, 'control_opened_by', None)
+        if not opener:
+            return None
+        return opener.get_full_name() or opener.username
 
     def get_has_been_notified(self, obj):
         """Bu ödev için veli/öğrenciye en az bir WhatsApp bildirimi (plan/rapor) gitmiş mi?
@@ -430,6 +472,17 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
         from apps.resources.models import ResourceContent
 
         student = data.get('student')
+        if student is None and self.instance is not None:
+            student = self.instance.student
+        if (
+            self.instance is not None
+            and 'student' in data
+            and data['student'] is not None
+            and data['student'] != self.instance.student
+        ):
+            raise serializers.ValidationError({
+                'student': 'Taslak ödevin öğrencisi değiştirilemez.',
+            })
         if student is not None and not getattr(student, 'aktif_mi', True):
             raise serializers.ValidationError({
                 'student': 'Bu öğrenci pasif durumda. Pasif öğrenciye yeni ödev atanamaz.',
@@ -463,29 +516,33 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                 })
 
         if student is not None and data.get('status') != 'DRAFT':
+            exclude_id = getattr(self.instance, 'pk', None)
             if content_ids:
-                self._check_duplicate_pending_content(student, content_ids, lessons_data)
-            self._check_duplicate_pending_quota(student, lessons_data)
+                self._check_duplicate_pending_content(
+                    student, content_ids, lessons_data, exclude_id,
+                )
+            self._check_duplicate_pending_quota(student, lessons_data, exclude_id)
 
         return data
 
     @staticmethod
-    def _check_duplicate_pending_content(student, content_ids, lessons_data):
+    def _check_duplicate_pending_content(student, content_ids, lessons_data, exclude_assignment_id=None):
         """Aynı öğrenciye, henüz kontrol edilmemiş aynı içerik tekrar atanmasın.
 
         Tamamlanmış/iptal edilmiş ödevlerdeki içerikler tekrar atanabilir
         (örn. konu tekrarı) — sadece hâlâ bekleyen/aktif bir ödevde aynı
         içerik varsa mükerrer atamayı engelle.
         """
-        duplicate_ids = set(
-            AssignmentTask.objects.filter(
-                content_id__in=content_ids,
-                completion_status='PENDING',
-                lesson_block__assignment__student=student,
-                lesson_block__assignment__is_active=True,
-                lesson_block__assignment__status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
-            ).values_list('content_id', flat=True)
+        qs = AssignmentTask.objects.filter(
+            content_id__in=content_ids,
+            completion_status='PENDING',
+            lesson_block__assignment__student=student,
+            lesson_block__assignment__is_active=True,
+            lesson_block__assignment__status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
         )
+        if exclude_assignment_id:
+            qs = qs.exclude(lesson_block__assignment_id=exclude_assignment_id)
+        duplicate_ids = set(qs.values_list('content_id', flat=True))
         if not duplicate_ids:
             return
 
@@ -509,7 +566,7 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
         })
 
     @staticmethod
-    def _check_duplicate_pending_quota(student, lessons_data):
+    def _check_duplicate_pending_quota(student, lessons_data, exclude_assignment_id=None):
         kinds = []
         for lesson in lessons_data or []:
             for task in lesson.get('tasks') or []:
@@ -518,15 +575,16 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                     kinds.append(kind)
         if not kinds:
             return
-        duplicate = set(
-            AssignmentTask.objects.filter(
-                quota_kind__in=kinds,
-                completion_status='PENDING',
-                lesson_block__assignment__student=student,
-                lesson_block__assignment__is_active=True,
-                lesson_block__assignment__status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
-            ).values_list('quota_kind', flat=True)
+        qs = AssignmentTask.objects.filter(
+            quota_kind__in=kinds,
+            completion_status='PENDING',
+            lesson_block__assignment__student=student,
+            lesson_block__assignment__is_active=True,
+            lesson_block__assignment__status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
         )
+        if exclude_assignment_id:
+            qs = qs.exclude(lesson_block__assignment_id=exclude_assignment_id)
+        duplicate = set(qs.values_list('quota_kind', flat=True))
         if not duplicate:
             return
         labels = {
@@ -543,8 +601,6 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         from django.db import transaction
-        from django.utils import timezone
-        from apps.resources.models import ResourceBook, ResourceContent
 
         lessons_data = validated_data.pop('lessons', [])
 
@@ -559,82 +615,141 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
 
         with transaction.atomic():
             assignment = ManualAssignment.objects.create(**validated_data)
-
-            for lesson_data in lessons_data:
-                tasks_data = lesson_data.pop('tasks', [])
-
-                lesson_id = lesson_data.pop('lesson', None)
-                if lesson_id:
-                    lesson_data['lesson_id'] = lesson_id
-
-                resource_book_id = lesson_data.pop('resource_book', None)
-                if resource_book_id:
-                    lesson_data['resource_book_id'] = resource_book_id
-                    book_ders_id = (
-                        ResourceBook.objects
-                        .filter(id=resource_book_id)
-                        .values_list('ders_id', flat=True)
-                        .first()
-                    )
-                    if book_ders_id:
-                        lesson_data['lesson_id'] = book_ders_id
-
-                lesson = AssignmentLesson.objects.create(
-                    assignment=assignment,
-                    **lesson_data
-                )
-
-                for task_data in tasks_data:
-                    task_data.pop('lesson_block', None)
-                    content_id = task_data.pop('content_id', None)
-                    if content_id is None:
-                        content_id = task_data.pop('content', None)
-                    else:
-                        task_data.pop('content', None)
-                    if content_id in ('', 0, '0'):
-                        content_id = None
-
-                    quota_kind = (task_data.get('quota_kind') or '').strip()
-                    if quota_kind and quota_kind not in AssignmentTask.QuotaKind.values:
-                        raise serializers.ValidationError({
-                            'lessons': f'Geçersiz kota türü: {quota_kind}',
-                        })
-                    task_data['quota_kind'] = quota_kind
-
-                    if content_id:
-                        content = ResourceContent.objects.filter(id=content_id).first()
-                        if content is None:
-                            raise serializers.ValidationError({
-                                'lessons': (
-                                    f'Seçilen kaynak içerik bulunamadı (#{content_id}). '
-                                    'Sayfayı yenileyip içeriği tekrar seçin.'
-                                ),
-                            })
-                        task_data['content_id'] = content.id
-                        if not task_data.get('question_count'):
-                            task_data['question_count'] = content.question_count
-                        if (
-                            not task_data.get('page_count')
-                            and content.page_start
-                            and content.page_end
-                        ):
-                            task_data['page_count'] = (
-                                content.page_end - content.page_start + 1
-                            )
-
-                    allowed = {
-                        'task_type', 'title', 'description', 'question_count', 'page_count',
-                        'is_required', 'estimated_duration_minutes', 'order',
-                        'is_completion_task', 'previous_task_completion_percent',
-                        'previous_assignment_title', 'quota_kind', 'content_id',
-                    }
-                    clean = {k: v for k, v in task_data.items() if k in allowed}
-                    AssignmentTask.objects.create(
-                        lesson_block=lesson,
-                        **clean
-                    )
+            self._create_lessons(assignment, lessons_data)
 
         return assignment
+
+    def update(self, instance, validated_data):
+        from django.db import transaction
+
+        lessons_data = validated_data.pop('lessons', None)
+        if lessons_data is not None and instance.status != ManualAssignment.Status.DRAFT:
+            raise serializers.ValidationError({
+                'lessons': (
+                    'Atanmış ödevin içeriği değiştirilemez. '
+                    'Yalnızca taslak ödevlerde içerik eklenip çıkarılabilir.'
+                ),
+            })
+
+        if validated_data.get('status') == ManualAssignment.Status.ASSIGNED and not instance.assigned_date:
+            validated_data['assigned_date'] = timezone.now()
+
+        with transaction.atomic():
+            for attr, value in validated_data.items():
+                setattr(instance, attr, value)
+            instance.save()
+            if lessons_data is not None:
+                instance.lessons.all().delete()
+                self._create_lessons(instance, lessons_data)
+
+        return instance
+
+    def _create_lessons(self, assignment, lessons_data):
+        from apps.resources.models import ResourceBook, ResourceContent
+
+        for raw_lesson in lessons_data:
+            lesson_data = deepcopy(raw_lesson)
+            tasks_data = lesson_data.pop('tasks', [])
+
+            lesson_id = lesson_data.pop('lesson', None)
+            if lesson_id:
+                lesson_data['lesson_id'] = lesson_id
+
+            resource_book_id = lesson_data.pop('resource_book', None)
+            if resource_book_id:
+                lesson_data['resource_book_id'] = resource_book_id
+                book_ders_id = (
+                    ResourceBook.objects
+                    .filter(id=resource_book_id)
+                    .values_list('ders_id', flat=True)
+                    .first()
+                )
+                if book_ders_id:
+                    lesson_data['lesson_id'] = book_ders_id
+
+            k3_mode = (lesson_data.get('k3_mode') or '').strip().upper()
+            if k3_mode and k3_mode not in AssignmentLesson.K3Mode.values:
+                raise serializers.ValidationError({
+                    'lessons': f'Geçersiz 3K Modu: {k3_mode}',
+                })
+            lesson_data['k3_mode'] = k3_mode
+            raw_target = lesson_data.get('k3_target_minutes')
+            if k3_mode != AssignmentLesson.K3Mode.HIZLAN:
+                lesson_data['k3_target_minutes'] = None
+            elif raw_target in ('', None):
+                lesson_data['k3_target_minutes'] = None
+            else:
+                try:
+                    lesson_data['k3_target_minutes'] = int(raw_target)
+                except (TypeError, ValueError):
+                    raise serializers.ValidationError({
+                        'lessons': 'Hedef süre dakika cinsinden sayı olmalıdır.',
+                    })
+                if lesson_data['k3_target_minutes'] <= 0:
+                    lesson_data['k3_target_minutes'] = None
+
+            allowed_lesson = {
+                'lesson_id', 'resource_book_id', 'content_mode', 'topic_name',
+                'page_start', 'page_end', 'test_number', 'notes', 'order',
+                'k3_mode', 'k3_target_minutes',
+            }
+            clean_lesson = {k: v for k, v in lesson_data.items() if k in allowed_lesson}
+
+            lesson = AssignmentLesson.objects.create(
+                assignment=assignment,
+                **clean_lesson
+            )
+
+            for raw_task in tasks_data:
+                task_data = deepcopy(raw_task)
+                task_data.pop('lesson_block', None)
+                content_id = task_data.pop('content_id', None)
+                if content_id is None:
+                    content_id = task_data.pop('content', None)
+                else:
+                    task_data.pop('content', None)
+                if content_id in ('', 0, '0'):
+                    content_id = None
+
+                quota_kind = (task_data.get('quota_kind') or '').strip()
+                if quota_kind and quota_kind not in AssignmentTask.QuotaKind.values:
+                    raise serializers.ValidationError({
+                        'lessons': f'Geçersiz kota türü: {quota_kind}',
+                    })
+                task_data['quota_kind'] = quota_kind
+
+                if content_id:
+                    content = ResourceContent.objects.filter(id=content_id).first()
+                    if content is None:
+                        raise serializers.ValidationError({
+                            'lessons': (
+                                f'Seçilen kaynak içerik bulunamadı (#{content_id}). '
+                                'Sayfayı yenileyip içeriği tekrar seçin.'
+                            ),
+                        })
+                    task_data['content_id'] = content.id
+                    if not task_data.get('question_count'):
+                        task_data['question_count'] = content.question_count
+                    if (
+                        not task_data.get('page_count')
+                        and content.page_start
+                        and content.page_end
+                    ):
+                        task_data['page_count'] = (
+                            content.page_end - content.page_start + 1
+                        )
+
+                allowed = {
+                    'task_type', 'title', 'description', 'question_count', 'page_count',
+                    'is_required', 'estimated_duration_minutes', 'order',
+                    'is_completion_task', 'previous_task_completion_percent',
+                    'previous_assignment_title', 'quota_kind', 'content_id',
+                }
+                clean = {k: v for k, v in task_data.items() if k in allowed}
+                AssignmentTask.objects.create(
+                    lesson_block=lesson,
+                    **clean
+                )
 
 
 class AssignmentPackageItemSerializer(serializers.ModelSerializer):
@@ -643,7 +758,8 @@ class AssignmentPackageItemSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'book_id', 'book_name', 'content_id', 'content_name',
             'content_type', 'topic_id', 'topic_name', 'unit_id', 'unit_name',
-            'question_count', 'page_start', 'page_end', 'order',
+            'question_count', 'page_start', 'page_end',
+            'k3_mode', 'k3_target_minutes', 'order',
         ]
         read_only_fields = ['id']
 
