@@ -3,6 +3,8 @@
 from django.db import migrations, models
 import django.db.models.deletion
 
+from . import _idempotent as idem
+
 
 class Migration(migrations.Migration):
 
@@ -14,7 +16,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
+        idem.CreateModelIfMissing(
             name='ExamRoom',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -29,7 +31,7 @@ class Migration(migrations.Migration):
                 'ordering': ['exam', 'order', 'id'],
             },
         ),
-        migrations.CreateModel(
+        idem.CreateModelIfMissing(
             name='ExamParticipant',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -51,7 +53,7 @@ class Migration(migrations.Migration):
                 'ordering': ['room__order', 'seat_no', 'id'],
             },
         ),
-        migrations.CreateModel(
+        idem.CreateModelIfMissing(
             name='ExamAudience',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -64,19 +66,19 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'Sınav Kitle Kuralları',
             },
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examroom',
             constraint=models.UniqueConstraint(fields=('exam', 'name'), name='unique_exam_room_name'),
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examparticipant',
             constraint=models.UniqueConstraint(fields=('exam', 'student'), name='unique_exam_participant'),
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examparticipant',
             constraint=models.UniqueConstraint(condition=models.Q(('room__isnull', False), ('seat_no__isnull', False)), fields=('exam', 'room', 'seat_no'), name='unique_exam_room_seat'),
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examaudience',
             constraint=models.UniqueConstraint(fields=('exam', 'sinif_seviyesi', 'deneme_paketi'), name='unique_exam_audience_row'),
         ),

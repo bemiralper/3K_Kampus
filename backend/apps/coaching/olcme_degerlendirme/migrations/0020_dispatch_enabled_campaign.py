@@ -1,5 +1,7 @@
 from django.db import migrations, models
 
+from . import _idempotent as idem
+
 
 def enable_existing_pending(apps, schema_editor):
     Dispatch = apps.get_model('olcme_degerlendirme', 'ExamScheduledDispatch')
@@ -13,7 +15,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
+        idem.AddFieldIfMissing(
             model_name='examscheduleddispatch',
             name='is_enabled',
             field=models.BooleanField(
@@ -21,7 +23,7 @@ class Migration(migrations.Migration):
                 help_text='Kapalıysa yayın saati dolsa bile otomatik gönderilmez.',
             ),
         ),
-        migrations.AddField(
+        idem.AddFieldIfMissing(
             model_name='examscheduleddispatch',
             name='campaign_id',
             field=models.UUIDField(blank=True, null=True),

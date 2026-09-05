@@ -1,6 +1,8 @@
 from django.db import migrations, models
 import django.db.models.deletion
 
+from . import _idempotent as idem
+
 
 class Migration(migrations.Migration):
 
@@ -13,7 +15,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.CreateModel(
+        idem.CreateModelIfMissing(
             name='OlcmeSeviyeOturumAyar',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -27,7 +29,7 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'Seviye Oturum Ayarları',
             },
         ),
-        migrations.CreateModel(
+        idem.CreateModelIfMissing(
             name='OlcmeOgrenciOturumTercihi',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -42,7 +44,7 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'Öğrenci Oturum Tercihleri',
             },
         ),
-        migrations.AddField(
+        idem.AddFieldIfMissing(
             model_name='examparticipant',
             name='exam_session',
             field=models.ForeignKey(
@@ -52,19 +54,19 @@ class Migration(migrations.Migration):
                 to='olcme_degerlendirme.examsessionmodel',
             ),
         ),
-        migrations.RemoveConstraint(
+        idem.RemoveConstraintIfExists(
             model_name='examparticipant',
             name='unique_exam_participant',
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='olcmeseviyeoturumayar',
             constraint=models.UniqueConstraint(fields=('sube', 'sinif_seviyesi'), name='unique_olcme_seviye_oturum_ayar'),
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='olcmeogrencioturumtercihi',
             constraint=models.UniqueConstraint(fields=('sube', 'egitim_yili', 'ogrenci'), name='unique_olcme_ogrenci_oturum_tercihi'),
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examparticipant',
             constraint=models.UniqueConstraint(
                 condition=models.Q(('exam_session__isnull', True)),
@@ -72,7 +74,7 @@ class Migration(migrations.Migration):
                 name='unique_exam_participant_no_session',
             ),
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examparticipant',
             constraint=models.UniqueConstraint(
                 condition=models.Q(('exam_session__isnull', False)),
@@ -80,11 +82,11 @@ class Migration(migrations.Migration):
                 name='unique_exam_participant_session',
             ),
         ),
-        migrations.RemoveConstraint(
+        idem.RemoveConstraintIfExists(
             model_name='examparticipant',
             name='unique_exam_room_seat',
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examparticipant',
             constraint=models.UniqueConstraint(
                 condition=models.Q(('exam_session__isnull', True), ('room__isnull', False), ('seat_no__isnull', False)),
@@ -92,7 +94,7 @@ class Migration(migrations.Migration):
                 name='unique_exam_room_seat',
             ),
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examparticipant',
             constraint=models.UniqueConstraint(
                 condition=models.Q(('exam_session__isnull', False), ('room__isnull', False), ('seat_no__isnull', False)),

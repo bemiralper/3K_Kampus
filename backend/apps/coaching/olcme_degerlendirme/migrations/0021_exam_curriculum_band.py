@@ -1,5 +1,7 @@
 from django.db import migrations, models
 
+from . import _idempotent as idem
+
 
 class Migration(migrations.Migration):
 
@@ -8,7 +10,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
-        migrations.AddField(
+        idem.AddFieldIfMissing(
             model_name='exam',
             name='curriculum_band',
             field=models.CharField(

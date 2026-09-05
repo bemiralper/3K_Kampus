@@ -1,6 +1,8 @@
 from django.db import migrations, models
 import django.db.models.deletion
 
+from . import _idempotent as idem
+
 
 def backfill_attendance(apps, schema_editor):
     ExamParticipant = apps.get_model('olcme_degerlendirme', 'ExamParticipant')
@@ -25,7 +27,7 @@ class Migration(migrations.Migration):
             ),
         ),
         migrations.RunPython(backfill_attendance, migrations.RunPython.noop),
-        migrations.AddField(
+        idem.AddFieldIfMissing(
             model_name='exam',
             name='answer_key_pdf',
             field=models.FileField(
@@ -35,7 +37,7 @@ class Migration(migrations.Migration):
                 verbose_name='Cevap Anahtarı PDF',
             ),
         ),
-        migrations.CreateModel(
+        idem.CreateModelIfMissing(
             name='ExamScheduledDispatch',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
@@ -55,7 +57,7 @@ class Migration(migrations.Migration):
                 'verbose_name_plural': 'Sınav Zamanlı Gönderimler',
             },
         ),
-        migrations.AddConstraint(
+        idem.AddConstraintIfMissing(
             model_name='examscheduleddispatch',
             constraint=models.UniqueConstraint(fields=('exam', 'kind'), name='unique_exam_scheduled_dispatch'),
         ),
