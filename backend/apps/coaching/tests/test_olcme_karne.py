@@ -254,3 +254,43 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         ).json()
         self.assertTrue(detail['profil_foto'])
         self.assertIn('ogrenci/profil', detail['profil_foto'])
+
+
+class KarneTopicBlockUsesImportedTextTest(TestCase):
+    """Karnedeki satır adı Excel metni olmalı, müfredat konu adı değil."""
+
+    def test_linked_outcome_keeps_excel_name(self):
+        from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, Topic
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
+
+        exam = Exam.objects.create(name='Karne Excel', exam_type='YKS_TYT')
+        section = ExamSection.objects.create(
+            exam=exam, name='Matematik', order=1, question_start=61, question_end=62,
+        )
+        subject = Subject.objects.create(code='MAT', name='Matematik')
+        topic = Topic.objects.create(
+            subject=subject, name='SHG21 · SAYILAR', order=1,
+        )
+        outcome = Outcome.objects.create(
+            topic=topic, code='21.1.2', text='Temel Kavramlar ve Sayı Kümeleri',
+        )
+        ak = AnswerKey.objects.create(exam=exam, booklet='')
+        AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=61,
+            correct_answer='A', outcome=outcome,
+            imported_outcome_text='Temel Kavramlar ve Sayı Kümeleri',
+        )
+        AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=62,
+            correct_answer='B', outcome=outcome,
+            imported_outcome_text='Sayı Basamakları',
+        )
+
+        blocks = _build_topic_blocks(exam, {
+            '61': {'result': 'correct'},
+            '62': {'result': 'wrong'},
+        }, '')
+        names = [row['name'] for block in blocks for table in block['tables'] for row in table['rows']]
+        self.assertEqual(names, ['Temel Kavramlar ve Sayı Kümeleri', 'Sayı Basamakları'])
+        self.assertNotIn('SHG21 · SAYILAR', names)

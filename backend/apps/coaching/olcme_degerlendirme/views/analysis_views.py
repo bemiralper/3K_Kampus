@@ -295,14 +295,13 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
     )
     blocks_map: OrderedDict = OrderedDict()
     for item in items:
-        label = ''
-        if item.outcome_id:
-            if getattr(item.outcome, 'topic_id', None):
-                label = item.outcome.topic.name
-            if not label:
-                label = item.outcome.text or ''
+        # Karnede Excel/yapıştırılan kazanım adı durur; müfredat konu adına
+        # (SHG21 · SAYILAR) düşürülmez — aksi halde farklı kazanımlar tek satır olur.
+        label = (item.imported_outcome_text or '').strip()
         if not label:
-            label = (item.imported_outcome_text or '').strip()
+            label = item.display_outcome_text()
+        if not label and item.outcome_id and getattr(item.outcome, 'topic_id', None):
+            label = item.outcome.topic.name or ''
         if not label:
             continue
         sec = item.section
