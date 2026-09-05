@@ -11,8 +11,11 @@ import {
   CAMPAIGN_STATUS_LABELS,
   CampaignItem,
   cancelCampaign,
+  communicationPortalPaths,
   fetchCampaign,
+  formatMessageStatus,
   retryFailedCampaign,
+  type InboxPortal,
 } from "@/lib/communication-api";
 
 function StatBar({
@@ -69,9 +72,18 @@ function statusBadgeClass(status: string): string {
   return map[status] || "draft";
 }
 
-export default function KampanyaDetayClient() {
+function contactTypeLabel(type: string): string {
+  if (type === "VELI") return "Veli";
+  if (type === "OGRENCI") return "Öğrenci";
+  if (type === "PERSONEL") return "Personel";
+  return "";
+}
+
+export default function KampanyaDetayClient({ portal = "admin" }: { portal?: InboxPortal }) {
   const params = useParams();
   const campaignId = params.id as string;
+  const paths = communicationPortalPaths(portal);
+  const historyCrumb = { label: "Gönderim Geçmişi", href: paths.campaigns };
   const [campaign, setCampaign] = useState<CampaignItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -128,7 +140,7 @@ export default function KampanyaDetayClient() {
         icon="📊"
         breadcrumbs={[
           { label: "İletişim" },
-          { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
+          historyCrumb,
           { label: "Detay" },
         ]}
       >
@@ -142,10 +154,7 @@ export default function KampanyaDetayClient() {
       <CommunicationPageShell
         title="Gönderim bulunamadı"
         icon="📊"
-        breadcrumbs={[
-          { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
-          { label: "Detay" },
-        ]}
+        breadcrumbs={[historyCrumb, { label: "Detay" }]}
       >
         <p>Bu gönderim mevcut değil.</p>
       </CommunicationPageShell>
@@ -155,6 +164,13 @@ export default function KampanyaDetayClient() {
   const total = campaign.total_recipients || 0;
   const canCancel = ["DRAFT", "QUEUED", "PROCESSING", "CONFIRMED"].includes(campaign.status);
   const canRetry = campaign.failed_count > 0 && campaign.status !== "CANCELLED";
+  const deliveries = campaign.deliveries || [];
+  const undelivered = deliveries.filter(
+    (row) => row.status === "FAILED" || row.status === "PENDING" || row.status === "SENDING" || row.status === "CANCELLED",
+  );
+  const delivered = deliveries.filter(
+    (row) => row.status === "SENT" || row.status === "DELIVERED" || row.status === "READ",
+  );
 
   return (
     <CommunicationPageShell
@@ -162,8 +178,8 @@ export default function KampanyaDetayClient() {
       subtitle={`Oluşturulma: ${new Date(campaign.created_at).toLocaleString("tr-TR")}`}
       icon="📊"
       breadcrumbs={[
-        { label: "İletişim" },
-        { label: "Gönderim Geçmişi", href: "/admin/iletisim/kampanyalar" },
+        { label: portal === "muhasebe" ? "WhatsApp" : "İletişim" },
+        historyCrumb,
         { label: campaign.title || "Detay" },
       ]}
       actions={
@@ -216,8 +232,34 @@ export default function KampanyaDetayClient() {
         </p>
       </div>
 
+      <DeliveryTable
+        title={
+          campaign.deliveries_total && campaign.deliveries_total > deliveries.length
+            ? `Alıcılar (ilk ${deliveries.length} / ${campaign.deliveries_total})`
+            : "Alıcılar"
+        }
+        rows={deliveries}
+        empty="Bu gönderimde alıcı kaydı yok."
+      />
+
+      {undelivered.length > 0 && (
+        <div style={{ marginTop: "1rem" }}>
+          <DeliveryTable
+            title={`İletilmeyenler (${undelivered.length})`}
+            rows={undelivered}
+            empty=""
+          />
+        </div>
+      )}
+
+      {delivered.length > 0 && undelivered.length > 0 && (
+        <p style={{ fontSize: "0.8rem", color: "#667781", marginTop: "0.5rem" }}>
+          İletilen {delivered.length} kişi üstteki alıcı listesinde.
+        </p>
+      )}
+
       {campaign.body_template && (
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "1.25rem", alignItems: "start" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 280px", gap: "1.25rem", alignItems: "start", marginTop: "1.25rem" }}>
           <div className="comm-card">
             <h2 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>Mesaj metni</h2>
             <pre
@@ -260,5 +302,63 @@ export default function KampanyaDetayClient() {
         )}
       </div>
     </CommunicationPageShell>
+  );
+}
+
+function DeliveryTable({
+  title,
+  rows,
+  empty,
+}: {
+  title: string;
+  rows: NonNullable<CampaignItem["deliveries"]>;
+  empty: string;
+}) {
+  return (
+    <div className="comm-card">
+      <h2 style={{ margin: "0 0 0.75rem", fontSize: "1rem" }}>{title}</h2>
+      {rows.length === 0 ? (
+        empty ? <p style={{ color: "#667781", margin: 0 }}>{empty}</p> : null
+      ) : (
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.875rem" }}>
+            <thead>
+              <tr style={{ textAlign: "left", color: "#667781", borderBottom: "1px solid #e9edef" }}>
+                <th style={{ padding: "6px 8px" }}>Kişi</th>
+                <th style={{ padding: "6px 8px" }}>Telefon</th>
+                <th style={{ padding: "6px 8px" }}>Durum</th>
+                <th style={{ padding: "6px 8px" }}>Not</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const isFailed = row.status === "FAILED";
+                const fullNote = isFailed ? (row.failed_reason || "") : (row.queue_note || "");
+                const shortNote = isFailed
+                  ? ((row.failed_reason_short || "").trim() || fullNote)
+                  : fullNote;
+                const kind = contactTypeLabel(row.contact_type);
+                const name = (row.contact_name || "").trim() || row.phone || "—";
+                return (
+                  <tr key={row.id} style={{ borderBottom: "1px solid #f0f2f5" }}>
+                    <td style={{ padding: "8px" }}>
+                      <strong>{name}</strong>
+                      {kind ? <span style={{ color: "#667781", marginLeft: 6 }}>{kind}</span> : null}
+                    </td>
+                    <td style={{ padding: "8px", color: "#667781" }}>{row.phone || "—"}</td>
+                    <td style={{ padding: "8px" }}>{formatMessageStatus(row.status)}</td>
+                    <td style={{ padding: "8px", color: isFailed ? "#b91c1c" : "#667781" }}>
+                      {fullNote ? (
+                        <span title={fullNote}>{shortNote}</span>
+                      ) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
   );
 }

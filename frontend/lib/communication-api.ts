@@ -1515,6 +1515,25 @@ export function conversationInboxPath(
   return `${conversationInboxBase(resolved)}?conversation=${conversationId}`;
 }
 
+export function communicationPortalPaths(portal: InboxPortal = 'admin') {
+  if (portal === 'muhasebe') {
+    return {
+      campaigns: '/muhasebe/iletisim/kampanyalar',
+      campaignDetail: (id: string) => `/muhasebe/iletisim/kampanyalar/${id}`,
+      compose: '/muhasebe/iletisim/toplu-gonder',
+      queue: '/muhasebe/iletisim/kuyruk',
+      chats: '/muhasebe/iletisim/mesajlar',
+    };
+  }
+  return {
+    campaigns: '/admin/iletisim/kampanyalar',
+    campaignDetail: (id: string) => `/admin/iletisim/kampanyalar/${id}`,
+    compose: '/admin/iletisim/toplu-gonder',
+    queue: '/admin/iletisim/kuyruk',
+    chats: '/admin/iletisim/mesajlar',
+  };
+}
+
 /** Veli sohbetinde "… velisi" alt satırı; öğrenci sohbetinde veli adı (varsa). */
 export function conversationRelationLabel(conv: {
   contact_type?: string;
@@ -1887,6 +1906,20 @@ export interface CampaignAnalytics {
   reply_rate: number;
 }
 
+export interface CampaignDelivery {
+  id: string;
+  contact_name: string;
+  phone: string;
+  contact_type: string;
+  status: string;
+  failed_reason: string;
+  failed_reason_short?: string;
+  sent_at: string | null;
+  next_attempt_at?: string | null;
+  attempt_count?: number;
+  queue_note?: string;
+}
+
 export interface CampaignItem {
   id: string;
   title: string;
@@ -1913,6 +1946,9 @@ export interface CampaignItem {
   analytics?: CampaignAnalytics;
   scheduled_at?: string | null;
   estimated_cost_usd?: string;
+  deliveries?: CampaignDelivery[];
+  deliveries_total?: number;
+  deliveries_limit?: number;
 }
 
 export async function previewCampaign(

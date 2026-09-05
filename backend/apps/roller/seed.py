@@ -162,7 +162,7 @@ ROLES_DATA = [
             'egitim_tanimlari.manage',
             'egitim_paketleri.manage',
             'ozel_ders.manage', 'ozel_ders.hakedis_approve',
-            'communication.read', 'communication.write',
+            'communication.read', 'communication.write', 'communication.bulk',
             'rapor.read', 'rapor.export',
             'gorev.read', 'gorev.write',
         ],

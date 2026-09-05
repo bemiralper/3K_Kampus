@@ -399,3 +399,67 @@ class CoachBulkScopeTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(OutboundCampaign.objects.count(), 1)
+
+
+class CampaignDeliveriesTest(TestCase):
+    def test_campaign_deliveries_use_person_name_not_phone(self):
+        from apps.communication.domain.enums import Channel, MessageDirection, RecipientType
+        from apps.communication.domain.models import Conversation
+        from apps.communication.interfaces.views.campaigns import _campaign_deliveries
+
+        kurum = Kurum.objects.create(ad='Teslimat Kurum', kod='TDL')
+        sube = Sube.objects.create(kurum=kurum, ad='Merkez', kod='TDL')
+        ogrenci = Ogrenci.objects.create(
+            kurum=kurum, sube=sube, ad='Zeynep', soyad='Yılmaz',
+            telefon='05321112233', aktif_mi=True,
+        )
+        veli = OgrenciVeli.objects.create(
+            ogrenci=ogrenci, ad='Ayşe', soyad='Yılmaz',
+            telefon='05321112233', veli_turu='anne', varsayilan=True,
+        )
+        campaign = OutboundCampaign.objects.create(
+            kurum=kurum,
+            sube=sube,
+            title='Deneme',
+            body_template='Merhaba',
+            status=CampaignStatus.COMPLETED,
+            total_recipients=2,
+            sent_count=1,
+            delivered_count=1,
+            failed_count=1,
+        )
+        ok_conv = Conversation.objects.create(
+            kurum=kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905321112233',
+            contact_type=RecipientType.VELI,
+            veli=veli,
+            contact_name='Ayşe Yılmaz',
+        )
+        fail_conv = Conversation.objects.create(
+            kurum=kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905399998877',
+            contact_type=RecipientType.RAW_PHONE,
+            contact_name='+905399998877',
+        )
+        Message.objects.create(
+            conversation=ok_conv,
+            campaign=campaign,
+            direction=MessageDirection.OUTBOUND,
+            body='ok',
+            status=MessageStatus.DELIVERED,
+        )
+        Message.objects.create(
+            conversation=fail_conv,
+            campaign=campaign,
+            direction=MessageDirection.OUTBOUND,
+            body='fail',
+            status=MessageStatus.FAILED,
+            failed_reason='(#131026) Message undeliverable',
+        )
+        rows = {row['status']: row for row in _campaign_deliveries(campaign)}
+        self.assertEqual(rows[MessageStatus.DELIVERED]['contact_name'], 'Ayşe Yılmaz')
+        self.assertNotEqual(rows[MessageStatus.DELIVERED]['contact_name'], rows[MessageStatus.DELIVERED]['phone'])
+        self.assertEqual(rows[MessageStatus.FAILED]['failed_reason_short'], 'İletilemedi')
+        self.assertIn('WhatsApp', rows[MessageStatus.FAILED]['failed_reason'])

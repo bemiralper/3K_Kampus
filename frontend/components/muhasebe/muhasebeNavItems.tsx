@@ -250,6 +250,18 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
         label: "Toplu Gönderim",
         matchPrefix: "/muhasebe/iletisim/toplu-gonder",
       },
+      {
+        id: "iletisim-kampanyalar",
+        href: "/muhasebe/iletisim/kampanyalar",
+        label: "Gönderim Geçmişi",
+        matchPrefix: "/muhasebe/iletisim/kampanyalar",
+      },
+      {
+        id: "iletisim-kuyruk",
+        href: "/muhasebe/iletisim/kuyruk",
+        label: "Mesaj Kuyruğu",
+        matchPrefix: "/muhasebe/iletisim/kuyruk",
+      },
     ],
   },
   {

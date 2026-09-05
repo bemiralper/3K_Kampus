@@ -2,11 +2,14 @@
 Gider Service — İş kuralları katmanı
 Gider kaydı oluşturma, onaylama, taksitlendirme, durum yönetimi.
 """
+import logging
 from decimal import Decimal
 
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.finans.infrastructure.gider_repository import GiderKaydiRepository, GiderTaksitRepository
 from apps.finans.application.cari_hareket_service import CariHareketService
@@ -48,6 +51,16 @@ class GiderService:
             son_sira = 0
         return f"{prefix}{son_sira + 1:03d}"
 
+    @staticmethod
+    def _sync_gider_cek_senet(gider):
+        """Çek/senet senkronu gider kaydını düşürmesin."""
+        try:
+            with transaction.atomic():
+                from apps.finans.application.cek_senet.cek_senet_service import CekSenetService
+                CekSenetService().sync_gider_plan(gider)
+        except Exception:
+            logger.exception('Gider çek/senet senkronu atlandı (gider_id=%s)', getattr(gider, 'pk', None))
+
     @transaction.atomic
     def create(self, data: dict):
         """
@@ -62,6 +75,9 @@ class GiderService:
         # Fatura no boşsa otomatik üret
         if not data.get('fatura_no'):
             data['fatura_no'] = self._generate_fatura_no(data.get('kurum_id'))
+        if not data.get('islem_belge_no'):
+            belge = data.get('fatura_no') or self._generate_fatura_no(data.get('kurum_id'))
+            data['islem_belge_no'] = str(belge)[:30]
 
         # KDV hesapla (moda göre: haric | dahil | muaf)
         girilen = data.get('brut_tutar', Decimal('0'))
@@ -98,8 +114,7 @@ class GiderService:
         taksit_plani_json = getattr(gider, 'taksit_plani_json', None)
         self.taksit_repo.toplu_olustur(gider, taksit_plani=taksit_plani_json)
 
-        from apps.finans.application.cek_senet.cek_senet_service import CekSenetService
-        CekSenetService().sync_gider_plan(gider)
+        self._sync_gider_cek_senet(gider)
 
         self.cari_hareket_service.hareket_olustur(
             cari_hesap_id=gider.cari_hesap_id,
@@ -213,8 +228,7 @@ class GiderService:
                 gider.taksitler.all().delete()
                 plan = taksit_plani or getattr(gider, 'taksit_plani_json', None)
                 self.taksit_repo.toplu_olustur(gider, taksit_plani=plan)
-                from apps.finans.application.cek_senet.cek_senet_service import CekSenetService
-                CekSenetService().sync_gider_plan(gider)
+                self._sync_gider_cek_senet(gider)
 
         return gider, None
 

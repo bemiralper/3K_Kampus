@@ -10,7 +10,10 @@ export const metadata = {
 export default function MuhasebeTopluGonderPage() {
   return (
     <Suspense fallback={<p style={{ color: "#667781", padding: "1rem" }}>Toplu gönderim yükleniyor…</p>}>
-      <TopluGonderClient mode="muhasebe" />
+      <TopluGonderClient
+        mode="muhasebe"
+        campaignDetailPath={(id) => `/muhasebe/iletisim/kampanyalar/${id}`}
+      />
     </Suspense>
   );
 }

@@ -127,6 +127,14 @@ class GiderKaydi(models.Model):
     )
 
     # ─── Fatura Bilgileri ────────────────────────
+    islem_belge_no = models.CharField(
+        'Gider İşlem Belge No',
+        max_length=30,
+        blank=True,
+        default='',
+        db_index=True,
+        help_text='Sistem belgesi: GDR-YYYY-000001. Tedarikçi faturası değildir.',
+    )
     fatura_no = models.CharField(
         'Fatura / Belge No',
         max_length=50,

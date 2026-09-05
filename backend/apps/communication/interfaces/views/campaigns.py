@@ -19,6 +19,87 @@ from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube, resolve_kurum_id as _resolve_kurum_id
 from apps.communication.infrastructure.repository import OutboundCampaignRepository
 from apps.communication.permissions import CommunicationBulkPermission
+from apps.communication.domain.enums import MessageStatus
+from apps.communication.domain.models import Message
+
+
+def _campaign_deliveries(campaign, *, limit=500):
+    from apps.communication.application.conversation_display import (
+        looks_like_phone,
+        resolve_conversation_display_name,
+    )
+    from apps.communication.application.delivery_error import summarize_delivery_failure
+    from apps.communication.domain.models import OutboundQueueItem
+
+    rows = []
+    qs = (
+        Message.objects.filter(campaign=campaign)
+        .select_related(
+            'conversation',
+            'conversation__veli',
+            'conversation__ogrenci',
+            'conversation__contact_identity',
+            'conversation__contact_identity__veli',
+            'conversation__contact_identity__ogrenci',
+            'conversation__contact_identity__personel',
+        )
+        .order_by('created_at')[:limit]
+    )
+    queue_by_message = {
+        item.message_id: item
+        for item in OutboundQueueItem.objects.filter(campaign=campaign).only(
+            'message_id', 'next_attempt_at', 'attempt_count', 'max_attempts', 'last_error',
+        )
+    }
+    lookup_cache: dict = {}
+    for msg in qs:
+        conv = msg.conversation
+        name = ''
+        if conv:
+            name = resolve_conversation_display_name(
+                conv,
+                allow_live_lookup=True,
+                lookup_cache=lookup_cache,
+            )
+            if looks_like_phone(name, conv.contact_phone):
+                name = ''
+        raw_reason = (msg.failed_reason or '').strip()
+        if msg.status == MessageStatus.FAILED:
+            short_reason, full_reason = summarize_delivery_failure(raw_reason)
+        else:
+            short_reason, full_reason = '', ''
+        item = queue_by_message.get(msg.id)
+        rows.append({
+            'id': str(msg.id),
+            'contact_name': name,
+            'phone': (conv.contact_phone if conv else '') or '',
+            'contact_type': (conv.contact_type if conv else '') or '',
+            'status': msg.status,
+            'failed_reason': full_reason,
+            'failed_reason_short': short_reason if full_reason else '',
+            'sent_at': msg.sent_at.isoformat() if msg.sent_at else None,
+            'next_attempt_at': (
+                item.next_attempt_at.isoformat()
+                if item is not None and item.next_attempt_at
+                else None
+            ),
+            'attempt_count': item.attempt_count if item is not None else 0,
+            'queue_note': _queue_note(msg, item, raw_reason),
+        })
+    return rows
+
+
+def _queue_note(msg, item, raw_reason: str) -> str:
+    """Bekleyen alıcı için 'neden gitmedi' açıklaması."""
+    if msg.status not in (MessageStatus.PENDING, MessageStatus.SENDING):
+        return ''
+    if item is None:
+        return 'Kuyruk kaydı yok — gönderimi yeniden başlatın.'
+    if item.attempt_count:
+        detail = (raw_reason or item.last_error or '').strip()
+        base = f'{item.attempt_count}/{item.max_attempts} deneme yapıldı, tekrar denenecek.'
+        return f'{base} {detail}'.strip() if detail else base
+    return 'Kuyrukta, sırası bekleniyor.'
 
 
 class CampaignBulkView(CommunicationAPIView):
@@ -147,7 +228,12 @@ class CampaignDetailView(CampaignBulkView):
         if gate:
             return gate
 
-        return Response(CampaignDetailSerializer(campaign).data)
+        data = CampaignDetailSerializer(campaign).data
+        limit = 500
+        data['deliveries'] = _campaign_deliveries(campaign, limit=limit)
+        data['deliveries_total'] = Message.objects.filter(campaign=campaign).count()
+        data['deliveries_limit'] = limit
+        return Response(data)
 
 
 class CampaignConfirmView(CampaignBulkView):

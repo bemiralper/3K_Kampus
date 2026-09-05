@@ -2,8 +2,12 @@
 Gider v2 — API view'ları.
 Kök: /finans/api/gider/v2/...
 """
+import logging
+
 from rest_framework import status
 from rest_framework.response import Response
+
+logger = logging.getLogger(__name__)
 
 from apps.finans.application.gider_v2.gider_command_service import GiderCommandService
 from apps.finans.application.gider_v2.gider_query_service import GiderQueryService
@@ -89,11 +93,18 @@ class GiderV2ListCreateView(APIView):
         data = dict(serializer.validated_data)
         data['kurum_id'] = int(kurum_id)
         data['sube_id'] = sube_id
-        gider, errors = GiderCommandService().create(
-            data,
-            islem_yapan=request.user if request.user.is_authenticated else None,
-            ip_adresi=get_client_ip(request),
-        )
+        try:
+            gider, errors = GiderCommandService().create(
+                data,
+                islem_yapan=request.user if request.user.is_authenticated else None,
+                ip_adresi=get_client_ip(request),
+            )
+        except Exception:
+            logger.exception('Gider v2 create failed')
+            return Response(
+                {'error': 'Gider kaydı oluşturulamadı. Sunucu hatası — çek/senet veya cari hareket adımını kontrol edin.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
         return Response(GiderQueryService.serialize(gider), status=status.HTTP_201_CREATED)

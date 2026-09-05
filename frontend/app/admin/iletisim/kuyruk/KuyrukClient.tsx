@@ -9,6 +9,7 @@ import "./kuyruk.css";
 import {
   archiveOldQueueFailures,
   cancelQueueItem,
+  communicationPortalPaths,
   fetchAccessibleWhatsAppAccounts,
   fetchOutboundQueue,
   formatMessageStatus,
@@ -16,6 +17,7 @@ import {
   OutboundQueueScope,
   retryQueueItem,
   WhatsAppAccount,
+  type InboxPortal,
 } from "@/lib/communication-api";
 
 const PAGE_SIZE = 40;
@@ -74,7 +76,8 @@ function nextAttemptLabel(iso: string | null, status: string | null): string {
   return formatWhen(iso);
 }
 
-export default function KuyrukClient() {
+export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPortal }) {
+  const paths = communicationPortalPaths(portal);
   const [items, setItems] = useState<OutboundQueueItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -211,7 +214,11 @@ export default function KuyrukClient() {
       subtitle="Bekleyen gönderimler, son hatalar ve eski hata arşivi"
       icon="🗂️"
       maxWidth="full"
-      breadcrumbs={[{ label: "İletişim", href: "/admin/iletisim/panel" }, { label: "Mesaj Kuyruğu" }]}
+      breadcrumbs={
+        portal === "muhasebe"
+          ? [{ label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" }, { label: "Mesaj Kuyruğu" }]
+          : [{ label: "İletişim", href: "/admin/iletisim/panel" }, { label: "Mesaj Kuyruğu" }]
+      }
       actions={
         <div className="comm-dash-refresh">
           <span className="ipanel-live">
@@ -248,7 +255,7 @@ export default function KuyrukClient() {
             <div className="ipanel-kpi-value">{statusCounts.failed_archive}</div>
             <div className="ipanel-kpi-meta">{liveDays}+ gün, arşiv</div>
           </button>
-          <Link href="/admin/iletisim/panel" className="ipanel-kpi" style={{ "--kpi-accent": "#0262a7" } as never}>
+          <Link href={portal === "muhasebe" ? paths.compose : "/admin/iletisim/panel"} className="ipanel-kpi" style={{ "--kpi-accent": "#0262a7" } as never}>
             <div className="ipanel-kpi-label">Toplam kuyruk</div>
             <div className="ipanel-kpi-value">{statusCounts.pending + statusCounts.sending + statusCounts.failed}</div>
             <div className="ipanel-kpi-meta">Panele dön</div>
@@ -357,7 +364,7 @@ export default function KuyrukClient() {
                       <td>
                         <div>{item.source_label || "Manuel"}</div>
                         {item.campaign_id && (
-                          <Link href={`/admin/iletisim/kampanyalar/${item.campaign_id}`} className="ipanel-link">
+                          <Link href={paths.campaignDetail(String(item.campaign_id))} className="ipanel-link">
                             {item.campaign_title || "Kampanya"}
                           </Link>
                         )}
@@ -385,7 +392,7 @@ export default function KuyrukClient() {
                             </button>
                           )}
                           {item.conversation_id && (
-                            <Link href={`/admin/iletisim/mesajlar?conversation=${item.conversation_id}`} className="ipanel-link">
+                            <Link href={`${paths.chats}?conversation=${item.conversation_id}`} className="ipanel-link">
                               Sohbet
                             </Link>
                           )}

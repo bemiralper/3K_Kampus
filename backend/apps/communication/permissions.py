@@ -6,6 +6,23 @@ from rest_framework.permissions import BasePermission, SAFE_METHODS
 from shared.permissions import user_has_any_permission, user_has_permission
 
 
+def user_can_bulk_communicate(user) -> bool:
+    """Toplu gönderim / kuyruk / kampanya geçmişi.
+
+    `communication.bulk` veya `manage` yeterli. Muhasebe rolü canlıda henüz
+    `bulk` taşımıyorsa `finans.manage` ile de açılır — seed çalışmadan da
+    portal çalışır.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    return user_has_any_permission(
+        user,
+        'communication.bulk',
+        'communication.manage',
+        'finans.manage',
+    )
+
+
 class CommunicationModulePermission(BasePermission):
     """GET → communication.read/manage; yazma → communication.write/manage.
 
@@ -60,16 +77,12 @@ class CommunicationManagePermission(BasePermission):
 
 
 class CommunicationBulkPermission(BasePermission):
-    """Toplu gönderim — communication.bulk, manage veya koç write kapsamı."""
+    """Toplu gönderim — communication.bulk, manage, muhasebe veya koç write kapsamı."""
 
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
             return False
-        if user_has_any_permission(
-            request.user,
-            'communication.bulk',
-            'communication.manage',
-        ):
+        if user_can_bulk_communicate(request.user):
             return True
         from apps.coaching.services.coach_access import scoped_student_ids
 
