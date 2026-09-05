@@ -426,6 +426,7 @@ export type ResmiTatilGun = {
 
 export type ResmiTatilYearData = {
   year: number;
+  years?: number[];
   available_years: number[];
   synced_count: number;
   source: string;
@@ -470,7 +471,7 @@ export type ResmiTatilSyncResult = {
   last_synced_at?: string;
 };
 
-export async function fetchResmiTatiller(year: number): Promise<ApiResponse<ResmiTatilYearData>> {
+export async function fetchResmiTatiller(year: number | 'all'): Promise<ApiResponse<ResmiTatilYearData>> {
   return apiGet<ResmiTatilYearData>(`${BASE}/resmi-tatiller/?year=${year}`);
 }
 

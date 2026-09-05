@@ -5,10 +5,15 @@ from typing import Any, Optional
 
 from django.db import transaction
 
-from apps.ozel_ders.domain.models import BirebirHaftalikSlot, BirebirOgrenciProgrami
+from apps.ozel_ders.domain.models import BirebirHaftalikSlot, BirebirOgrenciProgrami, ProgramDurumu
 from apps.ozel_ders.services.conflict_service import validate_slot_window
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.program_service import get_program
+from apps.ozel_ders.services.quota_service import (
+    close_future_planlandi,
+    consumed_quota_minutes,
+    parse_hedef_dakika,
+)
 
 
 def serialize_slot(s: BirebirHaftalikSlot) -> dict:
@@ -32,6 +37,7 @@ def serialize_slot(s: BirebirHaftalikSlot) -> dict:
         'aktif': s.aktif,
         'baslangic_tarihi': s.baslangic_tarihi.isoformat() if s.baslangic_tarihi else None,
         'bitis_tarihi': s.bitis_tarihi.isoformat() if s.bitis_tarihi else None,
+        'hedef_dakika': s.hedef_dakika,
     }
 
 
@@ -49,6 +55,49 @@ def _parse_time(value) -> time:
 
 def _slot_overlap(a_start: time, a_end: time, b_start: time, b_end: time) -> bool:
     return a_start < b_end and a_end > b_start
+
+
+def _inherit_ders_plan(program: BirebirOgrenciProgrami, ders_id: int) -> dict:
+    sibling = (
+        BirebirHaftalikSlot.objects.filter(
+            aktif=True,
+            ders_id=ders_id,
+            program__ogrenci_id=program.ogrenci_id,
+            program__durum=ProgramDurumu.AKTIF,
+        )
+        .exclude(baslangic_tarihi__isnull=True, bitis_tarihi__isnull=True, hedef_dakika__isnull=True)
+        .order_by('-id')
+        .first()
+    )
+    if not sibling:
+        return {}
+    return {
+        'baslangic_tarihi': sibling.baslangic_tarihi,
+        'bitis_tarihi': sibling.bitis_tarihi,
+        'hedef_dakika': sibling.hedef_dakika,
+    }
+
+
+def _sync_ders_plan_to_siblings(slot: BirebirHaftalikSlot) -> None:
+    siblings = BirebirHaftalikSlot.objects.filter(
+        aktif=True,
+        ders_id=slot.ders_id,
+        program__ogrenci_id=slot.program.ogrenci_id,
+        program__durum=ProgramDurumu.AKTIF,
+    ).exclude(pk=slot.id)
+    from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+    for s in siblings:
+        if (
+            s.baslangic_tarihi == slot.baslangic_tarihi
+            and s.bitis_tarihi == slot.bitis_tarihi
+            and s.hedef_dakika == slot.hedef_dakika
+        ):
+            continue
+        s.baslangic_tarihi = slot.baslangic_tarihi
+        s.bitis_tarihi = slot.bitis_tarihi
+        s.hedef_dakika = slot.hedef_dakika
+        s.save(update_fields=['baslangic_tarihi', 'bitis_tarihi', 'hedef_dakika', 'updated_at'])
+        sync_future_sessions_for_slot(s)
 
 
 def _check_template_conflicts(
@@ -174,6 +223,14 @@ def create_slot(
         oda_id=data.get('oda_id'),
     )
 
+    inherited = _inherit_ders_plan(program, data['ders_id'])
+    baslangic_tarihi = data['baslangic_tarihi'] if 'baslangic_tarihi' in data else inherited.get('baslangic_tarihi')
+    bitis_tarihi = data['bitis_tarihi'] if 'bitis_tarihi' in data else inherited.get('bitis_tarihi')
+    if 'hedef_dakika' in data:
+        hedef_dakika = parse_hedef_dakika(data.get('hedef_dakika'))
+    else:
+        hedef_dakika = inherited.get('hedef_dakika')
+
     slot = BirebirHaftalikSlot.objects.create(
         program=program,
         gun=gun,
@@ -184,11 +241,14 @@ def create_slot(
         ogretmen_id=data['ogretmen_id'],
         oda_id=data.get('oda_id'),
         aktif=data.get('aktif', True),
-        baslangic_tarihi=data.get('baslangic_tarihi'),
-        bitis_tarihi=data.get('bitis_tarihi'),
+        baslangic_tarihi=baslangic_tarihi,
+        bitis_tarihi=bitis_tarihi,
+        hedef_dakika=hedef_dakika,
     )
     from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
     sync_future_sessions_for_slot(slot)
+    if any(k in data for k in ('baslangic_tarihi', 'bitis_tarihi', 'hedef_dakika')):
+        _sync_ders_plan_to_siblings(slot)
     return slot
 
 
@@ -245,9 +305,63 @@ def update_slot(
         slot.baslangic_tarihi = data['baslangic_tarihi']
     if 'bitis_tarihi' in data:
         slot.bitis_tarihi = data['bitis_tarihi']
+    if 'hedef_dakika' in data:
+        slot.hedef_dakika = parse_hedef_dakika(data.get('hedef_dakika'))
     slot.save()
     from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
     sync_future_sessions_for_slot(slot)
+    if any(k in data for k in ('baslangic_tarihi', 'bitis_tarihi', 'hedef_dakika')):
+        _sync_ders_plan_to_siblings(slot)
+    return slot
+
+
+@transaction.atomic
+def end_slot_early(
+    slot_id: int,
+    *,
+    kurum_id: int,
+    sube_id: int,
+    bitis_tarihi=None,
+) -> BirebirHaftalikSlot:
+    """Dersi verilen süreden önce kapatır: pencere bugüne çekilir, kalan planlı oturumlar kapanır."""
+    from django.utils import timezone
+
+    try:
+        slot = BirebirHaftalikSlot.objects.select_related('program').get(
+            pk=slot_id,
+            program__kurum_id=kurum_id,
+            program__sube_id=sube_id,
+        )
+    except BirebirHaftalikSlot.DoesNotExist:
+        raise OzelDersError('Slot bulunamadı.', 'not_found', 404)
+
+    today = timezone.localdate()
+    end_day = bitis_tarihi or today
+    if isinstance(end_day, str):
+        end_day = date.fromisoformat(end_day[:10])
+    start = slot.baslangic_tarihi or slot.program.baslangic_tarihi
+    if start and end_day < start:
+        raise OzelDersError('Bitiş tarihi başlangıçtan önce olamaz.', 'bitis_tarihi')
+
+    consumed = consumed_quota_minutes(
+        ogrenci_id=slot.program.ogrenci_id,
+        ders_id=slot.ders_id,
+        kurum_id=kurum_id,
+    )
+    slot.bitis_tarihi = end_day
+    if slot.hedef_dakika:
+        slot.hedef_dakika = consumed or None
+    slot.save(update_fields=['bitis_tarihi', 'hedef_dakika', 'updated_at'])
+
+    from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+    sync_future_sessions_for_slot(slot, rematerialize=False)
+    _sync_ders_plan_to_siblings(slot)
+    close_future_planlandi(
+        ogrenci_id=slot.program.ogrenci_id,
+        ders_id=slot.ders_id,
+        kurum_id=kurum_id,
+        today=end_day,
+    )
     return slot
 
 

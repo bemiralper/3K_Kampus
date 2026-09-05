@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation';
 import {
   createSlot,
   deleteSlot,
+  endSlotEarly,
   fetchProgramlar,
   fetchSlots,
   resolveDersLabel,
@@ -46,6 +47,8 @@ import {
   timeToMinutes,
   type PeriodRow,
 } from './haftalikGridUtils';
+import SlotSureFields from './SlotSureFields';
+import { EMPTY_SLOT_SURE, slotSureFromLesson, slotSurePayload } from './slotSure';
 import './ozel-ders.css';
 
 type HaftalikSaatConfig = {
@@ -179,6 +182,7 @@ export default function HaftalikSablonlariClient() {
     sure_dk: '50',
     ders_id: '',
     ogretmen_id: '',
+    ...EMPTY_SLOT_SURE,
   });
 
   const [detailLesson, setDetailLesson] = useState<BirebirSlot | null>(null);
@@ -189,9 +193,11 @@ export default function HaftalikSablonlariClient() {
     sure_dk: '50',
     ders_id: '',
     ogretmen_id: '',
+    ...EMPTY_SLOT_SURE,
   });
   const [savingEdit, setSavingEdit] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [endingEarly, setEndingEarly] = useState(false);
 
   const scrollYRef = useRef(0);
   const tableScrollRef = useRef<HTMLDivElement | null>(null);
@@ -408,6 +414,7 @@ export default function HaftalikSablonlariClient() {
       sure_dk: String(config.sureDk),
       ders_id: paketDersleri[0] ? String(paketDersleri[0].id) : '',
       ogretmen_id: '',
+      ...EMPTY_SLOT_SURE,
     });
     setCreateOpen(true);
   }
@@ -426,6 +433,7 @@ export default function HaftalikSablonlariClient() {
         sure_dk: Number(form.sure_dk || config.sureDk),
         ders_id: dersId,
         ogretmen_id: Number(form.ogretmen_id),
+        ...slotSurePayload(form),
       });
       setCreateOpen(false);
       show('Haftalık ders eklendi.');
@@ -448,6 +456,7 @@ export default function HaftalikSablonlariClient() {
       sure_dk: String(sure),
       ders_id: String(lesson.ders),
       ogretmen_id: String(lesson.ogretmen),
+      ...slotSureFromLesson(lesson),
     });
   }
 
@@ -463,6 +472,7 @@ export default function HaftalikSablonlariClient() {
         sure_dk: Number(editForm.sure_dk || config.sureDk),
         ders_id: Number(editForm.ders_id),
         ogretmen_id: Number(editForm.ogretmen_id),
+        ...slotSurePayload(editForm),
       });
       show('Ders güncellendi.');
       setDetailLesson(null);
@@ -471,6 +481,28 @@ export default function HaftalikSablonlariClient() {
       show(err instanceof Error ? err.message : 'Güncelleme başarısız — çakışma olabilir.', 'error');
     } finally {
       setSavingEdit(false);
+    }
+  }
+
+  async function onEndEarly() {
+    if (!detailLesson) return;
+    if (
+      !window.confirm(
+        'Bu dersi bugün itibarıyla kapatmak istediğinize emin misiniz? İşlenen oturumlar kalır, ilerideki planlı dersler kapanır.',
+      )
+    ) {
+      return;
+    }
+    setEndingEarly(true);
+    try {
+      await endSlotEarly(detailLesson.id);
+      show('Ders erken bitirildi. Kalan planlı oturumlar kapatıldı.');
+      setDetailLesson(null);
+      await reloadLessons();
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Erken bitirme başarısız.', 'error');
+    } finally {
+      setEndingEarly(false);
     }
   }
 
@@ -919,13 +951,6 @@ export default function HaftalikSablonlariClient() {
             </div>
             <p className="od-cell-muted" style={{ margin: 0 }}>
               Saat, üstteki Zaman Ayarları panelinden gelir (bu öğrenciye özel).
-              {activeProgram && (
-                <>
-                  {' '}
-                  Oturumlar {activeProgram.baslangic_tarihi} –{' '}
-                  {activeProgram.bitis_tarihi || 'süresiz'} aralığında üretilir.
-                </>
-              )}
             </p>
           </div>
 
@@ -966,6 +991,14 @@ export default function HaftalikSablonlariClient() {
               </select>
             </div>
           </div>
+          <SlotSureFields
+            value={form}
+            onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+            programStart={activeStudentGroup?.baslangic_tarihi || activeProgram?.baslangic_tarihi}
+            programEnd={activeStudentGroup?.bitis_tarihi || activeProgram?.bitis_tarihi}
+            gunLabel={GUN_LABELS[Number(form.gun)] || ''}
+            saatLabel={`${form.baslangic}–${form.bitis}`}
+          />
         </form>
       </Drawer>
 
@@ -1074,6 +1107,17 @@ export default function HaftalikSablonlariClient() {
                 </select>
               </div>
             </div>
+
+            <SlotSureFields
+              value={editForm}
+              onChange={(next) => setEditForm((f) => ({ ...f, ...next }))}
+              programStart={activeStudentGroup?.baslangic_tarihi || activeProgram?.baslangic_tarihi}
+              programEnd={activeStudentGroup?.bitis_tarihi || activeProgram?.bitis_tarihi}
+              gunLabel={GUN_LABELS[Number(editForm.gun)] || ''}
+              saatLabel={`${editForm.baslangic}–${editForm.bitis}`}
+              onEndEarly={() => void onEndEarly()}
+              endingEarly={endingEarly}
+            />
 
             <div className="od-drawer-section">
               <div className="od-form-section-title">Derslik</div>

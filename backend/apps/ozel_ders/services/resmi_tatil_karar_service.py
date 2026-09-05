@@ -111,8 +111,42 @@ def list_resmi_tatiller_for_year(
 
     return {
         'year': year,
+        'years': [year],
         'available_years': years,
         'synced_count': len(synced_keys),
+        'source': source,
+        'days': days,
+    }
+
+
+def list_resmi_tatiller_for_years(
+    *,
+    kurum_id: int,
+    sube_id: Optional[int],
+    years: list[int],
+) -> dict:
+    years = sorted({int(y) for y in years})
+    if not years:
+        years = available_years()
+    days: list[dict] = []
+    synced = 0
+    source = 'fallback'
+    available = available_years()
+    for y in years:
+        part = list_resmi_tatiller_for_year(
+            kurum_id=kurum_id, sube_id=sube_id, year=y,
+        )
+        days.extend(part.get('days') or [])
+        synced += int(part.get('synced_count') or 0)
+        source = part.get('source') or source
+        if part.get('available_years'):
+            available = sorted(set(available) | set(part['available_years']))
+    days.sort(key=lambda r: r['date'])
+    return {
+        'year': years[0] if len(years) == 1 else 0,
+        'years': years,
+        'available_years': available,
+        'synced_count': synced,
         'source': source,
         'days': days,
     }

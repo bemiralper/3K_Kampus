@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { IconChevronDown, IconClose, IconInbox } from './icons';
 
 /* -------------------------------------------------------------------------
@@ -229,12 +230,52 @@ export function SkeletonCards({ count = 4 }: { count?: number }) {
 /* -------------------------------------------------------------------------
    Drawer
    ------------------------------------------------------------------------- */
+let bodyLockCount = 0;
+let bodyOverflowBackup = '';
+const closeStack: Array<() => void> = [];
+let escapeBound = false;
+
+function onDocumentEscape(e: KeyboardEvent) {
+  if (e.key !== 'Escape') return;
+  closeStack[closeStack.length - 1]?.();
+}
+
+function lockBodyScroll(close: () => void) {
+  if (typeof document === 'undefined') return;
+  if (bodyLockCount === 0) {
+    bodyOverflowBackup = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+  }
+  bodyLockCount += 1;
+  closeStack.push(close);
+  if (!escapeBound) {
+    document.addEventListener('keydown', onDocumentEscape);
+    escapeBound = true;
+  }
+}
+
+function unlockBodyScroll(close: () => void) {
+  if (typeof document === 'undefined') return;
+  const idx = closeStack.lastIndexOf(close);
+  if (idx >= 0) closeStack.splice(idx, 1);
+  bodyLockCount = Math.max(0, bodyLockCount - 1);
+  if (bodyLockCount === 0) {
+    document.body.style.overflow = bodyOverflowBackup;
+    bodyOverflowBackup = '';
+    if (escapeBound) {
+      document.removeEventListener('keydown', onDocumentEscape);
+      escapeBound = false;
+    }
+  }
+}
+
 export function Drawer({
   open,
   onClose,
   title,
   description,
   wide,
+  layer = 0,
   footer,
   children,
 }: {
@@ -243,27 +284,28 @@ export function Drawer({
   title: ReactNode;
   description?: ReactNode;
   wide?: boolean;
+  layer?: number;
   footer?: ReactNode;
   children: ReactNode;
 }) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
   useEffect(() => {
     if (!open) return;
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose();
-    }
-    document.addEventListener('keydown', onKey);
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.removeEventListener('keydown', onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [open, onClose]);
+    const close = () => onCloseRef.current();
+    lockBodyScroll(close);
+    return () => unlockBodyScroll(close);
+  }, [open]);
 
-  if (!open) return null;
+  if (!open || typeof document === 'undefined') return null;
 
-  return (
-    <div className="od-drawer-overlay" onClick={onClose}>
+  return createPortal(
+    <div
+      className="od-drawer-overlay"
+      style={layer ? { zIndex: 2400 + layer } : undefined}
+      onClick={onClose}
+    >
       <div
         className={`od-drawer${wide ? ' od-drawer-wide' : ''}`}
         onClick={(e) => e.stopPropagation()}
@@ -282,7 +324,8 @@ export function Drawer({
         <div className="od-drawer-body">{children}</div>
         {footer && <div className="od-drawer-footer">{footer}</div>}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

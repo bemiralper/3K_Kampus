@@ -226,13 +226,15 @@ def ensure_program_from_enrollment(
     paket_id: int,
     ogrenci_egitim_paketi_id: Optional[int] = None,
     baslangic: Optional[date] = None,
+    kurum_id: Optional[int] = None,
+    sube_id: Optional[int] = None,
     user=None,
 ) -> tuple[Optional[BirebirOgrenciProgrami], str]:
-    """Kayıt finalize sonrası çağrı — ogrenci modelinden kurum/şube alır."""
+    """Kayıt finalize sonrası çağrı — kayıt şubesi varsa onu, yoksa öğrenci şubesini kullanır."""
     return ensure_program_for_package(
         ogrenci_id=ogrenci.id if hasattr(ogrenci, 'id') else int(ogrenci),
-        kurum_id=getattr(ogrenci, 'kurum_id', None),
-        sube_id=getattr(ogrenci, 'sube_id', None),
+        kurum_id=kurum_id or getattr(ogrenci, 'kurum_id', None),
+        sube_id=sube_id or getattr(ogrenci, 'sube_id', None),
         egitim_yili_id=egitim_yili_id,
         paket_turu=paket_turu,
         paket_id=paket_id,
@@ -286,6 +288,32 @@ def _ensure_ogrenci_egitim_paketi(
     return ep.id
 
 
+def _catalog_sync_kind(kalem) -> Optional[str]:
+    """Eski `paket` kalemini katalog adı + id ile çöz.
+
+    Canlıda aynı id birden fazla katalogda durur (Özel Ders 2 = AYT Matematik,
+    Grup 2 = Mezun Eşit Ağırlık). Sadece id'ye bakmak grup satırını özel ders
+    sanır veya tam tersi atlar; ad eşleşmesi şart.
+    """
+    from apps.egitim_paketleri.models import OzelDers, PremiumPaket
+
+    kid = getattr(kalem, 'kalem_id', None)
+    ad = (getattr(kalem, 'kalem_adi', None) or '').strip()
+    if not ad:
+        return None
+    if kid:
+        if OzelDers.objects.filter(pk=kid, ad__iexact=ad).exists():
+            return 'ozel_ders'
+        if PremiumPaket.objects.filter(pk=kid, ad__iexact=ad).exists():
+            return 'premium'
+        return None
+    if OzelDers.objects.filter(ad__iexact=ad).exists():
+        return 'ozel_ders'
+    if PremiumPaket.objects.filter(ad__iexact=ad).exists():
+        return 'premium'
+    return None
+
+
 def _kalem_sync_kind(kalem, sozlesme=None) -> Optional[str]:
     tur = getattr(kalem, 'kalem_turu', None)
     normalized = normalize_paket_turu(tur)
@@ -295,6 +323,9 @@ def _kalem_sync_kind(kalem, sozlesme=None) -> Optional[str]:
         root = normalize_paket_turu(getattr(sozlesme, 'paket_turu', None))
         if root in SYNCABLE_PAKET_TURLERI and getattr(sozlesme, 'paket_id', None) == getattr(kalem, 'kalem_id', None):
             return root
+        return _catalog_sync_kind(kalem)
+    if not normalized:
+        return _catalog_sync_kind(kalem)
     return None
 
 
@@ -413,15 +444,28 @@ def sync_sube_programs(
     if not egitim_yili_id:
         raise OzelDersError('egitim_yili_id zorunlu.', 'egitim_yili_id')
 
+    from apps.ogrenci.domain.models import OgrenciKayit
+
+    kayit_ogrenci_ids = OgrenciKayit.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili_id=egitim_yili_id,
+        aktif_mi=True,
+        ogrenci__aktif_mi=True,
+    ).values_list('ogrenci_id', flat=True)
+
     packages = (
         OgrenciEgitimPaketi.objects.filter(
             aktif_mi=True,
             paket_turu__in=list(SYNCABLE_PAKET_TURLERI),
-            ogrenci__kurum_id=kurum_id,
-            ogrenci__sube_id=sube_id,
+        )
+        .filter(
+            Q(ogrenci_id__in=kayit_ogrenci_ids)
+            | Q(ogrenci__kurum_id=kurum_id, ogrenci__sube_id=sube_id)
         )
         .select_related('ogrenci')
         .order_by('id')
+        .distinct()
     )
 
     summary = {'created': 0, 'updated': 0, 'skipped': 0, 'noop': 0}

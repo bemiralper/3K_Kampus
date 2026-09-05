@@ -6,6 +6,7 @@ import { useOgrenciPath } from '@/components/ogrenci/OgrenciPathProvider';
 import CoachPhotoLightbox from '@/components/coach/CoachPhotoLightbox';
 import type { EgitimKalemiRow, OgrenciListColumnId } from '../lib/ogrenci-list-utils';
 import { LIST_COLUMNS } from '../lib/ogrenci-list-utils';
+import { trFold } from '@/lib/text-format';
 import OgrenciBelgeMenu, { type OgrenciBelgeTipi } from './OgrenciBelgeMenu';
 
 function OgrenciListPhoto({
@@ -112,22 +113,30 @@ function renderKalemChips(ogrenci: OgrenciRow) {
   return <span className="ogrenci-kalem-empty">—</span>;
 }
 
-function escapeRegex(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 export function highlightText(text: string, query: string): React.ReactNode {
   if (!query.trim() || !text) return text;
-  const parts = text.split(new RegExp(`(${escapeRegex(query.trim())})`, 'gi'));
-  return parts.map((part, index) =>
-    part.toLowerCase() === query.trim().toLowerCase() ? (
-      <mark key={index} className="ogrenci-search-highlight">
-        {part}
-      </mark>
-    ) : (
-      part
-    )
-  );
+  const foldedText = trFold(text);
+  const foldedQ = trFold(query.trim());
+  if (!foldedQ) return text;
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  let from = 0;
+  let key = 0;
+  while (from < foldedText.length) {
+    const idx = foldedText.indexOf(foldedQ, from);
+    if (idx === -1) break;
+    if (idx > last) parts.push(text.slice(last, idx));
+    parts.push(
+      <mark key={key} className="ogrenci-search-highlight">
+        {text.slice(idx, idx + foldedQ.length)}
+      </mark>,
+    );
+    key += 1;
+    last = idx + foldedQ.length;
+    from = last;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts.length ? parts : text;
 }
 
 function columnLabel(id: OgrenciListColumnId, hasKalemFilter: boolean): string {

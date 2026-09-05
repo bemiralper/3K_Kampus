@@ -156,6 +156,16 @@ class DashboardSozlesmeOzetTest(TestCase):
         self.assertNotIn(self.ogrenci_odemesiz.id, ids)
         self.assertNotIn(self.ogrenci_odenen.id, ids)
 
+    def test_sozlesmesiz_without_year_still_lists_students(self):
+        res = self.client.get(
+            f'{API}/sozlesmesiz-ogrenciler/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(res.status_code, 200)
+        ids = {row['id'] for row in res.json()['results']}
+        self.assertIn(self.ogrenci_sozlesmesiz.id, ids)
+
     def test_pasif_ogrenci_sozlesmesiz_listede_yok(self):
         """Sözleşmesi iptal + öğrenci pasif → sözleşmesiz listede ve sayaçta olmamalı."""
         today = timezone.localdate()

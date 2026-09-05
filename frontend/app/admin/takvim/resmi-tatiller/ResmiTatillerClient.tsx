@@ -24,7 +24,7 @@ export default function ResmiTatillerClient() {
   const ready = Boolean(initialized && activeKurum && activeSube);
   const { show, node: toastNode } = useOzelDersToast();
 
-  const [year, setYear] = useState(dayjs().year());
+  const [year, setYear] = useState<number | 'all'>('all');
   const [availableYears, setAvailableYears] = useState<number[]>([2025, 2026, 2027]);
   const [days, setDays] = useState<ResmiTatilGun[]>([]);
   const [syncedCount, setSyncedCount] = useState(0);
@@ -61,9 +61,9 @@ export default function ResmiTatillerClient() {
   }, [load]);
 
   const yearOptions = useMemo(() => {
-    const set = new Set([...availableYears, year, dayjs().year()]);
+    const set = new Set([...availableYears, dayjs().year(), dayjs().year() + 1]);
     return Array.from(set).sort((a, b) => a - b);
-  }, [availableYears, year]);
+  }, [availableYears]);
 
   const summary = useMemo(() => {
     const resmi = days.filter((d) => d.source !== 'cevre');
@@ -75,7 +75,7 @@ export default function ResmiTatillerClient() {
   async function onSync() {
     setSyncing(true);
     try {
-      const res = await syncResmiTatiller(year);
+      const res = await syncResmiTatiller(year === 'all' ? undefined : year);
       if (!res.success || !res.data) {
         throw new Error(res.error || 'Senkron başarısız');
       }
@@ -172,10 +172,14 @@ export default function ResmiTatillerClient() {
         <div className="od-head-actions">
           <select
             className="od-select"
-            value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
+            value={year === 'all' ? 'all' : String(year)}
+            onChange={(e) => {
+              const v = e.target.value;
+              setYear(v === 'all' ? 'all' : Number(v));
+            }}
             aria-label="Yıl"
           >
+            <option value="all">Tümü</option>
             {yearOptions.map((y) => (
               <option key={y} value={y}>
                 {y}
@@ -234,7 +238,7 @@ export default function ResmiTatillerClient() {
           ) : days.length === 0 ? (
             <EmptyState
               icon={<IconCalendar size={24} />}
-              title="Bu yıl için tatil yok"
+              title="Tatil yok"
               description="Önce Senkronize et ile resmi tatilleri takvime alın."
             />
           ) : (

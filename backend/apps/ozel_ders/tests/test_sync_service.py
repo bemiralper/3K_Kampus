@@ -6,7 +6,7 @@ from apps.egitim_paketleri.models import OzelDers, PremiumPaket
 from apps.egitim_tanimlari.models import Ders
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
-from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi
+from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciKayit
 from apps.ozel_ders.domain.models import (
     BirebirHaftalikSlot,
     BirebirOgrenciProgrami,
@@ -203,6 +203,83 @@ class SyncServiceTests(TestCase):
         self.assertEqual(summary2['skipped'], 1)
         self.assertEqual(summary2['created'], 0)
 
+    def test_ek_hizmet_paket_kalem_resolves_ozel_ders_by_name(self):
+        """Canlı Hamza Tatar: ek_hizmet sözleşmede kalem_turu=paket + AYT Matematik."""
+        from apps.egitim_paketleri.models import GrupDersi
+
+        GrupDersi.objects.create(
+            ad='Mezun Eşit Ağırlık Grup',
+            kod='MEZUN',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            brut_fiyat=5000,
+        )
+        sozlesme = Sozlesme.objects.create(
+            sozlesme_no='SZ-OD-EKH',
+            ogrenci=self.ogrenci,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=self.sube,
+            baslangic_tarihi=date(2025, 9, 1),
+            bitis_tarihi=date(2026, 6, 15),
+            paket_turu='ek_hizmet',
+            paket_id=None,
+            paket_adi='Ek Hizmetler',
+            brut_tutar=1000,
+            net_tutar=1000,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        SozlesmeKalemi.objects.create(
+            sozlesme=sozlesme,
+            kalem_turu=KalemTuru.PAKET,
+            kalem_id=self.ozel_paket.id,
+            kalem_adi=self.ozel_paket.ad,
+            brut_tutar=1000,
+            net_tutar=1000,
+        )
+        program, action = ensure_program_from_sozlesme(sozlesme)
+        self.assertEqual(action, 'created')
+        self.assertEqual(program.ozel_ders_paket_id, self.ozel_paket.id)
+
+    def test_paket_kalem_grup_adi_does_not_become_ozel_ders(self):
+        from apps.egitim_paketleri.models import GrupDersi
+
+        grup = GrupDersi.objects.create(
+            ad='Sayısal Grup',
+            kod='SAY',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            brut_fiyat=5000,
+        )
+        sozlesme = Sozlesme.objects.create(
+            sozlesme_no='SZ-OD-GRUP',
+            ogrenci=self.ogrenci,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=self.sube,
+            baslangic_tarihi=date(2025, 9, 1),
+            bitis_tarihi=date(2026, 6, 15),
+            paket_turu='ek_hizmet',
+            paket_id=None,
+            paket_adi='Ek Hizmetler',
+            brut_tutar=1000,
+            net_tutar=1000,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        SozlesmeKalemi.objects.create(
+            sozlesme=sozlesme,
+            kalem_turu=KalemTuru.PAKET,
+            kalem_id=grup.id,
+            kalem_adi=grup.ad,
+            brut_tutar=1000,
+            net_tutar=1000,
+        )
+        program, action = ensure_program_from_sozlesme(sozlesme)
+        self.assertIsNone(program)
+        self.assertEqual(action, 'noop')
+
     def test_sozlesme_kalem_creates_program(self):
         sozlesme = Sozlesme.objects.create(
             sozlesme_no='SZ-OD-KALEM',
@@ -236,5 +313,36 @@ class SyncServiceTests(TestCase):
                 paket_turu='ozel_ders',
                 paket_id=self.ozel_paket.id,
                 aktif_mi=True,
+            ).exists()
+        )
+
+    def test_sync_includes_student_by_kayit_sube(self):
+        other = Sube.objects.create(kurum=self.kurum, ad='Diğer', kod='ODD')
+        transferred = Ogrenci.objects.create(
+            kurum=self.kurum, sube=other, ad='Zeynep', soyad='Kaya', aktif_mi=True,
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=transferred,
+            egitim_yili=self.ey,
+            kurum=self.kurum,
+            sube=self.sube,
+            aktif_mi=True,
+        )
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=transferred,
+            paket_turu='ozel_ders',
+            paket_id=self.ozel_paket.id,
+            paket_adi=self.ozel_paket.ad,
+            aktif_mi=True,
+        )
+        summary = sync_sube_programs(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            egitim_yili_id=self.ey.id,
+        )
+        self.assertGreaterEqual(summary['created'], 1)
+        self.assertTrue(
+            BirebirOgrenciProgrami.objects.filter(
+                ogrenci=transferred, sube=self.sube, egitim_yili=self.ey,
             ).exists()
         )

@@ -45,11 +45,13 @@ export default function BirebirTelafiClient() {
           telafi_durumu: 'BEKLENIYOR',
           start_date: dayjs().subtract(60, 'day').format('YYYY-MM-DD'),
           end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
+          skip_materialize: 1,
         }),
         fetchOturumlar({
           oturum_turu: 'TELAFI',
           start_date: dayjs().subtract(30, 'day').format('YYYY-MM-DD'),
           end_date: dayjs().add(60, 'day').format('YYYY-MM-DD'),
+          skip_materialize: 1,
         }),
       ]);
       setCandidates(c);

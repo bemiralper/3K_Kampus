@@ -23,6 +23,7 @@ from apps.ozel_ders.services.conflict_service import list_holidays
 from apps.ozel_ders.services import resmi_tatil_karar_service
 from apps.ozel_ders.services import ogrenci_ozel_ders_dashboard
 from apps.ozel_ders.services import student_lesson_summary
+from apps.ozel_ders.services import ders_rapor_pdf, ders_tatil_service, haftalik_program_pdf
 from apps.ozel_ders.services.errors import OzelDersError
 from shared.permissions import require_module_permission, user_has_permission
 
@@ -203,6 +204,26 @@ def slot_detail(request, slot_id):
 
 @csrf_exempt
 @ozel_ders_api(methods=['POST'])
+def slot_end_early(request, slot_id):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        body = json_body(request)
+        bitis = parse_date_field(body.get('bitis_tarihi'))
+        s = slot_service.end_slot_early(
+            slot_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            bitis_tarihi=bitis,
+        )
+        return JsonResponse({'success': True, 'data': slot_service.serialize_slot(s)})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['POST'])
 def slot_swap(request):
     ctx, err = mandatory_ozel_ders_context(request)
     if err:
@@ -300,6 +321,268 @@ def ogrenci_ozet_donem(request, ogrenci_id: int):
         return error_response(exc)
 
 
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_haftalik_program_pdf(request, ogrenci_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        payload = haftalik_program_pdf.collect_weekly_program(
+            ogrenci_id=ogrenci_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+        )
+        return haftalik_program_pdf.pdf_http_response(payload)
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_haftalik_program_onizleme(request, ogrenci_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        data = haftalik_program_pdf.preview_haftalik_program(
+            ogrenci_id=ogrenci_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['POST'])
+def ogrenci_haftalik_program_gonder(request, ogrenci_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    body = json_body(request)
+    raw_veli_ids = body.get('veli_ids')
+    veli_ids = None
+    if isinstance(raw_veli_ids, list):
+        veli_ids = []
+        for item in raw_veli_ids:
+            try:
+                veli_ids.append(int(item))
+            except (TypeError, ValueError):
+                continue
+    include_student = body.get('include_student')
+    if include_student is not None:
+        include_student = include_student is not False
+    try:
+        data = haftalik_program_pdf.send_haftalik_program(
+            ogrenci_id=ogrenci_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            send_veli=body.get('send_veli', True) is not False,
+            send_ogrenci=body.get('send_ogrenci', True) is not False,
+            veli_ids=veli_ids,
+            include_student=include_student,
+            user=request.user,
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+def _parse_veli_ids(body: dict) -> list[int] | None:
+    raw = body.get('veli_ids')
+    if not isinstance(raw, list):
+        return None
+    ids: list[int] = []
+    for item in raw:
+        try:
+            ids.append(int(item))
+        except (TypeError, ValueError):
+            continue
+    return ids
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_ders_ozeti_pdf(request, ogrenci_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        payload = ders_rapor_pdf.collect_ders_ozet(
+            ogrenci_id=ogrenci_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=request.GET.get('start_date'),
+            end_date=request.GET.get('end_date'),
+        )
+        pdf_bytes, filename = ders_rapor_pdf.render_ders_ozet_pdf(payload)
+        return ders_rapor_pdf.pdf_http_response(pdf_bytes, filename)
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_ders_ozeti_onizleme(request, ogrenci_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        data = ders_rapor_pdf.preview_ders_ozet(
+            ogrenci_id=ogrenci_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=request.GET.get('start_date'),
+            end_date=request.GET.get('end_date'),
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['POST'])
+def ogrenci_ders_ozeti_gonder(request, ogrenci_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    body = json_body(request)
+    include_student = body.get('include_student')
+    if include_student is not None:
+        include_student = include_student is not False
+    try:
+        data = ders_rapor_pdf.send_ders_ozet(
+            ogrenci_id=ogrenci_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=body.get('start_date') or request.GET.get('start_date'),
+            end_date=body.get('end_date') or request.GET.get('end_date'),
+            send_veli=body.get('send_veli', True) is not False,
+            send_ogrenci=body.get('send_ogrenci', True) is not False,
+            veli_ids=_parse_veli_ids(body),
+            include_student=include_student,
+            user=request.user,
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_ders_gecmis(request, ogrenci_id: int, ders_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        payload = ders_rapor_pdf.collect_ders_timeline(
+            ogrenci_id=ogrenci_id,
+            ders_id=ders_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=request.GET.get('start_date'),
+            end_date=request.GET.get('end_date'),
+        )
+        payload.pop('ogrenci', None)
+        return JsonResponse({'success': True, 'data': payload})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_ders_gecmis_pdf(request, ogrenci_id: int, ders_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        payload = ders_rapor_pdf.collect_ders_timeline(
+            ogrenci_id=ogrenci_id,
+            ders_id=ders_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=request.GET.get('start_date'),
+            end_date=request.GET.get('end_date'),
+        )
+        pdf_bytes, filename = ders_rapor_pdf.render_ders_timeline_pdf(payload)
+        return ders_rapor_pdf.pdf_http_response(pdf_bytes, filename)
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['GET'])
+def ogrenci_ders_gecmis_onizleme(request, ogrenci_id: int, ders_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        data = ders_rapor_pdf.preview_ders_timeline(
+            ogrenci_id=ogrenci_id,
+            ders_id=ders_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=request.GET.get('start_date'),
+            end_date=request.GET.get('end_date'),
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['POST'])
+def ogrenci_ders_gecmis_gonder(request, ogrenci_id: int, ders_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    body = json_body(request)
+    include_student = body.get('include_student')
+    if include_student is not None:
+        include_student = include_student is not False
+    try:
+        data = ders_rapor_pdf.send_ders_timeline(
+            ogrenci_id=ogrenci_id,
+            ders_id=ders_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=body.get('start_date') or request.GET.get('start_date'),
+            end_date=body.get('end_date') or request.GET.get('end_date'),
+            send_veli=body.get('send_veli', True) is not False,
+            send_ogrenci=body.get('send_ogrenci', True) is not False,
+            veli_ids=_parse_veli_ids(body),
+            include_student=include_student,
+            user=request.user,
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['POST'])
+def ogrenci_ders_gecmis_tatil(request, ogrenci_id: int, ders_id: int):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    body = json_body(request)
+    try:
+        data = ders_tatil_service.set_ogrenci_ders_tatil(
+            ogrenci_id=ogrenci_id,
+            ders_id=ders_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            day=body.get('date') or body.get('tarih'),
+            mode=body.get('mode') or '',
+            user=request.user,
+        )
+        return JsonResponse({'success': True, 'data': data})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
 # ─── Resmi tatiller (katalog sync + karar) ───────────────────
 
 @csrf_exempt
@@ -311,13 +594,22 @@ def resmi_tatil_list_sync(request):
     try:
         if request.method == 'GET':
             from datetime import date as date_cls
+            from apps.takvim.data.resmi_tatiller_tr import available_years as resmi_tatil_years
 
-            year = _int_or_none(request.GET.get('year')) or date_cls.today().year
-            data = resmi_tatil_karar_service.list_resmi_tatiller_for_year(
-                kurum_id=ctx['kurum_id'],
-                sube_id=ctx['sube_id'],
-                year=year,
-            )
+            year_raw = (request.GET.get('year') or '').strip().lower()
+            if year_raw in ('all', 'tumu', '*'):
+                data = resmi_tatil_karar_service.list_resmi_tatiller_for_years(
+                    kurum_id=ctx['kurum_id'],
+                    sube_id=ctx['sube_id'],
+                    years=resmi_tatil_years(),
+                )
+            else:
+                year = _int_or_none(year_raw) or date_cls.today().year
+                data = resmi_tatil_karar_service.list_resmi_tatiller_for_year(
+                    kurum_id=ctx['kurum_id'],
+                    sube_id=ctx['sube_id'],
+                    year=year,
+                )
             return JsonResponse({'success': True, 'data': data})
 
         body = json_body(request)
@@ -400,7 +692,14 @@ def oturum_list_create(request):
         if request.method == 'GET':
             start_date = request.GET.get('start_date')
             end_date = request.GET.get('end_date')
-            if start_date and end_date:
+            skip_materialize = (request.GET.get('skip_materialize') or '').lower() in (
+                '1', 'true', 'yes',
+            )
+            # Telafi / tür filtreli listeler mevcut oturumları okur; tüm programları
+            # yeniden üretmek sayfayı (özellikle Birebir Telafi) saniyelerce yavaşlatır.
+            if request.GET.get('telafi_durumu') or request.GET.get('oturum_turu'):
+                skip_materialize = True
+            if start_date and end_date and not skip_materialize:
                 try:
                     materialize_service.materialize_active_programs(
                         kurum_id=ctx['kurum_id'],
@@ -422,6 +721,7 @@ def oturum_list_create(request):
                 ogretmen_id=_int_or_none(request.GET.get('ogretmen_id')),
                 ogrenci_id=_int_or_none(request.GET.get('ogrenci_id')),
                 program_id=_int_or_none(request.GET.get('program_id')),
+                egitim_yili_id=_int_or_none(request.GET.get('egitim_yili_id')),
             )
             return JsonResponse({'success': True, 'data': data})
 

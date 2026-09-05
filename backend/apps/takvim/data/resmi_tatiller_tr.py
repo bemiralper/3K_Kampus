@@ -116,15 +116,18 @@ def get_holiday(key: str) -> Optional[ResmiTatil]:
 
 
 def available_years() -> list[int]:
+    """Google yılları + yedek katalog + içinde bulunduğumuz ve sonraki yıl."""
+    years: set[int] = set(_RELIGIOUS.keys())
+    today = date.today()
+    years.add(today.year)
+    years.add(today.year + 1)
     try:
         from apps.takvim.application.google_holiday_fetch import available_years_from_google
 
-        years = available_years_from_google()
-        if years:
-            return years
+        years.update(available_years_from_google() or [])
     except Exception:
         pass
-    return sorted(_RELIGIOUS.keys())
+    return sorted(years)
 
 
 # Geriye dönük uyumluluk

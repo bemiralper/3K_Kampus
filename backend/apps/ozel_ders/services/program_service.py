@@ -167,7 +167,12 @@ def update_program(program_id: int, data: dict[str, Any], *, kurum_id: int, sube
     if p.bitis_tarihi and p.baslangic_tarihi and p.bitis_tarihi < p.baslangic_tarihi:
         raise OzelDersError('Bitiş tarihi başlangıçtan önce olamaz.', 'bitis_tarihi')
 
+    date_changed = 'baslangic_tarihi' in data or 'bitis_tarihi' in data
     p.save()
+    if date_changed and p.durum == ProgramDurumu.AKTIF:
+        from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+        for slot in p.slots.filter(aktif=True):
+            sync_future_sessions_for_slot(slot)
     return p
 
 

@@ -19,7 +19,7 @@ from apps.ozel_ders.domain.models import (
     OturumTuru,
     ProgramDurumu,
 )
-from apps.ozel_ders.services.slot_service import delete_slot, update_slot
+from apps.ozel_ders.services.slot_service import delete_slot, end_slot_early, update_slot
 from apps.personel.domain.models import Personel
 from apps.sube.domain.models import Sube
 
@@ -191,3 +191,51 @@ class SlotOturumSyncTests(TestCase):
         future.refresh_from_db()
         self.assertEqual(future.start_time, time(13, 0))
         self.assertTrue(future.is_active)
+
+    def test_kota_dusurulunce_fazla_planlandi_kapanir(self):
+        days = []
+        cur = self.today + timedelta(days=1)
+        while len(days) < 6:
+            if cur.isoweekday() == self.gun:
+                days.append(cur)
+            cur += timedelta(days=1)
+        sessions = [self._oturum(d) for d in days]
+        self.slot.hedef_dakika = 300
+        self.slot.save(update_fields=['hedef_dakika'])
+
+        with patch('apps.ozel_ders.services.materialize_service.materialize_program', return_value={'created': 0}):
+            update_slot(
+                self.slot.id,
+                {'hedef_dakika': 150},
+                kurum_id=self.kurum.id,
+                sube_id=self.sube.id,
+            )
+
+        for s in sessions:
+            s.refresh_from_db()
+        active = [s for s in sessions if s.is_active]
+        self.assertEqual(len(active), 3)
+        self.assertEqual({s.session_date for s in active}, set(days[:3]))
+
+    def test_erken_bitir_kapatir_gelecek_planliyi_islendiyi_birakir(self):
+        past = self._oturum(self.today - timedelta(days=7), durum=OturumDurumu.ISLENDI)
+        today_session = self._oturum(self.today, durum=OturumDurumu.PLANLANDI)
+        future = self._oturum(self._next_weekday(self.gun))
+        self.slot.hedef_dakika = 300
+        self.slot.save(update_fields=['hedef_dakika'])
+
+        updated = end_slot_early(
+            self.slot.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+
+        past.refresh_from_db()
+        today_session.refresh_from_db()
+        future.refresh_from_db()
+        self.assertTrue(past.is_active)
+        self.assertEqual(past.durum, OturumDurumu.ISLENDI)
+        self.assertTrue(today_session.is_active)
+        self.assertFalse(future.is_active)
+        self.assertEqual(updated.bitis_tarihi, self.today)
+        self.assertEqual(updated.hedef_dakika, 50)

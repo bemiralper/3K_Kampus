@@ -137,6 +137,26 @@ class YoklamaTelafiTests(TestCase):
         )
         self.assertEqual(result.telafi_durumu, TelafiDurumu.BEKLENIYOR)
 
+    @patch('apps.ozel_ders.services.notify_service._send_to_veliler', return_value=1)
+    def test_notify_ogrenci_gelmedi_uses_separate_events(self, send):
+        from apps.ozel_ders.services.notify_service import (
+            EVENT_OGRENCI_GELMEDI,
+            EVENT_OGRENCI_GELMEDI_TELAFI,
+            notify_yoklama,
+        )
+        yok = self._oturum(durum=OturumDurumu.OGRENCI_GELMEDI, telafi_durumu=TelafiDurumu.GEREKMIYOR)
+        with self.captureOnCommitCallbacks(execute=True):
+            notify_yoklama(yok, send_whatsapp=True)
+        self.assertEqual(send.call_args.args[1], EVENT_OGRENCI_GELMEDI)
+
+        send.reset_mock()
+        bekleyen = self._oturum(
+            durum=OturumDurumu.OGRENCI_GELMEDI, telafi_durumu=TelafiDurumu.BEKLENIYOR,
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            notify_yoklama(bekleyen, send_whatsapp=True)
+        self.assertEqual(send.call_args.args[1], EVENT_OGRENCI_GELMEDI_TELAFI)
+
     def test_6_iptal_sebep(self):
         o = self._oturum()
         result = oturum_service.set_durum(
@@ -342,6 +362,7 @@ class YoklamaTelafiTests(TestCase):
             EVENT_IPTAL,
             EVENT_ISLENDI,
             EVENT_OGRENCI_GELMEDI,
+            EVENT_OGRENCI_GELMEDI_TELAFI,
             EVENT_OGRETMEN_GELMEDI,
             EVENT_TELAFI_PLANLANDI,
             _fallback_body,
@@ -356,18 +377,20 @@ class YoklamaTelafiTests(TestCase):
             'telafi_tarihi': '18 Ocak 2026 Pazar',
             'telafi_saati': '14.00',
         }
-        ogretmen = _fallback_body(EVENT_OGRETMEN_GELMEDI, ctx, telafi_bekleniyor=True)
+        ogretmen = _fallback_body(EVENT_OGRETMEN_GELMEDI, ctx)
         self.assertIn('Değerli Velimiz', ogretmen)
         self.assertIn('Ahmet Yılmaz', ogretmen)
         self.assertIn('öğretmenimizin katılım sağlayamaması', ogretmen)
         self.assertIn('telafisi yapılacaktır', ogretmen)
-        ogrenci = _fallback_body(EVENT_OGRENCI_GELMEDI, ctx, telafi_bekleniyor=True)
+        self.assertNotIn('{{telafi_notu}}', ogretmen)
+        ogrenci = _fallback_body(EVENT_OGRENCI_GELMEDI_TELAFI, ctx)
         self.assertIn('katılım sağlanamamıştır', ogrenci)
         self.assertIn('telafi edilecektir', ogrenci)
-        ogrenci_yok = _fallback_body(EVENT_OGRENCI_GELMEDI, ctx, telafi_bekleniyor=False)
+        ogrenci_yok = _fallback_body(EVENT_OGRENCI_GELMEDI, ctx)
         self.assertIn('katılım sağlanamamıştır', ogrenci_yok)
         self.assertNotIn('telafi edilecektir', ogrenci_yok)
         self.assertNotIn('telafisi yapılacaktır', ogrenci_yok)
+        self.assertNotIn('—', ogrenci_yok)
         iptal = _fallback_body(EVENT_IPTAL, ctx)
         self.assertIn('İptal nedeni', iptal)
         self.assertIn('Hastalık', iptal)
@@ -408,3 +431,29 @@ class YoklamaTelafiTests(TestCase):
                 kurum_id=self.kurum.id,
                 sube_id=self.sube.id,
             )
+
+    def test_create_oturum_links_active_program(self):
+        from apps.ozel_ders.domain.models import BirebirOgrenciProgrami, ProgramDurumu
+
+        program = BirebirOgrenciProgrami.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            ogrenci=self.ogrenci,
+            baslangic_tarihi=date.today(),
+            durum=ProgramDurumu.AKTIF,
+        )
+        oturum, _ = oturum_service.create_oturum(
+            {
+                'session_date': date.today().isoformat(),
+                'start_time': '18:00',
+                'end_time': '19:00',
+                'ogrenci_id': self.ogrenci.id,
+                'ders_id': self.ders.id,
+                'ogretmen_id': self.ogretmen.id,
+                'egitim_yili_id': self.ey.id,
+            },
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+        self.assertEqual(oturum.program_id, program.id)

@@ -779,11 +779,16 @@ class DirectRegistrationView(APIView):
                                     paket_id=db_id,
                                     ogrenci_egitim_paketi_id=ep.id,
                                     baslangic=giris_tarihi,
+                                    kurum_id=kurum_id,
+                                    sube_id=sube_id,
                                     user=request.user,
                                 )
                             except Exception:
-                                # Kayıt akışını bozma; program senkronu manuel de çalıştırılabilir
-                                pass
+                                import logging
+                                logging.getLogger(__name__).exception(
+                                    'Özel ders program senkronu başarısız (ogrenci=%s paket=%s)',
+                                    ogrenci.id, db_id,
+                                )
                         
                         # GrupDersi ise dahil ek hizmet/deneme/yayın paketlerini otomatik ekle
                         if kategori == "grup_dersleri" and paket_obj:

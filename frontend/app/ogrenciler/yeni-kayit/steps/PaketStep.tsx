@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { DenemePaketiInfo, EkHizmetInfo, PackageInfo, WizardData, YayinPaketiInfo } from "../types";
 import { useStudentPackageSelection } from "../hooks/useStudentPackageSelection";
+import { trIncludes } from "@/lib/text-format";
 
 interface PaketStepProps {
   data: WizardData;
@@ -102,8 +103,7 @@ export default function PaketStep({
     { packages, ekHizmetler, denemePaketleri, yayinPaketleri },
   );
 
-  const filterText = (text: string) =>
-    !searchTerm || text.toLowerCase().includes(searchTerm.toLowerCase());
+  const filterText = (text: string) => !searchTerm || trIncludes(text, searchTerm);
 
   const grupPaketleri = packages.filter((p) => p.kategori === "grup_dersleri" && filterText(p.ad || ""));
   const premiumPaketleri = packages.filter((p) => p.kategori === "premium_paketler" && filterText(p.ad || ""));

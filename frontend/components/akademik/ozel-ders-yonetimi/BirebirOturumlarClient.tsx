@@ -18,6 +18,7 @@ import {
   type PaketDersi,
   type SetOturumDurumPayload,
 } from '@/lib/ozel-ders-api';
+import { trIncludes } from '@/lib/text-format';
 import { formatOzelDersSaati, formatOzelDersTarihi } from '@/lib/ozel-ders-whatsapp-templates';
 import { exportOzelDersYoklamaPdf } from '@/lib/ozel-ders-yoklama-pdf';
 import { useKurum } from '@/lib/contexts/KurumContext';
@@ -329,12 +330,12 @@ export default function BirebirOturumlarClient() {
   }, [createOpen, ready, form.ders_turu, urlOgrenciId]);
 
   const filteredRows = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return rows;
     return rows.filter((r) =>
       [r.ogrenci_ad, resolveDersLabel(r, useKisaAd), r.ders_ad, r.ogretmen_ad]
         .filter(Boolean)
-        .some((v) => v!.toLowerCase().includes(q)),
+        .some((v) => trIncludes(v, q)),
     );
   }, [rows, search, useKisaAd]);
 

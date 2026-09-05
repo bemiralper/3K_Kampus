@@ -4,11 +4,14 @@ from datetime import date, datetime, time
 from typing import Any, Optional
 
 from django.db import transaction
+from django.db.models import Prefetch
 
 from apps.ozel_ders.domain.models import (
     BirebirDersOturumu,
+    BirebirOgrenciProgrami,
     OturumDurumu,
     OturumTuru,
+    ProgramDurumu,
     SebepKodu,
     TelafiDurumu,
 )
@@ -215,15 +218,23 @@ def list_oturumlar(
     ogretmen_id: Optional[int] = None,
     ogrenci_id: Optional[int] = None,
     program_id: Optional[int] = None,
+    egitim_yili_id: Optional[int] = None,
 ) -> list[dict]:
     qs = BirebirDersOturumu.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
         is_active=True,
     ).select_related(
-        'ogrenci', 'ders', 'ogretmen', 'oda', 'replaces_oturum',
+        'ogrenci', 'ders', 'ogretmen', 'oda', 'hakedis', 'replaces_oturum',
         'replaces_oturum__ders', 'replaces_oturum__ogretmen',
-    ).prefetch_related('telafi_oturumlari')
+    ).prefetch_related(
+        Prefetch(
+            'telafi_oturumlari',
+            queryset=BirebirDersOturumu.objects.filter(is_active=True).select_related(
+                'ders', 'ogretmen',
+            ),
+        ),
+    )
     if start_date:
         qs = qs.filter(session_date__gte=_parse_date(start_date))
     if end_date:
@@ -240,11 +251,49 @@ def list_oturumlar(
         qs = qs.filter(ogrenci_id=ogrenci_id)
     if program_id:
         qs = qs.filter(program_id=program_id)
+    if egitim_yili_id:
+        qs = qs.filter(egitim_yili_id=egitim_yili_id)
     # Liste için bildirimleri tek tek sorgulamamak — boş bırak, detayda dolu gelir
     return [
         serialize_oturum(o, include_bildirimler=False)
         for o in qs.order_by('session_date', 'start_time')
     ]
+
+
+def _resolve_program_id(data: dict[str, Any], *, kurum_id: int, sube_id: int) -> Optional[int]:
+    """Tek seferlik oturumu öğrencinin aktif birebir programına bağlar."""
+    if data.get('program_id'):
+        try:
+            return int(data['program_id'])
+        except (TypeError, ValueError):
+            return None
+    ogrenci_id = data.get('ogrenci_id')
+    if not ogrenci_id:
+        return None
+    qs = BirebirOgrenciProgrami.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        ogrenci_id=ogrenci_id,
+        durum=ProgramDurumu.AKTIF,
+    )
+    ey = data.get('egitim_yili_id')
+    if ey:
+        qs = qs.filter(egitim_yili_id=ey)
+    programs = list(qs.order_by('-id'))
+    if not programs:
+        return None
+    ders_id = data.get('ders_id')
+    if ders_id:
+        from apps.ozel_ders.services.sync_service import resolve_paket_dersleri
+        try:
+            ders_id = int(ders_id)
+        except (TypeError, ValueError):
+            ders_id = None
+        if ders_id:
+            for program in programs:
+                if any(d.get('id') == ders_id for d in resolve_paket_dersleri(program)):
+                    return program.id
+    return programs[0].id
 
 
 def _create_oturum_record(
@@ -274,7 +323,7 @@ def _create_oturum_record(
     )
 
     oturum = BirebirDersOturumu.objects.create(
-        program_id=data.get('program_id'),
+        program_id=_resolve_program_id(data, kurum_id=kurum_id, sube_id=sube_id),
         kurum_id=kurum_id,
         sube_id=sube_id,
         egitim_yili_id=data['egitim_yili_id'],

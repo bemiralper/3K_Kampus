@@ -24,8 +24,13 @@ from apps.ozel_ders.domain.models import (
     OturumTuru,
     ProgramDurumu,
 )
-from apps.ozel_ders.services.conflict_service import is_holiday, iter_dates_for_weekday
+from apps.ozel_ders.services.conflict_service import is_holiday, iter_dates_for_weekday, list_holidays
+from apps.ozel_ders.services.ders_tatil_service import build_tatil_hits
 from apps.ozel_ders.services.errors import OzelDersError
+from apps.ozel_ders.services.quota_service import (
+    QUOTA_STATUSES,
+    resolve_ders_hedef_dakika,
+)
 
 ATTENDED = {OturumDurumu.ISLENDI, OturumDurumu.ONLINE}
 QUOTA_TURU = {OturumTuru.OZEL, OturumTuru.TELAFI}
@@ -127,6 +132,9 @@ def calculate_student_private_lesson_summary(
                 'telafi_ders': 0,
                 'ek_ders': 0,
                 'iptal_ders': 0,
+                'hedef_dakika': None,
+                'kullanilan_dakika': 0,
+                'kalan_dakika': None,
             }
             ders_breakdown[ders_id] = entry
         elif ad and not entry['ders_ad']:
@@ -135,10 +143,14 @@ def calculate_student_private_lesson_summary(
         return entry
 
     # Planlanan: şablonun dönem içindeki her tekrarı 1 "ders" — tatiller hariç.
+    # Saat kotası varsa pencere tekrarları kota dolana kadar sayılır.
     planlanan_ders = 0
     tatilden_dusulen_ders = 0
     holiday_dates: set[date] = set()
+    planned_minutes_by_ders: dict[int, int] = {}
+    hedef_by_ders: dict[int, int | None] = {}
 
+    candidates: list[tuple[date, BirebirHaftalikSlot]] = []
     for slot in slots:
         slot_start = slot.baslangic_tarihi or slot.program.baslangic_tarihi
         slot_end = slot.bitis_tarihi or slot.program.bitis_tarihi or end
@@ -146,14 +158,30 @@ def calculate_student_private_lesson_summary(
         range_end = min(end, slot_end)
         if range_end < range_start:
             continue
-        entry = _ders_entry(slot.ders_id, slot.ders)
+        _ders_entry(slot.ders_id, slot.ders)
+        if slot.ders_id not in hedef_by_ders:
+            hedef_by_ders[slot.ders_id] = resolve_ders_hedef_dakika(
+                ogrenci_id=ogrenci_id, ders_id=slot.ders_id,
+            )
         for day in iter_dates_for_weekday(range_start, range_end, slot.gun):
-            if is_holiday(kurum_id, sube_id, day):
-                holiday_dates.add(day)
-                tatilden_dusulen_ders += 1
+            candidates.append((day, slot))
+    candidates.sort(key=lambda item: (item[0], item[1].id))
+
+    for day, slot in candidates:
+        entry = _ders_entry(slot.ders_id, slot.ders)
+        if is_holiday(kurum_id, sube_id, day):
+            holiday_dates.add(day)
+            tatilden_dusulen_ders += 1
+            continue
+        hedef = hedef_by_ders.get(slot.ders_id)
+        sure = slot.resolved_sure_dk()
+        if hedef:
+            already = planned_minutes_by_ders.get(slot.ders_id, 0)
+            if already + sure > hedef:
                 continue
-            planlanan_ders += 1
-            entry['planlanan_ders'] += 1
+            planned_minutes_by_ders[slot.ders_id] = already + sure
+        planlanan_ders += 1
+        entry['planlanan_ders'] += 1
 
     # Gerçek oturumlar — her kayıt 1 "ders"tir (süresi ne olursa olsun).
     oturum_qs = BirebirDersOturumu.objects.filter(
@@ -181,7 +209,10 @@ def calculate_student_private_lesson_summary(
                 ders_kisa_ad=d.get('kisa_ad', ''),
             )
 
-    for o in oturum_qs.only('durum', 'oturum_turu', 'ders_id', 'ders__ad', 'ders__kisa_ad'):
+    for o in oturum_qs.only(
+        'durum', 'oturum_turu', 'ders_id', 'start_time', 'end_time',
+        'ders__ad', 'ders__kisa_ad',
+    ):
         entry = _ders_entry(o.ders_id, o.ders)
         if o.oturum_turu == OturumTuru.TELAFI:
             telafi_ders += 1
@@ -195,10 +226,21 @@ def calculate_student_private_lesson_summary(
         if o.durum in ATTENDED and o.oturum_turu in QUOTA_TURU:
             islenen_ders += 1
             entry['islenen_ders'] += 1
+        if o.durum in QUOTA_STATUSES and o.oturum_turu in QUOTA_TURU:
+            entry['kullanilan_dakika'] += o.duration_minutes()
 
     kalan_ders = max(planlanan_ders - islenen_ders, 0)
     for entry in ders_breakdown.values():
         entry['kalan_ders'] = max(entry['planlanan_ders'] - entry['islenen_ders'], 0)
+        hedef = hedef_by_ders.get(entry['ders_id'])
+        if hedef is None:
+            hedef = resolve_ders_hedef_dakika(ogrenci_id=ogrenci_id, ders_id=entry['ders_id'])
+        entry['hedef_dakika'] = hedef
+        if hedef:
+            entry['kalan_dakika'] = max(hedef - entry['kullanilan_dakika'], 0)
+        else:
+            entry['kullanilan_dakika'] = 0
+            entry['kalan_dakika'] = None
 
     dersler_list = sorted(
         ders_breakdown.values(),
@@ -238,6 +280,14 @@ def calculate_student_private_lesson_summary(
             'tatilden_dusulen_ders': tatilden_dusulen_ders,
         },
         'dersler': dersler_list,
+        'tatiller': list_holidays(kurum_id, sube_id, start, end),
+        'tatil_carpmalari': build_tatil_hits(
+            ogrenci_id=ogrenci.id,
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            start=start,
+            end=end,
+        ),
         'paketler': paketler,
         'paket': {
             'program_sayisi': len(programs),
