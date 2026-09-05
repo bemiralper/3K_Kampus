@@ -29,6 +29,7 @@ def _campaign_deliveries(campaign, *, limit=500):
         resolve_conversation_display_name,
     )
     from apps.communication.application.delivery_error import summarize_delivery_failure
+
     from apps.communication.domain.models import OutboundQueueItem
 
     rows = []
@@ -207,6 +208,7 @@ class CampaignListCreateView(CampaignBulkView):
             campaign = service.confirm(
                 campaign,
                 sender_user_id=request.user.id if request.user.is_authenticated else None,
+                enqueue_async=True,
             )
         except ValidationError as exc:
             return Response({'error': str(exc.message if hasattr(exc, 'message') else exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -255,6 +257,7 @@ class CampaignConfirmView(CampaignBulkView):
             campaign = service.confirm(
                 campaign,
                 sender_user_id=request.user.id if request.user.is_authenticated else None,
+                enqueue_async=True,
             )
         except ValidationError as exc:
             return Response({'error': str(exc.message if hasattr(exc, 'message') else exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -285,6 +288,53 @@ class CampaignRetryFailedView(CampaignBulkView):
         data = CampaignDetailSerializer(campaign).data
         data['retried_count'] = result['retried_count']
         return Response(data)
+
+
+class CampaignProcessQueueView(CampaignBulkView):
+    """
+    Kampanyanın bekleyen mesajlarını hemen işlemeye başlar.
+
+    Normalde `process_communication_queue` cron'u yapar; cron durmuşsa veya
+    kullanıcı beklemek istemiyorsa bu uç kuyruğu elle tetikler.
+    """
+
+    def post(self, request, campaign_id):
+        kurum_id, sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
+
+        campaign = OutboundCampaignRepository.get_by_id(kurum_id, campaign_id, sube_id=sube_id)
+        if not campaign:
+            return Response({'error': 'Kampanya bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+
+        gate = assert_record_sube_access(request, kurum_id, campaign.sube_id)
+        if gate:
+            return gate
+
+        from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
+        from apps.communication.domain.enums import CampaignStatus
+        from apps.communication.domain.models import Message
+
+        # Onaylandı ama alıcıları hiç üretilmemiş kampanya (materialize thread'i düşmüş)
+        if (
+            campaign.status in (CampaignStatus.DRAFT, CampaignStatus.CONFIRMED)
+            and not Message.objects.filter(campaign=campaign).exists()
+        ):
+            try:
+                campaign = CampaignService().confirm(
+                    campaign,
+                    sender_user_id=request.user.id if request.user.is_authenticated else None,
+                )
+            except ValidationError as exc:
+                return Response(
+                    {'error': str(exc.message if hasattr(exc, 'message') else exc)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+        else:
+            dispatch_process_outbound_queue(drain=True, background=True)
+
+        campaign.refresh_from_db()
+        return Response(CampaignDetailSerializer(campaign).data)
 
 
 class CampaignCancelView(CampaignBulkView):

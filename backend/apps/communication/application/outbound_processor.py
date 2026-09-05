@@ -527,3 +527,45 @@ def process_pending_batch(limit: int | None = None) -> dict[str, int]:
         else:
             failed += 1
     return {'processed': len(pending), 'sent': sent, 'failed': failed}
+
+
+def _drain_seconds(explicit: float | None) -> float:
+    if explicit is not None:
+        return max(0.0, float(explicit))
+    return max(0.0, float(getattr(settings, 'COMMUNICATION_QUEUE_DRAIN_SECONDS', 50) or 0))
+
+
+def drain_pending_queue(
+    *,
+    max_seconds: float | None = None,
+    batch_size: int | None = None,
+    max_messages: int | None = None,
+) -> dict[str, int]:
+    """
+    Kuyruk boşalana ya da süre bütçesi dolana kadar batch batch işler.
+
+    Tek batch (varsayılan 20) toplu gönderimde yetersiz kalıyordu: 500 kişilik
+    bir kampanyanın kalanı bir sonraki cron'a kalıyor, cron yoksa hiç
+    gönderilmiyordu. Süre bütçesi cron aralığından kısa tutulmalı ki iki
+    çalışma üst üste binmesin.
+    """
+    budget = _drain_seconds(max_seconds)
+    deadline = time.monotonic() + budget if budget else None
+    totals = {'processed': 0, 'sent': 0, 'failed': 0, 'batches': 0}
+
+    while True:
+        result = process_pending_batch(limit=batch_size)
+        totals['processed'] += result['processed']
+        totals['sent'] += result['sent']
+        totals['failed'] += result['failed']
+        totals['batches'] += 1
+
+        if result['processed'] == 0:
+            break
+        if max_messages is not None and totals['processed'] >= max_messages:
+            break
+        if deadline is None or time.monotonic() >= deadline:
+            break
+
+    totals['pending_left'] = OutboundQueueRepository.count_pending()
+    return totals

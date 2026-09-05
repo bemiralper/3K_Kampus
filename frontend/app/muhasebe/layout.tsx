@@ -21,6 +21,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/ogrenci/liste": "Öğrenci Listesi",
   "/muhasebe/ogrenci/yeni-kayit": "Yeni Kayıt",
   "/muhasebe/odeme-takip": "Sözleşme/Tahsilat",
+  "/muhasebe/iletisim/sohbetler": "WhatsApp",
   "/muhasebe/iletisim/mesajlar": "WhatsApp",
   "/muhasebe/iletisim/sablonlar": "WhatsApp Şablonları",
   "/muhasebe/iletisim/toplu-gonder": "Toplu Gönderim",

@@ -8,9 +8,11 @@ import {
   createComposerState,
   plainTextFromComposer,
   ComposerState,
+  hasVisibleWhatsAppText,
   parseWhatsAppText,
   resolvePreviewVariables,
 } from "./composer-utils";
+import { trIncludes, trFold } from "@/lib/text-format";
 import { useLivePreviewContext } from "./useLivePreviewContext";
 import {
   accountLabel,
@@ -154,17 +156,17 @@ export default function TemplateEditorPanel({
   }, [form.name, form.also_create_meta_template, metaNameTouched, editing]);
 
   const filteredMetaTemplates = useMemo(() => {
-    const q = form.name.trim().toLowerCase();
+    const q = form.name.trim();
     if (!q) return metaTemplates;
     const slug = suggestMetaTemplateName(form.name);
     return metaTemplates.filter((t) => {
-      const n = (t.name || "").toLowerCase();
-      const body = (t.body_named || "").toLowerCase();
+      const n = t.name || "";
+      const body = t.body_named || "";
       return (
-        n.includes(q)
-        || n.includes(slug)
-        || slug.includes(n)
-        || body.includes(q)
+        trIncludes(n, q)
+        || trIncludes(n, slug)
+        || trFold(slug).includes(trFold(n))
+        || trIncludes(body, q)
       );
     });
   }, [metaTemplates, form.name]);
@@ -619,7 +621,7 @@ export default function TemplateEditorPanel({
               <div className="sbx-bubble">
                 {headerPreview ? <p className="sbx-bubble-header">{headerPreview}</p> : null}
                 <p className="sbx-bubble-text">
-                  {previewText.trim()
+                  {hasVisibleWhatsAppText(previewText)
                     ? previewSegments.map((seg, i) =>
                         seg.type === "bold" ? (
                           <strong key={i}>{seg.content}</strong>
@@ -627,7 +629,7 @@ export default function TemplateEditorPanel({
                           <em key={i}>{seg.content}</em>
                         ) : seg.type === "strike" ? (
                           <s key={i}>{seg.content}</s>
-                        ) : seg.type === "mono" ? (
+                        ) : seg.type === "mono" || seg.type === "code" ? (
                           <code key={i}>{seg.content}</code>
                         ) : seg.type === "variable" ? (
                           <span key={i} className="wa-var">{seg.content}</span>

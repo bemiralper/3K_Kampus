@@ -1,15 +1,14 @@
-import { Suspense } from "react";
-import AdminMesajlarContent from "./AdminMesajlarContent";
-import "@/components/communication/communication.css";
+import { redirect } from "next/navigation";
 
-function Loading() {
-  return <p style={{ color: "#667781", padding: "1rem" }}>Konuşmalar yükleniyor…</p>;
-}
-
-export default function AdminMesajlarPage() {
-  return (
-    <Suspense fallback={<Loading />}>
-      <AdminMesajlarContent />
-    </Suspense>
-  );
+/** Eski inbox adresi — yeni Sohbetler ekranına yönlendirir. */
+export default function AdminMesajlarRedirect({
+  searchParams,
+}: {
+  searchParams?: { conversation?: string; filter?: string };
+}) {
+  const q = new URLSearchParams();
+  if (searchParams?.conversation) q.set("conversation", searchParams.conversation);
+  if (searchParams?.filter) q.set("filter", searchParams.filter);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  redirect(`/admin/iletisim/sohbetler${suffix}`);
 }

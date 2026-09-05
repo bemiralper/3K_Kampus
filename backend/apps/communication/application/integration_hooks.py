@@ -1209,20 +1209,27 @@ def notify_exam_result(
         return {'sent': 0, 'skipped': 0}
 
     source_id = f'{exam_id}:results'
-    sinif_ids = list(exam.siniflar.values_list('id', flat=True))
-    if not sinif_ids:
-        return {'sent': 0, 'skipped': 0}
-
-    kayit_qs = OgrenciKayit.objects.filter(
-        kurum_id=kurum_id,
-        sinif_id__in=sinif_ids,
-        aktif_mi=True,
-        ogrenci__aktif_mi=True,
+    from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+    participant_ids = list(
+        ExamParticipant.objects.filter(exam=exam).values_list('student_id', flat=True)
     )
-    if exam.egitim_yili_id:
-        kayit_qs = kayit_qs.filter(egitim_yili_id=exam.egitim_yili_id)
+    if participant_ids:
+        ogrenci_ids = participant_ids
+    else:
+        sinif_ids = list(exam.siniflar.values_list('id', flat=True))
+        if not sinif_ids:
+            return {'sent': 0, 'skipped': 0}
 
-    ogrenci_ids = list(kayit_qs.values_list('ogrenci_id', flat=True).distinct())
+        kayit_qs = OgrenciKayit.objects.filter(
+            kurum_id=kurum_id,
+            sinif_id__in=sinif_ids,
+            aktif_mi=True,
+            ogrenci__aktif_mi=True,
+        )
+        if exam.egitim_yili_id:
+            kayit_qs = kayit_qs.filter(egitim_yili_id=exam.egitim_yili_id)
+
+        ogrenci_ids = list(kayit_qs.values_list('ogrenci_id', flat=True).distinct())
     if not ogrenci_ids:
         return {'sent': 0, 'skipped': 0}
 

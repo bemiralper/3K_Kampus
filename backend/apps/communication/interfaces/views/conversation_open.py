@@ -139,10 +139,22 @@ class ConversationOpenView(CommunicationAPIView):
 
         cfg_id = channel_config.id if channel_config else None
         from apps.communication.application.coach_scope import visible_departments_for_user
+        from apps.communication.application.notification_dispatcher import (
+            department_for_sender,
+        )
         from apps.communication.domain.enums import CommunicationDepartment
+
+        requested = (request.data.get('department') or '').strip().upper()
         depts = visible_departments_for_user(request.user)
         open_dept = None
-        if depts is not None:
+        if requested and requested in CommunicationDepartment.values:
+            if depts is None or requested in depts:
+                open_dept = requested
+        if open_dept is None:
+            sender_dept = department_for_sender(request.user)
+            if sender_dept and (depts is None or sender_dept in depts):
+                open_dept = sender_dept
+        if open_dept is None and depts is not None:
             if (
                 CommunicationDepartment.ACCOUNTING in depts
                 and CommunicationDepartment.COACHING not in depts
@@ -198,15 +210,6 @@ class ConversationOpenView(CommunicationAPIView):
             return found
 
         conversation = _find_thread(open_dept)
-        if conversation is None and open_dept:
-            # Modül gönderimleri (özel ders telafi, finans, ödev …) karşı departmanın
-            # thread'ine düşmüş olabilir. Boş sohbet açmak yerine yetkinin izin
-            # verdiği mevcut thread'i getir.
-            from apps.communication.application.coach_scope import user_can_access_conversation
-
-            fallback = _find_thread(None)
-            if fallback is not None and user_can_access_conversation(request.user, fallback):
-                conversation = fallback
 
         if conversation:
             if not is_personel_thread:

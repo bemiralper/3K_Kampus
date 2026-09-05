@@ -7,6 +7,7 @@ import type {
   AudienceFilter,
   AudiencePersonType,
 } from "@/lib/communication-api";
+import { trIncludes } from "@/lib/text-format";
 import {
   addFilterToGroup,
   addGroup,
@@ -135,9 +136,9 @@ function CheckboxMultiSelect({
   const rootRef = useRef<HTMLDivElement>(null);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
   const filtered = useMemo(() => {
-    const needle = q.trim().toLocaleLowerCase("tr");
+    const needle = q.trim();
     if (!needle) return options;
-    return options.filter((opt) => opt.label.toLocaleLowerCase("tr").includes(needle));
+    return options.filter((opt) => trIncludes(opt.label, needle));
   }, [options, q]);
 
   useEffect(() => {
@@ -218,10 +219,10 @@ function AddFilterPicker({
   const [q, setQ] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
   const grouped = useMemo(() => {
-    const needle = q.trim().toLocaleLowerCase("tr");
+    const needle = q.trim();
     const map = new Map<string, AudienceCatalogField[]>();
     for (const field of fields) {
-      if (needle && !`${field.label} ${field.category_label}`.toLocaleLowerCase("tr").includes(needle)) {
+      if (needle && !trIncludes(`${field.label} ${field.category_label}`, needle)) {
         continue;
       }
       const list = map.get(field.category_label) || [];

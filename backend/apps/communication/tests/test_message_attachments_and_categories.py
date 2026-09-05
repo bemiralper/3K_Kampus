@@ -61,13 +61,29 @@ class MessageAttachmentSerializerTest(TestCase):
         self.assertEqual(data['attachments'][0]['original_name'], 'photo.jpg')
         self.assertTrue(data['attachments'][0]['file_url'])
 
+    def test_successful_message_has_empty_failed_reason(self):
+        self.message.status = 'READ'
+        self.message.failed_reason = ''
+        data = MessageSerializer(self.message).data
+        self.assertEqual(data['status'], 'READ')
+        self.assertEqual(data['failed_reason'], '')
+
+    def test_failed_reason_is_translated(self):
+        self.message.status = 'FAILED'
+        self.message.failed_reason = 'Message undeliverable'
+        data = MessageSerializer(self.message).data
+        self.assertIn('iletilemedi', data['failed_reason'].lower())
+        self.assertNotIn('undeliverable', data['failed_reason'].lower())
+
 
 class TemplateCategoryServiceTest(TestCase):
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='Cat Kurum', kod='CAT')
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='CAT-M')
         self.admin = User.objects.create_user(username='cat_admin', password='x')
-        _assign_role(self.admin, 'cat_admin', ['communication.bulk', 'communication.read'])
+        _assign_role(self.admin, 'cat_admin', [
+            'communication.manage', 'communication.bulk', 'communication.read',
+        ])
         self.client = APIClient()
         self.client.force_authenticate(user=self.admin)
         self.service = TemplateCategoryService()

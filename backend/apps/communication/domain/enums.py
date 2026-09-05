@@ -154,6 +154,22 @@ class MetaTemplateUsage(models.TextChoices):
     CAMPAIGN = 'CAMPAIGN', 'Toplu duyuru'
 
 
+class CampaignAudience(models.TextChoices):
+    """Toplu gönderim şablonunun hitap ettiği kişi türü."""
+    VELI = 'veli', 'Veli'
+    OGRENCI = 'ogrenci', 'Öğrenci'
+    PERSONEL = 'personel', 'Personel'
+    GENEL = 'genel', 'Genel (tüm kitleler)'
+
+
+class CampaignMedia(models.TextChoices):
+    """Toplu gönderim medya türü — Meta header tipinden türetilir."""
+    METIN = 'metin', 'Metin'
+    GORSEL = 'gorsel', 'Görsel'
+    PDF = 'pdf', 'Belge / PDF'
+    VIDEO = 'video', 'Video'
+
+
 class MetaTemplateStatus(models.TextChoices):
     DRAFT = 'DRAFT', 'Taslak'
     SUBMITTED = 'SUBMITTED', 'Meta\'ya Gönderildi'

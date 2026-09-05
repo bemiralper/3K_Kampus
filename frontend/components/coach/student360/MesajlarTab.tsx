@@ -79,7 +79,7 @@ export default function MesajlarTab({
               title="Veliye uygulama içi WhatsApp mesajı başlat"
             />
           ) : null}
-          <Link href="/coach/mesajlar" className="coach-link-btn">
+          <Link href="/coach/sohbetler" className="coach-link-btn">
             Mesaj Merkezi →
           </Link>
         </div>
@@ -102,7 +102,7 @@ export default function MesajlarTab({
         <ul className="mesajlar-tab-list">
           {conversations.map((conv) => (
             <li key={conv.id}>
-              <Link href={`/coach/mesajlar?conversation=${conv.id}`} className="mesajlar-tab-item">
+              <Link href={`/coach/sohbetler?conversation=${conv.id}`} className="mesajlar-tab-item">
                 <div className="mesajlar-tab-item-top">
                   <strong>{conv.contact_name || conv.contact_phone}</strong>
                   <span>{formatMessageTime(conv.last_message_at)}</span>

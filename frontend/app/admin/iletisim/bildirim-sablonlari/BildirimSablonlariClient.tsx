@@ -34,6 +34,7 @@ import {
   seedKayitSozlesmeTemplates,
   seedKutuphaneYoklamaTemplates,
   seedOzelDersTemplates,
+  seedSinavTemplates,
   seedSinifYoklamaTemplates,
 } from "@/lib/communication-api";
 import { notifyCommunicationTemplateUsageChanged } from "@/lib/communication-template-usage-sync";
@@ -471,8 +472,8 @@ function SlotCard({
     slot.resolved.meta_template_body ||
     ""
   ).trim();
-  const sendBody = (
-    preview?.body ||
+  const rawNamedBody = (
+    selectedMetaBody ||
     slot.resolved.display_body ||
     slot.resolved.body ||
     slot.default_body ||
@@ -480,8 +481,8 @@ function SlotCard({
   ).trim();
 
   const previewBody = showExample
-    ? selectedMetaBody || slot.meta_example_body || sendBody
-    : selectedMetaBody || sendBody;
+    ? selectedMetaBody || slot.meta_example_body || rawNamedBody
+    : rawNamedBody;
 
   const metaPending =
     Boolean(boundMeta) && boundMeta!.status !== "APPROVED" && Boolean(selectedMetaBody);
@@ -1072,6 +1073,7 @@ export default function BildirimSablonlariClient() {
           recipient_type: slot.recipient_type,
           sube_id: scopeSubeId,
           channel_config_id: scopeChannelConfigId,
+          context: previewContext,
         });
         setPreviews((prev) => ({ ...prev, [key]: result }));
       } catch (err) {
@@ -1080,7 +1082,7 @@ export default function BildirimSablonlariClient() {
         setPreviewLoading((prev) => ({ ...prev, [key]: false }));
       }
     },
-    [scopeSubeId, scopeChannelConfigId],
+    [scopeSubeId, scopeChannelConfigId, previewContext],
   );
 
   // Seçili olayın slotları için otomatik önizleme
@@ -1137,7 +1139,7 @@ export default function BildirimSablonlariClient() {
 
   const runSeed = useCallback(
     async (
-      kind: "academic" | "kutuphane" | "sinif_yoklama" | "kayit" | "ozel_ders",
+      kind: "academic" | "kutuphane" | "sinif_yoklama" | "kayit" | "ozel_ders" | "sinav",
       confirmText: string,
       fallbackInfo: string,
       failText: string,
@@ -1240,12 +1242,30 @@ export default function BildirimSablonlariClient() {
       seedKayitSozlesmeTemplates,
     );
 
+  const handleSeedSinav = () =>
+    runSeed(
+      "sinav",
+      "Ölçme / sınav taslakları oluşturulsun mu?\n\n" +
+        "• Sınav sonucu (veli)\n" +
+        "• Sınav bilgilendirmesi (veli / öğrenci)\n" +
+        "• Sınav yoklama (veli / öğrenci)\n" +
+        "• Sınav karnesi PDF (veli / öğrenci)\n" +
+        "• Sınav cevap anahtarı PDF (veli / öğrenci)\n\n" +
+        "LMS şablonları + Meta DRAFT üretilir ve Sınav olaylarına bağlanır. " +
+        "Karne ve cevap anahtarı için örnek PDF yükleyip Meta onayına göndermeniz gerekir.",
+      "Ölçme / sınav taslakları hazır.",
+      "Ölçme / sınav taslakları oluşturulamadı.",
+      "sinav.hatirlatma",
+      seedSinavTemplates,
+    );
+
   const handleSeedOzelDers = () =>
     runSeed(
       "ozel_ders",
       "Özel ders taslakları oluşturulsun mu?\n\n" +
         "• ozel_ders_ogretmen_gelmedi_veli\n" +
         "• ozel_ders_ogrenci_gelmedi_veli\n" +
+        "• ozel_ders_ogrenci_gelmedi_telafi_veli\n" +
         "• ozel_ders_iptal_veli\n" +
         "• ozel_ders_telafi_veli\n" +
         "• ozel_ders_islendi_veli\n\n" +
@@ -1277,9 +1297,15 @@ export default function BildirimSablonlariClient() {
       run: handleSeedSinifYoklama,
     },
     {
+      kind: "sinav",
+      title: "Ölçme / sınav taslakları",
+      desc: "Sonuç, salon/sıra, yoklama, karne ve cevap anahtarı",
+      run: handleSeedSinav,
+    },
+    {
       kind: "ozel_ders",
       title: "Özel ders taslakları",
-      desc: "Öğretmen/öğrenci gelmedi, iptal, telafi, işlendi",
+      desc: "Öğretmen/öğrenci gelmedi, telafi, iptal, işlendi",
       run: handleSeedOzelDers,
     },
     {

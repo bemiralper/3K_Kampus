@@ -223,7 +223,9 @@ class CampaignDuyuruTemplateSeedService:
                     header_json=dict(draft.header_json),
                     footer_text='',
                     usage_scope=MetaTemplateUsage.CAMPAIGN,
-                    template_group='duyuru',
+                    template_group=draft.family,
+                    campaign_audience=draft.audience,
+                    campaign_family=draft.family,
                     example_values_json=dict(draft.example_values),
                     user=user,
                 )

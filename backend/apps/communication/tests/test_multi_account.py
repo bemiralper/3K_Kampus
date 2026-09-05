@@ -291,8 +291,8 @@ class MultiWhatsAppAccountTests(TestCase):
         )
         return conv
 
-    def test_sender_sees_own_thread_outside_department_and_account(self):
-        """Muhasebe kullanıcısı, kendi gönderdiği koçluk hattı sohbetini görür."""
+    def test_sender_does_not_see_other_department_even_if_sent(self):
+        """Aynı numara / kendi gönderim olsa bile karşı rolün sohbeti görünmez."""
         from apps.communication.application.coach_scope import (
             filter_conversations_for_user,
             user_can_access_conversation,
@@ -306,8 +306,8 @@ class MultiWhatsAppAccountTests(TestCase):
             kurum_id=self.kurum.id,
             sube_id=self.sube_a.id,
         )
-        self.assertIn(conv.id, set(qs.values_list('id', flat=True)))
-        self.assertTrue(user_can_access_conversation(self.user_m, conv))
+        self.assertNotIn(conv.id, set(qs.values_list('id', flat=True)))
+        self.assertFalse(user_can_access_conversation(self.user_m, conv))
 
     def test_accounting_does_not_see_coaching_thread_of_others(self):
         """Kendi gönderimi olmayan koçluk sohbeti muhasebeye kapalı kalır."""
@@ -328,6 +328,56 @@ class MultiWhatsAppAccountTests(TestCase):
         )
         self.assertNotIn(conv.id, set(qs.values_list('id', flat=True)))
         self.assertFalse(user_can_access_conversation(self.user_m, conv))
+
+    def test_ozel_ders_telafi_follows_sender_department(self):
+        """Telafi, gönderen birimin sohbetine düşer; ödeme olayı sabit muhasebede kalır."""
+        from apps.communication.application.communication_service import (
+            CommunicationService,
+            MessageContent,
+            MessageSource,
+        )
+        from apps.communication.application.notification_dispatcher import (
+            department_for_dispatch,
+        )
+        from apps.communication.application.notification_events import MODULE_OZEL_DERS
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        self.assertEqual(
+            department_for_dispatch(
+                MODULE_OZEL_DERS, 'ozel_ders.telafi_planlandi', sender=self.user_m,
+            ),
+            CommunicationDepartment.ACCOUNTING,
+        )
+        self.assertEqual(
+            department_for_dispatch(MODULE_OZEL_DERS, 'ozel_ders.telafi_planlandi'),
+            CommunicationDepartment.COACHING,
+        )
+        self.assertEqual(
+            department_for_dispatch('odeme', 'odeme.hatirlatma', sender=self.user_k),
+            CommunicationDepartment.ACCOUNTING,
+        )
+
+        source = MessageSource(module=MODULE_OZEL_DERS, ref_id='telafi-1')
+        content = MessageContent(text='Telafi planlandı')
+        self.assertEqual(
+            CommunicationService._resolve_send_department(
+                content, source, None, self.user_m.id,
+            ),
+            CommunicationDepartment.ACCOUNTING,
+        )
+        self.assertEqual(
+            CommunicationService._resolve_send_department(
+                content, source, None, None,
+            ),
+            CommunicationDepartment.COACHING,
+        )
+        yoklama = MessageSource(module='yoklama_bildirim', ref_id='y-1')
+        self.assertEqual(
+            CommunicationService._resolve_send_department(
+                MessageContent(text='Gelmedi'), yoklama, None, self.user_m.id,
+            ),
+            CommunicationDepartment.ACCOUNTING,
+        )
 
     def test_accounting_sees_accounting_department_on_other_account(self):
         from apps.communication.application.coach_scope import filter_conversations_for_user

@@ -214,11 +214,10 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
       subtitle="Bekleyen gönderimler, son hatalar ve eski hata arşivi"
       icon="🗂️"
       maxWidth="full"
-      breadcrumbs={
-        portal === "muhasebe"
-          ? [{ label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" }, { label: "Mesaj Kuyruğu" }]
-          : [{ label: "İletişim", href: "/admin/iletisim/panel" }, { label: "Mesaj Kuyruğu" }]
-      }
+      breadcrumbs={[
+        { label: portal === "muhasebe" ? "WhatsApp" : "İletişim", href: paths.home },
+        { label: "Mesaj Kuyruğu" },
+      ]}
       actions={
         <div className="comm-dash-refresh">
           <span className="ipanel-live">
@@ -255,10 +254,10 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
             <div className="ipanel-kpi-value">{statusCounts.failed_archive}</div>
             <div className="ipanel-kpi-meta">{liveDays}+ gün, arşiv</div>
           </button>
-          <Link href={portal === "muhasebe" ? paths.compose : "/admin/iletisim/panel"} className="ipanel-kpi" style={{ "--kpi-accent": "#0262a7" } as never}>
+          <Link href={paths.home} className="ipanel-kpi" style={{ "--kpi-accent": "#0262a7" } as never}>
             <div className="ipanel-kpi-label">Toplam kuyruk</div>
             <div className="ipanel-kpi-value">{statusCounts.pending + statusCounts.sending + statusCounts.failed}</div>
-            <div className="ipanel-kpi-meta">Panele dön</div>
+            <div className="ipanel-kpi-meta">{portal === "muhasebe" ? "Sohbetlere dön" : "Panele dön"}</div>
           </Link>
         </div>
 
@@ -364,7 +363,7 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
                       <td>
                         <div>{item.source_label || "Manuel"}</div>
                         {item.campaign_id && (
-                          <Link href={paths.campaignDetail(String(item.campaign_id))} className="ipanel-link">
+                          <Link href={paths.campaign(item.campaign_id)} className="ipanel-link">
                             {item.campaign_title || "Kampanya"}
                           </Link>
                         )}

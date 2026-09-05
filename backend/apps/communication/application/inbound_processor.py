@@ -218,6 +218,17 @@ class InboundProcessor:
         resolved = ContactResolver.resolve_contact(kurum_id, phone)
         e164 = resolved.e164
 
+        # Cevap, kişiyle en son konuşan departmanın sohbetine düşer; muhasebenin
+        # gönderdiği mesaja gelen yanıt koçluk thread'ine kaymasın.
+        department = ConversationRepository.inbound_department(
+            kurum_id,
+            Channel.WHATSAPP,
+            e164,
+            ogrenci_id=resolved.ogrenci_id,
+            veli_id=resolved.veli_id,
+            channel_config=channel_config,
+        )
+
         conversation, created = ConversationRepository.get_or_create_for_contact(
             kurum_id=kurum_id,
             channel=Channel.WHATSAPP,
@@ -227,6 +238,7 @@ class InboundProcessor:
             ogrenci_id=resolved.ogrenci_id,
             veli_id=resolved.veli_id,
             channel_config=channel_config,
+            department=department,
         )
 
         if not created:
@@ -288,6 +300,7 @@ class InboundProcessor:
             preview=body or f'[{message_type}]',
             direction=MessageDirection.INBOUND,
             channel_config=channel_config,
+            department=department,
         )
 
         try:

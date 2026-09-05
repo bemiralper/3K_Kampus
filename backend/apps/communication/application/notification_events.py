@@ -534,6 +534,123 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         }),
     ),
     NotificationEvent(
+        key='sinav.hatirlatma',
+        module=MODULE_SINAV,
+        label='Sınav bilgilendirmesi (salon / sıra)',
+        description=(
+            'Ölçme → Katılımcılar ekranından öğrenci ve veliye salon, sıra, '
+            'tarih ve saat bilgisiyle sınav mesajı gönderilir.'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'sinav_adi', 'sinav_tarihi', 'baslama_saati', 'bitis_saati',
+            'sinav_salonu', 'sira_no',
+            'sinav_ad', 'tarih', 'salon_ad', 'sira',
+        ),
+        meta_name_base='sinav_hatirlatma',
+        default_bodies=MappingProxyType({
+            VELI: (
+                '*Sınav Bilgilendirmesi*\n'
+                '\n'
+                'Değerli Velimiz,\n'
+                '\n'
+                '{{ogrenci_ad}} öğrencimizin sınav bilgileri aşağıdaki gibidir:\n'
+                '\n'
+                '📝 *Sınav:* {{sinav_adi}}\n'
+                '📅 *Tarih:* {{sinav_tarihi}}\n'
+                '🕐 *Başlama:* {{baslama_saati}}\n'
+                '🕐 *Bitiş:* {{bitis_saati}}\n'
+                '🏫 *Salon:* {{sinav_salonu}}\n'
+                '💺 *Sıra No:* {{sira_no}}\n'
+                '\n'
+                '⚠️ *Önemli:* Sınav başladıktan sonra salona öğrenci alınmayacaktır. '
+                'Öğrencimizin sınav saatinden önce belirtilen salonda ve sıra numarasında '
+                'hazır bulunmasını rica ederiz.\n'
+                '\n'
+                '*Başarılar dileriz!* 🌟\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+            OGRENCI: (
+                '*Sınav Bilgilendirmesi*\n'
+                '\n'
+                'Sevgili Öğrencimiz,\n'
+                '\n'
+                'Sınav bilgilerin aşağıdaki gibidir:\n'
+                '\n'
+                '📝 *Sınav:* {{sinav_adi}}\n'
+                '📅 *Tarih:* {{sinav_tarihi}}\n'
+                '🕐 *Başlama:* {{baslama_saati}}\n'
+                '🕐 *Bitiş:* {{bitis_saati}}\n'
+                '🏫 *Salon:* {{sinav_salonu}}\n'
+                '💺 *Sıra No:* {{sira_no}}\n'
+                '\n'
+                '⚠️ *Önemli:* Sınav başladıktan sonra salona öğrenci alınmayacaktır. '
+                'Bu nedenle sınav saatinden önce belirtilen salonda ve sıra numaranda '
+                'hazır bulunman gerekmektedir.\n'
+                '\n'
+                '*Başarılar dileriz!* 🌟\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='sinav.yoklama',
+        module=MODULE_SINAV,
+        label='Sınav yoklama — katılmadı',
+        description=(
+            'Ölçme → Katılımcılar yoklamasında gelmedi işaretlenen öğrenci '
+            've velisine katılmama bildirimi gönderilir.'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='devamsizlik',
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'sinav_adi', 'sinav_tarihi', 'baslama_saati', 'bitis_saati',
+            'sinav_salonu', 'sira_no',
+            'sinav_ad', 'tarih', 'salon_ad', 'sira',
+        ),
+        meta_name_base='sinav_yoklama',
+        default_bodies=MappingProxyType({
+            VELI: (
+                '*Sınav Yoklama Bilgilendirmesi*\n'
+                '\n'
+                'Değerli Velimiz,\n'
+                '\n'
+                '{{ogrenci_ad}} öğrencimizin *{{sinav_adi}}* sınavına katılım '
+                'sağlamadığı tespit edilmiştir.\n'
+                '\n'
+                '📅 *Sınav Tarihi:* {{sinav_tarihi}}\n'
+                '🕐 *Sınav Saati:* {{baslama_saati}} – {{bitis_saati}}\n'
+                '\n'
+                'Sınav yoklamasında öğrencimiz *katılmadı* olarak kaydedilmiştir.\n'
+                '\n'
+                'Bilginize sunarız.\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+            OGRENCI: (
+                '*Sınav Yoklama Bilgilendirmesi*\n'
+                '\n'
+                'Sevgili Öğrencimiz,\n'
+                '\n'
+                '*{{sinav_adi}}* sınavına katılım sağlamadığın tespit edilmiştir.\n'
+                '\n'
+                '📅 *Sınav Tarihi:* {{sinav_tarihi}}\n'
+                '🕐 *Sınav Saati:* {{baslama_saati}} – {{bitis_saati}}\n'
+                '\n'
+                'Sınav yoklamasında *katılmadı* olarak kaydedildin.\n'
+                '\n'
+                'Bilgin olsun.\n'
+                '\n'
+                '{{kurum_ad}}'
+            ),
+        }),
+    ),
+    NotificationEvent(
         key='sinav.karne',
         module=MODULE_SINAV,
         label='Sınav karnesi (PDF)',
@@ -555,6 +672,29 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
             OGRENCI: (
                 'Merhaba {{ogrenci_ad}}, "{{sinav_ad}}" sınav sonuç belgen ektedir. '
                 'Puan: {{puan}}, net: {{net}}.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='sinav.cevap_anahtari',
+        module=MODULE_SINAV,
+        label='Sınav cevap anahtarı (PDF)',
+        description=(
+            'Yayın saatinde sınava giren öğrenci ve veliye cevap anahtarı PDF olarak '
+            'gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'sinav_ad', 'pdf_baslik'),
+        meta_name_base='sinav_cevap_anahtari',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın velimiz, {{ogrenci_ad}} öğrencimizin "{{sinav_ad}}" '
+                'sınav cevap anahtarı ektedir.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, "{{sinav_ad}}" sınav cevap anahtarın ektedir.'
             ),
         }),
     ),
@@ -776,12 +916,12 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='ozel_ders.ogretmen_gelmedi',
         module=MODULE_OZEL_DERS,
         label='Özel ders — öğretmen gelmedi',
-        description='Özel ders yoklamasında öğretmen gelmedi; veliye telafi bilgisi (tarih belirsiz).',
+        description='Özel ders yoklamasında öğretmen gelmedi; telafi cümlesi şablonda sabittir.',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=(
             'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
-            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi', 'telafi_notu',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
         ),
         meta_name_base='ozel_ders_ogretmen_gelmedi',
         legacy_meta_names=MappingProxyType({
@@ -795,7 +935,8 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 '{{ders_saati}}’te {{ders_adi}} özel dersi*, öğretmenimizin katılım '
                 'sağlayamaması nedeniyle yapılamamıştır.\n'
                 '\n'
-                '{{telafi_notu}}\n'
+                'Dersin *telafisi yapılacaktır.* Telafi tarihi ve saati kesinleştiğinde '
+                'tarafınıza ayrıca bilgi verilecektir.\n'
                 '\n'
                 'Anlayışınız için teşekkür ederiz.'
             ),
@@ -805,14 +946,40 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         key='ozel_ders.ogrenci_gelmedi',
         module=MODULE_OZEL_DERS,
         label='Özel ders — öğrenci gelmedi',
-        description='Özel ders yoklamasında öğrenci gelmedi bildirimi.',
+        description='Öğrenci gelmedi, telafi gerekmiyor. Telafi bekleniyorsa ayrı olay kullanılır.',
         recipients=(VELI,),
         opt_in_category='devamsizlik',
         variables=(
             'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
-            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi', 'telafi_notu',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
         ),
         meta_name_base='ozel_ders_ogrenci_gelmedi',
+        legacy_meta_names=MappingProxyType({
+            VELI: ('ozel_ders_bilgi_veli', 'ozel_ders_ogrenci_gelmedi_v2_veli'),
+        }),
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Değerli Velimiz,\n'
+                '\n'
+                '{{ogrenci_ad}} öğrencimizin *{{ders_tarihi}} tarihinde saat '
+                '{{ders_saati}}’te {{ders_adi}} özel dersine katılım sağlanamamıştır.*\n'
+                '\n'
+                'Bilginize sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.ogrenci_gelmedi_telafi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders — öğrenci gelmedi (telafi)',
+        description='Öğrenci gelmedi ve telafi bekleniyor. Telafi cümlesi şablonda sabittir.',
+        recipients=(VELI,),
+        opt_in_category='devamsizlik',
+        variables=(
+            'veli_ad', 'ogrenci_ad', 'ders_tarihi', 'ders_saati', 'ders_adi',
+            'ogretmen_ad', 'ders_durumu', 'sebep', 'ek_bilgi',
+        ),
+        meta_name_base='ozel_ders_ogrenci_gelmedi_telafi',
         legacy_meta_names=MappingProxyType({
             VELI: ('ozel_ders_bilgi_veli',),
         }),
@@ -823,7 +990,8 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 '{{ogrenci_ad}} öğrencimizin *{{ders_tarihi}} tarihinde saat '
                 '{{ders_saati}}’te {{ders_adi}} özel dersine katılım sağlanamamıştır.*\n'
                 '\n'
-                '{{telafi_notu}}\n'
+                'Ders *telafi edilecektir.* Telafi tarihi ve saati kesinleştiğinde '
+                'tarafınıza ayrıca bilgi verilecektir.\n'
                 '\n'
                 'Bilginize sunarız.'
             ),
@@ -919,6 +1087,84 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 '{{ders_saati}}’te {{ders_adi}} özel dersi gerçekleştirilmiştir.*\n'
                 '\n'
                 'Bilginize sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.haftalik_program',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders haftalık program (PDF)',
+        description=(
+            'Öğrenci özel ders haftalık şablonu PDF olarak veliye ve öğrenciye '
+            'WhatsApp ile gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler'),
+        meta_name_base='ozel_ders_haftalik_program',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{ogrenci_ad}} öğrencimizin özel ders haftalık programı ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                'Özel ders haftalık programın ektedir.\n\n'
+                'Bilgine sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.ders_ozeti',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders özeti (PDF)',
+        description=(
+            'Öğrencinin derslere göre özel ders özeti PDF olarak veliye ve öğrenciye '
+            'WhatsApp ile gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler', 'donem'),
+        meta_name_base='ozel_ders_ders_ozeti',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{ogrenci_ad}} öğrencimizin özel ders özeti ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                'Özel ders özetin ektedir.\n\n'
+                'Bilgine sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='ozel_ders.ders_gecmisi',
+        module=MODULE_OZEL_DERS,
+        label='Özel ders geçmişi (PDF)',
+        description=(
+            'Seçilen dersin tarih tarih kaydı PDF olarak veliye ve öğrenciye '
+            'WhatsApp ile gönderilir (DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogrenci_ad', 'veli_ad', 'pdf_baslik', 'paketler', 'donem', 'ders_ad', 'ders_adi'),
+        meta_name_base='ozel_ders_ders_gecmisi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın {{veli_ad}},\n\n'
+                '{{ogrenci_ad}} öğrencimizin {{ders_ad}} ders geçmişi ektedir.\n\n'
+                'Bilgilerinize sunarız.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}},\n\n'
+                '{{ders_ad}} ders geçmişin ektedir.\n\n'
+                'Bilgine sunarız.'
             ),
         }),
     ),

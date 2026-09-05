@@ -45,10 +45,22 @@ from apps.communication.domain.models import (
 OZEL_DERS_EVENT_KEYS: tuple[str, ...] = (
     'ozel_ders.ogretmen_gelmedi',
     'ozel_ders.ogrenci_gelmedi',
+    'ozel_ders.ogrenci_gelmedi_telafi',
     'ozel_ders.iptal',
     'ozel_ders.telafi_planlandi',
     'ozel_ders.islendi',
+    'ozel_ders.haftalik_program',
+    'ozel_ders.ders_ozeti',
+    'ozel_ders.ders_gecmisi',
 )
+
+_TELAFI_VAR_EVENTS = frozenset({
+    'ozel_ders.ogretmen_gelmedi',
+    'ozel_ders.ogrenci_gelmedi',
+    'ozel_ders.ogrenci_gelmedi_telafi',
+})
+
+OGRENCI_GELMEDI_V2_NAME = 'ozel_ders_ogrenci_gelmedi_v2_veli'
 
 _APP_NAME_BY_SLOT: dict[tuple[str, str], str] = {
     ('ozel_ders.ogretmen_gelmedi', RecipientType.VELI): (
@@ -57,16 +69,38 @@ _APP_NAME_BY_SLOT: dict[tuple[str, str], str] = {
     ('ozel_ders.ogrenci_gelmedi', RecipientType.VELI): (
         'Özel Ders Bilgilendirmesi — Öğrenci Gelmedi'
     ),
+    ('ozel_ders.ogrenci_gelmedi_telafi', RecipientType.VELI): (
+        'Özel Ders Bilgilendirmesi — Öğrenci Gelmedi (Telafi)'
+    ),
     ('ozel_ders.iptal', RecipientType.VELI): 'Özel Ders İptal Bilgilendirmesi',
     ('ozel_ders.telafi_planlandi', RecipientType.VELI): 'Özel Ders Telafi Bilgilendirmesi',
     ('ozel_ders.islendi', RecipientType.VELI): (
         'Özel Ders Bilgilendirmesi — Ders Gerçekleşti'
+    ),
+    ('ozel_ders.haftalik_program', RecipientType.VELI): (
+        'Özel ders haftalık program — Veli'
+    ),
+    ('ozel_ders.haftalik_program', RecipientType.OGRENCI): (
+        'Özel ders haftalık program — Öğrenci'
+    ),
+    ('ozel_ders.ders_ozeti', RecipientType.VELI): (
+        'Özel ders özeti — Veli'
+    ),
+    ('ozel_ders.ders_ozeti', RecipientType.OGRENCI): (
+        'Özel ders özeti — Öğrenci'
+    ),
+    ('ozel_ders.ders_gecmisi', RecipientType.VELI): (
+        'Özel ders geçmişi — Veli'
+    ),
+    ('ozel_ders.ders_gecmisi', RecipientType.OGRENCI): (
+        'Özel ders geçmişi — Öğrenci'
     ),
 }
 
 _HEADER_BY_EVENT: dict[str, str] = {
     'ozel_ders.ogretmen_gelmedi': 'Özel Ders Bilgilendirmesi',
     'ozel_ders.ogrenci_gelmedi': 'Özel Ders Bilgilendirmesi',
+    'ozel_ders.ogrenci_gelmedi_telafi': 'Özel Ders Bilgilendirmesi',
     'ozel_ders.iptal': 'Özel Ders İptal Bilgilendirmesi',
     'ozel_ders.telafi_planlandi': 'Özel Ders Telafi Bilgilendirmesi',
     'ozel_ders.islendi': 'Özel Ders Bilgilendirmesi',
@@ -98,10 +132,13 @@ def list_ozel_ders_template_drafts() -> list[OzelDersTemplateDraft]:
             continue
         for recipient in event.recipients:
             body = build_meta_example_body(event, recipient)
-            header = {
-                'type': 'TEXT',
-                'text': _HEADER_BY_EVENT[event.key],
-            }
+            if event.has_document:
+                header = {'type': 'DOCUMENT'}
+            else:
+                header = {
+                    'type': 'TEXT',
+                    'text': _HEADER_BY_EVENT[event.key],
+                }
             issues = validate_template_content(
                 body_named=body, header_json=header, footer_text='',
             )
@@ -116,7 +153,11 @@ def list_ozel_ders_template_drafts() -> list[OzelDersTemplateDraft]:
                     app_name=_APP_NAME_BY_SLOT[(event.key, recipient)],
                     meta_name=event.suggested_meta_name(recipient),
                     body_named=body,
-                    category=TemplateCategory.OZEL,
+                    category=(
+                        TemplateCategory.DUYURU
+                        if event.has_document
+                        else TemplateCategory.OZEL
+                    ),
                     audience_scope=TemplateAudienceScope.ADMIN,
                     header_json=header,
                     footer_text='',
@@ -231,11 +272,8 @@ class OzelDersTemplateSeedService:
             app_tpl = _find_active_app_template(kurum_id, draft, sube_id=sube_id)
 
             stale_telafi = (
-                draft.event_key in (
-                    'ozel_ders.ogretmen_gelmedi',
-                    'ozel_ders.ogrenci_gelmedi',
-                )
-                and '{{telafi_notu}}' not in (getattr(app_tpl, 'body', '') or '')
+                draft.event_key in _TELAFI_VAR_EVENTS
+                and '{{telafi_notu}}' in (getattr(app_tpl, 'body', '') or '')
             ) if app_tpl else False
 
             if app_tpl:
@@ -276,13 +314,47 @@ class OzelDersTemplateSeedService:
                 if meta:
                     stale_meta = (
                         meta.status == MetaTemplateStatus.DRAFT
-                        and draft.event_key in (
-                            'ozel_ders.ogretmen_gelmedi',
-                            'ozel_ders.ogrenci_gelmedi',
-                        )
-                        and '{{telafi_notu}}' not in (meta.body_named or '')
+                        and draft.event_key in _TELAFI_VAR_EVENTS
+                        and '{{telafi_notu}}' in (meta.body_named or '')
                     )
-                    if (
+                    approved_stale = (
+                        meta.status == MetaTemplateStatus.APPROVED
+                        and draft.event_key == 'ozel_ders.ogrenci_gelmedi'
+                        and '{{telafi_notu}}' in (meta.body_named or '')
+                    )
+                    if approved_stale:
+                        v2 = MetaTemplateService.find_on_shared_waba(
+                            kurum_id,
+                            channel_config_id=channel_config_id,
+                            names=[OGRENCI_GELMEDI_V2_NAME],
+                            language='tr',
+                            prefer_approved=True,
+                        )
+                        if v2 and '{{telafi_notu}}' not in (v2.body_named or ''):
+                            meta = v2
+                        elif dry_run:
+                            created_meta.append(OGRENCI_GELMEDI_V2_NAME)
+                            meta = None
+                        else:
+                            try:
+                                meta = MetaTemplateService.create_draft(
+                                    kurum_id,
+                                    channel_config_id=channel_config_id,
+                                    name=OGRENCI_GELMEDI_V2_NAME,
+                                    language='tr',
+                                    meta_category=draft.meta_category,
+                                    body_named=draft.body_named,
+                                    header_json=dict(draft.header_json),
+                                    footer_text='',
+                                    usage_scope=draft.usage_scope,
+                                    template_group=template_group_for_event_key(draft.event_key),
+                                    user=user,
+                                )
+                                created_meta.append(OGRENCI_GELMEDI_V2_NAME)
+                            except MetaTemplateServiceError as exc:
+                                errors.append(f'{OGRENCI_GELMEDI_V2_NAME}: {exc.message}')
+                                meta = None
+                    if meta and (
                         meta.status == MetaTemplateStatus.DRAFT
                         and (
                             meta.body_named != draft.body_named
@@ -344,7 +416,12 @@ class OzelDersTemplateSeedService:
                     existing_ok = (
                         existing.meta_template
                         and existing.meta_template.status == MetaTemplateStatus.APPROVED
-                        and existing.meta_template.name == draft.meta_name
+                        and existing.meta_template.name in (
+                            draft.meta_name, OGRENCI_GELMEDI_V2_NAME,
+                        )
+                        and '{{telafi_notu}}' not in (
+                            existing.meta_template.body_named or ''
+                        )
                     )
                     new_is_draft = (
                         meta is None or meta.status != MetaTemplateStatus.APPROVED
@@ -387,7 +464,8 @@ class OzelDersTemplateSeedService:
             'event_keys': list(OZEL_DERS_EVENT_KEYS),
             'next_steps': [
                 'Meta Şablonlar’da ozel_ders_ogretmen_gelmedi_veli, '
-                'ozel_ders_ogrenci_gelmedi_veli, ozel_ders_iptal_veli, '
+                'ozel_ders_ogrenci_gelmedi_veli (telafisiz), '
+                'ozel_ders_ogrenci_gelmedi_telafi_veli, ozel_ders_iptal_veli, '
                 'ozel_ders_telafi_veli, ozel_ders_islendi_veli taslaklarını '
                 'onay için gönderin (onaylı olanlara dokunulmaz).',
                 'Bildirim Şablonları → Özel Ders altında bağları kontrol edin.',

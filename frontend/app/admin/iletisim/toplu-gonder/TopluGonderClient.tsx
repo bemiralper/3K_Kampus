@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CommunicationPageShell } from "@/components/communication";
+import { CommunicationPageShell, WhatsAppPhonePreview } from "@/components/communication";
 import "@/components/communication/communication.css";
 import "../panel/iletisim-panel.css";
 import "./toplu-gonder.css";
@@ -28,7 +28,10 @@ import {
   fetchSavedAudiences,
   previewAudienceQuery,
 } from "@/lib/communication-api";
-import CampaignDuyuruPicker from "./CampaignDuyuruPicker";
+import CampaignDuyuruPicker, {
+  campaignMessageReady,
+  composePreview,
+} from "./CampaignDuyuruPicker";
 import FilterBuilder from "./FilterBuilder";
 import PersonPicker from "./PersonPicker";
 import RecipientsModal from "./RecipientsModal";
@@ -62,7 +65,12 @@ export default function TopluGonderClient({
   campaignDetailPath,
 }: TopluGonderClientProps) {
   const isCoach = mode === "coach";
-  const detailPath = campaignDetailPath || ((id: string) => `/admin/iletisim/kampanyalar/${id}`);
+  const detailPath =
+    campaignDetailPath
+    || ((id: string) =>
+      mode === "muhasebe"
+        ? `/muhasebe/iletisim/kampanyalar/${id}`
+        : `/admin/iletisim/kampanyalar/${id}`);
   const [tab, setTab] = useState<"compose" | "history" | "saved">("compose");
   const [step, setStep] = useState(0);
   const [query, setQuery] = useState<AudienceFilter>(() => emptyAudienceQuery(isCoach ? ["ogrenci"] : []));
@@ -77,7 +85,7 @@ export default function TopluGonderClient({
   const [templateName, setTemplateName] = useState("");
   const [templateLanguage, setTemplateLanguage] = useState("tr");
   const [selectedTemplate, setSelectedTemplate] = useState<WhatsAppMetaTemplateItem | null>(null);
-  const [message, setMessage] = useState("");
+  const [variableValues, setVariableValues] = useState<Record<string, string>>({});
   const [attachments, setAttachments] = useState<CampaignAttachmentItem[]>([]);
   const [pickedLabels, setPickedLabels] = useState<Record<string, BulkRecipientHit>>({});
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
@@ -90,6 +98,11 @@ export default function TopluGonderClient({
   const [saved, setSaved] = useState<SavedAudienceItem[]>([]);
 
   const personTypes = (query.person_types || []) as AudiencePersonType[];
+  const includedPeople = listedIncludes(query);
+  const audienceKinds = useMemo<AudiencePersonType[]>(() => {
+    if (personTypes.length) return personTypes;
+    return Array.from(new Set(includedPeople.map((item) => item.kind)));
+  }, [personTypes.join("|"), includedPeople.map((item) => item.kind).join("|")]);
 
   useEffect(() => {
     fetchAudienceCatalog(personTypes.length ? personTypes : undefined)
@@ -149,6 +162,16 @@ export default function TopluGonderClient({
     if (tab === "saved") void loadSaved();
   }, [tab, loadHistory, loadSaved]);
 
+  // Kuyruk arka planda işlenir; devam eden gönderim varken sayaçları tazele.
+  const historyInflight = history.some((item) =>
+    ["CONFIRMED", "QUEUED", "PROCESSING"].includes(item.status),
+  );
+  useEffect(() => {
+    if (tab !== "history" || !historyInflight) return;
+    const id = window.setInterval(() => void loadHistory(), 5000);
+    return () => window.clearInterval(id);
+  }, [tab, historyInflight, loadHistory]);
+
   const setPersonTypes = (types: AudiencePersonType[]) => {
     setQuery((prev) => ({ ...prev, person_types: types }));
   };
@@ -156,24 +179,31 @@ export default function TopluGonderClient({
   const defaultCrumbs = isCoach
     ? [{ label: "Koç Paneli", href: "/coach/dashboard" }, { label: "Toplu Gönderim" }]
     : mode === "muhasebe"
-      ? [{ label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" }, { label: "Toplu Gönderim" }]
+      ? [{ label: "WhatsApp", href: "/muhasebe/iletisim/sohbetler" }, { label: "Toplu Gönderim" }]
       : [{ label: "İletişim", href: "/admin/iletisim/panel" }, { label: "Toplu Gönderim" }];
 
-  const includedPeople = listedIncludes(query);
   const pickedKeys = useMemo(
     () => new Set(includedPeople.map((item) => `${item.kind}:${item.id}`)),
     [includedPeople],
   );
   const canContinueAudience = (preview?.deliverable_count || 0) > 0;
   const body = selectedTemplate?.body_named || "";
-  const previewBody = fillPreview(body, message);
-  const canSend = !!templateName && (preview?.deliverable_count || 0) > 0 && message.trim().length > 0;
+  const previewBody = composePreview(selectedTemplate, variableValues);
+  const templateReady = campaignMessageReady(
+    selectedTemplate,
+    variableValues,
+    attachments,
+  );
+  const canSend = templateReady && (preview?.deliverable_count || 0) > 0;
 
   const startSend = async () => {
     if (!canSend) return;
     setSubmitting(true);
     setError(null);
     try {
+      const templateContext = Object.fromEntries(
+        Object.entries(variableValues).filter(([, value]) => (value || "").trim()),
+      );
       const campaign = await createCampaign({
         title: title.trim() || querySummary(query),
         body: body || undefined,
@@ -181,7 +211,7 @@ export default function TopluGonderClient({
         template_language: templateLanguage,
         audience_filter: query,
         attachment_ids: attachments.map((a) => a.id),
-        send_options: { template_context: { mesaj: message } },
+        send_options: { template_context: templateContext },
         channel_config_id: accountId || undefined,
       });
       setSentCampaign(campaign);
@@ -238,6 +268,23 @@ export default function TopluGonderClient({
 
         {error && <div className="comm-alert comm-alert-danger">{error}</div>}
 
+        {sentCampaign && (
+          <div className="tg-card">
+            <strong>Gönderim kuyruğa alındı</strong>
+            <p className="lead" style={{ marginBottom: 8 }}>
+              Alıcılar arka planda kuyruğa alınıp gönderilir. İlerlemeyi gönderim
+              detayından izleyebilirsiniz.
+            </p>
+            <div className="tg-kpi-row">
+              <span>Toplam <b>{sentCampaign.total_recipients}</b></span>
+              <span>Başarılı <b>{sentCampaign.sent_count}</b></span>
+              <span>Başarısız <b>{sentCampaign.failed_count}</b></span>
+              <span>Bekleyen <b>{Math.max(0, (sentCampaign.total_recipients || 0) - (sentCampaign.sent_count || 0) - (sentCampaign.failed_count || 0))}</b></span>
+            </div>
+            <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>
+          </div>
+        )}
+
         {tab === "compose" && (
           <>
             <div className="tg-stepper">
@@ -268,7 +315,11 @@ export default function TopluGonderClient({
                         type="button"
                         className="tg-chip"
                         title={item.hint}
-                        onClick={() => setQuery(applyQuickStart(item.person_types, item.add_field))}
+                        onClick={() =>
+                          setQuery(
+                            applyQuickStart(item.person_types, item.add_field, item.add_value),
+                          )
+                        }
                       >
                         {item.label}
                       </button>
@@ -380,7 +431,7 @@ export default function TopluGonderClient({
                 accounts={accounts}
                 accountId={accountId}
                 onAccountChange={setAccountId}
-                personTypes={personTypes}
+                personTypes={audienceKinds}
                 templateName={templateName}
                 selectedTemplate={selectedTemplate}
                 onTemplateChange={(name, lang, tpl) => {
@@ -388,8 +439,8 @@ export default function TopluGonderClient({
                   if (lang) setTemplateLanguage(lang);
                   setSelectedTemplate(tpl);
                 }}
-                message={message}
-                onMessageChange={setMessage}
+                variableValues={variableValues}
+                onVariableValuesChange={setVariableValues}
                 attachments={attachments}
                 onAttachmentsChange={setAttachments}
               />
@@ -413,22 +464,17 @@ export default function TopluGonderClient({
                     <strong className="tg-ok">{preview?.deliverable_count ?? 0} kişi</strong>
                   </div>
                 </div>
-                <p style={{ marginTop: 16, whiteSpace: "pre-wrap" }}>{previewBody || "Mesaj seçilmedi"}</p>
-                <p className="lead">Ek: {attachments.length ? attachments.map((a) => a.original_name).join(", ") : "Yok"}</p>
-              </section>
-            )}
-
-            {sentCampaign && (
-              <div className="tg-card">
-                <strong>Gönderim kuyruğa alındı</strong>
-                <div className="tg-kpi-row">
-                  <span>Toplam <b>{sentCampaign.total_recipients}</b></span>
-                  <span>Başarılı <b>{sentCampaign.sent_count}</b></span>
-                  <span>Başarısız <b>{sentCampaign.failed_count}</b></span>
-                  <span>Bekleyen <b>{Math.max(0, (sentCampaign.total_recipients || 0) - (sentCampaign.sent_count || 0) - (sentCampaign.failed_count || 0))}</b></span>
+                <p className="lead" style={{ marginTop: 16 }}>
+                  Şablon: {selectedTemplate?.name || "seçilmedi"}
+                  {selectedTemplate?.status_label ? ` · ${selectedTemplate.status_label}` : ""}
+                </p>
+                <div style={{ marginTop: 12, maxWidth: 360 }}>
+                  <WhatsAppPhonePreview
+                    text={previewBody || "Mesaj seçilmedi"}
+                    previewContext={variableValues}
+                  />
                 </div>
-                <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>
-              </div>
+              </section>
             )}
 
             <div className="tg-footer">
@@ -444,7 +490,7 @@ export default function TopluGonderClient({
                 <button
                   type="button"
                   className="tg-btn-primary"
-                  disabled={step === 0 ? !canContinueAudience : !templateName || !message.trim()}
+                  disabled={step === 0 ? !canContinueAudience : !templateReady}
                   onClick={() => setStep((s) => s + 1)}
                 >
                   {step === 0 ? "Mesaj oluştur" : "Kontrole geç"}
@@ -567,10 +613,6 @@ function SavedTab({
       ))}
     </div>
   );
-}
-
-function fillPreview(body: string, message: string): string {
-  return body.replace(/\{\{\s*mesaj\s*\}\}/g, message.trim() || "{{mesaj}}");
 }
 
 function formatDate(iso?: string): string {

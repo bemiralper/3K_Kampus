@@ -1,6 +1,8 @@
 "use client";
 
 import {
+  hasVisibleWhatsAppText,
+  parseWhatsAppPreviewLines,
   parseWhatsAppText,
   PreviewFontSize,
   PreviewSampleContext,
@@ -23,6 +25,8 @@ interface WhatsAppPhonePreviewProps {
   resolveVariables?: boolean;
   /** Ek önizleme değişkenleri (mesaj vb.) — kurum/şube canlı bağlamdan gelir. */
   previewContext?: PreviewSampleContext;
+  /** Meta gönderimle aynı: değişken değerlerindeki satır sonları tek satıra. Gövde \n korunur. */
+  normalizeParamValues?: boolean;
   className?: string;
 }
 
@@ -39,6 +43,8 @@ function renderSegment(
       return <span key={key} className="wa-strike">{seg.content}</span>;
     case "mono":
       return <code key={key} className="wa-mono">{seg.content}</code>;
+    case "code":
+      return <code key={key} className="wa-code">{seg.content}</code>;
     case "variable":
       return <span key={key} className="wa-var">{seg.content}</span>;
     default:
@@ -60,14 +66,15 @@ export default function WhatsAppPhonePreview({
   attachments = [],
   resolveVariables = true,
   previewContext,
+  normalizeParamValues = true,
   className = "",
 }: WhatsAppPhonePreviewProps) {
   const liveContext = useLivePreviewContext(previewContext);
   const headerName = kurumName?.trim() || liveContext.kurum_ad || "Kurum";
   const displayText = resolveVariables
-    ? resolvePreviewVariables(text, liveContext)
+    ? resolvePreviewVariables(text, liveContext, { normalizeParamValues })
     : text;
-  const segments = parseWhatsAppText(displayText);
+  const lines = parseWhatsAppPreviewLines(displayText);
   const time = new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
 
   return (
@@ -88,8 +95,17 @@ export default function WhatsAppPhonePreview({
           style={previewColor ? { backgroundColor: previewColor } : undefined}
         >
           <p className={`comm-wa-bubble-text size-${fontSize}`}>
-            {displayText.trim() ? (
-              segments.map((seg, i) => renderSegment(seg, i))
+            {hasVisibleWhatsAppText(displayText) ? (
+              lines.map((line, i) => (
+                <span key={i} className={`wa-line wa-line-${line.block}`}>
+                  {line.block === "bullet" || line.block === "number" ? (
+                    <span className="wa-line-mark">{line.marker}</span>
+                  ) : null}
+                  {line.segments.length
+                    ? line.segments.map((seg, j) => renderSegment(seg, j))
+                    : "\u00a0"}
+                </span>
+              ))
             ) : (
               <span className="comm-wa-placeholder">Mesajınız burada görünecek…</span>
             )}

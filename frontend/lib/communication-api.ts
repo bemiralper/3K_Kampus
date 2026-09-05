@@ -57,6 +57,8 @@ function communicationApiUrl(path: string): string {
 }
 
 const REQUEST_TIMEOUT_MS = 45_000;
+/** Taslak oluşturma kitle çözümlemesi için; onay artık arka planda kuyruklar. */
+const CAMPAIGN_MUTATION_TIMEOUT_MS = 90_000;
 
 /**
  * 24 saatlik serbest mesaj penceresi kapalı — Meta onaylı şablon gerekir.
@@ -113,20 +115,24 @@ function errorFromBody(body: Record<string, unknown>, status: number): Error {
   return new Error(message);
 }
 
-async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+async function request<T>(
+  path: string,
+  options: RequestInit & { timeoutMs?: number } = {},
+): Promise<T> {
+  const { timeoutMs = REQUEST_TIMEOUT_MS, ...fetchOptions } = options;
   const csrf = getCsrfToken();
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     ...getContextHeaders(),
-    ...(options.headers as Record<string, string> || {}),
+    ...(fetchOptions.headers as Record<string, string> || {}),
   };
-  if (csrf && options.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(options.method)) {
+  if (csrf && fetchOptions.method && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(fetchOptions.method)) {
     headers['X-CSRFToken'] = csrf;
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const parentSignal = options.signal;
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const parentSignal = fetchOptions.signal;
   const onParentAbort = () => controller.abort();
   if (parentSignal) {
     if (parentSignal.aborted) controller.abort();
@@ -137,7 +143,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const response = await fetch(communicationApiUrl(path), {
       credentials: 'include',
       cache: 'no-store',
-      ...options,
+      ...fetchOptions,
       headers,
       signal: controller.signal,
     });
@@ -227,7 +233,17 @@ export interface ConversationListItem {
   session?: ConversationSessionInfo;
   can_claim?: boolean;
   created_at: string;
+  /** Sohbetler ekranı — kullanıcıya özel durum ve filtre alanları */
+  contact_kind?: ChatContactKind;
+  pinned_at?: string | null;
+  muted_until?: string | null;
+  is_pinned?: boolean;
+  is_muted?: boolean;
+  awaiting_reply?: boolean;
 }
+
+/** Sohbet listesi kişi grubu — filtre sekmeleriyle birebir eşleşir. */
+export type ChatContactKind = 'ogrenci' | 'veli' | 'koc' | 'ogretmen' | 'diger';
 
 const MESSAGE_STATUS_LABELS: Record<string, string> = {
   PENDING: "bekliyor",
@@ -286,17 +302,27 @@ export interface MessageItem {
   attachments?: MessageAttachmentItem[];
   reactions?: MessageReactionItem[];
   reply_to?: MessageReplyPreview | null;
+  sender_name?: string;
+  is_starred?: boolean;
+  is_forwarded?: boolean;
+  is_pinned?: boolean;
+  pinned_at?: string | null;
 }
 
 export interface ConversationsResponse {
   conversations: ConversationListItem[];
   total: number;
+  offset?: number;
+  has_more?: boolean;
 }
 
 export interface MessagesResponse {
   messages: MessageItem[];
   total: number;
   has_more: boolean;
+  incremental?: boolean;
+  /** Sohbette sabitlenmiş mesaj (varsa) — timeline üstünde şerit olarak gösterilir. */
+  pinned_message?: MessageItem | null;
 }
 
 export interface WhatsAppConfig {
@@ -619,13 +645,14 @@ export async function fetchNotificationSummary(): Promise<NotificationSummary> {
 
 export async function fetchConversationMessages(
   conversationId: string,
-  params?: { limit?: number; before?: string },
+  params?: { limit?: number; before?: string; after?: string },
 ): Promise<MessagesResponse> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const search = new URLSearchParams();
   if (kurumId) search.set('kurum_id', kurumId);
   if (params?.limit) search.set('limit', String(params.limit));
   if (params?.before) search.set('before', params.before);
+  if (params?.after) search.set('after', params.after);
   const qs = search.toString();
   return request<MessagesResponse>(
     `/conversations/${conversationId}/messages/${qs ? `?${qs}` : ''}`,
@@ -908,6 +935,13 @@ export interface WhatsAppMetaTemplateItem {
   meta_template_id?: string;
   usage_scope?: MetaTemplateUsage | string;
   usage_scope_label?: string;
+  campaign_audience?: string;
+  campaign_audience_label?: string;
+  campaign_family?: string;
+  campaign_family_label?: string;
+  campaign_media?: string;
+  campaign_media_label?: string;
+  campaign_eligible?: boolean;
   /** Gövdedeki değişken adları, gönderim ekranında doldurulur */
   variables?: string[];
   /** Sohbet bağlamıyla çözülmüş önizleme (yalnızca sohbet şablon listesinde) */
@@ -1014,6 +1048,8 @@ export async function createLocalMetaTemplate(data: {
   language?: string;
   meta_category?: string;
   usage_scope?: MetaTemplateUsage;
+  campaign_audience?: string;
+  campaign_family?: string;
   body_named?: string;
   header_json?: MetaTemplateHeader;
   footer_text?: string;
@@ -1041,6 +1077,8 @@ export async function updateLocalMetaTemplate(
     language: string;
     meta_category: string;
     usage_scope: MetaTemplateUsage;
+    campaign_audience?: string;
+    campaign_family?: string;
     body_named: string;
     header_json: MetaTemplateHeader;
     footer_text: string;
@@ -1058,9 +1096,30 @@ export async function updateLocalMetaTemplate(
 export async function deleteLocalMetaTemplate(
   id: string,
   deleteOnMeta = false,
-): Promise<{ success: boolean }> {
+): Promise<{ success: boolean; paired_app_deleted?: number }> {
   const qs = deleteOnMeta ? '?delete_on_meta=1' : '';
   return request(`/meta-templates/${id}/${qs}`, { method: 'DELETE' });
+}
+
+export async function bulkDeleteLocalMetaTemplates(
+  ids: string[],
+  deleteOnMeta = false,
+): Promise<{
+  deleted: Array<{ id: string; name: string; paired_app_deleted?: number }>;
+  blocked: Array<{
+    id: string;
+    name: string;
+    reason: string;
+    usages?: Array<{ label?: string; event_key?: string }>;
+  }>;
+  missing: string[];
+  deleted_count: number;
+  blocked_count: number;
+}> {
+  return request("/meta-templates/bulk-delete/", {
+    method: "POST",
+    body: JSON.stringify({ ids, delete_on_meta: deleteOnMeta }),
+  });
 }
 
 export async function submitLocalMetaTemplate(id: string): Promise<WhatsAppMetaTemplateItem> {
@@ -1163,7 +1222,38 @@ export async function seedPersonalChatTemplates(data: {
   });
 }
 
-/** Özel ders yoklama/telafi — 5 Meta + LMS taslak ve bildirim bağlama */
+/** Ölçme / sınav — veli + öğrenci LMS + Meta taslak ve bildirim bağlama */
+export async function seedSinavTemplates(data: {
+  channel_config_id: string;
+  sube_id?: number | null;
+  force?: boolean;
+  bind?: boolean;
+}): Promise<{
+  created_app_count: number;
+  updated_app_count: number;
+  skipped_app_count: number;
+  created_meta_count: number;
+  updated_meta_count: number;
+  skipped_meta_count: number;
+  bound_count: number;
+  created_app: string[];
+  updated_app: string[];
+  created_meta: string[];
+  updated_meta: string[];
+  bound: string[];
+  errors: string[];
+  next_steps?: string[];
+  event_keys?: string[];
+  info?: string;
+}> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request('/meta-templates/seed-sinav/', {
+    method: 'POST',
+    body: JSON.stringify({ ...data, kurum_id: kurumId }),
+  });
+}
+
+/** Özel ders yoklama/telafi — 6 Meta + LMS taslak ve bildirim bağlama */
 export async function seedOzelDersTemplates(data: {
   channel_config_id: string;
   sube_id?: number | null;
@@ -1471,6 +1561,12 @@ export async function fetchMetaWhatsAppTemplates(): Promise<{
   return request(`/config/whatsapp/templates/${qs}`);
 }
 
+export function inboxPortalDepartment(portal: InboxPortal): string | undefined {
+  if (portal === 'muhasebe') return 'ACCOUNTING';
+  if (portal === 'coach') return 'COACHING';
+  return undefined;
+}
+
 export async function openConversationByPhone(
   phone: string,
   options?: {
@@ -1478,6 +1574,7 @@ export async function openConversationByPhone(
     veli_id?: number;
     personel_id?: number;
     channel_config_id?: string;
+    department?: string;
   },
 ): Promise<ConversationListItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
@@ -1496,9 +1593,33 @@ export function resolveInboxPortal(pathname: string): InboxPortal {
 }
 
 export function conversationInboxBase(portal: InboxPortal): string {
-  if (portal === 'admin') return '/admin/iletisim/mesajlar';
-  if (portal === 'muhasebe') return '/muhasebe/iletisim/mesajlar';
-  return '/coach/mesajlar';
+  if (portal === 'admin') return '/admin/iletisim/sohbetler';
+  if (portal === 'muhasebe') return '/muhasebe/iletisim/sohbetler';
+  return '/coach/sohbetler';
+}
+
+/** Portal içi iletişim sayfa yolları — admin linkleri muhasebe kabuğuna sızmasın. */
+export function communicationPortalPaths(portal: InboxPortal) {
+  if (portal === 'muhasebe') {
+    return {
+      home: '/muhasebe/iletisim/sohbetler',
+      chats: '/muhasebe/iletisim/sohbetler',
+      templates: '/muhasebe/iletisim/sablonlar',
+      bulk: '/muhasebe/iletisim/toplu-gonder',
+      history: '/muhasebe/iletisim/kampanyalar',
+      campaign: (id: string) => `/muhasebe/iletisim/kampanyalar/${id}`,
+      queue: '/muhasebe/iletisim/kuyruk',
+    };
+  }
+  return {
+    home: '/admin/iletisim/panel',
+    chats: '/admin/iletisim/sohbetler',
+    templates: '/admin/iletisim/sablonlar',
+    bulk: '/admin/iletisim/toplu-gonder',
+    history: '/admin/iletisim/kampanyalar',
+    campaign: (id: string) => `/admin/iletisim/kampanyalar/${id}`,
+    queue: '/admin/iletisim/kuyruk',
+  };
 }
 
 export function conversationTemplatesPath(portal: InboxPortal): string {
@@ -1513,25 +1634,6 @@ export function conversationInboxPath(
   const resolved: InboxPortal =
     portal === true ? 'admin' : portal === false ? 'coach' : portal;
   return `${conversationInboxBase(resolved)}?conversation=${conversationId}`;
-}
-
-export function communicationPortalPaths(portal: InboxPortal = 'admin') {
-  if (portal === 'muhasebe') {
-    return {
-      campaigns: '/muhasebe/iletisim/kampanyalar',
-      campaignDetail: (id: string) => `/muhasebe/iletisim/kampanyalar/${id}`,
-      compose: '/muhasebe/iletisim/toplu-gonder',
-      queue: '/muhasebe/iletisim/kuyruk',
-      chats: '/muhasebe/iletisim/mesajlar',
-    };
-  }
-  return {
-    campaigns: '/admin/iletisim/kampanyalar',
-    campaignDetail: (id: string) => `/admin/iletisim/kampanyalar/${id}`,
-    compose: '/admin/iletisim/toplu-gonder',
-    queue: '/admin/iletisim/kuyruk',
-    chats: '/admin/iletisim/mesajlar',
-  };
 }
 
 /** Veli sohbetinde "… velisi" alt satırı; öğrenci sohbetinde veli adı (varsa). */
@@ -1671,6 +1773,8 @@ export interface AudienceQuickStart {
   label: string;
   person_types: AudiencePersonType[];
   add_field?: string;
+  /** Kısayolun `add_field` için önceden seçtiği değerler (ör. kütüphane). */
+  add_value?: unknown[];
   hint?: string;
 }
 
@@ -1915,9 +2019,20 @@ export interface CampaignDelivery {
   failed_reason: string;
   failed_reason_short?: string;
   sent_at: string | null;
+  /** Kuyruktaki bir sonraki deneme (bekleyen alıcılar için) */
   next_attempt_at?: string | null;
   attempt_count?: number;
+  /** "Kuyrukta, sırası bekleniyor" gibi bekleme açıklaması */
   queue_note?: string;
+}
+
+export interface CampaignQueueStatus {
+  pending: number;
+  sending: number;
+  waiting: number;
+  queue_items: number;
+  next_attempt_at: string | null;
+  last_error: string;
 }
 
 export interface CampaignItem {
@@ -1949,6 +2064,14 @@ export interface CampaignItem {
   deliveries?: CampaignDelivery[];
   deliveries_total?: number;
   deliveries_limit?: number;
+  /** Gönderimde kullanılan Meta şablonu */
+  template_name?: string;
+  template_language?: string;
+  /** Şablon değişkenlerine girilen değerler ({{mesaj}} vb.) */
+  template_context?: Record<string, string>;
+  /** Alıcıya giden gerçek metin — {{...}} çözülmüş hâli */
+  resolved_body?: string;
+  queue_status?: CampaignQueueStatus;
 }
 
 export async function previewCampaign(
@@ -1997,6 +2120,7 @@ export async function createCampaign(data: {
   return request<CampaignItem>('/campaigns/', {
     method: 'POST',
     body: JSON.stringify({ ...data, kurum_id: kurumId }),
+    timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
   });
 }
 
@@ -2005,6 +2129,7 @@ export async function confirmCampaign(campaignId: string): Promise<CampaignItem>
   return request<CampaignItem>(`/campaigns/${campaignId}/confirm/`, {
     method: 'POST',
     body: JSON.stringify({ kurum_id: kurumId }),
+    timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
   });
 }
 
@@ -2028,6 +2153,16 @@ export async function retryFailedCampaign(campaignId: string): Promise<CampaignI
   });
 }
 
+/** Kampanyanın bekleyen mesajlarını hemen işlemeye başlar (cron beklemeden). */
+export async function processCampaignQueue(campaignId: string): Promise<CampaignItem> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request<CampaignItem>(`/campaigns/${campaignId}/process-queue/`, {
+    method: 'POST',
+    body: JSON.stringify({ kurum_id: kurumId }),
+    timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
+  });
+}
+
 export async function cancelCampaign(campaignId: string): Promise<CampaignItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request<CampaignItem>(`/campaigns/${campaignId}/cancel/`, {
@@ -2048,7 +2183,7 @@ export async function resolveRecipients(
 
 export const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Taslak',
-  CONFIRMED: 'Onaylandı',
+  CONFIRMED: 'Kuyruğa alınıyor',
   QUEUED: 'Kuyrukta',
   PROCESSING: 'İşleniyor',
   COMPLETED: 'Tamamlandı',
@@ -2578,3 +2713,283 @@ export async function uploadCampaignAttachment(file: File): Promise<CampaignAtta
 
 /** @deprecated Use uploadCampaignAttachment */
 export const uploadAttachment = uploadCampaignAttachment;
+
+// ───────────────────────────────────────────────────────────────
+// Sohbetler ekranı (yeni arayüz)
+// ───────────────────────────────────────────────────────────────
+
+export type ChatQuickFilter =
+  | 'all'
+  | 'unread'
+  | 'read'
+  | 'pinned'
+  | 'archived'
+  | 'awaiting_reply';
+
+const CHAT_QUICK_FILTERS: readonly ChatQuickFilter[] = [
+  'all',
+  'unread',
+  'read',
+  'pinned',
+  'archived',
+  'awaiting_reply',
+];
+
+/** `?filter=` derin bağlantısını doğrular; tanınmayan değer için null döner. */
+export function parseChatQuickFilter(raw: string | null | undefined): ChatQuickFilter | null {
+  if (!raw) return null;
+  return CHAT_QUICK_FILTERS.includes(raw as ChatQuickFilter) ? (raw as ChatQuickFilter) : null;
+}
+
+export type ChatTimeFilter = 'all' | '24h' | '7d' | '30d';
+
+export interface ChatListQuery {
+  /** Tek seçimli ana filtre */
+  quick?: ChatQuickFilter;
+  /** Çoklu seçim: öğrenci / veli / koç / öğretmen / diğer */
+  kinds?: ChatContactKind[];
+  time?: ChatTimeFilter;
+  search?: string;
+  /** Aramayı mesaj içeriğinde de çalıştır */
+  searchMessages?: boolean;
+  accountId?: string;
+  department?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export async function fetchChatConversations(
+  query: ChatListQuery = {},
+): Promise<ConversationsResponse> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = new URLSearchParams();
+  if (kurumId) qs.set('kurum_id', kurumId);
+
+  switch (query.quick) {
+    case 'unread':
+      qs.set('unread', '1');
+      break;
+    case 'read':
+      qs.set('read', '1');
+      break;
+    case 'pinned':
+      qs.set('pinned', '1');
+      break;
+    case 'archived':
+      qs.set('archived', '1');
+      qs.set('inbox', 'archived');
+      break;
+    case 'awaiting_reply':
+      qs.set('awaiting_reply', '1');
+      break;
+    default:
+      break;
+  }
+
+  if (query.kinds?.length) qs.set('contact_kinds', query.kinds.join(','));
+  if (query.time && query.time !== 'all') qs.set('since', query.time);
+  if (query.search) {
+    qs.set('search', query.search);
+    if (query.searchMessages !== false) qs.set('search_messages', '1');
+  }
+  if (query.accountId) qs.set('channel_config_id', query.accountId);
+  if (query.department) qs.set('department', query.department);
+  qs.set('period', 'all');
+  qs.set('limit', String(query.limit ?? 30));
+  if (query.offset) qs.set('offset', String(query.offset));
+
+  return request<ConversationsResponse>(`/conversations/?${qs.toString()}`);
+}
+
+/**
+ * Tek sohbetin liste satırı — aktif filtreye uymayan ya da derin bağlantıyla
+ * gelen sohbet listede olmasa da açılabilsin diye.
+ */
+export async function fetchChatConversation(
+  conversationId: string,
+): Promise<ConversationListItem> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request<ConversationListItem>(`/conversations/${conversationId}/item/${qs}`);
+}
+
+function chatMutation<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  return request<T>(path, {
+    method,
+    body: JSON.stringify({ kurum_id: kurumId, ...(body as object || {}) }),
+  });
+}
+
+export function pinConversation(
+  conversationId: string,
+  pin = true,
+): Promise<ConversationListItem> {
+  return chatMutation(`/conversations/${conversationId}/pin/`, 'PATCH', { pin });
+}
+
+export function muteConversation(
+  conversationId: string,
+  mute = true,
+  hours?: number,
+): Promise<ConversationListItem> {
+  return chatMutation(`/conversations/${conversationId}/mute/`, 'PATCH', { mute, hours });
+}
+
+export function markConversationUnread(
+  conversationId: string,
+): Promise<ConversationListItem> {
+  return chatMutation(`/conversations/${conversationId}/unread/`, 'PATCH');
+}
+
+export function deleteConversation(conversationId: string): Promise<{ ok: boolean }> {
+  return chatMutation(`/conversations/${conversationId}/delete/`, 'DELETE');
+}
+
+export function markAllConversationsRead(): Promise<{ ok: boolean; updated: number }> {
+  return chatMutation('/conversations/read-all/', 'POST');
+}
+
+export interface ChatMessageSearchHit {
+  id: string;
+  body: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  created_at: string;
+}
+
+export async function searchMessagesInConversation(
+  conversationId: string,
+  q: string,
+): Promise<{ results: ChatMessageSearchHit[]; total: number }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = new URLSearchParams({ q });
+  if (kurumId) qs.set('kurum_id', kurumId);
+  return request(`/conversations/${conversationId}/messages/search/?${qs.toString()}`);
+}
+
+export async function fetchMessageContext(
+  conversationId: string,
+  messageId: string,
+): Promise<{ messages: MessageItem[]; anchor_id: string; has_more: boolean }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/conversations/${conversationId}/messages/${messageId}/context/${qs}`);
+}
+
+export function starMessage(
+  conversationId: string,
+  messageId: string,
+  star = true,
+): Promise<MessageItem> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/star/`,
+    'PATCH',
+    { star },
+  );
+}
+
+export function pinMessage(
+  conversationId: string,
+  messageId: string,
+  pin = true,
+): Promise<MessageItem> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/pin/`,
+    'PATCH',
+    { pin },
+  );
+}
+
+export function deleteMessage(
+  conversationId: string,
+  messageId: string,
+): Promise<{ ok: boolean }> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/delete/`,
+    'DELETE',
+  );
+}
+
+export interface StarredMessageItem {
+  id: string;
+  conversation_id: string;
+  contact_name: string;
+  body: string;
+  direction: 'INBOUND' | 'OUTBOUND';
+  created_at: string | null;
+}
+
+export async function fetchStarredMessages(): Promise<{ messages: StarredMessageItem[] }> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/messages/starred/${qs}`);
+}
+
+export interface ForwardResult {
+  results: Array<{
+    conversation_id: string;
+    ok: boolean;
+    error?: string | null;
+    session_expired?: boolean;
+  }>;
+  sent: number;
+  total: number;
+}
+
+export function forwardMessage(
+  conversationId: string,
+  messageId: string,
+  targetConversationIds: string[],
+): Promise<ForwardResult> {
+  return chatMutation(
+    `/conversations/${conversationId}/messages/${messageId}/forward/`,
+    'POST',
+    { conversation_ids: targetConversationIds },
+  );
+}
+
+export interface ChatContextStudent {
+  id: number;
+  ad_soyad: string;
+  profil_foto?: string | null;
+  telefon: string;
+  email: string;
+  aktif: boolean;
+  kayit_turu: string;
+  sinif: string;
+  sinif_seviyesi: string;
+  sube: string;
+  egitim_yili: string;
+  koc: string;
+  koc_id?: number | null;
+}
+
+export interface ChatContextParent {
+  id: number;
+  ad_soyad: string;
+  yakinlik: string;
+  telefon: string;
+  email: string;
+}
+
+export interface ChatContextData {
+  conversation_id: string;
+  contact: { name: string; phone: string; type: string };
+  ogrenci: ChatContextStudent | null;
+  veliler: ChatContextParent[];
+  sorumlu: {
+    claimed_by_id?: number | null;
+    claimed_by_name: string;
+    assigned_coach_id?: number | null;
+    assigned_coach_name: string;
+  };
+  kanal: { account_name: string; display_phone: string; department: string };
+}
+
+export async function fetchConversationContext(
+  conversationId: string,
+): Promise<ChatContextData> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
+  return request(`/conversations/${conversationId}/context/${qs}`);
+}

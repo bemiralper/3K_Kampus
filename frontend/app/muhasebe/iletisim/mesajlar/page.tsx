@@ -1,15 +1,14 @@
-import { Suspense } from "react";
-import MuhasebeMesajlarContent from "./MuhasebeMesajlarContent";
-import "@/components/communication/communication.css";
+import { redirect } from "next/navigation";
 
-function Loading() {
-  return <p style={{ color: "#667781", padding: "1rem" }}>Konuşmalar yükleniyor…</p>;
-}
-
-export default function MuhasebeMesajlarPage() {
-  return (
-    <Suspense fallback={<Loading />}>
-      <MuhasebeMesajlarContent />
-    </Suspense>
-  );
+/** Eski inbox adresi — yeni Sohbetler ekranına yönlendirir. */
+export default function MuhasebeMesajlarRedirect({
+  searchParams,
+}: {
+  searchParams?: { conversation?: string; filter?: string };
+}) {
+  const q = new URLSearchParams();
+  if (searchParams?.conversation) q.set("conversation", searchParams.conversation);
+  if (searchParams?.filter) q.set("filter", searchParams.filter);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  redirect(`/muhasebe/iletisim/sohbetler${suffix}`);
 }

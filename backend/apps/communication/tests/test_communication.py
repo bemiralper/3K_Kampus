@@ -179,7 +179,19 @@ class ContactResolverTest(TestCase):
         )
         self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'duyuru'))
         self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'devamsizlik'))
-        self.assertFalse(ContactResolver.veli_allows_outbound(veli, 'odeme'))
+        self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'odeme'))
+
+    def test_legacy_default_sms_allows_odeme(self):
+        veli = OgrenciVeli.objects.create(
+            ogrenci=self.student,
+            veli_turu='anne',
+            ad='Legacy',
+            soyad='Prefs',
+            telefon='05325556677',
+            sms_bildirimleri=['duyuru', 'devamsizlik'],
+        )
+        self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'odeme'))
+        self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'duyuru'))
 
 
 class InboundWebhookTest(TestCase):

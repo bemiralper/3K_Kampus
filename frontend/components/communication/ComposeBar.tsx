@@ -142,26 +142,32 @@ export default function ComposeBar({
             className={`comm-session-bar${session.is_open ? " is-open" : " is-closed"}`}
             role="status"
           >
-            <span className="comm-session-dot" aria-hidden="true" />
+            <span
+              className="comm-session-dot"
+              aria-hidden="true"
+              title={
+                session.is_open
+                  ? `Serbest mesaj penceresi ${
+                      session.seconds_left > 0 ? remainingLabel(session.seconds_left) : "kısa süre"
+                    } sonra kapanır. Kişi yazınca süre yeniden 24 saate döner.`
+                  : "24 saatlik yanıt penceresi kapandı. Kişi son 24 saatte yazmadıysa yalnızca Meta onaylı şablon gönderilebilir; yanıt gelince pencere yeniden açılır."
+              }
+            />
             <span className="comm-session-label">
-              {session.is_open ? "Normal mesaj gönderilebilir" : "24 saatlik süre dolmuş"}
-              {session.is_open && session.seconds_left > 0 && (
-                <em> · {remainingLabel(session.seconds_left)}</em>
-              )}
+              {session.is_open
+                ? session.seconds_left > 0
+                  ? remainingLabel(session.seconds_left)
+                  : "Pencere açık"
+                : "24 saatlik yanıt penceresi kapandı"}
             </span>
-            {!session.is_open && (
-              <>
-                <span className="comm-session-notice">{session.notice}</span>
-                {onOpenMetaTemplates && (
-                  <button
-                    type="button"
-                    className="comm-session-action"
-                    onClick={onOpenMetaTemplates}
-                  >
-                    Şablon seç
-                  </button>
-                )}
-              </>
+            {!session.is_open && onOpenMetaTemplates && (
+              <button
+                type="button"
+                className="comm-session-action"
+                onClick={onOpenMetaTemplates}
+              >
+                Şablon seç
+              </button>
             )}
           </div>
         )}

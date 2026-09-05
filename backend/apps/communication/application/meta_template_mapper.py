@@ -55,6 +55,13 @@ SAMPLE_VALUES: dict[str, str] = {
     'koc_ad': 'Elif Demir',
     'konu': 'Sınav hazırlığı',
     'sinav_ad': 'TYT Deneme 12',
+    'sinav_adi': 'TYT Deneme 12',
+    'sinav_tarihi': '12.04.2026',
+    'baslama_saati': '10:00',
+    'bitis_saati': '12:45',
+    'sinav_salonu': 'A Salonu',
+    'sira_no': '14',
+    'sira': '14',
     'baslik': 'Veli Toplantısı',
     'mesaj': (
         'Haftalık deneme sınavı sonuçları öğrenci paneline yüklenmiştir. '
@@ -64,6 +71,7 @@ SAMPLE_VALUES: dict[str, str] = {
     'ders_tarihi': '15 Ocak 2026 Pazartesi',
     'ders_saati': '15.00',
     'ders_adi': 'Matematik',
+    'ders_ad': 'Matematik',
     'ogretmen_ad': 'Tuba Demir',
     'ders_durumu': 'Öğretmen Gelmedi',
     'sebep': 'Hastalık',
@@ -108,11 +116,29 @@ NUMBERED_TEMPLATE_DEFAULT_MAPS: dict[str, dict[str, str]] = {
         '4': 'kayit_tarihi',
         '5': 'kayit_yapan',
     },
+    'toplu_duyuru': {'1': 'mesaj'},
+    'ogrenci_toplu_duyuru': {'1': 'mesaj'},
+    'ogretmen_toplu_duyuru': {'1': 'mesaj'},
+    'duyuru_toplu': {'1': 'mesaj'},
 }
 
 
-def default_variable_map_for_template(name: str) -> dict[str, str]:
-    return dict(NUMBERED_TEMPLATE_DEFAULT_MAPS.get((name or '').strip(), {}) or {})
+def infer_single_numbered_as_mesaj(body_named: str) -> dict[str, str]:
+    """Gövde yalnızca {{1}} gibi tek numaralı alan ise kampanya mesajıdır."""
+    keys = [match.group(1) for match in VARIABLE_PATTERN.finditer(body_named or '')]
+    numbered = [key for key in keys if key.isdigit()]
+    named = [key for key in keys if not key.isdigit()]
+    unique = list(dict.fromkeys(numbered))
+    if unique and not named and len(unique) == 1:
+        return {unique[0]: 'mesaj'}
+    return {}
+
+
+def default_variable_map_for_template(name: str, body_named: str = '') -> dict[str, str]:
+    mapped = dict(NUMBERED_TEMPLATE_DEFAULT_MAPS.get((name or '').strip(), {}) or {})
+    if mapped:
+        return mapped
+    return infer_single_numbered_as_mesaj(body_named)
 
 
 def build_variable_map(body_named: str, *extra_texts: str) -> dict[str, str]:
@@ -364,8 +390,11 @@ def build_meta_components(
 
 def sanitize_template_param_text(value: Any) -> str:
     """
-    Meta body/header text parametreleri boş veya satır sonu içeremez
-    (#100 Invalid parameter).
+    Gönderim parametresi (`components[].parameters[].text`).
+
+    Meta Cloud API #100 / 2494073: "Param text cannot have new-line/tab
+    characters or more than 4 consecutive spaces". Şablon GÖVDESİNDEKİ sabit
+    metin satır sonları bu fonksiyona girmez; yalnızca değişken değerleri.
     """
     text = '' if value is None else str(value)
     text = text.replace('\r', ' ').replace('\n', ' ').replace('\t', ' ')

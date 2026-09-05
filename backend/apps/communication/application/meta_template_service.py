@@ -23,6 +23,7 @@ from apps.communication.application.meta_template_validation import (
     validate_template_content,
 )
 from apps.communication.domain.enums import (
+    CampaignAudience,
     MetaTemplateCategory,
     MetaTemplateStatus,
     MetaTemplateUsage,
@@ -258,6 +259,8 @@ class MetaTemplateService:
         buttons_json: list | None = None,
         usage_scope: str = MetaTemplateUsage.ALL,
         template_group: str = '',
+        campaign_audience: str = '',
+        campaign_family: str = '',
         example_values_json: dict | None = None,
         user=None,
     ) -> WhatsAppMetaTemplate:
@@ -307,6 +310,11 @@ class MetaTemplateService:
             status=MetaTemplateStatus.DRAFT,
             usage_scope=usage_scope or MetaTemplateUsage.ALL,
             template_group=(template_group or '').strip()[:64],
+            campaign_audience=cls._normalize_campaign_audience(
+                usage_scope or MetaTemplateUsage.ALL,
+                campaign_audience,
+            ),
+            campaign_family=(campaign_family or '').strip()[:32],
             body_named=body_named or '',
             header_json=header_json or {},
             footer_text=(footer_text or '')[:60],
@@ -324,16 +332,58 @@ class MetaTemplateService:
             raise MetaTemplateServiceError('Geçersiz kullanım alanı.')
         if template.usage_scope != usage_scope:
             template.usage_scope = usage_scope
-            template.save(update_fields=['usage_scope', 'updated_at'])
+            update_fields = ['usage_scope', 'updated_at']
+            if usage_scope == MetaTemplateUsage.CAMPAIGN and not template.campaign_audience:
+                template.campaign_audience = CampaignAudience.GENEL
+                update_fields.append('campaign_audience')
+            template.save(update_fields=update_fields)
         return template
 
-    @staticmethod
-    def set_template_group(template: WhatsAppMetaTemplate, template_group: str | None) -> WhatsAppMetaTemplate:
+    @classmethod
+    def set_template_group(cls, template: WhatsAppMetaTemplate, template_group: str | None) -> WhatsAppMetaTemplate:
         """Yerel şablon grubu — Meta'ya gönderilmez, onaylı şablonda da değişebilir."""
         next_group = (template_group or '').strip()[:64]
         if template.template_group != next_group:
             template.template_group = next_group
             template.save(update_fields=['template_group', 'updated_at'])
+            cls._sync_paired_apps(template)
+        return template
+
+    @staticmethod
+    def _normalize_campaign_audience(usage_scope: str, campaign_audience: str | None) -> str:
+        audience = (campaign_audience or '').strip()[:16]
+        allowed = {item.value for item in CampaignAudience}
+        if audience and audience not in allowed:
+            audience = ''
+        if (usage_scope or '') == MetaTemplateUsage.CAMPAIGN and not audience:
+            return CampaignAudience.GENEL
+        return audience
+
+    @staticmethod
+    def set_campaign_tags(
+        template: WhatsAppMetaTemplate,
+        *,
+        campaign_audience: str | None = None,
+        campaign_family: str | None = None,
+    ) -> WhatsAppMetaTemplate:
+        """Toplu gönderim kitlesi — Meta'ya gitmez, onaylıda da değişir."""
+        update_fields: list[str] = []
+        if campaign_audience is not None:
+            next_audience = MetaTemplateService._normalize_campaign_audience(
+                template.usage_scope,
+                campaign_audience,
+            )
+            if template.campaign_audience != next_audience:
+                template.campaign_audience = next_audience
+                update_fields.append('campaign_audience')
+        if campaign_family is not None:
+            next_family = campaign_family.strip()[:32]
+            if template.campaign_family != next_family:
+                template.campaign_family = next_family
+                update_fields.append('campaign_family')
+        if update_fields:
+            update_fields.append('updated_at')
+            template.save(update_fields=update_fields)
         return template
 
     @classmethod
@@ -391,6 +441,7 @@ class MetaTemplateService:
         template.components_json = components
         template.variable_map_json = vmap
         template.save()
+        cls._sync_paired_apps(template)
         return template
 
     @classmethod
@@ -504,8 +555,43 @@ class MetaTemplateService:
             user=user,
         )
 
+    @staticmethod
+    def _sync_paired_apps(template: WhatsAppMetaTemplate) -> None:
+        from apps.communication.application.template_pairing_service import (
+            TemplatePairingService,
+        )
+        TemplatePairingService.sync_app_from_meta(template)
+
     @classmethod
-    def delete_local(cls, template: WhatsAppMetaTemplate, *, delete_on_meta: bool = False) -> None:
+    def deletion_blockers(cls, template: WhatsAppMetaTemplate) -> list[dict]:
+        from apps.communication.application.template_pairing_service import (
+            TemplatePairingService,
+        )
+        return TemplatePairingService.deletion_blockers(template)
+
+    @classmethod
+    def _assert_deletable(cls, template: WhatsAppMetaTemplate) -> None:
+        usages = cls.deletion_blockers(template)
+        if not usages:
+            return
+        labels = ', '.join(
+            str(row.get('label') or row.get('event_key') or row.get('role') or '')
+            for row in usages
+        )
+        raise MetaTemplateServiceError(
+            'Bu şablon bildirimlerde kullanılıyor'
+            + (f': {labels}' if labels else '.')
+            + ' Önce Bildirim Şablonları’ndan bağlantıyı kaldırın.',
+            status_code=409,
+        )
+
+    @classmethod
+    def delete_local(cls, template: WhatsAppMetaTemplate, *, delete_on_meta: bool = False) -> dict:
+        cls._assert_deletable(template)
+        from apps.communication.application.template_pairing_service import (
+            TemplatePairingService,
+        )
+        paired = TemplatePairingService.delete_paired_app_templates(template)
         if delete_on_meta and template.status != MetaTemplateStatus.DRAFT:
             client = WhatsAppCloudClient(channel_config=template.channel_config)
             client.delete_message_template(
@@ -513,7 +599,57 @@ class MetaTemplateService:
                 name=template.name,
                 hsm_id=template.meta_template_id or '',
             )
+        template_id = str(template.id)
+        name = template.name
         template.delete()
+        return {'id': template_id, 'name': name, 'paired_app_deleted': paired}
+
+    @classmethod
+    def bulk_delete(
+        cls,
+        kurum_id: int,
+        ids: list,
+        *,
+        delete_on_meta: bool = False,
+    ) -> dict:
+        deleted: list[dict] = []
+        blocked: list[dict] = []
+        missing: list[str] = []
+        seen: set[str] = set()
+        for raw in ids:
+            key = str(raw or '').strip()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            tpl = cls.get(kurum_id, key)
+            if not tpl:
+                missing.append(key)
+                continue
+            usages = cls.deletion_blockers(tpl)
+            if usages:
+                blocked.append({
+                    'id': str(tpl.id),
+                    'name': tpl.name,
+                    'reason': 'Bildirim şablonlarında kullanılıyor.',
+                    'usages': usages,
+                })
+                continue
+            try:
+                deleted.append(cls.delete_local(tpl, delete_on_meta=delete_on_meta))
+            except MetaTemplateServiceError as exc:
+                blocked.append({
+                    'id': str(tpl.id),
+                    'name': tpl.name,
+                    'reason': exc.message,
+                    'usages': cls.deletion_blockers(tpl),
+                })
+        return {
+            'deleted': deleted,
+            'blocked': blocked,
+            'missing': missing,
+            'deleted_count': len(deleted),
+            'blocked_count': len(blocked),
+        }
 
     _MISSING_ON_META_STATUSES = (
         MetaTemplateStatus.PENDING,
@@ -919,7 +1055,7 @@ class MetaTemplateService:
             header_text = header.get('text') or ''
         vmap = build_variable_map(template.body_named, header_text)
         if not vmap:
-            vmap = default_variable_map_for_template(template.name)
+            vmap = default_variable_map_for_template(template.name, template.body_named)
         template.variable_map_json = vmap
         template.save(update_fields=['variable_map_json', 'updated_at'])
         return vmap

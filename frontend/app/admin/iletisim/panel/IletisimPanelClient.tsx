@@ -53,7 +53,7 @@ function minutesLabel(seconds: number | null | undefined): string {
 }
 
 const SHORTCUTS = [
-  { href: "/admin/iletisim/mesajlar", label: "Sohbetler", desc: "Gelen kutusu ve SLA kuyruğu" },
+  { href: "/admin/iletisim/sohbetler", label: "Sohbetler", desc: "Gelen kutusu ve SLA kuyruğu" },
   { href: "/admin/iletisim/kuyruk", label: "Mesaj kuyruğu", desc: "Bekleyen / başarısız gönderimler" },
   { href: "/admin/iletisim/toplu-gonder", label: "Toplu gönder", desc: "Duyuru ve kampanya başlat" },
   { href: "/admin/iletisim/bildirim-sablonlari", label: "Bildirimler", desc: "Otomatik olay şablonları" },
@@ -139,7 +139,7 @@ export default function IletisimPanelClient() {
           {(data.alerts || []).length > 0 && (
             <div className="ipanel-alerts">
               {data.alerts!.map((alert) => (
-                <Link key={alert.key} href={alert.href || "/admin/iletisim/mesajlar"} className={`ipanel-alert ${alert.tone}`}>
+                <Link key={alert.key} href={alert.href || "/admin/iletisim/sohbetler"} className={`ipanel-alert ${alert.tone}`}>
                   {alert.label}
                 </Link>
               ))}
@@ -147,17 +147,17 @@ export default function IletisimPanelClient() {
           )}
 
           <div className="ipanel-kpis">
-            <Link href="/admin/iletisim/mesajlar" className="ipanel-kpi" style={{ "--kpi-accent": "#0262a7" } as never}>
+            <Link href="/admin/iletisim/sohbetler" className="ipanel-kpi" style={{ "--kpi-accent": "#0262a7" } as never}>
               <div className="ipanel-kpi-label">Aktif sohbet</div>
               <div className="ipanel-kpi-value">{data.active_conversations}</div>
               <div className="ipanel-kpi-meta">{data.unassigned_active || 0} atamasız</div>
             </Link>
-            <Link href="/admin/iletisim/mesajlar" className="ipanel-kpi" style={{ "--kpi-accent": "#f59e0b" } as never}>
+            <Link href="/admin/iletisim/sohbetler" className="ipanel-kpi" style={{ "--kpi-accent": "#f59e0b" } as never}>
               <div className="ipanel-kpi-label">Bekleyen</div>
               <div className="ipanel-kpi-value">{data.waiting_conversations}</div>
               <div className="ipanel-kpi-meta">{data.unanswered_messages} cevapsız</div>
             </Link>
-            <Link href="/admin/iletisim/mesajlar" className="ipanel-kpi" style={{ "--kpi-accent": "#be123c" } as never}>
+            <Link href="/admin/iletisim/sohbetler" className="ipanel-kpi" style={{ "--kpi-accent": "#be123c" } as never}>
               <div className="ipanel-kpi-label">SLA ihlali</div>
               <div className="ipanel-kpi-value">{data.sla_breaches}</div>
               <div className={`ipanel-kpi-meta${data.sla_breaches ? " hot" : ""}`}>30 dk cevap yoksa destek</div>

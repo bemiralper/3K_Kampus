@@ -80,15 +80,40 @@ class ConversationMessagesView(CommunicationAPIView):
         except (TypeError, ValueError):
             limit = 50
         before_id = request.query_params.get('before')
+        after_id = request.query_params.get('after')
+        ctx = {'_user_id': request.user.id}
+
+        if after_id:
+            # Artımlı canlı güncelleme: sadece bu id'den sonraki mesajlar.
+            msgs = list(MessageRepository.list_since(conversation_id, after_id=after_id, limit=100))
+            return Response({
+                'messages': MessageSerializer(msgs, many=True, context=ctx).data,
+                'total': MessageRepository.count_by_conversation(conversation_id),
+                'has_more': False,
+                'incremental': True,
+            })
 
         msgs = list(MessageRepository.list_by_conversation(conversation_id, limit=limit, before_id=before_id))
         msgs.reverse()
         total = MessageRepository.count_by_conversation(conversation_id)
+        if before_id:
+            has_more = len(msgs) == limit
+        else:
+            has_more = total > len(msgs)
+
+        pinned = (
+            MessageRepository.visible(conversation_id)
+            .filter(pinned_at__isnull=False)
+            .select_related('reply_to', 'forwarded_from', 'sender_user')
+            .prefetch_related(*MessageRepository.THREAD_PREFETCH)
+            .first()
+        )
 
         return Response({
-            'messages': MessageSerializer(msgs, many=True).data,
+            'messages': MessageSerializer(msgs, many=True, context=ctx).data,
             'total': total,
-            'has_more': total > len(msgs),
+            'has_more': has_more,
+            'pinned_message': MessageSerializer(pinned, context=ctx).data if pinned else None,
         })
 
     def post(self, request, conversation_id):
@@ -236,13 +261,12 @@ class ConversationMessagesView(CommunicationAPIView):
             from apps.communication.domain.models import Message
 
             message = Message.objects.filter(id=result.message_id).prefetch_related(
-                'attachments',
-                'reactions',
-                'reactions__reacted_by',
-                'reply_to__attachments',
-            ).select_related('reply_to').first()
+                *MessageRepository.THREAD_PREFETCH,
+            ).select_related('reply_to', 'forwarded_from', 'sender_user').first()
 
         return Response(
-            MessageSerializer(message).data if message else {'message_id': result.message_id},
+            MessageSerializer(message, context={'_user_id': request.user.id}).data
+            if message
+            else {'message_id': result.message_id},
             status=status.HTTP_201_CREATED,
         )

@@ -11,6 +11,7 @@ from rest_framework.test import APIClient
 
 from apps.coaching.models import CoachProfile, CoachStudentAssignment
 from apps.communication.application.campaign_service import AudienceResolver, CampaignService
+from apps.communication.interfaces.views.campaigns import _campaign_deliveries
 from apps.communication.domain.enums import CampaignStatus, MessageStatus
 from apps.communication.domain.models import Message, OutboundCampaign, OutboundQueueItem
 from apps.egitim_yili.domain.models import EgitimYili
@@ -170,6 +171,160 @@ class CampaignAudienceTest(TestCase):
         self.assertEqual(campaign.status, CampaignStatus.QUEUED)
         self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 2)
         self.assertEqual(Message.objects.filter(campaign=campaign).count(), 2)
+
+    def test_confirm_async_returns_confirmed_and_dispatches(self):
+        service = CampaignService()
+        campaign = service.create_draft(
+            self.kurum.id,
+            sube_id=self.sube.id,
+            created_by_id=None,
+            body='Async onay',
+            audience_filter={
+                'audience_type': 'sinif',
+                'sinif_id': self.sinif_a.id,
+                'egitim_yili_id': self.egitim_yili.id,
+            },
+        )
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_materialize_campaign',
+        ) as mock_dispatch:
+            with self.captureOnCommitCallbacks(execute=True):
+                service.confirm(campaign, enqueue_async=True)
+        campaign.refresh_from_db()
+        self.assertEqual(campaign.status, CampaignStatus.CONFIRMED)
+        self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 0)
+        mock_dispatch.assert_called_once()
+
+    def test_confirm_accepted_confirmed_campaign(self):
+        service = CampaignService()
+        campaign = service.create_draft(
+            self.kurum.id,
+            sube_id=self.sube.id,
+            created_by_id=None,
+            body='Confirmed yeniden',
+            audience_filter={
+                'audience_type': 'sinif',
+                'sinif_id': self.sinif_a.id,
+                'egitim_yili_id': self.egitim_yili.id,
+            },
+        )
+        campaign.status = CampaignStatus.CONFIRMED
+        campaign.save(update_fields=['status', 'updated_at'])
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            service.confirm(campaign)
+        campaign.refresh_from_db()
+        self.assertEqual(campaign.status, CampaignStatus.QUEUED)
+        self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 2)
+
+    def test_materialize_queue_is_idempotent(self):
+        service = CampaignService()
+        campaign = service.create_draft(
+            self.kurum.id,
+            sube_id=self.sube.id,
+            created_by_id=None,
+            body='Idempotent',
+            audience_filter={
+                'audience_type': 'sinif',
+                'sinif_id': self.sinif_a.id,
+                'egitim_yili_id': self.egitim_yili.id,
+            },
+        )
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            service.confirm(campaign)
+            service.materialize_queue(campaign)
+        self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 2)
+
+    def test_scheduled_command_materializes_stuck_confirmed(self):
+        from django.core.management import call_command
+
+        service = CampaignService()
+        campaign = service.create_draft(
+            self.kurum.id,
+            sube_id=self.sube.id,
+            created_by_id=None,
+            body='Stuck confirmed',
+            audience_filter={
+                'audience_type': 'sinif',
+                'sinif_id': self.sinif_a.id,
+                'egitim_yili_id': self.egitim_yili.id,
+            },
+        )
+        campaign.status = CampaignStatus.CONFIRMED
+        campaign.save(update_fields=['status', 'updated_at'])
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            call_command('process_scheduled_campaigns')
+        campaign.refresh_from_db()
+        self.assertEqual(campaign.status, CampaignStatus.QUEUED)
+        self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 2)
+
+    def test_confirm_is_noop_when_already_queued(self):
+        service = CampaignService()
+        campaign = service.create_draft(
+            self.kurum.id,
+            sube_id=self.sube.id,
+            created_by_id=None,
+            body='Already queued',
+            audience_filter={
+                'audience_type': 'sinif',
+                'sinif_id': self.sinif_a.id,
+                'egitim_yili_id': self.egitim_yili.id,
+            },
+        )
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            service.confirm(campaign)
+            again = service.confirm(campaign)
+        self.assertEqual(again.status, CampaignStatus.QUEUED)
+        self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 2)
+
+    def test_campaign_deliveries_use_person_name_not_phone(self):
+        service = CampaignService()
+        campaign = service.create_draft(
+            self.kurum.id,
+            sube_id=self.sube.id,
+            created_by_id=None,
+            body='İsim testi',
+            audience_filter={
+                'audience_type': 'sinif',
+                'sinif_id': self.sinif_a.id,
+                'egitim_yili_id': self.egitim_yili.id,
+            },
+        )
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            service.confirm(campaign)
+        for conv in Message.objects.filter(campaign=campaign).select_related('conversation'):
+            conv.conversation.contact_name = conv.conversation.contact_phone
+            conv.conversation.save(update_fields=['contact_name'])
+        rows = _campaign_deliveries(campaign)
+        names = {row['contact_name'] for row in rows}
+        self.assertTrue(names)
+        self.assertTrue(all(name and not name.startswith('+') for name in names))
+        self.assertTrue(any('Ali' in name or 'Anne' in name for name in names))
+        self.assertTrue(all(not row['failed_reason'] for row in rows))
+        failed = next(iter(rows))
+        failed_msg = Message.objects.get(id=failed['id'])
+        failed_msg.status = MessageStatus.FAILED
+        failed_msg.failed_reason = 'Message undeliverable'
+        failed_msg.save(update_fields=['status', 'failed_reason'])
+        again = {row['id']: row for row in _campaign_deliveries(campaign)}
+        self.assertEqual(again[str(failed_msg.id)]['failed_reason_short'], 'İletilemedi')
+        self.assertGreater(len(again[str(failed_msg.id)]['failed_reason']), 20)
+        ok_id = next(row['id'] for row in again.values() if row['id'] != str(failed_msg.id))
+        self.assertEqual(again[ok_id]['failed_reason'], '')
 
     def test_cancel_marks_pending_cancelled(self):
         service = CampaignService()
@@ -399,67 +554,3 @@ class CoachBulkScopeTest(TestCase):
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(OutboundCampaign.objects.count(), 1)
-
-
-class CampaignDeliveriesTest(TestCase):
-    def test_campaign_deliveries_use_person_name_not_phone(self):
-        from apps.communication.domain.enums import Channel, MessageDirection, RecipientType
-        from apps.communication.domain.models import Conversation
-        from apps.communication.interfaces.views.campaigns import _campaign_deliveries
-
-        kurum = Kurum.objects.create(ad='Teslimat Kurum', kod='TDL')
-        sube = Sube.objects.create(kurum=kurum, ad='Merkez', kod='TDL')
-        ogrenci = Ogrenci.objects.create(
-            kurum=kurum, sube=sube, ad='Zeynep', soyad='Yılmaz',
-            telefon='05321112233', aktif_mi=True,
-        )
-        veli = OgrenciVeli.objects.create(
-            ogrenci=ogrenci, ad='Ayşe', soyad='Yılmaz',
-            telefon='05321112233', veli_turu='anne', varsayilan=True,
-        )
-        campaign = OutboundCampaign.objects.create(
-            kurum=kurum,
-            sube=sube,
-            title='Deneme',
-            body_template='Merhaba',
-            status=CampaignStatus.COMPLETED,
-            total_recipients=2,
-            sent_count=1,
-            delivered_count=1,
-            failed_count=1,
-        )
-        ok_conv = Conversation.objects.create(
-            kurum=kurum,
-            channel=Channel.WHATSAPP,
-            contact_phone='+905321112233',
-            contact_type=RecipientType.VELI,
-            veli=veli,
-            contact_name='Ayşe Yılmaz',
-        )
-        fail_conv = Conversation.objects.create(
-            kurum=kurum,
-            channel=Channel.WHATSAPP,
-            contact_phone='+905399998877',
-            contact_type=RecipientType.RAW_PHONE,
-            contact_name='+905399998877',
-        )
-        Message.objects.create(
-            conversation=ok_conv,
-            campaign=campaign,
-            direction=MessageDirection.OUTBOUND,
-            body='ok',
-            status=MessageStatus.DELIVERED,
-        )
-        Message.objects.create(
-            conversation=fail_conv,
-            campaign=campaign,
-            direction=MessageDirection.OUTBOUND,
-            body='fail',
-            status=MessageStatus.FAILED,
-            failed_reason='(#131026) Message undeliverable',
-        )
-        rows = {row['status']: row for row in _campaign_deliveries(campaign)}
-        self.assertEqual(rows[MessageStatus.DELIVERED]['contact_name'], 'Ayşe Yılmaz')
-        self.assertNotEqual(rows[MessageStatus.DELIVERED]['contact_name'], rows[MessageStatus.DELIVERED]['phone'])
-        self.assertEqual(rows[MessageStatus.FAILED]['failed_reason_short'], 'İletilemedi')
-        self.assertIn('WhatsApp', rows[MessageStatus.FAILED]['failed_reason'])

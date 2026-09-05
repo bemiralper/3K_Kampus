@@ -266,7 +266,7 @@ class ConversationOpenVeliThreadTest(TestCase):
 
 
 class ConversationOpenCrossDepartmentTest(TestCase):
-    """Muhasebe kullanıcısı, modül gönderimi koçluk thread'ine düştüyse onu açabilmeli."""
+    """Muhasebe kullanıcısı koçluk thread'ini açmamalı — aynı numara olsa bile."""
 
     def setUp(self):
         from apps.communication.domain.enums import (
@@ -344,10 +344,27 @@ class ConversationOpenCrossDepartmentTest(TestCase):
             format='json',
         )
 
-    def test_sender_opens_thread_from_other_department(self):
+    def test_sender_does_not_open_other_department_thread(self):
         response = self._open()
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()['id'], str(self.coaching_conv.id))
+        self.assertNotEqual(response.json()['id'], str(self.coaching_conv.id))
+        self.assertEqual(response.json().get('department'), 'ACCOUNTING')
+
+    def test_explicit_department_opens_that_thread(self):
+        response = self.client.post(
+            '/api/communication/conversations/open/',
+            {
+                'phone': '0532 111 00 22',
+                'kurum_id': self.kurum.id,
+                'veli_id': self.veli.id,
+                'department': 'COACHING',
+            },
+            format='json',
+        )
+        # Muhasebe kullanıcısı koçluk departmanını isteyemez — kendi biriminde kalır
+        self.assertEqual(response.status_code, 200)
+        self.assertNotEqual(response.json()['id'], str(self.coaching_conv.id))
+        self.assertEqual(response.json().get('department'), 'ACCOUNTING')
 
     def test_non_sender_does_not_inherit_other_department_thread(self):
         self._message.sender_user = self.other

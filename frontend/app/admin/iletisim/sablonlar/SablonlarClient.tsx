@@ -12,6 +12,7 @@ import { catalogTemplateGroups } from "@/components/communication/notification-e
 import { useSheetChrome } from "@/components/communication/useSheetChrome";
 import "@/components/communication/communication.css";
 import { ComposerState, createComposerState } from "@/components/communication/composer-utils";
+import { trIncludes } from "@/lib/text-format";
 import {
   categoryLabelMap,
   createTemplate,
@@ -376,9 +377,9 @@ export default function SablonlarClient({
   );
 
   const visibleTemplates = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     return templates.filter((t) => {
-      if (q && !t.name.toLowerCase().includes(q) && !t.body.toLowerCase().includes(q)) {
+      if (q && !trIncludes(t.name, q) && !trIncludes(t.body, q)) {
         return false;
       }
       if (groupFilter && (t.template_group || "") !== groupFilter) return false;
@@ -431,7 +432,7 @@ export default function SablonlarClient({
       breadcrumbs={
         portal === "muhasebe"
           ? [
-              { label: "WhatsApp", href: "/muhasebe/iletisim/mesajlar" },
+              { label: "WhatsApp", href: "/muhasebe/iletisim/sohbetler" },
               { label: "Şablonlar" },
             ]
           : [

@@ -104,6 +104,22 @@ _PRIMARY_FAMILY_BY_DEPARTMENT: dict[str, str] = {
 }
 
 
+def personal_chat_families_for_department(department: str | None) -> frozenset[str]:
+    """Birimin sohbet şablon aileleri. Aynı WABA'da olsa bile diğer rolün ailesi yok."""
+    return _FAMILIES_BY_DEPARTMENT.get(
+        (department or '').upper(),
+        frozenset({'genel'}),
+    )
+
+
+def personal_chat_family_from_name(name: str) -> str | None:
+    """sohbet_kocluk_veli → kocluk. Eşleşmezse None."""
+    parts = (name or '').strip().lower().split('_')
+    if len(parts) < 3 or parts[0] != 'sohbet':
+        return None
+    return parts[1]
+
+
 def preferred_personal_chat_template_name(
     department: str | None,
     audience: str | None,

@@ -17,6 +17,7 @@ from apps.communication.interfaces.views.campaigns import (
     CampaignDetailView,
     CampaignListCreateView,
     CampaignPreviewView,
+    CampaignProcessQueueView,
     CampaignRetryFailedView,
 )
 from apps.communication.interfaces.views.accounts import (
@@ -51,6 +52,7 @@ from apps.communication.interfaces.views.notification_schedules import (
     NotificationScheduleView,
 )
 from apps.communication.interfaces.views.meta_template_mgmt import (
+    MetaTemplateBulkDeleteView,
     MetaTemplateCloneView,
     MetaTemplateDetailView,
     MetaTemplateExampleMediaUploadView,
@@ -66,14 +68,31 @@ from apps.communication.interfaces.views.meta_template_mgmt import (
     MetaTemplateSeedDuyuruView,
     MetaTemplateSeedKayitSozlesmeView,
     MetaTemplateSeedPersonalChatView,
+    MetaTemplateSeedSinavView,
     MetaTemplateSubmitView,
 )
 from apps.communication.interfaces.views.conversations import (
     ConversationArchiveView,
     ConversationDetailView,
+    ConversationItemView,
     ConversationListView,
     ConversationReadView,
 )
+from apps.communication.interfaces.views.chat_actions import (
+    ConversationDeleteView,
+    ConversationMessageContextView,
+    ConversationMessageSearchView,
+    ConversationMuteView,
+    ConversationPinView,
+    ConversationReadAllView,
+    ConversationUnreadView,
+    MessageDeleteView,
+    MessageForwardView,
+    MessagePinView,
+    MessageStarView,
+    StarredMessagesView,
+)
+from apps.communication.interfaces.views.chat_context import ConversationContextView
 from apps.communication.interfaces.views.conversation_actions import (
     ConversationClaimView,
     ConversationNoteDetailView,
@@ -159,6 +178,11 @@ urlpatterns = [
         name='meta-template-seed-ozel-ders',
     ),
     path(
+        'meta-templates/seed-sinav/',
+        MetaTemplateSeedSinavView.as_view(),
+        name='meta-template-seed-sinav',
+    ),
+    path(
         'meta-templates/seed-kayit-sozlesme/',
         MetaTemplateSeedKayitSozlesmeView.as_view(),
         name='meta-template-seed-kayit-sozlesme',
@@ -167,6 +191,11 @@ urlpatterns = [
         'meta-templates/seed-personal-chat/',
         MetaTemplateSeedPersonalChatView.as_view(),
         name='meta-template-seed-personal-chat',
+    ),
+    path(
+        'meta-templates/bulk-delete/',
+        MetaTemplateBulkDeleteView.as_view(),
+        name='meta-template-bulk-delete',
     ),
     path('meta-templates/<uuid:template_id>/', MetaTemplateDetailView.as_view(), name='meta-template-detail'),
     path(
@@ -301,6 +330,69 @@ urlpatterns = [
         name='conversation-tags',
     ),
     path('tags/', ConversationTagCatalogView.as_view(), name='tag-catalog'),
+    # --- Sohbetler ekranı (yeni arayüz) ---
+    path(
+        'conversations/<uuid:conversation_id>/item/',
+        ConversationItemView.as_view(),
+        name='conversation-item',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/pin/',
+        ConversationPinView.as_view(),
+        name='conversation-pin',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/mute/',
+        ConversationMuteView.as_view(),
+        name='conversation-mute',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/unread/',
+        ConversationUnreadView.as_view(),
+        name='conversation-unread',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/delete/',
+        ConversationDeleteView.as_view(),
+        name='conversation-delete',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/context/',
+        ConversationContextView.as_view(),
+        name='conversation-context',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/search/',
+        ConversationMessageSearchView.as_view(),
+        name='conversation-message-search',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/context/',
+        ConversationMessageContextView.as_view(),
+        name='conversation-message-context',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/star/',
+        MessageStarView.as_view(),
+        name='message-star',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/pin/',
+        MessagePinView.as_view(),
+        name='message-pin',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/delete/',
+        MessageDeleteView.as_view(),
+        name='message-delete',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/forward/',
+        MessageForwardView.as_view(),
+        name='message-forward',
+    ),
+    path('conversations/read-all/', ConversationReadAllView.as_view(), name='conversations-read-all'),
+    path('messages/starred/', StarredMessagesView.as_view(), name='messages-starred'),
     path('dashboard/', CommunicationDashboardView.as_view(), name='communication-dashboard'),
     path('routing-rules/', RoutingRuleListCreateView.as_view(), name='routing-rules'),
     path('routing-rules/<uuid:rule_id>/', RoutingRuleDetailView.as_view(), name='routing-rule-detail'),
@@ -324,6 +416,11 @@ urlpatterns = [
     path('campaigns/<uuid:campaign_id>/confirm/', CampaignConfirmView.as_view(), name='campaign-confirm'),
     path('campaigns/<uuid:campaign_id>/retry-failed/', CampaignRetryFailedView.as_view(), name='campaign-retry'),
     path('campaigns/<uuid:campaign_id>/cancel/', CampaignCancelView.as_view(), name='campaign-cancel'),
+    path(
+        'campaigns/<uuid:campaign_id>/process-queue/',
+        CampaignProcessQueueView.as_view(),
+        name='campaign-process-queue',
+    ),
     path('templates/', TemplateListCreateView.as_view(), name='template-list-create'),
     path('templates/<uuid:template_id>/', TemplateDetailView.as_view(), name='template-detail'),
     path('templates/<uuid:template_id>/use/', TemplateUseView.as_view(), name='template-use'),

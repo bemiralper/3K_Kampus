@@ -1,6 +1,11 @@
 "use client";
 
-import { parseWhatsAppText, PreviewFontSize } from "./composer-utils";
+import {
+  hasVisibleWhatsAppText,
+  parseWhatsAppPreviewLines,
+  parseWhatsAppText,
+  PreviewFontSize,
+} from "./composer-utils";
 
 interface WhatsAppPreviewBubbleProps {
   text: string;
@@ -39,6 +44,12 @@ function renderSegment(
           {seg.content}
         </code>
       );
+    case "code":
+      return (
+        <code key={key} className="wa-code">
+          {seg.content}
+        </code>
+      );
     case "variable":
       return (
         <span key={key} className="wa-var">
@@ -57,7 +68,7 @@ export default function WhatsAppPreviewBubble({
   timestamp,
   className = "",
 }: WhatsAppPreviewBubbleProps) {
-  const segments = parseWhatsAppText(text);
+  const lines = parseWhatsAppPreviewLines(text);
   const displayTime =
     timestamp ||
     new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" });
@@ -71,8 +82,17 @@ export default function WhatsAppPreviewBubble({
           style={previewColor ? { backgroundColor: previewColor } : undefined}
         >
           <p className={`comm-wa-bubble-text size-${fontSize}`}>
-            {text.trim() ? (
-              segments.map((seg, i) => renderSegment(seg, i))
+            {hasVisibleWhatsAppText(text) ? (
+              lines.map((line, i) => (
+                <span key={i} className={`wa-line wa-line-${line.block}`}>
+                  {line.block === "bullet" || line.block === "number" ? (
+                    <span className="wa-line-mark">{line.marker}</span>
+                  ) : null}
+                  {line.segments.length
+                    ? line.segments.map((seg, j) => renderSegment(seg, j))
+                    : "\u00a0"}
+                </span>
+              ))
             ) : (
               <span style={{ color: "#94a3b8", fontStyle: "italic" }}>
                 Mesajınız burada görünecek…

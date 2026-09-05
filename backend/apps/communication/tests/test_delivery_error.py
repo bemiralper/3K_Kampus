@@ -2,23 +2,39 @@ from django.test import SimpleTestCase
 
 from apps.communication.application.delivery_error import (
     explain_delivery_failure,
+    explain_from_webhook_errors,
     summarize_delivery_failure,
 )
 
 
-class DeliveryErrorTest(SimpleTestCase):
-    def test_code_131026_is_turkish(self):
-        text = explain_delivery_failure('(#131026) Message undeliverable', code=131026)
-        self.assertIn('WhatsApp', text)
+class DeliveryErrorExplainTest(SimpleTestCase):
+    def test_undeliverable_title_is_turkish(self):
+        text = explain_delivery_failure('Message undeliverable')
+        self.assertIn('iletilemedi', text.lower())
         self.assertNotIn('undeliverable', text.lower())
 
-    def test_empty_reason_stays_empty_in_summary(self):
-        short, full = summarize_delivery_failure('')
-        self.assertEqual(short, '')
-        self.assertEqual(full, '')
+    def test_code_131026(self):
+        text = explain_delivery_failure('', code=131026)
+        self.assertIn('WhatsApp', text)
 
-    def test_summary_shortens_long_reason(self):
-        short, full = summarize_delivery_failure('(#131026) Message undeliverable')
-        self.assertTrue(short)
-        self.assertGreaterEqual(len(full), len(short))
+    def test_webhook_errors(self):
+        text = explain_from_webhook_errors([{
+            'code': 131026,
+            'title': 'Message undeliverable',
+            'error_data': {'details': 'Message Undeliverable.'},
+        }])
+        self.assertIn('iletilemedi', text.lower())
+
+    def test_already_turkish_kept(self):
+        text = explain_delivery_failure('Numara WhatsApp’te kayıtlı değil.')
+        self.assertIn('WhatsApp', text)
+
+    def test_summarize_is_short_with_full_on_side(self):
+        short, full = summarize_delivery_failure('Message undeliverable')
         self.assertEqual(short, 'İletilemedi')
+        self.assertGreater(len(full), len(short))
+        self.assertIn('iletilemedi', full.lower())
+
+    def test_summarize_empty_stays_empty(self):
+        self.assertEqual(summarize_delivery_failure(''), ('', ''))
+        self.assertEqual(summarize_delivery_failure(None), ('', ''))

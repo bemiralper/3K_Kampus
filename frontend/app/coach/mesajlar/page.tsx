@@ -1,27 +1,14 @@
-import { Suspense } from "react";
-import CoachMesajlarContent from "./CoachMesajlarContent";
-import "@/app/coach/coach.css";
+import { redirect } from "next/navigation";
 
-function MesajlarLoading() {
-  return (
-    <div className="coach-mesajlar-page">
-      <div className="coach-mesajlar-body">
-        <div className="comm-inbox comm-inbox--loading" aria-busy="true">
-          <aside className="comm-inbox-sidebar">
-            <div className="comm-inbox-skeleton comm-inbox-skeleton--filters" />
-            <div className="comm-inbox-skeleton comm-inbox-skeleton--search" />
-          </aside>
-          <section className="comm-thread-panel" />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-export default function CoachMesajlarPage() {
-  return (
-    <Suspense fallback={<MesajlarLoading />}>
-      <CoachMesajlarContent />
-    </Suspense>
-  );
+/** Eski koç inbox adresi — yeni Sohbetler ekranına yönlendirir. */
+export default function CoachMesajlarRedirect({
+  searchParams,
+}: {
+  searchParams?: { conversation?: string; filter?: string };
+}) {
+  const q = new URLSearchParams();
+  if (searchParams?.conversation) q.set("conversation", searchParams.conversation);
+  if (searchParams?.filter) q.set("filter", searchParams.filter);
+  const suffix = q.toString() ? `?${q.toString()}` : "";
+  redirect(`/coach/sohbetler${suffix}`);
 }

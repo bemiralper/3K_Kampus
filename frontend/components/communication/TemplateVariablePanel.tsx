@@ -21,11 +21,38 @@ export default function TemplateVariablePanel({
   const groups: string[] = Array.from(
     new Set(TEMPLATE_VARIABLES.map((v) => v.group || "genel")),
   );
-  const orderedGroups = category === "haftalik_odev"
-    ? ["odev", "genel", "yoklama", "finans", "odeme"].filter((g) => groups.includes(g))
-    : category === "odeme_gecikme"
-      ? ["finans", "odeme", "genel", "yoklama", "odev"].filter((g) => groups.includes(g))
-      : ["genel", "finans", "odeme", "odev", "yoklama"].filter((g) => groups.includes(g));
+  const defaultOrder = [
+    "genel",
+    "ozel_ders",
+    "yoklama",
+    "odev",
+    "finans",
+    "odeme",
+    "sinav",
+    "kayit",
+    "gorusme",
+  ];
+  const pinned =
+    category === "haftalik_odev" || category === "odev"
+      ? ["odev"]
+      : category === "odeme_gecikme" || category === "odeme" || category === "finans"
+        ? ["finans", "odeme"]
+        : category === "ozel_ders"
+          ? ["ozel_ders"]
+          : category === "sinav"
+            ? ["sinav"]
+            : category === "kayit"
+              ? ["kayit"]
+              : category === "gorusme"
+                ? ["gorusme"]
+                : category === "yoklama" || (category || "").startsWith("yoklama")
+                  ? ["yoklama"]
+                  : [];
+  const orderedGroups = [
+    ...pinned,
+    ...defaultOrder.filter((g) => !pinned.includes(g)),
+    ...groups.filter((g) => !pinned.includes(g) && !defaultOrder.includes(g)),
+  ].filter((g) => groups.includes(g));
 
   return (
     <div className="comm-sablon-var-panel">

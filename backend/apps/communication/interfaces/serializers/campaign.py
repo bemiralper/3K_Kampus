@@ -79,12 +79,112 @@ class CampaignListSerializer(serializers.ModelSerializer):
 
 class CampaignDetailSerializer(CampaignListSerializer):
     analytics = serializers.SerializerMethodField()
+    template_name = serializers.SerializerMethodField()
+    template_language = serializers.SerializerMethodField()
+    template_context = serializers.SerializerMethodField()
+    resolved_body = serializers.SerializerMethodField()
+    queue_status = serializers.SerializerMethodField()
 
     class Meta(CampaignListSerializer.Meta):
         fields = CampaignListSerializer.Meta.fields + [
-            'body_template', 'recipient_filter_json', 'preview_stats_json',
+            'body_template', 'preview_stats_json',
             'scheduled_at', 'estimated_cost_usd', 'send_options_json', 'analytics',
+            'template_name', 'template_language', 'template_context',
+            'resolved_body', 'queue_status',
         ]
+
+    def _filter_json(self, obj) -> dict:
+        raw = obj.recipient_filter_json
+        return raw if isinstance(raw, dict) else {}
+
+    def get_template_name(self, obj) -> str:
+        return self._filter_json(obj).get('template_name', '') or ''
+
+    def get_template_language(self, obj) -> str:
+        return self._filter_json(obj).get('template_language', '') or ''
+
+    def get_template_context(self, obj) -> dict:
+        """Gönderimde kullanılan manuel değişken değerleri ({{mesaj}} vb.)."""
+        ctx = self._filter_json(obj).get('template_context')
+        if isinstance(ctx, dict) and ctx:
+            return ctx
+        send_options = obj.send_options_json if isinstance(obj.send_options_json, dict) else {}
+        ctx = send_options.get('template_context')
+        return ctx if isinstance(ctx, dict) else {}
+
+    def get_resolved_body(self, obj) -> str:
+        """
+        Alıcıya giden gerçek metin (ilk mesajın çözümlenmiş gövdesi).
+
+        `body_template` ham şablondur ve {{...}} içerir; şablon Meta'da
+        numaralıysa ({{1}}) hiçbir şey ifade etmez. Kuyruk üretildiyse ilk
+        mesajın gövdesi gönderimin birebir karşılığıdır.
+        """
+        from apps.communication.domain.enums import MessageDirection
+        from apps.communication.domain.models import Message
+
+        body = (
+            Message.objects.filter(campaign=obj, direction=MessageDirection.OUTBOUND)
+            .exclude(body='')
+            .order_by('created_at')
+            .values_list('body', flat=True)
+            .first()
+        )
+        if body:
+            return body
+        return self._resolve_from_template(obj)
+
+    def _resolve_from_template(self, obj) -> str:
+        """Kuyruk henüz üretilmediyse şablon gövdesini bilinen değişkenlerle doldur."""
+        from apps.communication.application.variable_resolver import resolve_variables
+
+        body = obj.body_template or ''
+        template_name = self.get_template_name(obj)
+        if not body or body == template_name:
+            body = self._meta_template_body(obj, template_name) or body
+        ctx = self.get_template_context(obj)
+        return resolve_variables(body, ctx) if ctx else body
+
+    def _meta_template_body(self, obj, template_name: str) -> str:
+        if not template_name:
+            return ''
+        from django.db.models import Q
+
+        from apps.communication.domain.models import WhatsAppMetaTemplate
+
+        qs = WhatsAppMetaTemplate.objects.filter(kurum_id=obj.kurum_id, name=template_name)
+        language = self.get_template_language(obj)
+        if language:
+            # tr ↔ tr_TR farkı şablonu kaybettirmesin
+            qs = qs.filter(Q(language=language) | Q(language__startswith=language[:2]))
+        return qs.exclude(body_named='').values_list('body_named', flat=True).first() or ''
+
+    def get_queue_status(self, obj) -> dict:
+        """Kuyrukta bekleyen mesajlar — 'neden hâlâ Bekliyor?' sorusunun cevabı."""
+        from django.db.models import Min
+
+        from apps.communication.domain.enums import MessageDirection, MessageStatus
+        from apps.communication.domain.models import Message, OutboundQueueItem
+
+        msgs = Message.objects.filter(campaign=obj, direction=MessageDirection.OUTBOUND)
+        pending = msgs.filter(status=MessageStatus.PENDING).count()
+        sending = msgs.filter(status=MessageStatus.SENDING).count()
+        items = OutboundQueueItem.objects.filter(campaign=obj)
+        next_attempt = items.aggregate(v=Min('next_attempt_at'))['v']
+        last_error = (
+            items.exclude(last_error='')
+            .order_by('-updated_at')
+            .values_list('last_error', flat=True)
+            .first()
+        )
+        return {
+            'pending': pending,
+            'sending': sending,
+            'waiting': pending + sending,
+            'queue_items': items.count(),
+            'next_attempt_at': next_attempt.isoformat() if next_attempt else None,
+            'last_error': last_error or '',
+        }
 
     def get_analytics(self, obj) -> dict:
         total = obj.total_recipients or 0

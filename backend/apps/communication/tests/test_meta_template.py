@@ -8,6 +8,7 @@ from apps.communication.application.meta_template_mapper import (
     build_meta_components,
     build_send_body_parameters,
     build_variable_map,
+    default_variable_map_for_template,
     map_meta_status,
     named_to_numbered,
 )
@@ -48,6 +49,13 @@ class MetaTemplateMapperTest(TestCase):
         self.assertIn('{{3}}', numbered)
         self.assertNotIn('ogrenci_ad', numbered)
 
+    def test_campaign_numbered_body_maps_to_mesaj(self):
+        self.assertEqual(default_variable_map_for_template('toplu_duyuru'), {'1': 'mesaj'})
+        self.assertEqual(
+            default_variable_map_for_template('kampus_ozel', '*DUYURU:*\n{{1}}\n*3K Kampüs*'),
+            {'1': 'mesaj'},
+        )
+
     def test_build_meta_components_body_example(self):
         components, vmap = build_meta_components(
             body_named='Merhaba {{veli_ad}}, tutar: {{taksit_tutar}}',
@@ -67,6 +75,11 @@ class MetaTemplateMapperTest(TestCase):
         body = next(c for c in components if c['type'] == 'BODY')
         examples = body['example']['body_text'][0]
         self.assertIn('Yarın saat 10.00’da deneme sınavı yapılacaktır.', examples)
+        self.assertIn('\n\n', body['text'])
+        self.assertEqual(
+            body['text'].count('\n\n'),
+            'Sayın {{veli_ad}},\n\n{{sube}} duyurusu:\n\n{{mesaj}}\n\nBilginize sunarız.'.count('\n\n'),
+        )
 
     def test_footer_variables_frozen_to_static_text(self):
         """Meta FOOTER parametre kabul etmez; değişken sabit metne çevrilmeli."""

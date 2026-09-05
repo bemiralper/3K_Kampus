@@ -17,6 +17,10 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     meta_category_label = serializers.SerializerMethodField()
     usage_scope_label = serializers.SerializerMethodField()
     template_group_label = serializers.SerializerMethodField()
+    campaign_eligible = serializers.SerializerMethodField()
+    campaign_media = serializers.SerializerMethodField()
+    campaign_audience_label = serializers.SerializerMethodField()
+    campaign_media_label = serializers.SerializerMethodField()
     variables = serializers.SerializerMethodField()
     app_template_id = serializers.SerializerMethodField()
     app_template_name = serializers.SerializerMethodField()
@@ -30,6 +34,10 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
             'name', 'language', 'meta_category', 'meta_category_label',
             'status', 'status_label', 'meta_template_id',
             'usage_scope', 'usage_scope_label',
+            'campaign_audience', 'campaign_audience_label',
+            'campaign_family',
+            'campaign_media', 'campaign_media_label',
+            'campaign_eligible',
             'template_group', 'template_group_label',
             'body_named', 'header_json', 'footer_text', 'buttons_json',
             'components_json', 'variable_map_json', 'example_values_json', 'variables',
@@ -73,6 +81,25 @@ class WhatsAppMetaTemplateSerializer(serializers.ModelSerializer):
     def get_template_group_label(self, obj) -> str:
         from apps.communication.application.notification_events import template_group_label
         return template_group_label(obj.template_group)
+
+    def _campaign_class(self, obj):
+        from apps.communication.application.campaign_template_catalog import (
+            classify_meta_template,
+        )
+        return classify_meta_template(obj)
+
+    def get_campaign_eligible(self, obj) -> bool:
+        return self._campaign_class(obj).eligible
+
+    def get_campaign_media(self, obj) -> str:
+        return self._campaign_class(obj).media
+
+    def get_campaign_audience_label(self, obj) -> str:
+        classified = self._campaign_class(obj)
+        return classified.audience_label
+
+    def get_campaign_media_label(self, obj) -> str:
+        return self._campaign_class(obj).media_label
 
     def _first_app_template(self, obj):
         cache = getattr(obj, '_prefetched_objects_cache', {}) or {}
@@ -129,6 +156,12 @@ class WhatsAppMetaTemplateWriteSerializer(serializers.Serializer):
     )
     template_group = serializers.CharField(
         required=False, allow_blank=True, max_length=64, default='',
+    )
+    campaign_audience = serializers.CharField(
+        required=False, allow_blank=True, max_length=16, default='',
+    )
+    campaign_family = serializers.CharField(
+        required=False, allow_blank=True, max_length=32, default='',
     )
     body_named = serializers.CharField(required=False, allow_blank=True, default='')
     header_json = serializers.JSONField(required=False, default=dict)

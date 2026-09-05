@@ -6,6 +6,7 @@ from __future__ import annotations
 from django.db.models import Q
 
 from apps.communication.application.notification_dispatcher import build_preview
+from apps.communication.application.preview_samples import sample_context_for
 from apps.communication.application.notification_events import (
     MODULE_LABELS,
     MODULE_YOKLAMA,
@@ -370,8 +371,8 @@ def preview_binding(
     if event is None:
         raise NotificationBindingError(f'Tanımsız bildirim olayı: {event_key}')
 
-    sample = {name: f'{{{name}}}' for name in event.all_variables()}
-    sample.update(context or {})
+    sample = sample_context_for(event.all_variables())
+    sample.update({k: v for k, v in (context or {}).items() if v is not None and str(v) != ''})
 
     preview = build_preview(
         kurum_id, event_key, recipient_type,

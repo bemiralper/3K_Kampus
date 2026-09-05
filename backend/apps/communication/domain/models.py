@@ -277,6 +277,15 @@ class Conversation(models.Model):
     last_reply_at = models.DateTimeField(null=True, blank=True, verbose_name='Son Kurum Cevabı')
     needs_support_at = models.DateTimeField(null=True, blank=True, verbose_name='Destek Gerekiyor Zamanı')
     archived_at = models.DateTimeField(null=True, blank=True, verbose_name='Arşiv Zamanı')
+    deleted_at = models.DateTimeField(null=True, blank=True, verbose_name='Silinme Zamanı')
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='deleted_conversations',
+        verbose_name='Silen Kullanıcı',
+    )
     claim_version = models.PositiveIntegerField(default=0, verbose_name='Claim Versiyonu')
     tags = models.ManyToManyField(
         'ConversationTag',
@@ -331,6 +340,48 @@ class ConversationTag(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class ConversationUserState(models.Model):
+    """Sohbetin kullanıcıya özel durumu — sabitleme ve bildirim susturma.
+
+    Inbox paylaşımlı olduğu için sabitleme/susturma sohbetin kendisine değil,
+    kullanıcı-sohbet çiftine yazılır; bir koçun sabitlediği sohbet diğer
+    personelin listesini etkilemez.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.CASCADE,
+        related_name='user_states',
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='conversation_states',
+    )
+    pinned_at = models.DateTimeField(null=True, blank=True, verbose_name='Sabitlenme Zamanı')
+    muted_until = models.DateTimeField(null=True, blank=True, verbose_name='Bildirim Susturma Bitişi')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_conversation_user_state'
+        verbose_name = 'Sohbet Kullanıcı Durumu'
+        verbose_name_plural = 'Sohbet Kullanıcı Durumları'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['conversation', 'user'],
+                name='comm_conv_user_state_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'pinned_at'], name='comm_conv_state_pin_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.user_id} → {self.conversation_id}'
 
 
 class ConversationNote(models.Model):
@@ -627,6 +678,22 @@ class WhatsAppMetaTemplate(models.Model):
         default=MetaTemplateUsage.ALL,
         verbose_name='Kullanım Alanı',
         db_index=True,
+    )
+    campaign_audience = models.CharField(
+        max_length=16,
+        blank=True,
+        default='',
+        verbose_name='Toplu gönderim kitlesi',
+        db_index=True,
+        help_text='veli / ogrenci / personel / genel. Boşsa ada göre tahmin edilir.',
+    )
+    campaign_family = models.CharField(
+        max_length=32,
+        blank=True,
+        default='',
+        verbose_name='Toplu gönderim kategorisi',
+        db_index=True,
+        help_text='duyuru / hatirlatma / bilgilendirme / genel veya özel slug.',
     )
     template_group = models.CharField(
         max_length=64,
@@ -993,6 +1060,40 @@ class Message(models.Model):
         on_delete=models.SET_NULL,
         related_name='replies',
         verbose_name='Yanıtlanan mesaj',
+    )
+    forwarded_from = models.ForeignKey(
+        'self',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='forwards',
+        verbose_name='İletilen mesaj',
+    )
+    starred_by = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name='starred_messages',
+        verbose_name='Yıldızlayanlar',
+    )
+    deleted_at = models.DateTimeField(null=True, blank=True, verbose_name='Silinme Zamanı')
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='deleted_messages',
+        verbose_name='Silen Kullanıcı',
+    )
+    # Sabitleme sohbet geneline aittir (yıldızlama kişiseldir): sohbeti gören
+    # herkes aynı sabitlenmiş mesajı üstte görür.
+    pinned_at = models.DateTimeField(null=True, blank=True, verbose_name='Sabitlenme Zamanı')
+    pinned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='pinned_messages',
+        verbose_name='Sabitleyen Kullanıcı',
     )
 
     created_at = models.DateTimeField(auto_now_add=True)

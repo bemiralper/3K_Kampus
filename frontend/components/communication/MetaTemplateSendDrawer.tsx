@@ -10,6 +10,7 @@ import {
   type MessageItem,
   type WhatsAppMetaTemplateItem,
 } from "@/lib/communication-api";
+import { trIncludes } from "@/lib/text-format";
 
 interface MetaTemplateSendDrawerProps {
   open: boolean;
@@ -87,10 +88,10 @@ export default function MetaTemplateSendDrawer({
   );
 
   const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
+    const q = search.trim();
     if (!q) return templates;
     return templates.filter(
-      (t) => t.name.toLowerCase().includes(q) || (t.body_named || "").toLowerCase().includes(q),
+      (t) => trIncludes(t.name, q) || trIncludes(t.body_named, q),
     );
   }, [templates, search]);
 
@@ -151,7 +152,7 @@ export default function MetaTemplateSendDrawer({
         <div className="comm-drawer-filters comm-drawer-filters-v2">
           <input
             type="search"
-            className="comm-inbox-search comm-drawer-search"
+            className="comm-drawer-search"
             placeholder="Şablon ara…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

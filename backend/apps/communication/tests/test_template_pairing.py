@@ -9,9 +9,17 @@ from apps.communication.application.template_pairing_service import (
     humanize_meta_name,
     slugify_meta_name,
 )
+from apps.communication.application.meta_template_service import (
+    MetaTemplateService,
+    MetaTemplateServiceError,
+)
+from apps.communication.application.notification_binding_service import upsert_binding
+from apps.communication.application.template_service import TemplateService
 from apps.communication.domain.enums import (
     Channel,
     MetaTemplateStatus,
+    NotificationSendMode,
+    RecipientType,
     TemplateAudienceScope,
     TemplateCategory,
 )
@@ -182,3 +190,114 @@ class TemplatePairingServiceTest(TestCase):
         self.assertEqual(
             MessageTemplate.objects.filter(meta_template=paired).count(), 1,
         )
+
+    def test_delete_meta_removes_paired_app(self):
+        meta = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='silinecek_esli',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Sayın {{veli_ad}}, bilgilendirme metni burada.',
+        )
+        app = TemplatePairingService.create_app_from_meta(
+            meta, sube_id=self.sube.id, user=self.user,
+        )
+        result = MetaTemplateService.delete_local(meta)
+        self.assertEqual(result['paired_app_deleted'], 1)
+        self.assertFalse(MessageTemplate.objects.filter(id=app.id).exists())
+        self.assertFalse(WhatsAppMetaTemplate.objects.filter(id=meta.id).exists())
+
+    def test_delete_meta_blocked_when_used_in_notification(self):
+        meta = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='yoklama_bagli',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Sayın {{veli_ad}}, {{ogrenci_ad}} gelmedi.',
+        )
+        upsert_binding(
+            self.kurum.id,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            meta_template_id=str(meta.id),
+            send_mode=NotificationSendMode.META_ONLY,
+        )
+        with self.assertRaises(MetaTemplateServiceError) as ctx:
+            MetaTemplateService.delete_local(meta)
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertTrue(WhatsAppMetaTemplate.objects.filter(id=meta.id).exists())
+
+    def test_edit_meta_syncs_paired_app(self):
+        meta = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='senkron_meta',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Sayın {{veli_ad}}, eski metin burada durur.',
+        )
+        app = TemplatePairingService.create_app_from_meta(
+            meta, sube_id=self.sube.id, user=self.user,
+        )
+        MetaTemplateService.update_draft(
+            meta,
+            body_named='Sayın {{veli_ad}}, yeni duyuru metni burada.',
+        )
+        app.refresh_from_db()
+        self.assertEqual(app.body, 'Sayın {{veli_ad}}, yeni duyuru metni burada.')
+
+    def test_edit_app_syncs_paired_meta_draft(self):
+        meta = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='senkron_app',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Sayın {{veli_ad}}, eski metin burada durur.',
+        )
+        app = TemplatePairingService.create_app_from_meta(
+            meta, sube_id=self.sube.id, user=self.user,
+        )
+        TemplateService().update(
+            app,
+            user=self.user,
+            body='Sayın {{veli_ad}}, uygulama tarafı güncellendi.',
+        )
+        meta.refresh_from_db()
+        self.assertEqual(meta.body_named, 'Sayın {{veli_ad}}, uygulama tarafı güncellendi.')
+
+    def test_bulk_delete_skips_notification_templates(self):
+        free = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='serbest_sablon',
+            language='tr',
+            status=MetaTemplateStatus.DRAFT,
+            body_named='Sayın {{veli_ad}}, serbest metin burada.',
+        )
+        used = WhatsAppMetaTemplate.objects.create(
+            kurum=self.kurum,
+            channel_config=self.account,
+            name='kullanilan_sablon',
+            language='tr',
+            status=MetaTemplateStatus.APPROVED,
+            body_named='Sayın {{veli_ad}}, {{ogrenci_ad}} gelmedi.',
+        )
+        upsert_binding(
+            self.kurum.id,
+            event_key='yoklama.gelmedi',
+            recipient_type=RecipientType.VELI,
+            meta_template_id=str(used.id),
+            send_mode=NotificationSendMode.META_ONLY,
+        )
+        result = MetaTemplateService.bulk_delete(
+            self.kurum.id,
+            [str(free.id), str(used.id)],
+        )
+        self.assertEqual(result['deleted_count'], 1)
+        self.assertEqual(result['blocked_count'], 1)
+        self.assertEqual(result['blocked'][0]['name'], 'kullanilan_sablon')
+        self.assertFalse(WhatsAppMetaTemplate.objects.filter(id=free.id).exists())
+        self.assertTrue(WhatsAppMetaTemplate.objects.filter(id=used.id).exists())

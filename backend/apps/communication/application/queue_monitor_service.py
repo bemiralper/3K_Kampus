@@ -9,6 +9,7 @@ from django.db.models import Count, F, Q
 from django.utils import timezone
 
 from apps.communication.application.dashboard_service import SOURCE_LABELS
+from apps.communication.application.delivery_error import explain_delivery_failure
 from apps.communication.domain.enums import MessageStatus
 from apps.communication.domain.models import CommunicationChannelConfig, OutboundQueueItem
 
@@ -57,7 +58,7 @@ def serialize_queue_item(item: OutboundQueueItem) -> dict:
     campaign = item.campaign
     channel_id, channel_name = _channel_info(item)
     status = msg.status if msg else None
-    error = item.last_error or (msg.failed_reason if msg else '')
+    error = explain_delivery_failure(item.last_error or (msg.failed_reason if msg else ''))
     source = (msg.source_module if msg else '') or ''
     return {
         'id': str(item.id),

@@ -218,18 +218,38 @@ def _meta_template_matches_event(event_key: str, meta_tpl) -> bool:
             return False
         return True
 
+    if event_key == 'ozel_ders.ogrenci_gelmedi' and (
+        '{{telafi_notu}}' in body or 'telafi edilecektir' in body
+    ):
+        return False
+
     event = get_event(event_key)
     if event is None or not name:
         return True
     allowed = _allowed_meta_names(event)
-    if name in allowed or name.startswith(f'{event.meta_name_base.lower()}_'):
+    if name in allowed:
         return True
+
+    my_prefix = f'{event.meta_name_base.lower()}_'
+    best_other_len = -1
+    other_owns = False
     for other in NOTIFICATION_EVENTS:
         if other.key == event_key:
             continue
         other_names = _allowed_meta_names(other)
-        if name in other_names or name.startswith(f'{other.meta_name_base.lower()}_'):
+        if name in other_names:
             return False
+        other_prefix = f'{other.meta_name_base.lower()}_'
+        if name.startswith(other_prefix) and len(other_prefix) > best_other_len:
+            best_other_len = len(other_prefix)
+            other_owns = True
+
+    if name.startswith(my_prefix):
+        if other_owns and best_other_len > len(my_prefix):
+            return False
+        return True
+    if other_owns:
+        return False
     return True
 
 
@@ -247,12 +267,16 @@ def display_template_body(resolved: ResolvedTemplate) -> str:
 
 def lms_body_matches_event(event_key: str, body: str) -> bool:
     """Bağlı LMS şablon metni olayla çelişiyor mu? (plan↔rapor karışması)."""
-    if (
-        event_key in ('ozel_ders.ogretmen_gelmedi', 'ozel_ders.ogrenci_gelmedi')
-        and body
-        and '{{telafi_notu}}' not in body
-        and ('telafi edilecektir' in body.lower() or 'telafisi yapılacaktır' in body.lower())
+    if event_key == 'ozel_ders.ogrenci_gelmedi' and body and (
+        '{{telafi_notu}}' in body
+        or 'telafi edilecektir' in body.lower()
+        or 'telafisi yapılacaktır' in body.lower()
     ):
+        return False
+    if event_key in (
+        'ozel_ders.ogretmen_gelmedi',
+        'ozel_ders.ogrenci_gelmedi_telafi',
+    ) and body and '{{telafi_notu}}' in body:
         return False
     if not body or event_key not in ('odev.plan', 'odev.rapor'):
         return True

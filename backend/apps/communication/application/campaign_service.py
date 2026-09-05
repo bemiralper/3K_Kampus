@@ -482,9 +482,9 @@ class AudienceResolver:
     def _scope_student_ids(cls, user, kurum_id: int, filter_json: dict):
         if not user or not user.is_authenticated:
             return None
-        if is_resource_admin(user) or user_has_any_permission(
-            user, 'communication.manage', 'communication.bulk'
-        ):
+        from apps.communication.permissions import user_can_bulk_communicate
+
+        if is_resource_admin(user) or user_can_bulk_communicate(user):
             audience_type = filter_json.get('audience_type', '')
             if audience_type in ('coach_students', 'coach_parents'):
                 coach_id = filter_json.get('coach_id') or cls._coach_id_from_user(user)
@@ -1017,57 +1017,159 @@ class CampaignService:
 
         return campaign
 
+    def confirm(
+        self,
+        campaign: OutboundCampaign,
+        *,
+        sender_user_id: int | None = None,
+        enqueue_async: bool = False,
+    ) -> OutboundCampaign:
+        """
+        Kampanyayı onayla.
+
+        HTTP isteklerinde enqueue_async=True: alıcı kuyruğu arka planda üretilir,
+        yanıt hemen CONFIRMED döner (45 sn tarayıcı timeout'una takılmaz).
+        Cron / test / hook'lar varsayılan senkron yolu kullanır.
+        """
+        from apps.communication.application.celery_dispatch import dispatch_materialize_campaign
+
+        with transaction.atomic():
+            locked = OutboundCampaign.objects.select_for_update().get(pk=campaign.pk)
+
+            if locked.status in (
+                CampaignStatus.QUEUED,
+                CampaignStatus.PROCESSING,
+                CampaignStatus.COMPLETED,
+                CampaignStatus.PARTIAL,
+            ):
+                return locked
+
+            if locked.status == CampaignStatus.CONFIRMED:
+                if locked.scheduled_at and locked.scheduled_at > timezone.now():
+                    return locked
+                if enqueue_async:
+                    campaign_id = locked.id
+                    transaction.on_commit(
+                        lambda: dispatch_materialize_campaign(campaign_id, sender_user_id),
+                    )
+                    return locked
+            elif locked.status != CampaignStatus.DRAFT:
+                raise ValidationError('Sadece taslak kampanyalar onaylanabilir.')
+            else:
+                if locked.scheduled_at and locked.scheduled_at > timezone.now():
+                    locked.status = CampaignStatus.CONFIRMED
+                    locked.save(update_fields=['status', 'updated_at'])
+                    return locked
+
+                if not locked.total_recipients:
+                    preview = AudienceResolver.resolve(
+                        locked.kurum_id,
+                        locked.recipient_filter_json,
+                    )
+                    if preview.total_recipients == 0:
+                        raise ValidationError('Alıcı listesi boş.')
+                    locked.total_recipients = preview.total_recipients
+                    locked.preview_stats_json = preview.to_dict()
+
+                locked.status = CampaignStatus.CONFIRMED
+                locked.save(update_fields=[
+                    'status', 'total_recipients', 'preview_stats_json', 'updated_at',
+                ])
+
+                if enqueue_async:
+                    campaign_id = locked.id
+                    transaction.on_commit(
+                        lambda: dispatch_materialize_campaign(campaign_id, sender_user_id),
+                    )
+                    return locked
+
+        return self.materialize_queue(locked, sender_user_id=sender_user_id)
+
     @transaction.atomic
-    def confirm(self, campaign: OutboundCampaign, *, sender_user_id: int | None = None) -> OutboundCampaign:
-        from apps.communication.application.variable_resolver import build_recipient_context, resolve_variables
+    def materialize_queue(
+        self,
+        campaign: OutboundCampaign,
+        *,
+        sender_user_id: int | None = None,
+    ) -> OutboundCampaign:
+        """Alıcı listesini mesaj + outbound kuyruk kayıtlarına çevir."""
+        from apps.communication.application.variable_resolver import (
+            aktif_sinif_ad,
+            build_recipient_context,
+            resolve_variables,
+        )
+        from apps.communication.domain.models import Message, MessageAttachment
         from apps.kurum.domain.models import Kurum
+        from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+        from apps.personel.domain.models import Personel
 
-        if campaign.status != CampaignStatus.DRAFT:
-            raise ValidationError('Sadece taslak kampanyalar onaylanabilir.')
-
-        if campaign.scheduled_at and campaign.scheduled_at > timezone.now():
-            campaign.status = CampaignStatus.CONFIRMED
-            campaign.save(update_fields=['status', 'updated_at'])
-            return campaign
+        locked = OutboundCampaign.objects.select_for_update().get(pk=campaign.pk)
+        if locked.status in (
+            CampaignStatus.QUEUED,
+            CampaignStatus.PROCESSING,
+            CampaignStatus.COMPLETED,
+            CampaignStatus.PARTIAL,
+            CampaignStatus.CANCELLED,
+        ):
+            return locked
+        if locked.status not in (CampaignStatus.DRAFT, CampaignStatus.CONFIRMED):
+            return locked
+        if Message.objects.filter(campaign=locked).exists():
+            locked.status = CampaignStatus.QUEUED
+            locked.save(update_fields=['status', 'updated_at'])
+            return locked
 
         preview = AudienceResolver.resolve(
-            campaign.kurum_id,
-            campaign.recipient_filter_json,
+            locked.kurum_id,
+            locked.recipient_filter_json,
         )
         if preview.total_recipients == 0:
             raise ValidationError('Alıcı listesi boş.')
 
-        filter_json = campaign.recipient_filter_json or {}
+        filter_json = locked.recipient_filter_json or {}
         template_name = filter_json.get('template_name', '')
         message_type = MessageType.TEMPLATE if template_name else MessageType.TEXT
-        body_template = campaign.body_template or template_name
-        kurum = Kurum.objects.filter(id=campaign.kurum_id).first()
-        campaign_attachments = list(campaign.attachments.all())
+        body_template = locked.body_template or template_name
+        kurum = Kurum.objects.filter(id=locked.kurum_id).first()
+        campaign_attachments = list(locked.attachments.all())
 
-        campaign.status = CampaignStatus.CONFIRMED
-        campaign.total_recipients = preview.total_recipients
-        campaign.preview_stats_json = preview.to_dict()
-        campaign.save(update_fields=[
-            'status', 'total_recipients', 'preview_stats_json', 'updated_at',
-        ])
+        ogrenci_ids = {
+            r.ogrenci_id
+            for r in preview.recipients
+            if r.ogrenci_id and r.recipient_type != RecipientType.PERSONEL
+        }
+        veli_ids = {
+            r.veli_id
+            for r in preview.recipients
+            if r.veli_id and r.recipient_type != RecipientType.PERSONEL
+        }
+        personel_ids = {r.personel_id for r in preview.recipients if r.personel_id}
+        ogrenciler = {
+            o.id: o
+            for o in Ogrenci.objects.select_related('sube').filter(id__in=ogrenci_ids)
+        }
+        veliler = {v.id: v for v in OgrenciVeli.objects.filter(id__in=veli_ids)}
+        personeller = {
+            p.id: p
+            for p in Personel.objects.select_related('sube').filter(id__in=personel_ids)
+        }
+
+        extra_ctx = {}
+        send_opts = locked.send_options_json or {}
+        if isinstance(send_opts.get('template_context'), dict):
+            extra_ctx.update(send_opts['template_context'])
+        if isinstance(filter_json.get('template_context'), dict):
+            extra_ctx.update(filter_json['template_context'])
+
+        locked.total_recipients = preview.total_recipients
+        locked.preview_stats_json = preview.to_dict()
+        locked.save(update_fields=['total_recipients', 'preview_stats_json', 'updated_at'])
 
         for recipient in preview.recipients:
-            ogrenci = None
-            veli = None
-            personel = None
             is_personel = recipient.recipient_type == RecipientType.PERSONEL
-            if recipient.ogrenci_id and not is_personel:
-                from apps.ogrenci.domain.models import Ogrenci
-
-                ogrenci = Ogrenci.objects.select_related('sube').filter(id=recipient.ogrenci_id).first()
-            if recipient.veli_id and not is_personel:
-                from apps.ogrenci.domain.models import OgrenciVeli
-
-                veli = OgrenciVeli.objects.filter(id=recipient.veli_id).first()
-            if recipient.personel_id:
-                from apps.personel.domain.models import Personel
-
-                personel = Personel.objects.filter(id=recipient.personel_id).first()
+            ogrenci = None if is_personel else ogrenciler.get(recipient.ogrenci_id)
+            veli = None if is_personel else veliler.get(recipient.veli_id)
+            personel = personeller.get(recipient.personel_id) if recipient.personel_id else None
 
             sube_ad = ''
             if ogrenci and getattr(ogrenci, 'sube', None):
@@ -1075,31 +1177,32 @@ class CampaignService:
             elif personel and getattr(personel, 'sube', None):
                 sube_ad = getattr(personel.sube, 'ad', '') or ''
 
-            from apps.communication.application.variable_resolver import aktif_sinif_ad
-
-            body = resolve_variables(
-                body_template,
-                build_recipient_context(
-                    display_name=recipient.display_name,
-                    recipient_type=recipient.recipient_type,
-                    ogrenci=ogrenci,
-                    veli=veli,
-                    personel=personel,
-                    kurum=kurum,
-                    sinif_ad=aktif_sinif_ad(ogrenci),
-                    sube_ad=sube_ad,
-                ),
+            recipient_ctx = build_recipient_context(
+                display_name=recipient.display_name,
+                recipient_type=recipient.recipient_type,
+                ogrenci=ogrenci,
+                veli=veli,
+                personel=personel,
+                kurum=kurum,
+                sinif_ad=aktif_sinif_ad(ogrenci),
+                sube_ad=sube_ad,
             )
-            resolved = ContactResolver.resolve_contact(campaign.kurum_id, recipient.e164)
+            for key, value in extra_ctx.items():
+                if value is None or str(value).strip() == '':
+                    continue
+                recipient_ctx[str(key)] = str(value)
+
+            body = resolve_variables(body_template, recipient_ctx)
+            resolved = ContactResolver.resolve_contact(locked.kurum_id, recipient.e164)
             conversation, _ = ConversationRepository.get_or_create_for_contact(
-                kurum_id=campaign.kurum_id,
-                channel=campaign.channel or Channel.WHATSAPP,
+                kurum_id=locked.kurum_id,
+                channel=locked.channel or Channel.WHATSAPP,
                 contact_phone=recipient.e164,
                 contact_type=recipient.recipient_type,
                 contact_identity=resolved.identity,
                 ogrenci_id=None if is_personel else (recipient.ogrenci_id or resolved.ogrenci_id),
                 veli_id=None if is_personel else (recipient.veli_id or resolved.veli_id),
-                channel_config=campaign.channel_config,
+                channel_config=locked.channel_config,
             )
             if is_personel and personel:
                 update_fields = []
@@ -1128,19 +1231,17 @@ class CampaignService:
 
             message = MessageRepository.create(
                 conversation=conversation,
-                campaign=campaign,
+                campaign=locked,
                 direction=MessageDirection.OUTBOUND,
                 message_type=msg_type,
                 body=body,
                 status=MessageStatus.PENDING,
                 sender_user_id=sender_user_id,
                 source_module='campaign',
-                source_ref_id=str(campaign.id),
+                source_ref_id=str(locked.id),
             )
 
             if campaign_attachments:
-                from apps.communication.domain.models import MessageAttachment
-
                 for att in campaign_attachments:
                     MessageAttachment.objects.create(
                         message=message,
@@ -1157,21 +1258,23 @@ class CampaignService:
                 direction=MessageDirection.OUTBOUND,
             )
             OutboundQueueRepository.enqueue(
-                kurum_id=campaign.kurum_id,
+                kurum_id=locked.kurum_id,
                 message=message,
-                campaign=campaign,
+                campaign=locked,
                 next_attempt_at=timezone.now(),
-                send_options=dict(campaign.send_options_json or {}),
+                send_options=dict(locked.send_options_json or {}),
             )
 
-        campaign.status = CampaignStatus.QUEUED
-        campaign.save(update_fields=['status', 'updated_at'])
+        locked.status = CampaignStatus.QUEUED
+        locked.save(update_fields=['status', 'updated_at'])
 
         from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
 
-        dispatch_process_outbound_queue()
-
-        return campaign
+        # Tek batch (20) yerine kuyruğu boşalt: kampanyanın kalanı cron'a kalmasın.
+        transaction.on_commit(
+            lambda: dispatch_process_outbound_queue(drain=True, background=True),
+        )
+        return locked
 
     @transaction.atomic
     def cancel(self, campaign: OutboundCampaign) -> OutboundCampaign:
@@ -1195,7 +1298,7 @@ class CampaignService:
             campaign.save(update_fields=['status', 'updated_at'])
             from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
 
-            dispatch_process_outbound_queue()
+            dispatch_process_outbound_queue(drain=True, background=True)
         return {'retried_count': retried}
 
     def _validate_audience_scope(self, kurum_id: int, audience_filter: dict, user) -> None:

@@ -20,6 +20,7 @@ from apps.communication.application.meta_template_validation import validate_tem
 from apps.communication.application.template_service import TemplateService
 from apps.communication.domain.enums import (
     MetaTemplateCategory,
+    MetaTemplateStatus,
     MetaTemplateUsage,
     TemplateAudienceScope,
     TemplateCategory,
@@ -210,3 +211,92 @@ class TemplatePairingService:
             'skipped': skipped,
             'info': PAIRING_INFO,
         }
+
+    @staticmethod
+    def _text_header(header_json) -> dict:
+        header = header_json if isinstance(header_json, dict) else {}
+        if (header.get('type') or '').upper() != 'TEXT':
+            return {}
+        return header
+
+    @classmethod
+    def sync_app_from_meta(cls, meta: WhatsAppMetaTemplate) -> int:
+        """Bağlı uygulama şablonlarının gövde / başlık / alt bilgi / grubunu Meta ile eşle."""
+        body = meta.body_named or ''
+        header = cls._text_header(meta.header_json)
+        footer = meta.footer_text or ''
+        group = (meta.template_group or '').strip()[:64]
+        variables = extract_named_variables_in_order(body)
+        updated = 0
+        for app in MessageTemplate.objects.filter(meta_template=meta):
+            fields: list[str] = []
+            if app.body != body:
+                app.body = body
+                fields.append('body')
+            if (app.header_json or {}) != header:
+                app.header_json = header
+                fields.append('header_json')
+            if (app.footer_text or '') != footer:
+                app.footer_text = footer
+                fields.append('footer_text')
+            if (app.template_group or '') != group:
+                app.template_group = group
+                fields.append('template_group')
+            if list(app.variables_json or []) != list(variables):
+                app.variables_json = variables
+                fields.append('variables_json')
+            if fields:
+                fields.append('updated_at')
+                app.save(update_fields=fields)
+                updated += 1
+        return updated
+
+    @classmethod
+    def sync_meta_from_app(cls, template: MessageTemplate) -> WhatsAppMetaTemplate | None:
+        """Bağlı Meta taslağını uygulama şablonu metniyle güncelle (yalnızca DRAFT)."""
+        meta = template.meta_template
+        if not meta or meta.status != MetaTemplateStatus.DRAFT:
+            return None
+        kwargs: dict = {
+            'body_named': template.body or '',
+            'footer_text': template.footer_text or '',
+        }
+        app_header = cls._text_header(template.header_json)
+        if app_header:
+            kwargs['header_json'] = app_header
+        MetaTemplateService.update_draft(meta, **kwargs)
+        MetaTemplateService.set_template_group(meta, template.template_group or '')
+        meta.refresh_from_db()
+        return meta
+
+    @classmethod
+    def deletion_blockers(cls, meta: WhatsAppMetaTemplate) -> list[dict]:
+        """Bildirim / sistem kullanımında olan Meta veya bağlı uygulama şablonları."""
+        from apps.communication.application.notification_binding_service import (
+            list_message_template_binding_usages,
+            list_meta_template_binding_usages,
+        )
+        from apps.coaching.assignment_manual.assignment_template_roles import (
+            list_template_system_usages,
+        )
+
+        usages = list(list_meta_template_binding_usages(meta))
+        for app in MessageTemplate.objects.filter(meta_template=meta):
+            usages.extend(list_message_template_binding_usages(app))
+            usages.extend(list_template_system_usages(app))
+        seen: set[str] = set()
+        unique: list[dict] = []
+        for row in usages:
+            key = f"{row.get('module')}:{row.get('role')}:{row.get('event_key')}:{row.get('label')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            unique.append(row)
+        return unique
+
+    @classmethod
+    def delete_paired_app_templates(cls, meta: WhatsAppMetaTemplate) -> int:
+        qs = MessageTemplate.objects.filter(meta_template=meta)
+        count = qs.count()
+        qs.delete()
+        return count

@@ -226,7 +226,7 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
   },
   {
     id: "iletisim",
-    href: "/muhasebe/iletisim/mesajlar",
+    href: "/muhasebe/iletisim/sohbetler",
     label: "WhatsApp",
     matchPrefix: "/muhasebe/iletisim",
     icon: (
@@ -237,9 +237,9 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
     children: [
       {
         id: "iletisim-sohbetler",
-        href: "/muhasebe/iletisim/mesajlar",
+        href: "/muhasebe/iletisim/sohbetler",
         label: "Sohbetler",
-        matchPrefix: "/muhasebe/iletisim/mesajlar",
+        matchPrefix: "/muhasebe/iletisim/sohbetler",
       },
       {
         id: "iletisim-sablonlar",

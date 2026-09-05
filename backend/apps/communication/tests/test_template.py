@@ -217,6 +217,67 @@ class TemplateAPITest(TestCase):
         self.assertEqual(res.status_code, 403)
 
 
+class TemplateAudienceIsolationTest(TestCase):
+    """Koç, muhasebe şablonunu (ve tersi) listede görmez — bulk yetkisi olsa bile."""
+
+    def setUp(self):
+        from apps.communication.domain.enums import TemplateAudienceScope
+
+        self.kurum = Kurum.objects.create(ad='Aud Kurum', kod='AUD')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='AUD-M')
+        self.service = TemplateService()
+        self.admin = User.objects.create_user(username='aud_admin', password='x')
+        _assign_role(self.admin, 'aud_admin', ['communication.manage', 'communication.read'])
+        self.coach_tpl = self.service.create(
+            self.kurum.id, sube_id=self.sube.id, user=self.admin,
+            name='Koç Şablon', body='Koç metni',
+            audience_scope=TemplateAudienceScope.COACH,
+        )
+        self.muh_tpl = self.service.create(
+            self.kurum.id, sube_id=self.sube.id, user=self.admin,
+            name='Muhasebe Şablon', body='Muhasebe metni',
+            audience_scope=TemplateAudienceScope.MUHASEBE,
+        )
+
+    def _coach(self):
+        from apps.coaching.models import CoachProfile
+        from apps.personel.domain.models import Personel
+
+        user = User.objects.create_user(username='aud_coach', password='x')
+        personel = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Koç', soyad='A',
+            tc_kimlik_no='55555555551', user=user,
+        )
+        CoachProfile.objects.create(teacher=personel, capacity=10, is_active=True, is_coach=True)
+        _assign_role(user, 'aud_coach', ['communication.bulk', 'communication.read'])
+        return user
+
+    def _muhasebe(self):
+        user = User.objects.create_user(username='aud_muh', password='x')
+        _assign_role(user, 'aud_muh', [
+            'communication.bulk', 'communication.read', 'finans.read',
+        ])
+        return user
+
+    def test_coach_does_not_see_accounting_template(self):
+        ids = set(
+            self.service.list_templates(
+                self.kurum.id, sube_id=self.sube.id, user=self._coach(),
+            ).values_list('id', flat=True)
+        )
+        self.assertIn(self.coach_tpl.id, ids)
+        self.assertNotIn(self.muh_tpl.id, ids)
+
+    def test_accounting_does_not_see_coach_template(self):
+        ids = set(
+            self.service.list_templates(
+                self.kurum.id, sube_id=self.sube.id, user=self._muhasebe(),
+            ).values_list('id', flat=True)
+        )
+        self.assertIn(self.muh_tpl.id, ids)
+        self.assertNotIn(self.coach_tpl.id, ids)
+
+
 class VariableResolverTest(TestCase):
     def test_resolve_variables(self):
         ctx = build_recipient_context(display_name='Ayşe Hanım', recipient_type='VELI')

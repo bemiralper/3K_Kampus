@@ -10,8 +10,8 @@ def user_can_bulk_communicate(user) -> bool:
     """Toplu gönderim / kuyruk / kampanya geçmişi.
 
     `communication.bulk` veya `manage` yeterli. Muhasebe rolü canlıda henüz
-    `bulk` taşımıyorsa `finans.manage` ile de açılır — seed çalışmadan da
-    portal çalışır.
+    `bulk` taşımıyorsa `finans.manage` (muhasebe parmak izi) ile de açılır —
+    böylece seed çalışmadan da portal çalışır.
     """
     if not user or not getattr(user, 'is_authenticated', False):
         return False

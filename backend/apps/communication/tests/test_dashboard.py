@@ -80,7 +80,7 @@ class CommunicationDashboardServiceTest(TestCase):
         self.assertTrue(any(row['key'] == 'COACHING' for row in data['by_department']))
         self.assertTrue(any(row['key'] == 'VELI' for row in data['by_contact_type']))
         self.assertTrue(any(row['key'] == 'odev' for row in data['by_source']))
-        self.assertEqual(data['recent_failures'][0]['reason'], 'Message undeliverable')
+        self.assertIn('iletilemedi', data['recent_failures'][0]['reason'].lower())
         alert_keys = {row['key'] for row in data['alerts']}
         self.assertIn('sla', alert_keys)
         self.assertIn('failed', alert_keys)

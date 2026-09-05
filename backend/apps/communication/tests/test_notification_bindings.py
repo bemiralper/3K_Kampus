@@ -79,6 +79,26 @@ class NotificationEventCatalogTest(TestCase):
         self.assertEqual(names[0], 'odev_plani_veli')
         self.assertIn('haftalik_odev_plani_veli', names)
 
+    def test_sinav_cevap_anahtari_event_has_document(self):
+        event = get_event('sinav.cevap_anahtari')
+        self.assertIsNotNone(event)
+        self.assertTrue(event.has_document)
+        self.assertIn(RecipientType.VELI, event.recipients)
+        self.assertIn(RecipientType.OGRENCI, event.recipients)
+
+    def test_sinav_notify_events_expose_schedule_variables(self):
+        for key in ('sinav.hatirlatma', 'sinav.yoklama'):
+            event = get_event(key)
+            self.assertIsNotNone(event)
+            self.assertIn(RecipientType.VELI, event.recipients)
+            self.assertIn(RecipientType.OGRENCI, event.recipients)
+            names = event.all_variables()
+            for name in (
+                'sinav_adi', 'sinav_tarihi', 'baslama_saati', 'bitis_saati',
+                'sinav_salonu', 'sira_no', 'ogrenci_ad', 'kurum_ad',
+            ):
+                self.assertIn(name, names, f'{key} eksik: {name}')
+
     def test_odeme_events_discover_live_meta_names(self):
         self.assertIn(
             'odeme_plan_veli',
@@ -413,6 +433,26 @@ class BindingServiceTest(TestCase):
         self.assertIn('Ali Yılmaz', payload['body'])
         self.assertIn('03.08.2026', payload['body'])
         self.assertTrue(payload['would_send'])
+
+    def test_ozel_ders_preview_uses_readable_samples(self):
+        payload = preview_binding(
+            self.kurum.id,
+            event_key='ozel_ders.ogretmen_gelmedi',
+            recipient_type=RecipientType.VELI,
+        )
+        self.assertIn('Mehmet Yılmaz', payload['body'])
+        self.assertIn('Matematik', payload['body'])
+        self.assertIn('15 Ocak 2026', payload['body'])
+        self.assertNotIn('{ders_tarihi}', payload['body'])
+        self.assertNotIn('{{ders_tarihi}}', payload['body'])
+
+        telafi = preview_binding(
+            self.kurum.id,
+            event_key='ozel_ders.telafi_planlandi',
+            recipient_type=RecipientType.VELI,
+        )
+        self.assertIn('18 Ocak 2026', telafi['body'])
+        self.assertIn('14.00', telafi['body'])
 
     def test_dry_run_dispatch_returns_preview(self):
         preview = dispatch_event(
