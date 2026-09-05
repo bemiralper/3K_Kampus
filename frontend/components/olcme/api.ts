@@ -9,6 +9,12 @@ import type {
   ExamDetail,
   ExamListItem,
   ExamCreateForm,
+  ExamParticipantRow,
+  ParticipantSearchHit,
+  ExamRoomItem,
+  ExamSessionItem,
+  PreviewStudent,
+  SeatingMode,
   LookupItem,
   SessionCreateForm,
   AnswerKey,
@@ -22,6 +28,7 @@ import type {
   StudentAnswerItem,
   MappingTemplate,
   StudentSearchResult,
+  MatchSuggestionsResponse,
   AnalysisSummary,
   AnalysisSectionItem,
   StudentAnalysis,
@@ -39,6 +46,9 @@ import type {
   PuanAyarlari,
   PuanYilSeti,
   KatsayiKind,
+  ExamPublishStatus,
+  ExamPublishPreview,
+  ExamPublishDispatch,
 } from './types';
 
 const BASE = '/api/coaching/olcme-degerlendirme/exams';
@@ -101,9 +111,23 @@ export const examApi = {
     return request<ExamListItem[]>(`${BASE}/${qs}`);
   },
 
+  downloadListPdf: async (params?: Record<string, string>) => {
+    const qs = params ? '?' + new URLSearchParams(params).toString() : '';
+    const res = await fetch(`${BASE}/list-pdf/${qs}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string })?.error || 'Liste PDF indirilemedi.');
+    }
+    const blob = await res.blob();
+    await downloadPdfBlob(blob, 'sinav-listesi.pdf');
+  },
+
   detail: (id: number) => request<ExamDetail>(`${BASE}/${id}/`),
 
-  create: (data: ExamCreateForm) =>
+  create: (data: ExamCreateForm & Record<string, unknown>) =>
     request<ExamDetail>(`${BASE}/`, {
       method: 'POST',
       body: JSON.stringify(cleanPayload(data as unknown as Record<string, unknown>)),
@@ -132,7 +156,7 @@ export const examApi = {
       body: JSON.stringify({ section_id: sectionId }),
     }),
 
-  updateSection: (examId: number, sectionId: number, data: { name?: string; question_start?: number; question_end?: number; order?: number }) =>
+  updateSection: (examId: number, sectionId: number, data: { name?: string; question_start?: number; question_end?: number; order?: number; subject?: number | null }) =>
     request<ExamDetail>(`${BASE}/${examId}/update_section/`, {
       method: 'POST',
       body: JSON.stringify({ section_id: sectionId, ...data }),
@@ -213,8 +237,276 @@ export const examApi = {
 
   denemeHizmetleri: () => request<LookupItem[]>(`${BASE}/deneme-hizmetleri/`),
 
-  denemePaketleri: () =>
-    request<(LookupItem & { deneme_sayisi: number })[]>(`${BASE}/deneme-paketleri/`),
+  denemePaketleri: (seviyeId?: number) => {
+    const qs = seviyeId ? `?seviye_id=${seviyeId}` : '';
+    return request<(LookupItem & { deneme_sayisi: number; seviye_ids?: number[] })[]>(
+      `${BASE}/deneme-paketleri/${qs}`,
+    );
+  },
+
+  previewParticipants: (data: {
+    sinif_ids?: number[];
+    sinif_seviyesi_ids?: number[];
+    deneme_paketi_ids?: number[];
+  }) =>
+    request<{ count: number; students: PreviewStudent[] }>(`${BASE}/preview-participants/`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  participants: (examId: number) =>
+    request<{
+      count: number;
+      participants: ExamParticipantRow[];
+      rooms: ExamRoomItem[];
+      sessions?: ExamSessionItem[];
+    }>(
+      `${BASE}/${examId}/participants/`,
+    ),
+
+  saveParticipants: (examId: number, data: Record<string, unknown>) =>
+    request<{ count: number; participants: ExamParticipantRow[]; rooms: ExamRoomItem[] }>(
+      `${BASE}/${examId}/participants/`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  addParticipant: (
+    examId: number,
+    studentId: number,
+    examSessionId?: number | null,
+    seat?: { room_id: number; seat_no: number },
+  ) =>
+    request<ExamParticipantRow>(`${BASE}/${examId}/participants/add/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        student_id: studentId,
+        exam_session_id: examSessionId ?? null,
+        ...(seat ? { room_id: seat.room_id, seat_no: seat.seat_no } : {}),
+      }),
+    }),
+
+  patchParticipant: (examId: number, participantId: number, data: Record<string, unknown>) =>
+    request<ExamParticipantRow>(`${BASE}/${examId}/participants/${participantId}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  removeParticipant: (examId: number, participantId: number) =>
+    request<void>(`${BASE}/${examId}/participants/${participantId}/`, { method: 'DELETE' }),
+
+  searchParticipants: (examId: number, q: string, examSessionId?: number | null) =>
+    request<ParticipantSearchHit[]>(
+      `${BASE}/${examId}/participants/search/?q=${encodeURIComponent(q)}${
+        examSessionId ? `&exam_session_id=${examSessionId}` : ''
+      }`,
+    ),
+
+  rooms: (examId: number) =>
+    request<{
+      rooms: ExamRoomItem[];
+      participant_count: number;
+      total_capacity: number;
+      warning: string | null;
+    }>(`${BASE}/${examId}/rooms/`),
+
+  saveRooms: (examId: number, rooms: ExamRoomItem[]) =>
+    request<{
+      rooms: ExamRoomItem[];
+      participant_count: number;
+      total_capacity: number;
+      warning: string | null;
+    }>(`${BASE}/${examId}/rooms/`, {
+      method: 'PUT',
+      body: JSON.stringify({ rooms }),
+    }),
+
+  seating: (examId: number, mode: SeatingMode, onlyUnassigned = false, examSessionId?: number | null) =>
+    request<{ ok: boolean; placed: number; unplaced: number; locked?: number; mode: string; error?: string }>(
+      `${BASE}/${examId}/seating/`,
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          mode,
+          only_unassigned: onlyUnassigned,
+          exam_session_id: examSessionId ?? null,
+        }),
+      },
+    ),
+
+  audience: (examId: number) =>
+    request<{
+      id: number;
+      sinif_seviyesi_id: number | null;
+      sinif_seviyesi: string;
+      deneme_paketi_id: number | null;
+      deneme_paketi: string;
+    }[]>(`${BASE}/${examId}/audience/`),
+
+  saveAudience: (examId: number, audience: { sinif_seviyesi_id?: number | null; deneme_paketi_id?: number | null }[]) =>
+    request<unknown>(`${BASE}/${examId}/audience/`, {
+      method: 'PUT',
+      body: JSON.stringify({ audience }),
+    }),
+
+  rosterExportUrl: (examId: number, kind: 'yoklama' | 'salon' | 'oturma') =>
+    `${BASE}/${examId}/roster-export/?kind=${kind}`,
+
+  downloadRoster: async (examId: number, kind: 'yoklama' | 'salon' | 'oturma') => {
+    const res = await fetch(`${BASE}/${examId}/roster-export/?kind=${kind}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) throw new Error('Liste indirilemedi.');
+    const blob = await res.blob();
+    const { downloadBlob } = await import('@/lib/download-file');
+    downloadBlob(blob, `${kind}.xlsx`);
+  },
+
+  bulkAttendance: (
+    examId: number,
+    data: { attendance: 'present' | 'absent'; participant_ids?: number[]; session_id?: number | null },
+  ) =>
+    request<{ ok: boolean; updated: number; attendance: string }>(
+      `${BASE}/${examId}/participants/bulk-attendance/`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  hatirlatmaPreview: (examId: number, participantIds: number[], eventKey = 'sinav.hatirlatma') =>
+    request<{
+      event_key: string;
+      event_label: string;
+      preview_body: string;
+      preview_body_veli?: string;
+      preview_body_ogrenci?: string;
+      supports_ogrenci?: boolean;
+      binding_hint: string;
+      students: {
+        participant_id: number;
+        student_id: number;
+        full_name: string;
+        salon_ad: string;
+        sira: string;
+        recipients: {
+          recipient_type: string;
+          veli_id: number | null;
+          display_name: string;
+          telefon: string;
+          skip_reason: string;
+        }[];
+      }[];
+    }>(`${BASE}/${examId}/hatirlatma/preview/`, {
+      method: 'POST',
+      body: JSON.stringify({ participant_ids: participantIds, event_key: eventKey }),
+    }),
+
+  hatirlatmaSend: (examId: number, data: {
+    participant_ids: number[];
+    veli_ids: number[];
+    include_student?: boolean;
+    event_key?: string;
+  }) =>
+    request<{ sent: number; skipped: number; errors: string[] }>(
+      `${BASE}/${examId}/hatirlatma/send/`,
+      { method: 'POST', body: JSON.stringify(data) },
+    ),
+
+  publishDispatch: (examId: number) =>
+    request<ExamPublishStatus>(`${BASE}/${examId}/publish-dispatch/`),
+
+  publishPreview: (examId: number, kind: 'karne' | 'answer_key') =>
+    request<ExamPublishPreview>(`${BASE}/${examId}/publish-dispatch/preview/?kind=${kind}`),
+
+  publishSendNow: (
+    examId: number,
+    kind: 'karne' | 'answer_key',
+    payload?: {
+      include_veli?: boolean;
+      include_student?: boolean;
+      student_ids?: number[];
+      veli_ids?: number[];
+      answer_ids?: number[];
+    },
+  ) =>
+    request<{
+      ok: boolean;
+      already?: boolean;
+      sent?: number;
+      skipped?: number;
+      errors?: string[];
+      error?: string;
+      status?: string;
+      campaign_id?: string | null;
+      dispatch: ExamPublishStatus;
+    }>(`${BASE}/${examId}/publish-dispatch/send-now/`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, ...payload }),
+    }),
+
+  publishReschedule: (
+    examId: number,
+    kind: 'karne' | 'answer_key',
+    scheduledAt: string | null,
+    isEnabled = false,
+  ) =>
+    request<ExamPublishStatus>(`${BASE}/${examId}/publish-dispatch/reschedule/`, {
+      method: 'POST',
+      body: JSON.stringify({ kind, scheduled_at: scheduledAt, is_enabled: isEnabled }),
+    }),
+
+  answerKeyPdfMeta: (examId: number) =>
+    request<{ has_uploaded: boolean; can_generate: boolean; filename: string }>(
+      `${BASE}/${examId}/answer-key-pdf/`,
+    ),
+
+  downloadAnswerKeyPdf: async (
+    examId: number,
+    opts?: 'uploaded' | 'generated' | {
+      source?: 'uploaded' | 'generated';
+      copies?: number;
+      booklet?: string;
+    },
+  ) => {
+    const options = typeof opts === 'string' ? { source: opts } : (opts || {});
+    const qs = new URLSearchParams({ download: '1' });
+    if (options.source === 'generated') qs.set('source', 'generated');
+    if (options.copies && options.copies !== 1) qs.set('copies', String(options.copies));
+    if (options.booklet) qs.set('booklet', options.booklet);
+    const res = await fetch(`${BASE}/${examId}/answer-key-pdf/?${qs}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'PDF indirilemedi.');
+    }
+    const blob = await res.blob();
+    const name = filenameFromDisposition(
+      res.headers.get('content-disposition'),
+      'cevap-anahtari.pdf',
+    );
+    await downloadPdfBlob(blob, name);
+  },
+
+  uploadAnswerKeyPdf: async (examId: number, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`${BASE}/${examId}/answer-key-pdf/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getContextHeaders(),
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'PDF yüklenemedi.');
+    }
+    return res.json() as Promise<{ ok: boolean; has_uploaded: boolean; filename: string }>;
+  },
+
+  deleteAnswerKeyPdf: (examId: number) =>
+    request<{ ok: boolean; has_uploaded: boolean }>(`${BASE}/${examId}/answer-key-pdf/`, {
+      method: 'DELETE',
+    }),
 
   // ── Yardımcı ──────────────────────────────────────────────────────────────
 
@@ -321,6 +613,7 @@ export const uploadApi = {
     const res = await fetch(`${BASE}/${examId}/results/upload/`, {
       method: 'POST',
       credentials: 'include',
+      headers: getContextHeaders(),
       body: formData,
       // Content-Type header'ını SET ETMEYİN — browser FormData boundary'yi otomatik ayarlar
     });
@@ -369,8 +662,17 @@ export const uploadApi = {
     ),
 
   /** Öğrenci arama (eşleştirme dialog'u için) */
-  searchStudents: (examId: number, query: string) =>
-    request<StudentSearchResult[]>(`${BASE}/${examId}/results/students/search/?q=${encodeURIComponent(query)}`),
+  searchStudents: (examId: number, query: string, answerId?: number) => {
+    const qs = new URLSearchParams({ q: query });
+    if (answerId) qs.set('answer_id', String(answerId));
+    return request<StudentSearchResult[]>(`${BASE}/${examId}/results/students/search/?${qs}`);
+  },
+
+  /** DAT kaydı için skorlanmış aday önerileri */
+  suggestStudents: (examId: number, answerId: number) =>
+    request<MatchSuggestionsResponse>(
+      `${BASE}/${examId}/results/students/${answerId}/suggestions/`,
+    ),
 
   /** Eşleşmemiş sonuçları güncel öğrenci havuzuyla yeniden eşleştir */
   rematchUnmatched: (examId: number) =>
@@ -481,7 +783,7 @@ export const analysisApi = {
     if (sessionId) params.set('session_id', String(sessionId));
     if (rankingYear) params.set('ranking_year', String(rankingYear));
     const qs = params.toString() ? `?${params}` : '';
-    return request<{ rankings: RankingItem[]; sections: import('./types').RankingSectionInfo[]; total_students: number; top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number; section_avgs?: Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>; avg_net?: number; puan_turleri_avgs?: Record<string, number>; sinif_avgs?: Record<string, any> }>(`${BASE}/${examId}/analysis/rankings/${qs}`);
+    return request<{ rankings: RankingItem[]; sections: import('./types').RankingSectionInfo[]; total_students: number; top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number; section_avgs?: Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>; avg_net?: number; puan_turleri_avgs?: Record<string, number>; sinif_avgs?: Record<string, any>; kurum_ad?: string; sube_ad?: string }>(`${BASE}/${examId}/analysis/rankings/${qs}`);
   },
 
   /** Madde (soru) analizi */
@@ -642,6 +944,7 @@ export interface KarneBulkPreviewResponse {
     students: KarneBulkStudentRow[];
     sendable: number;
     total: number;
+    scheduled_warning?: ExamPublishDispatch | null;
   };
 }
 
@@ -652,6 +955,8 @@ export interface KarneBulkSendResponse {
     sent: number;
     skipped: number;
     errors: string[];
+    campaign_id?: string | null;
+    schedule_cancelled?: boolean;
     student_results?: Array<{
       answer_id: number;
       student_name: string;
@@ -708,8 +1013,11 @@ const CURRICULUM_BASE = '/api/coaching/olcme-degerlendirme/curriculum';
 
 export const curriculumApi = {
   /** Ders listesi (özet) */
-  listSubjects: (examType?: string) => {
-    const qs = examType ? `?exam_type=${encodeURIComponent(examType)}` : '';
+  listSubjects: (examType?: string, band?: string) => {
+    const params = new URLSearchParams();
+    if (examType) params.set('exam_type', examType);
+    if (band) params.set('band', band);
+    const qs = params.toString() ? `?${params}` : '';
     return request<SubjectItem[]>(`${CURRICULUM_BASE}/subjects/${qs}`);
   },
 
@@ -818,6 +1126,48 @@ export const curriculumApi = {
       { method: 'POST', body: JSON.stringify(data) },
     ),
 
+  downloadCatalog: async (codes?: string[]) => {
+    const qs = codes?.length ? `?codes=${encodeURIComponent(codes.join(','))}` : '';
+    const res = await fetch(`${CURRICULUM_BASE}/catalog/export/${qs}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Katalog indirilemedi.');
+    }
+    const blob = await res.blob();
+    const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+    const { downloadBlob } = await import('@/lib/download-file');
+    downloadBlob(blob, `kazanim-katalogu-${stamp}.json`);
+  },
+
+  importCatalog: async (file: File, mode: 'replace' | 'merge', dryRun = false) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('mode', mode);
+    if (dryRun) form.append('dry_run', '1');
+    const res = await fetch(`${CURRICULUM_BASE}/catalog/import/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getContextHeaders(),
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Katalog yüklenemedi.');
+    }
+    return res.json() as Promise<{
+      ok: boolean;
+      message: string;
+      dry_run: boolean;
+      mode: string;
+      counts: { subjects: number; topics: number; outcomes: number; sub_outcomes: number };
+      imported?: { subjects: number; topics: number; outcomes: number; sub_outcomes: number };
+      subjects?: { code: string; name: string; topics: number }[];
+    }>;
+  },
+
   /** Metin formatında toplu içe aktarım (kopyala-yapıştır) */
   bulkTextImport: (data: { subject_id: number; text: string }) =>
     request<{ message: string; stats: { topics: number; outcomes: number; sub_outcomes: number }; subject: SubjectItem }>(
@@ -864,4 +1214,54 @@ export const puanAyarlariApi = {
     request<PuanYilSeti>(`${PUAN_AYAR_BASE}/katsayilar/${year}/reset/`, {
       method: 'POST',
     }),
+};
+
+const OTURUM_AYAR_BASE = '/api/coaching/olcme-degerlendirme/oturum-ayarlari';
+
+export type OturumSeviyeAyar = {
+  sinif_seviyesi_id: number;
+  sinif_seviyesi: string;
+  kod: string;
+  aktif_mi?: boolean;
+  preference: 'HAFTA_ICI' | 'HAFTA_SONU';
+  fallback: 'HAFTA_ICI' | 'HAFTA_SONU';
+};
+
+export type OturumOgrenciAyar = {
+  ogrenci_id: number;
+  full_name: string;
+  tc_kimlik_no: string;
+  sinif: string;
+  sinif_seviyesi_id: number | null;
+  sinif_seviyesi: string;
+  preference: 'HAFTA_ICI' | 'HAFTA_SONU';
+  is_override: boolean;
+};
+
+export const oturumAyarlariApi = {
+  seviyeler: () => request<{ items: OturumSeviyeAyar[] }>(`${OTURUM_AYAR_BASE}/seviyeler/`),
+
+  saveSeviyeler: (items: { sinif_seviyesi_id: number; preference: string }[]) =>
+    request<{ items: OturumSeviyeAyar[] }>(`${OTURUM_AYAR_BASE}/seviyeler/`, {
+      method: 'PUT',
+      body: JSON.stringify({ items }),
+    }),
+
+  ogrenciler: (params?: { paket_id?: number | ''; seviye_id?: number | ''; group?: string; q?: string }) => {
+    const qs = new URLSearchParams();
+    if (params?.paket_id) qs.set('paket_id', String(params.paket_id));
+    if (params?.seviye_id) qs.set('seviye_id', String(params.seviye_id));
+    if (params?.group) qs.set('group', params.group);
+    if (params?.q) qs.set('q', params.q);
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return request<{ items: OturumOgrenciAyar[]; paketler: { id: number; ad: string }[] }>(
+      `${OTURUM_AYAR_BASE}/ogrenciler/${suffix}`,
+    );
+  },
+
+  patchOgrenci: (ogrenciId: number, preference: 'HAFTA_ICI' | 'HAFTA_SONU' | 'default') =>
+    request<{ items: OturumOgrenciAyar[]; paketler: { id: number; ad: string }[] }>(
+      `${OTURUM_AYAR_BASE}/ogrenciler/`,
+      { method: 'PATCH', body: JSON.stringify({ ogrenci_id: ogrenciId, preference }) },
+    ),
 };

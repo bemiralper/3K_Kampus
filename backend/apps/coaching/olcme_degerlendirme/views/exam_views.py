@@ -2,7 +2,8 @@
 Ölçme & Değerlendirme — Exam Views
 """
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError as DrfValidationError
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
@@ -22,6 +23,7 @@ from ..services.exam_templates import (
     create_sections_from_template,
     ensure_sub_sections,
     _auto_link_subjects,
+    _resolve_payload_subject,
     sync_optional_philosophy_section,
 )
 from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id
@@ -31,6 +33,58 @@ from ..interfaces.sube_context import (
     resolve_mandatory_olcme_sube,
 )
 from ..views import CsrfExemptSessionAuthentication
+
+
+def _sync_exam_date_from_sessions(exam):
+    """
+    Sınav tarihi oturumlardan türetilir (en erken oturum günü).
+
+    Takvim entegrasyonu, sınav listesi sıralaması ve karne başlığı
+    exam.exam_date alanına bakar; tarih yalnızca oturum formunda
+    girildiği için bu alan aksi halde boş kalır.
+    """
+    first_date = (
+        exam.exam_sessions.filter(session_date__isnull=False)
+        .order_by('session_date')
+        .values_list('session_date', flat=True)
+        .first()
+    )
+    # Oturumların hiçbirinde tarih yoksa elle girilmiş exam_date korunur.
+    if first_date and first_date != exam.exam_date:
+        exam.exam_date = first_date
+        exam.save(update_fields=['exam_date'])
+    return exam.exam_date
+
+
+def _validate_question_range(start, end):
+    """(question_start, end, None) veya (None, None, hata mesajı)."""
+    try:
+        start = int(start)
+        end = int(end)
+    except (TypeError, ValueError):
+        return None, None, 'Soru aralığı sayısal olmalıdır.'
+    if start < 1:
+        return None, None, 'Başlangıç sorusu 1 veya daha büyük olmalıdır.'
+    if end < start:
+        return None, None, 'Bitiş sorusu, başlangıç sorusundan küçük olamaz.'
+    return start, end, None
+
+
+def _fresh_exam_payload(exam):
+    """Prefetch önbelleğini atıp güncel detayı döner (eklenen bölüm görünsün)."""
+    fresh = (
+        Exam.objects.select_related(
+            'kurum', 'sube', 'egitim_yili',
+            'deneme_hizmeti', 'deneme_paketi',
+            'linked_tyt_exam',
+        )
+        .prefetch_related(
+            'siniflar', 'sections__sub_sections', 'exam_sessions',
+            'audiences', 'rooms',
+        )
+        .get(pk=exam.pk)
+    )
+    return ExamDetailSerializer(fresh).data
 
 
 class ExamViewSet(viewsets.ModelViewSet):
@@ -49,7 +103,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         qs = Exam.objects.filter(is_active=True).select_related(
             'kurum', 'sube', 'egitim_yili',
             'deneme_hizmeti', 'deneme_paketi',
-            'linked_tyt_exam',
+            'linked_tyt_exam', 'linked_ayt_exam',
         ).prefetch_related('siniflar', 'sections', 'exam_sessions')
 
         qs = self._apply_tenant_scope(qs)
@@ -71,7 +125,43 @@ class ExamViewSet(viewsets.ModelViewSet):
         if search:
             qs = qs.filter(name__icontains=search)
 
+        if self.action == 'list':
+            qs = self._annotate_list_counts(qs)
+            qs = self._apply_ordering(qs)
+
         return qs
+
+    # Liste sıralaması — istemciden gelen serbest alan adları kabul edilmez.
+    ORDERING_FIELDS = {
+        'name': 'name',
+        'exam_date': 'exam_date',
+        'created_at': 'created_at',
+        'status': 'status',
+        'exam_type': 'exam_type',
+        'total_questions': 'ann_total_questions',
+        'answer_count': 'ann_answer_count',
+    }
+
+    def _apply_ordering(self, qs):
+        raw = (self.request.query_params.get('ordering') or '').strip()
+        if not raw:
+            # En yeni oluşturulan üstte; tarihi olmayan satırlar kaybolmasın.
+            return qs.order_by('-created_at', '-id')
+        from django.db.models import F
+
+        descending = raw.startswith('-')
+        field = self.ORDERING_FIELDS.get(raw.lstrip('-'))
+        if not field:
+            return qs
+
+        if field == 'exam_date':
+            # Tarihi olmayan sınavlar her iki yönde de sona düşsün.
+            expr = F('exam_date').desc(nulls_last=True) if descending \
+                else F('exam_date').asc(nulls_last=True)
+        else:
+            expr = f'-{field}' if descending else field
+
+        return qs.order_by(expr, '-created_at')
 
     def get_object(self):
         obj = super().get_object()
@@ -88,12 +178,58 @@ class ExamViewSet(viewsets.ModelViewSet):
         self._olcme_ctx = ctx
         return super().list(request, *args, **kwargs)
 
-    def create(self, request, *args, **kwargs):
-        ctx, err = mandatory_olcme_context(request)
-        if err:
-            return err
-        self._olcme_ctx = ctx
-        return super().create(request, *args, **kwargs)
+    @staticmethod
+    def _annotate_list_counts(qs):
+        """
+        Liste sayısal alanlarını satır başına ek sorgu açmadan hesaplar.
+
+        Tek annotate içinde birden çok çoklu-ilişki saymak kartezyen çarpım
+        ürettiği için her değer ayrı subquery ile alınır. Modelde aynı adlı
+        property'ler olduğundan annotation adları ann_* öneklidir.
+        """
+        from django.db.models import Count, DateField, IntegerField, OuterRef, Subquery, Sum
+        from django.db.models.functions import Coalesce
+
+        from ..models import StudentAnswer
+
+        def scalar(inner):
+            return Coalesce(Subquery(inner, output_field=IntegerField()), 0)
+
+        main_sections = (
+            ExamSection.objects
+            .filter(exam=OuterRef('pk'), is_sub_section=False)
+            .order_by().values('exam')
+        )
+        sessions = (
+            ExamSessionModel.objects
+            .filter(exam=OuterRef('pk'))
+            .order_by().values('exam')
+        )
+        answers = (
+            StudentAnswer.objects
+            .filter(session__exam=OuterRef('pk'))
+            .order_by().values('session__exam')
+        )
+        first_session_date = (
+            ExamSessionModel.objects
+            .filter(exam=OuterRef('pk'), session_date__isnull=False)
+            .order_by('session_date')
+            .values('session_date')[:1]
+        )
+
+        return qs.annotate(
+            ann_section_count=scalar(main_sections.annotate(v=Count('id')).values('v')[:1]),
+            ann_total_questions=scalar(
+                main_sections.annotate(v=Sum('question_count')).values('v')[:1],
+            ),
+            ann_session_count=scalar(sessions.annotate(v=Count('id')).values('v')[:1]),
+            ann_answer_count=scalar(answers.annotate(v=Count('id')).values('v')[:1]),
+            ann_matched_count=scalar(
+                answers.filter(student__isnull=False)
+                .annotate(v=Count('id')).values('v')[:1],
+            ),
+            ann_list_date=Subquery(first_session_date, output_field=DateField()),
+        )
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -118,6 +254,11 @@ class ExamViewSet(viewsets.ModelViewSet):
         except Exception:
             pass
 
+        try:
+            from apps.coaching.application.olcme_publish import sync_dispatches_from_exam
+            sync_dispatches_from_exam(exam)
+        except Exception:
+            pass
         return Response(
             ExamDetailSerializer(exam).data,
             status=status.HTTP_201_CREATED,
@@ -125,45 +266,60 @@ class ExamViewSet(viewsets.ModelViewSet):
 
     def perform_update(self, serializer):
         old_instance = self.get_object()
-        old_publish = old_instance.result_publish_date
         old_status = old_instance.status
         exam = serializer.save()
         self._sync_to_calendar(exam, self.request.user.id)
-        self._notify_exam_results_if_published(exam, old_publish, old_status)
+        try:
+            from apps.coaching.application.olcme_publish import sync_dispatches_from_exam
+            sync_dispatches_from_exam(exam)
+        except Exception:
+            pass
+        self._notify_exam_results_if_published(exam, old_status)
 
     @staticmethod
-    def _notify_exam_results_if_published(exam, old_publish, old_status):
-        newly_published = bool(
-            exam.result_publish_date
-            and exam.result_publish_date != old_publish
-        ) or (
+    def _notify_exam_results_if_published(exam, old_status):
+        """Koç görev kancası — WhatsApp artık yayın saatinde karne PDF ile gider."""
+        newly_ready = (
             exam.status in ('COMPLETED', 'RESULTS_UPLOADED')
             and exam.status != old_status
         )
-        if not newly_published or not exam.kurum_id:
+        if not newly_ready or not exam.kurum_id:
             return
         try:
             from apps.gorev.application.rule_engine import hook_exam_results_published
             hook_exam_results_published(exam)
         except Exception:
             pass
-        try:
-            from apps.communication.application.integration_hooks import notify_exam_result
-            notify_exam_result(
-                exam.kurum_id,
-                exam.id,
-            )
-        except Exception as e:
-            import logging
-            logging.getLogger('communication.integration').error(
-                f'Sınav sonuç WhatsApp bildirim hatası: {e}'
-            )
 
     def perform_destroy(self, instance):
         kurum_id = instance.kurum_id
         self._remove_from_calendar(kurum_id, instance.id)
         instance.is_active = False
         instance.save(update_fields=['is_active'])
+
+    @staticmethod
+    def _fill_session_roster(exam):
+        """Yeni oturum eklenince otomatik kitleyi oturum kurallarına göre yenile."""
+        from ..services.exam_roster import (
+            place_unassigned, replace_auto_participants, resolve_exam_candidates,
+        )
+
+        seviye_ids = [a.sinif_seviyesi_id for a in exam.audiences.all() if a.sinif_seviyesi_id]
+        paket_ids = [a.deneme_paketi_id for a in exam.audiences.all() if a.deneme_paketi_id]
+        sinif_ids = list(exam.siniflar.values_list('id', flat=True))
+        if not sinif_ids and not seviye_ids and not paket_ids:
+            return
+        candidates = resolve_exam_candidates(
+            kurum_id=exam.kurum_id,
+            sube_id=exam.sube_id,
+            egitim_yili_id=exam.egitim_yili_id,
+            sinif_ids=sinif_ids,
+            seviye_ids=seviye_ids,
+            paket_ids=paket_ids,
+        )
+        replace_auto_participants(exam, candidates)
+        if exam.rooms.exists():
+            place_unassigned(exam)
 
     def _sync_to_calendar(self, exam, user_id):
         """Sınavı takvime senkronize et"""
@@ -190,23 +346,89 @@ class ExamViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='add_section')
     def add_section(self, request, pk=None):
         exam = self.get_object()
-        data = request.data.copy()
-        data['exam'] = exam.id
+        name = (request.data.get('name') or '').strip()
+        if not name:
+            return Response({'error': 'Bölüm adı zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        parent_id = request.data.get('parent_section') or request.data.get('parent_section_id')
+        parent = None
+        if parent_id not in (None, ''):
+            try:
+                parent = ExamSection.objects.get(
+                    exam=exam, pk=parent_id, is_sub_section=False,
+                )
+            except (ExamSection.DoesNotExist, TypeError, ValueError):
+                return Response({'error': 'Üst ders bulunamadı.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        start_raw = request.data.get('question_start')
+        end_raw = request.data.get('question_end')
+        count_raw = request.data.get('question_count')
+        if start_raw in (None, '') or end_raw in (None, ''):
+            try:
+                count = int(count_raw) if count_raw not in (None, '') else 1
+            except (TypeError, ValueError):
+                return Response({'error': 'Soru sayısı sayısal olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+            if count < 1:
+                return Response({'error': 'Soru sayısı 1 veya daha büyük olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+            if parent:
+                last = parent.sub_sections.order_by('question_end', 'id').last()
+                start = (last.question_end + 1) if last else parent.question_start
+            else:
+                last_main = exam.sections.filter(is_sub_section=False).order_by('question_end', 'id').last()
+                start = (last_main.question_end + 1) if last_main else 1
+            end = start + count - 1
+        else:
+            start, end, err = _validate_question_range(start_raw, end_raw)
+            if err:
+                return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+
+        clash = ExamSection.objects.filter(exam=exam, name=name)
+        if parent:
+            clash = clash.filter(parent_section=parent)
+        else:
+            clash = clash.filter(parent_section__isnull=True)
+        if clash.exists():
+            return Response(
+                {'error': f'"{name}" adlı bölüm bu sınavda zaten var.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if request.data.get('order') not in (None, ''):
+            try:
+                order = int(request.data.get('order'))
+            except (TypeError, ValueError):
+                return Response({'error': 'Sıra sayısal olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
+        elif parent:
+            order = parent.sub_sections.count()
+        else:
+            order = exam.sections.filter(is_sub_section=False).count()
+
+        try:
+            subject = _resolve_payload_subject(exam, request.data)
+        except DrfValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         section = ExamSection.objects.create(
             exam=exam,
-            name=data.get('name', ''),
-            order=data.get('order', exam.section_count),
-            question_start=data.get('question_start', 1),
-            question_end=data.get('question_end', 1),
+            name=name,
+            order=order,
+            question_start=start,
+            question_end=end,
+            is_sub_section=bool(parent),
+            parent_section=parent,
+            subject=subject,
         )
-        return Response(ExamDetailSerializer(exam).data)
+        if parent and end > parent.question_end:
+            parent.question_end = end
+            parent.save()
+        _auto_link_subjects(exam, [section])
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='remove_section')
     def remove_section(self, request, pk=None):
         exam = self.get_object()
         section_id = request.data.get('section_id')
         ExamSection.objects.filter(exam=exam, id=section_id).delete()
-        return Response(ExamDetailSerializer(exam).data)
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='update_section')
     def update_section(self, request, pk=None):
@@ -219,17 +441,44 @@ class ExamViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Bölüm bulunamadı.'}, status=404)
 
         if 'name' in request.data:
-            section.name = request.data['name']
-        if 'question_start' in request.data:
-            section.question_start = int(request.data['question_start'])
-        if 'question_end' in request.data:
-            section.question_end = int(request.data['question_end'])
+            new_name = (request.data['name'] or '').strip()
+            if not new_name:
+                return Response({'error': 'Bölüm adı boş olamaz.'}, status=status.HTTP_400_BAD_REQUEST)
+            clash = ExamSection.objects.filter(
+                exam=exam, name=new_name, parent_section=section.parent_section,
+            ).exclude(pk=section.pk).exists()
+            if clash:
+                return Response(
+                    {'error': f'"{new_name}" adlı bölüm bu sınavda zaten var.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            section.name = new_name
+
+        if 'question_start' in request.data or 'question_end' in request.data:
+            start, end, err = _validate_question_range(
+                request.data.get('question_start', section.question_start),
+                request.data.get('question_end', section.question_end),
+            )
+            if err:
+                return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+            section.question_start = start
+            section.question_end = end
+
         if 'order' in request.data:
-            section.order = int(request.data['order'])
+            try:
+                section.order = int(request.data['order'])
+            except (TypeError, ValueError):
+                return Response({'error': 'Sıra sayısal olmalıdır.'}, status=status.HTTP_400_BAD_REQUEST)
         if 'subject' in request.data:
-            section.subject_id = request.data['subject'] or None
+            if request.data['subject'] in (None, ''):
+                section.subject = None
+            else:
+                try:
+                    section.subject = _resolve_payload_subject(exam, request.data)
+                except DrfValidationError as exc:
+                    return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         section.save()
-        return Response(ExamDetailSerializer(exam).data)
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='reorder_sections')
     def reorder_sections(self, request, pk=None):
@@ -237,7 +486,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         section_ids = request.data.get('section_ids', [])
         for idx, sid in enumerate(section_ids):
             ExamSection.objects.filter(exam=exam, id=sid).update(order=idx)
-        return Response(ExamDetailSerializer(exam).data)
+        return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='apply_template')
     def apply_template(self, request, pk=None):
@@ -246,7 +495,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         create_sections_from_template(exam)
         return Response({
             'message': 'Şablon uygulandı.',
-            'data': ExamDetailSerializer(exam).data,
+            'data': _fresh_exam_payload(exam),
         })
 
     @action(detail=True, methods=['post'], url_path='ensure_sub_sections')
@@ -256,7 +505,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         created = ensure_sub_sections(exam)
         return Response({
             'message': f'{len(created)} alt bölüm eklendi.',
-            'data': ExamDetailSerializer(exam).data,
+            'data': _fresh_exam_payload(exam),
         })
 
     @action(detail=True, methods=['post'], url_path='set_optional_philosophy')
@@ -302,17 +551,38 @@ class ExamViewSet(viewsets.ModelViewSet):
                 {'error': f'Geçersiz durum. Geçerli: {valid}'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        old_status = exam.status
         exam.status = new_status
         exam.save(update_fields=['status'])
+        self._notify_exam_results_if_published(exam, old_status)
         return Response(ExamDetailSerializer(exam).data)
 
     # ── OTURUM YÖNETİMİ ─────────────────────────────────────────────────────
 
+    @staticmethod
+    def _blank_to_null(data):
+        """Boş string gelen tarih/saat/sayı alanlarını null'a çevirir."""
+        nullable = ('session_date', 'start_time', 'end_time', 'duration_minutes')
+        cleaned = {k: v for k, v in data.items()}
+        for key in nullable:
+            if cleaned.get(key) == '':
+                cleaned[key] = None
+        return cleaned
+
     @action(detail=True, methods=['post'], url_path='add_session')
     def add_session(self, request, pk=None):
         exam = self.get_object()
-        serializer = ExamSessionSerializer(data=request.data)
+        serializer = ExamSessionSerializer(data=self._blank_to_null(request.data))
         serializer.is_valid(raise_exception=True)
+
+        # (exam, name) unique_together — çakışma DB'ye düşmeden 400 dönsün
+        name = serializer.validated_data.get('name', '')
+        if ExamSessionModel.objects.filter(exam=exam, name=name).exists():
+            return Response(
+                {'name': [f'"{name}" adlı oturum bu sınavda zaten var.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         session = ExamSessionModel.objects.create(
             exam=exam,
             name=serializer.validated_data.get('name', ''),
@@ -329,6 +599,9 @@ class ExamViewSet(viewsets.ModelViewSet):
         section_objs = serializer.validated_data.get('sections', [])
         if section_objs:
             session.sections.set(section_objs)
+        _sync_exam_date_from_sessions(exam)
+        self._sync_to_calendar(exam, request.user.id)
+        self._fill_session_roster(exam)
         return Response(
             ExamDetailSerializer(exam).data,
             status=status.HTTP_201_CREATED,
@@ -339,6 +612,8 @@ class ExamViewSet(viewsets.ModelViewSet):
         exam = self.get_object()
         session_id = request.data.get('session_id')
         ExamSessionModel.objects.filter(exam=exam, id=session_id).delete()
+        _sync_exam_date_from_sessions(exam)
+        self._sync_to_calendar(exam, request.user.id)
         return Response(ExamDetailSerializer(exam).data)
 
     @action(detail=True, methods=['post'], url_path='update_session')
@@ -352,17 +627,29 @@ class ExamViewSet(viewsets.ModelViewSet):
                 {'error': 'Oturum bulunamadı.'},
                 status=status.HTTP_404_NOT_FOUND,
             )
-        for field in ('name', 'order', 'session_date', 'start_time', 'end_time',
-                      'duration_minutes', 'schedule_preference', 'description'):
-            if field in request.data:
-                setattr(session, field, request.data[field])
-        session.save()
+
+        payload = self._blank_to_null(request.data)
+        serializer = ExamSessionSerializer(session, data=payload, partial=True)
+        serializer.is_valid(raise_exception=True)
+
+        new_name = serializer.validated_data.get('name')
+        if new_name and ExamSessionModel.objects.filter(
+            exam=exam, name=new_name,
+        ).exclude(pk=session.pk).exists():
+            return Response(
+                {'name': [f'"{new_name}" adlı oturum bu sınavda zaten var.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        serializer.save()
 
         section_ids = request.data.get('section_ids')
         if section_ids is not None:
             sections = ExamSection.objects.filter(exam=exam, id__in=section_ids)
             session.sections.set(sections)
 
+        _sync_exam_date_from_sessions(exam)
+        self._sync_to_calendar(exam, request.user.id)
         return Response(ExamDetailSerializer(exam).data)
 
     # ── ŞABLON BİLGİLERİ ────────────────────────────────────────────────────
@@ -453,9 +740,20 @@ class ExamViewSet(viewsets.ModelViewSet):
             aktif_mi=True,
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
-        )
+        ).prefetch_related('sinif_seviyeleri')
+        seviye_id = request.query_params.get('seviye_id')
+        if seviye_id:
+            qs = qs.filter(sinif_seviyeleri__id=seviye_id).distinct()
 
-        data = list(qs.values('id', 'ad', 'kod', 'deneme_sayisi').order_by('ad'))
+        data = []
+        for d in qs.order_by('ad'):
+            data.append({
+                'id': d.id,
+                'ad': d.ad,
+                'kod': d.kod,
+                'deneme_sayisi': d.deneme_sayisi,
+                'seviye_ids': list(d.sinif_seviyeleri.values_list('id', flat=True)),
+            })
         return Response(data)
 
     @action(detail=False, methods=['get'], url_path='sinif-seviyeleri')
@@ -585,7 +883,6 @@ class ExamViewSet(viewsets.ModelViewSet):
             puan_yili=original.puan_yili,
             booklet_type=original.booklet_type,
             booklet_auto_detect=original.booklet_auto_detect,
-            include_optional_philosophy=original.include_optional_philosophy,
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
             egitim_yili=original.egitim_yili,
@@ -621,3 +918,37 @@ class ExamViewSet(viewsets.ModelViewSet):
             ExamDetailSerializer(exam).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def exam_list_pdf(request):
+    """Filtrelenmiş sınav listesini PDF olarak indirir."""
+    from django.http import HttpResponse
+
+    from apps.coaching.application.olcme_exam_list_pdf import render_exam_list_pdf
+
+    ctx, err = mandatory_olcme_context(request)
+    if err:
+        return err
+    view = ExamViewSet()
+    view.request = request
+    view.args = ()
+    view.kwargs = {}
+    view.action = 'list'
+    view.format_kwarg = None
+    view._olcme_ctx = ctx
+    qs = view.get_queryset()
+    rows = ExamListSerializer(qs, many=True).data
+    filters = {
+        'search': request.query_params.get('search') or '',
+        'exam_type': request.query_params.get('exam_type') or '',
+        'status': request.query_params.get('status') or '',
+    }
+    response = HttpResponse(
+        render_exam_list_pdf(rows, filters=filters),
+        content_type='application/pdf',
+    )
+    response['Content-Disposition'] = 'attachment; filename="sinav-listesi.pdf"'
+    return response

@@ -238,6 +238,9 @@ def exam_karne_notify_bulk_preview(request, exam_pk):
             sendable += 1
         students.append(row)
 
+    from apps.coaching.application.olcme_publish import karne_schedule_active
+
+    scheduled = karne_schedule_active(exam)
     return Response({
         'success': True,
         'data': {
@@ -246,6 +249,7 @@ def exam_karne_notify_bulk_preview(request, exam_pk):
             'students': students,
             'sendable': sendable,
             'total': len(students),
+            'scheduled_warning': scheduled,
         },
     })
 
@@ -285,6 +289,12 @@ def exam_karne_notify_bulk_send(request, exam_pk):
     if not items:
         return Response({'success': False, 'error': 'Gönderilecek öğrenci bulunamadı.'}, status=404)
 
+    from apps.coaching.application.olcme_publish import (
+        KIND_KARNE,
+        attach_publish_campaign,
+        cancel_enabled_karne_schedule,
+    )
+
     result = send_karne_notify_bulk(
         kurum_id=exam.kurum_id,
         exam_id=exam.id,
@@ -294,4 +304,11 @@ def exam_karne_notify_bulk_send(request, exam_pk):
         sent_by_user_id=getattr(request.user, 'id', None),
         sube_id=exam.sube_id,
     )
+    if result.get('sent'):
+        result['schedule_cancelled'] = cancel_enabled_karne_schedule(exam)
+        campaign = attach_publish_campaign(
+            exam, KIND_KARNE, result.get('message_ids') or [],
+            sent_by_user_id=getattr(request.user, 'id', None),
+        )
+        result['campaign_id'] = str(campaign.id)
     return Response({'success': True, 'data': result})

@@ -1,14 +1,17 @@
 """
 Ölçme & Değerlendirme — Serializers
 """
+from django.db import transaction
 from rest_framework import serializers
 from ..models import Exam, ExamSection, ExamSessionModel
 from ..services.exam_templates import (
+    create_sections_from_payload,
     create_sections_from_template,
     get_default_duration,
     sync_optional_philosophy_section,
 )
 from ..models.scoring_settings import MANAGED_PUAN_YILLARI
+from ..services.curriculum_band import normalize_band, resolved_band
 
 
 def _validate_puan_yili(value):
@@ -81,11 +84,13 @@ class ExamListSerializer(serializers.ModelSerializer):
     status_display = serializers.CharField(
         source='get_status_display', read_only=True,
     )
-    section_count = serializers.IntegerField(read_only=True)
-    total_questions = serializers.IntegerField(read_only=True)
-    session_count = serializers.IntegerField(read_only=True)
+    # Liste sorgusu bu değerleri ann_* olarak annotate eder; annotation yoksa
+    # (ör. tekil kullanım) model property'sine düşülür.
+    section_count = serializers.SerializerMethodField()
+    total_questions = serializers.SerializerMethodField()
+    session_count = serializers.SerializerMethodField()
     sinif_display = serializers.CharField(read_only=True)
-                                            
+
     # TYT-AYT bağlantı bilgileri
     linked_tyt_exam = serializers.PrimaryKeyRelatedField(read_only=True)
     linked_tyt_exam_name = serializers.SerializerMethodField()
@@ -116,6 +121,22 @@ class ExamListSerializer(serializers.ModelSerializer):
             'created_at',
         ]
 
+    @staticmethod
+    def _counted(obj, annotation, fallback):
+        value = getattr(obj, annotation, None)
+        if value is not None:
+            return value
+        return fallback()
+
+    def get_section_count(self, obj):
+        return self._counted(obj, 'ann_section_count', lambda: obj.section_count)
+
+    def get_total_questions(self, obj):
+        return self._counted(obj, 'ann_total_questions', lambda: obj.total_questions)
+
+    def get_session_count(self, obj):
+        return self._counted(obj, 'ann_session_count', lambda: obj.session_count)
+
     def get_linked_tyt_exam_name(self, obj):
         return obj.linked_tyt_exam.name if obj.linked_tyt_exam else None
 
@@ -124,17 +145,33 @@ class ExamListSerializer(serializers.ModelSerializer):
         ayt = getattr(obj, 'linked_ayt_exam', None)
         return ayt.name if ayt else None
 
+    def _answer_totals(self, obj):
+        total = getattr(obj, 'ann_answer_count', None)
+        matched = getattr(obj, 'ann_matched_count', None)
+        if total is None or matched is None:
+            from ..models import StudentAnswer
+            answers = StudentAnswer.objects.filter(session__exam=obj)
+            total = answers.count()
+            matched = answers.filter(student__isnull=False).count()
+        return total, matched
+
     def get_answer_count(self, obj):
-        from ..models import StudentAnswer
-        return StudentAnswer.objects.filter(session__exam=obj).count()
+        return self._answer_totals(obj)[0]
 
     def get_matched_count(self, obj):
-        from ..models import StudentAnswer
-        return StudentAnswer.objects.filter(session__exam=obj, student__isnull=False).count()
+        return self._answer_totals(obj)[1]
 
     def get_unmatched_count(self, obj):
-        from ..models import StudentAnswer
-        return StudentAnswer.objects.filter(session__exam=obj, student__isnull=True).count()
+        total, matched = self._answer_totals(obj)
+        return total - matched
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not data.get('exam_date'):
+            extra = getattr(instance, 'ann_list_date', None)
+            if extra:
+                data['exam_date'] = extra.isoformat() if hasattr(extra, 'isoformat') else str(extra)
+        return data
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -177,6 +214,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
         model = Exam
         fields = [
             'id', 'name', 'exam_type', 'exam_type_display',
+            'curriculum_band',
             'status', 'status_display', 'description',
             'is_active', 'is_locked', 'is_template',
             'kurum', 'sube', 'egitim_yili',
@@ -191,22 +229,66 @@ class ExamDetailSerializer(serializers.ModelSerializer):
             'linked_tyt_exam', 'linked_tyt_exam_name',
             'section_count', 'total_questions', 'session_count',
             'sections', 'exam_sessions',
+            'participant_count', 'sinif_seviyesi_ids', 'deneme_paketi_ids',
+            'rooms',
             'created_at', 'updated_at',
         ]
 
+    participant_count = serializers.SerializerMethodField()
+    sinif_seviyesi_ids = serializers.SerializerMethodField()
+    deneme_paketi_ids = serializers.SerializerMethodField()
+    rooms = serializers.SerializerMethodField()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data['curriculum_band'] = resolved_band(instance)
+        return data
+
     def get_linked_tyt_exam_name(self, obj):
         return obj.linked_tyt_exam.name if obj.linked_tyt_exam else None
+
+    def get_participant_count(self, obj):
+        return obj.participants.count()
+
+    def get_sinif_seviyesi_ids(self, obj):
+        return list(dict.fromkeys(
+            a.sinif_seviyesi_id for a in obj.audiences.all() if a.sinif_seviyesi_id
+        ))
+
+    def get_deneme_paketi_ids(self, obj):
+        return list(dict.fromkeys(
+            a.deneme_paketi_id for a in obj.audiences.all() if a.deneme_paketi_id
+        ))
+
+    def get_rooms(self, obj):
+        return [
+            {'id': r.id, 'name': r.name, 'capacity': r.capacity, 'order': r.order}
+            for r in obj.rooms.order_by('order', 'id')
+        ]
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  CREATE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+class ExamSectionWriteSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=100)
+    question_start = serializers.IntegerField(required=False, min_value=1)
+    question_end = serializers.IntegerField(required=False, min_value=1)
+    question_count = serializers.IntegerField(required=False, min_value=1)
+    order = serializers.IntegerField(required=False, min_value=0)
+    subject = serializers.IntegerField(required=False, allow_null=True)
+    sub_sections = serializers.ListField(
+        child=serializers.DictField(), required=False, default=list,
+    )
+
+
 class ExamCreateSerializer(serializers.ModelSerializer):
     apply_template = serializers.BooleanField(write_only=True, default=True)
     sinif_ids = serializers.ListField(
         child=serializers.IntegerField(), write_only=True, required=False,
     )
+    sections = ExamSectionWriteSerializer(many=True, write_only=True, required=False)
 
     class Meta:
         model = Exam
@@ -220,17 +302,28 @@ class ExamCreateSerializer(serializers.ModelSerializer):
             'puan_yili', 'include_optional_philosophy',
             'booklet_type', 'booklet_auto_detect',
             'apply_template',
+            'curriculum_band',
+            'sections',
         ]
         extra_kwargs = {
             'puan_yili': {'required': False, 'allow_null': True},
+            'curriculum_band': {'required': False, 'allow_blank': True},
         }
 
     def validate_puan_yili(self, value):
         return _validate_puan_yili(value)
 
+    def validate(self, attrs):
+        attrs['curriculum_band'] = normalize_band(
+            attrs.get('curriculum_band'), attrs.get('exam_type'),
+        )
+        return attrs
+
+    @transaction.atomic
     def create(self, validated_data):
         apply_template = validated_data.pop('apply_template', True)
         sinif_ids = validated_data.pop('sinif_ids', [])
+        sections_payload = validated_data.pop('sections', None)
 
         request = self.context.get('request')
         if request:
@@ -260,9 +353,27 @@ class ExamCreateSerializer(serializers.ModelSerializer):
         if sinif_ids:
             exam.siniflar.set(sinif_ids)
 
-        # Şablon bölümleri
-        if apply_template:
+        if sections_payload:
+            create_sections_from_payload(exam, sections_payload)
+        elif apply_template:
             create_sections_from_template(exam)
+
+        extra = {}
+        request = self.context.get('request')
+        if request is not None:
+            extra = request.data if hasattr(request, 'data') else {}
+        roster_keys = (
+            'audience', 'sinif_seviyesi_ids', 'deneme_paketi_ids',
+            'rooms', 'manual_student_ids', 'removed_auto_ids', 'seating_mode',
+            'seat_assignments', 'sessions',
+        )
+        if any(k in extra for k in roster_keys) or sinif_ids:
+            from ..views.roster_views import apply_roster_payload
+            payload = {k: extra.get(k) for k in roster_keys if k in extra}
+            payload['sinif_ids'] = sinif_ids
+            result = apply_roster_payload(exam, payload)
+            if not result.get('ok'):
+                raise serializers.ValidationError({'roster': result.get('error')})
 
         return exam
 
@@ -273,6 +384,12 @@ class ExamCreateSerializer(serializers.ModelSerializer):
 
 class ExamUpdateSerializer(serializers.ModelSerializer):
     sinif_ids = serializers.ListField(
+        child=serializers.IntegerField(), write_only=True, required=False,
+    )
+    sinif_seviyesi_ids = serializers.ListField(
+        child=serializers.IntegerField(), write_only=True, required=False,
+    )
+    deneme_paketi_ids = serializers.ListField(
         child=serializers.IntegerField(), write_only=True, required=False,
     )
 
@@ -287,10 +404,13 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
             'booklet_type', 'booklet_auto_detect',
             'linked_tyt_exam', 'is_active', 'is_template',
             'sinif_ids',
+            'sinif_seviyesi_ids', 'deneme_paketi_ids',
             'deneme_hizmeti', 'deneme_paketi',
+            'curriculum_band',
         ]
         extra_kwargs = {
             'puan_yili': {'required': False, 'allow_null': True},
+            'curriculum_band': {'required': False, 'allow_blank': True},
         }
 
     def validate_puan_yili(self, value):
@@ -307,14 +427,34 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
                     raise serializers.ValidationError(
                         {f: 'Sınav kilitli — bu alan değiştirilemez.'},
                     )
+        exam_type = attrs.get('exam_type') or (self.instance.exam_type if self.instance else None)
+        if 'curriculum_band' in attrs:
+            attrs['curriculum_band'] = normalize_band(attrs.get('curriculum_band'), exam_type)
         return attrs
 
     def update(self, instance, validated_data):
         sinif_ids = validated_data.pop('sinif_ids', None)
+        validated_data.pop('sinif_seviyesi_ids', None)
+        validated_data.pop('deneme_paketi_ids', None)
         philosophy_changed = 'include_optional_philosophy' in validated_data
         instance = super().update(instance, validated_data)
         if sinif_ids is not None:
             instance.siniflar.set(sinif_ids)
         if philosophy_changed:
             sync_optional_philosophy_section(instance)
+        request = self.context.get('request')
+        extra = request.data if request is not None and hasattr(request, 'data') else {}
+        roster_keys = (
+            'audience', 'sinif_seviyesi_ids', 'deneme_paketi_ids',
+            'rooms', 'manual_student_ids', 'removed_auto_ids', 'seating_mode',
+            'seat_assignments', 'refresh_roster',
+        )
+        if any(k in extra for k in roster_keys):
+            from ..views.roster_views import apply_roster_payload
+            payload = {k: extra.get(k) for k in roster_keys if k in extra}
+            if sinif_ids is not None:
+                payload['sinif_ids'] = sinif_ids
+            result = apply_roster_payload(instance, payload)
+            if not result.get('ok'):
+                raise serializers.ValidationError({'roster': result.get('error')})
         return instance

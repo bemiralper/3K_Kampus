@@ -35,6 +35,49 @@ from ..interfaces.sube_context import get_exam_or_response, assert_olcme_exam_ac
 logger = logging.getLogger(__name__)
 
 
+def rebuild_booklet_b_from_primary(exam) -> int:
+    """
+    A anahtarındaki b_question_number'dan B kitapçığını yeniden kur.
+    Offset ana test başlangıcıdır (Sosyal 41, Temel Mat 61…), alt bölüm değil.
+    """
+    primary = (
+        exam.answer_keys.filter(is_primary=True).first()
+        or exam.answer_keys.exclude(booklet='B').first()
+    )
+    if not primary:
+        return 0
+
+    section_map = AnswerKeyViewSet._build_section_map(exam)
+    max_q = max((end for _start, end, _sec in section_map), default=0)
+    b_key, _ = AnswerKey.objects.get_or_create(
+        exam=exam, booklet='B', defaults={'is_primary': False},
+    )
+    b_key.items.all().delete()
+
+    unique: dict[int, dict] = {}
+    items = primary.items.select_related('section', 'section__parent_section')
+    for item in items:
+        b_global = item.booklet_b_global()
+        if not b_global or b_global < 1 or (max_q and b_global > max_q):
+            continue
+        section = AnswerKeyViewSet._find_section(section_map, b_global, fallback_last=False)
+        if section is None:
+            continue
+        unique[b_global] = {
+            'section': section,
+            'question_number': b_global,
+            'correct_answer': item.correct_answer,
+            'is_cancelled': item.is_cancelled,
+            'outcome_id': item.outcome_id,
+            'sub_outcome_id': item.sub_outcome_id,
+            'imported_outcome_text': item.imported_outcome_text or '',
+        }
+
+    for brow in sorted(unique.values(), key=lambda r: r['question_number']):
+        AnswerKeyItem.objects.create(answer_key=b_key, **brow)
+    return len(unique)
+
+
 class AnswerKeyViewSet(viewsets.ModelViewSet):
     """Sınav cevap anahtarı yönetimi."""
 
@@ -148,47 +191,11 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                         imported_outcome_text=row.get('imported_outcome_text', ''),
                         b_question_number=b_q,
                     )
+                    if b_q is not None:
+                        b_items.append(b_q)
 
-                    # B kitapçığı soru dönüşümü
-                    # b_question_number bölüm-içi (1..N) → global B pozisyonu
-                    # section.question_start + b_q - 1
-                    if b_q is not None and section is not None:
-                        b_global = section.question_start + b_q - 1
-                        b_items.append({
-                            'question_number': b_global,  # B kitapçığı global pozisyonu
-                            'correct_answer': row['correct_answer'],
-                            'is_cancelled': row.get('is_cancelled', False),
-                            'outcome_id': row.get('outcome_id'),
-                            'sub_outcome_id': row.get('sub_outcome_id'),
-                            'original_question_number': q_num,
-                            'section': section,
-                        })
-
-                # B kitapçığı oluştur (eğer dönüşüm verisi varsa)
                 if b_items and booklet in ('', 'A'):
-                    b_key, _ = AnswerKey.objects.get_or_create(
-                        exam=exam, booklet='B',
-                        defaults={'is_primary': False},
-                    )
-                    b_key.items.all().delete()
-
-                    # Aynı global B soru numarası birden fazla A sorusuna
-                    # eşlenmiş olabilir → son gelen kazanır (dict ile dedup)
-                    unique_b = {}
-                    for brow in b_items:
-                        unique_b[brow['question_number']] = brow
-                    b_items_dedup = sorted(unique_b.values(), key=lambda r: r['question_number'])
-
-                    for brow in b_items_dedup:
-                        AnswerKeyItem.objects.create(
-                            answer_key=b_key,
-                            section=brow['section'],
-                            question_number=brow['question_number'],
-                            correct_answer=brow['correct_answer'],
-                            is_cancelled=brow['is_cancelled'],
-                            outcome_id=brow['outcome_id'],
-                            sub_outcome_id=brow.get('sub_outcome_id'),
-                        )
+                    rebuild_booklet_b_from_primary(exam)
         except Exception as e:
             logger.exception('bulk_import transaction error')
             return Response(
@@ -231,18 +238,22 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         exam, err = get_exam_or_response(request, exam_pk)
         if err:
             return err
-        exam_type = exam.exam_type
 
-        subjects = Subject.objects.all().order_by('order', 'name')
-        # Sınav türü filtresi
-        subjects = subjects.filter(
-            exam_type_filter__in=['ALL', exam_type],
+        from ..services.curriculum_band import (
+            resolved_band, subject_matches_band, topic_matches_band,
         )
+
+        band = resolved_band(exam)
+        subjects = Subject.objects.all().order_by('order', 'name')
 
         result = []
         for subj in subjects:
+            if not subject_matches_band(subj, band):
+                continue
             topics_data = []
             for topic in subj.topics.order_by('order'):
+                if not topic_matches_band(topic, band):
+                    continue
                 outcomes_data = []
                 for outcome in topic.outcomes.filter(is_active=True).order_by('order'):
                     sub_outcomes = list(
@@ -475,12 +486,13 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         return result
 
     @staticmethod
-    def _find_section(section_map: list, question_number: int) -> ExamSection:
+    def _find_section(section_map: list, question_number: int, fallback_last: bool = True):
         """Soru numarasına göre hangi bölüme ait olduğunu bul."""
         for start, end, section in section_map:
             if start <= question_number <= end:
                 return section
-        # Bölüm bulunamazsa son bölümü döndür
-        if section_map:
+        if fallback_last and section_map:
             return section_map[-1][2]
+        if not fallback_last:
+            return None
         raise ValueError(f'Soru {question_number} için bölüm bulunamadı.')

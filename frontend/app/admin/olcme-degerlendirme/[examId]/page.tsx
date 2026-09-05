@@ -1,6 +1,6 @@
 'use client';
 
-import { useParams, useRouter } from 'next/navigation';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { examApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import {
@@ -13,6 +13,7 @@ import type {
   ExamDetail,
   ExamSection,
   ExamSessionItem,
+  LookupItem,
   SessionCreateForm,
   SchedulePreference,
 } from '../../../../components/olcme/types';
@@ -20,19 +21,18 @@ import AnswerKeyTab from './AnswerKeyTab';
 import OutcomesTab from './OutcomesTab';
 import UploadTab from './UploadTab';
 import AnalysisTab from './AnalysisTab';
+import ParticipantsTab from '../../../../components/olcme/roster/ParticipantsTab';
+import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
+import ExamSectionsEditor from '../../../../components/olcme/ExamSectionsEditor';
+import r from '../../../../components/olcme/roster/roster.module.css';
+import ExamPublishBanner from '../../../../components/olcme/ExamPublishBanner';
+import ExamHeader from '../../../../components/olcme/ui/ExamHeader';
+import Icon from '../../../../components/olcme/ui/Icon';
 import s from '../olcme.module.css';
 
 /* ── Yardımcı ──────────────────────────────────────────────────────────────── */
 const labelOf = (list: readonly { readonly value: string; readonly label: string }[], v: string) =>
   list.find(x => x.value === v)?.label ?? v;
-
-const statusColor = (status: string) => {
-  const map: Record<string, string> = {
-    DRAFT: '', ANSWER_KEY_READY: 'info',
-    RESULTS_UPLOADED: 'warning', COMPLETED: 'success',
-  };
-  return map[status] ?? '';
-};
 
 const fmtDate = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric' }) : '—';
@@ -41,6 +41,31 @@ const fmtTime = (t: string | null) => t ? t.slice(0, 5) : '';
 
 const fmtDateTime = (d: string | null) =>
   d ? new Date(d).toLocaleDateString('tr-TR', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—';
+
+/** API hatasını kullanıcıya gösterilebilir metne çevirir. */
+const errText = (err: unknown, fallback: string) =>
+  err instanceof Error && err.message ? err.message : fallback;
+
+/** İşlem hatalarını gösteren şerit. Hatalar sessizce yutulmamalı. */
+function ErrorBar({ message, onClose }: { message: string; onClose: () => void }) {
+  return (
+    <div style={{
+      padding: '12px 18px', background: '#fef2f2', border: '1px solid #fecaca',
+      borderRadius: 12, color: '#991b1b', marginBottom: 16, fontSize: 13,
+      display: 'flex', alignItems: 'center', gap: 12,
+    }}>
+      <Icon name="error" size={18} />
+      <span style={{ flex: 1 }}>{message}</span>
+      <button onClick={onClose} aria-label="Kapat"
+        style={{
+          background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c',
+          display: 'flex', alignItems: 'center', padding: 0,
+        }}>
+        <Icon name="close" size={16} />
+      </button>
+    </div>
+  );
+}
 
 /** Oturum tarihleri → tek satır özet */
 const sessionDateSummary = (sessions: ExamSessionItem[]) => {
@@ -54,11 +79,12 @@ const sessionDateSummary = (sessions: ExamSessionItem[]) => {
 };
 
 const TABS = [
-  { key: 'genel',           label: 'Genel Bilgiler',   icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2' },
-  { key: 'cevap-anahtari',  label: 'Cevap Anahtarı',   icon: 'M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z' },
-  { key: 'kazanimlar',      label: 'Kazanımlar',       icon: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z' },
-  { key: 'yukle',           label: 'Sonuç Yükle',      icon: 'M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12' },
-  { key: 'analiz',          label: 'Analiz',           icon: 'M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z' },
+  { key: 'genel',          label: 'Genel Bilgiler', icon: 'document'  },
+  { key: 'katilimcilar',   label: 'Katılımcılar',   icon: 'users'     },
+  { key: 'cevap-anahtari', label: 'Cevap Anahtarı', icon: 'answerKey' },
+  { key: 'kazanimlar',     label: 'Kazanımlar',     icon: 'outcome'   },
+  { key: 'yukle',          label: 'Sonuç Yükle',    icon: 'upload'    },
+  { key: 'analiz',         label: 'Analiz',         icon: 'chart'     },
 ] as const;
 type TabKey = typeof TABS[number]['key'];
 
@@ -67,12 +93,24 @@ type TabKey = typeof TABS[number]['key'];
 export default function ExamDetailPage() {
   const router = useRouter();
   const params = useParams();
+  const searchParams = useSearchParams();
   const examId = Number(params.examId);
+
+  /* Sınav listesindeki hızlı erişim bağlantıları ?tab=… ile doğrudan sekme açar */
+  const requestedTab = searchParams.get('tab');
+  const initialTab: TabKey = TABS.some(t => t.key === requestedTab)
+    ? (requestedTab as TabKey)
+    : 'genel';
+
+  /* Sınav oluşturuldu ama bazı oturumlar kaydedilemediyse uyarı gösterilir */
+  const sessionError = searchParams.get('sessionError');
+  const [sessionWarning, setSessionWarning] = useState(sessionError);
 
   const [exam, setExam]           = useState<ExamDetail | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
-  const [activeTab, setActiveTab] = useState<TabKey>('genel');
+  const [actionError, setActionError] = useState('');
+  const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
   /* Yükle */
   const fetchExam = useCallback(async () => {
@@ -92,18 +130,36 @@ export default function ExamDetailPage() {
   /* ── Aksiyonlar ──────────────────────────────────────────────────────────── */
   const handleLock = async () => {
     if (!exam) return;
+    setActionError('');
     try {
       if (exam.is_locked) await examApi.unlock(examId);
       else await examApi.lock(examId);
       fetchExam();
-    } catch { /* ignore */ }
+    } catch (err) {
+      setActionError(errText(err, 'Kilit durumu değiştirilemedi.'));
+    }
   };
   const handleCopy = async () => {
-    try { const copy = await examApi.copy(examId); router.push(`/admin/olcme-degerlendirme/${copy.id}`); } catch { /* */ }
+    setActionError('');
+    try {
+      const copy = await examApi.copy(examId);
+      router.push(`/admin/olcme-degerlendirme/${copy.id}`);
+    } catch (err) {
+      setActionError(errText(err, 'Sınav kopyalanamadı.'));
+    }
   };
   const handleDelete = async () => {
-    if (!confirm('Bu sınavı silmek istediğinize emin misiniz?')) return;
-    try { await examApi.delete(examId); router.push('/admin/olcme-degerlendirme'); } catch { /* */ }
+    if (!confirm(
+      'Bu sınav listeden kaldırılacak. Öğrenci cevapları ve oturum verileri ' +
+      'veritabanında korunur, ancak sınav analiz ekranlarında görünmez. Devam edilsin mi?',
+    )) return;
+    setActionError('');
+    try {
+      await examApi.delete(examId);
+      router.push('/admin/olcme-degerlendirme');
+    } catch (err) {
+      setActionError(errText(err, 'Sınav kaldırılamadı.'));
+    }
   };
 
   /* ── Loading / Error ────────────────────────────────────────────────────── */
@@ -125,98 +181,46 @@ export default function ExamDetailPage() {
     </div>
   );
 
-  /* hero subtitle: oturum tarihlerini göster */
-  const heroDate = sessionDateSummary(exam.exam_sessions);
-
   /* ═══════════ RENDER ═══════════ */
 
   return (
     <div className="section">
 
-      {/* ── Hero Header ──────────────────────────────────────────────────── */}
-      <div className="hero-header">
-        <div className="hero-content">
-          <div className="hero-breadcrumb">
-            <span style={{ cursor: 'pointer' }} onClick={() => router.push('/admin/olcme-degerlendirme')}>
-              Sınav Yönetimi
-            </span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-            <span>{exam.name}</span>
-          </div>
-          <h1 className="hero-title">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/>
-            </svg>
-            {exam.name}
-          </h1>
-          <p className="hero-subtitle">
-            {labelOf(EXAM_TYPES, exam.exam_type)} · {heroDate}
-            <span className={`badge-modern ${statusColor(exam.status)}`} style={{ marginLeft: 12 }}>
-              {exam.status_display}
-            </span>
-          </p>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-start' }}>
-          <button className="btn-hero" onClick={handleLock}>
-            {exam.is_locked ? '🔓 Kilidi Aç' : '🔒 Kilitle'}
-          </button>
-          <button className="btn-hero" onClick={handleCopy}>
-            📋 Kopyala
-          </button>
-          <button className="btn-hero" onClick={handleDelete} style={{ color: '#ef4444' }}>
-            🗑 Sil
-          </button>
-        </div>
-      </div>
+      <ExamHeader
+        exam={exam}
+        onBack={() => router.push('/admin/olcme-degerlendirme')}
+        onTabChange={tab => setActiveTab(tab as TabKey)}
+        onToggleLock={handleLock}
+        onCopy={handleCopy}
+        onDelete={handleDelete}
+      />
 
-      {/* ── İstatistikler ─────────────────────────────────────────────────── */}
-      <div className="quick-stats">
-        <div className="quick-stat">
-          <div className="quick-stat-icon blue">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{exam.total_questions ?? 0}</h4>
-            <span>Toplam Soru</span>
-          </div>
+      {actionError && <ErrorBar message={actionError} onClose={() => setActionError('')} />}
+
+      {sessionWarning && (
+        <div style={{
+          padding: '14px 20px', background: '#fffbeb', border: '1px solid #fde68a',
+          borderRadius: 12, color: '#92400e', marginBottom: 16, fontSize: 13,
+          display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+          <span style={{ flex: 1 }}>
+            <strong>Sınav oluşturuldu</strong>, ancak şu oturumlar kaydedilemedi:{' '}
+            {sessionWarning}. Aşağıdaki <strong>Sınav Oturumları</strong> bölümünden
+            tekrar ekleyebilirsiniz.
+          </span>
+          <button onClick={() => setSessionWarning(null)} aria-label="Kapat"
+            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#b45309' }}>
+            ×
+          </button>
         </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon green">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{exam.section_count ?? 0}</h4>
-            <span>Bölüm</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon orange">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{exam.session_count ?? 0}</h4>
-            <span>Oturum</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon purple">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{exam.duration_minutes ?? '—'}<span style={{ fontSize: 12, fontWeight: 400 }}> dk</span></h4>
-            <span>Toplam Süre</span>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* ── Tab Nav ───────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, overflowX: 'auto', paddingBottom: 2 }}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`tab-modern ${activeTab === t.key ? 'active' : ''}`}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d={t.icon} />
-            </svg>
+            <Icon name={t.icon} size={16} />
             {t.label}
           </button>
         ))}
@@ -224,6 +228,7 @@ export default function ExamDetailPage() {
 
       {/* Tab İçerikleri */}
       {activeTab === 'genel' && <GeneralTab exam={exam} onRefresh={fetchExam} onExamUpdate={setExam} />}
+      {activeTab === 'katilimcilar' && <ParticipantsTab exam={exam} />}
       {activeTab === 'cevap-anahtari' && <AnswerKeyTab exam={exam} />}
       {activeTab === 'kazanimlar' && <OutcomesTab exam={exam} />}
       {activeTab === 'yukle' && <UploadTab exam={exam} />}
@@ -246,6 +251,13 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   const [saving, setSaving]   = useState(false);
   const [statusSaving, setStatusSaving] = useState(false);
   const [subSaving, setSubSaving] = useState(false);
+  const [tabError, setTabError] = useState('');
+
+  // ── Sınıf / deneme seçenekleri (düzenleme modunda gerekir) ──
+  const [siniflar, setSiniflar] = useState<LookupItem[]>([]);
+  const [sinifSeviyeleri, setSinifSeviyeleri] = useState<LookupItem[]>([]);
+  const [hizmetler, setHizmetler] = useState<LookupItem[]>([]);
+  const [paketler, setPaketler] = useState<LookupItem[]>([]);
 
   // ── TYT Bağlantı State ──
   const [tytExams, setTytExams] = useState<{ id: number; name: string; exam_date: string | null; status: string; already_linked: boolean }[]>([]);
@@ -264,8 +276,23 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     }).catch(() => {});
   }, []);
 
+  /* Lookup'lar hem düzenleme formu hem de deneme adlarının gösterimi için gerekir. */
+  useEffect(() => {
+    Promise.all([
+      examApi.siniflar().catch(() => [] as LookupItem[]),
+      examApi.sinifSeviyeleri().catch(() => [] as LookupItem[]),
+      examApi.denemeHizmetleri().catch(() => [] as LookupItem[]),
+      examApi.denemePaketleri().catch(() => [] as LookupItem[]),
+    ]).then(([sf, sv, hz, pk]) => {
+      setSiniflar(sf);
+      setSinifSeviyeleri(sv);
+      setHizmetler(hz);
+      setPaketler(pk);
+    });
+  }, []);
+
   /* ── düzenleme formu state ─── */
-  const [editForm, setEditForm] = useState({
+  const buildEditForm = () => ({
     name: exam.name,
     description: exam.description || '',
     duration_minutes: exam.duration_minutes?.toString() || '',
@@ -275,8 +302,13 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     booklet_auto_detect: exam.booklet_auto_detect,
     result_publish_date: exam.result_publish_date?.slice(0, 16) || '',
     answer_key_publish_date: exam.answer_key_publish_date?.slice(0, 16) || '',
-    puan_yili: exam.puan_yili ?? '',
+    puan_yili: exam.puan_yili ?? ('' as number | ''),
+    sinif_ids: exam.sinif_ids ?? [],
+    sinif_seviyesi_ids: exam.sinif_seviyesi_ids ?? [],
+    deneme_paketi_ids: exam.deneme_paketi_ids ?? [],
+    deneme_hizmeti: exam.deneme_hizmeti,
   });
+  const [editForm, setEditForm] = useState(buildEditForm);
 
   /* ── oturum ekleme formu ─── */
   const [showSessionForm, setShowSessionForm] = useState(false);
@@ -288,6 +320,24 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 
   const sessions = exam.exam_sessions ?? [];
 
+  const toggleAudience = (
+    key: 'sinif_ids' | 'sinif_seviyesi_ids' | 'deneme_paketi_ids',
+    id: number,
+  ) => {
+    setEditForm(p => ({
+      ...p,
+      [key]: p[key].includes(id) ? p[key].filter(x => x !== id) : [...p[key], id],
+    }));
+  };
+
+  /* Lookup gelmeden sinif_display'e düşülür ki satır boş görünmesin. */
+  const sinifNames = lookupNames(siniflar, exam.sinif_ids ?? []) || exam.sinif_display;
+  const seviyeNames = lookupNames(sinifSeviyeleri, exam.sinif_seviyesi_ids ?? []);
+  const paketNames = lookupNames(
+    paketler,
+    uniqueIds([...(exam.deneme_paketi_ids ?? []), exam.deneme_paketi].filter((x): x is number => x != null)),
+  );
+
   /* Alt bölüm eksik mi? */
   const hasSubSections = (exam.sections || []).some(sec => sec.is_sub_section);
   const hasMainSections = (exam.sections || []).some(sec => !sec.is_sub_section);
@@ -296,47 +346,46 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   /* Durum güncelle */
   const handleStatusChange = async (newStatus: string) => {
     setStatusSaving(true);
+    setTabError('');
     try {
       const updated = await examApi.updateStatus(exam.id, newStatus);
       onExamUpdate(updated);
-    } catch { /* */ }
+    } catch (err) {
+      setTabError(errText(err, 'Sınav durumu güncellenemedi.'));
+    }
     finally { setStatusSaving(false); }
   };
 
   /* Alt dersleri ekle */
   const handleEnsureSubSections = async () => {
     setSubSaving(true);
+    setTabError('');
     try {
       const resp = await examApi.ensureSubSections(exam.id);
       onExamUpdate(resp.data);
-    } catch { /* */ }
+    } catch (err) {
+      setTabError(errText(err, 'Alt dersler eklenemedi.'));
+    }
     finally { setSubSaving(false); }
   };
 
-  /* form sıfırla */
-  const resetForm = () => {
-    setEditForm({
-      name: exam.name,
-      description: exam.description || '',
-      duration_minutes: exam.duration_minutes?.toString() || '',
-      wrong_answer_count: exam.wrong_answer_count?.toString() || '4',
-      per_section_penalty: exam.per_section_penalty,
-      booklet_type: exam.booklet_type,
-      booklet_auto_detect: exam.booklet_auto_detect,
-      result_publish_date: exam.result_publish_date?.slice(0, 16) || '',
-      answer_key_publish_date: exam.answer_key_publish_date?.slice(0, 16) || '',
-      puan_yili: exam.puan_yili ?? '',
-    });
-  };
-
-  const handleStartEdit = () => { resetForm(); setEditing(true); };
-  const handleCancelEdit = () => { setEditing(false); };
+  const handleStartEdit = () => { setEditForm(buildEditForm()); setTabError(''); setEditing(true); };
+  const handleCancelEdit = () => { setEditing(false); setTabError(''); };
 
   const handleSave = async () => {
+    if (!editForm.name.trim()) {
+      setTabError('Sınav adı boş olamaz.');
+      return;
+    }
     setSaving(true);
+    setTabError('');
     try {
+      const audienceChanged =
+        !sameIdSet(editForm.sinif_ids, exam.sinif_ids ?? []) ||
+        !sameIdSet(editForm.sinif_seviyesi_ids, exam.sinif_seviyesi_ids ?? []) ||
+        !sameIdSet(editForm.deneme_paketi_ids, exam.deneme_paketi_ids ?? []);
       await examApi.update(exam.id, {
-        name: editForm.name,
+        name: editForm.name.trim(),
         description: editForm.description,
         duration_minutes: editForm.duration_minutes ? Number(editForm.duration_minutes) : null,
         wrong_answer_count: Number(editForm.wrong_answer_count),
@@ -346,33 +395,60 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
         result_publish_date: editForm.result_publish_date || null,
         answer_key_publish_date: editForm.answer_key_publish_date || null,
         puan_yili: editForm.puan_yili === '' ? null : Number(editForm.puan_yili),
+        sinif_ids: editForm.sinif_ids,
+        deneme_hizmeti: editForm.deneme_hizmeti,
+        deneme_paketi: editForm.deneme_paketi_ids[0] ?? null,
+        ...(audienceChanged ? {
+          sinif_seviyesi_ids: editForm.sinif_seviyesi_ids,
+          deneme_paketi_ids: editForm.deneme_paketi_ids,
+        } : {}),
       } as Partial<ExamDetail>);
       setEditing(false);
       onRefresh();
-    } catch { /* */ }
+    } catch (err) {
+      setTabError(errText(err, 'Değişiklikler kaydedilemedi.'));
+    }
     finally { setSaving(false); }
   };
 
   /* Oturum Ekle */
   const handleAddSession = async () => {
-    if (!sessionForm.name.trim()) return;
+    if (!sessionForm.name.trim()) {
+      setTabError('Oturum adı zorunludur.');
+      return;
+    }
+    setTabError('');
     try {
       await examApi.addSession(exam.id, sessionForm);
       setShowSessionForm(false);
       setSessionForm({ ...EMPTY_SESSION });
       onRefresh();
-    } catch { /* */ }
+    } catch (err) {
+      setTabError(errText(err, 'Oturum eklenemedi.'));
+    }
   };
 
   /* Oturum Sil */
   const handleRemoveSession = async (sid: number) => {
     if (!confirm('Bu oturumu silmek istediğinize emin misiniz?')) return;
-    try { await examApi.removeSession(exam.id, sid); onRefresh(); } catch { /* */ }
+    setTabError('');
+    try {
+      await examApi.removeSession(exam.id, sid);
+      onRefresh();
+    } catch (err) {
+      setTabError(errText(err, 'Oturum kaldırılamadı.'));
+    }
   };
 
   /* Oturum Güncelle */
   const handleUpdateSession = async (sid: number, data: Record<string, unknown>) => {
-    try { await examApi.updateSession(exam.id, sid, data); onRefresh(); } catch { /* */ }
+    setTabError('');
+    try {
+      await examApi.updateSession(exam.id, sid, data);
+      onRefresh();
+    } catch (err) {
+      setTabError(errText(err, 'Oturum güncellenemedi.'));
+    }
   };
 
   const ef = editForm;
@@ -380,6 +456,8 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+      {tabError && <ErrorBar message={tabError} onClose={() => setTabError('')} />}
 
       {/* ── Düzenle / Kaydet Butonları ─────────────────────────────────── */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -468,8 +546,16 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   </div>
                 )}
                 <InfoItem label="Sınav Tarihleri" value={sessionDateSummary(sessions)} />
-                <InfoItem label="Sınav Yayın Tarihi" value={fmtDateTime(exam.result_publish_date)} />
+                <InfoItem label="Sonuç Yayın Tarihi" value={fmtDateTime(exam.result_publish_date)} />
                 <InfoItem label="Cevap Anahtarı Yayın Tarihi" value={fmtDateTime(exam.answer_key_publish_date)} />
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <ExamPublishBanner
+                    examId={exam.id}
+                    examName={exam.name}
+                    refreshKey={`${exam.result_publish_date || ''}|${exam.answer_key_publish_date || ''}|${exam.status}`}
+                    onExamDatesChanged={onRefresh}
+                  />
+                </div>
               </div>
             ) : (
               <div className={s.formGrid}>
@@ -480,7 +566,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                 <div className={s.formGroup}>
                   <label>Süre (dk)</label>
                   <input type="number" value={ef.duration_minutes}
-                    onChange={e => setEf({ duration_minutes: e.target.value })} placeholder="135" />
+                    onChange={e => setEf({ duration_minutes: e.target.value })} placeholder="165" />
                 </div>
                 <div className={s.formGroup}>
                   <label>Kitapçık</label>
@@ -506,12 +592,12 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   </select>
                 </div>
                 <div className={s.formGroup}>
-                  <label>Sonuç Yayın Tarihi</label>
+                  <label>Sonuç Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
                   <input type="datetime-local" value={ef.result_publish_date}
                     onChange={e => setEf({ result_publish_date: e.target.value })} />
                 </div>
                 <div className={s.formGroup}>
-                  <label>Cevap Anahtarı Yayın</label>
+                  <label>Cevap Anahtarı Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
                   <input type="datetime-local" value={ef.answer_key_publish_date}
                     onChange={e => setEf({ answer_key_publish_date: e.target.value })} />
                 </div>
@@ -520,37 +606,51 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   <textarea rows={3} value={ef.description}
                     onChange={e => setEf({ description: e.target.value })} />
                 </div>
-                <div className={s.formGroup}>
-                  <label style={{ visibility: 'hidden' }}>_</label>
-                  <label className={s.checkRow}>
-                    <input type="checkbox" checked={ef.per_section_penalty}
-                      onChange={e => setEf({ per_section_penalty: e.target.checked })} />
-                    Bölüm bazlı ceza
-                  </label>
-                </div>
-                <div className={s.formGroup}>
-                  <label style={{ visibility: 'hidden' }}>_</label>
-                  <label className={s.checkRow}>
-                    <input type="checkbox" checked={ef.booklet_auto_detect}
-                      onChange={e => setEf({ booklet_auto_detect: e.target.checked })} />
-                    Kitapçık oto-algıla
-                  </label>
-                </div>
-                {(exam.exam_type === 'YKS_TYT' || exam.exam_type === 'DENEME') && (
-                  <div className={s.formGroup}>
-                    <label style={{ visibility: 'hidden' }}>_</label>
-                    <label className={s.checkRow}>
-                      <input type="checkbox" checked={exam.include_optional_philosophy !== false}
-                        onChange={async e => {
-                          try {
-                            const updated = await examApi.setOptionalPhilosophy(exam.id, e.target.checked);
-                            onExamUpdate(updated);
-                          } catch { /* */ }
-                        }} />
-                      Felsefe (Seçmeli) dahil
-                    </label>
+                <div className={s.formGroupFull}>
+                  <div style={{
+                    background: '#f8fafc', border: '1px solid var(--border)',
+                    borderRadius: 10, padding: '12px 16px',
+                  }}>
+                    <div style={{
+                      fontSize: 11, fontWeight: 700, color: '#64748b',
+                      textTransform: 'uppercase', letterSpacing: '.3px', marginBottom: 8,
+                    }}>
+                      Kayıtlı ayarlar — puanlama motoru henüz uygulamıyor
+                    </div>
+                    <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+                      <label className={s.checkRow}>
+                        <input type="checkbox" checked={ef.per_section_penalty}
+                          onChange={e => setEf({ per_section_penalty: e.target.checked })} />
+                        Bölüm bazlı ceza
+                      </label>
+                      <label className={s.checkRow}>
+                        <input type="checkbox" checked={ef.booklet_auto_detect}
+                          onChange={e => setEf({ booklet_auto_detect: e.target.checked })} />
+                        Kitapçık oto-algıla
+                      </label>
+                      {(exam.exam_type === 'YKS_TYT' || exam.exam_type === 'DENEME') && (
+                        <label className={s.checkRow}>
+                          <input
+                            type="checkbox"
+                            checked={exam.include_optional_philosophy !== false}
+                            onChange={async e => {
+                              try {
+                                const updated = await examApi.setOptionalPhilosophy(exam.id, e.target.checked);
+                                onExamUpdate(updated);
+                              } catch { /* */ }
+                            }}
+                          />
+                          Felsefe (Seçmeli) dahil
+                        </label>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 11, color: '#94a3b8', margin: '8px 0 0', lineHeight: 1.5 }}>
+                      Net hesabı her zaman bölüm içinde yapılır; kitapçık harfi eksikse
+                      sistem zaten otomatik tespit dener. Bu tercihler kaydedilir ancak
+                      şu an sonucu değiştirmez.
+                    </p>
                   </div>
-                )}
+                </div>
               </div>
             )}
           </div>
@@ -569,29 +669,75 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
               <InfoItem label="Kurum" value={exam.kurum_adi || '—'} />
               <InfoItem label="Şube" value={exam.sube_adi || '—'} />
               <InfoItem label="Eğitim Yılı" value={exam.egitim_yili_str || '—'} />
-              <InfoItem label="Sınıflar" value={exam.sinif_display || '—'} />
+              <InfoItem
+                label="Katılımcı"
+                value={exam.participant_count != null ? String(exam.participant_count) : '—'}
+              />
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── Deneme Bilgileri ─────────────────────────────────────────── */}
-      {(exam.deneme_hizmeti || exam.deneme_paketi) && (
-        <div className="card-modern">
-          <div className="card-modern-header">
-            <h3>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
-              Deneme Bilgileri
-            </h3>
-          </div>
-          <div className={`card-modern-body ${s.cardBody}`}>
-            <div className={s.infoGrid}>
-              {exam.deneme_hizmeti && <InfoItem label="Hizmet" value={`#${exam.deneme_hizmeti}`} />}
-              {exam.deneme_paketi && <InfoItem label="Paket" value={`#${exam.deneme_paketi}`} />}
-            </div>
-          </div>
+      {/* ── Kimler girecek (oluşturma sihirbazıyla aynı seçim) ────────── */}
+      <div className="card-modern">
+        <div className="card-modern-header">
+          <h3>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+            Kimler girecek
+          </h3>
         </div>
-      )}
+        <div className={`card-modern-body ${s.cardBody}`}>
+          {!editing ? (
+            <div className={s.infoGrid}>
+              <InfoItem label="Seviye" value={seviyeNames || '—'} />
+              <InfoItem label="Sınıflar" value={sinifNames || '—'} />
+              <InfoItem label="Deneme paketi" value={paketNames || '—'} />
+              {exam.deneme_hizmeti && (
+                <InfoItem
+                  label="Deneme hizmeti"
+                  value={hizmetler.find(h => h.id === exam.deneme_hizmeti)?.ad ?? `#${exam.deneme_hizmeti}`}
+                />
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              <div className={r.heroCopy}>
+                <p style={{ margin: 0 }}>
+                  Sınıf, seviye ve deneme paketini dilediğiniz gibi birleştirin.
+                  Aynı öğrenci bir kez gelir. Seviye + paket birlikte seçilirse kesişim alınır;
+                  konu tarama için yalnız sınıf yeter. Kaydetmek otomatik katılımcı listesini bu kurallara göre günceller.
+                </p>
+              </div>
+              <div className={r.stats} style={{ minWidth: 0 }}>
+                <div className={r.stat}><span className={r.statValue}>{ef.sinif_ids.length}</span><span className={r.statLabel}>Sınıf</span></div>
+                <div className={r.stat}><span className={r.statValue}>{ef.sinif_seviyesi_ids.length}</span><span className={r.statLabel}>Seviye</span></div>
+                <div className={r.stat}><span className={r.statValue}>{ef.deneme_paketi_ids.length}</span><span className={r.statLabel}>Paket</span></div>
+              </div>
+              <AudiencePicker
+                sinifSeviyeleri={sinifSeviyeleri}
+                siniflar={siniflar}
+                denemePaketleri={paketler}
+                sinifSeviyesiIds={ef.sinif_seviyesi_ids}
+                sinifIds={ef.sinif_ids}
+                denemePaketiIds={ef.deneme_paketi_ids}
+                onToggleSeviye={id => toggleAudience('sinif_seviyesi_ids', id)}
+                onToggleSinif={id => toggleAudience('sinif_ids', id)}
+                onTogglePaket={id => toggleAudience('deneme_paketi_ids', id)}
+              />
+              <div className={s.formGroup} style={{ maxWidth: 360 }}>
+                <label>Deneme hizmeti <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
+                <select
+                  value={ef.deneme_hizmeti ?? ''}
+                  onChange={e => setEf({ deneme_hizmeti: e.target.value ? Number(e.target.value) : null })}
+                >
+                  <option value="">Seçilmedi</option>
+                  {hizmetler.map(h => <option key={h.id} value={h.id}>{h.ad}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* ── Oturumlar (Sınav Tarihleri & Saatleri) ────────────────────── */}
       <div className="card-modern">
@@ -689,22 +835,18 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
       </div>
 
       {/* ── Bölümler ──────────────────────────────────────────────────── */}
-      {exam.sections && exam.sections.length > 0 && (
-        <>
-          <SectionsTable exam={exam} editing={editing} onExamUpdate={onExamUpdate} />
-          {showEnsureSubBtn && (
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -12 }}>
-              <button
-                className="btn-modern btn-primary"
-                onClick={handleEnsureSubSections}
-                disabled={subSaving}
-                style={{ padding: '7px 16px', fontSize: 12 }}
-              >
-                {subSaving ? '⏳ Ekleniyor…' : '➕ Alt Dersleri Ekle'}
-              </button>
-            </div>
-          )}
-        </>
+      <ExamSectionsEditor exam={exam} onExamUpdate={onExamUpdate} />
+      {showEnsureSubBtn && (
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -12 }}>
+          <button
+            className="btn-modern btn-primary"
+            onClick={handleEnsureSubSections}
+            disabled={subSaving}
+            style={{ padding: '7px 16px', fontSize: 12 }}
+          >
+            {subSaving ? '⏳ Ekleniyor…' : '➕ Alt Dersleri Ekle'}
+          </button>
+        </div>
       )}
 
       {/* ── Açıklama (sadece görüntüleme modunda) ──────────────── */}
@@ -918,167 +1060,23 @@ function InfoItem({ label: lbl, value }: { label: string; value: string | number
   );
 }
 
-function ComingSoon({ label: lbl }: { label: string }) {
-  return (
-    <div className={s.comingSoon}>
-      <span style={{ fontSize: 48, lineHeight: 1 }}>🚧</span>
-      <p className={s.comingSoonTitle}>{lbl}</p>
-      <p className={s.comingSoonDesc}>Bu bölüm yakında aktif edilecek.</p>
-    </div>
-  );
+function uniqueIds(ids: number[]) {
+  return [...new Set(ids)];
 }
 
-
-/* ── SectionsTable: Alt bölüm girintili, düzenlenebilir soru aralığı ─────── */
-function SectionsTable({ exam, editing, onExamUpdate }: {
-  exam: ExamDetail;
-  editing: boolean;
-  onExamUpdate: (e: ExamDetail) => void;
-}) {
-  const [editingSection, setEditingSection] = useState<number | null>(null);
-  const [editForm, setEditForm] = useState({ question_start: 0, question_end: 0 });
-  const [saving, setSaving] = useState(false);
-
-  // Bölümleri düz liste olarak sıralı al: ana bölüm → altları → ana bölüm → altları
-  const flatSections: (ExamSection & { _depth: number })[] = [];
-  const mainSections = (exam.sections || []).filter(sec => !sec.is_sub_section);
-  mainSections.sort((a, b) => a.order - b.order);
-  mainSections.forEach(main => {
-    flatSections.push({ ...main, _depth: 0 });
-    const subs = (exam.sections || []).filter(sec => sec.is_sub_section && sec.parent_section === main.id);
-    subs.sort((a, b) => a.order - b.order);
-    subs.forEach(sub => flatSections.push({ ...sub, _depth: 1 }));
-  });
-
-  const startEdit = (sec: ExamSection) => {
-    setEditingSection(sec.id);
-    setEditForm({ question_start: sec.question_start, question_end: sec.question_end });
-  };
-
-  const cancelEdit = () => {
-    setEditingSection(null);
-  };
-
-  const saveEdit = async (sectionId: number) => {
-    setSaving(true);
-    try {
-      const updated = await examApi.updateSection(exam.id, sectionId, {
-        question_start: editForm.question_start,
-        question_end: editForm.question_end,
-      });
-      onExamUpdate(updated);
-      setEditingSection(null);
-    } catch (err) {
-      console.error('Section güncelleme hatası:', err);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  // Sıra numarası sadece ana bölümler için
-  let mainIdx = 0;
-
-  return (
-    <div className="card-modern" style={{ padding: 0, overflow: 'hidden' }}>
-      <div className="card-modern-header" style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)' }}>
-        <h3>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-          Bölümler ({exam.sections.length})
-        </h3>
-      </div>
-      <table className={s.sectionsTable} style={{ border: 'none', borderRadius: 0 }}>
-        <thead>
-          <tr>
-            <th style={{ width: 50 }}>Sıra</th>
-            <th>Bölüm</th>
-            <th style={{ width: 160 }}>Soru Aralığı</th>
-            <th style={{ width: 90 }}>Soru Sayısı</th>
-            {editing && <th style={{ width: 80 }}></th>}
-          </tr>
-        </thead>
-        <tbody>
-          {flatSections.map((sec) => {
-            const isEditing = editingSection === sec.id;
-            const isSub = sec._depth > 0;
-            const qCount = isEditing
-              ? Math.max(0, editForm.question_end - editForm.question_start + 1)
-              : sec.question_end - sec.question_start + 1;
-            if (!isSub) mainIdx++;
-
-            return (
-              <tr key={sec.id} style={isSub ? { background: '#f8fafc' } : undefined}>
-                <td style={{ fontWeight: 700, color: isSub ? '#94a3b8' : 'var(--primary)' }}>
-                  {isSub ? '' : mainIdx}
-                </td>
-                <td style={{ fontWeight: isSub ? 400 : 600, paddingLeft: isSub ? 32 : undefined, color: isSub ? '#64748b' : undefined }}>
-                  {isSub && <span style={{ color: '#94a3b8', marginRight: 6 }}>└</span>}
-                  {sec.name}
-                  {isSub && <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 6 }}>(alt ders)</span>}
-                </td>
-                <td>
-                  {isEditing ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      <input
-                        type="number"
-                        value={editForm.question_start}
-                        onChange={e => setEditForm(f => ({ ...f, question_start: Number(e.target.value) }))}
-                        style={{ width: 55, padding: '3px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 4, textAlign: 'center' }}
-                        min={1}
-                      />
-                      <span style={{ color: '#94a3b8' }}>–</span>
-                      <input
-                        type="number"
-                        value={editForm.question_end}
-                        onChange={e => setEditForm(f => ({ ...f, question_end: Number(e.target.value) }))}
-                        style={{ width: 55, padding: '3px 6px', fontSize: 12, border: '1px solid #cbd5e1', borderRadius: 4, textAlign: 'center' }}
-                        min={1}
-                      />
-                    </div>
-                  ) : (
-                    <>{sec.question_start} – {sec.question_end}</>
-                  )}
-                </td>
-                <td style={{ fontWeight: 600 }}>{qCount}</td>
-                {editing && (
-                  <td>
-                    {isEditing ? (
-                      <div style={{ display: 'flex', gap: 4 }}>
-                        <button
-                          className="btn-modern"
-                          onClick={() => saveEdit(sec.id)}
-                          disabled={saving}
-                          style={{ padding: '2px 8px', fontSize: 11, color: '#16a34a', border: '1px solid #bbf7d0' }}
-                        >
-                          ✓
-                        </button>
-                        <button
-                          className="btn-modern"
-                          onClick={cancelEdit}
-                          style={{ padding: '2px 8px', fontSize: 11, color: '#ef4444', border: '1px solid #fecaca' }}
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        className="btn-modern"
-                        onClick={() => startEdit(sec)}
-                        style={{ padding: '2px 8px', fontSize: 11, color: '#64748b' }}
-                        title="Soru aralığını düzenle"
-                      >
-                        ✏️
-                      </button>
-                    )}
-                  </td>
-                )}
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
+function sameIdSet(a: number[], b: number[]) {
+  if (a.length !== b.length) return false;
+  const sa = [...a].sort((x, y) => x - y);
+  const sb = [...b].sort((x, y) => x - y);
+  return sa.every((v, i) => v === sb[i]);
 }
+
+function lookupNames(options: LookupItem[], ids: number[]) {
+  if (!ids.length) return '';
+  const byId = new Map(options.map(o => [o.id, o.ad]));
+  return ids.map(id => byId.get(id) ?? `#${id}`).join(', ');
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* ─  TYT Link Card  (AYT → TYT bağlantısı)                                */
@@ -1115,23 +1113,31 @@ function TytLinkCard({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [linkError, setLinkError] = useState('');
+
   const handleLink = async (tytId: number) => {
     setLinkingTyt(true);
+    setLinkError('');
     try {
       const resp = await examApi.linkTyt(exam.id, tytId);
       onExamUpdate(resp.data);
       setShowTytSelect(false);
-    } catch { /* */ }
+    } catch (err) {
+      setLinkError(errText(err, 'TYT sınavı bağlanamadı.'));
+    }
     finally { setLinkingTyt(false); }
   };
 
   const handleUnlink = async () => {
     if (!confirm('TYT bağlantısını kaldırmak istediğinize emin misiniz?')) return;
     setLinkingTyt(true);
+    setLinkError('');
     try {
       const resp = await examApi.linkTyt(exam.id, null);
       onExamUpdate(resp.data);
-    } catch { /* */ }
+    } catch (err) {
+      setLinkError(errText(err, 'TYT bağlantısı kaldırılamadı.'));
+    }
     finally { setLinkingTyt(false); }
   };
 
@@ -1157,6 +1163,8 @@ function TytLinkCard({
           <strong>ℹ️ Bilgi:</strong> AYT puan hesabında TYT netleri de kullanılır. Daha önce yapılmış bir TYT sınavını
           bağlayarak öğrenci puanlarının doğru hesaplanmasını sağlayabilirsiniz.
         </div>
+
+        {linkError && <ErrorBar message={linkError} onClose={() => setLinkError('')} />}
 
         {/* Mevcut bağlantı */}
         {exam.linked_tyt_exam ? (

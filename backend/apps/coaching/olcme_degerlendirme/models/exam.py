@@ -36,8 +36,20 @@ class Exam(models.Model):
         AB    = 'AB',    'A-B'
         ABCD  = 'ABCD',  'A-B-C-D'
 
+    class CurriculumBand(models.TextChoices):
+        YKS = 'YKS', 'YKS (9–12)'
+        LGS = 'LGS', 'LGS (5–8)'
+
     # ── TEMEL BİLGİLER ────────────────────────────────────────────────────────
     name = models.CharField('Sınav Adı', max_length=200)
+    curriculum_band = models.CharField(
+        'Müfredat düzeyi',
+        max_length=8,
+        choices=CurriculumBand.choices,
+        blank=True,
+        default='',
+        help_text='YKS 9–12 veya LGS 5–8. TYT/AYT/LGS türünde otomatik kilitlenir.',
+    )
     exam_type = models.CharField(
         'Sınav Türü', max_length=20, choices=ExamType.choices,
     )
@@ -118,6 +130,12 @@ class Exam(models.Model):
             'TYT’de Din Kültürü’nden hemen sonra gelen 5 soruluk seçmeli felsefe. '
             'Varsayılan: dahil. Sözel puan hesaplamasında kullanılır.'
         ),
+    )
+    answer_key_pdf = models.FileField(
+        'Cevap Anahtarı PDF',
+        upload_to='olcme/cevap-anahtari/',
+        null=True,
+        blank=True,
     )
 
     # ── KİTAPÇIK ─────────────────────────────────────────────────────────────

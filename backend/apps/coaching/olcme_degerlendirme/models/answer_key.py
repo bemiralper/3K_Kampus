@@ -108,6 +108,21 @@ class AnswerKeyItem(models.Model):
         ordering = ['answer_key', 'question_number']
         unique_together = [('answer_key', 'question_number')]
 
+    def booklet_b_global(self) -> int | None:
+        """
+        B kitapçığındaki global soru no.
+        b_question_number ana test (Türkçe / Sosyal / Temel Mat / Fen) içi sıradır;
+        alt bölüm başlangıcı (Coğrafya 46) ile toplanmaz.
+        """
+        if self.b_question_number is None:
+            return None
+        sec = self.section
+        if sec is None:
+            return None
+        parent = getattr(sec, 'parent_section', None)
+        base = parent.question_start if parent is not None else sec.question_start
+        return base + int(self.b_question_number) - 1
+
     def display_outcome_code(self) -> str:
         """Görünen kod: alt kazanım varsa onun kodu, yoksa üst kazanım."""
         if self.sub_outcome_id:

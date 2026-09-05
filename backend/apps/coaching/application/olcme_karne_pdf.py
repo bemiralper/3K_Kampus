@@ -925,55 +925,52 @@ def _compare_card(sd, page_w, Table, TableStyle, Paragraph, colors):
     return card
 
 
+def _xml_escape(text: str) -> str:
+    return (
+        (text or '')
+        .replace('&', '&amp;')
+        .replace('<', '&lt;')
+        .replace('>', '&gt;')
+    )
+
+
 def _page_two(
     data, page_w, logo, primary, primary_dark,
     title_style, sub_style, exam_style, th, td, td_l,
     Image, Table, TableStyle, Paragraph, Spacer, colors,
 ):
+    """Kazanım tabloları sayfa boyunu aşabilir; iç içe Table kullanma (bölünmez)."""
     flow = [Spacer(1, 2)]
     blocks = data.get('topic_blocks') or []
-    mid = (len(blocks) + 1) // 2
-    cols = [blocks[:mid], blocks[mid:]]
-    col_tables = []
-    col_w = (page_w - 6) / 2
-    for col in cols:
-        bits = []
-        for block in col:
-            bits.append(Paragraph(block.get('heading') or '', exam_style))
-            for table in block.get('tables') or []:
-                title = table.get('title') or ''
-                if title and title != block.get('heading'):
-                    bits.append(Paragraph(title, ParagraphStyleSubHead(colors)))
-                rows = [[
-                    Paragraph(title or 'Konu', th),
-                    Paragraph('S', th), Paragraph('D', th), Paragraph('Y', th),
-                    Paragraph('B', th), Paragraph('%', th),
-                ]]
-                for row in table.get('rows') or []:
-                    rows.append([
-                        Paragraph(row.get('name') or '', td_l),
-                        Paragraph(str(row.get('soru') or 0), td),
-                        Paragraph(str(row.get('dogru') or 0), td),
-                        Paragraph(str(row.get('yanlis') or 0), td),
-                        Paragraph(str(row.get('bos') or 0), td),
-                        Paragraph(str(row.get('basari') or 0), td),
-                    ])
-                tw = [col_w * x for x in (0.52, 0.096, 0.096, 0.096, 0.096, 0.096)]
-                tbl = Table(rows, colWidths=tw)
-                tbl.setStyle(_table_style(primary, colors.HexColor('#F8FAFC'), colors, header_rows=1))
-                bits.append(tbl)
-                bits.append(Spacer(1, 4))
-        col_tables.append(bits)
-    # Flatten two columns as sequential blocks if platypus two-col is heavy
-    left = col_tables[0]
-    right = col_tables[1] if len(col_tables) > 1 else []
-    wrapper = Table([[left, right]], colWidths=[col_w, col_w])
-    wrapper.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 2),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-    ]))
-    flow.append(wrapper)
+    tw = [page_w * x for x in (0.52, 0.096, 0.096, 0.096, 0.096, 0.096)]
+    for block in blocks:
+        heading = _xml_escape(block.get('heading') or '')
+        if heading:
+            flow.append(Paragraph(heading, exam_style))
+            flow.append(Spacer(1, 3))
+        for table in block.get('tables') or []:
+            title = table.get('title') or ''
+            if title and title != block.get('heading'):
+                flow.append(Paragraph(_xml_escape(title), ParagraphStyleSubHead(colors)))
+                flow.append(Spacer(1, 2))
+            rows = [[
+                Paragraph(_xml_escape(title or 'Konu'), th),
+                Paragraph('S', th), Paragraph('D', th), Paragraph('Y', th),
+                Paragraph('B', th), Paragraph('%', th),
+            ]]
+            for row in table.get('rows') or []:
+                rows.append([
+                    Paragraph(_xml_escape(row.get('name') or ''), td_l),
+                    Paragraph(str(row.get('soru') or 0), td),
+                    Paragraph(str(row.get('dogru') or 0), td),
+                    Paragraph(str(row.get('yanlis') or 0), td),
+                    Paragraph(str(row.get('bos') or 0), td),
+                    Paragraph(str(row.get('basari') or 0), td),
+                ])
+            tbl = Table(rows, colWidths=tw, repeatRows=1)
+            tbl.setStyle(_table_style(primary, colors.HexColor('#F8FAFC'), colors, header_rows=1))
+            flow.append(tbl)
+            flow.append(Spacer(1, 8))
     return flow
 
 

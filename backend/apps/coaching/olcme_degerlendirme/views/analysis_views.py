@@ -282,10 +282,24 @@ def _build_answer_grids(exam, comparison: dict) -> list:
     return grids
 
 
+def _topic_block_label(item) -> str:
+    # Karnede Excel/yapıştırılan kazanım adı durur; müfredat konu adına
+    # (SHG21 · SAYILAR) düşürülmez — aksi halde farklı kazanımlar tek satır olur.
+    label = (item.imported_outcome_text or '').strip()
+    if not label:
+        label = item.display_outcome_text()
+    if not label and item.outcome_id and getattr(item.outcome, 'topic_id', None):
+        label = item.outcome.topic.name or ''
+    return label
+
+
 def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
     from collections import OrderedDict
 
-    ak = _pick_answer_key(exam, booklet)
+    # Kazanım etiketleri her zaman A (primary) anahtardan gelir.
+    # B kitapçığında üretilmiş anahtar boş/kaymış olabiliyor; karşılaştırma
+    # sonucu b_question_number → parent test offset ile bulunur.
+    ak = exam.answer_keys.filter(is_primary=True).first() or exam.answer_keys.first()
     if not ak:
         return []
     items = (
@@ -293,17 +307,15 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         .select_related('section', 'section__parent_section', 'outcome__topic', 'sub_outcome')
         .order_by('section__order', 'question_number')
     )
+    use_b = (booklet or '').upper() == 'B'
     blocks_map: OrderedDict = OrderedDict()
     for item in items:
-        # Karnede Excel/yapıştırılan kazanım adı durur; müfredat konu adına
-        # (SHG21 · SAYILAR) düşürülmez — aksi halde farklı kazanımlar tek satır olur.
-        label = (item.imported_outcome_text or '').strip()
-        if not label:
-            label = item.display_outcome_text()
-        if not label and item.outcome_id and getattr(item.outcome, 'topic_id', None):
-            label = item.outcome.topic.name or ''
+        label = _topic_block_label(item)
         if not label:
             continue
+        lookup_q = item.booklet_b_global() if use_b else item.question_number
+        if not lookup_q:
+            lookup_q = item.question_number
         sec = item.section
         parent_name = sec.parent_section.name if sec.parent_section_id else sec.name
         table_name = sec.name
@@ -311,7 +323,7 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         table = block.setdefault(table_name, OrderedDict())
         row = table.setdefault(label, {'soru': 0, 'dogru': 0, 'yanlis': 0, 'bos': 0})
         row['soru'] += 1
-        result = (comparison.get(str(item.question_number)) or {}).get('result')
+        result = (comparison.get(str(lookup_q)) or {}).get('result')
         if result == 'correct':
             row['dogru'] += 1
         elif result == 'wrong':

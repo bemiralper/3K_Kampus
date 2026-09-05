@@ -294,3 +294,65 @@ class KarneTopicBlockUsesImportedTextTest(TestCase):
         names = [row['name'] for block in blocks for table in block['tables'] for row in table['rows']]
         self.assertEqual(names, ['Temel Kavramlar ve Sayı Kümeleri', 'Sayı Basamakları'])
         self.assertNotIn('SHG21 · SAYILAR', names)
+
+    def test_b_booklet_uses_primary_excel_labels(self):
+        from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
+        from apps.coaching.olcme_degerlendirme.models.exam import ExamSection
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
+
+        exam = Exam.objects.create(name='Karne B Kitapçık', exam_type='YKS_TYT')
+        parent = ExamSection.objects.create(
+            exam=exam, name='Sosyal Bilimler', order=1,
+            question_start=41, question_end=60, is_sub_section=False,
+        )
+        cografya = ExamSection.objects.create(
+            exam=exam, name='Coğrafya', order=1,
+            question_start=46, question_end=50, is_sub_section=True,
+            parent_section=parent,
+        )
+        ak = AnswerKey.objects.create(exam=exam, booklet='A', is_primary=True)
+        item = AnswerKeyItem.objects.create(
+            answer_key=ak, section=cografya, question_number=46,
+            correct_answer='D', b_question_number=7,
+            imported_outcome_text='9.1.1.4',
+        )
+        self.assertEqual(item.booklet_b_global(), 47)
+
+        AnswerKey.objects.create(exam=exam, booklet='B', is_primary=False)
+        blocks = _build_topic_blocks(exam, {
+            '47': {'result': 'correct'},
+            '46': {'result': 'wrong'},
+        }, 'B')
+        rows = [row for block in blocks for table in block['tables'] for row in table['rows']]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['name'], '9.1.1.4')
+        self.assertEqual(rows[0]['dogru'], 1)
+        self.assertEqual(rows[0]['yanlis'], 0)
+
+
+class KarnePdfLongTopicTableTest(TestCase):
+    def test_long_imported_topic_table_fits_across_pages(self):
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+
+        rows = [
+            {
+                'name': f'{i}. kazanım metni & <uzun>',
+                'soru': 1, 'dogru': 1, 'yanlis': 0, 'bos': 0, 'basari': 100,
+            }
+            for i in range(1, 81)
+        ]
+        pdf = render_karne_pdf({
+            'exam_name': 'DK TYT',
+            'student_name': 'Test Öğrenci',
+            'sube_ad': 'Merkez',
+            'kurum_ad': '3K',
+            'toplam_net': 40,
+            'topic_blocks': [
+                {'heading': 'Türkçe', 'tables': [{'title': 'Türkçe', 'rows': rows}]},
+                {'heading': 'Matematik', 'tables': [{'title': 'Matematik', 'rows': rows[:20]}]},
+            ],
+            'section_details': [],
+            'answer_grids': [],
+        })
+        self.assertTrue(pdf.startswith(b'%PDF'))
+        self.assertGreater(len(pdf), 1500)

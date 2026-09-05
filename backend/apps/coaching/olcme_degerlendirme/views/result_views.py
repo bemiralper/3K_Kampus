@@ -262,18 +262,20 @@ def upload_dat(request, exam_pk):
         else:
             text = raw.decode('latin-1', errors='replace')
 
-        lines = text.strip().splitlines()
+        lines = [ln.replace('\x00', '') for ln in text.splitlines()]
     except Exception as e:
         session.status = ExamSession.Status.ERROR
         session.error_message = str(e)
         session.save()
         return Response({'error': f'Dosya okunamadı: {str(e)}'}, status=400)
 
+    preview_limit = 80
     return Response({
         'session_id': session.id,
         'filename': session.original_filename,
         'total_lines': len(lines),
-        'preview_lines': lines,   # tüm satırlar
+        'preview_lines': lines[:preview_limit],
+        'preview_truncated': len(lines) > preview_limit,
     }, status=201)
 
 
@@ -1114,6 +1116,9 @@ def session_results(request, exam_pk, session_pk):
             'section_nets': section_nets,
         })
 
+    from ..services.student_matching import attach_match_hints
+    attach_match_hints(results, exam)
+
     mc = sum(1 for r in results if r['matched_student_id'])
 
     return Response({
@@ -1211,10 +1216,15 @@ def update_student_match(request, exam_pk, answer_pk):
 @permission_classes([IsAuthenticated])
 def search_students(request, exam_pk):
     """
-    Öğrenci arama (eşleştirme dialog'u için).
+    Sınav havuzunda öğrenci ara. Eşleştirilmiş öğrenciler dönmez.
 
-    GET /exams/{exam_pk}/results/students/search/?q=ali
+    GET /exams/{exam_pk}/results/students/search/?q=ali&answer_id=12
     """
+    from ..services.student_matching import (
+        exam_student_pool, identity_from_raw, rank_candidates,
+        search_pool, taken_student_ids,
+    )
+
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
         return err
@@ -1223,33 +1233,79 @@ def search_students(request, exam_pk):
     if len(q) < 2:
         return Response([])
 
-    from apps.ogrenci.domain.models import Ogrenci
-    from django.db.models import Q, Value, CharField
-    from django.db.models.functions import Concat
+    except_answer = request.query_params.get('answer_id')
+    try:
+        except_id = int(except_answer) if except_answer else None
+    except (TypeError, ValueError):
+        except_id = None
 
-    qs = Ogrenci.objects.filter(
-        aktif_mi=True,
-        kurum_id=exam.kurum_id,
-        sube_id=exam.sube_id,
-    ).annotate(
-        full_name=Concat('ad', Value(' '), 'soyad', output_field=CharField())
-    ).filter(
-        Q(full_name__icontains=q) |
-        Q(tc_kimlik_no__icontains=q) |
-        Q(pk__icontains=q)
-    )[:20]
+    pool = exam_student_pool(exam)
+    taken = taken_student_ids(exam, except_answer_id=except_id)
+    found = [rec for rec in search_pool(pool, q) if rec.pk not in taken][:20]
 
-    data = [
-        {
-            'id': ogr.pk,
-            'ad': ogr.ad,
-            'soyad': ogr.soyad,
-            'tc_kimlik_no': ogr.tc_kimlik_no or '',
-            'full_name': f'{ogr.ad} {ogr.soyad}',
+    dat = None
+    if except_id:
+        try:
+            sa = StudentAnswer.objects.get(pk=except_id, session__exam=exam)
+            dat = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+        except StudentAnswer.DoesNotExist:
+            dat = None
+
+    data = []
+    for rec in found:
+        hits = rank_candidates(dat, [rec], min_score=0, limit=1) if dat else []
+        hit = hits[0] if hits else None
+        row = {
+            'id': rec.pk,
+            'ad': rec.ad,
+            'soyad': rec.soyad,
+            'tc_kimlik_no': rec.tc,
+            'full_name': rec.full_name,
+            'okul_no': rec.okul_no,
+            'sinif': rec.sinif,
+            'selectable': True,
         }
-        for ogr in qs
-    ]
+        if hit:
+            row.update({
+                'score': hit.as_dict()['score'],
+                'reason': hit.reason,
+                'confidence': hit.confidence,
+            })
+        data.append(row)
     return Response(data)
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def suggest_students(request, exam_pk, answer_pk):
+    """DAT kaydı için skorlanmış aday listesi. Çakışan öğrenciler yoktur."""
+    from ..services.student_matching import (
+        exam_student_pool, identity_from_raw, rank_candidates, taken_student_ids,
+    )
+
+    exam, err = get_exam_or_response(request, exam_pk)
+    if err:
+        return err
+
+    try:
+        sa = StudentAnswer.objects.get(pk=answer_pk, session__exam=exam)
+    except StudentAnswer.DoesNotExist:
+        return Response({'error': 'Öğrenci cevabı bulunamadı.'}, status=404)
+
+    dat = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+    pool = exam_student_pool(exam)
+    taken = taken_student_ids(exam, except_answer_id=sa.pk)
+    hits = rank_candidates(dat, pool, exclude_ids=taken, limit=12)
+
+    return Response({
+        'answer_id': sa.id,
+        'dat': {
+            'name': sa.raw_student_name or '',
+            'ogrenci_no': sa.raw_student_id or '',
+        },
+        'suggestions': [h.as_dict() for h in hits],
+    })
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

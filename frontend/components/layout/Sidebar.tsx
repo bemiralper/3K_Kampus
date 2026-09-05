@@ -268,6 +268,7 @@ const navItems: MenuItem[] = [
       { label: "Karşılaştırma", href: "/admin/olcme-degerlendirme/karsilastirma", group: "Analiz" },
       { label: "Konu & Kazanımlar", href: "/admin/olcme-degerlendirme/kazanimlar", group: "Tanımlar" },
       { label: "Puan Katsayıları", href: "/admin/olcme-degerlendirme/ayarlar", group: "Tanımlar" },
+      { label: "Oturum grupları", href: "/admin/olcme-degerlendirme/oturum-gruplari", group: "Tanımlar" },
     ],
   },
   {
