@@ -3,10 +3,12 @@ import type { DaySchedule, GunAktiflik, PeriyotDersler, DaySessionCode } from '.
 import {
   PERIOD_DEFS,
   SESSION_BREAK_DEFS,
+  buildScheduleMatrix,
   deriveGunAktiflik,
   getActiveDayDefs,
   getSessionBreak,
   normalizeGunlukDersSaatleri,
+  timeToMinutes,
   type GunlukDersSaatleri,
 } from './ders-programi-utils';
 
@@ -136,6 +138,14 @@ function printShell(options: {
 </body></html>`;
 }
 
+/**
+ * Haftalık ders programı — yazdırma/PDF çıktısı.
+ *
+ * Ekrandaki matrisin aynısı: satır = etüt veya ara, sütun = gün. Böylece
+ * ekranda görülen ile kâğıda çıkan birebir örtüşür. `meta.orientation`
+ * 'landscape' (varsayılan) veya 'portrait' olabilir; yön yalnızca @page
+ * kuralını değil, tek sayfaya sığması için tipografi ölçeğini de belirler.
+ */
 export function buildDersProgramiPrintHtml(options: {
   meta: KutuphanePrintMeta;
   programAd: string;
@@ -155,168 +165,210 @@ export function buildDersProgramiPrintHtml(options: {
   const logo = logoSrc(branding, origin);
   const printedAt = new Date().toLocaleString('tr-TR');
 
-  const activeDays = getActiveDayDefs(gunAktiflik);
-  const activeDayHeaders = activeDays.map((d) => ({ key: d.key, short: d.short, label: d.label }));
+  const portrait = meta.orientation === 'portrait';
+  const days = getActiveDayDefs(gunAktiflik);
+  const sections = buildScheduleMatrix(gunluk, days).filter(
+    (sec) => sec.rows.length > 0 || sec.breakRow,
+  );
 
-  const dayColumns = activeDayHeaders.map((d) => {
-    const daySchedule = gunluk[d.key];
-    const sessionBlocks = PERIODS.map((p) => {
-      const pd = daySchedule?.[p.code];
-      if (!pd?.dersler?.length) return '';
-      const lines = pd.dersler.map((ders: { ders_no: number; baslangic: string; bitis: string }) => {
-        const start = (ders.baslangic || '').slice(0, 5);
-        const end = (ders.bitis || '').slice(0, 5);
-        return `<div class="dp-slot">
-          <span class="dp-slot-no">${ders.ders_no}. Etüt</span>
-          <span class="dp-slot-time">${escapeHtml(start)}<span class="dp-slot-sep">–</span>${escapeHtml(end)}</span>
-        </div>`;
-      }).join('');
-      const icon = p.code === 'MORNING' ? '☀' : p.code === 'AFTERNOON' ? '◐' : '☾';
-      const sessionBlock = `<div class="dp-session" style="--session-color:${p.color}">
-        <div class="dp-session-head">${icon} ${escapeHtml(p.label)}</div>
-        ${lines}
-      </div>`;
-      const breakDef = SESSION_BREAK_DEFS.find((b) => b.afterCode === p.code);
-      const brk = breakDef ? getSessionBreak(daySchedule, breakDef.afterCode, breakDef.beforeCode) : null;
-      const breakBlock = brk
-        ? `<div class="dp-break">
-            <span class="dp-break-label">${breakDef!.icon} ${escapeHtml(breakDef!.label)}</span>
-            <span class="dp-break-time">${escapeHtml(brk.baslangic)}<span class="dp-slot-sep">–</span>${escapeHtml(brk.bitis)}</span>
-          </div>`
-        : '';
-      return sessionBlock + breakBlock;
-    }).filter(Boolean).join('');
-
-    if (!sessionBlocks) {
-      return `<td class="dp-day closed"><span class="dp-closed-label">Kapalı</span></td>`;
-    }
-
-    return `<td class="dp-day">${sessionBlocks}</td>`;
-  }).join('');
-
-  const activeDayCount = activeDays.length;
-  const totalDers = Object.values(gunluk).reduce(
-    (s, day) => s + PERIODS.reduce((ps, p) => ps + (day[p.code]?.dersler?.length || 0), 0),
+  const totalDers = days.reduce(
+    (sum, d) => sum + PERIOD_DEFS.reduce((ps, p) => ps + (gunluk[d.key]?.[p.code]?.dersler?.length || 0), 0),
     0,
   );
 
+  // Haftanın ilk dersinin başlangıcı ve son dersinin bitişi.
+  let weekStart = '';
+  let weekEnd = '';
+  for (const sec of sections) {
+    for (const row of sec.rows) {
+      for (const day of days) {
+        const cell = row.cells[day.key];
+        if (!cell) continue;
+        const from = timeToMinutes(cell.baslangic);
+        const to = timeToMinutes(cell.bitis);
+        if (from !== null && (!weekStart || from < (timeToMinutes(weekStart) ?? Infinity))) weekStart = cell.baslangic;
+        if (to !== null && (!weekEnd || to > (timeToMinutes(weekEnd) ?? -Infinity))) weekEnd = cell.bitis;
+      }
+    }
+  }
+
+  /** Bir oturumun hafta genelindeki en erken başlangıcı ve en geç bitişi. */
+  const sectionSpan = (sec: (typeof sections)[number]): string => {
+    let from = '';
+    let to = '';
+    for (const row of sec.rows) {
+      for (const day of days) {
+        const cell = row.cells[day.key];
+        if (!cell) continue;
+        if (!from || (timeToMinutes(cell.baslangic) ?? 0) < (timeToMinutes(from) ?? Infinity)) from = cell.baslangic;
+        if (!to || (timeToMinutes(cell.bitis) ?? 0) > (timeToMinutes(to) ?? -Infinity)) to = cell.bitis;
+      }
+    }
+    return from && to ? `${from} – ${to}` : '';
+  };
+
+  const colWidth = `${(100 - (portrait ? 22 : 16)) / Math.max(days.length, 1)}%`;
+
+  const head = `<tr>
+    <th class="dp-corner">Oturum</th>
+    ${days.map((d) => `<th class="dp-day" style="width:${colWidth}">
+      <span class="dp-day-name">${escapeHtml(portrait ? d.short : d.label)}</span>
+    </th>`).join('')}
+  </tr>`;
+
+  const body = sections.map((sec) => {
+    const span = sectionSpan(sec);
+    const group = `<tr class="dp-group" style="--acc:${sec.accent};background:${sec.light}">
+      <td colspan="${days.length + 1}">
+        <span class="dp-group-name">${escapeHtml(sec.label)}</span>
+        <span class="dp-group-meta">${sec.rows.length} etüt${span ? ` · ${escapeHtml(span)}` : ''}</span>
+      </td>
+    </tr>`;
+
+    const rows = sec.rows.map((row, idx) => `<tr class="${idx % 2 ? 'dp-alt' : ''}">
+      <th class="dp-rowlabel">${escapeHtml(row.label)}</th>
+      ${days.map((d) => {
+        const cell = row.cells[d.key];
+        return `<td class="dp-cell">${cell
+          ? `<span class="dp-time">${escapeHtml(cell.baslangic)}<i>–</i>${escapeHtml(cell.bitis)}</span>`
+          : '<span class="dp-none">—</span>'}</td>`;
+      }).join('')}
+    </tr>`).join('');
+
+    const brk = sec.breakRow
+      ? `<tr class="dp-brk">
+          <th class="dp-rowlabel">${escapeHtml(sec.breakRow.label)}</th>
+          ${days.map((d) => {
+            const cell = sec.breakRow!.cells[d.key];
+            return `<td class="dp-cell">${cell
+              ? `<span class="dp-time">${escapeHtml(cell.baslangic)}<i>–</i>${escapeHtml(cell.bitis)}</span>`
+              : '<span class="dp-none">—</span>'}</td>`;
+          }).join('')}
+        </tr>`
+      : '';
+
+    return group + rows + brk;
+  }).join('');
+
+  const chips = [
+    `<span class="dp-chip"><strong>${days.length}</strong> gün</span>`,
+    `<span class="dp-chip"><strong>${totalDers}</strong> etüt</span>`,
+    weekStart && weekEnd ? `<span class="dp-chip">${escapeHtml(weekStart)} – ${escapeHtml(weekEnd)}</span>` : '',
+  ].filter(Boolean).join('');
+
   return `<!DOCTYPE html><html lang="tr"><head><meta charset="utf-8"/>
 <title>${escapeHtml(meta.title)}</title>
-<link rel="preconnect" href="https://fonts.googleapis.com"/>
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
-  :root { --theme: ${theme}; --ink: #0f172a; --muted: #64748b; --line: #dbe3ef; --soft: #f8fafc; }
-  * { box-sizing: border-box; margin: 0; padding: 0; overflow-wrap: break-word; word-break: break-word; }
-  @page { size: A4 landscape; margin: 5mm; }
+  :root {
+    --theme: ${theme};
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #d7dfea;
+    --line-strong: #b9c6d6;
+    --fs: ${portrait ? '10' : '12.5'}px;
+    --pad: ${portrait ? '5px 3px' : '8px 6px'};
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  @page { size: A4 ${portrait ? 'portrait' : 'landscape'}; margin: ${portrait ? '8mm 7mm' : '6mm 8mm'}; }
   body {
-    font-family: 'Manrope', 'Segoe UI', system-ui, sans-serif;
-    color: var(--ink); background: #fff; font-size: 11.5px; line-height: 1.35;
-    padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    color: var(--ink); background: #fff; font-size: var(--fs); line-height: 1.3;
+    -webkit-print-color-adjust: exact; print-color-adjust: exact;
+    padding: ${portrait ? '8mm 7mm' : '6mm 8mm'};
   }
-  .dp-wrap { width: 100%; max-width: 287mm; margin: 0 auto; }
-  .dp-header {
-    display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: center;
-    padding: 10px 14px; border: 1px solid var(--line); border-radius: 12px;
-    background: linear-gradient(135deg, #ffffff 0%, var(--soft) 100%);
-    margin-bottom: 8px;
+
+  .dp-head {
+    display: flex; align-items: center; gap: ${portrait ? '10px' : '14px'};
+    padding-bottom: ${portrait ? '7px' : '10px'}; margin-bottom: ${portrait ? '8px' : '11px'};
+    border-bottom: 3px solid var(--theme);
   }
-  .dp-logo {
-    width: 52px; height: 52px; object-fit: contain; border-radius: 10px;
-    border: 1px solid var(--line); background: #fff; padding: 4px;
+  .dp-logo { width: ${portrait ? '40px' : '50px'}; height: ${portrait ? '40px' : '50px'}; object-fit: contain; flex-shrink: 0; }
+  .dp-titles { flex: 1; min-width: 0; }
+  .dp-title {
+    font-size: ${portrait ? '15px' : '19px'}; font-weight: 800;
+    color: var(--theme); letter-spacing: -0.02em; line-height: 1.15;
   }
-  .dp-title { font-family: 'Sora', 'Manrope', sans-serif; font-size: 22px; font-weight: 800; color: var(--theme); letter-spacing: -0.02em; }
-  .dp-sub { font-size: 12px; font-weight: 700; color: #334155; margin-top: 3px; }
-  .dp-meta { font-size: 10px; color: var(--muted); margin-top: 4px; font-weight: 500; }
-  .dp-badges { display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
-  .dp-badge {
-    font-family: 'Sora', 'Manrope', sans-serif;
-    font-size: 10px; font-weight: 700; padding: 4px 11px; border-radius: 999px;
-    border: 1px solid var(--line); background: #fff; color: #334155; white-space: nowrap;
+  .dp-kurum { font-size: ${portrait ? '10px' : '12px'}; font-weight: 700; color: #334155; margin-top: 2px; }
+  .dp-prog { font-size: ${portrait ? '9px' : '10.5px'}; color: var(--muted); margin-top: 2px; }
+  .dp-chips { display: flex; gap: 5px; flex-shrink: 0; }
+  .dp-chip {
+    font-size: ${portrait ? '8.5px' : '10px'}; font-weight: 700; color: #334155;
+    padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); background: #f8fafc;
+    white-space: nowrap;
   }
-  .dp-badge strong { color: var(--theme); }
-  .dp-table { width: 100%; border-collapse: separate; border-spacing: 0; table-layout: fixed; }
-  .dp-table thead th {
-    font-family: 'Sora', 'Manrope', sans-serif;
-    font-size: 13.5px; font-weight: 800; color: #fff; background: var(--theme);
-    padding: 9px 4px; border: 1px solid color-mix(in srgb, var(--theme) 80%, #000);
-    text-align: center; vertical-align: middle;
+  .dp-chip strong { color: var(--theme); }
+
+  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
+  th, td { border: 1px solid var(--line); }
+
+  thead th {
+    background: var(--theme); color: #fff; padding: var(--pad);
+    border-color: color-mix(in srgb, var(--theme) 75%, #000);
+    text-align: center; font-weight: 800;
   }
-  .dp-table thead th .dp-day-full {
-    display: block; font-size: 9px; font-weight: 600; opacity: 0.92; margin-top: 2px;
+  .dp-corner {
+    width: ${portrait ? '22%' : '16%'}; text-align: left;
+    font-size: ${portrait ? '8.5px' : '10px'}; text-transform: uppercase; letter-spacing: 0.06em;
   }
-  .dp-table tbody td.dp-day {
-    vertical-align: top; border: 1px solid var(--line); background: #fff;
-    padding: 7px 5px; min-height: 72px;
+  .dp-day-name { font-size: calc(var(--fs) * 1.02); letter-spacing: -0.01em; }
+
+  .dp-group td {
+    padding: ${portrait ? '4px 8px' : '6px 11px'};
+    border-left-width: 3px; border-left-color: var(--acc);
+    border-top: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong);
   }
-  .dp-table tbody td.dp-day.closed { background: #f1f5f9; }
-  .dp-closed-label { display: block; text-align: center; color: #94a3b8; font-style: italic; font-weight: 600; padding: 16px 2px; }
-  .dp-session {
-    margin-bottom: 6px; padding: 6px 6px; border-radius: 8px;
-    border: 1px solid color-mix(in srgb, var(--session-color) 25%, var(--line));
-    background: color-mix(in srgb, var(--session-color) 6%, #fff);
+  .dp-group-name {
+    font-weight: 800; color: var(--acc); text-transform: uppercase;
+    letter-spacing: 0.05em; font-size: calc(var(--fs) * 0.9);
   }
-  .dp-session:last-child { margin-bottom: 0; }
-  .dp-session-head {
-    font-family: 'Sora', 'Manrope', sans-serif;
-    font-size: 11.5px; font-weight: 800; color: var(--session-color);
-    margin-bottom: 5px; letter-spacing: 0.01em;
+  .dp-group-meta { font-size: calc(var(--fs) * 0.8); color: var(--muted); font-weight: 600; margin-left: 8px; }
+
+  .dp-rowlabel {
+    text-align: left; padding: var(--pad); background: #f6f8fb;
+    font-weight: 700; color: #475569; font-size: calc(var(--fs) * 0.88);
+    border-right: 2px solid var(--line-strong);
   }
-  .dp-slot {
-    display: flex; flex-direction: column; gap: 1px;
-    padding: 4px 0; border-bottom: 1px dashed #e8edf3;
+  .dp-cell { text-align: center; padding: var(--pad); }
+  .dp-alt .dp-cell { background: #fafbfd; }
+  .dp-time { font-weight: 700; white-space: nowrap; letter-spacing: -0.01em; }
+  .dp-time i { color: var(--muted); font-style: normal; margin: 0 2px; font-weight: 500; }
+  .dp-none { color: #cbd5e1; }
+
+  .dp-brk .dp-rowlabel,
+  .dp-brk .dp-cell {
+    background: #eef2f7;
+    border-top: 1px dashed var(--line-strong); border-bottom: 1px dashed var(--line-strong);
   }
-  .dp-slot:last-child { border-bottom: none; padding-bottom: 0; }
-  .dp-slot-no { font-size: 9.5px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.02em; }
-  .dp-slot-time {
-    font-family: 'Sora', 'Manrope', sans-serif;
-    font-size: 14px; font-weight: 700; color: var(--ink);
-    white-space: nowrap; letter-spacing: -0.01em;
+  .dp-brk .dp-rowlabel { text-transform: uppercase; font-size: calc(var(--fs) * 0.78); letter-spacing: 0.04em; }
+  .dp-brk .dp-time { font-size: calc(var(--fs) * 0.88); color: #475569; }
+
+  .dp-foot {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-top: ${portrait ? '6px' : '9px'}; font-size: ${portrait ? '7.5px' : '9px'}; color: #94a3b8;
   }
-  .dp-slot-sep { color: var(--theme); font-weight: 600; margin: 0 3px; }
-  .dp-break {
-    margin-bottom: 6px; padding: 5px 6px; border-radius: 8px; text-align: center;
-    background: repeating-linear-gradient(135deg, #f8fafc, #f8fafc 6px, #eef2f7 6px, #eef2f7 12px);
-    border: 1px dashed #cbd5e1; color: #475569;
-  }
-  .dp-break:last-child { margin-bottom: 0; }
-  .dp-break-label { display: block; font-size: 9.5px; font-weight: 700; letter-spacing: 0.01em; }
-  .dp-break-time {
-    display: block; font-family: 'Sora', 'Manrope', sans-serif;
-    font-size: 12px; font-weight: 700; color: #334155; margin-top: 1px;
-  }
-  .dp-footer {
-    margin-top: 6px; display: flex; justify-content: space-between; align-items: center;
-    font-size: 9px; color: #94a3b8; padding: 0 2px;
-  }
+
   @media print {
     body { padding: 0; }
-    .dp-wrap { max-width: none; }
-    .dp-header, .dp-table { page-break-inside: avoid; break-inside: avoid; }
-    .dp-table tbody tr { page-break-inside: avoid; break-inside: avoid; }
+    tr, .dp-head { page-break-inside: avoid; break-inside: avoid; }
+    thead { display: table-header-group; }
   }
 </style></head><body>
-  <div class="dp-wrap">
-    <header class="dp-header">
-      <img class="dp-logo" src="${logo}" alt="${escapeHtml(kurumAd)}" onerror="this.style.display='none'"/>
-      <div>
-        <div class="dp-title">${escapeHtml(meta.title)}</div>
-        <div class="dp-sub">${escapeHtml(kurumAd)}${meta.subeAdi ? ` · ${escapeHtml(meta.subeAdi)}` : ''}</div>
-        <div class="dp-meta">${escapeHtml(programAd)}${meta.subtitle ? ` · ${escapeHtml(meta.subtitle)}` : ''}</div>
-      </div>
-      <div class="dp-badges">
-        <span class="dp-badge"><strong>${activeDayCount}</strong> aktif gün</span>
-        <span class="dp-badge"><strong>${totalDers}</strong> etüt</span>
-      </div>
-    </header>
-    <table class="dp-table">
-      <thead><tr>${activeDayHeaders.map((d) => `<th>${escapeHtml(d.short)}<span class="dp-day-full">${escapeHtml(d.label)}</span></th>`).join('')}</tr></thead>
-      <tbody><tr>${dayColumns}</tr></tbody>
-    </table>
-    <div class="dp-footer">
-      <span>Haftalık çalışma programı</span>
-      <span>Yazdırma: ${printedAt}</span>
+  <header class="dp-head">
+    <img class="dp-logo" src="${logo}" alt="${escapeHtml(kurumAd)}" onerror="this.style.display='none'"/>
+    <div class="dp-titles">
+      <div class="dp-title">${escapeHtml(meta.title)}</div>
+      <div class="dp-kurum">${escapeHtml(kurumAd)}${meta.subeAdi ? ` · ${escapeHtml(meta.subeAdi)}` : ''}</div>
+      <div class="dp-prog">${escapeHtml(programAd)}</div>
     </div>
+    <div class="dp-chips">${chips}</div>
+  </header>
+  <table>
+    <thead>${head}</thead>
+    <tbody>${body}</tbody>
+  </table>
+  <div class="dp-foot">
+    <span>Haftalık çalışma programı · 3K Kampüs LMS</span>
+    <span>Yazdırma: ${printedAt}</span>
   </div>
 </body></html>`;
 }

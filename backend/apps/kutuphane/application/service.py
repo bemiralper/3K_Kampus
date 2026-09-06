@@ -13,12 +13,12 @@ from apps.kutuphane.infrastructure.repository import (
     LockerAssignmentRepository, AttendanceRepository,
     TemporarySeatingRepository,
     AuditLogRepository,
-    SubeDersProgramiRepository, OgrenciIzinRepository
+    SubeDersProgramiRepository, DersProgramiSablonuRepository, OgrenciIzinRepository
 )
 from apps.kutuphane.domain.models import (
     Library, Seat, Locker, SeatAssignment, LockerAssignment,
     AttendanceSession, AttendanceRecord, TemporarySeating,
-    SubeDersProgrami, OgrenciIzin,
+    SubeDersProgrami, DersProgramiSablonu, OgrenciIzin,
     SeatStatus, LockerStatus, AssignmentStatus,
     AttendanceSessionStatus, TemporarySeatingStatus,
     LibraryStatus, AuditAction, AttendanceStatus,
@@ -1215,6 +1215,98 @@ class SubeDersProgramiService:
             for gun_str, gun_info in gun_bazli.items():
                 if not gun_str.isdigit() or int(gun_str) not in range(7):
                     raise ValueError(f"Geçersiz gün: {gun_str} (0-6 arası olmalı)")
+
+
+class DersProgramiSablonuService:
+    """Adlandırılmış ders programı şablonları iş mantığı"""
+
+    def __init__(self):
+        self.repo = DersProgramiSablonuRepository()
+
+    def list_sablonlar(self, kurum_id: int) -> list:
+        return list(self.repo.get_all(kurum_id))
+
+    @staticmethod
+    def _clean(kurum_id: int, data: dict, *, exclude_id=None) -> dict:
+        """Adı ve program JSON'unu normalize eder; ad çakışmasını engeller."""
+        from apps.kutuphane.ders_programi_utils import (
+            derive_gun_bazli_aktiflik,
+            normalize_ders_saatleri,
+        )
+
+        cleaned: dict = {}
+        if 'ad' in data:
+            ad = (data.get('ad') or '').strip()
+            if not ad:
+                raise ValueError("Şablon adı zorunludur")
+            if len(ad) > 100:
+                raise ValueError("Şablon adı en fazla 100 karakter olabilir")
+            mevcut = DersProgramiSablonuRepository.get_by_ad(kurum_id, ad)
+            if mevcut and mevcut.id != exclude_id:
+                raise ValueError(f"'{ad}' adında bir şablon zaten var")
+            cleaned['ad'] = ad
+        if 'aciklama' in data:
+            cleaned['aciklama'] = (data.get('aciklama') or '').strip()[:255]
+        if 'ders_saatleri' in data:
+            gunluk = normalize_ders_saatleri(data.get('ders_saatleri') or {}, data.get('gun_bazli_aktiflik'))
+            cleaned['ders_saatleri'] = gunluk
+            cleaned['gun_bazli_aktiflik'] = derive_gun_bazli_aktiflik(gunluk)
+        return cleaned
+
+    @transaction.atomic
+    def create_sablon(self, kurum_id: int, data: dict, user_id: int) -> DersProgramiSablonu:
+        payload = self._clean(kurum_id, {'ad': data.get('ad'), **data})
+        if not payload.get('ders_saatleri'):
+            raise ValueError("Şablon için ders saatleri gereklidir")
+        payload['kurum_id'] = kurum_id
+        payload['olusturan_id'] = user_id
+        sablon = self.repo.create(payload)
+
+        AuditLogRepository.create({
+            'entity_type': 'DersProgramiSablonu',
+            'entity_id': sablon.id,
+            'action': AuditAction.CREATE,
+            'performed_by': user_id,
+            'description': f"Ders programı şablonu oluşturuldu: {sablon.ad}",
+        })
+        return sablon
+
+    @transaction.atomic
+    def update_sablon(self, kurum_id: int, sablon_id, data: dict, user_id: int) -> DersProgramiSablonu:
+        sablon = self.repo.get_by_id(sablon_id, kurum_id)
+        if not sablon:
+            raise ValueError("Şablon bulunamadı")
+
+        payload = self._clean(kurum_id, data, exclude_id=sablon.id)
+        if not payload:
+            return sablon
+        updated = self.repo.update(sablon.id, payload)
+
+        AuditLogRepository.create({
+            'entity_type': 'DersProgramiSablonu',
+            'entity_id': sablon.id,
+            'action': AuditAction.UPDATE,
+            'performed_by': user_id,
+            'description': f"Ders programı şablonu güncellendi: {updated.ad}",
+        })
+        return updated
+
+    @transaction.atomic
+    def delete_sablon(self, kurum_id: int, sablon_id, user_id: int) -> bool:
+        sablon = self.repo.get_by_id(sablon_id, kurum_id)
+        if not sablon:
+            raise ValueError("Şablon bulunamadı")
+        ad = sablon.ad
+        result = self.repo.delete(sablon.id)
+
+        AuditLogRepository.create({
+            'entity_type': 'DersProgramiSablonu',
+            'entity_id': sablon_id,
+            'action': AuditAction.DELETE,
+            'performed_by': user_id,
+            'description': f"Ders programı şablonu silindi: {ad}",
+        })
+        return result
 
 
 class OgrenciIzinService:

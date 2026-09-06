@@ -842,6 +842,43 @@ export async function fetchSubeler(): Promise<ApiResponse<SubeInfo[]>> {
   return apiGet<SubeInfo[]>(`${BASE}/subeler/`);
 }
 
+/** Kurum bazlı, kullanıcının ad verdiği ders programı şablonu. */
+export interface DersProgramiSablonu {
+  id: string;
+  ad: string;
+  aciklama: string;
+  ders_saatleri: GunlukDersSaatleriApi;
+  gun_bazli_aktiflik: Record<string, GunAktiflik>;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchDersProgramiSablonlari(): Promise<ApiResponse<DersProgramiSablonu[]>> {
+  return apiGet<DersProgramiSablonu[]>(`${BASE}/ders-programi/sablonlar/`);
+}
+
+export async function createDersProgramiSablonu(data: {
+  ad: string;
+  aciklama?: string;
+  ders_saatleri: GunlukDersSaatleriApi;
+  gun_bazli_aktiflik?: Record<string, GunAktiflik>;
+}): Promise<ApiResponse<DersProgramiSablonu>> {
+  return apiPost<DersProgramiSablonu>(`${BASE}/ders-programi/sablonlar/`, data);
+}
+
+export async function updateDersProgramiSablonu(id: string, data: Partial<{
+  ad: string;
+  aciklama: string;
+  ders_saatleri: GunlukDersSaatleriApi;
+  gun_bazli_aktiflik: Record<string, GunAktiflik>;
+}>): Promise<ApiResponse<DersProgramiSablonu>> {
+  return apiPut<DersProgramiSablonu>(`${BASE}/ders-programi/sablonlar/${id}/`, data);
+}
+
+export async function deleteDersProgramiSablonu(id: string): Promise<ApiResponse<void>> {
+  return apiDelete<void>(`${BASE}/ders-programi/sablonlar/${id}/`);
+}
+
 // ============================================================
 // ÖĞRENCİ İZİNLERİ
 // ============================================================
@@ -1030,8 +1067,8 @@ export async function downloadSeatListExport(
  * Ders programı (haftalık çalışma saatleri) — kurumsal CSV/Excel dışa aktarma.
  */
 export async function downloadDersProgramiExport(data: {
-  columns: AttendanceExportColumn[];
-  rows: Record<string, string>[];
+  columns: (AttendanceExportColumn & { type?: string })[];
+  rows: Record<string, string | number>[];
   meta: {
     program_ad: string;
     sube_id?: number | string;

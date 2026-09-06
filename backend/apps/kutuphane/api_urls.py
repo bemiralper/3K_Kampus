@@ -36,6 +36,8 @@ urlpatterns = [
     # Şube Ders Programı
     path("ders-programi/", views.api_ders_programi_list_create, name="ders_programi_list_create"),
     path("ders-programi/export/", views.api_ders_programi_export, name="ders_programi_export"),
+    path("ders-programi/sablonlar/", views.api_ders_programi_sablon_list_create, name="ders_programi_sablon_list_create"),
+    path("ders-programi/sablonlar/<uuid:pk>/", views.api_ders_programi_sablon_detail, name="ders_programi_sablon_detail"),
     path("ders-programi/<uuid:pk>/", views.api_ders_programi_detail, name="ders_programi_detail"),
     path("subeler/", views.api_subeler_with_program, name="subeler_with_program"),
 

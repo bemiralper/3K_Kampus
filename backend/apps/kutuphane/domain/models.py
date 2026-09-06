@@ -346,6 +346,54 @@ class SubeDersProgrami(models.Model):
         return period_data.get('ders_sayisi', len(period_data.get('dersler', [])))
 
 
+class DersProgramiSablonu(models.Model):
+    """
+    Kurum bazlı, kullanıcının ad verdiği ders programı şablonu.
+
+    `SubeDersProgrami` şube başına yalnızca bir aktif kayıt tutar (yoklama bu kaydı
+    okur). Şablonlar ise şubeden bağımsız saklanır: kullanıcı ekrandaki haftalık
+    programı "Yaz Dönemi" gibi bir adla kaydeder, sonra istediği şubede yükler.
+
+    `ders_saatleri` ve `gun_bazli_aktiflik` alanları `SubeDersProgrami` ile aynı
+    JSON şemasını kullanır, böylece şablon doğrudan programa uygulanabilir.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum_id = models.IntegerField('Kurum ID')
+    ad = models.CharField('Şablon Adı', max_length=100)
+    aciklama = models.CharField('Açıklama', max_length=255, blank=True, default='')
+    ders_saatleri = models.JSONField(
+        'Ders Saatleri',
+        default=dict,
+        help_text='Gün bazlı ders saatleri (SubeDersProgrami ile aynı şema)',
+    )
+    gun_bazli_aktiflik = models.JSONField(
+        'Gün Bazlı Aktiflik',
+        default=dict,
+        help_text='Hangi gün hangi periyotlar aktif',
+    )
+    olusturan_id = models.IntegerField('Oluşturan Kullanıcı', null=True, blank=True)
+    created_at = models.DateTimeField('Oluşturma Tarihi', auto_now_add=True)
+    updated_at = models.DateTimeField('Güncelleme Tarihi', auto_now=True)
+
+    class Meta:
+        db_table = 'kutuphane_ders_programi_sablonu'
+        verbose_name = 'Ders Programı Şablonu'
+        verbose_name_plural = 'Ders Programı Şablonları'
+        ordering = ['ad']
+        indexes = [
+            models.Index(fields=['kurum_id']),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum_id', 'ad'],
+                name='unique_kurum_ders_programi_sablon_ad',
+            ),
+        ]
+
+    def __str__(self):
+        return f"Ders Programı Şablonu: {self.ad}"
+
+
 class OgrenciIzin(models.Model):
     """
     Öğrenci İzin Kaydı

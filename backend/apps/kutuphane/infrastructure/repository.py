@@ -13,7 +13,7 @@ from apps.kutuphane.domain.models import (
     AttendanceSession, AttendanceRecord,
     TemporarySeating,
     LibraryAuditLog,
-    SubeDersProgrami, OgrenciIzin,
+    SubeDersProgrami, DersProgramiSablonu, OgrenciIzin,
     LibraryStatus, SeatStatus, LockerStatus,
     AssignmentStatus, AttendanceSessionStatus,
     TemporarySeatingStatus, ExemptionType,
@@ -768,6 +768,50 @@ class SubeDersProgramiRepository:
                 kurum_id=kurum_id, aktif_mi=True
             ).values_list('sube_id', flat=True)
         )
+
+
+# ──────────────────────────────────────
+# DERS PROGRAMI ŞABLONU REPOSITORY
+# ──────────────────────────────────────
+
+class DersProgramiSablonuRepository:
+    """Kurum bazlı, adlandırılmış ders programı şablonları"""
+
+    @staticmethod
+    def get_all(kurum_id: int) -> QuerySet:
+        return DersProgramiSablonu.objects.filter(kurum_id=kurum_id)
+
+    @staticmethod
+    def get_by_id(sablon_id, kurum_id: int | None = None) -> Optional[DersProgramiSablonu]:
+        qs = DersProgramiSablonu.objects.filter(id=sablon_id)
+        if kurum_id is not None:
+            qs = qs.filter(kurum_id=kurum_id)
+        return qs.first()
+
+    @staticmethod
+    def get_by_ad(kurum_id: int, ad: str) -> Optional[DersProgramiSablonu]:
+        return DersProgramiSablonu.objects.filter(kurum_id=kurum_id, ad__iexact=ad).first()
+
+    @staticmethod
+    def create(data: dict) -> DersProgramiSablonu:
+        return DersProgramiSablonu.objects.create(**data)
+
+    @staticmethod
+    def update(sablon_id, data: dict) -> Optional[DersProgramiSablonu]:
+        sablon = DersProgramiSablonuRepository.get_by_id(sablon_id)
+        if sablon:
+            for key, value in data.items():
+                setattr(sablon, key, value)
+            sablon.save()
+        return sablon
+
+    @staticmethod
+    def delete(sablon_id) -> bool:
+        sablon = DersProgramiSablonuRepository.get_by_id(sablon_id)
+        if sablon:
+            sablon.delete()
+            return True
+        return False
 
 
 # ──────────────────────────────────────

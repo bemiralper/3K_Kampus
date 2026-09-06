@@ -16,10 +16,12 @@ export const PERIOD_DEFS: {
   icon: string;
   gradient: string;
   light: string;
+  /** Düz renk — tablo/PDF'te oturum şeridi ve kenarlıklarda kullanılır. */
+  accent: string;
 }[] = [
-  { code: 'MORNING', label: 'Sabah', icon: '☀', gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', light: '#fffbeb' },
-  { code: 'AFTERNOON', label: 'Öğle', icon: '🌤', gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)', light: '#eff6ff' },
-  { code: 'EVENING', label: 'Akşam', icon: '🌙', gradient: 'linear-gradient(135deg, #6366f1, #4f46e5)', light: '#eef2ff' },
+  { code: 'MORNING', label: 'Sabah', icon: '☀', gradient: 'linear-gradient(135deg, #f59e0b, #d97706)', light: '#fffbeb', accent: '#d97706' },
+  { code: 'AFTERNOON', label: 'Öğle', icon: '🌤', gradient: 'linear-gradient(135deg, #3b82f6, #2563eb)', light: '#eff6ff', accent: '#2563eb' },
+  { code: 'EVENING', label: 'Akşam', icon: '🌙', gradient: 'linear-gradient(135deg, #6366f1, #4f46e5)', light: '#eef2ff', accent: '#4f46e5' },
 ];
 
 export type GunlukDersSaatleri = Record<string, DaySchedule>;
@@ -315,55 +317,83 @@ export function updatePeriodBlock(
 export interface DersProgramiExportColumn {
   key: string;
   label: string;
+  /** Backend ExportColumn tipi — hizalama ve sayı biçimini belirler. */
+  type?: 'text' | 'integer';
+}
+
+/** Excel/CSV hücresi: "09:00 - 09:40". Boş hücre gerçekten boş kalır ki filtreler çalışsın. */
+function exportRange(baslangic?: string, bitis?: string): string {
+  const from = (baslangic || '').slice(0, 5);
+  const to = (bitis || '').slice(0, 5);
+  return from && to ? `${from} - ${to}` : '';
 }
 
 /**
- * Haftalık çalışma saatleri — kurumsal Excel/CSV dışa aktarma için pivot tablo.
- * Satırlar: oturum + etüt no (örn. "Sabah — 1. Etüt") ve oturumlar arası aralar
- * (örn. "🍽 Öğle Arası"); sütunlar: sadece aktif (kapalı olmayan) günler.
+ * Haftalık çalışma saatleri — kurumsal Excel/CSV dışa aktarma tablosu.
+ *
+ * Ekrandaki matrisin veri hâli: her satır bir etüt ya da ara, her aktif gün bir
+ * sütun. Oturum/Bölüm/Tür ayrı sütunlarda tutulur (tek bir "☀ Sabah — 1. Etüt"
+ * metnine sıkıştırılmaz) ki Excel'de süzme, gruplama ve pivot yapılabilsin.
  */
 export function buildDersProgramiExportTable(
   gunluk: GunlukDersSaatleri,
   gunAktiflik: Record<string, GunAktiflik>,
-): { columns: DersProgramiExportColumn[]; rows: Record<string, string>[] } {
+): { columns: DersProgramiExportColumn[]; rows: Record<string, string | number>[] } {
   const activeDays = getActiveDayDefs(gunAktiflik);
   const columns: DersProgramiExportColumn[] = [
-    { key: 'periyot', label: 'Oturum' },
-    ...activeDays.map((d) => ({ key: d.key, label: d.label })),
+    { key: 'oturum', label: 'Oturum' },
+    { key: 'bolum', label: 'Bölüm' },
+    { key: 'tur', label: 'Tür' },
+    { key: 'sure', label: 'Süre (dk)', type: 'integer' },
+    ...activeDays.map((d) => ({ key: d.key, label: d.label, type: 'text' as const })),
   ];
 
-  const rows: Record<string, string>[] = [];
+  const rows: Record<string, string | number>[] = [];
 
   PERIOD_DEFS.forEach((period, periodIdx) => {
     const maxCount = activeDays.reduce(
       (max, d) => Math.max(max, gunluk[d.key]?.[period.code]?.dersler?.length || 0),
       0,
     );
+
     for (let i = 0; i < maxCount; i++) {
-      const row: Record<string, string> = {
-        periyot: `${period.icon} ${period.label} — ${i + 1}. Etüt`,
+      const row: Record<string, string | number> = {
+        oturum: period.label,
+        bolum: `${i + 1}. Etüt`,
+        tur: 'Etüt',
+        sure: '',
       };
       for (const day of activeDays) {
         const ders = gunluk[day.key]?.[period.code]?.dersler?.[i];
-        row[day.key] = ders
-          ? `${(ders.baslangic || '').slice(0, 5)} – ${(ders.bitis || '').slice(0, 5)}`
-          : '—';
+        row[day.key] = exportRange(ders?.baslangic, ders?.bitis);
+        if (!row.sure && ders) {
+          const from = timeToMinutes(ders.baslangic);
+          const to = timeToMinutes(ders.bitis);
+          if (from !== null && to !== null && to > from) row.sure = to - from;
+        }
       }
       rows.push(row);
     }
 
     const breakDef = SESSION_BREAK_DEFS.find((b) => b.afterCode === period.code);
-    const nextPeriod = PERIOD_DEFS[periodIdx + 1];
-    if (breakDef && nextPeriod) {
-      const breakRow: Record<string, string> = { periyot: `${breakDef.icon} ${breakDef.label}` };
+    if (breakDef && PERIOD_DEFS[periodIdx + 1]) {
+      const breakRow: Record<string, string | number> = {
+        oturum: period.label,
+        bolum: breakDef.label,
+        tur: 'Ara',
+        sure: '',
+      };
       let hasAnyBreak = false;
       for (const day of activeDays) {
         const brk = getSessionBreak(gunluk[day.key], breakDef.afterCode, breakDef.beforeCode);
+        breakRow[day.key] = brk ? exportRange(brk.baslangic, brk.bitis) : '';
         if (brk) {
           hasAnyBreak = true;
-          breakRow[day.key] = `${brk.baslangic} – ${brk.bitis}`;
-        } else {
-          breakRow[day.key] = '—';
+          if (!breakRow.sure) {
+            const from = timeToMinutes(brk.baslangic);
+            const to = timeToMinutes(brk.bitis);
+            if (from !== null && to !== null && to > from) breakRow.sure = to - from;
+          }
         }
       }
       if (hasAnyBreak) rows.push(breakRow);
@@ -377,4 +407,301 @@ export function addMinutes(time: string, minutes: number): string {
   const [h, m] = time.split(':').map(Number);
   const total = h * 60 + m + minutes;
   return `${String(Math.floor(total / 60) % 24).padStart(2, '0')}:${String(total % 60).padStart(2, '0')}`;
+}
+
+/** 'HH:MM' → gün başından itibaren dakika. Geçersiz girdide null. */
+export function timeToMinutes(time: string | undefined | null): number | null {
+  if (!time) return null;
+  const [h, m] = time.slice(0, 5).split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+export function minutesToTime(total: number): string {
+  const safe = ((Math.round(total) % 1440) + 1440) % 1440;
+  return `${String(Math.floor(safe / 60)).padStart(2, '0')}:${String(safe % 60).padStart(2, '0')}`;
+}
+
+/**
+ * Elle yazılan saati normalize eder: "930", "9:30", "0930", "9.30" → "09:30".
+ * Anlaşılamayan girdide null döner (çağıran eski değere geri döner).
+ */
+export function parseTimeInput(raw: string): string | null {
+  const digits = (raw || '').replace(/\D/g, '');
+  if (digits.length < 3 || digits.length > 4) return null;
+  const hh = Number(digits.slice(0, digits.length - 2));
+  const mm = Number(digits.slice(-2));
+  if (!Number.isFinite(hh) || !Number.isFinite(mm) || hh > 23 || mm > 59) return null;
+  return `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+}
+
+/** "1 sa 30 dk" / "45 dk" */
+export function formatDuration(dakika: number): string {
+  const saat = Math.floor(dakika / 60);
+  const kalan = dakika % 60;
+  if (saat > 0) return kalan ? `${saat} sa ${kalan} dk` : `${saat} sa`;
+  return `${kalan} dk`;
+}
+
+// ─────────────────────────────────────────────────────────────
+// Otomatik program üretimi
+// ─────────────────────────────────────────────────────────────
+
+/** Bir oturumun (sabah/öğle/akşam) çalışma penceresi. */
+export interface SessionWindow {
+  enabled: boolean;
+  start: string;
+  end: string;
+}
+
+export interface AutoScheduleConfig {
+  windows: Record<DaySessionCode, SessionWindow>;
+  /** Tek bir etüdün süresi (dk). */
+  dersSuresiDk: number;
+  /** Etütler arası teneffüs (dk). */
+  teneffusDk: number;
+  /** Hangi günlere uygulanacak. */
+  days: string[];
+}
+
+export const DEFAULT_AUTO_CONFIG: AutoScheduleConfig = {
+  windows: {
+    MORNING: { enabled: true, start: '09:00', end: '12:00' },
+    AFTERNOON: { enabled: true, start: '13:00', end: '16:00' },
+    EVENING: { enabled: false, start: '17:00', end: '20:00' },
+  },
+  dersSuresiDk: 40,
+  teneffusDk: 10,
+  days: ['0', '1', '2', '3', '4'],
+};
+
+/** Üretim sırasında bozuk girdinin sonsuz döngüye dönmemesi için üst sınır. */
+const MAX_SLOTS_PER_SESSION = 24;
+
+/**
+ * Bir oturum penceresini etütlere böler: pencereye sığdığı sürece
+ * `dersSuresiDk` uzunluğunda etüt açar, aralarına `teneffusDk` bırakır.
+ */
+export function buildSessionSlots(
+  window: SessionWindow,
+  dersSuresiDk: number,
+  teneffusDk: number,
+): { baslangic: string; bitis: string }[] {
+  if (!window?.enabled) return [];
+  const start = timeToMinutes(window.start);
+  const end = timeToMinutes(window.end);
+  const sure = Math.round(dersSuresiDk);
+  if (start === null || end === null || sure <= 0 || end <= start) return [];
+
+  const ara = Math.max(0, Math.round(teneffusDk));
+  const slots: { baslangic: string; bitis: string }[] = [];
+  let cursor = start;
+  while (cursor + sure <= end && slots.length < MAX_SLOTS_PER_SESSION) {
+    slots.push({ baslangic: minutesToTime(cursor), bitis: minutesToTime(cursor + sure) });
+    cursor += sure + ara;
+  }
+  return slots;
+}
+
+function autoDaySchedule(config: AutoScheduleConfig): DaySchedule {
+  const schedule = emptyDaySchedule();
+  for (const code of PERIOD_CODES) {
+    const slots = buildSessionSlots(config.windows[code], config.dersSuresiDk, config.teneffusDk);
+    schedule[code] = {
+      ders_sayisi: slots.length,
+      ders_suresi_dk: config.dersSuresiDk,
+      dersler: slots.map((slot, idx) => ({ ders_no: idx + 1, ...slot })),
+      molalar: [],
+    };
+  }
+  return schedule;
+}
+
+/**
+ * Seçilen günlere otomatik program yazar. Seçilmeyen günler `base`'den olduğu gibi
+ * korunur, böylece hafta içi otomatik üretilip cumartesi elde düzenlenebilir.
+ */
+export function buildAutoSchedule(
+  config: AutoScheduleConfig,
+  base?: GunlukDersSaatleri,
+): GunlukDersSaatleri {
+  const targetDays = new Set(config.days);
+  const generated = autoDaySchedule(config);
+  return Object.fromEntries(DAY_DEFS.map((day) => [
+    day.key,
+    targetDays.has(day.key)
+      ? cloneDaySchedule(generated)
+      : cloneDaySchedule(base?.[day.key] || emptyDaySchedule()),
+  ])) as GunlukDersSaatleri;
+}
+
+export interface AutoBreakPreview extends SessionBreak {
+  label: string;
+  icon: string;
+}
+
+/**
+ * Öğle/akşam arası, ayrıca girilmez: bir oturumun son etüdü ile bir sonraki
+ * oturumun ilk etüdü arasında kalan boşluktan türetilir.
+ */
+export function previewAutoBreaks(config: AutoScheduleConfig): AutoBreakPreview[] {
+  const day = autoDaySchedule(config);
+  return SESSION_BREAK_DEFS.flatMap((def) => {
+    const brk = getSessionBreak(day, def.afterCode, def.beforeCode);
+    return brk ? [{ ...brk, label: def.label, icon: def.icon }] : [];
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Tablo matrisi — satır: etüt/ara, sütun: gün
+// ─────────────────────────────────────────────────────────────
+
+export interface ScheduleMatrixCell {
+  baslangic: string;
+  bitis: string;
+}
+
+export interface ScheduleMatrixRow {
+  kind: 'etut' | 'ara';
+  periodCode: DaySessionCode;
+  /** Oturum içindeki etüt sırası; ara satırlarında -1. */
+  slotIndex: number;
+  label: string;
+  cells: Record<string, ScheduleMatrixCell | null>;
+}
+
+export interface ScheduleMatrixSection {
+  code: DaySessionCode;
+  label: string;
+  icon: string;
+  gradient: string;
+  light: string;
+  accent: string;
+  rows: ScheduleMatrixRow[];
+  /** Bu oturumdan sonraki ara (öğle/akşam arası); yoksa null. */
+  breakRow: ScheduleMatrixRow | null;
+}
+
+/**
+ * Haftalık programı "satır = etüt/ara, sütun = gün" tablosuna çevirir.
+ * Günler arasında etüt sayısı farklıysa eksik hücreler null kalır.
+ */
+export function buildScheduleMatrix(
+  gunluk: GunlukDersSaatleri,
+  days: readonly { key: string }[],
+): ScheduleMatrixSection[] {
+  return PERIOD_DEFS.map((period, periodIdx) => {
+    const slotCount = days.reduce(
+      (max, day) => Math.max(max, gunluk[day.key]?.[period.code]?.dersler?.length || 0),
+      0,
+    );
+
+    const rows: ScheduleMatrixRow[] = [];
+    for (let i = 0; i < slotCount; i++) {
+      const cells: Record<string, ScheduleMatrixCell | null> = {};
+      for (const day of days) {
+        const ders = gunluk[day.key]?.[period.code]?.dersler?.[i];
+        cells[day.key] = ders
+          ? { baslangic: (ders.baslangic || '').slice(0, 5), bitis: (ders.bitis || '').slice(0, 5) }
+          : null;
+      }
+      rows.push({ kind: 'etut', periodCode: period.code, slotIndex: i, label: `${i + 1}. Etüt`, cells });
+    }
+
+    const breakDef = SESSION_BREAK_DEFS.find((b) => b.afterCode === period.code);
+    let breakRow: ScheduleMatrixRow | null = null;
+    if (breakDef && PERIOD_DEFS[periodIdx + 1]) {
+      const cells: Record<string, ScheduleMatrixCell | null> = {};
+      let hasAny = false;
+      for (const day of days) {
+        const brk = getSessionBreak(gunluk[day.key], breakDef.afterCode, breakDef.beforeCode);
+        cells[day.key] = brk ? { baslangic: brk.baslangic, bitis: brk.bitis } : null;
+        if (brk) hasAny = true;
+      }
+      if (hasAny) {
+        breakRow = {
+          kind: 'ara',
+          periodCode: period.code,
+          slotIndex: -1,
+          label: breakDef.label,
+          cells,
+        };
+      }
+    }
+
+    return { ...period, rows, breakRow };
+  });
+}
+
+// ─────────────────────────────────────────────────────────────
+// Satır bazlı düzenleme (matris hücreleri)
+// ─────────────────────────────────────────────────────────────
+
+/** Belirli bir günün belirli etüdünün başlangıç/bitiş saatini değiştirir. */
+export function setSlotTime(
+  gunluk: GunlukDersSaatleri,
+  dayKey: string,
+  periodCode: DaySessionCode,
+  slotIndex: number,
+  field: 'baslangic' | 'bitis',
+  value: string,
+): GunlukDersSaatleri {
+  const block = gunluk[dayKey]?.[periodCode] || emptyPeriodBlock();
+  const dersler = block.dersler.map((d, i) => (i === slotIndex ? { ...d, [field]: value } : d));
+  return updatePeriodBlock(gunluk, dayKey, periodCode, { ...block, dersler });
+}
+
+/**
+ * Verilen günlere bu oturum için bir etüt daha ekler. Saat, günün son etüdünün
+ * bitişine `teneffusDk` eklenerek bulunur; ilk etütte oturumun varsayılan başlangıcı kullanılır.
+ */
+export function appendSlotToDays(
+  gunluk: GunlukDersSaatleri,
+  dayKeys: string[],
+  periodCode: DaySessionCode,
+  dersSuresiDk = 40,
+  teneffusDk = 10,
+): GunlukDersSaatleri {
+  const fallbackStart = DEFAULT_AUTO_CONFIG.windows[periodCode].start;
+  let next = gunluk;
+  for (const dayKey of dayKeys) {
+    const block = next[dayKey]?.[periodCode] || emptyPeriodBlock();
+    const last = block.dersler[block.dersler.length - 1];
+    const start = last?.bitis ? addMinutes(last.bitis, teneffusDk) : fallbackStart;
+    const dersler = [
+      ...block.dersler,
+      { ders_no: block.dersler.length + 1, baslangic: start, bitis: addMinutes(start, dersSuresiDk) },
+    ];
+    next = updatePeriodBlock(next, dayKey, periodCode, { ...block, dersler });
+  }
+  return next;
+}
+
+/** Verilen günlerde bu oturumun `slotIndex`'inci etüdünü siler. */
+export function removeSlotFromDays(
+  gunluk: GunlukDersSaatleri,
+  dayKeys: string[],
+  periodCode: DaySessionCode,
+  slotIndex: number,
+): GunlukDersSaatleri {
+  let next = gunluk;
+  for (const dayKey of dayKeys) {
+    const block = next[dayKey]?.[periodCode] || emptyPeriodBlock();
+    if (slotIndex >= block.dersler.length) continue;
+    const dersler = block.dersler
+      .filter((_, i) => i !== slotIndex)
+      .map((d, i) => ({ ...d, ders_no: i + 1 }));
+    next = updatePeriodBlock(next, dayKey, periodCode, { ...block, dersler });
+  }
+  return next;
+}
+
+/** Tek bir günün tek etüdünü siler (matris hücresindeki ✕). */
+export function removeSlotCell(
+  gunluk: GunlukDersSaatleri,
+  dayKey: string,
+  periodCode: DaySessionCode,
+  slotIndex: number,
+): GunlukDersSaatleri {
+  return removeSlotFromDays(gunluk, [dayKey], periodCode, slotIndex);
 }

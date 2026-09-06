@@ -13,7 +13,7 @@ from apps.kutuphane.application.service import (
     LibraryService, SeatService, LockerService,
     AssignmentService, AttendanceService,
     TemporarySeatingService,
-    SubeDersProgramiService, OgrenciIzinService
+    SubeDersProgramiService, DersProgramiSablonuService, OgrenciIzinService
 )
 from apps.kutuphane.infrastructure.repository import (
     LibraryRepository, SeatRepository, LockerRepository,
@@ -21,7 +21,7 @@ from apps.kutuphane.infrastructure.repository import (
     LockerAssignmentRepository, AttendanceRepository,
     TemporarySeatingRepository,
     AuditLogRepository,
-    SubeDersProgramiRepository, OgrenciIzinRepository
+    SubeDersProgramiRepository, DersProgramiSablonuRepository, OgrenciIzinRepository
 )
 from apps.kutuphane.domain.models import (
     Library, Seat, Locker, SessionDefinition,
@@ -2331,8 +2331,14 @@ def api_ders_programi_export(request):
 
     from shared.export.style_manager import ExportColumn, ExportStat, ReportMeta
 
+    # Frontend sütun tipi verebilir (ör. "Süre (dk)" -> integer); bilinmeyen tip metne düşer.
+    allowed_types = {'text', 'integer', 'decimal', 'date', 'datetime'}
     columns = [
-        ExportColumn(key=c.get('key'), label=c.get('label') or c.get('key'), type='text')
+        ExportColumn(
+            key=c.get('key'),
+            label=c.get('label') or c.get('key'),
+            type=c.get('type') if c.get('type') in allowed_types else 'text',
+        )
         for c in raw_columns if c.get('key')
     ]
 
@@ -2421,6 +2427,99 @@ def api_ders_programi_detail(request, pk):
             return JsonResponse({'success': True, 'message': 'Program silindi'})
         except ValueError as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+    return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+
+def _serialize_ders_programi_sablonu(sablon):
+    return {
+        'id': str(sablon.id),
+        'ad': sablon.ad,
+        'aciklama': sablon.aciklama,
+        'ders_saatleri': sablon.ders_saatleri,
+        'gun_bazli_aktiflik': sablon.gun_bazli_aktiflik,
+        'created_at': sablon.created_at.isoformat() if sablon.created_at else '',
+        'updated_at': sablon.updated_at.isoformat() if sablon.updated_at else '',
+    }
+
+
+@csrf_exempt
+def api_ders_programi_sablon_list_create(request):
+    """
+    GET  /kutuphane/api/ders-programi/sablonlar/ — Kurumun adlandırılmış şablonları
+    POST /kutuphane/api/ders-programi/sablonlar/ — Ekrandaki programı adıyla kaydet
+    Body: { ad, aciklama?, ders_saatleri, gun_bazli_aktiflik? }
+    """
+    kurum_id = _get_kurum_id(request)
+    if not kurum_id:
+        return JsonResponse({'success': False, 'error': 'Kurum ID gerekli'}, status=400)
+
+    service = DersProgramiSablonuService()
+
+    if request.method == 'GET':
+        return JsonResponse({
+            'success': True,
+            'data': [_serialize_ders_programi_sablonu(s) for s in service.list_sablonlar(kurum_id)],
+        })
+
+    if request.method == 'POST':
+        denied = require_infra_admin(request)
+        if denied:
+            return denied
+        try:
+            body = json.loads(request.body)
+            sablon = service.create_sablon(kurum_id, body, _get_user_id(request))
+            return JsonResponse(
+                {'success': True, 'data': _serialize_ders_programi_sablonu(sablon)}, status=201,
+            )
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı.'}, status=400)
+        except (KeyError, ValueError) as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
+    return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+
+@csrf_exempt
+def api_ders_programi_sablon_detail(request, pk):
+    """
+    PUT    /kutuphane/api/ders-programi/sablonlar/<pk>/ — Yeniden adlandır / üzerine yaz
+    DELETE /kutuphane/api/ders-programi/sablonlar/<pk>/ — Sil
+    """
+    kurum_id = _get_kurum_id(request)
+    if not kurum_id:
+        return JsonResponse({'success': False, 'error': 'Kurum ID gerekli'}, status=400)
+
+    service = DersProgramiSablonuService()
+
+    if request.method == 'GET':
+        sablon = DersProgramiSablonuRepository.get_by_id(pk, kurum_id)
+        if not sablon:
+            return JsonResponse({'success': False, 'error': 'Şablon bulunamadı'}, status=404)
+        return JsonResponse({'success': True, 'data': _serialize_ders_programi_sablonu(sablon)})
+
+    denied = require_infra_admin(request)
+    if denied:
+        return denied
+
+    if request.method == 'PUT':
+        try:
+            body = json.loads(request.body)
+            sablon = service.update_sablon(kurum_id, pk, body, _get_user_id(request))
+            return JsonResponse({'success': True, 'data': _serialize_ders_programi_sablonu(sablon)})
+        except json.JSONDecodeError:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı.'}, status=400)
+        except ValueError as e:
+            status = 404 if 'bulunamadı' in str(e) else 400
+            return JsonResponse({'success': False, 'error': str(e)}, status=status)
+
+    if request.method == 'DELETE':
+        try:
+            service.delete_sablon(kurum_id, pk, _get_user_id(request))
+            return JsonResponse({'success': True, 'message': 'Şablon silindi'})
+        except ValueError as e:
+            status = 404 if 'bulunamadı' in str(e) else 400
+            return JsonResponse({'success': False, 'error': str(e)}, status=status)
 
     return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
