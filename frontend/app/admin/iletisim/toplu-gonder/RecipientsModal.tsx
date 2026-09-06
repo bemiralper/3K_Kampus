@@ -77,8 +77,8 @@ export default function RecipientsModal({
     onChangeQuery(selected ? unexcludePerson(query, target.kind, target.id) : excludePerson(query, target.kind, target.id));
   };
 
-  const includeHit = (hit: BulkRecipientHit) => {
-    onChangeQuery(includePerson(query, hit.kind, hit.id));
+  const includeHits = (hits: BulkRecipientHit[]) => {
+    onChangeQuery(hits.reduce((acc, hit) => includePerson(acc, hit.kind, hit.id), query));
   };
 
   const pageSelected = rows.filter((row) => !excluded.has(rowKey(row)));
@@ -113,7 +113,7 @@ export default function RecipientsModal({
         <PersonPicker
           allowPersonel={allowPersonel}
           excludeKeys={pickedKeys}
-          onPick={includeHit}
+          onPickMany={includeHits}
         />
 
         {loading ? (

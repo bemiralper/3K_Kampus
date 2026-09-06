@@ -1862,7 +1862,7 @@ export async function fetchAudienceRecipients(
 export async function searchAudiencePeople(
   q: string,
   options?: { kinds?: AudiencePersonType[]; includePersonel?: boolean },
-): Promise<{ results: BulkRecipientHit[]; query: string }> {
+): Promise<{ results: BulkRecipientHit[]; groups?: BulkRecipientGroup[]; query: string }> {
   const search = new URLSearchParams();
   search.set('q', q);
   (options?.kinds || []).forEach((k) => search.append('kind', k));
@@ -1936,6 +1936,21 @@ export interface BulkRecipientHit {
   ogrenci_id?: number;
   ogrenci_name?: string;
   veli_turu_display?: string;
+  /** "Öğrenci" / "Anne" / "Baba" / "Personel" — grup içinde satırı ayırt eder. */
+  role?: string;
+  /** Aynı aileye ait satırlar aynı anahtarı taşır (ör. `ogrenci:12`). */
+  group_key?: string;
+  /** false ise satır aramaya değil, aile genişletmesine takılmıştır. */
+  matched?: boolean;
+}
+
+/** Arama sonuçlarının aile (öğrenci + velileri) bazında gruplanmış hâli. */
+export interface BulkRecipientGroup {
+  key: string;
+  kind: 'aile' | 'personel';
+  label: string;
+  meta?: string;
+  items: BulkRecipientHit[];
 }
 
 export async function searchBulkRecipients(

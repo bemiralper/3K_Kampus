@@ -351,9 +351,16 @@ export default function TopluGonderClient({
                   <PersonPicker
                     allowPersonel={!isCoach}
                     excludeKeys={pickedKeys}
-                    onPick={(hit) => {
-                      setQuery((prev) => includePerson(prev, hit.kind, hit.id));
-                      setPickedLabels((prev) => ({ ...prev, [`${hit.kind}:${hit.id}`]: hit }));
+                    onPickMany={(hits) => {
+                      setQuery((prev) => hits.reduce(
+                        (acc, hit) => includePerson(acc, hit.kind, hit.id),
+                        prev,
+                      ));
+                      setPickedLabels((prev) => {
+                        const next = { ...prev };
+                        for (const hit of hits) next[`${hit.kind}:${hit.id}`] = hit;
+                        return next;
+                      });
                     }}
                   />
 

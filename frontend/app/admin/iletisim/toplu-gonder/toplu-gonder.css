@@ -614,8 +614,102 @@
   border: 1px solid var(--tg-line);
   border-radius: 12px;
   background: #fff;
-  max-height: 220px;
+  max-height: 340px;
   overflow: auto;
+  position: relative;
+}
+
+/* ── Aile grubu: öğrenci başlığı + altında öğrenci/veli satırları ── */
+.tg-fam + .tg-fam {
+  border-top: 1px solid var(--tg-line);
+}
+
+.tg-fam-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 10px 5px;
+  position: sticky;
+  top: 0;
+  background: linear-gradient(#fff 70%, rgba(255, 255, 255, 0));
+  z-index: 1;
+}
+
+.tg-fam-title {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--tg-ink);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tg-fam-title small {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--tg-muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.tg-fam-all {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--tg-blue);
+  cursor: pointer;
+}
+
+.tg-fam-all:hover { text-decoration: underline; }
+
+.tg-fam-row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  margin: 0 6px 4px;
+  width: calc(100% - 12px);
+  border: 1px solid transparent;
+}
+
+.tg-fam-row.is-on {
+  background: var(--tg-blue-soft);
+  border-color: var(--tg-blue);
+}
+
+.tg-fam-row .tg-check { flex-shrink: 0; }
+
+.tg-fam-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.tg-people-actions {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #fff;
+  border-top: 1px solid var(--tg-line);
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--tg-ink);
+}
+
+.tg-people-actions > div {
+  display: flex;
+  gap: 8px;
 }
 
 .tg-field {

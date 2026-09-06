@@ -103,13 +103,25 @@ class AudienceRecipientsView(CampaignBulkView):
 
 
 class AudienceSearchView(CampaignBulkView):
+    """Toplu gönderim — kişi araması.
+
+    Eşleşen öğrencinin velileri ve eşleşen velinin öğrencisi de sonuca girer, böylece
+    "zeynep" araması Zeynep'i ve Zeynep'in velisini birlikte döndürür. Satırlar
+    ``group_key`` ile aile bazında gruplanır; ``groups`` alanı aynı satırları hazır
+    gruplanmış hâlde verir.
+    """
+
+    #: Aile grubu başına dönülecek azami satır sayısı guard'ı.
+    MAX_FAMILIES = 20
+    MAX_PERSONEL = 20
+
     def get(self, request):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
         q = (request.query_params.get('q') or '').strip()
         if len(q) < 2:
-            return Response({'results': [], 'query': q})
+            return Response({'results': [], 'groups': [], 'query': q})
 
         from apps.coaching.services.coach_access import get_coach_profile, is_resource_admin
 
@@ -128,51 +140,128 @@ class AudienceSearchView(CampaignBulkView):
             include_personel = False
 
         kinds = request.query_params.getlist('kind') or ['ogrenci', 'veli', 'personel']
-        results = []
         from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
 
         name_q = Q(ad__icontains=q) | Q(soyad__icontains=q)
-        if 'ogrenci' in kinds:
-            oqs = Ogrenci.objects.filter(kurum_id=kurum_id).filter(name_q | Q(telefon__icontains=q))
+
+        def scope_students(qs):
             if sube_id:
-                oqs = oqs.filter(sube_id=sube_id)
+                qs = qs.filter(sube_id=sube_id)
             if allowed is not None:
-                oqs = oqs.filter(id__in=allowed)
-            kayit_map = {}
+                qs = qs.filter(id__in=allowed)
+            return qs
+
+        def scope_veliler(qs):
+            if sube_id:
+                qs = qs.filter(ogrenci__sube_id=sube_id)
+            if allowed is not None:
+                qs = qs.filter(ogrenci_id__in=allowed)
+            return qs
+
+        wants_family = 'ogrenci' in kinds or 'veli' in kinds
+        # Öğrenci araması, 'ogrenci' istenmese bile yapılır: veli genişletmesinin çıpası odur.
+        matched_students = []
+        if wants_family:
+            matched_students = list(
+                scope_students(
+                    Ogrenci.objects.filter(kurum_id=kurum_id).filter(name_q | Q(telefon__icontains=q))
+                ).order_by('ad', 'soyad')[:self.MAX_FAMILIES]
+            )
+        matched_veliler = []
+        if 'veli' in kinds:
+            matched_veliler = list(
+                scope_veliler(
+                    OgrenciVeli.objects.filter(ogrenci__kurum_id=kurum_id).filter(
+                        name_q | Q(telefon__icontains=q)
+                    )
+                ).select_related('ogrenci').order_by('ad', 'soyad')[:self.MAX_FAMILIES]
+            )
+
+        # Aile sırası: önce doğrudan eşleşen öğrenciler, sonra eşleşen velilerin öğrencileri.
+        family_ids: list[int] = []
+        seen_family: set[int] = set()
+        for ogrenci in matched_students:
+            if ogrenci.id not in seen_family:
+                seen_family.add(ogrenci.id)
+                family_ids.append(ogrenci.id)
+        for veli in matched_veliler:
+            if veli.ogrenci_id and veli.ogrenci_id not in seen_family:
+                seen_family.add(veli.ogrenci_id)
+                family_ids.append(veli.ogrenci_id)
+        family_ids = family_ids[:self.MAX_FAMILIES]
+
+        students_by_id = {o.id: o for o in matched_students if o.id in seen_family}
+        missing_ids = [oid for oid in family_ids if oid not in students_by_id]
+        if missing_ids:
+            for ogrenci in scope_students(Ogrenci.objects.filter(kurum_id=kurum_id, id__in=missing_ids)):
+                students_by_id[ogrenci.id] = ogrenci
+
+        sinif_map: dict[int, str] = {}
+        if family_ids:
+            kqs = OgrenciKayit.objects.filter(ogrenci_id__in=family_ids).select_related('sinif')
             year_id = _egitim_yili_id(request)
-            kqs = OgrenciKayit.objects.filter(ogrenci__in=oqs[:40]).select_related('sinif')
             if year_id:
                 kqs = kqs.filter(egitim_yili_id=year_id)
-            for k in kqs:
-                kayit_map[k.ogrenci_id] = k.sinif.ad if k.sinif_id else ''
-            for o in oqs[:20]:
-                results.append({
-                    'kind': 'ogrenci',
-                    'id': o.id,
-                    'label': o.tam_ad,
-                    'phone': o.telefon,
-                    'sinif': kayit_map.get(o.id, ''),
-                    'meta': kayit_map.get(o.id, ''),
-                })
+            for kayit in kqs:
+                sinif_map[kayit.ogrenci_id] = kayit.sinif.ad if kayit.sinif_id else ''
 
-        if 'veli' in kinds:
-            vqs = OgrenciVeli.objects.filter(ogrenci__kurum_id=kurum_id).filter(
-                name_q | Q(telefon__icontains=q)
-            ).select_related('ogrenci')
-            if sube_id:
-                vqs = vqs.filter(ogrenci__sube_id=sube_id)
-            if allowed is not None:
-                vqs = vqs.filter(ogrenci_id__in=allowed)
-            for v in vqs[:20]:
-                results.append({
-                    'kind': 'veli',
-                    'id': v.id,
-                    'label': v.tam_ad,
-                    'phone': v.telefon,
-                    'ogrenci_id': v.ogrenci_id,
-                    'ogrenci_name': v.ogrenci.tam_ad,
-                    'meta': f'{v.get_veli_turu_display()} · {v.ogrenci.tam_ad}',
+        veliler_by_student: dict[int, list] = {}
+        if family_ids and 'veli' in kinds:
+            vqs = scope_veliler(
+                OgrenciVeli.objects.filter(ogrenci_id__in=family_ids, ogrenci__kurum_id=kurum_id)
+            ).select_related('ogrenci').order_by('-varsayilan', 'ad', 'soyad')
+            for veli in vqs:
+                veliler_by_student.setdefault(veli.ogrenci_id, []).append(veli)
+
+        matched_keys = {('ogrenci', o.id) for o in matched_students}
+        matched_keys |= {('veli', v.id) for v in matched_veliler}
+
+        groups: list[dict] = []
+        results: list[dict] = []
+
+        for ogrenci_id in family_ids:
+            ogrenci = students_by_id.get(ogrenci_id)
+            if ogrenci is None:
+                continue
+            sinif = sinif_map.get(ogrenci_id, '')
+            group_key = f'ogrenci:{ogrenci_id}'
+            items: list[dict] = []
+            if 'ogrenci' in kinds:
+                items.append({
+                    'kind': 'ogrenci',
+                    'id': ogrenci.id,
+                    'label': ogrenci.tam_ad,
+                    'phone': (ogrenci.telefon or '').strip(),
+                    'sinif': sinif,
+                    'meta': sinif,
+                    'role': 'Öğrenci',
+                    'group_key': group_key,
+                    'matched': ('ogrenci', ogrenci.id) in matched_keys,
                 })
+            for veli in veliler_by_student.get(ogrenci_id, []):
+                rol = veli.get_veli_turu_display()
+                items.append({
+                    'kind': 'veli',
+                    'id': veli.id,
+                    'label': veli.tam_ad,
+                    'phone': (veli.telefon or '').strip(),
+                    'ogrenci_id': veli.ogrenci_id,
+                    'ogrenci_name': ogrenci.tam_ad,
+                    'meta': f'{rol} · {ogrenci.tam_ad}',
+                    'role': rol,
+                    'group_key': group_key,
+                    'matched': ('veli', veli.id) in matched_keys,
+                })
+            if not items:
+                continue
+            groups.append({
+                'key': group_key,
+                'kind': 'aile',
+                'label': ogrenci.tam_ad,
+                'meta': sinif,
+                'items': items,
+            })
+            results.extend(items)
 
         if include_personel and 'personel' in kinds:
             from apps.personel.domain.models import Personel
@@ -182,16 +271,27 @@ class AudienceSearchView(CampaignBulkView):
             )
             if sube_id:
                 pqs = pqs.filter(sube_id=sube_id)
-            for p in pqs[:20]:
-                results.append({
+            personel_items = [{
+                'kind': 'personel',
+                'id': p.id,
+                'label': p.tam_ad,
+                'phone': (p.cep_telefon or p.telefon or '').strip(),
+                'meta': 'Personel',
+                'role': 'Personel',
+                'group_key': 'personel',
+                'matched': True,
+            } for p in pqs.order_by('ad', 'soyad')[:self.MAX_PERSONEL]]
+            if personel_items:
+                groups.append({
+                    'key': 'personel',
                     'kind': 'personel',
-                    'id': p.id,
-                    'label': p.tam_ad,
-                    'phone': p.cep_telefon or p.telefon,
-                    'meta': 'Personel',
+                    'label': 'Personel',
+                    'meta': '',
+                    'items': personel_items,
                 })
+                results.extend(personel_items)
 
-        return Response({'results': results, 'query': q})
+        return Response({'results': results, 'groups': groups, 'query': q})
 
 
 class SavedAudienceListCreateView(CampaignBulkView):
