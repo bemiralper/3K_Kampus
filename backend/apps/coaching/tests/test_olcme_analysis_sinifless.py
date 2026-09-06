@@ -81,12 +81,14 @@ class OlcmeAnalysisSiniflessKayitTest(TestCase):
         self.assertEqual(res.status_code, 200)
         row = res.json()['rankings'][0]
         self.assertEqual(row['sinif'], '')
+        self.assertFalse(row['has_class'])
 
     def test_students_ok_without_sinif(self):
         res = self.client.get(f'{self.base}/students/', **self.headers)
         self.assertEqual(res.status_code, 200)
         row = res.json()['students'][0]
         self.assertEqual(row['sinif'], '')
+        self.assertFalse(row['has_class'])
 
     def test_student_detail_ok_without_sinif(self):
         res = self.client.get(
@@ -96,6 +98,8 @@ class OlcmeAnalysisSiniflessKayitTest(TestCase):
         self.assertEqual(res.status_code, 200)
         data = res.json()
         self.assertEqual(data['sinif'], '')
+        self.assertFalse(data['has_class'])
+        self.assertEqual(data['sinif_meta_label'], 'Program')
         self.assertIn('exam_name', data)
         self.assertIn('answer_grids', data)
         self.assertIn('topic_blocks', data)
@@ -107,3 +111,103 @@ class OlcmeAnalysisSiniflessKayitTest(TestCase):
         self.assertEqual(res.status_code, 200)
         names = {c['sinif_name'] for c in res.json()['classes']}
         self.assertIn('Sınıfsız', names)
+
+    def _attach_library(self):
+        from apps.egitim_paketleri.models import EkHizmet
+        from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+        hizmet = EkHizmet.objects.create(
+            ad='Kütüphane', kod='KUT_TEST', hizmet_turu='kutuphane',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+            brut_fiyat=0, aktif_mi=True,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.ogrenci, ek_hizmet=hizmet, egitim_yili=self.egitim_yili,
+            aktif_mi=True,
+        )
+        return hizmet
+
+    def test_library_label_when_no_class(self):
+        self._attach_library()
+        data = self.client.get(
+            f'{self.base}/students/{self.answer.id}/detail/',
+            **self.headers,
+        ).json()
+        self.assertFalse(data['has_class'])
+        self.assertTrue(data['has_kutuphane'])
+        self.assertFalse(data['has_deneme'])
+        self.assertEqual(data['sinif'], 'Kütüphane')
+        self.assertEqual(data['sinif_meta_label'], 'Program')
+
+    def test_deneme_kayit_turu_when_no_class_and_no_library(self):
+        self.ogrenci.kayit_turu = 'deneme_kulubu'
+        self.ogrenci.save(update_fields=['kayit_turu'])
+        data = self.client.get(
+            f'{self.base}/students/{self.answer.id}/detail/',
+            **self.headers,
+        ).json()
+        self.assertFalse(data['has_class'])
+        self.assertFalse(data['has_kutuphane'])
+        self.assertTrue(data['has_deneme'])
+        self.assertEqual(data['sinif'], 'Deneme Kulübü')
+
+        students = self.client.get(f'{self.base}/students/', **self.headers).json()['students'][0]
+        self.assertEqual(students['sinif'], 'Deneme Kulübü')
+        rankings = self.client.get(f'{self.base}/rankings/', **self.headers).json()['rankings'][0]
+        self.assertEqual(rankings['sinif'], 'Deneme Kulübü')
+
+    def test_library_wins_over_deneme_kayit_turu(self):
+        self._attach_library()
+        self.ogrenci.kayit_turu = 'deneme_kulubu'
+        self.ogrenci.save(update_fields=['kayit_turu'])
+        data = self.client.get(
+            f'{self.base}/students/{self.answer.id}/detail/',
+            **self.headers,
+        ).json()
+        self.assertTrue(data['has_kutuphane'])
+        self.assertTrue(data['has_deneme'])
+        self.assertEqual(data['sinif'], 'Kütüphane')
+
+    def test_deneme_ek_hizmet_does_not_fill_classless_label(self):
+        from apps.egitim_paketleri.models import EkHizmet
+        from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+        hizmet = EkHizmet.objects.create(
+            ad='Deneme', kod='DNM_TEST', hizmet_turu='deneme',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+            brut_fiyat=0, aktif_mi=True,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.ogrenci, ek_hizmet=hizmet, egitim_yili=self.egitim_yili,
+            aktif_mi=True,
+        )
+        data = self.client.get(
+            f'{self.base}/students/{self.answer.id}/detail/',
+            **self.headers,
+        ).json()
+        self.assertFalse(data['has_kutuphane'])
+        self.assertFalse(data['has_deneme'])
+        self.assertEqual(data['sinif'], '')
+
+    def test_class_name_wins_over_library_or_deneme(self):
+        from apps.egitim_tanimlari.models import SinifSeviyesi
+        from apps.sinif.domain.models import Sinif
+
+        seviye = SinifSeviyesi.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='12. Sınıf', kod='12',
+        )
+        sinif = Sinif.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+            ad='12-A', kod='12A', sinif_seviyesi=seviye,
+        )
+        OgrenciKayit.objects.filter(ogrenci=self.ogrenci, egitim_yili=self.egitim_yili).update(sinif=sinif)
+        self._attach_library()
+        self.ogrenci.kayit_turu = 'deneme_kulubu'
+        self.ogrenci.save(update_fields=['kayit_turu'])
+        data = self.client.get(
+            f'{self.base}/students/{self.answer.id}/detail/',
+            **self.headers,
+        ).json()
+        self.assertTrue(data['has_class'])
+        self.assertEqual(data['sinif'], '12-A')
+        self.assertEqual(data['sinif_meta_label'], 'Sınıf')

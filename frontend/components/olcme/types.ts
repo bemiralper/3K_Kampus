@@ -670,6 +670,9 @@ export interface StudentAnalysis {
   student_name: string;
   raw_student_id: string;
   sinif: string;
+  has_class?: boolean;
+  has_kutuphane?: boolean;
+  has_deneme?: boolean;
   alan?: string | null;  // SAYISAL | SOZEL | ESIT_AGIRLIK | null
   toplam_net: number;
   total_correct: number;
@@ -729,6 +732,11 @@ export interface StudentDetailResponse {
   profil_foto?: string | null;
   raw_student_id: string;
   sinif: string;
+  has_class?: boolean;
+  has_kutuphane?: boolean;
+  has_deneme?: boolean;
+  sinif_meta_label?: string;
+  alan?: string | null;
   sinif_student_count: number;
   sinif_rank: number;
   toplam_net: number;
@@ -765,6 +773,7 @@ export interface StudentDetailResponse {
   session_name?: string;
   session_date?: string | null;
   session_start_time?: string | null;
+  session_end_time?: string | null;
   kurum_avg_puan?: number;
   puan_turleri_avgs?: Record<string, number>;
   answer_grids?: {

@@ -130,7 +130,7 @@ export default function StudentsPanel({
             <tr>
               <th>#</th>
               <th>Öğrenci</th>
-              <th>Sınıf</th>
+              <th>Sınıf / Program</th>
               <th style={{ textAlign: 'center' }}>Net</th>
               <th style={{ textAlign: 'center' }}>Puan</th>
               {examType === 'YKS_AYT' && displayStudents.length > 0 && displayStudents[0].puan_turleri && (

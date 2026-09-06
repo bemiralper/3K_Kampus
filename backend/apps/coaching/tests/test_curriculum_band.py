@@ -10,6 +10,7 @@ from apps.coaching.olcme_degerlendirme.services.curriculum_band import (
     BAND_YKS,
     grades_from_text,
     normalize_band,
+    primary_grades_from_text,
     subject_matches_band,
     topic_matches_band,
 )
@@ -36,6 +37,8 @@ class CurriculumBandHelperTest(SimpleTestCase):
         self.assertEqual(grades_from_text('12.3', '11.2.1'), {11, 12})
         self.assertEqual(grades_from_text('2019 kazanım'), set())
         self.assertEqual(grades_from_text('8. sınıf · SAYILAR'), {8})
+        self.assertEqual(primary_grades_from_text('2.1', '2. sınıf · Okulumuz'), {2})
+        self.assertEqual(primary_grades_from_text('9.1.2', 'TYT Fizik'), set())
 
     def test_okulizyon_shg21_is_not_a_grade(self):
         from apps.coaching.olcme_degerlendirme.services.curriculum_band import topic_display_name
@@ -118,6 +121,31 @@ class CurriculumBandAPITest(TestCase):
         self.assertNotIn(self.yks_fizik.id, lgs_ids)
         self.assertIn(self.mixed.id, yks_ids)
         self.assertIn(self.mixed.id, lgs_ids)
+
+    def test_hayat_bilgisi_excluded_from_yks_and_lgs(self):
+        hayat = Subject.objects.create(
+            code='HAYAT_BILGISI', name='Hayat Bilgisi', exam_type_filter='ALL',
+        )
+        topic = Topic.objects.create(
+            subject=hayat, code='2.1', name='2. sınıf · Okulumuz', order=0,
+        )
+        Outcome.objects.create(topic=topic, code='2.1.1', text='Okulu tanır.', order=0)
+        unnamed = Subject.objects.create(
+            code='HAYAT_BOS', name='Hayat Bilgisi', exam_type_filter='ALL',
+        )
+
+        self.assertFalse(subject_matches_band(hayat, BAND_YKS))
+        self.assertFalse(subject_matches_band(hayat, BAND_LGS))
+        self.assertFalse(subject_matches_band(unnamed, BAND_YKS))
+        self.assertFalse(subject_matches_band(unnamed, BAND_LGS))
+
+        yks = self.client.get(SUBJECTS_URL, {'band': 'YKS'}, **self.headers)
+        lgs = self.client.get(SUBJECTS_URL, {'band': 'LGS'}, **self.headers)
+        self.assertEqual(yks.status_code, 200)
+        self.assertEqual(lgs.status_code, 200)
+        self.assertNotIn(hayat.id, {row['id'] for row in yks.json()})
+        self.assertNotIn(hayat.id, {row['id'] for row in lgs.json()})
+        self.assertNotIn(unnamed.id, {row['id'] for row in yks.json()})
 
     def test_create_persists_subject_and_band(self):
         res = self.client.post(

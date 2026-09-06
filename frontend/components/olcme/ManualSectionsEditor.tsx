@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import type { ManualSectionDraft, TemplateSectionLike } from './manual-sections';
-import { emptyDraft, rangesFromTree, totalQuestionsFromDrafts } from './manual-sections';
+import { emptyDraft, rangesFromTree, templateOpticalTotal, totalQuestionsFromDrafts } from './manual-sections';
 import type { SubjectItem } from './types';
 import SubjectPicker, { subjectLabel } from './SubjectPicker';
 import t from './section-tree.module.css';
@@ -13,6 +13,16 @@ type ManualSectionsEditorProps = {
   subjects?: SubjectItem[];
   error?: string;
 };
+
+function distinctSectionName(name: string, subjectId: number | null, subjects: SubjectItem[]) {
+  const trimmed = name.trim();
+  if (!trimmed || !subjectId) return trimmed || null;
+  const picked = subjects.find(item => item.id === subjectId);
+  if (!picked) return trimmed;
+  const label = subjectLabel(picked).trim();
+  if (label.toLocaleLowerCase('tr-TR') === trimmed.toLocaleLowerCase('tr-TR')) return null;
+  return trimmed;
+}
 
 export default function ManualSectionsEditor({ drafts, onChange, subjects = [], error }: ManualSectionsEditorProps) {
   const [mainName, setMainName] = useState('');
@@ -115,26 +125,35 @@ export default function ManualSectionsEditor({ drafts, onChange, subjects = [], 
                   <div key={`${sub.name}-${j}`} className={t.rowSub}>
                     <span className={t.badgeSub}>Alt ders</span>
                     <div className={t.name}>
-                      {subjects.length > 0 ? (
+                    {subjects.length > 0 ? (
+                      <>
+                        {distinctSectionName(
+                          drafts[i]?.sub_sections?.[j]?.name ?? sub.name,
+                          drafts[i]?.sub_sections?.[j]?.subject_id ?? null,
+                          subjects,
+                        ) && (
+                          <span className={t.nameText}>
+                            {drafts[i]?.sub_sections?.[j]?.name ?? sub.name}
+                          </span>
+                        )}
                         <SubjectPicker
                           subjects={subjects}
                           value={drafts[i]?.sub_sections?.[j]?.subject_id ?? null}
                           emptyLabel="Müfredattan seç…"
                           ariaLabel="Alt ders müfredatı"
-                          onChange={(id, subject) => onChange(drafts.map((d, di) => (
+                          onChange={id => onChange(drafts.map((d, di) => (
                             di === i
                               ? {
                                 ...d,
                                 sub_sections: (d.sub_sections || []).map((srow, sj) => (
-                                  sj === j
-                                    ? { ...srow, subject_id: id, name: subject ? subjectLabel(subject) : srow.name }
-                                    : srow
+                                  sj === j ? { ...srow, subject_id: id } : srow
                                 )),
                               }
                               : d
                           )))}
                         />
-                      ) : (
+                      </>
+                    ) : (
                         <input
                           className={t.nameInput}
                           value={drafts[i]?.sub_sections?.[j]?.name ?? sub.name}
@@ -291,7 +310,7 @@ export function TemplatePreview({
   sections: TemplateSectionLike[];
   subSections?: Record<string, TemplateSectionLike[]>;
 }) {
-  const total = sections.reduce((sum, sec) => sum + (sec.question_end - sec.question_start + 1), 0);
+  const total = templateOpticalTotal(sections, subSections);
   return (
     <div className={t.tree}>
       <div className={t.meta}>

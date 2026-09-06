@@ -34,21 +34,34 @@ import ManualSectionsEditor, { TemplatePreview } from '../../../../components/ol
 import {
   isManualSectionExamType,
   rangesFromCounts,
+  templateOpticalTotal,
   templateToDrafts,
   totalQuestionsFromDrafts,
   type ManualSectionDraft,
 } from '../../../../components/olcme/manual-sections';
 import r from '../../../../components/olcme/roster/roster.module.css';
-import s from '../olcme.module.css';
+import Icon from '../../../../components/olcme/ui/Icon';
+import y from './yeni.module.css';
 
 const WIZARD = [
-  { n: 1, label: 'Sınav bilgisi' },
-  { n: 2, label: 'Kimler girecek' },
-  { n: 3, label: 'Liste' },
-  { n: 4, label: 'Salonlar' },
-  { n: 5, label: 'Oturma' },
-  { n: 6, label: 'Özet' },
+  { n: 1, label: 'Bilgi', full: 'Sınav bilgisi' },
+  { n: 2, label: 'Kitle', full: 'Kimler girecek' },
+  { n: 3, label: 'Liste', full: 'Katılımcı listesi' },
+  { n: 4, label: 'Salon', full: 'Salonlar' },
+  { n: 5, label: 'Oturma', full: 'Oturma düzeni' },
+  { n: 6, label: 'Özet', full: 'Kayıt özeti' },
 ] as const;
+
+const TYPE_META: Record<string, { short: string; hint: string }> = {
+  YKS_TYT: { short: 'TYT', hint: 'Temel yeterlilik' },
+  YKS_AYT: { short: 'AYT', hint: 'Alan yeterlilik' },
+  LGS: { short: 'LGS', hint: 'Liselere geçiş' },
+  DENEME: { short: 'Deneme', hint: 'Kurum denemesi' },
+  KURUM_ICI: { short: 'Kurum', hint: 'İç sınav' },
+  KONU_TARAMA: { short: 'Tarama', hint: 'Dersi sen seç' },
+  KAZANIM: { short: 'Kazanım', hint: 'Kazanım ölç' },
+  OZEL: { short: 'Özel', hint: 'Serbest şablon' },
+};
 
 /* ── Oturum boş form ──────────────────────────────────────────────────────── */
 const EMPTY_SESSION: SessionCreateForm = {
@@ -441,428 +454,348 @@ export default function YeniSinavPage() {
   };
 
   const templateTotal = currentTemplate
-    ? currentTemplate.sections.reduce((a, sec) => a + sec.question_end - sec.question_start + 1, 0)
+    ? templateOpticalTotal(currentTemplate.sections, currentTemplate.sub_sections)
     : 0;
-  const sectionCountLabel = editingTemplate
-    ? (rangesFromCounts(manualSections).length
-      ? `${rangesFromCounts(manualSections).length} / ${totalQuestionsFromDrafts(manualSections)}`
-      : '—')
-    : (form.apply_template && currentTemplate
-      ? `${currentTemplate.sections.length} / ${templateTotal}`
-      : '—');
+  const questionTotal = editingTemplate
+    ? totalQuestionsFromDrafts(manualSections)
+    : (form.apply_template && currentTemplate ? templateTotal : 0);
+  const sectionTotal = editingTemplate
+    ? rangesFromCounts(manualSections).length
+    : (form.apply_template && currentTemplate ? currentTemplate.sections.length : 0);
+  const sectionCountLabel = questionTotal
+    ? `${sectionTotal} üst · ${questionTotal} soru`
+    : '—';
 
   const err = (key: string) => (touched ? fieldErrors[key] : undefined);
-
-  const inputStyle = (key: string) =>
-    err(key) ? { borderColor: 'var(--danger, #dc2626)' } : undefined;
-
-  const FieldError = ({ name }: { name: string }) =>
-    err(name)
-      ? <span style={{ fontSize: 11.5, color: 'var(--danger, #dc2626)', marginTop: 4, display: 'block' }}>{err(name)}</span>
-      : null;
+  const typeMeta = form.exam_type ? TYPE_META[form.exam_type] : null;
 
   /* ═══════════ RENDER ═══════════ */
 
   return (
-    <div className="section">
+    <div className={`section ${y.page}`}>
 
-      {/* ── Hero ─────────────────────────────────────────────────────────── */}
-      <div className="hero-header">
-        <div className="hero-content">
-          <div className="hero-breadcrumb">
-            <span style={{ cursor: 'pointer' }} onClick={() => router.push('/admin/olcme-degerlendirme')}>
-              Ölçme &amp; Değerlendirme
-            </span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="9 18 15 12 9 6"/></svg>
-            <span>Yeni Sınav</span>
+      <header className={y.header}>
+        <div className={y.headerTop}>
+          <div style={{ minWidth: 0 }}>
+            <nav className={y.breadcrumb} aria-label="Konum">
+              <button type="button" className={y.crumbLink} onClick={() => router.push('/admin/olcme-degerlendirme')}>
+                Sınav Yönetimi
+              </button>
+              <Icon name="chevronRight" size={13} />
+              <span className={y.crumbCurrent}>Yeni Sınav</span>
+            </nav>
+            <div className={y.titleBlock}>
+              <span className={y.titleIcon}><Icon name="plus" size={22} /></span>
+              <div style={{ minWidth: 0 }}>
+                <h1 className={y.title}>Yeni Sınav Oluştur</h1>
+                <p className={y.subtitle}>
+                  Türü seç, şablonu kontrol et, kitle ve salonu sonraki adımlarda ayarla.
+                </p>
+              </div>
+            </div>
           </div>
-          <h1 className="hero-title">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-            </svg>
-            Yeni Sınav Oluştur
-          </h1>
-          <p className="hero-subtitle">
-            TYT, AYT ve LGS bölümleri şablondan gelir. Konu tarama, kazanım ve özel sınavlarda
-            ders ile soru sayısını bu adımda girersiniz; sonra Genel Bilgiler’den değiştirirsiniz.
-          </p>
+          <button type="button" className={y.action} onClick={() => router.push('/admin/olcme-degerlendirme')}>
+            <Icon name="back" size={15} />
+            <span className={y.actionLabel}>Listeye dön</span>
+          </button>
         </div>
-        <button className="btn-hero" onClick={() => router.push('/admin/olcme-degerlendirme')}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
-          Listeye Dön
-        </button>
-      </div>
+        <div className={y.metrics}>
+          <div className={y.metric}>
+            <span className={y.metricValue}>{typeMeta?.short || '—'}</span>
+            <span className={y.metricLabel}><Icon name="exam" size={12} />Tür</span>
+          </div>
+          <div className={y.metric}>
+            <span className={y.metricValue}>{questionTotal || '—'}</span>
+            <span className={y.metricLabel}><Icon name="layers" size={12} />Soru</span>
+          </div>
+          <div className={y.metric}>
+            <span className={y.metricValue}>{form.duration_minutes || '—'}</span>
+            <span className={y.metricLabel}><Icon name="clock" size={12} />Süre (dk)</span>
+          </div>
+          <div className={y.metric}>
+            <span className={y.metricValue}>{derivedExamDate ? fmtSessionDate(derivedExamDate) : 'Tarihsiz'}</span>
+            <span className={y.metricLabel}><Icon name="calendar" size={12} />Tarih</span>
+          </div>
+          <div className={y.metric}>
+            <span className={y.metricValue}>{sessions.length || '—'}</span>
+            <span className={y.metricLabel}><Icon name="document" size={12} />Oturum</span>
+          </div>
+        </div>
+      </header>
 
       {error && (
-        <div style={{
-          padding: '14px 20px', background: '#fef2f2', border: '1px solid #fecaca',
-          borderRadius: 10, color: '#991b1b', marginBottom: 20, fontSize: 13,
-        }}>
-          <strong>Hata:</strong> {error}
+        <div className={`${y.notice} ${y.noticeError}`} role="alert">
+          <Icon name="error" size={18} />
+          <div>{error}</div>
         </div>
       )}
 
-      <div className={s.wizardNav}>
-        {WIZARD.map(w => (
-          <button
-            key={w.n}
-            type="button"
-            className={step === w.n ? s.wizardStepOn : step > w.n ? s.wizardStepDone : s.wizardStep}
-            onClick={() => {
-              if (w.n < step || w.n === step) setStep(w.n);
-            }}
-          >
-            <span className={s.wizardNum}>{w.n}</span>
-            {w.label}
-          </button>
-        ))}
-      </div>
+      <nav className={y.stepper} aria-label="Oluşturma adımları">
+        <div className={y.stepperTrack}>
+          {WIZARD.map(w => (
+            <button
+              key={w.n}
+              type="button"
+              className={`${y.stepBtn} ${step === w.n ? y.stepOn : ''} ${step > w.n ? y.stepDone : ''}`}
+              onClick={() => { if (w.n <= step) setStep(w.n); }}
+              disabled={w.n > step}
+            >
+              <span className={y.stepDot}>
+                {step > w.n ? <Icon name="check" size={13} strokeWidth={3} /> : w.n}
+              </span>
+              <span className={y.stepLabel}>{w.label}</span>
+            </button>
+          ))}
+        </div>
+        <p className={y.stepperNow}>{WIZARD[step - 1]?.full}</p>
+      </nav>
 
       <form onSubmit={handleSubmit} noValidate>
         {step === 1 && (
-        <div className={s.createStack}>
-
-          <div className={s.createTop}>
-          <div className={s.flexCol}>
-
-            {/* ─── Temel Bilgiler ──────────────────────────────────────── */}
-            <div className="card-modern">
-              <div className="card-modern-header">
-                <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                  Temel Bilgiler
-                </h3>
+        <div className={y.stack}>
+          <section className={y.card}>
+            <div className={y.cardHead}>
+              <div>
+                <h2>Temel bilgiler</h2>
               </div>
-              <div className={s.cardBody}>
-                <div className={s.formGrid}>
-                  <div className={s.formGroupFull}>
-                    <label>Sınav Adı *</label>
-                    <input
-                      placeholder="Örn: TYT Deneme 1"
-                      value={form.name}
-                      style={inputStyle('name')}
-                      onChange={e => setField('name', e.target.value)}
-                      onBlur={() => setTouched(true)}
-                    />
-                    <FieldError name="name" />
-                    {duplicateName && !err('name') && (
-                      <span style={{ fontSize: 11.5, color: '#b45309', marginTop: 4, display: 'block' }}>
-                        Bu adla bir sınav zaten var. Karışmaması için ad ekleyebilirsiniz.
-                      </span>
-                    )}
-                  </div>
-
-                  <div className={s.formGroup}>
-                    <label>Sınav Türü *</label>
+            </div>
+            <div className={y.cardBody}>
+              <div className={y.fields}>
+                <label className={y.field}>
+                  <span>Sınav adı *</span>
+                  <input
+                    placeholder="Örn: TYT Deneme 1"
+                    value={form.name}
+                    data-invalid={err('name') ? 'true' : undefined}
+                    onChange={e => setField('name', e.target.value)}
+                    onBlur={() => setTouched(true)}
+                  />
+                  {err('name') && <em className={y.fieldErr}>{err('name')}</em>}
+                  {duplicateName && !err('name') && (
+                    <em className={y.fieldErr} style={{ color: '#b45309' }}>Bu adla bir sınav zaten var.</em>
+                  )}
+                </label>
+                <div className={y.fields3}>
+                  <label className={y.field}>
+                    <span>Sınav türü *</span>
                     <select
                       value={form.exam_type}
-                      style={inputStyle('exam_type')}
+                      data-invalid={err('exam_type') ? 'true' : undefined}
                       onChange={e => setField('exam_type', e.target.value as ExamCreateForm['exam_type'])}
                       onBlur={() => setTouched(true)}
                     >
                       <option value="">Seçiniz…</option>
                       {EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                     </select>
-                    <FieldError name="exam_type" />
-                  </div>
-
-                  <div className={s.formGroup}>
-                    <label>Toplam Süre (dk)</label>
-                    <input type="number" min={1} placeholder="165" value={form.duration_minutes}
-                      style={inputStyle('duration_minutes')}
-                      onChange={e => setField('duration_minutes', e.target.value)} />
-                    <FieldError name="duration_minutes" />
-                  </div>
-
-                  <div className={s.formGroup}>
-                    <label>Kitapçık Türü</label>
-                    <select value={form.booklet_type}
-                      onChange={e => setField('booklet_type', e.target.value)}>
+                    {err('exam_type') && <em className={y.fieldErr}>{err('exam_type')}</em>}
+                  </label>
+                  <label className={y.field}>
+                    <span>Toplam süre (dk)</span>
+                    <input
+                      type="number"
+                      min={1}
+                      inputMode="numeric"
+                      placeholder="165"
+                      value={form.duration_minutes}
+                      data-invalid={err('duration_minutes') ? 'true' : undefined}
+                      onChange={e => setField('duration_minutes', e.target.value)}
+                    />
+                    {err('duration_minutes') && <em className={y.fieldErr}>{err('duration_minutes')}</em>}
+                  </label>
+                  <label className={y.field}>
+                    <span>Kitapçık türü</span>
+                    <select value={form.booklet_type} onChange={e => setField('booklet_type', e.target.value)}>
                       {BOOKLET_TYPES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
                     </select>
-                  </div>
-
-                  <div className={s.formGroup}>
-                    <label>Yanlış Cevap Düzeltme</label>
-                    <select value={form.wrong_answer_count}
-                      onChange={e => setField('wrong_answer_count', e.target.value)}>
-                      <option value="0">Ceza Yok</option>
+                  </label>
+                </div>
+                <div className={y.fields2}>
+                  <label className={y.field}>
+                    <span>Yanlış cevap düzeltme</span>
+                    <select value={form.wrong_answer_count} onChange={e => setField('wrong_answer_count', e.target.value)}>
+                      <option value="0">Ceza yok</option>
                       <option value="3">3 yanlış → 1 doğruyu götürür</option>
                       <option value="4">4 yanlış → 1 doğruyu götürür</option>
                       <option value="5">5 yanlış → 1 doğruyu götürür</option>
                     </select>
-                  </div>
-
-                  <div className={s.formGroupFull}>
-                    <label>Açıklama</label>
-                    <textarea style={{ minHeight: 56, resize: 'vertical' }}
-                      placeholder="Opsiyonel açıklama…" value={form.description}
-                      onChange={e => setField('description', e.target.value)} />
-                  </div>
+                  </label>
+                  <label className={y.field}>
+                    <span>Açıklama</span>
+                    <textarea
+                      placeholder="Opsiyonel açıklama…"
+                      value={form.description}
+                      onChange={e => setField('description', e.target.value)}
+                    />
+                  </label>
                 </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <div className={s.createAside}>
-            <div className={s.summaryCard}>
-              <h3 className={s.summaryTitle}>Özet</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                <div className={s.summaryRow}>
-                  <span>Sınav Türü</span>
-                  <span className={s.summaryVal}>
-                    {form.exam_type ? EXAM_TYPES.find(t => t.value === form.exam_type)?.label : '—'}
-                  </span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Bölüm / Soru</span>
-                  <span className={s.summaryVal}>{sectionCountLabel}</span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Süre</span>
-                  <span className={s.summaryVal}>{form.duration_minutes || '—'} dk</span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Sınav Tarihi</span>
-                  <span className={s.summaryVal}>
-                    {derivedExamDate ? fmtSessionDate(derivedExamDate) : 'Tarihsiz'}
-                  </span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Oturum</span>
-                  <span className={s.summaryVal}>{sessions.length || '—'}</span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Yanlış Düzeltme</span>
-                  <span className={s.summaryVal}>
-                    {form.wrong_answer_count === '0' ? 'Ceza Yok' : `${form.wrong_answer_count} → 1`}
-                  </span>
-                </div>
-                <div className={s.summaryRow}>
-                  <span>Puan Yılı</span>
-                  <span className={s.summaryVal}>
-                    {form.puan_yili ? `${form.puan_yili} YKS` : `Varsayılan (${kurumDefaultYear})`}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <button type="button" onClick={goNext} className="btn-modern btn-primary"
-              style={{
-                width: '100%', justifyContent: 'center', padding: '14px 20px',
-                fontSize: 15,
-              }}>
-              Katılımcılara geç
-            </button>
-            <p style={{ fontSize: 11.5, color: 'var(--text-secondary)', textAlign: 'center', margin: 0, lineHeight: 1.5 }}>
-              Sonraki adımlarda seviye, paket, salon ve oturma düzenini belirlersiniz.
-            </p>
-          </div>
-          </div>
-
-          <div className={s.flexCol}>
-            {/* ─── Oturumlar ───────────────────────────────────────────── */}
-            <div className="card-modern">
-              <div className="card-modern-header">
-                <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                  Oturumlar &amp; Zamanlama
-                </h3>
-                <div className="card-modern-header-actions">
-                  <button type="button" onClick={addSession} className="btn-modern btn-primary"
-                    style={{ padding: '6px 14px', fontSize: 12 }}>
-                    + Oturum Ekle
-                  </button>
-                </div>
-              </div>
-              <div className={s.cardBody}>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.5 }}>
-                  Sınav tarihi oturumlardan alınır: en erken oturum günü sınavın tarihi olur ve
-                  takvime bu tarihle işlenir.
-                  {derivedExamDate && (
-                    <strong style={{ color: 'var(--primary)' }}>
-                      {' '}Şu anki sınav tarihi: {fmtSessionDate(derivedExamDate)}
-                    </strong>
-                  )}
+          <section className={y.card}>
+            <div className={y.cardHead}>
+              <div>
+                <h2>Oturumlar &amp; zamanlama</h2>
+                <p>
+                  Sınav tarihi oturumlardan alınır: en erken oturum günü takvime işlenir.
+                  {derivedExamDate && <> Şu anki tarih: <strong>{fmtSessionDate(derivedExamDate)}</strong></>}
                 </p>
-
-                {sessions.length === 0 && (
-                  <div style={{ textAlign: 'center', padding: '24px 16px', color: 'var(--text-secondary)' }}>
-                    <p style={{ fontSize: 13, margin: 0 }}>
-                      Henüz oturum eklenmedi. Oturum eklemezseniz sınav tarihsiz kaydedilir
-                      ve takvimde görünmez.
-                    </p>
-                    <button type="button" onClick={addSession} className="btn-modern btn-secondary"
-                      style={{ marginTop: 12, padding: '8px 16px', fontSize: 12 }}>
-                      + İlk Oturumu Ekle
-                    </button>
+              </div>
+              <button type="button" className={y.ghost} onClick={addSession}>+ Oturum ekle</button>
+            </div>
+            <div className={y.cardBody}>
+              {sessions.length === 0 ? (
+                <div className={y.empty}>
+                  Henüz oturum eklenmedi. Oturum yoksa sınav tarihsiz kaydedilir ve takvimde görünmez.
+                  <div style={{ marginTop: 12 }}>
+                    <button type="button" className={y.ghost} onClick={addSession}>+ İlk oturumu ekle</button>
                   </div>
-                )}
-
-                {sessions.map((sess, idx) => (
-                  <div key={idx} className={s.sessionFormWrap} style={{ marginTop: idx > 0 ? 12 : 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span className={s.sessionOrder}>{idx + 1}</span>
-                        <span className={s.sessionName}>{sess.name || `${idx + 1}. Oturum`}</span>
-                        {sess.session_date && (
-                          <span style={{ fontSize: 11.5, color: 'var(--text-secondary)' }}>
-                            {fmtSessionDate(sess.session_date)}
-                            {sess.start_time && ` · ${sess.start_time}`}
-                          </span>
-                        )}
-                      </div>
-                      <button type="button" onClick={() => removeSession(idx)}
-                        style={{
-                          background: 'none', border: '1px solid #fecaca', borderRadius: 6,
-                          color: 'var(--danger)', cursor: 'pointer', fontSize: 12, padding: '4px 10px',
-                        }}>
-                        Kaldır
-                      </button>
-                    </div>
-
-                    <div className={s.sessionFormGrid}>
-                      <div className={s.formGroup}>
-                        <label>Oturum Adı *</label>
-                        <input value={sess.name}
-                          onChange={e => updateSession(idx, 'name', e.target.value)}
-                          onBlur={() => setTouched(true)}
-                          placeholder="1. Oturum" />
-                      </div>
-                      <div className={s.formGroup}>
-                        <label>Tarih</label>
-                        <input type="date" value={sess.session_date}
-                          onChange={e => updateSession(idx, 'session_date', e.target.value)} />
-                      </div>
-                      <div className={s.formGroup}>
-                        <label>Süre (dk)</label>
-                        <input type="number" min={1} value={sess.duration_minutes}
-                          onChange={e => updateSession(idx, 'duration_minutes', e.target.value)}
-                          placeholder="75" />
-                      </div>
-                    </div>
-
-                    <div className={s.sessionFormGrid} style={{ marginTop: 10 }}>
-                      <div className={s.formGroup}>
-                        <label>Başlangıç</label>
-                        <input type="time" value={sess.start_time}
-                          onChange={e => updateSession(idx, 'start_time', e.target.value)} />
-                      </div>
-                      <div className={s.formGroup}>
-                        <label>Bitiş <span style={{ fontWeight: 400, textTransform: 'none' }}>(otomatik)</span></label>
-                        <input type="time" value={sess.end_time}
-                          onChange={e => updateSession(idx, 'end_time', e.target.value)} />
-                      </div>
-                      <div className={s.formGroup}>
-                        <label>Gün Tercihi</label>
-                        <div className={s.prefGroup}>
-                          {SCHEDULE_PREFERENCES.map(pref => (
-                            <button key={pref.value} type="button"
-                              className={sess.schedule_preference === pref.value ? s.prefBtnActive : s.prefBtn}
-                              onClick={() => updateSession(idx, 'schedule_preference', pref.value as SchedulePreference)}>
-                              {pref.label}
-                            </button>
-                          ))}
+                </div>
+              ) : sessions.map((sess, idx) => (
+                <div key={idx} className={y.session}>
+                  <div className={y.sessionTop}>
+                    <div className={y.sessionWho}>
+                      <span className={y.sessionNum}>{idx + 1}</span>
+                      <div>
+                        <div className={y.sessionTitle}>{sess.name || `${idx + 1}. Oturum`}</div>
+                        <div className={y.sessionMeta}>
+                          {sess.session_date ? fmtSessionDate(sess.session_date) : 'Tarih yok'}
+                          {sess.start_time ? ` · ${sess.start_time}` : ''}
                         </div>
                       </div>
                     </div>
-
-                    <FieldError name={`session_${idx}`} />
+                    <button type="button" className={y.danger} onClick={() => removeSession(idx)}>Kaldır</button>
                   </div>
-                ))}
-              </div>
-            </div>
-
-            {/* ─── Yayın & Puanlama ────────────────────────────────────── */}
-            <div className="card-modern">
-              <div className="card-modern-header">
-                <h3>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-                  Yayın Tarihleri &amp; Puanlama
-                </h3>
-              </div>
-              <div className={s.cardBody}>
-                <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 14px', lineHeight: 1.5 }}>
-                  Yayın saatleri zorunlu değildir. Otomatik WhatsApp gönderimi için
-                  sınav detayında <strong>Zamanlı</strong> anahtarını ayrıca açın.
-                  Bu tarihler öğrenci ekranındaki görünürlüğü <strong>kısıtlamaz</strong>;
-                  sonuçlar yüklendiği anda öğrenciye açıktır.
-                </p>
-                <div className={s.formGrid}>
-                  <div className={s.formGroup}>
-                    <label>Sonuç Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
-                    <input type="datetime-local" value={form.result_publish_date}
-                      onChange={e => setField('result_publish_date', e.target.value)} />
-                  </div>
-                  <div className={s.formGroup}>
-                    <label>Cevap Anahtarı Yayın Tarihi <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
-                    <input type="datetime-local" value={form.answer_key_publish_date}
-                      style={inputStyle('answer_key_publish_date')}
-                      onChange={e => setField('answer_key_publish_date', e.target.value)} />
-                    <FieldError name="answer_key_publish_date" />
-                  </div>
-                  <div className={s.formGroup}>
-                    <label>Puan Yılı</label>
-                    <select
-                      value={form.puan_yili ?? ''}
-                      onChange={e => setField('puan_yili', e.target.value ? Number(e.target.value) : null)}
-                    >
-                      <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
-                      {managedYears.map(y => (
-                        <option key={y} value={y}>{y} YKS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', marginTop: 14 }}>
-                  <label className={s.checkRow}>
-                    <input type="checkbox" checked={form.per_section_penalty}
-                      onChange={e => setField('per_section_penalty', e.target.checked)} />
-                    Bölüm bazlı ceza uygula
-                  </label>
-                  <label className={s.checkRow}>
-                    <input type="checkbox" checked={form.booklet_auto_detect}
-                      onChange={e => setField('booklet_auto_detect', e.target.checked)} />
-                    Kitapçık otomatik tespit
-                  </label>
-                  {(form.exam_type === 'YKS_TYT' || form.exam_type === 'DENEME') && (
-                    <label className={s.checkRow}>
-                      <input type="checkbox" checked={form.include_optional_philosophy}
-                        onChange={e => setField('include_optional_philosophy', e.target.checked)} />
-                      Felsefe (Seçmeli) dahil — Din Kültürü sonrası
+                  <div className={y.fields3}>
+                    <label className={y.field}>
+                      <span>Oturum adı *</span>
+                      <input value={sess.name} placeholder="1. Oturum"
+                        onChange={e => updateSession(idx, 'name', e.target.value)}
+                        onBlur={() => setTouched(true)} />
                     </label>
-                  )}
+                    <label className={y.field}>
+                      <span>Tarih</span>
+                      <input type="date" value={sess.session_date}
+                        onChange={e => updateSession(idx, 'session_date', e.target.value)} />
+                    </label>
+                    <label className={y.field}>
+                      <span>Süre (dk)</span>
+                      <input type="number" min={1} inputMode="numeric" value={sess.duration_minutes} placeholder="75"
+                        onChange={e => updateSession(idx, 'duration_minutes', e.target.value)} />
+                    </label>
+                  </div>
+                  <div className={y.fields3}>
+                    <label className={y.field}>
+                      <span>Başlangıç</span>
+                      <input type="time" value={sess.start_time}
+                        onChange={e => updateSession(idx, 'start_time', e.target.value)} />
+                    </label>
+                    <label className={y.field}>
+                      <span>Bitiş (otomatik)</span>
+                      <input type="time" value={sess.end_time}
+                        onChange={e => updateSession(idx, 'end_time', e.target.value)} />
+                    </label>
+                    <div className={y.field}>
+                      <span>Gün tercihi</span>
+                      <div className={y.prefs}>
+                        {SCHEDULE_PREFERENCES.map(pref => (
+                          <button key={pref.value} type="button"
+                            className={sess.schedule_preference === pref.value ? y.prefOn : y.pref}
+                            onClick={() => updateSession(idx, 'schedule_preference', pref.value as SchedulePreference)}>
+                            {pref.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                  {err(`session_${idx}`) && <em className={y.fieldErr}>{err(`session_${idx}`)}</em>}
                 </div>
+              ))}
+            </div>
+          </section>
+
+          <section className={y.card}>
+            <div className={y.cardHead}>
+              <div>
+                <h2>Yayın tarihleri &amp; puanlama</h2>
+                <p>
+                  Yayın saatleri zorunlu değildir. Otomatik WhatsApp için sınav detayında
+                  Zamanlı anahtarını ayrıca açın. Bu tarihler öğrenci ekranını kısıtlamaz.
+                </p>
               </div>
             </div>
+            <div className={y.cardBody}>
+              <div className={y.fields3}>
+                <label className={y.field}>
+                  <span>Sonuç yayın tarihi</span>
+                  <input type="datetime-local" value={form.result_publish_date}
+                    onChange={e => setField('result_publish_date', e.target.value)} />
+                </label>
+                <label className={y.field}>
+                  <span>Cevap anahtarı yayın tarihi</span>
+                  <input
+                    type="datetime-local"
+                    value={form.answer_key_publish_date}
+                    data-invalid={err('answer_key_publish_date') ? 'true' : undefined}
+                    onChange={e => setField('answer_key_publish_date', e.target.value)}
+                  />
+                  {err('answer_key_publish_date') && <em className={y.fieldErr}>{err('answer_key_publish_date')}</em>}
+                </label>
+                <label className={y.field}>
+                  <span>Puan yılı</span>
+                  <select
+                    value={form.puan_yili ?? ''}
+                    onChange={e => setField('puan_yili', e.target.value ? Number(e.target.value) : null)}
+                  >
+                    <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
+                    {managedYears.map(yr => (
+                      <option key={yr} value={yr}>{yr} YKS{yr === 2026 ? ' (henüz resmi değil)' : ''}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className={y.toggles} style={{ marginTop: 12 }}>
+                <label className={y.toggle}>
+                  <input type="checkbox" checked={form.per_section_penalty}
+                    onChange={e => setField('per_section_penalty', e.target.checked)} />
+                  <span>Bölüm bazlı ceza uygula</span>
+                </label>
+                <label className={y.toggle}>
+                  <input type="checkbox" checked={form.booklet_auto_detect}
+                    onChange={e => setField('booklet_auto_detect', e.target.checked)} />
+                  <span>Kitapçık otomatik tespit</span>
+                </label>
+                {(form.exam_type === 'YKS_TYT' || form.exam_type === 'DENEME') && (
+                  <label className={y.toggle}>
+                    <input type="checkbox" checked={form.include_optional_philosophy}
+                      onChange={e => setField('include_optional_philosophy', e.target.checked)} />
+                    <span>Felsefe (Seçmeli) dahil — Sosyal Bilimler içinde, Din Kültürü sonrası</span>
+                  </label>
+                )}
+              </div>
+            </div>
+          </section>
 
-          </div>
-
-          <div className="card-modern">
-            <div className="card-modern-header">
-              <h3>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                Bölüm Şablonu
-              </h3>
-              <div className="card-modern-header-actions">
+          <section className={y.card}>
+            <div className={y.cardHead}>
+              <div>
+                <h2>Bölüm şablonu</h2>
+                <p>
+                  {questionTotal
+                    ? `${questionTotal} soru · ${sectionTotal} üst ders`
+                    : 'Sınav türü seçildiğinde bölümler burada görünür.'}
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {hasBuiltInTemplate && !manualTemplate && !editingTemplate && (
-                  <button type="button" className="btn-modern btn-secondary"
-                    onClick={startEditingTemplate}
-                    style={{ padding: '6px 14px', fontSize: 12 }}>
-                    Şablonu düzenle
-                  </button>
+                  <button type="button" className={y.ghost} onClick={startEditingTemplate}>Şablonu düzenle</button>
                 )}
                 {hasBuiltInTemplate && !manualTemplate && editingTemplate && (
-                  <button type="button" className="btn-modern btn-secondary"
-                    onClick={resetBuiltInTemplate}
-                    style={{ padding: '6px 14px', fontSize: 12 }}>
-                    Hazır şablona dön
-                  </button>
+                  <button type="button" className={y.ghost} onClick={resetBuiltInTemplate}>Hazır şablona dön</button>
                 )}
               </div>
             </div>
-            <div className={s.cardBody}>
+            <div className={y.cardBody}>
               {form.exam_type && (
                 <div className={tree.bandRow}>
                   <span style={{ fontSize: 12, color: '#64748b', fontWeight: 650 }}>Müfredat</span>
@@ -880,21 +813,15 @@ export default function YeniSinavPage() {
                       </button>
                     </>
                   )}
-                  <span style={{ fontSize: 12, color: '#64748b' }}>
-                    Ders seçici ve kazanımlar bu düzeye aittir; YKS ile LGS karışmaz.
-                  </span>
                 </div>
               )}
               {!form.exam_type ? (
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
-                  Sınav türü seçildiğinde bölümler burada görünecek.
-                </p>
+                <p className={y.hint}>Sınav türü seçildiğinde bölümler burada görünecek.</p>
               ) : editingTemplate ? (
                 <>
                   {hasBuiltInTemplate && !manualTemplate && (
-                    <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.55 }}>
+                    <p className={y.hint}>
                       Hazır şablonu düzenliyorsunuz. Ders ekleyip çıkarabilir, müfredattan bağlayabilirsiniz.
-                      Cevap anahtarı, kazanım ve analiz bu derslere göre oluşur.
                     </p>
                   )}
                   <ManualSectionsEditor
@@ -906,9 +833,8 @@ export default function YeniSinavPage() {
                 </>
               ) : currentTemplate && currentTemplate.sections.length > 0 ? (
                 <>
-                  <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px', lineHeight: 1.55 }}>
-                    Süre: {currentTemplate.duration} dk. Alt dersler kazanım eşleştirmesi için müfredat derslerine bağlanır.
-                    Ders eklemek veya çıkarmak için şablonu düzenleyin.
+                  <p className={y.hint}>
+                    Süre: {currentTemplate.duration} dk. Ders eklemek veya çıkarmak için şablonu düzenleyin.
                   </p>
                   <TemplatePreview
                     sections={currentTemplate.sections}
@@ -916,12 +842,15 @@ export default function YeniSinavPage() {
                   />
                 </>
               ) : (
-                <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
-                  Bu sınav türünde hazır bölüm yok; üst ders ekleyerek başlayın.
-                </p>
+                <p className={y.hint}>Bu sınav türünde hazır bölüm yok; üst ders ekleyerek başlayın.</p>
               )}
             </div>
-          </div>
+          </section>
+
+          <button type="button" className={y.primaryWide} onClick={goNext}>
+            Katılımcılara geç
+            <Icon name="chevronRight" size={16} />
+          </button>
         </div>
         )}
 
@@ -936,7 +865,7 @@ export default function YeniSinavPage() {
                   konu tarama için yalnız sınıf yeter.
                 </p>
               </div>
-              <div className={r.stats} style={{ minWidth: 280 }}>
+              <div className={r.stats}>
                 <div className={r.stat}><span className={r.statValue}>{form.sinif_ids.length}</span><span className={r.statLabel}>Sınıf</span></div>
                 <div className={r.stat}><span className={r.statValue}>{form.sinif_seviyesi_ids.length}</span><span className={r.statLabel}>Seviye</span></div>
                 <div className={r.stat}><span className={r.statValue}>{form.deneme_paketi_ids.length}</span><span className={r.statLabel}>Paket</span></div>
@@ -1016,27 +945,27 @@ export default function YeniSinavPage() {
                 <span className={r.statLabel}>kişilik</span>
               </div>
             </div>
-            {capError && <div className={s.capWarn}>{capError}</div>}
+            {capError && <div className={`${y.notice} ${y.noticeError}`}>{capError}</div>}
             <section className={r.card}>
               <div className={r.cardBody}>
                 {rooms.map((room, i) => (
-                  <div key={i} className={r.roomEdit}>
-                    <div className={s.formGroup}>
-                      <label>Salon adı</label>
+                  <div key={i} className={y.roomEdit}>
+                    <label className={y.field}>
+                      <span>Salon adı</span>
                       <input value={room.name}
                         onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, name: e.target.value } : item))} />
-                    </div>
-                    <div className={s.formGroup}>
-                      <label>Kapasite</label>
-                      <input type="number" min={1} value={room.capacity}
+                    </label>
+                    <label className={y.field}>
+                      <span>Kapasite</span>
+                      <input type="number" min={1} inputMode="numeric" value={room.capacity}
                         onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, capacity: Number(e.target.value) || 1 } : item))} />
-                    </div>
-                    <button type="button" className={r.ghost} onClick={() => setRooms(p => p.filter((_, j) => j !== i))}>×</button>
+                    </label>
+                    <button type="button" className={y.danger} onClick={() => setRooms(p => p.filter((_, j) => j !== i))}>×</button>
                   </div>
                 ))}
-                <button type="button" className="btn-modern btn-secondary"
+                <button type="button" className={y.ghost}
                   onClick={() => setRooms(p => [...p, { name: `Salon ${p.length + 1}`, capacity: 30, order: p.length }])}>
-                  + Salon ekle
+                  <Icon name="plus" size={14} /> Salon ekle
                 </button>
               </div>
             </section>
@@ -1050,11 +979,11 @@ export default function YeniSinavPage() {
                 <h2>Oturma düzeni</h2>
                 <p>Kuralı seçin, listeyi görün. Beğenmezseniz yeniden karıştırın — kayıtta bu düzen kullanılır.</p>
               </div>
-              <button type="button" className="btn-modern btn-primary" onClick={() => setSeatingTick(n => n + 1)}>
+              <button type="button" className={y.primary} onClick={() => setSeatingTick(n => n + 1)}>
                 Yeniden karıştır
               </button>
             </div>
-            {capError && <div className={s.capWarn}>{capError}</div>}
+            {capError && <div className={`${y.notice} ${y.noticeError}`}>{capError}</div>}
             <div className={r.modeGrid}>
               {([
                 ['shuffle', 'Karışık', 'Salonlara rastgele dağıtılır.'],
@@ -1096,32 +1025,31 @@ export default function YeniSinavPage() {
         )}
 
         {step === 6 && (
-          <div className={s.summaryCard}>
-            <h3 className={s.summaryTitle}>Kayıt özeti</h3>
-            <div className={s.summaryRow}><span>Sınav</span><span className={s.summaryVal}>{form.name || '—'}</span></div>
-            <div className={s.summaryRow}><span>Tür</span><span className={s.summaryVal}>{form.exam_type ? EXAM_TYPES.find(t => t.value === form.exam_type)?.label : '—'}</span></div>
-            <div className={s.summaryRow}><span>Ders / Soru</span><span className={s.summaryVal}>{sectionCountLabel}</span></div>
-            <div className={s.summaryRow}><span>Katılımcı</span><span className={s.summaryVal}>{roster.length}</span></div>
-            <div className={s.summaryRow}><span>Sınıf</span><span className={s.summaryVal}>{form.sinif_ids.length || '—'}</span></div>
-            <div className={s.summaryRow}><span>Seviye</span><span className={s.summaryVal}>{form.sinif_seviyesi_ids.length || '—'}</span></div>
-            <div className={s.summaryRow}><span>Paket</span><span className={s.summaryVal}>{form.deneme_paketi_ids.length || '—'}</span></div>
-            <div className={s.summaryRow}><span>Salon</span><span className={s.summaryVal}>{rooms.filter(r => r.name.trim()).length} · {totalCap} kişilik</span></div>
-            <div className={s.summaryRow}><span>Oturma</span><span className={s.summaryVal}>{seatingMode === 'cross' ? 'Çapraz' : seatingMode === 'sequential' ? 'Sıralı' : 'Karışık'}</span></div>
-            {capError && <div className={s.capWarn} style={{ marginTop: 12 }}>{capError}</div>}
-            <button type="submit" disabled={submitting || !!capError} className="btn-modern btn-primary"
-              style={{ width: '100%', justifyContent: 'center', marginTop: 16, padding: '14px 20px', fontSize: 15, opacity: submitting ? .6 : 1 }}>
+          <div className={y.summary}>
+            <h3>Kayıt özeti</h3>
+            <div className={y.summaryRow}><span>Sınav</span><span className={y.summaryVal}>{form.name || '—'}</span></div>
+            <div className={y.summaryRow}><span>Tür</span><span className={y.summaryVal}>{form.exam_type ? EXAM_TYPES.find(t => t.value === form.exam_type)?.label : '—'}</span></div>
+            <div className={y.summaryRow}><span>Ders / Soru</span><span className={y.summaryVal}>{sectionCountLabel}</span></div>
+            <div className={y.summaryRow}><span>Katılımcı</span><span className={y.summaryVal}>{roster.length}</span></div>
+            <div className={y.summaryRow}><span>Sınıf</span><span className={y.summaryVal}>{form.sinif_ids.length || '—'}</span></div>
+            <div className={y.summaryRow}><span>Seviye</span><span className={y.summaryVal}>{form.sinif_seviyesi_ids.length || '—'}</span></div>
+            <div className={y.summaryRow}><span>Paket</span><span className={y.summaryVal}>{form.deneme_paketi_ids.length || '—'}</span></div>
+            <div className={y.summaryRow}><span>Salon</span><span className={y.summaryVal}>{rooms.filter(room => room.name.trim()).length} · {totalCap} kişilik</span></div>
+            <div className={y.summaryRow}><span>Oturma</span><span className={y.summaryVal}>{seatingMode === 'cross' ? 'Çapraz' : seatingMode === 'sequential' ? 'Sıralı' : 'Karışık'}</span></div>
+            {capError && <div className={`${y.notice} ${y.noticeError}`} style={{ marginTop: 12 }}>{capError}</div>}
+            <button type="submit" disabled={submitting || !!capError} className={y.primaryWide} style={{ marginTop: 16 }}>
               {submitting ? 'Oluşturuluyor…' : 'Sınavı oluştur'}
             </button>
           </div>
         )}
 
         {step > 1 && (
-          <div className={s.wizardActions}>
-            <button type="button" className="btn-modern btn-secondary" onClick={() => setStep(n => n - 1)}>
+          <div className={y.nav}>
+            <button type="button" className={y.ghost} onClick={() => setStep(n => n - 1)}>
               Geri
             </button>
             {step < 6 && (
-              <button type="button" className="btn-modern btn-primary" onClick={goNext}>
+              <button type="button" className={y.primary} onClick={goNext}>
                 İleri
               </button>
             )}

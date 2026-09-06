@@ -7,13 +7,56 @@ export function subjectLabel(subject: Pick<SubjectItem, 'name' | 'display_name' 
   return subject.display_name || subject.name || subject.code;
 }
 
+function normalizeSubjectKey(value: string): string {
+  return value.trim().toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ');
+}
+
+/** Şablon adı → müfredattaki gerçek ad / kod. */
+const SUBJECT_ALIASES: Record<string, string[]> = {
+  'din kültürü': [
+    'din kültürü ve ahlak bilgisi',
+    'din kültürü ve ahlâk bilgisi',
+    'dkab',
+    'dinkul_tyt',
+    'dinkul_lgs',
+    'dinkul',
+  ],
+  'din kültürü ve ahlak bilgisi': ['din kültürü', 'dkab'],
+  'din kültürü ve ahlâk bilgisi': ['din kültürü', 'dkab'],
+  'felsefe (seçmeli)': ['felsefe'],
+  'felsefe seçmeli': ['felsefe'],
+  'ilave felsefe': ['felsefe'],
+};
+
+function subjectKeys(subject: SubjectItem): string[] {
+  return [subject.name, subject.display_name, subject.code]
+    .map(value => normalizeSubjectKey(value || ''))
+    .filter(Boolean);
+}
+
 export function matchSubjectId(subjects: SubjectItem[], name: string): number | null {
-  const needle = name.trim().toLocaleLowerCase('tr-TR');
+  const needle = normalizeSubjectKey(name);
   if (!needle) return null;
-  const hit = subjects.find(s =>
-    [s.name, s.display_name, s.code].some(v => (v || '').toLocaleLowerCase('tr-TR') === needle),
+
+  const exact = subjects.find(subject => subjectKeys(subject).includes(needle));
+  if (exact) return exact.id;
+
+  const stripped = normalizeSubjectKey(name.replace(/[()]/g, ' '));
+  const aliases = [
+    ...(SUBJECT_ALIASES[needle] || []),
+    ...(stripped !== needle ? (SUBJECT_ALIASES[stripped] || []) : []),
+  ];
+  for (const alias of aliases) {
+    const key = normalizeSubjectKey(alias);
+    const hit = subjects.find(subject => subjectKeys(subject).includes(key));
+    if (hit) return hit.id;
+  }
+
+  // "Din Kültürü" → "Din Kültürü ve Ahlak Bilgisi"
+  const prefixed = subjects.find(subject =>
+    subjectKeys(subject).some(label => label.startsWith(`${needle} ve `) || label.startsWith(`${needle} `)),
   );
-  return hit?.id ?? null;
+  return prefixed?.id ?? null;
 }
 
 type SubjectPickerProps = {

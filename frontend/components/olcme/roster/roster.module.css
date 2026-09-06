@@ -564,6 +564,7 @@
 @media (max-width: 960px) {
   .grid3 { grid-template-columns: 1fr; }
   .modeGrid { grid-template-columns: 1fr; }
+  .stats { width: 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .listHead,
   .row { grid-template-columns: 40px minmax(0, 1fr) 120px 52px 60px 56px; }
   .row .meta { display: none; }

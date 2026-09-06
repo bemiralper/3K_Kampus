@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useId } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { analysisApi } from '../api';
 import KarneNotifyModal from './KarneNotifyModal';
 import type { StudentAnalysis, StudentDetailResponse, StudentDetailSectionItem } from '../types';
@@ -15,11 +15,6 @@ function fmt(n: number | null | undefined, digits = 2) {
 function fmtInt(n: number | null | undefined) {
   if (n == null || Number.isNaN(n)) return '—';
   return n.toLocaleString('tr-TR');
-}
-
-function avgClass(v: number, avg: number) {
-  if (avg == null) return s.karneAbove;
-  return v + 0.001 < avg ? s.karneBelow : s.karneAbove;
 }
 
 function verimColor(v: number) {
@@ -62,62 +57,38 @@ function kurumRankLabel(rank: number) {
   return `Kurum ${rank}. si`;
 }
 
-function KarneRozet({ rank }: { rank: number }) {
-  const uid = useId().replace(/:/g, '');
-  const metal = `rm${uid}`;
-  const leaves = [
-    [17, 74, 58], [13, 66, 42], [11, 57, 26], [12, 48, 12], [15, 40, -2], [19, 33, -16],
-  ];
-  return (
-    <svg className={s.karneRozet} data-rank={rank} viewBox="0 0 80 96" aria-hidden>
-      <defs>
-        <linearGradient id={metal} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" className={s.karneRozetStopHi} />
-          <stop offset="42%" className={s.karneRozetStopMid} />
-          <stop offset="100%" className={s.karneRozetStopLo} />
-        </linearGradient>
-      </defs>
-      <g fill={`url(#${metal})`}>
-        {leaves.map(([x, y, r], i) => (
-          <ellipse key={`l${i}`} cx={x} cy={y} rx="6.4" ry="3" transform={`rotate(${r} ${x} ${y})`} />
-        ))}
-        {leaves.map(([x, y, r], i) => (
-          <ellipse key={`r${i}`} cx={80 - x} cy={y} rx="6.4" ry="3" transform={`rotate(${-r} ${80 - x} ${y})`} />
-        ))}
-        <path d="M40 86 L44 78 H36 Z" />
-      </g>
-      <circle cx="40" cy="52" r="26.5" fill={`url(#${metal})`} />
-      <circle cx="40" cy="52" r="21.2" className={s.karneRozetDisc} />
-      <circle cx="40" cy="52" r="21.2" fill="none" stroke={`url(#${metal})`} strokeWidth="1.3" />
-      <g fill={`url(#${metal})`}>
-        <path d="M25 30 L29.2 16.5 C29.8 15 32.2 15 32.8 16.5 L36.2 26 L40 12.2 C40.4 10.8 43.6 10.8 44 12.2 L47.8 26 L51.2 16.5 C51.8 15 54.2 15 54.8 16.5 L59 30 Z" />
-        <circle cx="29.4" cy="15.6" r="2.15" />
-        <circle cx="54.6" cy="15.6" r="2.15" />
-        <path d="M40 10.4 L42.4 15.2 L40 14.1 L37.6 15.2 Z" />
-      </g>
-      <text x="40" y="61" textAnchor="middle" fill={`url(#${metal})`} className={s.karneRozetNum}>
-        {rank}
-      </text>
-    </svg>
-  );
+function sessionHours(detail: StudentDetailResponse) {
+  const start = (detail.session_start_time || '').slice(0, 5);
+  const end = (detail.session_end_time || '').slice(0, 5);
+  if (start && end) return `${start} - ${end}`;
+  return start;
 }
 
 function KarneHeader({ detail }: { detail: StudentDetailResponse }) {
   const photo = resolveCoachPhotoUrl(detail.profil_foto);
-  const branch = (detail.sube_ad || detail.kurum_ad || '3K KAMPÜS').toLocaleUpperCase('tr-TR');
   const when = formatSessionWhen(detail);
   const medal = top3Rank(detail);
+  const place = (detail.sube_ad || '').trim();
+  const caption = [place, when].filter(Boolean).join('  ·  ');
+  const typeLabel = detail.exam_type_label || '';
+  const programLabel = (detail.sinif || '').trim();
+  const programKey = detail.has_class ? 'Sınıf' : (detail.sinif_meta_label || 'Program');
+  const hours = sessionHours(detail);
+  const meta = [
+    ['Öğrenci no', detail.raw_student_id || '—'],
+    [programKey, programLabel],
+    ['Oturum', detail.session_name || ''],
+    ['Saat', hours],
+  ].filter(([, val]) => val);
   return (
-    <>
-      <div className={s.karneBanner}>
+    <div className={s.karneHero}>
+      <div className={s.karneHeroBrand}>
         <img src="/img/beyaz-logo.png" alt="3K Kampüs" className={s.karneLogo} />
-        <div className={s.karneBannerText}>
-          <p className={s.karneKurum}>{branch}</p>
-        </div>
-        {when && <div className={s.karneBannerWhen}>{when}</div>}
+        <div className={s.karneHeroExam}>{(detail.exam_name || 'Sınav').trim()}</div>
+        <div className={s.karneHeroDoc}>Sınav Sonuç Belgesi</div>
+        {caption && <div className={s.karneHeroCap}>{caption}</div>}
       </div>
-      <div className={s.karneExamBar}>{(detail.exam_name || 'Sınav').toLocaleUpperCase('tr-TR')}</div>
-      <div className={s.karneStudentBar}>
+      <div className={s.karneHeroId}>
         <div className={s.karnePhotoWrap}>
           {photo ? (
             <img src={photo} alt="" className={s.karnePhoto} />
@@ -125,27 +96,48 @@ function KarneHeader({ detail }: { detail: StudentDetailResponse }) {
             <div className={s.karnePhotoFallback}>{studentInitials(detail.student_name)}</div>
           )}
         </div>
-        <div className={s.karneStudentMain}>
+        <div className={s.karneHeroMain}>
           <div className={s.karneStudentNameRow}>
-            {medal > 0 && <KarneRozet rank={medal} />}
-            <div className={s.karneStudentNameBlock}>
-              <span className={s.karneStudentName}>
-                {detail.student_name}
-              </span>
+            <span className={s.karneStudentName}>{detail.student_name}</span>
+            <span className={s.karneHeroChips}>
+              {typeLabel && <span className={s.karneChip}>{typeLabel}</span>}
               {medal > 0 && (
-                <span className={s.karneRankCaption} data-rank={medal}>
+                <span className={s.karneChipRank} data-rank={medal}>
                   {kurumRankLabel(medal)}
+                  {detail.toplam_ogrenci ? ` / ${detail.toplam_ogrenci}` : ''}
                 </span>
               )}
-            </div>
+            </span>
           </div>
-        </div>
-        <div className={s.karneStudentNo}>
-          <span className={s.karneStudentNoLabel}>Öğr. No</span>
-          <span className={s.karneStudentNoValue}>{detail.raw_student_id || '—'}</span>
+          <dl className={s.karneHeroMeta}>
+            {meta.map(([lab, val]) => (
+              <div key={lab}>
+                <dt>{lab}</dt>
+                <dd>{val}</dd>
+              </div>
+            ))}
+          </dl>
         </div>
       </div>
-    </>
+    </div>
+  );
+}
+
+function KarneSecHead({ title, note }: { title: string; note?: string }) {
+  return (
+    <div className={s.karneSecHead}>
+      <span>{title}</span>
+      {note ? <em>{note}</em> : null}
+    </div>
+  );
+}
+
+function KarneRunHead({ title, detail }: { title: string; detail: StudentDetailResponse }) {
+  return (
+    <div className={s.karneRunHead}>
+      <strong>{title}</strong>
+      <span>{detail.student_name} · {detail.exam_name}</span>
+    </div>
   );
 }
 
@@ -163,18 +155,20 @@ function AnswerGrid({
 
   return (
     <div className={s.karneGridBlock}>
-      <div className={s.karneGridTitle}>{title} — Cevap Anahtarı</div>
+      <div className={s.karneGridName}>{title}</div>
       {rows.map((part, ri) => (
         <table key={ri} className={s.karneGrid}>
           <thead>
             <tr>
+              <th className={s.karneGridLabel} />
               {part.map((q, i) => (
-                <th key={q.q} className={s.karneQ}>{i + 1 + ri * chunk}</th>
+                <th key={q.q}>{i + 1 + ri * chunk}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             <tr>
+              <th className={s.karneGridLabel}>Cevap</th>
               {part.map(q => {
                 const empty = !q.given || q.result === 'empty';
                 const wrong = q.result === 'wrong';
@@ -183,14 +177,15 @@ function AnswerGrid({
                     key={`g-${q.q}`}
                     className={empty ? s.karneEmpty : wrong ? s.karneWrong : s.karneOk}
                   >
-                    {empty ? '.' : wrong ? q.given.toLocaleLowerCase('tr-TR') : q.given}
+                    {empty ? '·' : q.given.toLocaleUpperCase('tr-TR')}
                   </td>
                 );
               })}
             </tr>
             <tr>
+              <th className={s.karneGridLabel}>Anahtar</th>
               {part.map(q => (
-                <td key={`c-${q.q}`} className={s.karneOk}>{q.correct || ''}</td>
+                <td key={`c-${q.q}`}>{q.correct || ''}</td>
               ))}
             </tr>
           </tbody>
@@ -291,9 +286,7 @@ export default function StudentDetailModal({
     return [{ label: typeLabel, puan: detail.puan, avg: detail.kurum_avg_puan ?? 0 }];
   })();
 
-  const topicMid = detail?.topic_blocks ? Math.ceil(detail.topic_blocks.length / 2) : 0;
-  const topicLeft = detail?.topic_blocks?.slice(0, topicMid) || [];
-  const topicRight = detail?.topic_blocks?.slice(topicMid) || [];
+  const hasClass = detail?.has_class ?? Boolean(detail?.sinif_student_count || detail?.sinif_rank);
 
   return (
     <div className={s.matchDialogOverlay} ref={overlayRef} onClick={handleOverlayClick}>
@@ -349,150 +342,130 @@ export default function StudentDetailModal({
 
               <div className={s.karneSummary}>
                 {[
-                  ['Soru', detail.total_questions],
-                  ['Doğru', detail.total_correct],
-                  ['Yanlış', detail.total_wrong],
-                  ['Boş', detail.total_empty],
-                  ['Net', detail.toplam_net],
-                ].map(([label, value]) => (
-                  <div key={String(label)} className={s.karneSummaryBox}>
+                  ['Doğru', fmtInt(detail.total_correct), 'green'],
+                  ['Yanlış', fmtInt(detail.total_wrong), 'red'],
+                  ['Boş', fmtInt(detail.total_empty), 'muted'],
+                  ['Net', fmt(detail.toplam_net, 2), 'brand'],
+                  ['Puan', fmt(detail.puan, 2), 'brand'],
+                  ['Kurum Sırası', fmtInt(detail.kurum_ici_sira), 'ink'],
+                ].map(([label, value, tone]) => (
+                  <div key={label} className={s.karneSummaryBox} data-tone={tone}>
+                    <span className={s.karneSummaryValue} data-tone={tone}>{value}</span>
                     <span className={s.karneSummaryLabel}>{label}</span>
-                    <span className={s.karneSummaryValue}>
-                      {label === 'Net' ? fmt(Number(value), 2) : fmtInt(Number(value))}
-                    </span>
                   </div>
                 ))}
               </div>
 
-              <div className={s.karneYearNote}>
-                Tahmini sıralama yılı: {detail.referans_yil} · Puan sıralı
-              </div>
-
+              <KarneSecHead
+                title="Puan ve Sıralama"
+                note={detail.referans_yil ? `Tahmini sıralama ${detail.referans_yil} verilerine göre` : ''}
+              />
               <div className={s.karneTableWrap}>
                 <table className={s.karneTable}>
                   <thead>
                     <tr>
-                      <th rowSpan={2}>Puan Türü</th>
-                      <th rowSpan={2}>Puan</th>
-                      <th rowSpan={2}>Kurum Ort.</th>
-                      <th colSpan={3}>Sıralamalar</th>
-                    </tr>
-                    <tr>
-                      <th>Sınıf</th>
-                      <th>Kurum</th>
-                      <th>Tah. TR</th>
+                      <th style={{ textAlign: 'left' }}>Puan Türü</th>
+                      <th>Puan</th>
+                      <th>Kurum Ort.</th>
+                      <th>Sınıf Sırası</th>
+                      <th>Kurum Sırası</th>
+                      <th>Tahmini TR Sırası</th>
                     </tr>
                   </thead>
                   <tbody>
                     {rankingRows.map((row, i) => (
                       <tr key={row.label}>
                         <td className={s.karneLeft}>{row.label}</td>
-                        <td>{fmt(row.puan, 3)}</td>
-                        <td>{fmt(row.avg, 3)}</td>
-                        <td>{i === 0 && detail.sinif_rank ? detail.sinif_rank : i === 0 ? '—' : ''}</td>
-                        <td>{i === 0 ? detail.kurum_ici_sira : ''}</td>
+                        <td>{fmt(row.puan, 2)}</td>
+                        <td>{fmt(row.avg, 2)}</td>
+                        <td>{i === 0 ? (hasClass && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—') : ''}</td>
+                        <td>{i === 0 ? fmtInt(detail.kurum_ici_sira) : ''}</td>
                         <td>{i === 0 ? (detail.tahmini_siralama ? fmtInt(detail.tahmini_siralama) : '—') : ''}</td>
                       </tr>
                     ))}
                     <tr>
-                      <td className={s.karneLeft} colSpan={3}>Katılımlar</td>
-                      <td>{detail.sinif_student_count || '—'}</td>
-                      <td>{detail.toplam_ogrenci}</td>
-                      <td>—</td>
+                      <td className={s.karneLeft}>Katılım</td>
+                      <td className={s.karneMuted}>—</td>
+                      <td className={s.karneMuted}>—</td>
+                      <td className={s.karneMuted}>
+                        {hasClass
+                          ? `${fmtInt(detail.sinif_student_count)} öğrenci`
+                          : (detail.sinif || 'Sınıf tanımlı değil')}
+                      </td>
+                      <td className={s.karneMuted}>{fmtInt(detail.toplam_ogrenci)} öğrenci</td>
+                      <td className={s.karneMuted}>—</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
+              <KarneSecHead title="Ders / Test Performansı" note="Fark sütunları öğrencinin ortalamaya göre konumudur" />
               <div className={s.karneTableWrap}>
                 <table className={s.karneTable}>
                   <thead>
                     <tr>
-                      <th rowSpan={2} style={{ textAlign: 'left' }}>Ders / Test</th>
-                      <th rowSpan={2}>Soru</th>
-                      <th rowSpan={2}>Doğru</th>
-                      <th rowSpan={2}>Yanlış</th>
-                      <th rowSpan={2}>Net</th>
-                      <th rowSpan={2}>Başarı %</th>
-                      <th colSpan={2}>Ortalamalar</th>
-                    </tr>
-                    <tr>
-                      <th>Sınıf</th>
-                      <th>Kurum</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sectionRows.map(({ sd, main }) => (
-                      <tr key={sd.section_id} className={main ? s.karneMainRow : undefined}>
-                        <td className={s.karneLeft}>{sd.section_name}</td>
-                        <td>{sd.question_count}</td>
-                        <td>{sd.correct}</td>
-                        <td>{sd.wrong}</td>
-                        <td>{fmt(sd.net, 2)}</td>
-                        <td>{Math.round(sd.verimlilik)}</td>
-                        <td className={avgClass(sd.net, sd.sinif_avg_net)}>{fmt(sd.sinif_avg_net, 2)}</td>
-                        <td className={avgClass(sd.net, sd.kurum_avg_net)}>{fmt(sd.kurum_avg_net, 2)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              {(detail.answer_grids || []).map(grid => (
-                <AnswerGrid key={grid.section_id} title={grid.section_name} questions={grid.questions} />
-              ))}
-            </div>
-
-            <div className={s.karnePage}>
-              <div className={s.karneSectionTitle}>Alan / Ders Bazlı Performans</div>
-              <div className={s.karneTableWrap}>
-                <table className={s.karneTable}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left' }}>Alan / Ders</th>
-                      <th>D</th><th>Y</th><th>B</th><th>Net</th>
-                      <th>Verim %</th>
-                      <th>Sınıf</th><th>Fark</th>
-                      <th>Kurum</th><th>Fark</th>
-                      <th>Hata</th>
+                      <th style={{ textAlign: 'left' }}>Ders / Test</th>
+                      <th>Soru</th><th>D</th><th>Y</th><th>B</th>
+                      <th>Net</th><th>Başarı</th>
+                      <th>Sınıf Ort.</th><th>Fark</th>
+                      <th>Kurum Ort.</th><th>Fark</th>
                     </tr>
                   </thead>
                   <tbody>
                     {sectionRows.map(({ sd, main }) => {
-                      const ds = diffLabel(sd.diff_sinif);
+                      const ds = hasClass ? diffLabel(sd.diff_sinif) : { text: '—', cls: s.karneMuted };
                       const dk = diffLabel(sd.diff_kurum);
                       return (
-                        <tr key={`p-${sd.section_id}`} className={main ? s.karneMainRow : undefined}>
-                          <td className={s.karneLeft}>{sd.section_name}</td>
+                        <tr key={sd.section_id} className={main ? s.karneMainRow : undefined}>
+                          <td className={main ? s.karneLeft : s.karneSub}>{sd.section_name}</td>
+                          <td>{sd.question_count}</td>
                           <td>{sd.correct}</td>
                           <td>{sd.wrong}</td>
                           <td>{sd.empty}</td>
                           <td>{fmt(sd.net, 2)}</td>
-                          <td style={{ color: verimColor(sd.verimlilik), fontWeight: 700 }}>{Math.round(sd.verimlilik)}</td>
-                          <td>{fmt(sd.sinif_avg_net, 2)}</td>
+                          <td style={{ color: verimColor(sd.verimlilik), fontWeight: 700 }}>
+                            %{Math.round(sd.verimlilik)}
+                          </td>
+                          <td>{hasClass ? fmt(sd.sinif_avg_net, 2) : '—'}</td>
                           <td className={ds.cls}>{ds.text}</td>
                           <td>{fmt(sd.kurum_avg_net, 2)}</td>
                           <td className={dk.cls}>{dk.text}</td>
-                          <td className={sd.hata_orani > 30 ? s.karneBelow : undefined}>%{Math.round(sd.hata_orani)}</td>
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
+            </div>
 
-              <div className={s.karneSectionTitle}>Karşılaştırma (Net)</div>
+            {!!detail.answer_grids?.length && (
+              <div className={s.karnePage}>
+                <KarneRunHead title="Cevap Anahtarı" detail={detail} />
+                <div className={s.karneBarLegend}>
+                  <span className={s.karneGridLegOk}>Doğru</span>
+                  <span className={s.karneGridLegBad}>Yanlış</span>
+                  <span className={s.karneGridLegEmpty}>Boş</span>
+                </div>
+                {(detail.answer_grids || []).map(grid => (
+                  <AnswerGrid key={grid.section_id} title={grid.section_name} questions={grid.questions} />
+                ))}
+              </div>
+            )}
+
+            <div className={s.karnePage}>
+              <KarneRunHead title="Performans Analizi" detail={detail} />
+              <KarneSecHead title="Net Karşılaştırması" />
               <div className={s.karneBarLegend}>
                 <span className={s.karneBarStudent}>Öğrenci</span>
-                <span className={s.karneBarSinif}>Sınıf</span>
-                <span className={s.karneBarKurum}>Kurum</span>
+                {hasClass && <span className={s.karneBarSinif}>Sınıf ortalaması</span>}
+                <span className={s.karneBarKurum}>Kurum ortalaması</span>
               </div>
               <div className={s.karneBarList}>
                 {sectionRows.filter(r => r.main).map(({ sd }) => {
                   const cap = Math.max(sd.question_count || 1, 1);
                   const lines = [
                     { label: 'Öğrenci', value: sd.net, fill: s.karneBarFillStudent, color: '#0262a7' },
-                    { label: 'Sınıf', value: sd.sinif_avg_net, fill: s.karneBarFillSinif, color: '#7c3aed' },
+                    ...(hasClass ? [{ label: 'Sınıf', value: sd.sinif_avg_net, fill: s.karneBarFillSinif, color: '#7c3aed' }] : []),
                     { label: 'Kurum', value: sd.kurum_avg_net, fill: s.karneBarFillKurum, color: '#d97706' },
                   ];
                   return (
@@ -512,7 +485,7 @@ export default function StudentDetailModal({
                 })}
               </div>
 
-              <div className={s.karneSectionTitle}>Verimlilik &amp; Potansiyel Analizi</div>
+              <KarneSecHead title="Verimlilik" note="Doğru / (doğru + yanlış) oranı" />
               <div className={s.karneVerimGrid}>
                 {detail.section_details.map(sd => (
                   <div key={`v-${sd.section_id}`} className={s.karneVerimCard} style={{ borderTopColor: verimColor(sd.verimlilik) }}>
@@ -527,7 +500,7 @@ export default function StudentDetailModal({
                 ))}
               </div>
 
-              <div className={s.karneSectionTitle}>Güçlü ve Zayıf Alanlar</div>
+              <KarneSecHead title="Güçlü ve Geliştirilecek Alanlar" />
               <div className={s.karneAreaPair}>
                 <div className={s.karneAreaCard}>
                   <div className={`${s.karneAreaHead} ${s.karneAreaStrong}`}>Güçlü Alanlar</div>
@@ -542,7 +515,7 @@ export default function StudentDetailModal({
                   </div>
                 </div>
                 <div className={s.karneAreaCard}>
-                  <div className={`${s.karneAreaHead} ${s.karneAreaWeak}`}>Zayıf Alanlar</div>
+                  <div className={`${s.karneAreaHead} ${s.karneAreaWeak}`}>Geliştirilecek Alanlar</div>
                   <div className={s.karneAreaBody}>
                     {detail.weak_areas.length
                       ? detail.weak_areas.map(a => (
@@ -558,42 +531,36 @@ export default function StudentDetailModal({
 
             {!!detail.topic_blocks?.length && (
               <div className={s.karnePage}>
-                <div className={s.karneTopicCols}>
-                  {[topicLeft, topicRight].map((col, ci) => (
-                    <div key={ci}>
-                      {col.map(block => (
-                        <div key={block.heading}>
-                          <div className={s.karneTopicHead}>{block.heading}</div>
-                          {block.tables.map(table => (
-                            <div key={table.title}>
-                              {table.title !== block.heading && (
-                                <div className={s.karneTopicSub}>{table.title}</div>
-                              )}
-                              <table className={s.karneTopicTable}>
-                                <thead>
-                                  <tr>
-                                    <th style={{ textAlign: 'left' }}>{table.title}</th>
-                                    <th>S</th><th>D</th><th>Y</th><th>B</th><th>%</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {table.rows.map(row => (
-                                    <tr key={row.name}>
-                                      <td>{row.name}</td>
-                                      <td>{row.soru}</td>
-                                      <td>{row.dogru}</td>
-                                      <td>{row.yanlis}</td>
-                                      <td>{row.bos}</td>
-                                      <td>{row.basari}</td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
+                <KarneRunHead title="Kazanım Analizi" detail={detail} />
+                <div className={s.karneTopicStack}>
+                  {detail.topic_blocks.map(block => (
+                    block.tables.map(table => {
+                      const caption = [block.heading, table.title].filter((part, i, all) => part && all.indexOf(part) === i).join(' — ') || 'Kazanım';
+                      return (
+                        <table key={`${block.heading}-${table.title}`} className={s.karneTopicTable}>
+                          <thead>
+                            <tr>
+                              <th style={{ textAlign: 'left' }}>{caption}</th>
+                              <th>Soru</th><th>D</th><th>Y</th><th>B</th><th>Başarı</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {table.rows.map(row => (
+                              <tr key={row.name}>
+                                <td>{row.name}</td>
+                                <td>{row.soru}</td>
+                                <td>{row.dogru}</td>
+                                <td>{row.yanlis}</td>
+                                <td>{row.bos}</td>
+                                <td style={{ color: verimColor(row.basari), fontWeight: 700 }}>
+                                  %{row.basari}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      );
+                    })
                   ))}
                 </div>
               </div>

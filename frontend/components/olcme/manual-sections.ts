@@ -98,6 +98,23 @@ export type TemplateSectionLike = {
   question_end: number;
 };
 
+/** Kitapçıktaki son soru (üst ders 41–60 kalsa da seçmeli felsefe 61–65 sayılır). */
+export function templateOpticalTotal(
+  sections: TemplateSectionLike[],
+  subSections?: Record<string, TemplateSectionLike[]>,
+): number {
+  let minStart = Infinity;
+  let maxEnd = 0;
+  const visit = (row: TemplateSectionLike) => {
+    if (Number.isFinite(row.question_start)) minStart = Math.min(minStart, row.question_start);
+    if (Number.isFinite(row.question_end)) maxEnd = Math.max(maxEnd, row.question_end);
+  };
+  sections.forEach(visit);
+  Object.values(subSections || {}).flat().forEach(visit);
+  if (!Number.isFinite(minStart) || maxEnd < minStart) return 0;
+  return maxEnd - minStart + 1;
+}
+
 export function templateToDrafts(
   sections: TemplateSectionLike[],
   subSections?: Record<string, TemplateSectionLike[]>,

@@ -13,6 +13,7 @@ Tüm analiz endpoint'leri:
 import math
 import logging
 import os
+import re
 from collections import defaultdict
 from decimal import Decimal
 
@@ -34,7 +35,7 @@ from ..models import (
     Exam, ExamSection, ExamSession, ExamSessionModel,
     AnswerKey, AnswerKeyItem,
     StudentAnswer, StudentSectionScore,
-    Outcome,
+    Outcome, SubOutcome,
 )
 from ..views import CsrfExemptSessionAuthentication
 from ..interfaces.sube_context import get_exam_or_response
@@ -71,10 +72,12 @@ def _get_student_alan(student, egitim_yili):
         ).select_related('alan', 'sinif__alan').first()
         if not kayit:
             return None
+        raw, ad = None, None
         if kayit.alan:
-            return kayit.alan.kod
-        if kayit.sinif and kayit.sinif.alan:
-            return kayit.sinif.alan.kod
+            raw, ad = kayit.alan.kod, kayit.alan.ad
+        elif kayit.sinif and kayit.sinif.alan:
+            raw, ad = kayit.sinif.alan.kod, kayit.sinif.alan.ad
+        return _normalize_alan_kodu(raw) or _normalize_alan_kodu(ad)
     except Exception:
         pass
     return None
@@ -84,6 +87,200 @@ def _sinif_ad(kayit):
     """Kayıt varsa ve sınıf atanmışsa sınıf adını döner; aksi halde boş string."""
     if kayit and kayit.sinif_id and kayit.sinif:
         return kayit.sinif.ad or ''
+    return ''
+
+
+def _normalize_alan_kodu(alan_kodu: str | None) -> str | None:
+    if not alan_kodu:
+        return None
+    compact = _fold_tr(alan_kodu).replace(' ', '').replace('-', '').replace('_', '')
+    return {
+        'sayisal': 'SAYISAL',
+        'say': 'SAYISAL',
+        'sys': 'SAYISAL',
+        'esitagirlik': 'ESIT_AGIRLIK',
+        'ea': 'ESIT_AGIRLIK',
+        'sozel': 'SOZEL',
+        'soz': 'SOZEL',
+    }.get(compact)
+
+
+def _is_optional_philosophy_section(name: str) -> bool:
+    folded = _fold_tr(name)
+    return 'felsefe' in folded and 'secmeli' in folded
+
+
+def _section_name_key(name: str) -> str:
+    compact = (
+        _fold_tr(name)
+        .replace(' ', '')
+        .replace('-', '')
+        .replace('_', '')
+        .replace('(', '')
+        .replace(')', '')
+    )
+    return {
+        'turkdiliveedebiyati': 'edebiyat',
+        'tde': 'edebiyat',
+        'edebiyat': 'edebiyat',
+        'tarih1': 'tarih1',
+        'cografya1': 'cografya1',
+        'tarih2': 'tarih2',
+        'cografya2': 'cografya2',
+        'felsefegrubu': 'felsefegrubu',
+        'dinkulturuveahlakbilgisi': 'dkab',
+        'dinkulturu': 'dkab',
+        'dkab': 'dkab',
+        'matematik': 'matematik',
+        'geometri': 'geometri',
+        'fizik': 'fizik',
+        'kimya': 'kimya',
+        'biyoloji': 'biyoloji',
+        'felsefesecmeli': 'felsefesecmeli',
+    }.get(compact, compact)
+
+
+# AYT'de öğrencinin çözdüğü dersler — ÖSYM puan türü testleri.
+_AYT_ALAN_SECTION_KEYS = {
+    'SAYISAL': {'matematik', 'geometri', 'fizik', 'kimya', 'biyoloji'},
+    'ESIT_AGIRLIK': {'edebiyat', 'tarih1', 'cografya1', 'matematik', 'geometri'},
+    'SOZEL': {
+        'edebiyat', 'tarih1', 'cografya1',
+        'tarih2', 'cografya2', 'felsefegrubu', 'dkab',
+    },
+}
+
+
+def _leaf_area_sections(sections: list, sec_map: dict | None = None) -> list:
+    """Alt dersler + çocuğu olmayan ana bölümler (üst toplamlar elenir)."""
+    enriched = []
+    for row in sections:
+        info = (sec_map or {}).get(row.get('section_id'), {})
+        name = row.get('section_name') or row.get('name') or info.get('name') or ''
+        is_sub = row.get('is_sub_section')
+        if is_sub is None:
+            is_sub = info.get('is_sub', False)
+        parent_id = row.get('parent_id')
+        if parent_id is None:
+            parent_id = info.get('parent_id')
+        enriched.append({
+            **row,
+            'section_name': name,
+            'is_sub_section': bool(is_sub),
+            'parent_id': parent_id,
+        })
+    parents_with_children = {
+        row['parent_id'] for row in enriched if row['is_sub_section'] and row['parent_id']
+    }
+    return [
+        row for row in enriched
+        if row['is_sub_section'] or row.get('section_id') not in parents_with_children
+    ]
+
+
+def _areas_for_student(sections: list, exam_type: str, alan_kodu: str | None, sec_map: dict | None = None) -> list:
+    alan = _normalize_alan_kodu(alan_kodu)
+    relevant = []
+    for row in _leaf_area_sections(sections, sec_map):
+        name = row.get('section_name') or ''
+        if _is_optional_philosophy_section(name):
+            if alan == 'SOZEL':
+                relevant.append(row)
+            continue
+        if exam_type == 'YKS_AYT':
+            allowed = _AYT_ALAN_SECTION_KEYS.get(alan or '')
+            if allowed and _section_name_key(name) not in allowed:
+                continue
+        relevant.append(row)
+    return relevant
+
+
+def _pick_strong_weak_areas(
+    sections: list,
+    exam_type: str,
+    alan_kodu: str | None,
+    sec_map: dict | None = None,
+    limit: int = 2,
+) -> tuple[list, list]:
+    """Öğrencinin alanına göre güçlü / geliştirilecek dersleri seçer."""
+    candidates = _areas_for_student(sections, exam_type, alan_kodu, sec_map)
+    ranked = sorted(candidates, key=lambda x: x.get('net') or 0, reverse=True)
+    if not ranked:
+        return [], []
+    if len(ranked) == 1:
+        return ranked, []
+    strong = ranked[:limit]
+    strong_ids = {row.get('section_id') for row in strong}
+    weak = [row for row in reversed(ranked) if row.get('section_id') not in strong_ids][:limit]
+    return strong, weak
+
+
+def _area_payload(rows: list) -> list[dict]:
+    return [{'name': row.get('section_name') or row.get('name') or '', 'net': row.get('net') or 0} for row in rows]
+
+
+_TR_FOLD = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
+
+
+def _fold_tr(text: str) -> str:
+    return (text or '').translate(_TR_FOLD).casefold()
+
+
+def _looks_like_deneme_kulubu(code: str, label: str = '') -> bool:
+    blob = _fold_tr(f'{code} {label}')
+    compact = blob.replace(' ', '').replace('_', '').replace('-', '')
+    if compact == 'denemekulubu':
+        return True
+    return 'deneme' in blob and 'kulub' in blob
+
+
+def _deneme_kulubu_codes() -> set[str]:
+    codes = {'deneme_kulubu'}
+    from apps.ogrenci_kayit.domain.models import LookupOption
+    for code, label in LookupOption.objects.filter(
+        category__code='registration_type',
+    ).values_list('code', 'label'):
+        if _looks_like_deneme_kulubu(code, label):
+            codes.add(code)
+    return codes
+
+
+def _is_deneme_kulubu_kayit(ogrenci) -> bool:
+    """Kayıt türü Deneme Kulübü mü? Ek hizmet değil, Ogrenci.kayit_turu."""
+    if not ogrenci:
+        return False
+    code = (getattr(ogrenci, 'kayit_turu', None) or '').strip()
+    if not code:
+        return False
+    if _looks_like_deneme_kulubu(code):
+        return True
+    return code in _deneme_kulubu_codes()
+
+
+def _kutuphane_student_ids(student_ids, egitim_yili) -> set[int]:
+    from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+    ids = [sid for sid in student_ids if sid]
+    if not ids:
+        return set()
+    qs = OgrenciEkHizmet.objects.filter(
+        ogrenci_id__in=ids,
+        aktif_mi=True,
+        ek_hizmet__hizmet_turu='kutuphane',
+    )
+    if egitim_yili:
+        qs = qs.filter(Q(egitim_yili=egitim_yili) | Q(egitim_yili__isnull=True))
+    return set(qs.values_list('ogrenci_id', flat=True))
+
+
+def _program_label(sinif_adi: str, has_kutuphane: bool, has_deneme_kayit: bool) -> str:
+    """Sınıf yoksa: kütüphane hizmeti, yoksa kayıt türü deneme kulübü, yoksa boş."""
+    if sinif_adi:
+        return sinif_adi
+    if has_kutuphane:
+        return 'Kütüphane'
+    if has_deneme_kayit:
+        return 'Deneme Kulübü'
     return ''
 
 
@@ -165,6 +362,7 @@ def _student_session_fields(exam, answer):
     chosen = _pick_exam_session_for_answer(sessions, answer)
     session_date = chosen.session_date if chosen else None
     start_time = chosen.start_time if chosen else None
+    end_time = chosen.end_time if chosen else None
     session_name = (chosen.name or '') if chosen else ''
     if not session_date:
         session_date = exam.exam_date
@@ -172,6 +370,7 @@ def _student_session_fields(exam, answer):
         'session_name': session_name,
         'session_date': session_date.isoformat() if session_date else None,
         'session_start_time': start_time.strftime('%H:%M') if start_time else None,
+        'session_end_time': end_time.strftime('%H:%M') if end_time else None,
     }
 
 
@@ -282,16 +481,50 @@ def _build_answer_grids(exam, comparison: dict) -> list:
     return grids
 
 
-def _topic_block_label(item) -> str:
-    # Karnede Excel/yapıştırılan kazanım adı durur; müfredat konu adına
-    # (SHG21 · SAYILAR) düşürülmez — aksi halde farklı kazanımlar tek satır olur.
-    label = (item.imported_outcome_text or '').strip()
-    if not label:
-        label = item.display_outcome_text()
-    if not label and item.outcome_id and getattr(item.outcome, 'topic_id', None):
+_OUTCOME_CODE_RE = re.compile(r'^\d+(?:\.\d+){1,}$')
+
+
+def _normalize_outcome_code(text: str) -> str:
+    return (text or '').strip().rstrip('.')
+
+
+def _looks_like_outcome_code(text: str) -> bool:
+    return bool(_OUTCOME_CODE_RE.fullmatch(_normalize_outcome_code(text)))
+
+
+def _outcome_texts_for_codes(codes: set[str]) -> dict[str, str]:
+    cleaned = {_normalize_outcome_code(code) for code in codes if _looks_like_outcome_code(code)}
+    if not cleaned:
+        return {}
+    mapping: dict[str, str] = {}
+    for sub in SubOutcome.objects.filter(code__in=cleaned, is_active=True).only('code', 'text'):
+        if sub.text:
+            mapping[sub.code] = sub.text
+    remaining = cleaned - set(mapping)
+    if remaining:
+        for outcome in Outcome.objects.filter(code__in=remaining, is_active=True).only('code', 'text'):
+            if outcome.text:
+                mapping[outcome.code] = outcome.text
+    return mapping
+
+
+def _topic_block_label(item, code_texts: dict[str, str] | None = None) -> str:
+    # Karnede kod (21.1.1 / 9.1.1.4) değil, kazanım metni durur.
+    matched = (item.display_outcome_text() or '').strip()
+    if matched and not _looks_like_outcome_code(matched):
+        return matched
+    imported = (item.imported_outcome_text or '').strip()
+    if imported and not _looks_like_outcome_code(imported):
+        return imported
+    key = _normalize_outcome_code(imported)
+    if code_texts and key in code_texts:
+        return code_texts[key]
+    if item.outcome_id and getattr(item.outcome, 'topic_id', None):
         from ..services.curriculum_band import topic_display_name
-        label = topic_display_name(item.outcome.topic.name or '')
-    return label
+        topic = topic_display_name(item.outcome.topic.name or '')
+        if topic:
+            return topic
+    return imported
 
 
 def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
@@ -303,15 +536,21 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
     ak = exam.answer_keys.filter(is_primary=True).first() or exam.answer_keys.first()
     if not ak:
         return []
-    items = (
+    items = list(
         ak.items
         .select_related('section', 'section__parent_section', 'outcome__topic', 'sub_outcome')
         .order_by('section__order', 'question_number')
     )
+    code_texts = _outcome_texts_for_codes({
+        item.imported_outcome_text
+        for item in items
+        if not (item.display_outcome_text() or '').strip()
+        and _looks_like_outcome_code(item.imported_outcome_text or '')
+    })
     use_b = (booklet or '').upper() == 'B'
     blocks_map: OrderedDict = OrderedDict()
     for item in items:
-        label = _topic_block_label(item)
+        label = _topic_block_label(item, code_texts)
         if not label:
             continue
         lookup_q = item.booklet_b_global() if use_b else item.question_number
@@ -677,6 +916,10 @@ def exam_analysis_students(request, exam_pk):
     sec_map = _build_section_map(exam)
     all_nets = [_safe_float(a.total_net) for a in answers]
     is_ayt = exam.exam_type == 'YKS_AYT'
+    kutuphane_ids = _kutuphane_student_ids(
+        [a.student_id for a in answers if a.student_id],
+        exam.egitim_yili,
+    )
 
     # Puan hesapla ve sırala
     student_list = []
@@ -715,14 +958,12 @@ def exam_analysis_students(request, exam_pk):
 
         ranking_data = estimate_ranking(score_data['puan'], exam.exam_type, ranking_year)
 
-        # Güçlü / zayıf alanlar
-        sorted_sections = sorted(section_details, key=lambda x: x['net'], reverse=True)
-        strong = sorted_sections[:2] if len(sorted_sections) >= 2 else sorted_sections
-        weak = sorted_sections[-2:] if len(sorted_sections) >= 2 else []
-
-        # Sınıf bilgisi + Alan
+        # Sınıf bilgisi + Alan (sınıf yoksa kütüphane / deneme kulübü)
         sinif_adi = ''
         alan_kodu = _get_student_alan(a.student, exam.egitim_yili)
+        strong, weak = _pick_strong_weak_areas(
+            section_details, exam.exam_type, alan_kodu, sec_map,
+        )
         if a.student:
             kayit = OgrenciKayit.objects.filter(
                 ogrenci=a.student,
@@ -730,13 +971,18 @@ def exam_analysis_students(request, exam_pk):
                 aktif_mi=True,
             ).select_related('sinif').first()
             sinif_adi = _sinif_ad(kayit)
+        kutuphane = bool(a.student_id and a.student_id in kutuphane_ids)
+        deneme = _is_deneme_kulubu_kayit(a.student)
 
         student_list.append({
             'answer_id': a.id,
             'student_id': a.student_id,
             'student_name': f'{a.student.ad} {a.student.soyad}' if a.student else (a.raw_student_name or a.raw_student_id),
             'raw_student_id': a.raw_student_id,
-            'sinif': sinif_adi,
+            'sinif': _program_label(sinif_adi, kutuphane, deneme),
+            'has_class': bool(sinif_adi),
+            'has_kutuphane': kutuphane,
+            'has_deneme': deneme,
             'alan': alan_kodu,
             'toplam_net': _safe_float(a.total_net),
             'total_correct': a.total_correct,
@@ -749,8 +995,8 @@ def exam_analysis_students(request, exam_pk):
             'yuzdelik_dilim': ranking_data.get('yuzdelik_dilim'),
             'kurum_ici_yuzdelik': calculate_percentile(_safe_float(a.total_net), all_nets),
             'section_details': section_details,
-            'strong_areas': [{'name': s['section_name'], 'net': s['net']} for s in strong],
-            'weak_areas': [{'name': s['section_name'], 'net': s['net']} for s in weak],
+            'strong_areas': _area_payload(strong),
+            'weak_areas': _area_payload(weak),
         })
 
     # student_id filtresi
@@ -852,7 +1098,13 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     sinif_student_count = 0
     sinif_rank = 0
 
+    has_kutuphane = False
+    has_deneme = False
     if answer.student:
+        has_kutuphane = answer.student_id in _kutuphane_student_ids(
+            [answer.student_id], exam.egitim_yili,
+        )
+        has_deneme = _is_deneme_kulubu_kayit(answer.student)
         kayit = OgrenciKayit.objects.filter(
             ogrenci=answer.student,
             egitim_yili=exam.egitim_yili,
@@ -961,10 +1213,10 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     sorted_all_nets = sorted(all_nets, reverse=True)
     kurum_sira = sorted_all_nets.index(student_net) + 1 if student_net in sorted_all_nets else 0
 
-    # Güçlü / Zayıf
-    sorted_sections = sorted(section_details, key=lambda x: x['net'], reverse=True)
-    strong = sorted_sections[:2] if len(sorted_sections) >= 2 else sorted_sections
-    weak = sorted_sections[-2:] if len(sorted_sections) >= 2 else []
+    alan_kodu = _get_student_alan(answer.student, exam.egitim_yili)
+    strong, weak = _pick_strong_weak_areas(
+        section_details, exam.exam_type, alan_kodu, sec_map,
+    )
 
     # ── Net gelişim trendi ────────────────────────────────────────────────
     net_trend = []
@@ -1040,7 +1292,11 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'profil_foto': profil_foto,
         'profil_foto_path': profil_foto_path,
         'raw_student_id': answer.raw_student_id,
-        'sinif': sinif_adi,
+        'sinif': _program_label(sinif_adi, has_kutuphane, has_deneme),
+        'has_class': bool(sinif_adi),
+        'has_kutuphane': has_kutuphane,
+        'has_deneme': has_deneme,
+        'sinif_meta_label': 'Sınıf' if sinif_adi else 'Program',
         'sinif_student_count': sinif_student_count,
         'sinif_rank': sinif_rank,
         'toplam_net': student_net,
@@ -1059,8 +1315,9 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'kurum_avg_net': round(kurum_avg_net, 2),
         'sinif_avg_net': sinif_avg_net,
         'section_details': section_details,
-        'strong_areas': [{'name': sd['section_name'], 'net': sd['net']} for sd in strong],
-        'weak_areas': [{'name': sd['section_name'], 'net': sd['net']} for sd in weak],
+        'alan': alan_kodu,
+        'strong_areas': _area_payload(strong),
+        'weak_areas': _area_payload(weak),
         'net_trend': net_trend,
         'dogruluk_orani': dogruluk_orani,
         'toplam_bos_potansiyel': total_bos_potansiyel,
@@ -1201,6 +1458,10 @@ def exam_analysis_rankings(request, exam_pk):
 
     # Puan hesapla
     is_ayt = exam.exam_type == 'YKS_AYT'
+    kutuphane_ids = _kutuphane_student_ids(
+        [a.student_id for a in answers if a.student_id],
+        exam.egitim_yili,
+    )
     ranking_list = []
     for a in answers:
         sec_nets = _build_scoring_nets(a, exam)
@@ -1243,6 +1504,8 @@ def exam_analysis_rankings(request, exam_pk):
                 aktif_mi=True,
             ).select_related('sinif').first()
             sinif_adi = _sinif_ad(kayit)
+        kutuphane = bool(a.student_id and a.student_id in kutuphane_ids)
+        deneme = _is_deneme_kulubu_kayit(a.student)
 
         ranking_list.append({
             'answer_id': a.id,
@@ -1258,7 +1521,10 @@ def exam_analysis_rankings(request, exam_pk):
             'tahmini_siralama': est.get('tahmini_siralama'),
             'yuzdelik_dilim': est.get('yuzdelik_dilim'),
             'section_nets': section_scores_detail,
-            'sinif': sinif_adi,
+            'sinif': _program_label(sinif_adi, kutuphane, deneme),
+            'has_class': bool(sinif_adi),
+            'has_kutuphane': kutuphane,
+            'has_deneme': deneme,
             'alan': alan_kodu,
         })
 

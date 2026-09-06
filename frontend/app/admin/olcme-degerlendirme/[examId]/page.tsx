@@ -530,7 +530,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                           checked={exam.include_optional_philosophy !== false}
                           onChange={async e => {
                             const include = e.target.checked;
-                            if (!include && !confirm('Din Kültürü’nden sonraki Felsefe (Seçmeli) soruları kaldırılsın mı?')) {
+                            if (!include && !confirm('Sosyal Bilimler içindeki Felsefe (Seçmeli) soruları kaldırılsın mı?')) {
                               e.target.checked = true;
                               return;
                             }
@@ -540,7 +540,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                             } catch { /* */ }
                           }}
                         />
-                        {exam.include_optional_philosophy !== false ? 'Dahil (DKAB sonrası)' : 'Hariç'}
+                        {exam.include_optional_philosophy !== false ? 'Dahil (Sosyal Bilimler / DKAB sonrası)' : 'Hariç'}
                       </label>
                     </span>
                   </div>

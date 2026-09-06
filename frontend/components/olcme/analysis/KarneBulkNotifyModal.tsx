@@ -154,7 +154,7 @@ export default function KarneBulkNotifyModal({
             </label>
           )}
           <label style={{ fontSize: 12, color: '#475569' }}>
-            Sınıf
+            Sınıf / Program
             <select value={sinifFilter || ''} onChange={e => setSinifFilter(e.target.value || null)} style={selectStyle}>
               <option value="">Tümü</option>
               {uniqueSiniflar.map(sn => <option key={sn} value={sn}>{sn}</option>)}

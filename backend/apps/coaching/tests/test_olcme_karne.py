@@ -256,10 +256,10 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertIn('ogrenci/profil', detail['profil_foto'])
 
 
-class KarneTopicBlockUsesImportedTextTest(TestCase):
-    """Karnedeki satır adı Excel metni olmalı, müfredat konu adı değil."""
+class KarneTopicBlockUsesOutcomeTextTest(TestCase):
+    """Karnedeki satır adı kazanım metni olmalı, kod veya konu başlığı değil."""
 
-    def test_linked_outcome_keeps_excel_name(self):
+    def test_linked_outcome_uses_curriculum_text(self):
         from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
         from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, Topic
         from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
@@ -279,24 +279,30 @@ class KarneTopicBlockUsesImportedTextTest(TestCase):
         AnswerKeyItem.objects.create(
             answer_key=ak, section=section, question_number=61,
             correct_answer='A', outcome=outcome,
-            imported_outcome_text='Temel Kavramlar ve Sayı Kümeleri',
+            imported_outcome_text='21.1.2',
         )
         AnswerKeyItem.objects.create(
             answer_key=ak, section=section, question_number=62,
             correct_answer='B', outcome=outcome,
-            imported_outcome_text='Sayı Basamakları',
+            imported_outcome_text='21.1.2.',
         )
 
         blocks = _build_topic_blocks(exam, {
             '61': {'result': 'correct'},
             '62': {'result': 'wrong'},
         }, '')
-        names = [row['name'] for block in blocks for table in block['tables'] for row in table['rows']]
-        self.assertEqual(names, ['Temel Kavramlar ve Sayı Kümeleri', 'Sayı Basamakları'])
-        self.assertNotIn('SHG21 · SAYILAR', names)
+        rows = [row for block in blocks for table in block['tables'] for row in table['rows']]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['name'], 'Temel Kavramlar ve Sayı Kümeleri')
+        self.assertEqual(rows[0]['soru'], 2)
+        self.assertEqual(rows[0]['dogru'], 1)
+        self.assertEqual(rows[0]['yanlis'], 1)
+        self.assertNotIn('21.1.2', rows[0]['name'])
+        self.assertNotIn('SHG21 · SAYILAR', rows[0]['name'])
 
-    def test_b_booklet_uses_primary_excel_labels(self):
+    def test_unmatched_code_resolves_to_curriculum_text(self):
         from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, Topic
         from apps.coaching.olcme_degerlendirme.models.exam import ExamSection
         from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
 
@@ -309,6 +315,11 @@ class KarneTopicBlockUsesImportedTextTest(TestCase):
             exam=exam, name='Coğrafya', order=1,
             question_start=46, question_end=50, is_sub_section=True,
             parent_section=parent,
+        )
+        subject = Subject.objects.create(code='COG', name='Coğrafya')
+        topic = Topic.objects.create(subject=subject, name='9. sınıf · HARİTA', order=1)
+        Outcome.objects.create(
+            topic=topic, code='9.1.1.4', text='Harita bilgilerini kullanır.',
         )
         ak = AnswerKey.objects.create(exam=exam, booklet='A', is_primary=True)
         item = AnswerKeyItem.objects.create(
@@ -325,7 +336,7 @@ class KarneTopicBlockUsesImportedTextTest(TestCase):
         }, 'B')
         rows = [row for block in blocks for table in block['tables'] for row in table['rows']]
         self.assertEqual(len(rows), 1)
-        self.assertEqual(rows[0]['name'], '9.1.1.4')
+        self.assertEqual(rows[0]['name'], 'Harita bilgilerini kullanır.')
         self.assertEqual(rows[0]['dogru'], 1)
         self.assertEqual(rows[0]['yanlis'], 0)
 

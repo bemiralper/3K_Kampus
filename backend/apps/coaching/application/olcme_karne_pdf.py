@@ -235,6 +235,8 @@ def _has_class_context(data) -> bool:
     Bu durumda alanlar sıfır döner; sıfırı gerçek bir ortalama gibi göstermek
     yerine ilgili sütunları boş bırakıyoruz.
     """
+    if 'has_class' in data:
+        return bool(data.get('has_class'))
     try:
         return int(data.get('sinif_student_count') or 0) > 0
     except (TypeError, ValueError):
@@ -617,9 +619,10 @@ def _hero_header(ctx: _Ctx, data: dict):
             session = (data.get('session_name') or '').strip()
             hours = _session_hours(data)
             no = str(data.get('raw_student_id') or '—')
+            sinif_lab = (data.get('sinif_meta_label') or 'Sınıf').strip() or 'Sınıf'
             meta = [
                 ('Öğrenci no', no),
-                ('Sınıf', sinif),
+                (sinif_lab, sinif),
                 ('Oturum', session),
                 ('Saat', hours),
             ]
@@ -945,7 +948,8 @@ def _ranking_table(ctx: _Ctx, data: dict):
         Paragraph('—', ctx.s('tdMuted')),
         Paragraph('—', ctx.s('tdMuted')),
         Paragraph(
-            f"{_fmt_int(data.get('sinif_student_count'))} öğrenci" if has_class else 'Sınıf tanımlı değil',
+            f"{_fmt_int(data.get('sinif_student_count'))} öğrenci" if has_class
+            else (data.get('sinif') or 'Sınıf tanımlı değil'),
             ctx.s('tdMuted'),
         ),
         Paragraph(f"{_fmt_int(data.get('toplam_ogrenci'))} öğrenci", ctx.s('tdMuted')),
@@ -1528,9 +1532,12 @@ def render_karne_pdf_many(payloads: list[dict]) -> bytes:
 
     story: list[Any] = []
     for index, data in enumerate(payloads):
-        pages = [_summary_page(ctx, data), _analysis_page(ctx, data)]
-        pages.append(_topic_page(ctx, data))
-        pages.append(_answer_page(ctx, data))
+        pages = [
+            _summary_page(ctx, data),
+            _answer_page(ctx, data),
+            _analysis_page(ctx, data),
+            _topic_page(ctx, data),
+        ]
 
         for page in [p for p in pages if p]:
             if story:

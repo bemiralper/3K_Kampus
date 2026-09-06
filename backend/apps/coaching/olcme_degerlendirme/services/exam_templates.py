@@ -141,23 +141,21 @@ def _rows_to_dicts(rows: list[tuple]) -> list[dict]:
 
 def _with_optional_philosophy(main_rows: list[tuple], sub_map: dict[str, list[tuple]]):
     """
-    Seçmeli felsefeyi Din Kültürü'nün hemen ardına yerleştirir (61–65)
-    ve sonraki testleri +5 kaydırır. TYT 4'lü formül için ayrı ana bölümdür.
+    Seçmeli felsefe ayrı üst test değildir; Sosyal Bilimler içinde
+    Din Kültürü'nün alternatif 5 sorusudur (kitapçıkta 61–65).
+    Matematik / Fen numaraları +5 kayar. Sosyal ana blok 20 soruda kalır
+    (TYT 4'lü puan formülü bozulmasın).
     """
     mains: list[tuple] = []
     inserted = False
+    sosyal_end = None
     for name, qs, qe, order in main_rows:
         if name == OPTIONAL_PHILOSOPHY_AFTER:
             mains.append((name, qs, qe, order))
-            mains.append((
-                OPTIONAL_PHILOSOPHY_NAME,
-                qe + 1,
-                qe + OPTIONAL_PHILOSOPHY_COUNT,
-                order + 1,
-            ))
+            sosyal_end = qe
             inserted = True
         elif inserted:
-            mains.append((name, qs + OPTIONAL_PHILOSOPHY_COUNT, qe + OPTIONAL_PHILOSOPHY_COUNT, order + 1))
+            mains.append((name, qs + OPTIONAL_PHILOSOPHY_COUNT, qe + OPTIONAL_PHILOSOPHY_COUNT, order))
         else:
             mains.append((name, qs, qe, order))
 
@@ -166,7 +164,15 @@ def _with_optional_philosophy(main_rows: list[tuple], sub_map: dict[str, list[tu
 
     shifted_subs: dict[str, list[tuple]] = {}
     for parent, rows in sub_map.items():
-        if parent in _SHIFT_PARENTS:
+        if parent == OPTIONAL_PHILOSOPHY_AFTER:
+            last_end = rows[-1][2] if rows else (sosyal_end or 60)
+            shifted_subs[parent] = list(rows) + [(
+                OPTIONAL_PHILOSOPHY_NAME,
+                last_end + 1,
+                last_end + OPTIONAL_PHILOSOPHY_COUNT,
+                len(rows),
+            )]
+        elif parent in _SHIFT_PARENTS:
             shifted_subs[parent] = [
                 (n, s + OPTIONAL_PHILOSOPHY_COUNT, e + OPTIONAL_PHILOSOPHY_COUNT, o)
                 for n, s, e, o in rows
@@ -544,9 +550,7 @@ def _philosophy_layout(exam) -> str:
     """Mevcut sınavın felsefe yerleşimi: after_dkab | trailing | none."""
     from ..models.exam import ExamSection
 
-    phil = ExamSection.objects.filter(
-        exam=exam, name=OPTIONAL_PHILOSOPHY_NAME, is_sub_section=False,
-    ).first()
+    phil = ExamSection.objects.filter(exam=exam, name=OPTIONAL_PHILOSOPHY_NAME).first()
     if not phil:
         return 'none'
     if phil.question_start >= 121:
@@ -646,23 +650,9 @@ def _apply_template_ranges(exam, include: bool) -> None:
             section.question_end = row['question_end']
             section.order = row['order']
             section.save(update_fields=['question_start', 'question_end', 'order', 'question_count'])
-        elif name == OPTIONAL_PHILOSOPHY_NAME:
-            section = ExamSection.objects.create(
-                exam=exam,
-                name=row['name'],
-                question_start=row['question_start'],
-                question_end=row['question_end'],
-                order=row['order'],
-                is_sub_section=False,
-            )
-            _auto_link_subjects(exam, [section])
-            mains[name] = section
 
     if not include:
-        extra = ExamSection.objects.filter(
-            exam=exam, name=OPTIONAL_PHILOSOPHY_NAME, is_sub_section=False,
-        )
-        extra.delete()
+        ExamSection.objects.filter(exam=exam, name=OPTIONAL_PHILOSOPHY_NAME).delete()
 
     for parent_name, rows in subs_tpl.items():
         parent = mains.get(parent_name)
@@ -674,12 +664,37 @@ def _apply_template_ranges(exam, include: bool) -> None:
         }
         for row in rows:
             child = children.get(row['name'])
+            if not child and row['name'] == OPTIONAL_PHILOSOPHY_NAME:
+                orphan = ExamSection.objects.filter(
+                    exam=exam, name=OPTIONAL_PHILOSOPHY_NAME,
+                ).first()
+                if orphan:
+                    orphan.is_sub_section = True
+                    orphan.parent_section = parent
+                    child = orphan
+                else:
+                    child = ExamSection.objects.create(
+                        exam=exam,
+                        name=row['name'],
+                        question_start=row['question_start'],
+                        question_end=row['question_end'],
+                        order=row['order'],
+                        is_sub_section=True,
+                        parent_section=parent,
+                    )
+                    _auto_link_subjects(exam, [child])
+                children[row['name']] = child
             if not child:
                 continue
             child.question_start = row['question_start']
             child.question_end = row['question_end']
             child.order = row['order']
-            child.save(update_fields=['question_start', 'question_end', 'order', 'question_count'])
+            child.is_sub_section = True
+            child.parent_section = parent
+            child.save(update_fields=[
+                'question_start', 'question_end', 'order', 'question_count',
+                'is_sub_section', 'parent_section',
+            ])
 
 
 def sync_optional_philosophy_section(exam) -> None:

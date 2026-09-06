@@ -15,6 +15,7 @@ LOCKED_BAND_TYPES = YKS_EXAM_TYPES | LGS_EXAM_TYPES
 
 YKS_GRADES = frozenset({9, 10, 11, 12})
 LGS_GRADES = frozenset({5, 6, 7, 8})
+PRIMARY_GRADES = frozenset({1, 2, 3, 4})
 
 # Okulizyon birim kodları (SHG21 / 21.5.1) sınıf değildir; 21.5 içindeki 5
 # LGS 5. sınıf sanılınca Geometri YKS sınavından düşüyordu.
@@ -24,6 +25,8 @@ _SINIF_RE = re.compile(r'(?<!\d)(5|6|7|8|9|10|11|12)\s*\.\s*s[ıi]n[ıi]f', re.I
 _PRIMARY_SINIF_RE = re.compile(r'(?<!\d)([1-4])\s*\.\s*s[ıi]n[ıi]f', re.I)
 # MEB kodu: sınıf ilk parça (9.1.2, 12.3). 21.5.1 buraya düşmez.
 _MEB_HEAD_RE = re.compile(r'(?<![0-9.])(5|6|7|8|9|10|11|12)(?:\.\d+)+')
+_PRIMARY_MEB_HEAD_RE = re.compile(r'(?<![0-9.])([1-4])(?:\.\d+)+')
+_PRIMARY_SUBJECT_RE = re.compile(r'hayat\s*bilgisi|ilk\s*okul|ilkokul', re.I)
 _TOPIC_PREFIX_SPLIT = re.compile(r'\s*[·•|:]\s*')
 
 
@@ -72,6 +75,20 @@ def grades_from_text(*texts: str) -> set[int]:
     return found
 
 
+def primary_grades_from_text(*texts: str) -> set[int]:
+    found: set[int] = set()
+    for text in texts:
+        if not text:
+            continue
+        for match in _PRIMARY_SINIF_RE.finditer(text):
+            found.add(int(match.group(1)))
+        cleaned = _OKULIZYON_CODE_RE.sub(' ', text)
+        cleaned = _SHG_TOKEN_RE.sub(' ', cleaned)
+        for match in _PRIMARY_MEB_HEAD_RE.finditer(cleaned):
+            found.add(int(match.group(1)))
+    return found
+
+
 def is_okulizyon_yks(*texts: str) -> bool:
     """SHG21 / 21.x Okulizyon birimleri TYT-AYT müfredadıdır, LGS değil."""
     for text in texts:
@@ -88,16 +105,43 @@ def _topic_texts(topic) -> list[str]:
     return texts
 
 
-def _subject_signals(subject) -> tuple[set[int], bool]:
+def _subject_signals(subject) -> tuple[set[int], set[int], bool]:
     grades: set[int] = set()
+    primary: set[int] = set()
     has_yks_okulizyon = False
     topics = list(subject.topics.all()) if hasattr(subject, 'topics') else []
     for topic in topics:
         texts = _topic_texts(topic)
         grades.update(grades_from_text(*texts))
+        primary.update(primary_grades_from_text(*texts))
         if is_okulizyon_yks(*texts):
             has_yks_okulizyon = True
-    return grades, has_yks_okulizyon
+    return grades, primary, has_yks_okulizyon
+
+
+def _looks_like_primary_subject(subject) -> bool:
+    blob = ' '.join(
+        filter(None, [
+            getattr(subject, 'name', None) or '',
+            getattr(subject, 'display_name', None) or '',
+            getattr(subject, 'code', None) or '',
+        ]),
+    )
+    return bool(_PRIMARY_SUBJECT_RE.search(blob))
+
+
+def _is_primary_only(subject) -> bool:
+    """1–4. sınıf (Hayat Bilgisi vb.) YKS/LGS seçicisine düşmesin."""
+    filt = getattr(subject, 'exam_type_filter', None) or 'ALL'
+    if filt in ('LGS', 'YKS_TYT', 'YKS_AYT'):
+        return False
+    grades, primary, has_yks_okulizyon = _subject_signals(subject)
+    has_secondary = bool(grades & (YKS_GRADES | LGS_GRADES)) or has_yks_okulizyon
+    if has_secondary:
+        return False
+    if primary or _looks_like_primary_subject(subject):
+        return True
+    return False
 
 
 def subject_band(subject) -> str | None:
@@ -106,7 +150,7 @@ def subject_band(subject) -> str | None:
         return BAND_LGS
     if filt in ('YKS_TYT', 'YKS_AYT'):
         return BAND_YKS
-    grades, has_yks_okulizyon = _subject_signals(subject)
+    grades, _primary, has_yks_okulizyon = _subject_signals(subject)
     has_yks = bool(grades & YKS_GRADES) or has_yks_okulizyon
     has_lgs = bool(grades & LGS_GRADES)
     if has_yks and not has_lgs:
@@ -117,6 +161,8 @@ def subject_band(subject) -> str | None:
 
 
 def subject_matches_band(subject, band: str) -> bool:
+    if _is_primary_only(subject):
+        return False
     owned = subject_band(subject)
     return owned is None or owned == band
 
