@@ -88,6 +88,57 @@ class TicketRoutingUnitTest(TestCase):
         conv.refresh_from_db()
         self.assertEqual(conv.status, ConversationStatus.NEEDS_SUPPORT)
 
+        # İhlal sorumlu koça ekran mesajı olarak bildirilir; sessiz kalmaz.
+        from apps.takvim.domain.models import AppNotification
+
+        bildirim = AppNotification.objects.filter(
+            user_id=self.user_a.id, kurum_id=self.kurum.id, ekran_mesaji=True,
+        ).first()
+        self.assertIsNotNone(bildirim, 'SLA ihlali için ekran mesajı oluşmadı')
+        self.assertIn('Cevapsız sohbet', bildirim.baslik)
+        self.assertIn('30 dakika', bildirim.mesaj)
+        self.assertFalse(bildirim.ekran_gosterildi)
+        self.assertIn(str(conv.id), bildirim.url)
+
+    def test_sla_breach_notified_once_per_conversation(self):
+        """Cron her dakika koşar; aynı ihlal için tekrar tekrar bildirim çıkmamalı."""
+        from apps.takvim.domain.models import AppNotification
+
+        user = User.objects.create_user(username='mgr_tkt', password='x', is_superuser=True)
+        conv = self._conv(
+            status=ConversationStatus.WAITING,
+            claimed_by_user_id=user.id,
+            first_unanswered_at=timezone.now() - timedelta(minutes=45),
+            assigned_coach=self._coach_for(user),
+        )
+
+        check_and_mark_needs_support()
+        first = AppNotification.objects.filter(ekran_mesaji=True, user_id=user.id).count()
+        self.assertGreaterEqual(first, 1)
+
+        # İkinci tur: sohbet artık NEEDS_SUPPORT, sorgudan hariç tutulur.
+        check_and_mark_needs_support()
+        self.assertEqual(
+            AppNotification.objects.filter(ekran_mesaji=True, user_id=user.id).count(), first,
+        )
+        conv.refresh_from_db()
+        self.assertEqual(conv.status, ConversationStatus.NEEDS_SUPPORT)
+
+    def _coach_for(self, user):
+        """Testte SLA sorgusunun gerektirdiği assigned_coach'u üretir."""
+        from apps.coaching.models import CoachProfile
+        from apps.personel.domain.models import Personel
+        from apps.sube.domain.models import Sube
+
+        sube = Sube.objects.create(kurum=self.kurum, ad=f'S{user.id}', kod=f'S{user.id}')
+        personel = Personel.objects.create(
+            kurum=self.kurum, sube=sube, ad='K', soyad=str(user.id),
+            tc_kimlik_no=str(10000000000 + user.id), user=user,
+        )
+        return CoachProfile.objects.create(
+            teacher=personel, capacity=10, is_active=True, is_coach=True,
+        )
+
     def test_inbound_router_sets_new_for_unknown(self):
         conv = self._conv(status=ConversationStatus.OPEN)
         ConversationRouter.apply_after_inbound(conv, preview='Merhaba')

@@ -1,4 +1,4 @@
-"""WhatsApp inbound → uygulama içi (🔔) bildirim."""
+"""WhatsApp inbound → uygulama içi (🔔) bildirim ve SLA ihlali ekran mesajı."""
 from __future__ import annotations
 
 import logging
@@ -235,4 +235,79 @@ def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
             created += 1
         except Exception:
             logger.exception('whatsapp notify: create failed user=%s', user_id)
+    return created
+
+
+def resolve_sla_notify_user_ids(conversation) -> list[int]:
+    """SLA ihlali alıcıları — sorumlu koç(lar) + yetkililer.
+
+    Cevaplaması gereken kişi cevaplamadığı için bildirim yalnızca ona
+    bırakılamaz; `communication.manage` yetkisi olanlar da eklenir ki ihlal
+    yukarı tırmansın. Departmanı göremeyenler yine elenir.
+    """
+    ids = set(resolve_whatsapp_notify_user_ids(conversation))
+    try:
+        managers = set(_manage_user_ids(conversation.kurum_id))
+    except Exception:
+        logger.exception('sla notify: manager resolve failed')
+        managers = set()
+    if managers:
+        ids.update(
+            uid for uid, user in _load_users(managers).items() if _can_see(user, conversation)
+        )
+    return sorted(ids)
+
+
+def notify_sla_breach(conversation, *, sla_minutes: int) -> int:
+    """
+    Cevapsız sohbet (SLA ihlali) için ekran mesajı bildirimi oluştur.
+
+    `ekran_mesaji=True` ile gönderilir: bu bildirim panele girildiğinde tam
+    ekran modal olarak çıkar. Gelen her mesaj için bu yapılmaz — ihlal nadir
+    ve aksiyon gerektiren bir olay olduğu için burada bilinçli tercih edilmiştir.
+
+    Mükerrer bildirim koruması çağıran taraftadır: `check_and_mark_needs_support`
+    zaten NEEDS_SUPPORT olan sohbetleri sorgudan hariç tutar, dolayısıyla her
+    ihlal için tek tur bildirim üretilir.
+
+    Dönüş: oluşturulan bildirim sayısı.
+    """
+    try:
+        user_ids = resolve_sla_notify_user_ids(conversation)
+    except Exception:
+        logger.exception('sla notify: recipient resolve failed')
+        return 0
+    if not user_ids:
+        return 0
+
+    name = resolve_conversation_display_name(conversation, allow_live_lookup=True)
+    repo = AppNotificationRepository()
+    users_by_id = _load_users(user_ids)
+    created = 0
+
+    for user_id in user_ids:
+        user = users_by_id.get(user_id)
+        url = (
+            _inbox_url_for_user(user, conversation.id)
+            if user is not None
+            else f'/admin/iletisim/sohbetler?conversation={conversation.id}'
+        )
+        try:
+            repo.create({
+                'kurum_id': conversation.kurum_id,
+                'user_id': user_id,
+                'alici_tip': RecipientType.PERSONEL,
+                'baslik': f'Cevapsız sohbet: {name}',
+                'mesaj': (
+                    f'{sla_minutes} dakikadır yanıtlanmadı. Sohbet "Destek Gerekiyor" '
+                    f'durumuna alındı.'
+                ),
+                'ikon': '⏰',
+                'renk': '#dc2626',
+                'url': url,
+                'ekran_mesaji': True,
+            })
+            created += 1
+        except Exception:
+            logger.exception('sla notify: create failed user=%s', user_id)
     return created

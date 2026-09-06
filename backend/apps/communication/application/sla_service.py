@@ -1,6 +1,7 @@
 """30 dakika SLA — Destek Gerekiyor geçişi."""
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 from django.conf import settings
@@ -10,8 +11,11 @@ from apps.communication.application.conversation_events import (
     log_conversation_event,
     log_status_change,
 )
+from apps.communication.application.whatsapp_notifications import notify_sla_breach
 from apps.communication.domain.enums import ConversationEventType, ConversationStatus
 from apps.communication.domain.models import Conversation
+
+logger = logging.getLogger(__name__)
 
 
 def sla_minutes() -> int:
@@ -61,5 +65,10 @@ def check_and_mark_needs_support(*, limit: int = 200) -> int:
                 'sla_minutes': sla_minutes(),
             },
         )
+        # Bildirim üretimi durum geçişini bozmamalı; hata yutulur ve loglanır.
+        try:
+            notify_sla_breach(conv, sla_minutes=sla_minutes())
+        except Exception:
+            logger.exception('sla: breach notification failed conversation=%s', conv.id)
         updated += 1
     return updated
