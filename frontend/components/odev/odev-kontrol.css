@@ -124,6 +124,17 @@
   color: #fff;
 }
 
+.ok-filter-chip.is-info {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
+.ok-filter-chip.is-info.is-active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+
 .ok-toolbar {
   background: #fff;
   padding: 14px 18px;
@@ -589,6 +600,12 @@
   background: #f0fdf4;
   color: #15803d;
   border-color: #bbf7d0;
+}
+
+.ok-badge.is-info {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
 }
 
 .ok-empty,
@@ -1382,6 +1399,21 @@
   background: linear-gradient(135deg, #fffbeb 0%, #fef3c7 100%);
   color: #92400e;
   align-items: center;
+}
+
+/* Yönetici kilidi koça açtı; koç yeni kontrol gününü seçene kadar görünür. */
+.ok-control-open-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  margin-bottom: 14px;
+  border-radius: 12px;
+  border: 1px solid #bfdbfe;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  color: #1e40af;
+  font-size: 14px;
+  line-height: 1.4;
 }
 
 .ok-table-wrap {

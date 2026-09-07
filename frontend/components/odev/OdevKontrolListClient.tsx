@@ -7,6 +7,8 @@ import {
   fetchAssignments,
   fetchAssignmentsStats,
   assignAssignment,
+  openAssignmentForCoach,
+  setAssignmentControlDate,
   type AssignmentListStats,
 } from "@/lib/resources-api";
 import { useOdevKontrolPaths } from "@/components/odev/OdevKontrolPaths";
@@ -44,6 +46,13 @@ interface Assignment {
   non_submission_reason_display?: string | null;
   is_overdue?: boolean;
   is_due_today?: boolean;
+  is_control_locked?: boolean;
+  /** Yönetici kontrol tarihi geçmiş ödevi koça açtıysa true. */
+  control_opened_for_coach?: boolean;
+  /** Yönetici bu ödevi koça açabilir mi (kontrol tarihi geçmiş + yetki). */
+  can_open_for_coach?: boolean;
+  /** Koç bu ödeve yeni kontrol tarihi verebilir mi (koça açılmış olmalı). */
+  can_set_control_date?: boolean;
   created_at: string;
 }
 
@@ -163,8 +172,14 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [sortBy, setSortBy] = useState<"created" | "due_date" | "progress" | "student">("created");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [filterOpenedForCoach, setFilterOpenedForCoach] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [assigningId, setAssigningId] = useState<number | null>(null);
+  const [openingId, setOpeningId] = useState<number | null>(null);
+  // Koç yeni kontrol tarihi verirken açılan modal; null ise kapalı.
+  const [controlDateTarget, setControlDateTarget] = useState<Assignment | null>(null);
+  const [controlDate, setControlDate] = useState("");
+  const [savingControlDate, setSavingControlDate] = useState(false);
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
   useEffect(() => {
@@ -191,6 +206,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         status: filterStatus !== "all" ? filterStatus : undefined,
         risk_status: filterRisk !== "all" ? filterRisk : undefined,
         due_today: filterDueToday || undefined,
+        opened_for_coach: filterOpenedForCoach || undefined,
         q: debouncedSearch || undefined,
         page: targetPage,
         page_size: PAGE_SIZE,
@@ -210,7 +226,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
       flash("Ödevler yüklenemedi");
     }
     if (seq === requestSeq.current) setLoading(false);
-  }, [filterStatus, filterRisk, filterDueToday, debouncedSearch, PAGE_SIZE]);
+  }, [filterStatus, filterRisk, filterDueToday, filterOpenedForCoach, debouncedSearch, PAGE_SIZE]);
 
   useEffect(() => {
     loadAssignments(1);
@@ -242,6 +258,44 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
     setAssigningId(null);
   };
 
+  /** Yönetici: kontrol tarihi geçmiş ödevi koça açar; tarihi koç seçer. */
+  const handleOpenForCoach = async (e: React.MouseEvent, id: number) => {
+    e.stopPropagation();
+    if (openingId) return;
+    setOpeningId(id);
+    try {
+      const result = await openAssignmentForCoach(id);
+      if (result.success) { flash("Ödev koça açıldı"); refreshAll(); }
+      else flash(result.error || "Koça açma başarısız");
+    } catch { flash("Koça açma başarısız"); }
+    setOpeningId(null);
+  };
+
+  const openControlDateModal = (e: React.MouseEvent, a: Assignment) => {
+    e.stopPropagation();
+    setControlDate(new Date().toISOString().split("T")[0]);
+    setControlDateTarget(a);
+  };
+
+  /** Koç: koça açılmış ödeve yeni kontrol tarihi verir. Erteleme hakkı tüketilmez. */
+  const handleSetControlDate = async () => {
+    if (!controlDateTarget || !controlDate || savingControlDate) return;
+    setSavingControlDate(true);
+    try {
+      const result = await setAssignmentControlDate(controlDateTarget.id, {
+        new_due_date: controlDate + "T23:59:00",
+      });
+      if (result.success) {
+        flash("Yeni kontrol tarihi kaydedildi");
+        setControlDateTarget(null);
+        refreshAll();
+      } else {
+        flash(result.error || "Kontrol tarihi kaydedilemedi");
+      }
+    } catch { flash("Kontrol tarihi kaydedilemedi"); }
+    setSavingControlDate(false);
+  };
+
   const goDetail = (id: number) => router.push(paths.detail(id));
 
   const sortedAssignments = useMemo(() => {
@@ -267,18 +321,29 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
   }, [assignments, sortBy, sortOrder]);
 
   const dueTodayStat = stats?.due_today ?? assignments.filter((a) => assignmentIsDueToday(a)).length;
+  const openedForCoachStat =
+    stats?.opened_for_coach ?? assignments.filter((a) => a.control_opened_for_coach).length;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE) || 1);
 
   const selectStatusFilter = (next: FilterStatus) => {
     setFilterStatus(next);
     setFilterRisk("all");
     setFilterDueToday(false);
+    setFilterOpenedForCoach(false);
   };
 
   const selectDueTodayFilter = () => {
     setFilterDueToday(true);
     setFilterStatus("all");
     setFilterRisk("all");
+    setFilterOpenedForCoach(false);
+  };
+
+  const selectOpenedForCoachFilter = () => {
+    setFilterOpenedForCoach(true);
+    setFilterStatus("all");
+    setFilterRisk("all");
+    setFilterDueToday(false);
   };
   const rangeStart = totalCount === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
   const rangeEnd = Math.min(page * PAGE_SIZE, totalCount);
@@ -392,6 +457,30 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           {nonSubmissionLabel && (
             <span className="ok-badge is-danger">{nonSubmissionLabel}</span>
           )}
+          {a.control_opened_for_coach && (
+            <span className="ok-badge is-info">Koça açık</span>
+          )}
+          {a.can_open_for_coach && (
+            <button
+              type="button"
+              className="ok-btn-secondary"
+              style={{ padding: "4px 12px", fontSize: 12 }}
+              disabled={openingId === a.id}
+              onClick={(e) => handleOpenForCoach(e, a.id)}
+            >
+              {openingId === a.id ? "Açılıyor…" : "Koça aç"}
+            </button>
+          )}
+          {a.can_set_control_date && !a.can_open_for_coach && (
+            <button
+              type="button"
+              className="ok-btn-primary"
+              style={{ padding: "4px 12px", fontSize: 12 }}
+              onClick={(e) => openControlDateModal(e, a)}
+            >
+              Kontrol tarihi ayarla
+            </button>
+          )}
           {isDraft && (
             <button
               type="button"
@@ -446,6 +535,15 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           >
             Kontrol günü<strong>{dueTodayStat}</strong>
           </button>
+          {openedForCoachStat > 0 && (
+            <button
+              type="button"
+              className={`ok-filter-chip is-info${filterOpenedForCoach ? " is-active" : ""}`}
+              onClick={selectOpenedForCoachFilter}
+            >
+              Koça açık<strong>{openedForCoachStat}</strong>
+            </button>
+          )}
           {STATUS_CHIP_LABELS.map((chip) => {
             const value =
               chip.filter === "all" ? stats.total
@@ -458,7 +556,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
               <button
                 key={chip.filter}
                 type="button"
-                className={`ok-filter-chip${!filterDueToday && filterStatus === chip.filter ? " is-active" : ""}`}
+                className={`ok-filter-chip${!filterDueToday && !filterOpenedForCoach && filterStatus === chip.filter ? " is-active" : ""}`}
                 onClick={() => selectStatusFilter(chip.filter)}
               >
                 {chip.label}<strong>{value}</strong>
@@ -478,14 +576,16 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         />
         <select
           className="ok-select"
-          value={filterDueToday ? "due_today" : filterStatus}
+          value={filterDueToday ? "due_today" : filterOpenedForCoach ? "opened_for_coach" : filterStatus}
           onChange={(e) => {
             const v = e.target.value;
             if (v === "due_today") selectDueTodayFilter();
+            else if (v === "opened_for_coach") selectOpenedForCoachFilter();
             else selectStatusFilter(v as FilterStatus);
           }}
         >
           <option value="due_today">Kontrol günü (bugün)</option>
+          <option value="opened_for_coach">Koça açık</option>
           <option value="all">Tüm durumlar</option>
           <option value="DRAFT">Taslak</option>
           <option value="ASSIGNED">Atanmış</option>
@@ -617,6 +717,11 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                           <span className="ok-badge is-danger">{nonSubmissionLabel}</span>
                         </div>
                       )}
+                      {a.control_opened_for_coach && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className="ok-badge is-info">Koça açık</span>
+                        </div>
+                      )}
                     </td>
                     <td>
                       <div className="ok-table-progress">
@@ -630,7 +735,26 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                       )}
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      {isDraft ? (
+                      {a.can_open_for_coach ? (
+                        <button
+                          type="button"
+                          className="ok-btn-secondary"
+                          style={{ padding: "6px 12px", fontSize: 12 }}
+                          disabled={openingId === a.id}
+                          onClick={(e) => handleOpenForCoach(e, a.id)}
+                        >
+                          {openingId === a.id ? "Açılıyor…" : "Koça aç"}
+                        </button>
+                      ) : a.can_set_control_date ? (
+                        <button
+                          type="button"
+                          className="ok-btn-primary"
+                          style={{ padding: "6px 12px", fontSize: 12 }}
+                          onClick={(e) => openControlDateModal(e, a)}
+                        >
+                          Kontrol tarihi ayarla
+                        </button>
+                      ) : isDraft ? (
                         <button
                           type="button"
                           className="ok-btn-primary"
@@ -652,6 +776,49 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
           </div>
 
           {renderPager()}
+        </>
+      )}
+
+      {controlDateTarget && (
+        <>
+          <div
+            onClick={() => !savingControlDate && setControlDateTarget(null)}
+            style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.4)", backdropFilter: "blur(4px)", zIndex: 1000 }}
+          />
+          <div style={{ position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)", background: "white", borderRadius: 20, padding: 24, zIndex: 1001, width: "min(420px, calc(100vw - 32px))", boxShadow: "0 24px 80px rgba(0,0,0,0.2)" }}>
+            <h2 style={{ margin: "0 0 8px", fontSize: 20, fontWeight: 800, color: "#1e293b" }}>Yeni kontrol tarihi</h2>
+            <p style={{ margin: "0 0 20px", fontSize: 13, color: "#64748b" }}>
+              <strong>{controlDateTarget.student_name}</strong> — {assignmentTitle(controlDateTarget)}
+              <br />
+              Seçtiğiniz günde kontrol tekrar yapılabilir; erteleme hakkınız tüketilmez.
+            </p>
+            <label style={{ display: "block", fontSize: 13, fontWeight: 600, marginBottom: 6, color: "#334155" }}>Kontrol günü *</label>
+            <input
+              type="date"
+              value={controlDate}
+              min={new Date().toISOString().split("T")[0]}
+              onChange={(e) => setControlDate(e.target.value)}
+              style={{ width: "100%", padding: "11px 14px", border: "1.5px solid #e2e8f0", borderRadius: 10, fontSize: 14, outline: "none", marginBottom: 24 }}
+            />
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
+              <button
+                type="button"
+                className="ok-btn-secondary"
+                disabled={savingControlDate}
+                onClick={() => setControlDateTarget(null)}
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                className="ok-btn-primary"
+                disabled={!controlDate || savingControlDate}
+                onClick={handleSetControlDate}
+              >
+                {savingControlDate ? "Kaydediliyor…" : "Kaydet"}
+              </button>
+            </div>
+          </div>
         </>
       )}
     </div>
