@@ -368,10 +368,26 @@ def _attendance_student_info_map(ogrenci_ids):
 
 def _serialize_attendance_records(records):
     info = _attendance_student_info_map([r.ogrenci_id for r in records])
-    return [_serialize_attendance_record(r, info.get(r.ogrenci_id)) for r in records]
+    sebepler = {}
+    izinli_ids = [r.ogrenci_id for r in records if getattr(r, 'izinli_mi', False)]
+    if izinli_ids:
+        session = getattr(records[0], 'attendance_session', None)
+        if session is not None:
+            from apps.kutuphane.application.service import OgrenciIzinService
+            svc = OgrenciIzinService()
+            for oid in set(izinli_ids):
+                det = svc.get_exemption_detail(
+                    oid, session.tarih, session.periyot_kodu, library_id=session.library_id,
+                )
+                if det:
+                    sebepler[oid] = det.sebep_label()
+    return [
+        _serialize_attendance_record(r, info.get(r.ogrenci_id), sebepler.get(r.ogrenci_id, ''))
+        for r in records
+    ]
 
 
-def _serialize_attendance_record(r, student_info=None):
+def _serialize_attendance_record(r, student_info=None, izin_sebep=''):
     info = student_info or _attendance_student_info_map([r.ogrenci_id]).get(r.ogrenci_id) or {}
     return {
         'id': str(r.id),
@@ -385,6 +401,7 @@ def _serialize_attendance_record(r, student_info=None):
         'giris_saati': r.giris_saati.strftime('%H:%M') if r.giris_saati else '',
         'cikis_saati': r.cikis_saati.strftime('%H:%M') if getattr(r, 'cikis_saati', None) else '',
         'izinli_mi': getattr(r, 'izinli_mi', False),
+        'izin_sebep': izin_sebep,
         'notlar': r.notlar,
     }
 
@@ -2078,7 +2095,7 @@ def api_global_analytics(request):
     var_sayisi = yoklama_base.filter(durum__in=['PRESENT', 'LATE']).count()
     gec_sayisi = yoklama_base.filter(durum='LATE').count()
     yok_sayisi = yoklama_base.filter(durum='ABSENT').count()
-    izinli_sayisi = yoklama_base.filter(durum='EXEMPT').count()
+    izinli_sayisi = yoklama_base.filter(durum='EXCUSED').count()
     toplam_oturum = AttendanceSession.objects.filter(
         library__kurum_id=ctx['kurum_id'],
         library__sube_id=ctx['sube_id'],
@@ -2566,16 +2583,47 @@ def _serialize_izin(izin):
         'library_id': str(izin.library_id) if izin.library_id else None,
         'library_adi': izin.library.ad if izin.library else None,
         'izin_tipi': izin.izin_tipi,
+        'tekrar_modu': getattr(izin, 'tekrar_modu', None) or 'WEEKLY',
         'gun': izin.gun,
-        'gun_adi': izin.get_gun_display(),
+        'gun_adi': izin.get_gun_display() if izin.gun is not None else None,
         'periyot_kodu': izin.periyot_kodu,
         'periyot_adi': izin.get_periyot_kodu_display() if izin.periyot_kodu else None,
         'baslangic_tarihi': izin.baslangic_tarihi if isinstance(izin.baslangic_tarihi, str) else (izin.baslangic_tarihi.isoformat() if izin.baslangic_tarihi else None),
         'bitis_tarihi': izin.bitis_tarihi if isinstance(izin.bitis_tarihi, str) else (izin.bitis_tarihi.isoformat() if izin.bitis_tarihi else None),
+        'sebep_kodu': getattr(izin, 'sebep_kodu', '') or '',
         'sebep': izin.sebep,
+        'sebep_label': izin.sebep_label() if hasattr(izin, 'sebep_label') else (izin.sebep or ''),
         'aktif_mi': izin.aktif_mi,
         'created_at': izin.created_at.isoformat() if izin.created_at else '',
     }
+
+
+def _parse_izin_item(item, kurum_id, ogrenci_id=None):
+    baslangic_str = item.get('baslangic_tarihi')
+    bitis_str = item.get('bitis_tarihi')
+    gun = item.get('gun')
+    if gun is not None and gun != '':
+        gun = int(gun)
+    else:
+        gun = None
+    tekrar = item.get('tekrar_modu')
+    if not tekrar:
+        tekrar = 'WEEKLY' if gun is not None else 'RANGE'
+    payload = {
+        'ogrenci_id': ogrenci_id if ogrenci_id is not None else item['ogrenci_id'],
+        'kurum_id': kurum_id,
+        'library_id': item.get('library_id'),
+        'izin_tipi': item.get('izin_tipi', 'PERIOD'),
+        'tekrar_modu': tekrar,
+        'gun': gun,
+        'periyot_kodu': item.get('periyot_kodu'),
+        'baslangic_tarihi': date.fromisoformat(baslangic_str) if baslangic_str else date.today(),
+        'bitis_tarihi': date.fromisoformat(bitis_str) if bitis_str else None,
+        'sebep_kodu': item.get('sebep_kodu') or '',
+        'sebep': item.get('sebep', ''),
+        'suresiz': bool(item.get('suresiz')),
+    }
+    return payload
 
 
 @csrf_exempt
@@ -2592,12 +2640,14 @@ def api_ogrenci_izin_list_create(request):
     if request.method == 'GET':
         ogrenci_id = request.GET.get('ogrenci_id')
         library_id = request.GET.get('library_id')
+        include_inactive = request.GET.get('include_inactive') in ('1', 'true', 'True')
 
         service = OgrenciIzinService()
         izinler = service.list_izinler(
             kurum_id,
             ogrenci_id=int(ogrenci_id) if ogrenci_id else None,
-            library_id=library_id
+            library_id=library_id,
+            include_inactive=include_inactive,
         )
         return JsonResponse({
             'success': True,
@@ -2617,19 +2667,7 @@ def api_ogrenci_izin_list_create(request):
                     denied = require_kutuphane_operational_access(request, izin_item.get('ogrenci_id'))
                     if denied:
                         return denied
-                    baslangic_str = izin_item.get('baslangic_tarihi')
-                    bitis_str = izin_item.get('bitis_tarihi')
-                    izinler_data.append({
-                        'ogrenci_id': izin_item['ogrenci_id'],
-                        'kurum_id': kurum_id,
-                        'library_id': izin_item.get('library_id'),
-                        'izin_tipi': izin_item.get('izin_tipi', 'PERIOD'),
-                        'gun': izin_item['gun'],
-                        'periyot_kodu': izin_item.get('periyot_kodu'),
-                        'baslangic_tarihi': date.fromisoformat(baslangic_str) if baslangic_str else date.today(),
-                        'bitis_tarihi': date.fromisoformat(bitis_str) if bitis_str else None,
-                        'sebep': izin_item.get('sebep', ''),
-                    })
+                    izinler_data.append(_parse_izin_item(izin_item, kurum_id))
                 izinler = service.bulk_create_izinler(izinler_data, _get_user_id(request))
                 return JsonResponse({
                     'success': True,
@@ -2641,19 +2679,7 @@ def api_ogrenci_izin_list_create(request):
                 denied = require_kutuphane_operational_access(request, body.get('ogrenci_id'))
                 if denied:
                     return denied
-                baslangic_str = body.get('baslangic_tarihi')
-                bitis_str = body.get('bitis_tarihi')
-                data = {
-                    'ogrenci_id': body['ogrenci_id'],
-                    'kurum_id': kurum_id,
-                    'library_id': body.get('library_id'),
-                    'izin_tipi': body.get('izin_tipi', 'PERIOD'),
-                    'gun': body['gun'],
-                    'periyot_kodu': body.get('periyot_kodu'),
-                    'baslangic_tarihi': date.fromisoformat(baslangic_str) if baslangic_str else date.today(),
-                    'bitis_tarihi': date.fromisoformat(bitis_str) if bitis_str else None,
-                    'sebep': body.get('sebep', ''),
-                }
+                data = _parse_izin_item(body, kurum_id)
                 izin = service.create_izin(data, _get_user_id(request))
                 return JsonResponse({
                     'success': True,
@@ -2701,10 +2727,20 @@ def api_ogrenci_izin_detail(request, pk):
             service = OgrenciIzinService()
 
             data = {}
-            for field in ['izin_tipi', 'gun', 'periyot_kodu', 'baslangic_tarihi',
-                          'bitis_tarihi', 'sebep', 'aktif_mi', 'library_id']:
+            for field in [
+                'izin_tipi', 'tekrar_modu', 'gun', 'periyot_kodu',
+                'baslangic_tarihi', 'bitis_tarihi', 'sebep', 'sebep_kodu',
+                'aktif_mi', 'library_id', 'suresiz',
+            ]:
                 if field in body:
-                    data[field] = body[field]
+                    val = body[field]
+                    if field in ('baslangic_tarihi', 'bitis_tarihi') and val:
+                        val = date.fromisoformat(val)
+                    if field == 'gun' and val is not None and val != '':
+                        val = int(val)
+                    elif field == 'gun' and (val is None or val == ''):
+                        val = None
+                    data[field] = val
 
             izin = service.update_izin(pk, data, _get_user_id(request))
             if not izin:
@@ -2760,21 +2796,10 @@ def api_ogrenci_izin_replace(request):
         izinler_raw = body.get('izinler', [])
 
         service = OgrenciIzinService()
-        izinler_data = []
-        for item in izinler_raw:
-            baslangic_str = item.get('baslangic_tarihi')
-            bitis_str = item.get('bitis_tarihi')
-            izinler_data.append({
-                'ogrenci_id': ogrenci_id,
-                'kurum_id': kurum_id,
-                'library_id': item.get('library_id'),
-                'izin_tipi': item.get('izin_tipi', 'PERIOD'),
-                'gun': item['gun'],
-                'periyot_kodu': item.get('periyot_kodu'),
-                'baslangic_tarihi': date.fromisoformat(baslangic_str) if baslangic_str else date.today(),
-                'bitis_tarihi': date.fromisoformat(bitis_str) if bitis_str else None,
-                'sebep': item.get('sebep', ''),
-            })
+        izinler_data = [
+            _parse_izin_item(item, kurum_id, ogrenci_id=ogrenci_id)
+            for item in izinler_raw
+        ]
 
         izinler = service.replace_student_izinler(
             ogrenci_id, kurum_id, izinler_data, _get_user_id(request)

@@ -22,7 +22,8 @@ from apps.kutuphane.domain.models import (
     SeatStatus, LockerStatus, AssignmentStatus,
     AttendanceSessionStatus, TemporarySeatingStatus,
     LibraryStatus, AuditAction, AttendanceStatus,
-    AttendanceType, ExemptionType, SessionCode
+    AttendanceType, ExemptionType, SessionCode,
+    IzinTekrarModu, IzinSebepKodu,
 )
 
 
@@ -1315,33 +1316,53 @@ class OgrenciIzinService:
     def __init__(self):
         self.repo = OgrenciIzinRepository()
 
-    def list_izinler(self, kurum_id: int, ogrenci_id: int = None, library_id=None) -> list:
+    def list_izinler(
+        self,
+        kurum_id: int,
+        ogrenci_id: int = None,
+        library_id=None,
+        include_inactive: bool = False,
+    ) -> list:
         """İzinleri listeler"""
         if ogrenci_id:
-            return list(self.repo.get_by_ogrenci(ogrenci_id))
+            return list(self.repo.get_by_ogrenci(ogrenci_id, aktif_only=not include_inactive))
         if library_id:
-            return list(self.repo.get_by_library(library_id))
+            return list(self.repo.get_by_library(library_id, aktif_only=not include_inactive))
+        if include_inactive:
+            return list(self.repo.get_all(kurum_id))
         return list(self.repo.get_aktif(kurum_id))
 
     def get_izin(self, izin_id) -> Optional[OgrenciIzin]:
         return self.repo.get_by_id(izin_id)
 
+    @staticmethod
+    def _sync_after_izin_change(ogrenci_id: int, kurum_id: int, extra_dates=None):
+        AttendanceService.sync_izin_for_open_sessions(ogrenci_id, kurum_id)
+        from apps.academic.services.kutuphane_izin import sync_academic_attendance_for_student
+        days = {timezone.localdate()}
+        if extra_dates:
+            days.update(d for d in extra_dates if d)
+        for gun in days:
+            sync_academic_attendance_for_student(ogrenci_id, kurum_id, tarih=gun)
+
     @transaction.atomic
     def create_izin(self, data: dict, user_id: int) -> OgrenciIzin:
         """Yeni izin oluşturur"""
+        self._normalize_izin(data)
         self._validate_izin(data)
 
-        # Çakışma kontrolü
-        existing = self._check_conflict(data)
-        if existing:
+        if self._check_conflict(data):
             raise ValueError(
-                f"Bu öğrenci için aynı gün ve periyotta zaten izin var"
+                "Bu öğrenci için aynı tarih aralığı ve periyotta zaten izin var"
             )
 
         data['olusturan_id'] = user_id
         izin = self.repo.create(data)
 
-        AttendanceService.sync_izin_for_open_sessions(data['ogrenci_id'], data['kurum_id'])
+        self._sync_after_izin_change(
+            data['ogrenci_id'], data['kurum_id'],
+            extra_dates=[izin.baslangic_tarihi, izin.bitis_tarihi],
+        )
 
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
@@ -1349,23 +1370,30 @@ class OgrenciIzinService:
             'action': AuditAction.CREATE,
             'performed_by': user_id,
             'description': (
-                f"İzin oluşturuldu: Öğrenci #{data['ogrenci_id']} - "
-                f"Gün: {izin.get_gun_display()}"
+                f"İzin oluşturuldu: Öğrenci #{data['ogrenci_id']}"
             )
         })
         return izin
 
     @transaction.atomic
     def bulk_create_izinler(self, izinler_data: list, user_id: int) -> list:
-        """Toplu izin oluşturur — bir öğrencinin tüm haftalık izinlerini tek seferde"""
+        """Toplu izin oluşturur."""
+        synced = set()
         for data in izinler_data:
+            self._normalize_izin(data)
             self._validate_izin(data)
             data['olusturan_id'] = user_id
 
         izinler = self.repo.bulk_create(izinler_data)
 
-        if izinler:
-            AttendanceService.sync_izin_for_open_sessions(izinler[0].ogrenci_id, izinler[0].kurum_id)
+        for izin in izinler:
+            key = (izin.ogrenci_id, izin.kurum_id)
+            if key not in synced:
+                self._sync_after_izin_change(
+                    izin.ogrenci_id, izin.kurum_id,
+                    extra_dates=[izin.baslangic_tarihi, izin.bitis_tarihi],
+                )
+                synced.add(key)
 
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
@@ -1382,9 +1410,43 @@ class OgrenciIzinService:
         if not izin:
             raise ValueError("İzin bulunamadı")
 
-        updated = self.repo.update(izin_id, data)
+        merged = {
+            'ogrenci_id': izin.ogrenci_id,
+            'kurum_id': izin.kurum_id,
+            'library_id': izin.library_id,
+            'izin_tipi': izin.izin_tipi,
+            'tekrar_modu': izin.tekrar_modu,
+            'gun': izin.gun,
+            'periyot_kodu': izin.periyot_kodu,
+            'baslangic_tarihi': izin.baslangic_tarihi,
+            'bitis_tarihi': izin.bitis_tarihi,
+            'sebep_kodu': izin.sebep_kodu,
+            'sebep': izin.sebep,
+            'aktif_mi': izin.aktif_mi,
+        }
+        merged.update(data)
+        self._normalize_izin(merged)
+        self._validate_izin(merged)
+        if self._check_conflict(merged, exclude_id=izin_id):
+            raise ValueError(
+                "Bu öğrenci için aynı tarih aralığı ve periyotta zaten izin var"
+            )
 
-        AttendanceService.sync_izin_for_open_sessions(izin.ogrenci_id, izin.kurum_id)
+        persist = {
+            k: v for k, v in merged.items()
+            if k not in ('ogrenci_id', 'kurum_id', '_suresiz')
+        }
+        updated = self.repo.update(izin_id, persist)
+
+        self._sync_after_izin_change(
+            izin.ogrenci_id, izin.kurum_id,
+            extra_dates=[
+                izin.baslangic_tarihi,
+                izin.bitis_tarihi,
+                persist.get('baslangic_tarihi'),
+                persist.get('bitis_tarihi'),
+            ],
+        )
 
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
@@ -1403,7 +1465,10 @@ class OgrenciIzinService:
 
         result = self.repo.delete(izin_id)
 
-        AttendanceService.sync_izin_for_open_sessions(izin.ogrenci_id, izin.kurum_id)
+        self._sync_after_izin_change(
+            izin.ogrenci_id, izin.kurum_id,
+            extra_dates=[izin.baslangic_tarihi, izin.bitis_tarihi],
+        )
 
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
@@ -1417,87 +1482,138 @@ class OgrenciIzinService:
     @transaction.atomic
     def replace_student_izinler(self, ogrenci_id: int, kurum_id: int,
                                  izinler_data: list, user_id: int) -> list:
-        """
-        Öğrencinin tüm aktif izinlerini sil ve yenilerini oluştur.
-        Haftalık program değişikliğinde kullanılır.
-        """
-        self.repo.deactivate_by_ogrenci(ogrenci_id)
+        """Haftalık (WEEKLY) izinleri değiştirir; RANGE kayıtlarına dokunmaz."""
+        self.repo.deactivate_weekly_by_ogrenci(ogrenci_id)
 
         for data in izinler_data:
             data['ogrenci_id'] = ogrenci_id
             data['kurum_id'] = kurum_id
             data['olusturan_id'] = user_id
+            data.setdefault('tekrar_modu', IzinTekrarModu.WEEKLY)
+            self._normalize_izin(data)
             self._validate_izin(data)
 
         izinler = self.repo.bulk_create(izinler_data)
 
-        AttendanceService.sync_izin_for_open_sessions(ogrenci_id, kurum_id)
+        extra = []
+        for iz in izinler:
+            extra.extend([iz.baslangic_tarihi, iz.bitis_tarihi])
+        self._sync_after_izin_change(ogrenci_id, kurum_id, extra_dates=extra)
 
         AuditLogRepository.create({
             'entity_type': 'OgrenciIzin',
             'entity_id': izinler[0].id if izinler else None,
             'action': AuditAction.UPDATE,
             'performed_by': user_id,
-            'description': f"Öğrenci #{ogrenci_id} izinleri yeniden düzenlendi ({len(izinler)} izin)"
+            'description': f"Öğrenci #{ogrenci_id} haftalık izinleri düzenlendi ({len(izinler)} izin)"
         })
         return izinler
 
-    def is_student_exempted(self, ogrenci_id: int, tarih: date, periyot_kodu: str,
-                             library_id=None, kurum_id: int = None) -> bool:
+    def is_student_exempted(
+        self,
+        ogrenci_id: int,
+        tarih: date,
+        periyot_kodu: str,
+        library_id=None,
+        kurum_id: int = None,
+        ignore_library: bool = False,
+    ) -> bool:
         """Öğrenci belirli tarih ve periyotta izinli mi?"""
+        return self.get_exemption_detail(
+            ogrenci_id, tarih, periyot_kodu,
+            library_id=library_id,
+            ignore_library=ignore_library,
+        ) is not None
+
+    def get_exemption_detail(
+        self,
+        ogrenci_id: int,
+        tarih: date,
+        periyot_kodu: str,
+        library_id=None,
+        ignore_library: bool = False,
+    ) -> Optional[OgrenciIzin]:
         gun = tarih.weekday()
         izinler = self.repo.get_by_ogrenci_and_day(ogrenci_id, gun, tarih)
-
         for izin in izinler:
-            # Tam gün izni
-            if izin.izin_tipi == ExemptionType.FULL_DAY:
-                # Salon kontrolü
-                if izin.library_id is None or izin.library_id == library_id:
-                    return True
-            # Periyot izni
-            elif izin.periyot_kodu == periyot_kodu:
-                if izin.library_id is None or izin.library_id == library_id:
-                    return True
-        return False
+            if not izin.covers_period(periyot_kodu):
+                continue
+            if ignore_library or izin.library_id is None or izin.library_id == library_id:
+                return izin
+        return None
+
+    def _normalize_izin(self, data: dict):
+        tekrar = data.get('tekrar_modu') or IzinTekrarModu.RANGE
+        if tekrar not in IzinTekrarModu.values:
+            raise ValueError("Geçersiz tekrar modu")
+        data['tekrar_modu'] = tekrar
+        if tekrar == IzinTekrarModu.RANGE:
+            data['gun'] = None
+        if bool(data.pop('suresiz', False)):
+            data['bitis_tarihi'] = None
+            data['_suresiz'] = True
+        sebep_kodu = data.get('sebep_kodu') or ''
+        if sebep_kodu and sebep_kodu not in IzinSebepKodu.values:
+            raise ValueError("Geçersiz izin sebebi")
+        data['sebep_kodu'] = sebep_kodu
 
     def _validate_izin(self, data: dict):
         """İzin validasyonu"""
         if 'ogrenci_id' not in data:
             raise ValueError("Öğrenci ID gereklidir")
-        if 'gun' not in data:
-            raise ValueError("Gün bilgisi gereklidir")
-        if data.get('gun') not in range(7):
-            raise ValueError("Geçersiz gün (0-6 arası olmalı)")
-        if 'baslangic_tarihi' not in data:
+        if 'baslangic_tarihi' not in data or not data.get('baslangic_tarihi'):
             raise ValueError("Başlangıç tarihi gereklidir")
 
-        izin_tipi = data.get('izin_tipi', 'PERIOD')
-        if izin_tipi == 'PERIOD' and not data.get('periyot_kodu'):
-            raise ValueError("Periyot izni için periyot kodu gereklidir")
+        tekrar = data.get('tekrar_modu') or IzinTekrarModu.RANGE
+        if tekrar == IzinTekrarModu.WEEKLY:
+            if data.get('gun') not in range(7):
+                raise ValueError("Haftalık izin için gün (0-6) gereklidir")
+        else:
+            data['gun'] = None
 
-    def _check_conflict(self, data: dict) -> bool:
-        """Aynı öğrenci/gün/periyot çakışma kontrolü"""
+        suresiz = bool(data.pop('_suresiz', False))
+        if data.get('bitis_tarihi') is None and not suresiz:
+            raise ValueError(
+                "Bitiş tarihi gerekli. Dönem boyu izin için suresiz=true gönderin."
+            )
+        izin_tipi = data.get('izin_tipi', ExemptionType.PERIOD)
+        if izin_tipi == ExemptionType.PERIOD and not data.get('periyot_kodu'):
+            raise ValueError("Periyot izni için periyot kodu gereklidir")
+        if data.get('bitis_tarihi') and data['baslangic_tarihi'] > data['bitis_tarihi']:
+            raise ValueError("Bitiş tarihi başlangıçtan önce olamaz")
+
+    def _check_conflict(self, data: dict, exclude_id=None) -> bool:
+        """Aynı öğrenci / örtüşen aralık / aynı periyot çakışması."""
+        from django.db.models import Q
+
         qs = OgrenciIzin.objects.filter(
             ogrenci_id=data['ogrenci_id'],
-            gun=data['gun'],
-            aktif_mi=True
+            aktif_mi=True,
         )
-        izin_tipi = data.get('izin_tipi', 'PERIOD')
-        if izin_tipi == 'FULL_DAY':
-            # Tam gün izni varsa çakışır
-            qs = qs.filter(izin_tipi='FULL_DAY')
+        if exclude_id:
+            qs = qs.exclude(id=exclude_id)
+
+        izin_tipi = data.get('izin_tipi', ExemptionType.PERIOD)
+        if izin_tipi == ExemptionType.FULL_DAY:
+            qs = qs.filter(
+                Q(izin_tipi=ExemptionType.FULL_DAY) | Q(periyot_kodu__isnull=False)
+            )
         else:
-            # Aynı periyotta izin veya tam gün izni varsa çakışır
-            from django.db.models import Q
             qs = qs.filter(
-                Q(izin_tipi='FULL_DAY') | Q(periyot_kodu=data.get('periyot_kodu'))
+                Q(izin_tipi=ExemptionType.FULL_DAY) | Q(periyot_kodu=data.get('periyot_kodu'))
             )
 
-        if data.get('library_id'):
-            qs = qs.filter(
-                Q(library_id=data['library_id']) | Q(library__isnull=True)
-            )
+        start = data['baslangic_tarihi']
+        end = data.get('bitis_tarihi')
+        qs = qs.filter(baslangic_tarihi__lte=end or date(9999, 12, 31))
+        qs = qs.filter(Q(bitis_tarihi__isnull=True) | Q(bitis_tarihi__gte=start))
 
+        tekrar = data.get('tekrar_modu') or IzinTekrarModu.RANGE
+        gun = data.get('gun')
+        if tekrar == IzinTekrarModu.WEEKLY and gun is not None:
+            qs = qs.filter(
+                Q(tekrar_modu=IzinTekrarModu.RANGE) | Q(gun=gun) | Q(gun__isnull=True)
+            )
         return qs.exists()
 
 

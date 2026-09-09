@@ -680,19 +680,27 @@ def get_or_build_student_roster(session: LessonSession) -> list[dict[str, Any]]:
     else:
         students = []
 
+    from apps.academic.services.kutuphane_izin import lesson_academic_period, virtual_izin_status
+
+    periyot = lesson_academic_period(session)
     for st in students:
         rec = existing.get(st.id)
+        izin = virtual_izin_status(
+            ogrenci_id=st.id,
+            tarih=session.session_date,
+            periyot_kodu=periyot,
+            rec=rec,
+        )
         rows.append({
             'student_id': st.id,
             'student_name': f'{st.ad} {st.soyad}'.strip(),
-            'status': rec.status if rec else StudentAttendanceStatus.PRESENT,
-            'status_display': (
-                rec.get_status_display() if rec
-                else dict(StudentAttendanceStatus.choices)[StudentAttendanceStatus.PRESENT]
-            ),
-            'note': rec.note if rec else '',
+            'status': izin['status'],
+            'status_display': izin['status_display'],
+            'note': rec.note if rec else izin['note'],
             'late_time': format_late_time(rec.late_time) if rec else None,
             'record_id': rec.id if rec else None,
+            'izinli_mi': izin['izinli_mi'],
+            'izin_sebep': izin['izin_sebep'],
         })
     return rows
 
@@ -722,15 +730,27 @@ def save_student_attendance(
         late_time = None
         if status == StudentAttendanceStatus.LATE:
             late_time = late_time_or_now(item.get('late_time'))
-        LessonAttendanceRecord.objects.update_or_create(
-            session=session,
+        from apps.academic.services.kutuphane_izin import (
+            apply_izin_badge_on_save,
+            lesson_academic_period,
+        )
+
+        defaults = apply_izin_badge_on_save(
             student_id=sid,
+            session_date=session.session_date,
+            periyot_kodu=lesson_academic_period(session),
+            status=status,
             defaults={
                 'status': status,
                 'note': item.get('note') or '',
                 'late_time': late_time,
                 'marked_by': user if getattr(user, 'is_authenticated', False) else None,
             },
+        )
+        LessonAttendanceRecord.objects.update_or_create(
+            session=session,
+            student_id=sid,
+            defaults=defaults,
         )
 
     if session.status == SessionStatus.SCHEDULED:

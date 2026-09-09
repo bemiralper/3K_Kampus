@@ -95,6 +95,10 @@ class ClassPeriodAttendanceRecord(models.Model):
         default=StudentAttendanceStatus.PRESENT,
     )
     note = models.CharField(max_length=255, blank=True, default='')
+    izinli_mi = models.BooleanField(
+        default=False,
+        help_text='Kütüphane izin kaydı nedeniyle otomatik İZİNLİ',
+    )
     late_time = models.TimeField(
         null=True,
         blank=True,

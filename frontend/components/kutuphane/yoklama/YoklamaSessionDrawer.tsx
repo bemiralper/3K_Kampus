@@ -258,7 +258,11 @@ export default function YoklamaSessionDrawer({
         <td style={tdStyle}>
           <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
             <span style={{ fontWeight: 500, fontSize: "13px" }}>{r.ogrenci_adi || `#${r.ogrenci_id}`}</span>
-            {r.izinli_mi && <Badge label="İZİNLİ" color="#4338ca" bg="#e0e7ff" />}
+            {r.izinli_mi && (
+              <span title={r.izin_sebep || 'Kütüphane izni'}>
+                <Badge label="İZİNLİ" color="#4338ca" bg="#e0e7ff" />
+              </span>
+            )}
           </div>
         </td>
         <td style={tdStyle}>

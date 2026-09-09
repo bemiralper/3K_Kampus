@@ -122,6 +122,21 @@ class ExemptionType(models.TextChoices):
     FULL_DAY = 'FULL_DAY', 'Tam Gün İzni'
 
 
+class IzinTekrarModu(models.TextChoices):
+    """İznin takvimde nasıl yineleneceği"""
+    RANGE = 'RANGE', 'Tarih Aralığı'
+    WEEKLY = 'WEEKLY', 'Haftalık Tekrar'
+
+
+class IzinSebepKodu(models.TextChoices):
+    HASTALIK = 'HASTALIK', 'Hastalık'
+    AILEVI = 'AILEVI', 'Ailevi'
+    SINAV = 'SINAV', 'Sınav'
+    SPOR = 'SPOR', 'Spor'
+    RESMI_ISLEM = 'RESMI_ISLEM', 'Resmi işlem'
+    DIGER = 'DIGER', 'Diğer'
+
+
 class DayOfWeek(models.IntegerChoices):
     """Haftanın günleri (Python weekday uyumlu)"""
     MONDAY = 0, 'Pazartesi'
@@ -396,14 +411,10 @@ class DersProgramiSablonu(models.Model):
 
 class OgrenciIzin(models.Model):
     """
-    Öğrenci İzin Kaydı
-    
-    Haftalık tekrarlı izinler. Bir öğrenci belirli günlerde
-    belirli periyotlardan izinli olabilir.
-    Örn: "Her Pazartesi akşam izinli", "Her Çarşamba tam gün izinli"
-    
-    İzin bir kez tanımlanır, haftalık tekrarlanır.
-    Gerektiğinde değiştirilebilir veya belirli bir tarih aralığı verilebilir.
+    Öğrenci izin kaydı.
+
+    RANGE: baslangic–bitis arasındaki her takvim günü.
+    WEEKLY: aralık içindeki eşleşen hafta günleri (ör. her Pazartesi akşam).
     """
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     ogrenci_id = models.IntegerField('Öğrenci ID')
@@ -420,10 +431,18 @@ class OgrenciIzin(models.Model):
         choices=ExemptionType.choices,
         default=ExemptionType.PERIOD
     )
+    tekrar_modu = models.CharField(
+        'Tekrar',
+        max_length=16,
+        choices=IzinTekrarModu.choices,
+        default=IzinTekrarModu.RANGE,
+    )
     gun = models.IntegerField(
         'Gün',
         choices=DayOfWeek.choices,
-        help_text='Haftanın günü (0=Pazartesi ... 6=Pazar)'
+        null=True,
+        blank=True,
+        help_text='WEEKLY için haftanın günü (0=Pazartesi ... 6=Pazar). RANGE için boş.'
     )
     periyot_kodu = models.CharField(
         'Periyot Kodu', max_length=20,
@@ -440,6 +459,13 @@ class OgrenciIzin(models.Model):
         null=True, blank=True,
         help_text='Null ise süresiz'
     )
+    sebep_kodu = models.CharField(
+        'Sebep Kodu',
+        max_length=20,
+        choices=IzinSebepKodu.choices,
+        blank=True,
+        default='',
+    )
     sebep = models.CharField('İzin Sebebi', max_length=255, blank=True, default='')
     aktif_mi = models.BooleanField('Aktif', default=True)
     olusturan_id = models.IntegerField('Oluşturan Personel ID', null=True, blank=True)
@@ -450,19 +476,23 @@ class OgrenciIzin(models.Model):
         db_table = 'kutuphane_ogrenci_izin'
         verbose_name = 'Öğrenci İzni'
         verbose_name_plural = 'Öğrenci İzinleri'
-        ordering = ['ogrenci_id', 'gun', 'periyot_kodu']
+        ordering = ['ogrenci_id', 'baslangic_tarihi', 'gun', 'periyot_kodu']
         indexes = [
             models.Index(fields=['ogrenci_id', 'aktif_mi']),
             models.Index(fields=['kurum_id']),
             models.Index(fields=['gun', 'periyot_kodu']),
             models.Index(fields=['library', 'gun']),
+            models.Index(fields=['tekrar_modu', 'baslangic_tarihi']),
         ]
 
     def __str__(self):
-        gun_str = self.get_gun_display()
-        if self.izin_tipi == ExemptionType.FULL_DAY:
-            return f"Öğrenci #{self.ogrenci_id} - {gun_str} Tam Gün İzinli"
-        return f"Öğrenci #{self.ogrenci_id} - {gun_str} {self.get_periyot_kodu_display()} İzinli"
+        periyot = (
+            'Tam Gün' if self.izin_tipi == ExemptionType.FULL_DAY
+            else (self.get_periyot_kodu_display() if self.periyot_kodu else 'Periyot')
+        )
+        if self.tekrar_modu == IzinTekrarModu.WEEKLY and self.gun is not None:
+            return f"Öğrenci #{self.ogrenci_id} - {self.get_gun_display()} {periyot}"
+        return f"Öğrenci #{self.ogrenci_id} - {self.baslangic_tarihi} {periyot}"
 
     def is_valid_on_date(self, tarih) -> bool:
         """Verilen tarihte bu izin geçerli mi?"""
@@ -472,8 +502,20 @@ class OgrenciIzin(models.Model):
             return False
         if self.bitis_tarihi and tarih > self.bitis_tarihi:
             return False
-        # Gün kontrolü
+        if self.tekrar_modu == IzinTekrarModu.RANGE or self.gun is None:
+            return True
         return tarih.weekday() == self.gun
+
+    def covers_period(self, periyot_kodu: str) -> bool:
+        if self.izin_tipi == ExemptionType.FULL_DAY:
+            return True
+        return self.periyot_kodu == periyot_kodu
+
+    def sebep_label(self) -> str:
+        kod = self.get_sebep_kodu_display() if self.sebep_kodu else ''
+        if kod and self.sebep and self.sebep != kod:
+            return f'{kod}: {self.sebep}'
+        return self.sebep or kod or ''
 
 
 class Seat(models.Model):

@@ -16,7 +16,7 @@ from apps.kutuphane.domain.models import (
     SubeDersProgrami, DersProgramiSablonu, OgrenciIzin,
     LibraryStatus, SeatStatus, LockerStatus,
     AssignmentStatus, AttendanceSessionStatus,
-    TemporarySeatingStatus, ExemptionType,
+    TemporarySeatingStatus, ExemptionType, IzinTekrarModu,
     AttendanceStatus, AttendanceType, SessionCode
 )
 
@@ -845,15 +845,25 @@ class OgrenciIzinRepository:
         return qs
 
     @staticmethod
+    def _date_window_q(tarih: date) -> Q:
+        return Q(baslangic_tarihi__lte=tarih) & (
+            Q(bitis_tarihi__isnull=True) | Q(bitis_tarihi__gte=tarih)
+        )
+
+    @staticmethod
+    def _weekday_match_q(gun: int) -> Q:
+        return Q(tekrar_modu=IzinTekrarModu.RANGE) | Q(gun=gun) | Q(gun__isnull=True)
+
+    @staticmethod
     def get_by_ogrenci_and_day(ogrenci_id: int, gun: int, tarih: date) -> QuerySet:
-        """Öğrencinin belirli bir gün için aktif izinlerini getirir"""
+        """Öğrencinin belirli bir takvim günü için aktif izinlerini getirir."""
         return OgrenciIzin.objects.filter(
             ogrenci_id=ogrenci_id,
-            gun=gun,
             aktif_mi=True,
-            baslangic_tarihi__lte=tarih
         ).filter(
-            Q(bitis_tarihi__isnull=True) | Q(bitis_tarihi__gte=tarih)
+            OgrenciIzinRepository._date_window_q(tarih)
+        ).filter(
+            OgrenciIzinRepository._weekday_match_q(gun)
         )
 
     @staticmethod
@@ -867,17 +877,15 @@ class OgrenciIzinRepository:
         """
         qs = OgrenciIzin.objects.filter(
             kurum_id=kurum_id,
-            gun=gun,
             aktif_mi=True,
-            baslangic_tarihi__lte=tarih
         ).filter(
-            Q(bitis_tarihi__isnull=True) | Q(bitis_tarihi__gte=tarih)
+            OgrenciIzinRepository._date_window_q(tarih)
         ).filter(
-            # TAM_GUN izinli veya belirli periyotta izinli
-            Q(izin_tipi='FULL_DAY') | Q(periyot_kodu=periyot_kodu)
+            OgrenciIzinRepository._weekday_match_q(gun)
+        ).filter(
+            Q(izin_tipi=ExemptionType.FULL_DAY) | Q(periyot_kodu=periyot_kodu)
         )
 
-        # Salon bazlı veya genel
         if library_id:
             qs = qs.filter(Q(library_id=library_id) | Q(library__isnull=True))
         else:
@@ -924,4 +932,13 @@ class OgrenciIzinRepository:
         """Öğrencinin tüm aktif izinlerini pasife al"""
         OgrenciIzin.objects.filter(
             ogrenci_id=ogrenci_id, aktif_mi=True
+        ).update(aktif_mi=False)
+
+    @staticmethod
+    def deactivate_weekly_by_ogrenci(ogrenci_id: int):
+        """Yalnızca haftalık tekrarlı aktif izinleri pasife al (RANGE kayıtları kalır)."""
+        OgrenciIzin.objects.filter(
+            ogrenci_id=ogrenci_id,
+            aktif_mi=True,
+            tekrar_modu=IzinTekrarModu.WEEKLY,
         ).update(aktif_mi=False)

@@ -1420,6 +1420,8 @@ export type AttendanceRosterRow = {
   note: string;
   late_time?: string | null;
   record_id: number | null;
+  izinli_mi?: boolean;
+  izin_sebep?: string;
 };
 
 export type LessonOpsMeta = {

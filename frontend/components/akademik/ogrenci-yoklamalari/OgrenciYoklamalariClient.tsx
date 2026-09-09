@@ -273,7 +273,13 @@ export default function OgrenciYoklamalariClient() {
               : row.status === 'EXCUSED'
                 ? 'blue'
                 : 'red';
-        return <Tag color={color}>{v}</Tag>;
+        return (
+          <span title={row.izin_sebep || undefined}>
+            <Tag color={row.izinli_mi ? 'purple' : color}>
+              {row.izinli_mi ? 'İZİNLİ' : v}
+            </Tag>
+          </span>
+        );
       },
     },
     {

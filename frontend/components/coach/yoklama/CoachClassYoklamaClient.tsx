@@ -346,7 +346,14 @@ export default function CoachClassYoklamaClient() {
                       {initials(row.student_name)}
                     </span>
                     <div className="cyc-name-col">
-                      <div className="cyc-name">{row.student_name}</div>
+                      <div className="cyc-name">
+                        {row.student_name}
+                        {row.izinli_mi ? (
+                          <span className="cyc-izin-badge" title={row.izin_sebep || 'Kütüphane izni'}>
+                            İZİNLİ
+                          </span>
+                        ) : null}
+                      </div>
                       <button
                         type="button"
                         className={`cyc-note-btn${row.note ? " has-note" : ""}`}

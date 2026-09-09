@@ -186,6 +186,7 @@ export interface AttendanceRecord {
   giris_saati: string | null;
   cikis_saati: string | null;
   izinli_mi: boolean;
+  izin_sebep?: string;
   notlar: string;
   notification_status?: Record<'ABSENT' | 'LATE' | 'EXIT', 'none' | 'pending' | 'sent'>;
 }
@@ -883,6 +884,23 @@ export async function deleteDersProgramiSablonu(id: string): Promise<ApiResponse
 // ÖĞRENCİ İZİNLERİ
 // ============================================================
 
+export type IzinTekrarModu = 'RANGE' | 'WEEKLY';
+export type IzinSebepKodu = 'HASTALIK' | 'AILEVI' | 'SINAV' | 'SPOR' | 'RESMI_ISLEM' | 'DIGER' | '';
+
+export interface IzinWritePayload {
+  ogrenci_id: number;
+  library_id?: string;
+  izin_tipi: ExemptionType;
+  tekrar_modu?: IzinTekrarModu;
+  gun?: number | null;
+  periyot_kodu?: SessionCode;
+  baslangic_tarihi?: string;
+  bitis_tarihi?: string | null;
+  sebep?: string;
+  sebep_kodu?: IzinSebepKodu;
+  suresiz?: boolean;
+}
+
 export interface OgrenciIzin {
   id: string;
   ogrenci_id: number;
@@ -891,52 +909,45 @@ export interface OgrenciIzin {
   library_id: string | null;
   library_adi?: string | null;
   izin_tipi: ExemptionType;
-  gun: number;
-  gun_adi?: string;
+  tekrar_modu: IzinTekrarModu;
+  gun: number | null;
+  gun_adi?: string | null;
   periyot_kodu: SessionCode | null;
   periyot_adi?: string | null;
   baslangic_tarihi: string;
   bitis_tarihi: string | null;
+  sebep_kodu?: IzinSebepKodu;
   sebep: string;
+  sebep_label?: string;
   aktif_mi: boolean;
   created_at: string;
 }
 
-export async function fetchIzinler(params?: { ogrenci_id?: number; library_id?: string }): Promise<ApiResponse<OgrenciIzin[]>> {
+export async function fetchIzinler(params?: {
+  ogrenci_id?: number;
+  library_id?: string;
+  include_inactive?: boolean;
+}): Promise<ApiResponse<OgrenciIzin[]>> {
   const query = new URLSearchParams();
   if (params?.ogrenci_id) query.set('ogrenci_id', String(params.ogrenci_id));
   if (params?.library_id) query.set('library_id', params.library_id);
+  if (params?.include_inactive) query.set('include_inactive', '1');
   const qs = query.toString();
   return apiGet<OgrenciIzin[]>(`${BASE}/izinler/${qs ? '?' + qs : ''}`);
 }
 
-export async function createIzin(data: {
-  ogrenci_id: number;
-  library_id?: string;
-  izin_tipi: ExemptionType;
-  gun: number;
-  periyot_kodu?: SessionCode;
-  baslangic_tarihi?: string;
-  bitis_tarihi?: string;
-  sebep?: string;
-}): Promise<ApiResponse<OgrenciIzin>> {
+export async function createIzin(data: IzinWritePayload): Promise<ApiResponse<OgrenciIzin>> {
   return apiPost<OgrenciIzin>(`${BASE}/izinler/`, data);
 }
 
-export async function createBulkIzinler(izinler: Array<{
-  ogrenci_id: number;
-  library_id?: string;
-  izin_tipi: ExemptionType;
-  gun: number;
-  periyot_kodu?: SessionCode;
-  baslangic_tarihi?: string;
-  bitis_tarihi?: string;
-  sebep?: string;
-}>): Promise<ApiResponse<OgrenciIzin[]>> {
+export async function createBulkIzinler(izinler: IzinWritePayload[]): Promise<ApiResponse<OgrenciIzin[]>> {
   return apiPost<OgrenciIzin[]>(`${BASE}/izinler/`, { izinler });
 }
 
-export async function updateIzin(id: string, data: Partial<OgrenciIzin>): Promise<ApiResponse<OgrenciIzin>> {
+export async function updateIzin(
+  id: string,
+  data: Partial<OgrenciIzin> & { suresiz?: boolean },
+): Promise<ApiResponse<OgrenciIzin>> {
   return apiPut<OgrenciIzin>(`${BASE}/izinler/${id}/`, data);
 }
 
@@ -944,15 +955,10 @@ export async function deleteIzin(id: string): Promise<ApiResponse<void>> {
   return apiDelete<void>(`${BASE}/izinler/${id}/`);
 }
 
-export async function replaceStudentIzinler(ogrenci_id: number, izinler: Array<{
-  library_id?: string;
-  izin_tipi: ExemptionType;
-  gun: number;
-  periyot_kodu?: SessionCode;
-  baslangic_tarihi?: string;
-  bitis_tarihi?: string;
-  sebep?: string;
-}>): Promise<ApiResponse<OgrenciIzin[]>> {
+export async function replaceStudentIzinler(
+  ogrenci_id: number,
+  izinler: Array<Omit<IzinWritePayload, 'ogrenci_id'>>,
+): Promise<ApiResponse<OgrenciIzin[]>> {
   return apiPost<OgrenciIzin[]>(`${BASE}/izinler/degistir/`, { ogrenci_id, izinler });
 }
 

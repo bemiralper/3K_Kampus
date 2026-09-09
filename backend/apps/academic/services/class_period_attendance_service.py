@@ -230,23 +230,30 @@ def get_or_build_period_roster(session: ClassPeriodAttendanceSession) -> list[di
         term_id=session.term_id,
     ).select_related('student').order_by('student__ad', 'student__soyad')
 
+    from apps.academic.services.kutuphane_izin import virtual_izin_status
+
     rows: list[dict[str, Any]] = []
     for p in placements:
         st = p.student
         if not st or not st.aktif_mi:
             continue
         rec = existing.get(st.id)
+        izin_fields = virtual_izin_status(
+            ogrenci_id=st.id,
+            tarih=session.session_date,
+            periyot_kodu=session.period,
+            rec=rec,
+        )
         rows.append({
             'student_id': st.id,
             'student_name': f'{st.ad} {st.soyad}'.strip(),
-            'status': rec.status if rec else StudentAttendanceStatus.PRESENT,
-            'status_display': (
-                rec.get_status_display() if rec
-                else dict(StudentAttendanceStatus.choices)[StudentAttendanceStatus.PRESENT]
-            ),
-            'note': rec.note if rec else '',
+            'status': izin_fields['status'],
+            'status_display': izin_fields['status_display'],
+            'note': rec.note if rec else izin_fields['note'],
             'late_time': format_late_time(rec.late_time) if rec else None,
             'record_id': rec.id if rec else None,
+            'izinli_mi': izin_fields['izinli_mi'],
+            'izin_sebep': izin_fields['izin_sebep'],
         })
     return rows
 
@@ -275,15 +282,24 @@ def save_period_attendance(
         late_time = None
         if status == StudentAttendanceStatus.LATE:
             late_time = late_time_or_now(item.get('late_time'))
-        ClassPeriodAttendanceRecord.objects.update_or_create(
-            session=session,
+        from apps.academic.services.kutuphane_izin import apply_izin_badge_on_save
+
+        defaults = apply_izin_badge_on_save(
             student_id=sid,
+            session_date=session.session_date,
+            periyot_kodu=session.period,
+            status=status,
             defaults={
                 'status': status,
                 'note': item.get('note') or '',
                 'late_time': late_time,
                 'marked_by': user if getattr(user, 'is_authenticated', False) else None,
             },
+        )
+        ClassPeriodAttendanceRecord.objects.update_or_create(
+            session=session,
+            student_id=sid,
+            defaults=defaults,
         )
     return get_or_build_period_roster(session)
 
