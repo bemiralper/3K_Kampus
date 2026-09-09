@@ -25,6 +25,7 @@ import {
   swapSlots,
   updateProgram,
   updateSlot,
+  downloadHaftalikProgramPdf,
   GUN_LABELS,
   type BirebirOturum,
   type BirebirProgram,
@@ -78,16 +79,19 @@ import {
   IconWand,
   IconXCircle,
 } from './icons';
-import HaftalikProgramGrid from './HaftalikProgramGrid';
+import OgrenciHaftalikTakvim from './OgrenciHaftalikTakvim';
 import YoklamaDurumDrawer from './YoklamaDurumDrawer';
 import {
   TELAFI_DURUM_LABEL,
   yoklamaNeedsDrawer,
 } from './oturumDurum';
 import {
+  addDaysIso,
   buildPeriods,
   formatDateTr,
   formatDurationDk,
+  isoWeekday,
+  startOfIsoWeek,
   timeToMinutes,
   type PeriodRow,
 } from './haftalikGridUtils';
@@ -135,6 +139,12 @@ function resolveProgramIdForDers(programs: BirebirProgram[], dersId: number): nu
     return [...matches].sort((a, b) => (a.slot_count || 0) - (b.slot_count || 0))[0].id;
   }
   return programs[0]?.id ?? null;
+}
+
+function sortOturumlar(list: BirebirOturum[]): BirebirOturum[] {
+  return [...list].sort((a, b) =>
+    `${a.session_date}${a.start_time}` < `${b.session_date}${b.start_time}` ? 1 : -1,
+  );
 }
 
 function oturumDisplayLabel(o: BirebirOturum): { label: string; tone: BadgeTone; extra?: string } {
@@ -226,7 +236,15 @@ export default function OgrenciOzelDersClient() {
     dersAdet: 8,
   });
   const zamanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [moving, setMoving] = useState(false);
+  const rematerializedWeeks = useRef(new Set<string>());
+  const oturumEpoch = useRef(0);
+  const oturumlarRef = useRef<BirebirOturum[]>([]);
+  const [weekStart, setWeekStart] = useState(() => startOfIsoWeek());
+  const [weekLoading, setWeekLoading] = useState(false);
+  const [weekMoving, setWeekMoving] = useState(false);
+  const [weekPdfBusy, setWeekPdfBusy] = useState(false);
+  const [detailOturum, setDetailOturum] = useState<BirebirOturum | null>(null);
+  oturumlarRef.current = oturumlar;
 
   const [createOpen, setCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -367,6 +385,7 @@ export default function OgrenciOzelDersClient() {
     }
     setLoading(true);
     setError('');
+    rematerializedWeeks.current.clear();
     try {
       const progs = await fetchProgramlar({
         egitim_yili_id: egitimYiliId || undefined,
@@ -403,28 +422,42 @@ export default function OgrenciOzelDersClient() {
         console.error(e);
         return null;
       });
-      const oturumPromise = fetchOturumlar({
-        ogrenci_id: ogrenciId,
-        start_date: bas,
-        end_date: bit || dayjs(bas).add(1, 'year').format('YYYY-MM-DD'),
-        skip_materialize: 1,
-      }).catch((e) => {
-        console.error(e);
-        return [] as BirebirOturum[];
-      });
+      const thisWeekStart = startOfIsoWeek();
+      const thisWeekEnd = addDaysIso(thisWeekStart, 6);
+      rematerializedWeeks.current.add(thisWeekStart);
+      const weekPromise = sorted.length
+        ? fetchOturumlar({
+            ogrenci_id: ogrenciId,
+            start_date: thisWeekStart,
+            end_date: thisWeekEnd,
+          }).catch((e) => {
+            console.error(e);
+            return [] as BirebirOturum[];
+          })
+        : Promise.resolve([] as BirebirOturum[]);
 
-      const [slotLists, sum, oturumList] = await Promise.all([
+      const [slotLists, sum, weekList] = await Promise.all([
         slotPromise,
         sumPromise,
-        oturumPromise,
+        weekPromise,
       ]);
       setLessons(slotLists.flat());
       if (sum) setSummary(sum);
-      setOturumlar(
-        [...oturumList].sort((a, b) =>
-          `${a.session_date}${a.start_time}` < `${b.session_date}${b.start_time}` ? 1 : -1,
-        ),
-      );
+      setOturumlar(sortOturumlar(weekList));
+
+      const yearEnd = bit || dayjs(bas).add(4, 'month').format('YYYY-MM-DD');
+      const epoch = oturumEpoch.current;
+      void fetchOturumlar({
+        ogrenci_id: ogrenciId,
+        start_date: bas,
+        end_date: yearEnd,
+        skip_materialize: 1,
+      })
+        .then((yearList) => {
+          if (epoch !== oturumEpoch.current) return;
+          setOturumlar(sortOturumlar(yearList));
+        })
+        .catch((e) => console.error(e));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Yüklenemedi');
     } finally {
@@ -445,20 +478,54 @@ export default function OgrenciOzelDersClient() {
         const oturumList = await fetchOturumlar({
           ogrenci_id: ogrenciId,
           start_date: bas,
-          end_date: bit || dayjs(bas).add(1, 'year').format('YYYY-MM-DD'),
+          end_date: bit || dayjs(bas).add(4, 'month').format('YYYY-MM-DD'),
           skip_materialize: 1,
         });
-        setOturumlar(
-          oturumList.sort((a, b) =>
-            `${a.session_date}${a.start_time}` < `${b.session_date}${b.start_time}` ? 1 : -1,
-          ),
-        );
+        setOturumlar(sortOturumlar(oturumList));
       } catch (e) {
         show(e instanceof Error ? e.message : 'Özet güncellenemedi', 'error');
       }
     },
     [ogrenciId, show],
   );
+
+  const loadWeek = useCallback(
+    async (start: string, opts?: { rematerialize?: boolean }) => {
+      if (!ogrenciId) return;
+      const end = addDaysIso(start, 6);
+      const rematerialize = Boolean(opts?.rematerialize);
+      if (rematerialize) setWeekLoading(true);
+      try {
+        const list = await fetchOturumlar({
+          ogrenci_id: ogrenciId,
+          start_date: start,
+          end_date: end,
+          ...(rematerialize ? {} : { skip_materialize: 1 }),
+        });
+        setOturumlar((prev) => {
+          const others = prev.filter((o) => o.session_date < start || o.session_date > end);
+          return sortOturumlar([...others, ...list]);
+        });
+      } catch (e) {
+        show(e instanceof Error ? e.message : 'Hafta yüklenemedi', 'error');
+      } finally {
+        if (rematerialize) setWeekLoading(false);
+      }
+    },
+    [ogrenciId, show],
+  );
+
+  useEffect(() => {
+    if (!ready || !ogrenciId || programs.length === 0) return;
+    if (rematerializedWeeks.current.has(weekStart)) return;
+    const weekEnd = addDaysIso(weekStart, 6);
+    if (oturumlarRef.current.some((o) => o.session_date >= weekStart && o.session_date <= weekEnd)) {
+      rematerializedWeeks.current.add(weekStart);
+      return;
+    }
+    rematerializedWeeks.current.add(weekStart);
+    void loadWeek(weekStart, { rematerialize: true });
+  }, [ready, ogrenciId, programs.length, weekStart, loadWeek]);
 
   async function saveDonem() {
     if (!programs.length || !donem.baslangic) return;
@@ -511,69 +578,18 @@ export default function OgrenciOzelDersClient() {
     }, 400);
   }
 
-  async function reloadLessons() {
+  async function reloadSlots() {
     if (!programs.length) {
       setLessons([]);
       return;
     }
     const results = await Promise.all(programs.map((p) => fetchSlots(p.id)));
     setLessons(results.flat());
-    await refreshSummary(donem.baslangic, donem.bitis);
   }
 
-  async function moveLesson(lesson: BirebirSlot, gun: number, period: PeriodRow) {
-    if (moving) return;
-    const snapshot = lessons;
-    setLessons((prev) =>
-      prev.map((s) =>
-        s.id === lesson.id
-          ? { ...s, gun, baslangic: period.baslangic, bitis: period.bitis, sure_dk: config.sureDk }
-          : s,
-      ),
-    );
-    setMoving(true);
-    try {
-      await updateSlot(lesson.id, {
-        gun,
-        baslangic: period.baslangic,
-        bitis: period.bitis,
-        sure_dk: config.sureDk,
-      });
-      show('Ders taşındı.');
-      void reloadLessons();
-    } catch (err) {
-      setLessons(snapshot);
-      show(err instanceof Error ? err.message : 'Taşıma başarısız — çakışma olabilir.', 'error');
-    } finally {
-      setMoving(false);
-    }
-  }
-
-  async function swapLesson(a: BirebirSlot, b: BirebirSlot) {
-    if (moving || a.id === b.id) return;
-    const snapshot = lessons;
-    setLessons((prev) =>
-      prev.map((s) => {
-        if (s.id === a.id) {
-          return { ...s, gun: b.gun, baslangic: b.baslangic, bitis: b.bitis, sure_dk: b.sure_dk };
-        }
-        if (s.id === b.id) {
-          return { ...s, gun: a.gun, baslangic: a.baslangic, bitis: a.bitis, sure_dk: a.sure_dk };
-        }
-        return s;
-      }),
-    );
-    setMoving(true);
-    try {
-      await swapSlots(a.id, b.id);
-      show('Dersler yer değiştirdi.');
-      void reloadLessons();
-    } catch (err) {
-      setLessons(snapshot);
-      show(err instanceof Error ? err.message : 'Yer değiştirme başarısız.', 'error');
-    } finally {
-      setMoving(false);
-    }
+  async function reloadLessons() {
+    await reloadSlots();
+    void refreshSummary(donem.baslangic, donem.bitis);
   }
 
   function openCreateAt(gun: number, period: PeriodRow) {
@@ -587,6 +603,139 @@ export default function OgrenciOzelDersClient() {
       ...EMPTY_SLOT_SURE,
     });
     setCreateOpen(true);
+  }
+
+  function slotForOturum(o: BirebirOturum): BirebirSlot | undefined {
+    if (!o.source_slot) return undefined;
+    return lessons.find((l) => l.id === o.source_slot);
+  }
+
+  async function moveOturum(o: BirebirOturum, date: string, period: PeriodRow) {
+    const slot = slotForOturum(o);
+    if (!slot) {
+      show('Bu ders şablona bağlı değil, sürüklenemez.', 'error');
+      return;
+    }
+    if (weekMoving) return;
+    const prevOturumlar = oturumlar;
+    const prevLessons = lessons;
+    oturumEpoch.current += 1;
+    const gun = isoWeekday(date);
+    setOturumlar((prev) =>
+      sortOturumlar(
+        prev.map((x) =>
+          x.id === o.id
+            ? { ...x, session_date: date, start_time: period.baslangic, end_time: period.bitis }
+            : x,
+        ),
+      ),
+    );
+    setLessons((prev) =>
+      prev.map((s) =>
+        s.id === slot.id
+          ? { ...s, gun, baslangic: period.baslangic, bitis: period.bitis, sure_dk: config.sureDk }
+          : s,
+      ),
+    );
+    setWeekMoving(true);
+    try {
+      await updateSlot(slot.id, {
+        gun,
+        baslangic: period.baslangic,
+        bitis: period.bitis,
+        sure_dk: config.sureDk,
+      });
+      show('Ders taşındı. Gelecek haftalar da güncellendi.');
+      await Promise.all([reloadSlots(), loadWeek(weekStart)]);
+      void refreshSummary(donem.baslangic, donem.bitis);
+    } catch (err) {
+      setOturumlar(prevOturumlar);
+      setLessons(prevLessons);
+      show(err instanceof Error ? err.message : 'Taşıma başarısız — çakışma olabilir.', 'error');
+    } finally {
+      setWeekMoving(false);
+    }
+  }
+
+  async function swapOturum(a: BirebirOturum, b: BirebirOturum) {
+    if (!a.source_slot || !b.source_slot) {
+      show('Yalnızca programdaki dersler yer değiştirebilir.', 'error');
+      return;
+    }
+    if (weekMoving) return;
+    const prevOturumlar = oturumlar;
+    const prevLessons = lessons;
+    oturumEpoch.current += 1;
+    const slotA = lessons.find((l) => l.id === a.source_slot);
+    const slotB = lessons.find((l) => l.id === b.source_slot);
+    setOturumlar((prev) =>
+      sortOturumlar(
+        prev.map((x) => {
+          if (x.id === a.id) {
+            return {
+              ...x,
+              session_date: b.session_date,
+              start_time: b.start_time,
+              end_time: b.end_time,
+            };
+          }
+          if (x.id === b.id) {
+            return {
+              ...x,
+              session_date: a.session_date,
+              start_time: a.start_time,
+              end_time: a.end_time,
+            };
+          }
+          return x;
+        }),
+      ),
+    );
+    if (slotA && slotB) {
+      setLessons((prev) =>
+        prev.map((s) => {
+          if (s.id === slotA.id) {
+            return { ...s, gun: slotB.gun, baslangic: slotB.baslangic, bitis: slotB.bitis };
+          }
+          if (s.id === slotB.id) {
+            return { ...s, gun: slotA.gun, baslangic: slotA.baslangic, bitis: slotA.bitis };
+          }
+          return s;
+        }),
+      );
+    }
+    setWeekMoving(true);
+    try {
+      await swapSlots(a.source_slot, b.source_slot);
+      show('Dersler yer değiştirdi.');
+      await Promise.all([reloadSlots(), loadWeek(weekStart)]);
+      void refreshSummary(donem.baslangic, donem.bitis);
+    } catch (err) {
+      setOturumlar(prevOturumlar);
+      setLessons(prevLessons);
+      show(err instanceof Error ? err.message : 'Yer değiştirme başarısız.', 'error');
+    } finally {
+      setWeekMoving(false);
+    }
+  }
+
+  async function downloadWeekPdf() {
+    if (!ogrenciId || weekPdfBusy) return;
+    setWeekPdfBusy(true);
+    try {
+      await downloadHaftalikProgramPdf(ogrenciId, weekStart, addDaysIso(weekStart, 6));
+      show('Haftalık program PDF indirildi.');
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'PDF indirilemedi', 'error');
+    } finally {
+      setWeekPdfBusy(false);
+    }
+  }
+
+  function openCreateOnDate(date: string, period?: PeriodRow) {
+    const slot = period || periods.find((p) => !p.isBreak) || periods[0];
+    if (!slot) return;
+    openCreateAt(isoWeekday(date), slot);
   }
 
   async function onCreate(e: React.FormEvent) {
@@ -606,8 +755,9 @@ export default function OgrenciOzelDersClient() {
         ...slotSurePayload(form),
       });
       setCreateOpen(false);
-      show('Haftalık ders eklendi.');
+      show('Ders programa eklendi. Bu haftadan itibaren takvimde görünür.');
       await reloadLessons();
+      await loadWeek(weekStart);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Kayıt başarısız — çakışma olabilir.', 'error');
     } finally {
@@ -646,6 +796,7 @@ export default function OgrenciOzelDersClient() {
       show('Ders güncellendi.');
       setDetailLesson(null);
       await reloadLessons();
+      await loadWeek(weekStart);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Güncelleme başarısız.', 'error');
     } finally {
@@ -686,6 +837,7 @@ export default function OgrenciOzelDersClient() {
       show('Ders pasifleştirildi. Geçmiş ve işlenmiş oturumlar değişmedi.');
       setDetailLesson(null);
       await reloadLessons();
+      await loadWeek(weekStart);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Silinemedi', 'error');
     } finally {
@@ -799,6 +951,7 @@ export default function OgrenciOzelDersClient() {
     try {
       const updated = await setOturumDurum(oturumId, payload);
       setOturumlar((prev) => prev.map((x) => (x.id === oturumId ? updated : x)));
+      setDetailOturum((cur) => (cur && cur.id === oturumId ? updated : cur));
       show('Durum güncellendi.');
       setYoklamaTarget(null);
       await refreshSummary(donem.baslangic, donem.bitis);
@@ -1308,40 +1461,26 @@ export default function OgrenciOzelDersClient() {
             </div>
           </Collapsible>
 
-          <div className="od-ops-program-toolbar">
-            <p className="od-cell-muted" style={{ margin: 0 }}>
-              Haftalık şablon — sürükleyerek taşıyın. Gelecek planlı oturumlar güncellenir; geçmiş ve işlenmiş kayıtlar (hakediş) değişmez.
-            </p>
-            <button
-              type="button"
-              className="od-btn od-btn-primary od-btn-sm"
-              onClick={() => periods[0] && openCreateAt(1, periods[0])}
-            >
-              <IconPlus size={14} /> Ders Ekle
-            </button>
-          </div>
-
-          <div className="od-card">
-            <div className="od-card-body no-pad">
-              {lessons.filter((l) => l.aktif).length === 0 && (
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--od-border)' }}>
-                  <span className="od-cell-muted">
-                    Boş bir hücreye tıklayarak {config.sureDk} dakikalık ders ekleyin.
-                  </span>
-                </div>
-              )}
-              <HaftalikProgramGrid
-                lessons={lessons}
-                periods={periods}
-                useKisaAd={useKisaAd}
-                moving={moving}
-                onCreateAt={openCreateAt}
-                onOpenLesson={openDetail}
-                onMove={moveLesson}
-                onSwap={swapLesson}
-              />
-            </div>
-          </div>
+          <OgrenciHaftalikTakvim
+            weekStart={weekStart}
+            periods={periods}
+            oturumlar={oturumlar.filter(
+              (o) => o.session_date >= weekStart && o.session_date <= addDaysIso(weekStart, 6),
+            )}
+            holidays={summary?.tatiller}
+            useKisaAd={useKisaAd}
+            loading={weekLoading}
+            moving={weekMoving}
+            pdfBusy={weekPdfBusy}
+            onPrevWeek={() => setWeekStart((w) => addDaysIso(w, -7))}
+            onNextWeek={() => setWeekStart((w) => addDaysIso(w, 7))}
+            onThisWeek={() => setWeekStart(startOfIsoWeek())}
+            onAddAt={openCreateOnDate}
+            onOpenOturum={setDetailOturum}
+            onMove={(o, date, period) => void moveOturum(o, date, period)}
+            onSwap={(a, b) => void swapOturum(a, b)}
+            onDownloadPdf={() => void downloadWeekPdf()}
+          />
           </div>
 
           <div
@@ -1689,8 +1828,8 @@ export default function OgrenciOzelDersClient() {
       <Drawer
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        title="Haftalık Ders Ekle"
-        description={ogrenciAd}
+        title="Programa Ders Ekle"
+        description={ogrenciAd ? `${ogrenciAd} · her hafta tekrarlanır` : 'Her hafta aynı gün ve saatte tekrarlanır'}
         footer={
           <>
             <button type="button" className="od-btn od-btn-secondary" onClick={() => setCreateOpen(false)}>
@@ -1766,6 +1905,100 @@ export default function OgrenciOzelDersClient() {
             saatLabel={`${form.baslangic}–${form.bitis}`}
           />
         </form>
+      </Drawer>
+
+      <Drawer
+        open={Boolean(detailOturum)}
+        onClose={() => setDetailOturum(null)}
+        title={detailOturum ? resolveDersLabel(detailOturum, useKisaAd) : ''}
+        description={
+          detailOturum
+            ? `${formatDateTr(detailOturum.session_date)} · ${detailOturum.start_time?.slice(0, 5)}–${detailOturum.end_time?.slice(0, 5)} · ${detailOturum.ogretmen_ad}`
+            : ''
+        }
+        footer={
+          detailOturum ? (
+            <>
+              {rowActionsFor(detailOturum).canComplete && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-primary"
+                  disabled={busyOturumId === detailOturum.id}
+                  onClick={() => void handleDurumChange(detailOturum, 'ISLENDI')}
+                >
+                  <IconCheckCircle size={14} /> İşlendi
+                </button>
+              )}
+              {rowActionsFor(detailOturum).canCancel && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-danger"
+                  disabled={busyOturumId === detailOturum.id}
+                  onClick={() => void handleDurumChange(detailOturum, 'IPTAL')}
+                >
+                  <IconXCircle size={14} /> Bu dersi iptal et
+                </button>
+              )}
+              {rowActionsFor(detailOturum).canTelafi && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-secondary"
+                  onClick={() => {
+                    openTelafi(detailOturum);
+                    setDetailOturum(null);
+                  }}
+                >
+                  <IconRotateCcw size={14} /> Telafi
+                </button>
+              )}
+              {rowActionsFor(detailOturum).canReopen && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-secondary"
+                  disabled={busyOturumId === detailOturum.id}
+                  onClick={() => void handleDurumChange(detailOturum, 'PLANLANDI')}
+                >
+                  <IconRefresh size={14} /> Geri al
+                </button>
+              )}
+              <div style={{ flex: 1 }} />
+              {detailOturum.source_slot && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-secondary"
+                  onClick={() => {
+                    const slot = lessons.find((l) => l.id === detailOturum.source_slot);
+                    setDetailOturum(null);
+                    if (slot) openDetail(slot);
+                  }}
+                >
+                  Şablonu düzenle
+                </button>
+              )}
+            </>
+          ) : null
+        }
+      >
+        {detailOturum && (
+          <div className="od-form">
+            <p className="od-form-hint" style={{ marginTop: 0 }}>
+              Bu kart bu haftanın gerçek dersidir. İptal yalnızca bu tarihi etkiler.
+              Şablonu düzenlerseniz gelecek haftalar değişir.
+            </p>
+            <dl className="od-panel-kv">
+              <dt>Durum</dt>
+              <dd>{oturumDisplayLabel(detailOturum).label}</dd>
+              <dt>Tür</dt>
+              <dd>{detailOturum.oturum_turu_display || detailOturum.oturum_turu}</dd>
+              {detailOturum.notes ? (
+                <>
+                  <dt>Not</dt>
+                  <dd>{detailOturum.notes}</dd>
+                </>
+              ) : null}
+            </dl>
+          </div>
+        )}
       </Drawer>
 
       <Drawer

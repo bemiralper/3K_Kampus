@@ -86,6 +86,7 @@ export type OturumBildirim = {
 export type BirebirOturum = {
   id: number;
   program: number | null;
+  source_slot?: number | null;
   session_date: string;
   start_time: string;
   end_time: string;
@@ -460,9 +461,16 @@ async function downloadPdfFrom(path: string, fallbackName: string) {
   URL.revokeObjectURL(url);
 }
 
-export async function downloadHaftalikProgramPdf(ogrenciId: number) {
+export async function downloadHaftalikProgramPdf(
+  ogrenciId: number,
+  startDate?: string,
+  endDate?: string,
+) {
   await downloadPdfFrom(
-    `${BASE}/ogrenci/${ogrenciId}/haftalik-program/pdf/`,
+    withQuery(`${BASE}/ogrenci/${ogrenciId}/haftalik-program/pdf/`, {
+      start_date: startDate,
+      end_date: endDate,
+    }),
     `ozel-ders-program-${ogrenciId}.pdf`,
   );
 }

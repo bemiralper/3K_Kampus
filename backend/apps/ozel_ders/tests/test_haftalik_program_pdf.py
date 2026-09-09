@@ -78,6 +78,37 @@ class HaftalikProgramPdfTests(TestCase):
         )
         self.assertEqual(payload['ogrenci_ad'], 'Zeynep Kaya')
         self.assertEqual(len(payload['slots']), 1)
+        self.assertEqual(payload['mode'], 'template')
+
+    def test_collect_week_uses_sessions_not_template(self):
+        from apps.ozel_ders.domain.models import BirebirDersOturumu, OturumDurumu, OturumTuru
+
+        BirebirDersOturumu.objects.create(
+            program=self.program,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            ogrenci=self.ogrenci,
+            ders=self.ders,
+            ogretmen=self.ogretmen,
+            session_date=date(2026, 9, 7),
+            start_time=time(16, 0),
+            end_time=time(17, 0),
+            durum=OturumDurumu.PLANLANDI,
+            oturum_turu=OturumTuru.OZEL,
+        )
+        payload = collect_weekly_program(
+            ogrenci_id=self.ogrenci.id,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-09-07',
+            end_date='2026-09-13',
+        )
+        self.assertEqual(payload['mode'], 'week')
+        self.assertEqual(len(payload['slots']), 1)
+        self.assertEqual(payload['slots'][0]['durum'], 'Planlandı')
+        pdf_bytes, _ = render_haftalik_program_pdf(payload)
+        self.assertGreater(len(pdf_bytes), 200)
         self.assertEqual(payload['slots'][0]['ders_ad'], 'Fizik')
         pdf_bytes, filename = render_haftalik_program_pdf(payload)
         self.assertTrue(pdf_bytes.startswith(b'%PDF'))

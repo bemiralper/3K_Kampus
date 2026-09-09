@@ -572,3 +572,329 @@
     width: 100%;
   }
 }
+
+/* Öğrenci program takvimi — haftalık tablo */
+.od-week-cal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.od-week-cal.is-loading {
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.od-week-cal-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.od-week-cal-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.od-week-cal-arrow {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 10px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.od-week-cal-arrow:hover {
+  border-color: #93c5fd;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.od-week-cal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 168px;
+  font-size: 0.98rem;
+}
+
+.od-week-cal-now {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #1d4ed8;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  padding: 3px 9px;
+}
+
+.od-week-cal-now.is-btn {
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.od-week-cal-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 0.75rem;
+  color: #64748b;
+}
+
+.od-week-cal-stats span {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 4px 9px;
+}
+
+.od-week-cal-stats .is-done { color: #15803d; background: #f0fdf4; border-color: #bbf7d0; }
+.od-week-cal-stats .is-wait { color: #1d4ed8; background: #eff6ff; border-color: #bfdbfe; }
+.od-week-cal-stats .is-miss { color: #b45309; background: #fffbeb; border-color: #fde68a; }
+.od-week-cal-stats .is-cancel { color: #b91c1c; background: #fef2f2; border-color: #fecaca; }
+
+.od-week-cal-shell {
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.05);
+}
+
+.od-week-cal-table {
+  min-width: 880px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.od-week-cal-table th,
+.od-week-cal-table td {
+  border-color: #eef2f7 !important;
+}
+
+.od-week-cal-table thead th {
+  background: #f8fafc;
+  padding: 10px 6px;
+}
+
+.od-week-cal-table .od-week-head-day {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  color: #64748b;
+}
+
+.od-week-cal-table .od-week-head-date {
+  display: block;
+  margin-top: 2px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  color: #0f172a;
+  line-height: 1;
+}
+
+.od-week-cal-table thead th.is-today {
+  background: #eff6ff;
+  box-shadow: inset 0 3px 0 #2563eb;
+}
+
+.od-week-cal-table thead th.is-today .od-week-head-date {
+  color: #1d4ed8;
+}
+
+.od-week-cal-table thead th.is-holiday {
+  background: #fff7ed;
+}
+
+.od-week-cal-table thead th.is-holiday .od-week-head-count {
+  color: #c2410c;
+}
+
+.od-week-cal-table thead th.is-weekend {
+  background: #f8fafc;
+}
+
+.od-week-cal-table .od-grid-time-col {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  width: 72px;
+  min-width: 72px;
+  background: #f8fafc;
+}
+
+.od-week-cal-table tbody .od-grid-time-col strong {
+  font-size: 0.78rem;
+}
+
+.od-week-cal-table .od-grid-cell {
+  height: 72px;
+  padding: 5px !important;
+  background: #fff;
+}
+
+.od-week-cal-table .od-grid-cell.is-today {
+  background: #f8fbff;
+}
+
+.od-week-cal-table .od-grid-cell.is-holiday {
+  background: #fffaf5;
+}
+
+.od-week-cal-table .od-grid-cell.is-weekend {
+  background: #fcfdff;
+}
+
+.od-week-cal-table .od-grid-cell.is-past {
+  opacity: 0.78;
+}
+
+.od-week-cal-table .od-grid-empty {
+  min-height: 58px;
+  border-radius: 10px;
+  border: 1px dashed transparent;
+  font-size: 0.95rem;
+}
+
+.od-week-cal-table .od-grid-cell:hover .od-grid-empty {
+  border-color: #93c5fd;
+  background: #eff6ff;
+  color: #2563eb;
+}
+
+.od-week-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  min-height: 58px;
+  padding: 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.od-week-chip + .od-week-chip {
+  margin-top: 4px;
+}
+
+.od-week-chip-title {
+  font-size: 0.74rem;
+  font-weight: 750;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.od-week-chip-sub,
+.od-week-chip-status {
+  font-size: 0.64rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.od-week-chip-status {
+  font-weight: 700;
+  margin-top: 2px;
+}
+
+.od-week-chip.is-plan {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1e3a8a;
+}
+.od-week-chip.is-done {
+  background: #f0fdf4;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+.od-week-chip.is-miss {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+.od-week-chip.is-cancel {
+  background: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+.od-week-chip.is-telafi {
+  background: #f5f3ff;
+  border-color: #ddd6fe;
+  color: #5b21b6;
+}
+
+.od-week-chip:hover {
+  filter: brightness(0.98);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.od-week-chip[draggable='true'] {
+  cursor: grab;
+}
+
+.od-week-chip.is-dragging {
+  opacity: 0.35;
+}
+
+.od-week-cal-table .od-grid-cell.is-drop {
+  background: #e8f2fa;
+  box-shadow: inset 0 0 0 2px #2563eb;
+}
+
+.od-week-cal-shell.is-moving {
+  pointer-events: none;
+  opacity: 0.75;
+}
+
+.od-week-cal-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.od-week-cal-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.od-week-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  display: inline-block;
+}
+.od-week-dot.is-plan { background: #3b82f6; }
+.od-week-dot.is-done { background: #22c55e; }
+.od-week-dot.is-miss { background: #f59e0b; }
+.od-week-dot.is-cancel { background: #ef4444; }
+.od-week-dot.is-telafi { background: #8b5cf6; }
+
+.od-week-cal-hint {
+  margin-left: auto;
+  color: #94a3b8;
+}
+
+@media (max-width: 720px) {
+  .od-week-cal-hint {
+    margin-left: 0;
+    width: 100%;
+  }
+}

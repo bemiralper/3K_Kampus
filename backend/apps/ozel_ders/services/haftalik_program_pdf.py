@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import logging
 import re
+from datetime import date
 from typing import Any
 
 from django.http import HttpResponse
@@ -36,6 +37,7 @@ from apps.communication.domain.enums import RecipientType
 from apps.ogrenci.application.veli_contact import effective_veli_phone
 from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 from apps.ozel_ders.domain.models import (
+    BirebirDersOturumu,
     BirebirHaftalikSlot,
     BirebirOgrenciProgrami,
     ProgramDurumu,
@@ -91,6 +93,8 @@ def collect_weekly_program(
     ogrenci_id: int,
     kurum_id: int,
     sube_id: int,
+    start_date: date | str | None = None,
+    end_date: date | str | None = None,
 ) -> dict[str, Any]:
     try:
         ogrenci = Ogrenci.objects.select_related('kurum', 'sube').get(
@@ -122,19 +126,55 @@ def collect_weekly_program(
         if ad and ad not in paketler:
             paketler.append(ad)
 
+    week_start = _parse_iso_date(start_date)
+    week_end = _parse_iso_date(end_date)
+    week_mode = bool(week_start and week_end)
     rows = []
-    for s in slots:
-        rows.append({
-            'gun': s.gun,
-            'gun_label': GUN_LABELS.get(s.gun, str(s.gun)),
-            'baslangic': s.baslangic.strftime('%H:%M'),
-            'bitis': s.bitis.strftime('%H:%M'),
-            'ders_ad': getattr(s.ders, 'ad', None) or str(s.ders_id),
-            'ogretmen_ad': _person_ad(s.ogretmen),
-            'oda_ad': s.oda.ad if s.oda_id else '',
-        })
+    if week_mode:
+        sessions = (
+            BirebirDersOturumu.objects
+            .filter(
+                ogrenci_id=ogrenci_id,
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                is_active=True,
+                session_date__gte=week_start,
+                session_date__lte=week_end,
+            )
+            .select_related('ders', 'ogretmen', 'oda')
+            .order_by('session_date', 'start_time', 'id')
+        )
+        for o in sessions:
+            rows.append({
+                'gun': o.session_date.isoweekday(),
+                'gun_label': (
+                    f"{GUN_LABELS.get(o.session_date.isoweekday(), '')} "
+                    f"{o.session_date.strftime('%d.%m')}"
+                ).strip(),
+                'baslangic': o.start_time.strftime('%H:%M'),
+                'bitis': o.end_time.strftime('%H:%M'),
+                'ders_ad': getattr(o.ders, 'ad', None) or str(o.ders_id),
+                'ogretmen_ad': _person_ad(o.ogretmen),
+                'oda_ad': o.oda.ad if o.oda_id else '',
+                'durum': o.get_durum_display(),
+            })
+    else:
+        for s in slots:
+            rows.append({
+                'gun': s.gun,
+                'gun_label': GUN_LABELS.get(s.gun, str(s.gun)),
+                'baslangic': s.baslangic.strftime('%H:%M'),
+                'bitis': s.bitis.strftime('%H:%M'),
+                'ders_ad': getattr(s.ders, 'ad', None) or str(s.ders_id),
+                'ogretmen_ad': _person_ad(s.ogretmen),
+                'oda_ad': s.oda.ad if s.oda_id else '',
+            })
 
     ogrenci_ad = _person_ad(ogrenci)
+    week_label = (
+        f"{week_start.strftime('%d.%m.%Y')} – {week_end.strftime('%d.%m.%Y')}"
+        if week_mode else ''
+    )
     return {
         'ogrenci': ogrenci,
         'ogrenci_id': ogrenci_id,
@@ -143,8 +183,25 @@ def collect_weekly_program(
         'sube_ad': ogrenci.sube.ad if ogrenci.sube_id else '',
         'paketler': paketler,
         'slots': rows,
-        'pdf_baslik': f'{ogrenci_ad} — Özel ders haftalık program',
+        'mode': 'week' if week_mode else 'template',
+        'week_label': week_label,
+        'pdf_baslik': (
+            f'{ogrenci_ad} — Haftalık program ({week_label})'
+            if week_mode
+            else f'{ogrenci_ad} — Özel ders haftalık program'
+        ),
     }
+
+
+def _parse_iso_date(value: date | str | None) -> date | None:
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str) and value.strip():
+        try:
+            return date.fromisoformat(value.strip()[:10])
+        except ValueError:
+            return None
+    return None
 
 
 def render_haftalik_program_pdf(payload: dict[str, Any]) -> tuple[bytes, str]:
@@ -183,7 +240,7 @@ def render_haftalik_program_pdf(payload: dict[str, Any]) -> tuple[bytes, str]:
     ) if p]
     strip_bits = [p for p in (
         ', '.join(payload.get('paketler') or []) or None,
-        'Haftalık özel ders programı',
+        payload.get('week_label') or 'Haftalık özel ders programı',
     ) if p]
     story.extend(brand_header(
         header_styles(font, font_bold),
@@ -210,14 +267,17 @@ def render_haftalik_program_pdf(payload: dict[str, Any]) -> tuple[bytes, str]:
         by_day: dict[int, list[dict]] = {}
         for row in slots:
             by_day.setdefault(int(row['gun']), []).append(row)
-        time_w, ders_w, ogretmen_w = 30 * mm, 64 * mm, 54 * mm
-        oda_w = CONTENT_W - time_w - ders_w - ogretmen_w
+        week_mode = payload.get('mode') == 'week'
+        time_w, ders_w, ogretmen_w = 28 * mm, 52 * mm, 46 * mm
+        durum_w = 28 * mm if week_mode else 0
+        oda_w = CONTENT_W - time_w - ders_w - ogretmen_w - durum_w
         for gun in range(1, 8):
             day_rows = by_day.get(gun)
             if not day_rows:
                 continue
+            day_title = day_rows[0].get('gun_label') or GUN_LABELS.get(gun, str(gun))
             header = Table(
-                [[Paragraph(_escape(GUN_LABELS.get(gun, str(gun))), styles['day'])]],
+                [[Paragraph(_escape(day_title), styles['day'])]],
                 colWidths=[CONTENT_W],
             )
             header.setStyle(TableStyle([
@@ -229,20 +289,29 @@ def render_haftalik_program_pdf(payload: dict[str, Any]) -> tuple[bytes, str]:
             ]))
             story.append(header)
 
-            table_data = [[
+            headings = [
                 Paragraph('Saat', styles['th']),
                 Paragraph('Ders', styles['th']),
                 Paragraph('Öğretmen', styles['th']),
                 Paragraph('Oda', styles['th']),
-            ]]
+            ]
+            if week_mode:
+                headings.append(Paragraph('Durum', styles['th']))
+            table_data = [headings]
             for row in day_rows:
-                table_data.append([
+                cells = [
                     Paragraph(_escape(f"{row['baslangic']}–{row['bitis']}"), styles['time']),
                     Paragraph(_escape(row['ders_ad']), styles['cell']),
                     Paragraph(_escape(row['ogretmen_ad'] or '—'), styles['cell']),
                     Paragraph(_escape(row['oda_ad'] or '—'), styles['sub']),
-                ])
-            table = Table(table_data, colWidths=[time_w, ders_w, ogretmen_w, oda_w])
+                ]
+                if week_mode:
+                    cells.append(Paragraph(_escape(row.get('durum') or '—'), styles['sub']))
+                table_data.append(cells)
+            col_widths = [time_w, ders_w, ogretmen_w, oda_w]
+            if week_mode:
+                col_widths.append(durum_w)
+            table = Table(table_data, colWidths=col_widths)
             table.setStyle(TableStyle([
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SURFACE)),
                 ('BACKGROUND', (0, 1), (-1, -1), colors.white),

@@ -180,7 +180,8 @@ def _rematerialize_from_today(slot: BirebirHaftalikSlot, *, user=None) -> int:
     program = slot.program
     today = timezone.localdate()
     start = max(today, slot.baslangic_tarihi or program.baslangic_tarihi or today)
-    end = slot.bitis_tarihi or program.bitis_tarihi or (today + timedelta(days=_FUTURE_SYNC_DAYS))
+    horizon = today + timedelta(days=_FUTURE_SYNC_DAYS)
+    end = min(slot.bitis_tarihi or program.bitis_tarihi or horizon, horizon)
     if end < start:
         return 0
     result = materialize_program(
@@ -190,6 +191,7 @@ def _rematerialize_from_today(slot: BirebirHaftalikSlot, *, user=None) -> int:
         start_date=start,
         end_date=end,
         user=user,
+        slot_id=slot.id,
     )
     return result.get('created') or 0
 
@@ -203,6 +205,7 @@ def materialize_program(
     start_date: date | str,
     end_date: date | str,
     user=None,
+    slot_id: int | None = None,
 ) -> dict:
     program = get_program(program_id, kurum_id=kurum_id, sube_id=sube_id)
     if program.durum != ProgramDurumu.AKTIF:
@@ -228,7 +231,10 @@ def materialize_program(
     holiday_dates: set[str] = set()
     warnings: list[dict] = []
 
-    slots = list(program.slots.filter(aktif=True).select_related('ders', 'ogretmen', 'oda'))
+    slots_qs = program.slots.filter(aktif=True)
+    if slot_id:
+        slots_qs = slots_qs.filter(pk=slot_id)
+    slots = list(slots_qs.select_related('ders', 'ogretmen', 'oda'))
     candidates: list[tuple[date, BirebirHaftalikSlot]] = []
     for slot in slots:
         slot_start = slot.baslangic_tarihi or program.baslangic_tarihi
@@ -376,6 +382,7 @@ def materialize_active_programs(
     end_date: date | str,
     user=None,
     max_days: int = 62,
+    ogrenci_id: int | None = None,
 ) -> dict:
     """Aktif programların şablon slotlarından tarih aralığı için oturum üretir (idempotent)."""
     start = _parse_date(start_date)
@@ -385,14 +392,15 @@ def materialize_active_programs(
     if (end - start).days > max_days:
         end = start + timedelta(days=max_days)
 
-    program_ids = list(
-        BirebirHaftalikSlot.objects.filter(
-            aktif=True,
-            program__kurum_id=kurum_id,
-            program__sube_id=sube_id,
-            program__durum=ProgramDurumu.AKTIF,
-        ).values_list('program_id', flat=True).distinct()
+    slot_qs = BirebirHaftalikSlot.objects.filter(
+        aktif=True,
+        program__kurum_id=kurum_id,
+        program__sube_id=sube_id,
+        program__durum=ProgramDurumu.AKTIF,
     )
+    if ogrenci_id:
+        slot_qs = slot_qs.filter(program__ogrenci_id=ogrenci_id)
+    program_ids = list(slot_qs.values_list('program_id', flat=True).distinct())
     created = 0
     for program_id in program_ids:
         result = materialize_program(

@@ -54,6 +54,43 @@ class MaterializeActiveProgramsTests(TestCase):
             aktif=True,
         )
 
+    def test_ogrenci_id_only_materializes_that_student(self):
+        other = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Ada', soyad='Kaya', aktif_mi=True,
+        )
+        other_program = BirebirOgrenciProgrami.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.ey,
+            ogrenci=other,
+            baslangic_tarihi=date(2026, 8, 10),
+            durum=ProgramDurumu.AKTIF,
+        )
+        BirebirHaftalikSlot.objects.create(
+            program=other_program,
+            gun=2,
+            baslangic=time(13, 0),
+            bitis=time(13, 50),
+            sure_dk=50,
+            ders=self.ders,
+            ogretmen=self.ogretmen,
+            aktif=True,
+        )
+
+        result = materialize_active_programs(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            start_date='2026-08-10',
+            end_date='2026-08-16',
+            ogrenci_id=self.ogrenci.id,
+        )
+        self.assertEqual(result['created'], 1)
+        self.assertEqual(result['programs'], 1)
+        self.assertEqual(BirebirDersOturumu.objects.filter(is_active=True).count(), 1)
+        self.assertFalse(
+            BirebirDersOturumu.objects.filter(ogrenci=other, is_active=True).exists()
+        )
+
     def test_creates_sessions_for_range_and_is_idempotent(self):
         first = materialize_active_programs(
             kurum_id=self.kurum.id,

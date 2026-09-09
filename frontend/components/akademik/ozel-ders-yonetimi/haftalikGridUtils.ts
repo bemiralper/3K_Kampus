@@ -80,3 +80,55 @@ export function formatDateTr(iso: string | null | undefined): string {
   if (!y || !m || !d) return iso;
   return `${d}.${m}.${y}`;
 }
+
+/** Pazartesi başlangıçlı ISO hafta (locale'den bağımsız). */
+export function startOfIsoWeek(isoOrNow?: string): string {
+  const d = isoOrNow ? new Date(`${isoOrNow.slice(0, 10)}T12:00:00`) : new Date();
+  const day = d.getDay(); // 0 Pazar
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+export function addDaysIso(iso: string, days: number): string {
+  const d = new Date(`${iso.slice(0, 10)}T12:00:00`);
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+/** 1 = Pazartesi … 7 = Pazar */
+export function isoWeekday(iso: string): number {
+  const day = new Date(`${iso.slice(0, 10)}T12:00:00`).getDay();
+  return day === 0 ? 7 : day;
+}
+
+export function todayIso(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+export function formatWeekRangeTr(weekStart: string): string {
+  const end = addDaysIso(weekStart, 6);
+  const [ys, ms, ds] = weekStart.split('-');
+  const [ye, me, de] = end.split('-');
+  if (ys === ye && ms === me) return `${ds}–${de} ${monthTr(ms)} ${ys}`;
+  if (ys === ye) return `${ds} ${monthTr(ms)} – ${de} ${monthTr(me)} ${ys}`;
+  return `${ds} ${monthTr(ms)} ${ys} – ${de} ${monthTr(me)} ${ye}`;
+}
+
+function monthTr(mm: string): string {
+  const names = [
+    '', 'Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz',
+    'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara',
+  ];
+  return names[Number(mm)] || mm;
+}

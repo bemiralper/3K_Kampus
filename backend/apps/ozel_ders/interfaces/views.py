@@ -332,6 +332,8 @@ def ogrenci_haftalik_program_pdf(request, ogrenci_id: int):
             ogrenci_id=ogrenci_id,
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
+            start_date=request.GET.get('start_date'),
+            end_date=request.GET.get('end_date'),
         )
         return haftalik_program_pdf.pdf_http_response(payload)
     except OzelDersError as exc:
@@ -707,6 +709,7 @@ def oturum_list_create(request):
                         start_date=start_date,
                         end_date=end_date,
                         user=request.user,
+                        ogrenci_id=_int_or_none(request.GET.get('ogrenci_id')),
                     )
                 except OzelDersError:
                     pass
