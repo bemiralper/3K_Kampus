@@ -677,6 +677,57 @@ class ConversationRepository:
                 conversation.save(update_fields=['status', 'updated_at'])
 
     @staticmethod
+    def clear_notifications_for_user(conversation: Conversation, user) -> None:
+        """Sohbeti açan kişinin bildirimini kapatır; koç okunmamış sayacına dokunmaz."""
+        if not getattr(user, 'pk', None):
+            return
+        state = ConversationRepository.user_state(conversation, user)
+        state.notif_cleared_at = timezone.now()
+        state.save(update_fields=['notif_cleared_at', 'updated_at'])
+        ConversationRepository.mark_user_app_notifications(conversation, user)
+
+    @staticmethod
+    def mark_user_app_notifications(conversation: Conversation, user) -> None:
+        if not getattr(user, 'pk', None):
+            return
+        try:
+            from apps.takvim.infrastructure.repository import AppNotificationRepository
+
+            AppNotificationRepository.mark_conversation_read_for_user(
+                user_id=user.id,
+                kurum_id=conversation.kurum_id,
+                conversation_id=str(conversation.id),
+            )
+        except Exception:
+            pass
+
+    @staticmethod
+    def exclude_cleared_notifications(qs, user):
+        """Bu kullanıcının kapattığı (ve sonrası mesaj gelmeyen) sohbetleri çıkar."""
+        from django.db.models import F, Q
+        from django.db.models.functions import Coalesce
+        from apps.communication.domain.models import ConversationUserState
+
+        if not getattr(user, 'pk', None):
+            return qs
+        latest_inbound = Coalesce(
+            F('conversation__last_customer_message_at'),
+            F('conversation__last_message_at'),
+        )
+        cleared_ids = ConversationUserState.objects.filter(
+            user=user,
+            notif_cleared_at__isnull=False,
+            conversation_id__in=qs.values('id'),
+        ).filter(
+            Q(notif_cleared_at__gte=latest_inbound)
+            | Q(
+                conversation__last_customer_message_at__isnull=True,
+                conversation__last_message_at__isnull=True,
+            ),
+        ).values_list('conversation_id', flat=True)
+        return qs.exclude(id__in=list(cleared_ids))
+
+    @staticmethod
     def mark_read(conversation: Conversation) -> None:
         from django.conf import settings
 

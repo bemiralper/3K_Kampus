@@ -137,6 +137,43 @@ class ChatActionsAPITest(TestCase):
 
     # ── okundu / okunmadı ──
 
+    def _summary_ids(self, client=None):
+        who = client or self.client
+        res = who.get(f'{BASE}/notifications/summary/', {'kurum_id': self.kurum.id})
+        self.assertEqual(res.status_code, 200)
+        return {row['id'] for row in res.json()['cards']}
+
+    def test_admin_view_does_not_mark_read(self):
+        now = timezone.now()
+        self.conv.unread_count_coach = 4
+        self.conv.last_message_at = now
+        self.conv.last_customer_message_at = now
+        self.conv.save(update_fields=[
+            'unread_count_coach', 'last_message_at', 'last_customer_message_at',
+        ])
+        self.assertIn(str(self.conv.id), self._summary_ids())
+
+        res = self.client.patch(
+            f'{BASE}/conversations/{self.conv.id}/read/',
+            {'kurum_id': self.kurum.id},
+            format='json',
+        )
+        self.assertEqual(res.status_code, 200)
+        self.conv.refresh_from_db()
+        self.assertEqual(self.conv.unread_count_coach, 4)
+        self.assertNotIn(str(self.conv.id), self._summary_ids())
+
+        other = APIClient()
+        other.force_authenticate(user=self.other_user)
+        other.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
+        self.assertIn(str(self.conv.id), self._summary_ids(other))
+
+        later = timezone.now() + timedelta(seconds=2)
+        self.conv.last_message_at = later
+        self.conv.last_customer_message_at = later
+        self.conv.save(update_fields=['last_message_at', 'last_customer_message_at'])
+        self.assertIn(str(self.conv.id), self._summary_ids())
+
     def test_mark_unread_then_read(self):
         res = self.client.patch(
             f'{BASE}/conversations/{self.conv.id}/unread/',
@@ -151,7 +188,9 @@ class ChatActionsAPITest(TestCase):
         )
         self.assertEqual(res.status_code, 200)
         self.conv.refresh_from_db()
-        self.assertEqual(self.conv.unread_count_coach, 0)
+        # Yönetici "tümünü oku" yalnızca kendi bildirimini kapatır.
+        self.assertGreater(self.conv.unread_count_coach, 0)
+        self.assertNotIn(str(self.conv.id), self._summary_ids())
 
     # ── soft delete ──
 

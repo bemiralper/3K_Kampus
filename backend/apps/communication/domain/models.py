@@ -363,6 +363,12 @@ class ConversationUserState(models.Model):
     )
     pinned_at = models.DateTimeField(null=True, blank=True, verbose_name='Sabitlenme Zamanı')
     muted_until = models.DateTimeField(null=True, blank=True, verbose_name='Bildirim Susturma Bitişi')
+    notif_cleared_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name='Bildirim Temizleme',
+        help_text='Bu kullanıcı bildirimi kapattı / sohbeti açtı. Yeni mesaj gelince yeniden görünür.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

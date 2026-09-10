@@ -419,10 +419,14 @@ class AdminDashboardService:
             'sinif__sinif_seviyesi',
         )
         items: list[dict] = []
+        from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit
+
         for kayit in kayitlar.iterator():
             ogrenci = kayit.ogrenci
             dogum = ogrenci.dogum_tarihi
             if not dogum:
+                continue
+            if is_deneme_kulubu_kayit(ogrenci):
                 continue
             sonraki = _next_birthday(dogum, bugun)
             kalan = (sonraki - bugun).days

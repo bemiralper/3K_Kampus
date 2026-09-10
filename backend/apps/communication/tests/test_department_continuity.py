@@ -301,3 +301,27 @@ class WhatsAppNotifyRecipientsTest(TestCase):
         ids = resolve_whatsapp_notify_user_ids(conv)
         self.assertIn(muhasebe.id, ids)
         self.assertNotIn(self.coach_user.id, ids)
+
+    def test_accounting_sees_department_threads_without_wa_role(self):
+        """WhatsApp hesabı rol listesinde olmasa da muhasebe sohbeti görünsün."""
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+
+        muhasebe = User.objects.create_user(username='acc_inbox', password='x')
+        _grant(muhasebe, 'acc_inbox_role', [
+            'communication.read', 'communication.write', 'finans.read', 'ogrenci.read',
+        ])
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905321110000',
+            department=CommunicationDepartment.ACCOUNTING,
+            unread_count_coach=2,
+        )
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            muhasebe,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+        self.assertIn(conv.id, qs.values_list('id', flat=True))

@@ -750,9 +750,9 @@ def _parse_curriculum_text(text: str) -> list[dict]:
     current_outcome = None
 
     # Regex desenleri
-    # Konu: 9.2. KÜMELER veya 9.2 KÜMELER
+    # Konu: 9.2. KÜMELER veya 9.2 KÜMELER — yalnız "21.10" da başlık kabul
     topic_pattern = re.compile(
-        r'^\s*(\d+\.\d+)\.?\s+(.+)$'
+        r'^\s*(\d+\.\d+)\.?(?:\s+(.+))?$'
     )
     # Kazanım: 9.2.1. Küme kavramını...
     outcome_pattern = re.compile(
@@ -802,7 +802,7 @@ def _parse_curriculum_text(text: str) -> list[dict]:
         m_topic = topic_pattern.match(line)
         if m_topic:
             code = m_topic.group(1)
-            name = m_topic.group(2).strip()
+            name = (m_topic.group(2) or '').strip() or code
             current_topic = {
                 'code': code,
                 'name': name,
@@ -962,6 +962,43 @@ def _is_dotted_code(text: str) -> bool:
     return bool(_DOTTED_CODE_RE.match((text or '').strip()))
 
 
+def _dotted_segment_count(text: str) -> int:
+    return len([p for p in (text or '').strip().rstrip('.').split('.') if p])
+
+
+def _is_heading_code(text: str) -> bool:
+    """İki parçalı kod (21.10, 9.1) ünite / konu başlığıdır, tek kazanım değil."""
+    stripped = (text or '').strip().rstrip('.')
+    return _is_dotted_code(stripped) and _dotted_segment_count(stripped) == 2
+
+
+def _heading_owns_code(topic, query_lower: str) -> bool:
+    """Konu kodu 21.10 veya çocuk kazanımlar 21.10.* ise bu başlığa aittir."""
+    topic_code = (topic.code or '').strip().rstrip('.').lower()
+    if topic_code == query_lower:
+        return True
+    prefix = f'{query_lower}.'
+    return topic.outcomes.filter(code__istartswith=prefix).exists()
+
+
+def _match_heading_as_itself(query_stripped: str, query_lower: str, topics):
+    """Başlık kodunu çocuk kazanıma düşürmeden kendisi olarak döndür."""
+    for topic in topics:
+        if not _heading_owns_code(topic, query_lower):
+            continue
+        title = _topic_display_name(topic.name) or query_stripped
+        return {
+            'outcome_id': None,
+            'sub_outcome_id': None,
+            'outcome_code': query_stripped,
+            'outcome_text': title,
+            'topic_name': title,
+            'match_score': 100,
+            'match_type': 'topic',
+        }
+    return None
+
+
 def _topic_display_name(name: str) -> str:
     """'SHG21 · SAYILAR' / '9. sınıf · KÜMELER' → asıl konu başlığı."""
     from ..services.curriculum_band import topic_display_name
@@ -1005,8 +1042,9 @@ def _match_single_text(query: str, subject: Subject):
       4. Konu başlığı ile eşleşme → konunun son kazanımını ata
     
     Birden fazla eşleşme → en yüksek skorlu; isim eşleşmesinde konu yakınlığı
-    skora eklenir. Noktalı kod girilince (10.3.1.3) konu bonusu uygulanmaz
-    ve üst kod (10.3.1) prefix olarak eşlenmez.
+    skora eklenir.     Noktalı kod girilince yalnızca tam eşleşme geçer: 9.4.1.3 → 9.4.1
+    düşmez. İki parçalı başlık (21.10) çocuk kazanıma (21.10.2) da
+    düşmez; başlığın kendi metni döner.
     
     Returns: dict { outcome_id, sub_outcome_id, outcome_code, outcome_text, topic_name, match_score, match_type }
     """
@@ -1028,7 +1066,7 @@ def _match_single_text(query: str, subject: Subject):
         topic_norm = _normalize_turkish(topic.name)
         topic_kw = _extract_keywords(topic.name)
         
-        outcomes = Outcome.objects.filter(topic=topic).order_by('order')
+        outcomes = list(Outcome.objects.filter(topic=topic).order_by('order'))
         
         # ── 1. Konu başlığı eşleşmesi ──
         # Konu başlığı eşleşirse → o konunun son kazanımını ata
@@ -1066,9 +1104,9 @@ def _match_single_text(query: str, subject: Subject):
                 overlap = min(len(query_norm), len(topic_norm)) / max(len(query_norm), len(topic_norm))
                 topic_score = max(topic_score, int(overlap * 80))
         
-        if topic_score >= 30 and outcomes.exists() and not query_is_code:
+        if topic_score >= 30 and outcomes and not query_is_code:
             # Konu eşleşmesi → konunun SON kazanımını ata
-            last_outcome = outcomes.last()
+            last_outcome = outcomes[-1]
             candidates.append((
                 topic_score,
                 (topic.order, last_outcome.order, 0),
@@ -1201,6 +1239,8 @@ def _match_single_text(query: str, subject: Subject):
                     ))
     
     if not candidates:
+        if query_is_code and _is_heading_code(query_stripped):
+            return _match_heading_as_itself(query_stripped, query_lower, topics)
         return None
     
     # Eşleşme tipi önceliği: sub_outcome > outcome > topic (spesifik > genel)

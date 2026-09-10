@@ -389,6 +389,17 @@ class AppNotificationRepository:
         return AppNotification.objects.bulk_create(objs)
 
     @staticmethod
+    def mark_conversation_read_for_user(user_id: int, kurum_id: int, conversation_id: str) -> int:
+        if not user_id or not conversation_id:
+            return 0
+        return AppNotification.objects.filter(
+            user_id=user_id,
+            kurum_id=kurum_id,
+            is_read=False,
+            url__icontains=str(conversation_id),
+        ).update(is_read=True, read_at=timezone.now())
+
+    @staticmethod
     def mark_as_read(notification_id):
         AppNotification.objects.filter(id=notification_id, is_read=False).update(
             is_read=True, read_at=timezone.now()

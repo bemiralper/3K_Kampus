@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.response import Response
 
 from apps.communication.application.coach_scope import (
+    _has_full_inbox_access,
     filter_conversations_for_user,
     user_can_access_conversation,
 )
@@ -236,6 +237,10 @@ class ConversationReadView(CommunicationAPIView):
         if not user_can_access_conversation(request.user, conversation):
             return Response({'error': 'Bu konuşmaya erişim yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN)
 
-        ConversationRepository.mark_read(conversation)
+        # Bildirim çanı kişiye özel kapanır; sohbetin koç sayacı yalnızca
+        # yönetici olmayanlarda (veya yönetici cevap yazınca) sıfırlanır.
+        ConversationRepository.clear_notifications_for_user(conversation, request.user)
+        if not _has_full_inbox_access(request.user):
+            ConversationRepository.mark_read(conversation)
         conversation.refresh_from_db()
         return Response(_serialize_one(conversation, request))

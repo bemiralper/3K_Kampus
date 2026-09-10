@@ -12,7 +12,10 @@ from django.utils import timezone
 from rest_framework import status
 from rest_framework.response import Response
 
-from apps.communication.application.coach_scope import user_can_access_conversation
+from apps.communication.application.coach_scope import (
+    _has_full_inbox_access,
+    user_can_access_conversation,
+)
 from apps.communication.domain.models import Message
 from apps.communication.infrastructure.repository import (
     ConversationRepository,
@@ -135,9 +138,12 @@ class ConversationReadAllView(CommunicationAPIView):
         qs = filter_conversations_for_user(
             qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
         )
+        admin_peek = _has_full_inbox_access(request.user)
         updated = 0
         for conversation in qs.iterator():
-            ConversationRepository.mark_read(conversation)
+            ConversationRepository.clear_notifications_for_user(conversation, request.user)
+            if not admin_peek:
+                ConversationRepository.mark_read(conversation)
             updated += 1
         return Response({'ok': True, 'updated': updated})
 

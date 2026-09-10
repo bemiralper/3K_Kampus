@@ -505,6 +505,28 @@ def _outcome_texts_for_codes(codes: set[str]) -> dict[str, str]:
         for outcome in Outcome.objects.filter(code__in=remaining, is_active=True).only('code', 'text'):
             if outcome.text:
                 mapping[outcome.code] = outcome.text
+    remaining = cleaned - set(mapping)
+    if remaining:
+        from ..services.curriculum_band import topic_display_name
+        from ..models.curriculum import Topic
+
+        for topic in Topic.objects.filter(code__in=remaining).only('code', 'name'):
+            title = topic_display_name(topic.name or '')
+            if title:
+                mapping[topic.code] = title
+        leftover = remaining - set(mapping)
+        for code in leftover:
+            prefix = f'{code}.'
+            child = (
+                Outcome.objects.filter(code__startswith=prefix, is_active=True)
+                .select_related('topic')
+                .only('code', 'topic__name')
+                .first()
+            )
+            if child and child.topic_id:
+                title = topic_display_name(child.topic.name or '')
+                if title:
+                    mapping[code] = title
     return mapping
 
 

@@ -85,6 +85,15 @@ export default function DashOgrenciSection({ data }: Props) {
         </DashCard>
       </div>
 
+      {birthdays.bugun.length > 0 && (
+        <div className="adm-bd-today">
+          <strong>Bugün doğum günü</strong>
+          <span>
+            {birthdays.bugun.map((item) => item.ad_soyad).join(', ')}
+          </span>
+        </div>
+      )}
+
       <DashCard
         title="🎂 Yaklaşan Doğum Günleri"
         subtitle={`Önümüzdeki 30 gün içinde ${fmtNum(birthdays.ozet.otuz_gun_icinde)} doğum günü`}

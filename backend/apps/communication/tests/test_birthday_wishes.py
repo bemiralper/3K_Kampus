@@ -92,6 +92,30 @@ class BirthdayWishServiceTest(TestCase):
         self.assertEqual(run2.sent, 0)
         self.assertEqual(run2.skipped, 1)
 
+    def test_skips_deneme_kulubu_student(self):
+        self.ogrenci.kayit_turu = 'deneme_kulubu'
+        self.ogrenci.save(update_fields=['kayit_turu'])
+        run = send_birthday_wishes_for_kurum(self.kurum.id, on_date=self.today)
+        self.assertEqual(run.scanned, 0)
+        self.assertEqual(run.sent, 0)
+
+    def test_staff_reminder_for_admins(self):
+        from apps.communication.application.birthday_wish_service import notify_staff_birthdays
+        from apps.personel.domain.models import Personel
+        from apps.takvim.domain.models import AppNotification
+
+        user = User.objects.create_user(username='bday_admin', password='x')
+        Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Yönet', soyad='Ci',
+            user=user, aktif_mi=True,
+        )
+        created = notify_staff_birthdays(self.kurum.id, on_date=self.today)
+        self.assertEqual(created, 1)
+        n = AppNotification.objects.get(user_id=user.id, kurum_id=self.kurum.id)
+        self.assertTrue(n.ekran_mesaji)
+        self.assertIn('Ali', n.baslik)
+        self.assertEqual(notify_staff_birthdays(self.kurum.id, on_date=self.today), 0)
+
     def test_skips_without_media(self):
         BirthdayMediaAsset.objects.filter(kurum=self.kurum).delete()
         run = send_birthday_wishes_for_kurum(self.kurum.id, on_date=self.today)

@@ -303,13 +303,22 @@ def filter_by_accessible_whatsapp_accounts(
     ).exists():
         return qs
 
+    from apps.communication.application.account_resolver import _is_accounting_staff
+
     accessible = AccountResolver.list_accessible(
         kurum_id=kurum_id,
         user=user,
         sube_id=sube_id,
         active_only=True,
     )
+    is_accounting = _is_accounting_staff(user)
     if not accessible:
+        # Muhasebe hattı rol listesine eklenmemiş olsa da departman sohbetleri görünsün.
+        if is_accounting:
+            return qs.filter(
+                Q(department=CommunicationDepartment.ACCOUNTING)
+                | _own_outbound_conversation_q(user)
+            )
         return qs.none()
 
     ids = [cfg.id for cfg in accessible]
@@ -318,8 +327,7 @@ def filter_by_accessible_whatsapp_accounts(
     # Hesap atanmamış eski sohbetler yalnızca erişilebilir varsayılan hesaba düşer
     if default_ids:
         account_q |= Q(channel_config_id__isnull=True)
-    from apps.communication.application.account_resolver import _is_accounting_staff
-    if _is_accounting_staff(user):
+    if is_accounting:
         account_q |= Q(department=CommunicationDepartment.ACCOUNTING)
     # Kendi gönderdiği mesajın olduğu sohbet başka hatta kalsa da listede durmalı
     account_q |= _own_outbound_conversation_q(user)

@@ -11,7 +11,7 @@ SESSION_LAST_ACTIVITY_KEY = '_last_activity'
 
 
 def _resolve_idle_timeout_seconds() -> int:
-    return int(getattr(settings, 'SESSION_IDLE_TIMEOUT_SECONDS', 900))
+    return int(getattr(settings, 'SESSION_IDLE_TIMEOUT_SECONDS', 1800))
 
 
 def _is_exempt_path(path: str) -> bool:
@@ -38,7 +38,7 @@ def _wants_json_response(request) -> bool:
 
 
 class SessionIdleTimeoutMiddleware:
-    """15 dk (varsayılan) işlem yoksa oturumu sonlandır."""
+    """30 dk (varsayılan) işlem yoksa oturumu sonlandır."""
 
     def __init__(self, get_response):
         self.get_response = get_response

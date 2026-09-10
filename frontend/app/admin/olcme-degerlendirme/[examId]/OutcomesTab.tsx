@@ -450,7 +450,7 @@ export default function OutcomesTab({ exam }: Props) {
           ...newRows[idx],
           imported_outcome_text: result.input_text,
         };
-        if (result.outcome_id) {
+        if (result.outcome_id || (result.match_type === 'topic' && result.outcome_code)) {
           newRows[idx] = {
             ...newRows[idx],
             outcome_id: result.outcome_id,
@@ -827,8 +827,8 @@ export default function OutcomesTab({ exam }: Props) {
                                 style={{
                                   fontSize: 12,
                                   color: row.imported_outcome_text
-                                    ? (row.outcome_id
-                                        ? (row.imported_outcome_text.toLowerCase().includes(row.outcome_code.toLowerCase())
+                                    ? ((row.outcome_id || row.outcome_code)
+                                        ? (row.outcome_code && row.imported_outcome_text.toLowerCase().includes(row.outcome_code.toLowerCase())
                                             ? 'var(--text-secondary)'
                                             : '#f59e0b')
                                         : '#ef4444')
@@ -848,7 +848,7 @@ export default function OutcomesTab({ exam }: Props) {
                             )}
                           </td>
                           <td>
-                            {row.outcome_id ? (
+                            {row.outcome_id || row.outcome_code ? (
                               <div className={s.otOutcomeCell}>
                                 <span className={s.otOutcomeCode}>{row.outcome_code}</span>
                                 <span className={s.otOutcomeText} title={row.outcome_text}>
@@ -862,7 +862,7 @@ export default function OutcomesTab({ exam }: Props) {
                             )}
                           </td>
                           <td style={{ textAlign: 'center' }}>
-                            {row.outcome_id ? (
+                            {row.outcome_id || row.outcome_code ? (
                               <span
                                 className={s.otScoreBadge}
                                 style={{

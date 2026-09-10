@@ -116,6 +116,55 @@ class DuplicateOutcomeNamePrefersRelatedTopicTest(TestCase):
         self.assertEqual(match['outcome_code'], '21.2.2')
 
 
+class HeadingCodeStaysExactTest(TestCase):
+    """21.10 başlık olarak kalır; 21.10.2 çocuğuna düşmez."""
+
+    def setUp(self):
+        self.subject = Subject.objects.create(code='MAT', name='Matematik')
+        self.topic = Topic.objects.create(
+            subject=self.subject, code='21.10', name='SHG21 · FONKSİYONLAR', order=10,
+        )
+        self.first = Outcome.objects.create(
+            topic=self.topic, code='21.10.1', text='Fonksiyon tanımı', order=0,
+        )
+        self.last = Outcome.objects.create(
+            topic=self.topic, code='21.10.2', text='Fonksiyon grafiği', order=1,
+        )
+        other_topic = Topic.objects.create(
+            subject=self.subject, code='21.1', name='SHG21 · SAYILAR', order=1,
+        )
+        self.other = Outcome.objects.create(
+            topic=other_topic, code='21.1.1', text='Doğal sayılar', order=0,
+        )
+
+    def test_heading_code_stays_heading(self):
+        match = _match_single_text('21.10', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['match_type'], 'topic')
+        self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['outcome_code'], '21.10')
+        self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
+
+    def test_heading_code_does_not_match_sibling_unit(self):
+        match = _match_single_text('21.10', self.subject)
+        self.assertNotEqual(match['outcome_code'], '21.1.1')
+
+    def test_heading_inferred_from_child_codes(self):
+        self.topic.code = ''
+        self.topic.save(update_fields=['code'])
+        match = _match_single_text('21.10', self.subject)
+        self.assertIsNotNone(match)
+        self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['outcome_code'], '21.10')
+        self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
+
+    def test_trailing_dot_heading_code(self):
+        match = _match_single_text('21.10.', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['outcome_code'], '21.10')
+        self.assertIsNone(match['outcome_id'])
+
+
 class AnswerKeySubOutcomeDisplayTest(TestCase):
     def setUp(self):
         self.subject = Subject.objects.create(code='MAT', name='Matematik')
@@ -149,6 +198,18 @@ class AnswerKeySubOutcomeDisplayTest(TestCase):
         self.assertEqual(data['outcome_code'], '10.3.1.3')
         self.assertEqual(data['outcome_text'], 'Bileşke fonksiyonu hesaplar.')
         self.assertEqual(data['sub_outcome'], self.sub.id)
+
+    def test_imported_code_stays_exact_even_if_parent_linked(self):
+        item = AnswerKeyItem.objects.create(
+            answer_key=self.answer_key,
+            section=self.section,
+            question_number=3,
+            correct_answer='C',
+            outcome=self.outcome,
+            imported_outcome_text='9.4.1.3',
+        )
+        data = AnswerKeyItemSerializer(item).data
+        self.assertEqual(data['outcome_code'], '9.4.1.3')
 
     def test_serializer_falls_back_to_outcome_when_no_sub(self):
         item = AnswerKeyItem.objects.create(

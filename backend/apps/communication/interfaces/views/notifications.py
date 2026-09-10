@@ -23,7 +23,10 @@ class NotificationSummaryView(CommunicationAPIView):
             qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
         )
         unread_qs = qs.filter(unread_count_coach__gt=0)
-        unread_count = ConversationRepository.unread_count_for_queryset(qs)
+        unread_qs = ConversationRepository.exclude_cleared_notifications(
+            unread_qs, request.user,
+        )
+        unread_count = ConversationRepository.unread_count_for_queryset(unread_qs)
         unread_conversations = unread_qs.count()
 
         cards = ConversationListSerializer(

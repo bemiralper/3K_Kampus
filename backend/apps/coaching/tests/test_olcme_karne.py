@@ -340,6 +340,33 @@ class KarneTopicBlockUsesOutcomeTextTest(TestCase):
         self.assertEqual(rows[0]['dogru'], 1)
         self.assertEqual(rows[0]['yanlis'], 0)
 
+    def test_heading_code_uses_topic_title_not_child_outcome(self):
+        from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, Topic
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
+
+        exam = Exam.objects.create(name='Karne Başlık', exam_type='YKS_TYT')
+        section = ExamSection.objects.create(
+            exam=exam, name='Matematik', order=1, question_start=1, question_end=2,
+        )
+        subject = Subject.objects.create(code='MAT2', name='Matematik')
+        topic = Topic.objects.create(
+            subject=subject, code='21.10', name='SHG21 · FONKSİYONLAR', order=1,
+        )
+        Outcome.objects.create(topic=topic, code='21.10.2', text='Fonksiyon grafiği')
+        ak = AnswerKey.objects.create(exam=exam, booklet='')
+        AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=1,
+            correct_answer='A', imported_outcome_text='21.10',
+        )
+
+        blocks = _build_topic_blocks(exam, {'1': {'result': 'correct'}}, '')
+        rows = [row for block in blocks for table in block['tables'] for row in table['rows']]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['name'], 'FONKSİYONLAR')
+        self.assertNotIn('21.10.2', rows[0]['name'])
+        self.assertNotIn('Fonksiyon grafiği', rows[0]['name'])
+
 
 class KarnePdfLongTopicTableTest(TestCase):
     def test_long_imported_topic_table_fits_across_pages(self):

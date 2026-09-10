@@ -60,9 +60,11 @@ export function useConversationThread(
       if (silent && unreadRef.current === 0) return;
       // Okundu işaretleme yüklemeyi bloklamasın
       void markConversationRead(id)
-        .then(() => {
-          unreadRef.current = 0;
-          onConversationReadRef.current?.(id);
+        .then((updated) => {
+          if ((updated?.unread_count_coach ?? 0) === 0) {
+            unreadRef.current = 0;
+            onConversationReadRef.current?.(id);
+          }
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new Event('lms:notifications-refresh'));
           }

@@ -4,6 +4,8 @@ Cevap Anahtarı Modeli  (models/answer_key.py)
 AnswerKey     → Sınav cevap anahtarı başlığı (kitapçık bazlı)
 AnswerKeyItem → Her sorunun doğru cevabı
 """
+import re
+
 from django.db import models
 
 
@@ -124,7 +126,10 @@ class AnswerKeyItem(models.Model):
         return base + int(self.b_question_number) - 1
 
     def display_outcome_code(self) -> str:
-        """Görünen kod: alt kazanım varsa onun kodu, yoksa üst kazanım."""
+        """Görünen kod: girilen noktalı kod birebir; yoksa bağlı kayıt."""
+        imported = (self.imported_outcome_text or '').strip().rstrip('.')
+        if imported and re.fullmatch(r'\d+(?:\.\d+){1,}', imported):
+            return imported
         if self.sub_outcome_id:
             code = getattr(self.sub_outcome, 'code', '') or ''
             if code:

@@ -139,6 +139,13 @@ def api_notification_screen(request):
     if err:
         return err
 
+    try:
+        from apps.communication.application.birthday_wish_service import notify_staff_birthdays
+
+        notify_staff_birthdays(kurum_id)
+    except Exception:
+        pass
+
     limit = min(int(request.GET.get('limit', 5)), 10)
     service = AppNotificationService()
     notifications = service.get_screen_messages(user_id, kurum_id, limit)

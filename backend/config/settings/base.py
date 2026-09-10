@@ -293,7 +293,7 @@ SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 SESSION_COOKIE_AGE = 86400 * 7  # 7 days
 SESSION_SAVE_EVERY_REQUEST = True  # Refresh session on every request
 SESSION_COOKIE_NAME = 'lms_sessionid'
-SESSION_IDLE_TIMEOUT_SECONDS = int(os.environ.get('SESSION_IDLE_TIMEOUT_SECONDS', '900'))  # 15 dk
+SESSION_IDLE_TIMEOUT_SECONDS = int(os.environ.get('SESSION_IDLE_TIMEOUT_SECONDS', '1800'))  # 30 dk
 
 # CSRF — frontend JS reads this cookie for X-CSRFToken (must match getCsrfToken in frontend)
 CSRF_COOKIE_NAME = 'lms_csrftoken'

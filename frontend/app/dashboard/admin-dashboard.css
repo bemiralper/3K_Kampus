@@ -831,6 +831,25 @@
 
 /* ─── Doğum günleri ────────────────────────────────────────── */
 
+.adm-bd-today {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  border: 1px solid #f9a8d4;
+  background: linear-gradient(135deg, #fdf2f8, #fff7ed);
+  color: #9d174d;
+  font-size: 14px;
+}
+
+.adm-bd-today strong {
+  font-size: 13px;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
 .adm-bd-list {
   display: grid;
   grid-template-columns: 1fr;

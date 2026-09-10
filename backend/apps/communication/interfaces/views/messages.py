@@ -248,6 +248,11 @@ class ConversationMessagesView(CommunicationAPIView):
             process_immediately=bool(process_immediately),
         )
 
+        if result.success:
+            from apps.communication.infrastructure.repository import ConversationRepository
+
+            ConversationRepository.mark_read(conversation)
+
         if not result.success:
             payload = {'error': result.errors}
             if result.session_expired:

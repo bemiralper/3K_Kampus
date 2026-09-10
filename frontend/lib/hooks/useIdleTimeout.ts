@@ -2,7 +2,7 @@
 
 import { useEffect, useRef } from "react";
 
-const IDLE_MS = 15 * 60 * 1000;
+const IDLE_MS = 30 * 60 * 1000;
 const ACTIVITY_STORAGE_KEY = "3k_last_activity_at";
 
 const ACTIVITY_EVENTS = [
@@ -35,7 +35,7 @@ export function touchActivity() {
 }
 
 /**
- * 15 dk işlem yoksa onIdle çağrılır (logout + login yönlendirmesi).
+ * 30 dk işlem yoksa onIdle çağrılır (logout + login yönlendirmesi).
  */
 export function useIdleTimeout(onIdle: () => void, enabled = true) {
   const onIdleRef = useRef(onIdle);

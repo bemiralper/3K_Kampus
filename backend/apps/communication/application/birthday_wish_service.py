@@ -73,6 +73,7 @@ def _active_media(kurum_id: int, sube_id: int | None) -> list[BirthdayMediaAsset
 
 def _birthday_students(kurum_id: int, today: date, *, sube_id: int | None = None):
     from apps.ogrenci.domain.models import OgrenciKayit
+    from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit
 
     qs = OgrenciKayit.objects.filter(
         kurum_id=kurum_id,
@@ -84,7 +85,7 @@ def _birthday_students(kurum_id: int, today: date, *, sube_id: int | None = None
     ).select_related('ogrenci', 'sinif', 'sube')
     if sube_id:
         qs = qs.filter(sube_id=sube_id)
-    return qs
+    return [k for k in qs if not is_deneme_kulubu_kayit(k.ogrenci)]
 
 
 def _context_for(kayit, today: date) -> dict:
@@ -114,7 +115,7 @@ def send_birthday_wishes_for_kurum(
     result = BirthdayWishRunResult(date=today.isoformat())
     media_cache: dict[int | None, list[BirthdayMediaAsset]] = {}
 
-    for kayit in _birthday_students(kurum_id, today, sube_id=sube_id).iterator():
+    for kayit in _birthday_students(kurum_id, today, sube_id=sube_id):
         result.scanned += 1
         ogrenci = kayit.ogrenci
         scope_sube = kayit.sube_id
@@ -227,6 +228,11 @@ def send_birthday_wishes_for_kurum(
         detail['media_id'] = str(asset.id)
         result.details.append(detail)
 
+    try:
+        notify_staff_birthdays(kurum_id, on_date=today, sube_id=sube_id)
+    except Exception:
+        logger.exception('Doğum günü personel hatırlatması yazılamadı (kurum=%s)', kurum_id)
+
     return result
 
 
@@ -261,3 +267,83 @@ def send_birthday_wishes_all(
             kurum.id, run.scanned, run.sent, run.skipped, run.failed,
         )
     return out
+
+
+BIRTHDAY_REMINDER_URL_PREFIX = '/ogrenciler?dogum-gunu='
+
+
+def _staff_user_ids(kurum_id: int) -> list[int]:
+    from apps.personel.domain.models import Personel
+
+    return list(
+        Personel.objects.filter(
+            kurum_id=kurum_id,
+            aktif_mi=True,
+            user_id__isnull=False,
+        ).values_list('user_id', flat=True).distinct()
+    )
+
+
+def notify_staff_birthdays(
+    kurum_id: int,
+    *,
+    on_date: date | None = None,
+    sube_id: int | None = None,
+) -> int:
+    """Bugünkü doğum günlerini tüm personel/yöneticilere in-app + ekran mesajı olarak yazar."""
+    from apps.takvim.domain.enums import RecipientType
+    from apps.takvim.infrastructure.repository import AppNotificationRepository
+
+    today = on_date or timezone.localdate()
+    kayitlar = _birthday_students(kurum_id, today, sube_id=sube_id)
+    if not kayitlar:
+        return 0
+
+    names = []
+    for kayit in kayitlar:
+        ogrenci = kayit.ogrenci
+        ad = f'{ogrenci.ad} {ogrenci.soyad}'.strip()
+        sinif = ''
+        if kayit.sinif_id and getattr(kayit.sinif, 'ad', None):
+            sinif = kayit.sinif.ad
+        names.append(f'{ad} ({sinif})' if sinif else ad)
+
+    if len(names) == 1:
+        baslik = f'Bugün doğum günü: {names[0].split(" (")[0]}'
+        mesaj = f'Bugün {names[0]} doğum gününü kutluyor.'
+    else:
+        shown = ', '.join(names[:8])
+        extra = len(names) - 8
+        if extra > 0:
+            shown = f'{shown} ve {extra} öğrenci daha'
+        baslik = f'Bugün {len(names)} öğrencinin doğum günü'
+        mesaj = shown
+
+    url = f'{BIRTHDAY_REMINDER_URL_PREFIX}{today.isoformat()}'
+    repo = AppNotificationRepository()
+    created = 0
+    from apps.takvim.domain.models import AppNotification
+
+    for user_id in _staff_user_ids(kurum_id):
+        if AppNotification.objects.filter(
+            user_id=user_id,
+            kurum_id=kurum_id,
+            url=url,
+        ).exists():
+            continue
+        try:
+            repo.create({
+                'kurum_id': kurum_id,
+                'user_id': user_id,
+                'alici_tip': RecipientType.PERSONEL,
+                'baslik': baslik,
+                'mesaj': mesaj,
+                'ikon': '🎂',
+                'renk': '#DB2777',
+                'url': url,
+                'ekran_mesaji': True,
+            })
+            created += 1
+        except Exception:
+            logger.exception('Doğum günü hatırlatması yazılamadı (user_id=%s)', user_id)
+    return created
