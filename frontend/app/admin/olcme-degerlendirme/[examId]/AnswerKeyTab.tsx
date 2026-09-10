@@ -11,7 +11,12 @@ import type {
   OutcomeItem,
 } from '../../../../components/olcme/types';
 import s from '../olcme.module.css';
-import { trIncludes } from '@/lib/text-format';
+import {
+  filterTopicsByQuery,
+  findOutcomeByText,
+  flattenSubjectOutcomes,
+  subjectsForSection,
+} from '../../../../components/olcme/outcome-search';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Yardımcı Tipler & Fonksiyonlar                                           */
@@ -40,65 +45,9 @@ function normalizeAnswer(val: string): AnswerChoice {
   return '' as AnswerChoice;
 }
 
-/** Tüm kazanımları düz listeye çevir (Subject → Topic → Outcome + Alt Kazanım) */
-function flattenOutcomes(subjects: SubjectItem[]): OutcomeItem[] {
-  const flat: OutcomeItem[] = [];
-  for (const subj of subjects) {
-    const topics = subj.topics ?? [];
-    for (const topic of topics) {
-      for (const o of topic.outcomes ?? []) {
-        flat.push({ ...o, sub_outcome_id: null });
-        for (const sub of o.sub_outcomes ?? []) {
-          flat.push({
-            id: o.id,
-            code: sub.code,
-            text: sub.text,
-            sub_outcome_id: sub.id,
-          });
-        }
-      }
-    }
-  }
-  return flat;
-}
-
-function isDottedCode(value: string): boolean {
-  return /^\d+(?:\.\d+)+$/.test(value.trim());
-}
-
-/**
- * Kazanım metnine/koduna göre en iyi eşleşmeyi bul.
- * Noktalı kod (10.3.1.3) yalnızca tam eşleşir; üst kod (10.3.1) prefix sayılmaz.
- */
-function findOutcomeByText(input: string, allOutcomes: OutcomeItem[]): OutcomeItem | null {
-  if (!input.trim()) return null;
-  const q = input.trim().replace(/\.+$/, '').toLowerCase();
-
-  const byCodeExact = allOutcomes.find(o => o.code.toLowerCase() === q);
-  if (byCodeExact) return byCodeExact;
-
-  const compact = q.replace(/\./g, '');
-  const byCompact = allOutcomes.find(
-    o => o.code.toLowerCase().replace(/\./g, '') === compact,
-  );
-  if (byCompact) return byCompact;
-
-  if (isDottedCode(q)) return null;
-
-  const byTextExact = allOutcomes.find(o => o.text.toLowerCase() === q);
-  if (byTextExact) return byTextExact;
-
-  const byCodeIncludes = allOutcomes.find(
-    o => o.code.toLowerCase().includes(q) || q.includes(o.code.toLowerCase()),
-  );
-  if (byCodeIncludes) return byCodeIncludes;
-
-  const byTextIncludes = allOutcomes.find(
-    o => o.text.toLowerCase().includes(q) || q.includes(o.text.toLowerCase()),
-  );
-  if (byTextIncludes) return byTextIncludes;
-
-  return null;
+function outcomesForRow(subjects: SubjectItem[], sections: ExamDetail['sections'], sectionId: number): OutcomeItem[] {
+  const section = (sections ?? []).find(s => s.id === sectionId);
+  return flattenSubjectOutcomes(subjectsForSection(subjects, section?.subject ?? null));
 }
 
 type Step = 'answers' | 'b_booklet' | 'outcomes' | 'preview';
@@ -163,7 +112,10 @@ export default function AnswerKeyTab({ exam }: Props) {
     [sections],
   );
 
-  const allOutcomes = useMemo(() => flattenOutcomes(subjects), [subjects]);
+  const allOutcomes = useMemo(
+    () => flattenSubjectOutcomes(subjects),
+    [subjects],
+  );
 
   /* ── Boş grid oluştur ─── */
   const buildEmptyGrid = useCallback((): GridRow[] => {
@@ -330,7 +282,10 @@ export default function AnswerKeyTab({ exam }: Props) {
 
     for (let i = 0; i < lines.length && i < newRows.length; i++) {
       if (!lines[i]) continue; // boş satır atla
-      const found = findOutcomeByText(lines[i], allOutcomes);
+      const found = findOutcomeByText(
+        lines[i],
+        outcomesForRow(subjects, exam.sections, newRows[i].section_id),
+      );
       // Orijinal yapıştırılan metni her zaman kaydet
       newRows[i] = {
         ...newRows[i],
@@ -360,7 +315,7 @@ export default function AnswerKeyTab({ exam }: Props) {
       setMsg(`✅ ${matched} kazanım başarıyla eşleştirildi.`);
     }
     setStep('preview');
-  }, [outcomeText, rows, allOutcomes]);
+  }, [outcomeText, rows, subjects, exam.sections]);
 
   /* ═════════════════════════════════════════════════════════════════════════ */
   /*  ÖNİZLEME İŞLEYİCİLERİ                                                */
@@ -847,7 +802,10 @@ export default function AnswerKeyTab({ exam }: Props) {
       {/* ── Kazanım Seçici Modal ─── */}
       {outcomeModal !== null && (
         <OutcomePickerModal
-          subjects={subjects}
+          subjects={subjectsForSection(
+            subjects,
+            (exam.sections ?? []).find(sec => sec.id === rows[outcomeModal.rowIdx]?.section_id)?.subject ?? null,
+          )}
           search={outcomeSearch}
           onSearch={setOutcomeSearch}
           onSelect={o => setOutcome(outcomeModal.rowIdx, o)}
@@ -964,8 +922,6 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
   onSelect: (o: OutcomeItem) => void;
   onClose: () => void;
 }) {
-  const lower = search.trim();
-
   return (
     <div className={s.outcomeModal} onClick={onClose}>
       <div className={s.outcomeModalContent} onClick={e => e.stopPropagation()}>
@@ -987,21 +943,8 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
           />
 
           {subjects.map(subj => {
-            const filteredTopics = (subj.topics ?? [])
-              .map(topic => ({
-                ...topic,
-                outcomes: (topic.outcomes ?? []).filter(o =>
-                  !lower ||
-                  trIncludes(o.code, lower) ||
-                  trIncludes(o.text, lower) ||
-                  trIncludes(topic.name, lower) ||
-                  (o.sub_outcomes ?? []).some(sub =>
-                    trIncludes(sub.code, lower) ||
-                    trIncludes(sub.text, lower),
-                  )
-                ),
-              }))
-              .filter(t => t.outcomes.length > 0);
+            const filteredTopics = filterTopicsByQuery(subj.topics ?? [], search)
+              .filter(t => (t.outcomes ?? []).length > 0);
 
             if (filteredTopics.length === 0) return null;
 

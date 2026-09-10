@@ -12,6 +12,11 @@ import type {
   MatchResult,
 } from '../../../../components/olcme/types';
 import { topicDisplayName } from '../../../../components/olcme/curriculum-band';
+import {
+  dottedParts,
+  filterTopicsByQuery,
+  topicNameBelongsElsewhere,
+} from '../../../../components/olcme/outcome-search';
 import s from '../olcme.module.css';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -79,8 +84,10 @@ function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   return '';
 }
 
-function dottedParts(raw: string): string[] {
-  return (raw || '').trim().replace(/\.+$/, '').toLowerCase().split('.').filter(Boolean);
+function topicsForHomeSubject(home: SubjectItem | null, allSubjects: SubjectItem[]): TopicItem[] {
+  return (home?.topics ?? []).filter(t =>
+    !isDumpTopic(t) && !topicNameBelongsElsewhere(t, home, allSubjects),
+  );
 }
 
 function firstOutcomeForImported(topics: TopicItem[], raw: string): OutcomeItem | null {
@@ -262,9 +269,9 @@ export default function OutcomesTab({ exam }: Props) {
         let outcomes: OutcomeItem[] = [];
 
         if (sub.subject) {
-          subject = subjectsTree.find(s => s.id === sub.subject) ?? null;
+          subject = subjectsTree.find(s => Number(s.id) === Number(sub.subject)) ?? null;
           if (subject) {
-            topics = subject.topics ?? [];
+            topics = topicsForHomeSubject(subject, subjectsTree);
             outcomes = flattenOutcomes(topics);
           }
         }
@@ -279,9 +286,9 @@ export default function OutcomesTab({ exam }: Props) {
         let outcomes: OutcomeItem[] = [];
 
         if (main.subject) {
-          subject = subjectsTree.find(s => s.id === main.subject) ?? null;
+          subject = subjectsTree.find(s => Number(s.id) === Number(main.subject)) ?? null;
           if (subject) {
-            topics = subject.topics ?? [];
+            topics = topicsForHomeSubject(subject, subjectsTree);
             outcomes = flattenOutcomes(topics);
           }
         }
@@ -300,7 +307,10 @@ export default function OutcomesTab({ exam }: Props) {
           // Bu sorunun ait olduğu alt bölümü bul
           const ssInfo = ssInfos.find(ss => ss.section.id === item.section);
           const resolved = (!item.outcome && ssInfo)
-            ? firstOutcomeForImported(ssInfo.topics, item.imported_outcome_text || item.outcome_code || '')
+            ? firstOutcomeForImported(
+                ssInfo.topics,
+                item.imported_outcome_text || item.outcome_code || '',
+              )
             : null;
           const outcomeId = item.outcome || resolved?.id || null;
           const outcomeCode = item.outcome_code || resolved?.code || '';
@@ -909,7 +919,7 @@ export default function OutcomesTab({ exam }: Props) {
                             )}
                           </td>
                           <td>
-                            {row.outcome_id || row.outcome_code ? (
+                            {row.outcome_id || (row.outcome_code && row.outcome_text) ? (
                               <div className={s.otOutcomeCell}>
                                 <span className={s.otOutcomeCode}>{row.outcome_code}</span>
                                 <span className={s.otOutcomeText} title={row.outcome_text}>
@@ -1130,25 +1140,8 @@ function OutcomePickerModal({
   currentSubOutcomeId: number | null;
   questionNumber: number;
 }) {
-  const lower = search.toLowerCase();
-
   const topics = section?.topics ?? [];
-
-  const filteredTopics = topics
-    .map(topic => ({
-      ...topic,
-      outcomes: (topic.outcomes ?? []).filter(o =>
-        !lower ||
-        (o.code || '').toLowerCase().includes(lower) ||
-        (o.text || '').toLowerCase().includes(lower) ||
-        (topic.name || '').toLowerCase().includes(lower) ||
-        (o.sub_outcomes ?? []).some(sub =>
-          (sub.code || '').toLowerCase().includes(lower) ||
-          (sub.text || '').toLowerCase().includes(lower),
-        )
-      ),
-    }))
-    .filter(t => t.outcomes.length > 0);
+  const filteredTopics = filterTopicsByQuery(topics, search).filter(t => (t.outcomes ?? []).length > 0);
 
   return (
     <div className={s.outcomeModal} onClick={onClose}>

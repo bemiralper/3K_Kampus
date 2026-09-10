@@ -7,10 +7,13 @@ from apps.coaching.olcme_degerlendirme.models.exam import Exam, ExamSection
 from apps.coaching.olcme_degerlendirme.serializers.answer_key import AnswerKeyItemSerializer
 from apps.coaching.olcme_degerlendirme.views.curriculum_views import (
     _code_is_under,
+    _code_query_hits,
     _match_single_text,
     detach_false_heading_binds,
+    detach_foreign_outcome_binds,
     relink_dump_answer_key,
     relink_unbound_answer_key,
+    search_subject_outcomes,
     topic_is_bulk_dump,
 )
 
@@ -446,3 +449,168 @@ class DetachFalseHeadingBindsTest(TestCase):
         self.assertEqual(detach_false_heading_binds(self.ak), 0)
         item.refresh_from_db()
         self.assertEqual(item.outcome_id, self.geo_out.id)
+
+
+class CrossSubjectCurriculumMatchTest(TestCase):
+    """Felsefe/Din satırı Edebiyat, Biyoloji, Türkçe, Mat kodunu yutmamalı."""
+
+    def setUp(self):
+        self.felsefe = Subject.objects.create(code='FELSEFE_TYT', name='Felsefe')
+        self.din = Subject.objects.create(code='DINKUL_TYT', name='Din Kültürü')
+        self.ede = Subject.objects.create(code='TDE_AYT', name='Türk Dili ve Edebiyatı')
+        self.bio = Subject.objects.create(code='BIO_TYT', name='Biyoloji')
+        self.turkce = Subject.objects.create(code='TURKCE_TYT', name='Türkçe')
+        self.mat = Subject.objects.create(code='MAT_TYT', name='Matematik')
+
+        giris = Topic.objects.create(
+            subject=self.ede, code='11.1', name='11. sınıf · TÜRK DİLİ VE EDEBİYATINA GİRİŞ',
+        )
+        out = Outcome.objects.create(topic=giris, code='11.1.1', text='Edebiyat ve toplum')
+        self.ede_sub = SubOutcome.objects.create(
+            outcome=out, code='11.1.1.1', text='Edebiyatın toplumla ilişkisini belirler.',
+        )
+        siiri = Topic.objects.create(subject=self.ede, code='10.3', name='10. sınıf · ŞİİR')
+        siiri_out = Outcome.objects.create(topic=siiri, code='10.3.1', text='Şiir')
+        SubOutcome.objects.create(
+            outcome=siiri_out, code='10.3.1.2',
+            text='Destan Dönemi Türk şiirinin genel özelliklerini açıklar.',
+        )
+        eko = Topic.objects.create(
+            subject=self.bio, code='10.3',
+            name='10. sınıf · EKOSİSTEM EKOLOJİSİ VE GÜNCEL ÇEVRE SORUNLARI',
+        )
+        eko_out = Outcome.objects.create(topic=eko, code='10.3.1', text='Ekoloji')
+        SubOutcome.objects.create(
+            outcome=eko_out, code='10.3.1.4',
+            text='Madde döngüleri ve hayatın sürdürülebilirliği arasında ilişki kurar.',
+        )
+        paragraf = Topic.objects.create(
+            subject=self.turkce, code='21.5', name='SHG21 · PARAGRAF YORUMU',
+        )
+        self.tr_out = Outcome.objects.create(
+            topic=paragraf, code='21.5.1', text='Paragrafta Ana Düşünce (Ana Fikir)',
+        )
+        esitsiz = Topic.objects.create(
+            subject=self.mat, code='21.19', name='SHG21 · EŞİTSİZLİKLER',
+        )
+        Outcome.objects.create(topic=esitsiz, code='21.19.1', text='Eşitsizlikler')
+
+        own = Topic.objects.create(
+            subject=self.felsefe, code='10.1', name='10. sınıf · FELSEFEYE GİRİŞ',
+        )
+        self.fel_out = Outcome.objects.create(
+            topic=own, code='10.1.1', text='Felsefenin anlamını açıklar.',
+        )
+
+    def test_felsefe_does_not_match_edebiyat_or_biology(self):
+        self.assertIsNone(_match_single_text('11.1.1.1', self.felsefe))
+        self.assertIsNone(_match_single_text('10.3.1.2', self.felsefe))
+        self.assertIsNone(_match_single_text('10.3.1.4', self.felsefe))
+
+    def test_din_does_not_match_turkce_or_math(self):
+        self.assertIsNone(_match_single_text('21.5.1', self.din))
+        self.assertIsNone(_match_single_text('21.19.1', self.din))
+
+    def test_home_subject_still_matches_own_code(self):
+        match = _match_single_text('10.1.1', self.felsefe)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['outcome_id'], self.fel_out.id)
+
+    def test_same_code_on_other_subject_does_not_hide_home(self):
+        """MEB kodları dersler arası tekrarlanır; ev dersindeki 10.1.1 kaybolmamalı."""
+        other_topic = Topic.objects.create(
+            subject=self.ede, code='10.1', name='10. sınıf · EDEBİYAT METİNLERİ',
+        )
+        Outcome.objects.create(topic=other_topic, code='10.1.1', text='Edebiyat 10.1.1')
+        match = _match_single_text('10.1.1', self.felsefe)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['outcome_id'], self.fel_out.id)
+        self.assertEqual(match['outcome_text'], 'Felsefenin anlamını açıklar.')
+
+    def test_polluted_felsefe_copy_is_rejected(self):
+        leaked = Topic.objects.create(
+            subject=self.felsefe, code='11.1',
+            name='11. sınıf · TÜRK DİLİ VE EDEBİYATINA GİRİŞ',
+        )
+        leaked_out = Outcome.objects.create(topic=leaked, code='11.1.1', text='Kopya')
+        SubOutcome.objects.create(
+            outcome=leaked_out, code='11.1.1.1',
+            text='Edebiyatın toplumla ilişkisini belirler.',
+        )
+        self.assertIsNone(_match_single_text('11.1.1.1', self.felsefe))
+
+    def test_detaches_foreign_bind_on_felsefe_section(self):
+        exam = Exam.objects.create(name='TYT Sosyal', exam_type='YKS_TYT')
+        section = ExamSection.objects.create(
+            exam=exam, name='Felsefe', question_start=51, question_end=55,
+            subject=self.felsefe,
+        )
+        ak = AnswerKey.objects.create(exam=exam, booklet='')
+        item = AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=51,
+            correct_answer='B', outcome=self.ede_sub.outcome,
+            imported_outcome_text='11.1.1.1',
+        )
+        self.assertEqual(detach_foreign_outcome_binds(ak), 1)
+        item.refresh_from_db()
+        self.assertIsNone(item.outcome_id)
+
+
+class UnmatchedCodeSearchTest(TestCase):
+    """Arama, cevap anahtarına bağlı olmayan kodları da bulmalı; 21.1 ≠ 21.10."""
+
+    def setUp(self):
+        self.mat = Subject.objects.create(code='MAT_TYT', name='Matematik')
+        self.turkce = Subject.objects.create(code='TURKCE_TYT', name='Türkçe')
+        sayilar = Topic.objects.create(
+            subject=self.mat, code='21.1', name='SHG21 · SAYILAR',
+        )
+        self.out_211 = Outcome.objects.create(
+            topic=sayilar, code='21.1.1', text='Doğal sayılar',
+        )
+        fonk = Topic.objects.create(
+            subject=self.mat, code='21.10', name='SHG21 · FONKSİYONLAR',
+        )
+        self.out_2110 = Outcome.objects.create(
+            topic=fonk, code='21.10.1', text='Fonksiyon tanımı',
+        )
+        self.out_21102 = Outcome.objects.create(
+            topic=fonk, code='21.10.2', text='Fonksiyon grafiği',
+        )
+        paragraf = Topic.objects.create(
+            subject=self.turkce, code='21.5', name='SHG21 · PARAGRAF YORUMU',
+        )
+        Outcome.objects.create(
+            topic=paragraf, code='21.5.1', text='Paragrafta Ana Düşünce (Ana Fikir)',
+        )
+
+    def test_startswith_style_prefix_must_not_match_sibling_unit(self):
+        self.assertTrue(_code_is_under('21.1.2', '21.1'))
+        self.assertFalse(_code_is_under('21.10.2', '21.1'))
+        self.assertTrue(_code_query_hits('21.1.1', '21.1'))
+        self.assertFalse(_code_query_hits('21.10.2', '21.1'))
+        self.assertTrue('21.10.2'.startswith('21.1'))  # string bug; segment must reject
+
+    def test_search_finds_unmatched_code_on_home_subject(self):
+        hits = search_subject_outcomes(self.mat, '21.10.1')
+        codes = {row['outcome_code'] for row in hits}
+        self.assertIn('21.10.1', codes)
+        self.assertNotIn('21.5.1', codes)
+
+    def test_search_21_1_does_not_return_21_10(self):
+        hits = search_subject_outcomes(self.mat, '21.1')
+        codes = {row['outcome_code'] for row in hits}
+        self.assertIn('21.1.1', codes)
+        self.assertNotIn('21.10.1', codes)
+        self.assertNotIn('21.10.2', codes)
+
+    def test_search_unmatched_text_on_home_subject(self):
+        hits = search_subject_outcomes(self.mat, 'Fonksiyon tanımı')
+        self.assertTrue(any(row['outcome_id'] == self.out_2110.id for row in hits))
+
+    def test_search_does_not_return_other_subject(self):
+        hits = search_subject_outcomes(self.mat, 'Paragrafta')
+        self.assertEqual(hits, [])
+        hits = search_subject_outcomes(self.turkce, '21.5.1')
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]['outcome_code'], '21.5.1')

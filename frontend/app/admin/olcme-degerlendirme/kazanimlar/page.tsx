@@ -3,6 +3,8 @@
 import { useEffect, useState, useCallback, useMemo } from 'react';
 import { curriculumApi } from '../../../../components/olcme/api';
 import type { SubjectItem, TopicItem, OutcomeItem, SubOutcomeItem } from '../../../../components/olcme/types';
+import { filterTopicsByQuery, codeQueryHits } from '../../../../components/olcme/outcome-search';
+import { trIncludes } from '@/lib/text-format';
 import styles from './kazanimlar.module.css';
 
 /* ── Yardımcı ─────────────────────────────────────────────────────────────── */
@@ -372,53 +374,27 @@ export default function KazanimlarPage() {
     setDragOverTopicId(null);
   };
 
-  const treeQuery = treeSearch.trim().toLowerCase();
+  const treeQuery = treeSearch.trim();
   const visibleTopics = useMemo(() => {
     const topics = selectedSubject?.topics || [];
-    if (!treeQuery) return topics;
-    return topics
-      .map(topic => {
-        const topicHit =
-          (topic.code || '').toLowerCase().includes(treeQuery) ||
-          (topic.name || '').toLowerCase().includes(treeQuery);
-        const outcomes = (topic.outcomes || []).filter(o =>
-          topicHit ||
-          (o.code || '').toLowerCase().includes(treeQuery) ||
-          (o.text || '').toLowerCase().includes(treeQuery) ||
-          (o.sub_outcomes || []).some(sub =>
-            (sub.code || '').toLowerCase().includes(treeQuery) ||
-            (sub.text || '').toLowerCase().includes(treeQuery),
-          ),
-        );
-        if (!topicHit && outcomes.length === 0) return null;
-        return { ...topic, outcomes: topicHit ? (topic.outcomes || []) : outcomes };
-      })
-      .filter((t): t is TopicItem => t != null);
+    return filterTopicsByQuery(topics, treeQuery);
   }, [selectedSubject, treeQuery]);
 
   useEffect(() => {
     if (!treeQuery || !selectedSubject?.topics) return;
     const nextTopics = new Set<number>();
     const nextOutcomes = new Set<number>();
-    for (const topic of selectedSubject.topics) {
-      const topicHit =
-        (topic.code || '').toLowerCase().includes(treeQuery) ||
-        (topic.name || '').toLowerCase().includes(treeQuery);
-      let topicHasHit = topicHit;
+    for (const topic of filterTopicsByQuery(selectedSubject.topics, treeQuery)) {
+      nextTopics.add(topic.id);
       for (const o of topic.outcomes || []) {
         const outcomeHit =
-          (o.code || '').toLowerCase().includes(treeQuery) ||
-          (o.text || '').toLowerCase().includes(treeQuery) ||
+          codeQueryHits(o.code, treeQuery) ||
+          trIncludes(o.text, treeQuery) ||
           (o.sub_outcomes || []).some(sub =>
-            (sub.code || '').toLowerCase().includes(treeQuery) ||
-            (sub.text || '').toLowerCase().includes(treeQuery),
+            codeQueryHits(sub.code, treeQuery) || trIncludes(sub.text, treeQuery),
           );
-        if (outcomeHit) {
-          topicHasHit = true;
-          nextOutcomes.add(o.id);
-        }
+        if (outcomeHit) nextOutcomes.add(o.id);
       }
-      if (topicHasHit) nextTopics.add(topic.id);
     }
     setOpenTopics(nextTopics);
     setOpenOutcomes(nextOutcomes);

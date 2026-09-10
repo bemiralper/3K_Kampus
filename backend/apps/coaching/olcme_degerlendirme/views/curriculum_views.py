@@ -1021,6 +1021,112 @@ def _dotted_parts(text: str) -> list[str]:
     return [p for p in (text or '').strip().rstrip('.').lower().split('.') if p]
 
 
+def _norm_outcome_code(code: str) -> str:
+    return (code or '').strip().rstrip('.').lower()
+
+
+def _subject_name_tokens(name: str) -> set[str]:
+    return {
+        w for w in _normalize_turkish(name or '').split()
+        if w not in _STOP_WORDS and len(w) >= 4
+    }
+
+
+def _topic_name_belongs_elsewhere(topic, home_subject) -> bool:
+    """
+    Konu adı başka dersin adını taşıyorsa (Felsefe ağacındaki
+    'TÜRK DİLİ VE EDEBİYATINA GİRİŞ') ev dersine ait değildir.
+
+    Kodların başka derste de durması normaldir (10.1.1 birden fazla derste
+    vardır); bu yüzden yalnızca ada bakılır.
+    """
+    title = _normalize_turkish(
+        _topic_display_name(getattr(topic, 'name', '') or '') or getattr(topic, 'name', '') or ''
+    )
+    title_tokens = _subject_name_tokens(title)
+    home_tokens = _subject_name_tokens(getattr(home_subject, 'name', '') or '') | _subject_name_tokens(
+        getattr(home_subject, 'display_name', '') or ''
+    )
+    if home_tokens and any(
+        any(tt == ht or tt.startswith(ht) or ht.startswith(tt) for tt in title_tokens)
+        for ht in home_tokens
+    ):
+        return False
+    home_id = getattr(home_subject, 'pk', None)
+    others = Subject.objects.exclude(pk=home_id).only('name', 'display_name') if home_id else Subject.objects.none()
+    for other in others:
+        other_tokens = _subject_name_tokens(other.name) | _subject_name_tokens(other.display_name or '')
+        if len(other_tokens) < 2:
+            continue
+        matched = 0
+        for ot in other_tokens:
+            if any(tt == ot or tt.startswith(ot) or ot.startswith(tt) for tt in title_tokens):
+                matched += 1
+        if matched >= 2:
+            return True
+    return False
+
+
+def _code_query_hits(code: str, query: str) -> bool:
+    """21.1 → 21.1.2 evet; 21.1 → 21.10.2 hayır. Serbest metinde substring."""
+    q = (query or '').strip().rstrip('.').lower()
+    c = _norm_outcome_code(code)
+    if not q or not c:
+        return False
+    if _is_dotted_code(q):
+        return c == q or _code_is_under(c, q)
+    return q in c
+
+
+def search_subject_outcomes(subject, query: str) -> list[dict]:
+    """
+    Tek ders içinde ara. Cevap anahtarına bağlı olmayan (unmatched) kodlar da döner.
+    Başka dersin kazanımı asla gelmez.
+    """
+    q = (query or '').strip()
+    if not q or not subject:
+        return []
+    q_norm = _normalize_turkish(q)
+    results = []
+    topics = Topic.objects.filter(subject=subject).prefetch_related(
+        Prefetch(
+            'outcomes',
+            queryset=Outcome.objects.filter(is_active=True).order_by('order').prefetch_related(
+                Prefetch('sub_outcomes', queryset=SubOutcome.objects.filter(is_active=True).order_by('order')),
+            ),
+        ),
+    ).order_by('order')
+    for topic in topics:
+        if topic_is_bulk_dump(topic) or _topic_name_belongs_elsewhere(topic, subject):
+            continue
+        topic_hit = (
+            _code_query_hits(topic.code or '', q)
+            or q.lower() in (topic.name or '').lower()
+            or (q_norm and q_norm in _normalize_turkish(topic.name or ''))
+        )
+        for outcome in topic.outcomes.all():
+            outcome_hit = (
+                _code_query_hits(outcome.code or '', q)
+                or q_norm in _normalize_turkish(outcome.text or '')
+            )
+            sub_hits = []
+            for sub in outcome.sub_outcomes.all():
+                if _code_query_hits(sub.code or '', q) or q_norm in _normalize_turkish(sub.text or ''):
+                    sub_hits.append(sub)
+            if not topic_hit and not outcome_hit and not sub_hits:
+                continue
+            results.append({
+                'topic_id': topic.id,
+                'topic_code': topic.code or '',
+                'topic_name': _topic_display_name(topic.name) or topic.name,
+                'outcome_id': outcome.id,
+                'outcome_code': outcome.code or '',
+                'outcome_text': outcome.text or '',
+                'sub_outcome_ids': [s.id for s in sub_hits],
+            })
+    return results
+
+
 def _code_is_under(code: str, parent: str) -> bool:
     """21.1 → 21.1.2 evet; 21.1 → 21.10.2 hayır (string prefix değil, segment)."""
     child = _dotted_parts(code)
@@ -1040,9 +1146,11 @@ def _heading_owns_code(topic, query_lower: str) -> bool:
     )
 
 
-def _match_heading_as_itself(query_stripped: str, query_lower: str, topics):
+def _match_heading_as_itself(query_stripped: str, query_lower: str, topics, home_subject=None):
     """Başlık kodunu çocuk kazanıma düşürmeden konu olarak eşleştir."""
     for topic in topics:
+        if home_subject and _topic_name_belongs_elsewhere(topic, home_subject):
+            continue
         if not _heading_owns_code(topic, query_lower):
             continue
         title = _topic_display_name(topic.name) or query_stripped
@@ -1079,7 +1187,7 @@ def _resolve_topic_for_import(subject, text):
     query_lower = query.lower()
     topics = list(subject.topics.order_by('order'))
     for topic in topics:
-        if topic_is_bulk_dump(topic):
+        if topic_is_bulk_dump(topic) or _topic_name_belongs_elsewhere(topic, subject):
             continue
         if _heading_owns_code(topic, query_lower):
             return topic
@@ -1093,7 +1201,7 @@ def _resolve_topic_for_import(subject, text):
             outcome = Outcome.objects.select_related('topic').get(pk=match['outcome_id'])
         except Outcome.DoesNotExist:
             return None
-        if topic_is_bulk_dump(outcome.topic):
+        if topic_is_bulk_dump(outcome.topic) or _topic_name_belongs_elsewhere(outcome.topic, subject):
             return None
         return outcome.topic
     return None
@@ -1132,6 +1240,28 @@ def relink_dump_answer_key(answer_key) -> int:
             item.imported_outcome_text = text
         item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
         updated += 1
+    return updated
+
+
+def detach_foreign_outcome_binds(answer_key) -> int:
+    """Bölüm dersinin Subject FK'sı dışındaki kazanım bağını çöz."""
+    items = list(
+        answer_key.items.select_related(
+            'outcome__topic__subject', 'section__subject',
+        ).exclude(outcome_id=None)
+    )
+    updated = 0
+    for item in items:
+        home = getattr(getattr(item, 'section', None), 'subject', None)
+        topic = getattr(getattr(item, 'outcome', None), 'topic', None)
+        if not home or not topic:
+            continue
+        leaked = _topic_name_belongs_elsewhere(topic, home)
+        if (topic.subject_id and topic.subject_id != home.id) or leaked:
+            item.outcome_id = None
+            item.sub_outcome_id = None
+            item.save(update_fields=['outcome_id', 'sub_outcome_id'])
+            updated += 1
     return updated
 
 
@@ -1257,16 +1387,19 @@ def _match_single_text(query: str, subject: Subject):
         )
         .order_by('order')
     )
-
     # İki parçalı başlık (21.1) asla 21.10.* çocuğuna veya ilk kazanıma düşmez.
     if query_is_code and _is_heading_code(query_stripped):
-        heading = _match_heading_as_itself(query_stripped, query_lower, topics)
+        heading = _match_heading_as_itself(
+            query_stripped, query_lower, topics, subject,
+        )
         if heading:
             return heading
 
     candidates = []  # [(score, order_key, outcome, match_type, sub_or_none)]
     
     for topic in topics:
+        if _topic_name_belongs_elsewhere(topic, subject):
+            continue
         topic_norm = _normalize_turkish(topic.name)
         topic_kw = _extract_keywords(topic.name)
         
@@ -1444,7 +1577,9 @@ def _match_single_text(query: str, subject: Subject):
     
     if not candidates:
         if query_is_code and _is_heading_code(query_stripped):
-            return _match_heading_as_itself(query_stripped, query_lower, topics)
+            return _match_heading_as_itself(
+                query_stripped, query_lower, topics, subject,
+            )
         return None
     
     # Eşleşme tipi önceliği: sub_outcome > outcome > topic (spesifik > genel)

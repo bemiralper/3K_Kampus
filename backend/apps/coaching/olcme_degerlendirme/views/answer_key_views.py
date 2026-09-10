@@ -95,12 +95,14 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             return err
         from ..views.curriculum_views import (
             detach_false_heading_binds,
+            detach_foreign_outcome_binds,
             relink_dump_answer_key,
             relink_unbound_answer_key,
         )
         for answer_key in self.filter_queryset(self.get_queryset()):
             relink_dump_answer_key(answer_key)
             detach_false_heading_binds(answer_key)
+            detach_foreign_outcome_binds(answer_key)
             relink_unbound_answer_key(answer_key)
         return super().list(request, *args, **kwargs)
 
@@ -116,12 +118,14 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             return err
         from ..views.curriculum_views import (
             detach_false_heading_binds,
+            detach_foreign_outcome_binds,
             relink_dump_answer_key,
             relink_unbound_answer_key,
         )
         obj = self.get_object()
         relink_dump_answer_key(obj)
         detach_false_heading_binds(obj)
+        detach_foreign_outcome_binds(obj)
         relink_unbound_answer_key(obj)
         return super().retrieve(request, *args, **kwargs)
 
