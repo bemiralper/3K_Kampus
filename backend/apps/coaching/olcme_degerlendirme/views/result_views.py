@@ -8,13 +8,12 @@ DATUploadViewSet:
   - delete       → Yükleme oturumunu sil
   - sessions     → Sınava ait DAT yükleme oturumları
 """
-import json
 import logging
-import unicodedata
 from collections import Counter
 from difflib import SequenceMatcher
 
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, parser_classes, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
@@ -287,13 +286,16 @@ def upload_dat(request, exam_pk):
 
 def _score_answers(answers_raw, total_questions, booklet,
                    correct_map_a, b_to_a_map, correct_map_b,
-                   sections, wrong_penalty, sub_sections=None):
+                   sections, wrong_penalty, sub_sections=None,
+                   per_section_penalty=True):
     """
     Cevap string'ini skorla.
 
     booklet: 'A' veya 'B'
     sections: ana bölümler (is_sub_section=False) — total hesaplaması bunlardan yapılır
     sub_sections: alt bölümler (is_sub_section=True) — skorlanır ama totale dahil edilmez
+    per_section_penalty: False ise yanlış düzeltmesi yalnızca genel toplamda
+        uygulanır, bölüm netleri doğru sayısına eşit olur.
     Döndürür: (answers_dict, comparison_dict, section_scores_data, totals)
     totals = (t_correct, t_wrong, t_empty, t_net)
     """
@@ -332,7 +334,9 @@ def _score_answers(answers_raw, total_questions, booklet,
         else:
             correct_info = correct_map_a.get(q_no)
 
-        if correct_info:
+        # Doğru cevabı girilmemiş satırlar (yalnız kazanım işaretlenmiş olabilir)
+        # skorlamaya girmez; aksi halde herkes o sorudan yanlış alırdı.
+        if correct_info and correct_info.get('answer'):
             if correct_info['is_cancelled']:
                 result_type = 'cancelled'
             elif not given or given in (' ', '', '*', '.', '0'):
@@ -359,7 +363,8 @@ def _score_answers(answers_raw, total_questions, booklet,
                 sw += 1
             else:
                 se += 1
-        net = sc - (sw / wrong_penalty) if wrong_penalty > 0 else sc
+        apply_penalty = per_section_penalty and wrong_penalty > 0
+        net = sc - (sw / wrong_penalty) if apply_penalty else sc
         return {'correct': sc, 'wrong': sw, 'empty': se, 'net': round(net, 2)}
 
     # Ana bölüm skorları (totale dahil)
@@ -453,20 +458,14 @@ def parse_dat(request, exam_pk, session_pk):
     except ExamSession.DoesNotExist:
         return Response({'error': 'Yükleme oturumu bulunamadı.'}, status=404)
 
-    # Cevap anahtarını getir — en çok soruya sahip primary olanı tercih et
-    answer_keys = (
-        AnswerKey.objects
-        .filter(exam=exam)
-        .prefetch_related('items')
-        .order_by('-is_primary')
-    )
-    answer_key = None
-    max_items = 0
-    for ak in answer_keys:
-        count = ak.items.count()
-        if count > max_items:
-            max_items = count
-            answer_key = ak
+    # A (primary) anahtar esastır; boşsa dolu olan herhangi bir anahtara düş.
+    answer_key = AnswerKey.primary_for(exam)
+    if answer_key is None or not answer_key.items.exists():
+        answer_key = max(
+            AnswerKey.objects.filter(exam=exam).prefetch_related('items'),
+            key=lambda ak: ak.items.count(),
+            default=None,
+        )
     if not answer_key:
         return Response({'error': 'Cevap anahtarı bulunamadı. Önce cevap anahtarını girin.'}, status=400)
 
@@ -546,6 +545,7 @@ def parse_dat(request, exam_pk, session_pk):
     field_mappings = data.get('field_mappings', [])
     first_line_is_header = data.get('first_line_is_header', False)
     student_id_field = data.get('student_id_field', 'ogrenci_no')
+    identity_is_tc = student_id_field == 'tc_kimlik'
 
     if not field_mappings:
         return Response({'error': 'field_mappings zorunludur.'}, status=400)
@@ -682,6 +682,13 @@ def parse_dat(request, exam_pk, session_pk):
                 if 'tc_kimlik' in mapping:
                     s, e = mapping['tc_kimlik']
                     tc = line[s:e].strip()
+                # Kullanıcının seçtiği kimlik alanı sütunu yanlış etiketlenmiş
+                # olabilir: TC seçildiği hâlde yalnız "ogrenci_no" haritalanmışsa
+                # o sütun TC olarak okunur (tersi de geçerli).
+                if identity_is_tc and not tc and sid:
+                    tc, sid = sid, ''
+                elif not identity_is_tc and not sid and tc:
+                    sid = tc
                 if 'ad_soyad' in mapping:
                     s, e = mapping['ad_soyad']
                     name_raw = line[s:e].strip()
@@ -743,7 +750,7 @@ def parse_dat(request, exam_pk, session_pk):
                                 q_count = sec.question_end - sec.question_start + 1
                                 answers_raw += ' ' * q_count
 
-                raw_id = sid or tc or str(row_num)
+                raw_id = (tc or sid if identity_is_tc else sid or tc) or str(row_num)
 
                 # ── Öğrenci eşleştirme ───────────────────────────────────
                 matched_student, match_score, match_method = _match_student(
@@ -763,11 +770,13 @@ def parse_dat(request, exam_pk, session_pk):
                         answers_raw, total_questions, 'A',
                         correct_map_a, b_to_a_map, correct_map_b,
                         sections, wrong_penalty, sub_sections,
+                        exam.per_section_penalty,
                     )
                     _, _, _, totals_b = _score_answers(
                         answers_raw, total_questions, 'B',
                         correct_map_a, b_to_a_map, correct_map_b,
                         sections, wrong_penalty, sub_sections,
+                        exam.per_section_penalty,
                     )
                     # En yüksek net'e göre kitapçık seç
                     if totals_b[3] > totals_a[3]:
@@ -781,6 +790,7 @@ def parse_dat(request, exam_pk, session_pk):
                     answers_raw, total_questions, booklet_raw,
                     correct_map_a, b_to_a_map, correct_map_b,
                     sections, wrong_penalty, sub_sections,
+                    exam.per_section_penalty,
                 )
                 t_correct, t_wrong, t_empty, t_net = totals
 
@@ -790,6 +800,7 @@ def parse_dat(request, exam_pk, session_pk):
                     student=matched_student,
                     raw_student_id=raw_id,
                     raw_student_name=name_raw,
+                    raw_tc_kimlik=tc[:20],
                     booklet=booklet_raw,
                     booklet_auto_detected=booklet_auto_detected,
                     answers=answers_dict,
@@ -912,9 +923,7 @@ def update_student_booklet(request, exam_pk, answer_pk):
         for sec in exam.sections.filter(is_sub_section=True)
         if sec.parent_section_id
     }
-    a_key = AnswerKey.objects.filter(exam=exam, booklet__in=['', 'A'], is_primary=True).first()
-    if not a_key:
-        a_key = AnswerKey.objects.filter(exam=exam).order_by('-is_primary').first()
+    a_key = AnswerKey.primary_for(exam)
     if not a_key:
         return Response({'error': 'Cevap anahtarı bulunamadı.'}, status=400)
 
@@ -962,6 +971,7 @@ def update_student_booklet(request, exam_pk, answer_pk):
         answers_raw, total_questions, new_booklet,
         correct_map_a, b_to_a_map, correct_map_b,
         sections, wrong_penalty, sub_sections,
+        exam.per_section_penalty,
     )
     t_correct, t_wrong, t_empty, t_net = totals
 
@@ -1100,7 +1110,7 @@ def session_results(request, exam_pk, session_pk):
             'id': sa.id,
             'row': idx,
             'ogrenci_no': sa.raw_student_id,
-            'tc_kimlik': '',
+            'tc_kimlik': sa.raw_tc_kimlik,
             'student_id': sa.raw_student_id,
             'student_name': sa.raw_student_name,
             'booklet': sa.booklet,
@@ -1146,7 +1156,7 @@ def update_student_match(request, exam_pk, answer_pk):
     { "student_id": 42 }     → Belirtilen öğrenciyle eşleştir
     { "student_id": null }   → Eşleştirmeyi kaldır
     """
-    _, err = get_exam_or_response(request, exam_pk)
+    exam, err = get_exam_or_response(request, exam_pk)
     if err:
         return err
 
@@ -1173,11 +1183,20 @@ def update_student_match(request, exam_pk, answer_pk):
             'match_method': '',
         })
 
-    try:
-        from apps.ogrenci.domain.models import Ogrenci
-        student = Ogrenci.objects.get(pk=new_student_id)
-    except Ogrenci.DoesNotExist:
-        return Response({'error': 'Öğrenci bulunamadı.'}, status=404)
+    # Öğrenci sınavın kurum/şubesinden olmalı — başka şubenin öğrencisi
+    # optik satırına bağlanamaz.
+    from apps.ogrenci.domain.models import Ogrenci
+    student = (
+        Ogrenci.objects
+        .filter(pk=new_student_id, kurum_id=exam.kurum_id)
+        .filter(Q(sube_id=exam.sube_id) if exam.sube_id else Q())
+        .first()
+    )
+    if student is None:
+        return Response(
+            {'error': 'Öğrenci bulunamadı veya bu sınavın şubesine ait değil.'},
+            status=404,
+        )
 
     # Aynı session'da bu öğrenci zaten başka bir satıra eşleştirilmiş mi?
     existing = (

@@ -1,7 +1,8 @@
 """Şube oturum grubu ayarları — seviye varsayılanı ve öğrenci override."""
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from shared.permissions import OlcmeModulePermission
 
 from shared.context import get_secili_egitim_yili_id
 
@@ -35,7 +36,7 @@ def _valid_pref(raw) -> str | None:
 
 @api_view(['GET', 'PUT'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def oturum_ayarlari_seviyeler(request):
     ctx, err = _ctx_or_error(request)
     if err:
@@ -85,7 +86,7 @@ def oturum_ayarlari_seviyeler(request):
 
 @api_view(['GET', 'PATCH'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def oturum_ayarlari_ogrenciler(request):
     ctx, err = _ctx_or_error(request)
     if err:

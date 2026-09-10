@@ -7,6 +7,8 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from shared.permissions import OlcmeModulePermission
+
 from apps.coaching.application.olcme_publish import (
     KIND_ANSWER_KEY,
     KIND_KARNE,
@@ -78,7 +80,7 @@ def exam_publish_preview(request, exam_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_publish_send_now(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -104,7 +106,7 @@ def exam_publish_send_now(request, exam_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_publish_reschedule(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -131,7 +133,7 @@ def exam_publish_reschedule(request, exam_pk):
 
 @api_view(['GET', 'POST', 'DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_answer_key_pdf(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:

@@ -46,6 +46,21 @@ class AnswerKey(models.Model):
         booklet_str = f' – {self.booklet} Kitapçığı' if self.booklet else ''
         return f'{self.exam.name}{booklet_str} Cevap Anahtarı'
 
+    @classmethod
+    def primary_for(cls, exam):
+        """Sınavın ana (A / kitapçıksız) cevap anahtarı.
+
+        Tek bir seçim kuralı: is_primary → A/kitapçıksız → B dışı ilk kayıt.
+        B kitapçığı yalnızca hiçbir alternatif yoksa döner.
+        """
+        qs = cls.objects.filter(exam=exam)
+        return (
+            qs.filter(is_primary=True).exclude(booklet='B').first()
+            or qs.filter(booklet__in=['', 'A']).first()
+            or qs.exclude(booklet='B').first()
+            or qs.first()
+        )
+
 
 class AnswerKeyItem(models.Model):
     """Tek bir sorunun cevabı."""

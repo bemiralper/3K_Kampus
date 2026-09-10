@@ -82,8 +82,11 @@ class AnswerKeySerializer(serializers.ModelSerializer):
 class BulkAnswerKeyItemRow(serializers.Serializer):
     """Tek bir soru satırı."""
     question_number = serializers.IntegerField(min_value=1)
+    # '' → doğru cevabı henüz girilmemiş satır (yalnız kazanım işaretlenmiş
+    # olabilir). Skorlamada bu sorular değerlendirme dışı bırakılır.
     correct_answer  = serializers.ChoiceField(
-        choices=['A', 'B', 'C', 'D', 'E', 'EMPTY', 'INVALID'],
+        choices=['', 'A', 'B', 'C', 'D', 'E', 'EMPTY', 'INVALID'],
+        allow_blank=True,
     )
     is_cancelled    = serializers.BooleanField(default=False)
     outcome_id      = serializers.IntegerField(required=False, allow_null=True, default=None)

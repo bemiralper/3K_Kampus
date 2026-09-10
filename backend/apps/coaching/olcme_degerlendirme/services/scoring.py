@@ -371,21 +371,23 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
 
     # ── 2. TC kimlik no ──────────────────────────────────────────────
     if not tyt_answer and student_id:
-        try:
-            from apps.ogrenci.models import Ogrenci
-            ogrenci = Ogrenci.objects.filter(id=student_id).first()
-            if ogrenci and ogrenci.tc_kimlik_no:
-                tyt_answer = (
-                    StudentAnswer.objects
-                    .filter(
-                        session__exam=tyt_exam,
-                        session__status='COMPLETED',
-                        student__tc_kimlik_no=ogrenci.tc_kimlik_no,
-                    )
-                    .first()
+        from apps.ogrenci.domain.models import Ogrenci
+        tc = (
+            Ogrenci.objects
+            .filter(id=student_id)
+            .values_list('tc_kimlik_no', flat=True)
+            .first()
+        )
+        if tc:
+            tyt_answer = (
+                StudentAnswer.objects
+                .filter(
+                    session__exam=tyt_exam,
+                    session__status='COMPLETED',
+                    student__tc_kimlik_no=tc,
                 )
-        except Exception:
-            pass
+                .first()
+            )
 
     # ── 3a. raw_student_name — birebir eşleşme ──────────────────────
     if not tyt_answer and raw_student_name:

@@ -10,6 +10,8 @@ from rest_framework.decorators import api_view, permission_classes, authenticati
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from shared.permissions import OlcmeModulePermission
+
 from ..models import MappingTemplate
 from ..serializers.mapping_template import MappingTemplateSerializer
 from ..views import CsrfExemptSessionAuthentication
@@ -33,7 +35,7 @@ def list_mapping_templates(request):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def create_mapping_template(request):
     """
     POST /exams/mapping-templates/
@@ -50,7 +52,7 @@ def create_mapping_template(request):
 
 @api_view(['DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def delete_mapping_template(request, template_pk):
     """
     DELETE /exams/mapping-templates/{template_pk}/

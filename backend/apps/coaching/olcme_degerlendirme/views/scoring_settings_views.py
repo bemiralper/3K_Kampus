@@ -1,7 +1,8 @@
 """Puan katsayısı ayar API."""
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from shared.permissions import OlcmeModulePermission
 
 from ..interfaces.sube_context import mandatory_olcme_context
 from ..models.scoring_settings import MANAGED_PUAN_YILLARI, OlcmeKatsayiSeti
@@ -22,7 +23,7 @@ def _kurum_or_error(request):
 
 @api_view(['GET', 'PATCH'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def puan_ayarlari(request):
     """
     GET  /puan-ayarlari/  → varsayılan yıl + yıl listesi
@@ -55,7 +56,7 @@ def puan_ayarlari(request):
 
 @api_view(['GET', 'PUT'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def puan_ayarlari_katsayilar(request, year):
     """GET/PUT /puan-ayarlari/katsayilar/<year>/"""
     kurum_id, err = _kurum_or_error(request)
@@ -87,7 +88,7 @@ def puan_ayarlari_katsayilar(request, year):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def puan_ayarlari_reset(request, year):
     """POST /puan-ayarlari/katsayilar/<year>/reset/"""
     kurum_id, err = _kurum_or_error(request)

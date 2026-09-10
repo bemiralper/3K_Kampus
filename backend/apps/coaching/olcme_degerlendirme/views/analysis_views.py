@@ -150,6 +150,12 @@ _AYT_ALAN_SECTION_KEYS = {
     },
 }
 
+# Öğrenci alanı → AYT puan türü → sıralama tablosu anahtarı
+_ALAN_TO_PUAN_TURU = {'SAYISAL': 'SAY', 'ESIT_AGIRLIK': 'EA', 'SOZEL': 'SOZ'}
+_PUAN_TURU_TO_EXAM_TYPE = {
+    'SAY': 'YKS_AYT', 'EA': 'YKS_AYT_EA', 'SOZ': 'YKS_AYT_SOZ',
+}
+
 
 def _leaf_area_sections(sections: list, sec_map: dict | None = None) -> list:
     """Alt dersler + çocuğu olmayan ana bölümler (üst toplamlar elenir)."""
@@ -302,15 +308,30 @@ def _get_exam_or_404(request, exam_pk):
 
 
 def _get_session_answers(exam, session_id=None):
-    """Sınav veya belirli bir oturumdaki tüm öğrenci cevaplarını getir."""
+    """Sınav veya belirli bir oturumdaki öğrenci cevapları.
+
+    Analiz yalnızca öğrenciyle eşleşmiş satırlar üzerinden yapılır; eşleşmemiş
+    optik satırları ortalamaları bozardı. Tüm oturumlar birlikte istendiğinde
+    aynı öğrencinin birden fazla yüklemede yer alması durumunda yalnızca en
+    güncel yükleme sayılır (aksi halde çift sayım olur).
+    """
     qs = StudentAnswer.objects.filter(
         session__exam=exam,
         session__status='COMPLETED',
+        student__isnull=False,
     ).select_related('student', 'session').prefetch_related('section_scores__section')
 
     if session_id:
-        qs = qs.filter(session_id=session_id)
-    return qs
+        return qs.filter(session_id=session_id)
+
+    latest_ids = (
+        StudentAnswer.objects
+        .filter(session__exam=exam, session__status='COMPLETED', student__isnull=False)
+        .values('student_id')
+        .annotate(latest_id=Max('id'))
+        .values_list('latest_id', flat=True)
+    )
+    return qs.filter(id__in=latest_ids)
 
 
 def _pick_exam_session_for_answer(sessions, answer):
@@ -560,7 +581,7 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
     # Kazanım etiketleri her zaman A (primary) anahtardan gelir.
     # B kitapçığında üretilmiş anahtar boş/kaymış olabiliyor; karşılaştırma
     # sonucu b_question_number → parent test offset ile bulunur.
-    ak = exam.answer_keys.filter(is_primary=True).first() or exam.answer_keys.first()
+    ak = AnswerKey.primary_for(exam)
     if not ak:
         return []
     items = list(
@@ -965,11 +986,16 @@ def exam_analysis_students(request, exam_pk):
                 'question_count': sec_map.get(ss.section_id, {}).get('question_count', 0),
             })
 
+        alan_kodu = _get_student_alan(a.student, exam.egitim_yili)
+
         # AYT sınavlarında 3 puan türünü hesapla
         if is_ayt:
             tyt_nets = _get_linked_tyt_nets(exam, a.student_id, a.raw_student_name, a.raw_student_id) if hasattr(exam, 'linked_tyt_exam') and exam.linked_tyt_exam else {}
             all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets, year=ranking_year, kurum_id=exam.kurum_id)
-            score_data = all_scores_data['SAY']  # Varsayılan sıralama için SAY puanı
+            # Sıralama öğrencinin alanına göre; alan bilinmiyorsa SAY.
+            pt_key = _ALAN_TO_PUAN_TURU.get(alan_kodu, 'SAY')
+            score_data = all_scores_data[pt_key]
+            ranking_exam_type = _PUAN_TURU_TO_EXAM_TYPE[pt_key]
             puan_turleri_student = {
                 pt: {
                     'puan': d['puan'],
@@ -981,13 +1007,13 @@ def exam_analysis_students(request, exam_pk):
             }
         else:
             score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
+            ranking_exam_type = exam.exam_type
             puan_turleri_student = None
 
-        ranking_data = estimate_ranking(score_data['puan'], exam.exam_type, ranking_year)
+        ranking_data = estimate_ranking(score_data['puan'], ranking_exam_type, ranking_year)
 
         # Sınıf bilgisi + Alan (sınıf yoksa kütüphane / deneme kulübü)
         sinif_adi = ''
-        alan_kodu = _get_student_alan(a.student, exam.egitim_yili)
         strong, weak = _pick_strong_weak_areas(
             section_details, exam.exam_type, alan_kodu, sec_map,
         )
@@ -1215,11 +1241,14 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     student_net = _safe_float(answer.total_net)
     sec_nets = _build_scoring_nets(answer, exam)
     is_ayt = exam.exam_type == 'YKS_AYT'
+    alan_kodu = _get_student_alan(answer.student, exam.egitim_yili)
 
     if is_ayt:
         tyt_nets = _get_linked_tyt_nets(exam, answer.student_id, answer.raw_student_name, answer.raw_student_id) if hasattr(exam, 'linked_tyt_exam') and exam.linked_tyt_exam else {}
         all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets, year=ranking_year, kurum_id=exam.kurum_id)
-        score_data = all_scores_data['SAY']
+        pt_key = _ALAN_TO_PUAN_TURU.get(alan_kodu, 'SAY')
+        score_data = all_scores_data[pt_key]
+        ranking_exam_type = _PUAN_TURU_TO_EXAM_TYPE[pt_key]
         puan_turleri_detail = {
             pt: {
                 'puan': d['puan'],
@@ -1231,16 +1260,16 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         }
     else:
         score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=answer.student_id, raw_student_name=answer.raw_student_name, raw_student_id=answer.raw_student_id)
+        ranking_exam_type = exam.exam_type
         puan_turleri_detail = None
 
-    ranking_data = estimate_ranking(score_data['puan'], exam.exam_type, ranking_year)
+    ranking_data = estimate_ranking(score_data['puan'], ranking_exam_type, ranking_year)
     kurum_percentile = calculate_percentile(student_net, all_nets)
 
     # Kurum sırası
     sorted_all_nets = sorted(all_nets, reverse=True)
     kurum_sira = sorted_all_nets.index(student_net) + 1 if student_net in sorted_all_nets else 0
 
-    alan_kodu = _get_student_alan(answer.student, exam.egitim_yili)
     strong, weak = _pick_strong_weak_areas(
         section_details, exam.exam_type, alan_kodu, sec_map,
     )
@@ -1501,15 +1530,18 @@ def exam_analysis_rankings(request, exam_pk):
                 'empty': ss.empty,
             }
 
+        alan_kodu = _get_student_alan(a.student, exam.egitim_yili)
+
         if is_ayt:
             tyt_nets = _get_linked_tyt_nets(exam, a.student_id, a.raw_student_name, a.raw_student_id) if hasattr(exam, 'linked_tyt_exam') and exam.linked_tyt_exam else {}
             all_scores_data = calculate_all_ayt_scores(sec_nets, tyt_nets, year=ranking_year, kurum_id=exam.kurum_id)
-            score_data = all_scores_data['SAY']
+            pt_key = _ALAN_TO_PUAN_TURU.get(alan_kodu, 'SAY')
+            score_data = all_scores_data[pt_key]
+            ranking_exam_type = _PUAN_TURU_TO_EXAM_TYPE[pt_key]
             # Her puan türü için puan + tahmini sıralama
-            _pt_type_map = {'SAY': 'YKS_AYT', 'EA': 'YKS_AYT_EA', 'SOZ': 'YKS_AYT_SOZ'}
             puan_turleri_r = {}
             for pt, d in all_scores_data.items():
-                pt_est = estimate_ranking(d['puan'], _pt_type_map.get(pt, 'YKS_AYT'), ranking_year)
+                pt_est = estimate_ranking(d['puan'], _PUAN_TURU_TO_EXAM_TYPE.get(pt, 'YKS_AYT'), ranking_year)
                 puan_turleri_r[pt] = {
                     'puan': d['puan'],
                     'tahmini_siralama': pt_est.get('tahmini_siralama'),
@@ -1517,13 +1549,13 @@ def exam_analysis_rankings(request, exam_pk):
                 }
         else:
             score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
+            ranking_exam_type = exam.exam_type
             puan_turleri_r = None
 
-        est = estimate_ranking(score_data['puan'], exam.exam_type, ranking_year)
+        est = estimate_ranking(score_data['puan'], ranking_exam_type, ranking_year)
 
         # Sınıf ve Alan bilgisi
         sinif_adi = ''
-        alan_kodu = _get_student_alan(a.student, exam.egitim_yili)
         if a.student:
             kayit = OgrenciKayit.objects.filter(
                 ogrenci=a.student,
@@ -1715,15 +1747,14 @@ def exam_analysis_questions(request, exam_pk):
     total_students = answers.count()
 
     # Cevap anahtarı
-    answer_key = AnswerKey.objects.filter(exam=exam, is_primary=True).first()
-    if not answer_key:
-        answer_key = AnswerKey.objects.filter(exam=exam).first()
+    answer_key = AnswerKey.primary_for(exam)
     if not answer_key:
         return Response({'error': 'Cevap anahtarı bulunamadı.'}, status=400)
 
-    ak_items = AnswerKeyItem.objects.filter(answer_key=answer_key).select_related(
-        'section', 'outcome', 'sub_outcome',
-    )
+    # Doğru cevabı girilmemiş satırlar soru analizine girmez.
+    ak_items = AnswerKeyItem.objects.filter(answer_key=answer_key).exclude(
+        correct_answer='',
+    ).select_related('section', 'outcome', 'sub_outcome')
     if section_id:
         ak_items = ak_items.filter(section_id=section_id)
     ak_items = ak_items.order_by('question_number')
@@ -1975,7 +2006,7 @@ def exam_analysis_strategy(request, exam_pk):
                 })
 
     # Kazanım bazlı zayıf noktalar (eğer cevap anahtarında kazanım varsa)
-    ak = AnswerKey.objects.filter(exam=exam, is_primary=True).first()
+    ak = AnswerKey.primary_for(exam)
     if ak:
         outcome_items = AnswerKeyItem.objects.filter(
             answer_key=ak,

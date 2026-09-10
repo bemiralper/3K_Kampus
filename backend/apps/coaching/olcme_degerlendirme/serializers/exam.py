@@ -272,6 +272,33 @@ class ExamDetailSerializer(serializers.ModelSerializer):
 #  CREATE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def _tenant_sinif_ids(exam, sinif_ids):
+    """Yalnız sınavın kurum/şubesindeki sınıflar bağlanabilir."""
+    from apps.sinif.domain.models import Sinif
+
+    return list(
+        Sinif.objects
+        .filter(pk__in=sinif_ids or [], kurum_id=exam.kurum_id, sube_id=exam.sube_id)
+        .values_list('id', flat=True)
+    )
+
+
+def _validate_publish_order(attrs, instance=None):
+    """Cevap anahtarı yayını sonuç yayınından önce olamaz."""
+    def _value(field):
+        if field in attrs:
+            return attrs[field]
+        return getattr(instance, field, None) if instance else None
+
+    result_at = _value('result_publish_date')
+    key_at = _value('answer_key_publish_date')
+    if result_at and key_at and key_at < result_at:
+        raise serializers.ValidationError({
+            'answer_key_publish_date':
+                'Cevap anahtarı yayın tarihi, sonuç yayın tarihinden önce olamaz.',
+        })
+
+
 class ExamSectionWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=100)
     question_start = serializers.IntegerField(required=False, min_value=1)
@@ -326,6 +353,7 @@ class ExamCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 'sections': 'En az bir ders/bölüm girilmelidir.',
             })
+        _validate_publish_order(attrs)
         return attrs
 
     @transaction.atomic
@@ -363,6 +391,7 @@ class ExamCreateSerializer(serializers.ModelSerializer):
 
         # Sınıf ataması
         if sinif_ids:
+            sinif_ids = _tenant_sinif_ids(exam, sinif_ids)
             exam.siniflar.set(sinif_ids)
 
         if sections_payload:
@@ -442,6 +471,7 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
         exam_type = attrs.get('exam_type') or (self.instance.exam_type if self.instance else None)
         if 'curriculum_band' in attrs:
             attrs['curriculum_band'] = normalize_band(attrs.get('curriculum_band'), exam_type)
+        _validate_publish_order(attrs, self.instance)
         return attrs
 
     def update(self, instance, validated_data):
@@ -451,6 +481,7 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
         philosophy_changed = 'include_optional_philosophy' in validated_data
         instance = super().update(instance, validated_data)
         if sinif_ids is not None:
+            sinif_ids = _tenant_sinif_ids(instance, sinif_ids)
             instance.siniflar.set(sinif_ids)
         if philosophy_changed:
             sync_optional_philosophy_section(instance)

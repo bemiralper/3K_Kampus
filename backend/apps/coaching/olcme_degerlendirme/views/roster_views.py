@@ -7,6 +7,8 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
+from shared.permissions import OlcmeModulePermission
+
 from ..interfaces.sube_context import get_exam_or_response, mandatory_olcme_context
 from ..models import ExamParticipant, ExamRoom
 from ..services.exam_roster import (
@@ -46,6 +48,17 @@ def _int_list(raw) -> list[int]:
     return list(dict.fromkeys(out))
 
 
+def _participant_row(exam, participant_pk, *, warning: str = '') -> dict:
+    row = enrich_participants(exam, [serialize_participant(
+        ExamParticipant.objects.select_related(
+            'student', 'room', 'sinif_seviyesi', 'exam_session',
+        ).get(pk=participant_pk)
+    )])[0]
+    if warning:
+        row['warning'] = warning
+    return row
+
+
 def _max_session_count(exam) -> int:
     sessions = list(exam.exam_sessions.order_by('id'))
     if not sessions:
@@ -64,7 +77,17 @@ def apply_roster_payload(exam, data: dict) -> dict:
         _sync_exam_date_from_sessions(exam)
 
     if 'sinif_ids' in data:
-        sinif_ids = _int_list(data.get('sinif_ids'))
+        # Başka kurum/şubenin sınıfı sınava bağlanamaz.
+        from apps.sinif.domain.models import Sinif
+        sinif_ids = list(
+            Sinif.objects
+            .filter(
+                pk__in=_int_list(data.get('sinif_ids')),
+                kurum_id=exam.kurum_id,
+                sube_id=exam.sube_id,
+            )
+            .values_list('id', flat=True)
+        )
         exam.siniflar.set(sinif_ids)
     else:
         sinif_ids = list(exam.siniflar.values_list('id', flat=True))
@@ -125,7 +148,6 @@ def apply_roster_payload(exam, data: dict) -> dict:
         err = seating_capacity_error(count, rooms)
         if err:
             return {'ok': False, 'error': err}
-    sessions = list(exam.exam_sessions.order_by('order', 'id'))
     if assignments:
         # Sihirbaz önizlemesi oturum başına aynı salon/sıra düzenini gösterir;
         # 2+ oturumda da kaydedilen atamayı uygula (yeniden karıştırma).
@@ -144,7 +166,7 @@ def apply_roster_payload(exam, data: dict) -> dict:
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def preview_participants(request):
     ctx, err = mandatory_olcme_context(request)
     if err:
@@ -167,7 +189,7 @@ def preview_participants(request):
 
 @api_view(['GET', 'PUT'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_audience(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -189,7 +211,7 @@ def exam_audience(request, exam_pk):
 
 @api_view(['GET', 'POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_participants(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -230,7 +252,7 @@ def exam_participants(request, exam_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_participant_add(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -286,33 +308,28 @@ def exam_participant_add(request, exam_pk):
         )
         if not p:
             return Response({'error': err_msg or 'Oturum değiştirilemedi.'}, status=400)
-        if err_msg:
-            return Response({'error': err_msg}, status=400)
-    else:
-        p, err_msg = add_manual_participant(exam, student_id, exam_session=session_id)
-        if err_msg:
-            return Response({'error': err_msg}, status=400)
-        if p and target_room and target_seat:
-            seat_err = assign_participant_to_seat(p, target_room, target_seat)
-            if seat_err:
-                if not p.room_id:
-                    p.delete()
-                return Response({'error': seat_err}, status=400)
-        elif p and not p.room_id:
-            for room in exam.rooms.order_by('order', 'id'):
-                if assign_participant_to_room(p, room) is None:
-                    break
-    row = enrich_participants(exam, [serialize_participant(
-        ExamParticipant.objects.select_related(
-            'student', 'room', 'sinif_seviyesi', 'exam_session',
-        ).get(pk=p.pk)
-    )])[0]
-    return Response(row, status=201)
+        # Taşıma yapıldı; yalnız sıra verilemediyse uyarı olarak döner.
+        return Response(_participant_row(exam, p.pk, warning=err_msg or ''), status=201)
+
+    p, err_msg = add_manual_participant(exam, student_id, exam_session=session_id)
+    if err_msg:
+        return Response({'error': err_msg}, status=400)
+    if p and target_room and target_seat:
+        seat_err = assign_participant_to_seat(p, target_room, target_seat)
+        if seat_err:
+            if not p.room_id:
+                p.delete()
+            return Response({'error': seat_err}, status=400)
+    elif p and not p.room_id:
+        for room in exam.rooms.order_by('order', 'id'):
+            if assign_participant_to_room(p, room) is None:
+                break
+    return Response(_participant_row(exam, p.pk), status=201)
 
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_participants_bulk_attendance(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -336,7 +353,7 @@ def exam_participants_bulk_attendance(request, exam_pk):
 
 @api_view(['PATCH', 'DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_participant_detail(request, exam_pk, participant_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -366,52 +383,44 @@ def exam_participant_detail(request, exam_pk, participant_pk):
         moved, move_err = move_participant_to_session(p, target)
         if not moved:
             return Response({'error': move_err or 'Oturum değiştirilemedi.'}, status=400)
-        return Response(enrich_participants(exam, [serialize_participant(
-            ExamParticipant.objects.select_related(
-                'student', 'room', 'sinif_seviyesi', 'exam_session',
-            ).get(pk=moved.pk)
-        )])[0])
+        # Taşıma başarılı ama yer bulunamadıysa 400 dönmek kaydı yarım
+        # bırakırdı; öğrenci taşınmış sayılır, uyarı ile bildirilir.
+        return Response(_participant_row(exam, moved.pk, warning=move_err))
 
     attendance = request.data.get('attendance')
     if attendance is not None:
         if attendance not in ('', 'present', 'absent'):
             return Response({'error': 'Geçersiz yoklama değeri.'}, status=400)
         p.attendance = attendance
-    if 'room_id' in request.data:
-        rid = request.data.get('room_id')
+        p.save(update_fields=['attendance', 'updated_at'])
+
+    if 'room_id' in request.data or 'seat_no' in request.data:
+        rid = request.data.get('room_id', p.room_id)
+        seat_raw = request.data.get('seat_no', p.seat_no)
         if rid in (None, ''):
             p.room = None
             p.seat_no = None
             p.desk_no = ''
+            p.save(update_fields=['room', 'seat_no', 'desk_no', 'updated_at'])
         else:
             room = ExamRoom.objects.filter(exam=exam, pk=rid).first()
             if not room:
                 return Response({'error': 'Salon bulunamadı.'}, status=400)
-            if 'seat_no' not in request.data:
-                err = assign_participant_to_room(p, room)
-                if err:
-                    return Response({'error': err}, status=400)
-                return Response(enrich_participants(exam, [serialize_participant(
-                    ExamParticipant.objects.select_related(
-                        'student', 'room', 'sinif_seviyesi', 'exam_session',
-                    ).get(pk=p.pk)
-                )])[0])
-            p.room = room
-    if 'seat_no' in request.data:
-        raw = request.data.get('seat_no')
-        p.seat_no = int(raw) if raw not in (None, '') else None
-        p.desk_no = str(p.seat_no) if p.seat_no else ''
-    p.save()
-    return Response(enrich_participants(exam, [serialize_participant(
-        ExamParticipant.objects.select_related(
-            'student', 'room', 'sinif_seviyesi', 'exam_session',
-        ).get(pk=p.pk)
-    )])[0])
+            # Sıra doğrulaması (kapasite + doluluk) servis katmanında yapılır;
+            # doğrudan p.seat_no yazmak unique kısıtını ihlal edebiliyordu.
+            if seat_raw in (None, ''):
+                seat_err = assign_participant_to_room(p, room)
+            else:
+                seat_err = assign_participant_to_seat(p, room, seat_raw)
+            if seat_err:
+                return Response({'error': seat_err}, status=400)
+
+    return Response(_participant_row(exam, p.pk))
 
 
 @api_view(['GET', 'PUT'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_rooms(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -439,7 +448,7 @@ def exam_rooms(request, exam_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_seating(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -470,8 +479,8 @@ def exam_seating(request, exam_pk):
 def _ordered_participants(exam):
     parts = list(
         ExamParticipant.objects.filter(exam=exam)
-        .select_related('student', 'room', 'sinif_seviyesi')
-        .order_by('room__order', 'seat_no', 'id')
+        .select_related('student', 'room', 'sinif_seviyesi', 'exam_session')
+        .order_by('exam_session__order', 'room__order', 'seat_no', 'id')
     )
     return enrich_participants(exam, [serialize_participant(p) for p in parts])
 
@@ -795,7 +804,7 @@ def exam_hatirlatma_preview(request, exam_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_hatirlatma_send(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:

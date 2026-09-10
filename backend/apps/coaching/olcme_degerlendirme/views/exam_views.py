@@ -72,6 +72,26 @@ def _validate_question_range(start, end):
     return start, end, None
 
 
+def _range_overlap_error(exam, start, end, parent=None, exclude_pk=None):
+    """Aynı düzeydeki bölümlerin soru aralıkları çakışamaz."""
+    siblings = ExamSection.objects.filter(exam=exam)
+    if parent is not None:
+        siblings = siblings.filter(parent_section=parent)
+    else:
+        siblings = siblings.filter(is_sub_section=False)
+    if exclude_pk:
+        siblings = siblings.exclude(pk=exclude_pk)
+    clash = siblings.filter(
+        question_start__lte=end, question_end__gte=start,
+    ).order_by('question_start').first()
+    if clash:
+        return (
+            f'Soru aralığı {start}–{end}, "{clash.name}" bölümünün '
+            f'{clash.question_start}–{clash.question_end} aralığıyla çakışıyor.'
+        )
+    return None
+
+
 def _fresh_exam_payload(exam):
     """Prefetch önbelleğini atıp güncel detayı döner (eklenen bölüm görünsün)."""
     fresh = (
@@ -384,6 +404,10 @@ class ExamViewSet(viewsets.ModelViewSet):
             if err:
                 return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
 
+        overlap = _range_overlap_error(exam, start, end, parent)
+        if overlap:
+            return Response({'error': overlap}, status=status.HTTP_400_BAD_REQUEST)
+
         clash = ExamSection.objects.filter(exam=exam, name=name)
         if parent:
             clash = clash.filter(parent_section=parent)
@@ -429,7 +453,16 @@ class ExamViewSet(viewsets.ModelViewSet):
     def remove_section(self, request, pk=None):
         exam = self.get_object()
         section_id = request.data.get('section_id')
-        ExamSection.objects.filter(exam=exam, id=section_id).delete()
+        section = ExamSection.objects.filter(exam=exam, id=section_id).first()
+        if section is None:
+            return Response({'error': 'Bölüm bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        if section.answer_key_items.exists():
+            return Response(
+                {'error': 'Bu bölüme bağlı cevap anahtarı satırları var. '
+                          'Önce cevap anahtarını güncelleyin.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        section.delete()
         return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='update_section')
@@ -463,6 +496,11 @@ class ExamViewSet(viewsets.ModelViewSet):
             )
             if err:
                 return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
+            overlap = _range_overlap_error(
+                exam, start, end, section.parent_section, exclude_pk=section.pk,
+            )
+            if overlap:
+                return Response({'error': overlap}, status=status.HTTP_400_BAD_REQUEST)
             section.question_start = start
             section.question_end = end
 
@@ -890,6 +928,8 @@ class ExamViewSet(viewsets.ModelViewSet):
             puan_yili=original.puan_yili,
             booklet_type=original.booklet_type,
             booklet_auto_detect=original.booklet_auto_detect,
+            curriculum_band=original.curriculum_band,
+            include_optional_philosophy=original.include_optional_philosophy,
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
             egitim_yili=original.egitim_yili,
@@ -921,8 +961,37 @@ class ExamViewSet(viewsets.ModelViewSet):
                 parent_section=new_parent,
                 subject=sub.subject,
             )
+
+        # Kitle (seviye / deneme paketi) kopyalanır.
+        from ..models import ExamAudience
+
+        ExamAudience.objects.bulk_create([
+            ExamAudience(
+                exam=exam,
+                sinif_seviyesi_id=a.sinif_seviyesi_id,
+                deneme_paketi_id=a.deneme_paketi_id,
+            )
+            for a in original.audiences.all()
+        ])
+
+        # Oturum yapısı kopyalanır; tarih/saat yeni sınavda yeniden girilir.
+        for sess in original.exam_sessions.order_by('order', 'id'):
+            new_sess = ExamSessionModel.objects.create(
+                exam=exam,
+                name=sess.name,
+                order=sess.order,
+                duration_minutes=sess.duration_minutes,
+                schedule_preference=sess.schedule_preference,
+                description=sess.description,
+            )
+            old_names = list(sess.sections.values_list('name', flat=True))
+            if old_names:
+                new_sess.sections.set(
+                    ExamSection.objects.filter(exam=exam, name__in=old_names),
+                )
+
         return Response(
-            ExamDetailSerializer(exam).data,
+            _fresh_exam_payload(exam),
             status=status.HTTP_201_CREATED,
         )
 

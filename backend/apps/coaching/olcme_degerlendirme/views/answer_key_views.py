@@ -19,7 +19,8 @@ from django.db.models import Prefetch
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.permissions import IsAuthenticated
+
+from shared.permissions import OlcmeModulePermission
 
 from ..models import (
     Exam, ExamSection, AnswerKey, AnswerKeyItem,
@@ -41,10 +42,7 @@ def rebuild_booklet_b_from_primary(exam) -> int:
     A anahtarındaki b_question_number'dan B kitapçığını yeniden kur.
     Offset ana test başlangıcıdır (Sosyal 41, Temel Mat 61…), alt bölüm değil.
     """
-    primary = (
-        exam.answer_keys.filter(is_primary=True).first()
-        or exam.answer_keys.exclude(booklet='B').first()
-    )
+    primary = AnswerKey.primary_for(exam)
     if not primary:
         return 0
 
@@ -84,7 +82,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
     serializer_class = AnswerKeySerializer
     authentication_classes = [CsrfExemptSessionAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [OlcmeModulePermission]
 
     def _gate_exam(self, request, exam_pk):
         return get_exam_or_response(request, exam_pk)
@@ -188,9 +186,6 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     exam=exam, booklet=booklet,
                     defaults={'is_primary': booklet in ('', 'A')},
                 )
-                # Mevcut items sil → yeniden oluştur (upsert mantığı)
-                answer_key.items.all().delete()
-
                 # B kitapçığı items'ı da topla
                 b_items = []
 
@@ -200,24 +195,45 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     unique_items[row['question_number']] = row
                 items_dedup = sorted(unique_items.values(), key=lambda r: r['question_number'])
 
+                # Upsert: gönderilmeyen sorular silinmez, kazanım bağları korunur.
+                existing = {it.question_number: it for it in answer_key.items.all()}
+                sent_numbers = set(unique_items)
+
                 for row in items_dedup:
                     q_num = row['question_number']
                     section = self._find_section(section_map, q_num)
                     b_q = row.get('b_question_number')
 
-                    AnswerKeyItem.objects.create(
-                        answer_key=answer_key,
-                        section=section,
-                        question_number=q_num,
-                        correct_answer=row['correct_answer'],
-                        is_cancelled=row.get('is_cancelled', False),
-                        outcome_id=row.get('outcome_id'),
-                        sub_outcome_id=row.get('sub_outcome_id'),
-                        imported_outcome_text=row.get('imported_outcome_text', ''),
-                        b_question_number=b_q,
-                    )
+                    fields = {
+                        'section': section,
+                        'correct_answer': row['correct_answer'],
+                        'is_cancelled': row.get('is_cancelled', False),
+                        'outcome_id': row.get('outcome_id'),
+                        'sub_outcome_id': row.get('sub_outcome_id'),
+                        'imported_outcome_text': row.get('imported_outcome_text', ''),
+                        'b_question_number': b_q,
+                    }
+                    item = existing.get(q_num)
+                    if item is None:
+                        AnswerKeyItem.objects.create(
+                            answer_key=answer_key, question_number=q_num, **fields,
+                        )
+                    else:
+                        for name, value in fields.items():
+                            setattr(item, name, value)
+                        item.save(update_fields=list(fields))
                     if b_q is not None:
                         b_items.append(b_q)
+
+                # Gönderilmeyen satırlar: kazanım bilgisi taşıyorsa korunur,
+                # tamamen boşsa silinir.
+                stale_ids = [
+                    it.id for q_num, it in existing.items()
+                    if q_num not in sent_numbers
+                    and not (it.outcome_id or it.sub_outcome_id or it.imported_outcome_text)
+                ]
+                if stale_ids:
+                    AnswerKeyItem.objects.filter(id__in=stale_ids).delete()
 
                 if b_items and booklet in ('', 'A'):
                     rebuild_booklet_b_from_primary(exam)
@@ -341,6 +357,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         PATCH .../answer-keys/{pk}/update-item/
         { "item_id": 42, "correct_answer": "C", "outcome_id": 7, "is_cancelled": false }
         """
+        _, err = self._gate_exam(request, exam_pk)
+        if err:
+            return err
         answer_key = self.get_object()
         item_id = request.data.get('item_id')
         try:
@@ -372,6 +391,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['patch'], url_path='bulk-update-items')
     def bulk_update_items(self, request, exam_pk=None, pk=None):
+        _, err = self._gate_exam(request, exam_pk)
+        if err:
+            return err
         answer_key = self.get_object()
         payload = request.data.get('items', [])
         if not isinstance(payload, list):
@@ -410,6 +432,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
     def bulk_assign_outcomes(self, request, exam_pk=None, pk=None):
         from ..views.curriculum_views import _match_single_text
 
+        _, err = self._gate_exam(request, exam_pk)
+        if err:
+            return err
         answer_key = self.get_object()
         texts = request.data.get('texts', [])
         create_if_missing = bool(request.data.get('create_if_missing', False))

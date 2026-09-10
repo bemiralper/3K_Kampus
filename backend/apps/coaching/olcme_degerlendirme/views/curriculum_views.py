@@ -47,6 +47,7 @@ from ..serializers.curriculum import (
     BulkTextImportSerializer,
 )
 from . import CsrfExemptSessionAuthentication
+from ..interfaces.sube_context import get_exam_or_response
 
 logger = logging.getLogger(__name__)
 
@@ -711,6 +712,9 @@ def link_subject_to_section(request):
 
     subject = get_object_or_404(Subject, pk=subject_id)
     section = get_object_or_404(ExamSection, pk=section_id)
+    _, err = get_exam_or_response(request, section.exam_id)
+    if err:
+        return err
 
     section.subject = subject
     section.save(update_fields=['subject'])
@@ -734,6 +738,9 @@ def unlink_subject_from_section(request):
     """
     section_id = request.data.get('section_id')
     section = get_object_or_404(ExamSection, pk=section_id)
+    _, err = get_exam_or_response(request, section.exam_id)
+    if err:
+        return err
 
     old_subject = section.subject
     section.subject = None
@@ -1380,8 +1387,11 @@ def _match_single_text(query: str, subject: Subject):
         .prefetch_related(
             Prefetch(
                 'outcomes',
-                queryset=Outcome.objects.order_by('order').prefetch_related(
-                    Prefetch('sub_outcomes', queryset=SubOutcome.objects.order_by('order')),
+                queryset=Outcome.objects.filter(is_active=True).order_by('order').prefetch_related(
+                    Prefetch(
+                        'sub_outcomes',
+                        queryset=SubOutcome.objects.filter(is_active=True).order_by('order'),
+                    ),
                 ),
             ),
         )

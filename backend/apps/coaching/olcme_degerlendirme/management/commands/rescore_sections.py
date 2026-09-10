@@ -44,32 +44,24 @@ class Command(BaseCommand):
             return
 
         # Cevap anahtarını bul
-        answer_key = (
-            AnswerKey.objects
-            .filter(exam=exam)
-            .prefetch_related('items')
-            .order_by('-is_primary')
-            .first()
-        )
+        answer_key = AnswerKey.primary_for(exam)
         if not answer_key:
             self.stdout.write(f'  [{exam.pk}] {exam.name}: Cevap anahtarı yok, atlanıyor.')
             return
 
         # correct_map oluştur
         correct_map_a = {}
-        section_offset = {
-            sec.id: sec.question_start
-            for sec in sections
-        }
+        # b_question_number ana test içi sıradır; alt bölüm satırlarında
+        # offset parent bölümden alınmalıdır (bkz. AnswerKeyItem.booklet_b_global).
         b_to_a_map = {}
-        for item in answer_key.items.select_related('section').all():
+        for item in answer_key.items.select_related('section', 'section__parent_section').all():
             correct_map_a[item.question_number] = {
                 'answer': item.correct_answer,
                 'is_cancelled': item.is_cancelled,
                 'section_id': item.section_id,
             }
-            if item.b_question_number is not None and item.section_id in section_offset:
-                b_global = section_offset[item.section_id] + item.b_question_number - 1
+            b_global = item.booklet_b_global()
+            if b_global:
                 b_to_a_map[b_global] = item.question_number
 
         correct_map_b = {}
@@ -114,6 +106,7 @@ class Command(BaseCommand):
                 answers_raw, total_questions, booklet,
                 correct_map_a, b_to_a_map, correct_map_b,
                 sections, wrong_penalty, sub_sections,
+                exam.per_section_penalty,
             )
 
             if dry_run:

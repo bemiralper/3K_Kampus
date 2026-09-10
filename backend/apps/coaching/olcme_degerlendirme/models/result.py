@@ -27,6 +27,11 @@ class StudentAnswer(models.Model):
     # DAT'tan gelen ham kimlik (eşleşme öncesi)
     raw_student_id  = models.CharField('Ham Öğrenci No', max_length=50, blank=True)
     raw_student_name = models.CharField('Ham Ad Soyad', max_length=200, blank=True)
+    raw_tc_kimlik = models.CharField(
+        'Ham TC Kimlik', max_length=20, blank=True, default='',
+        help_text='DAT satırındaki TC sütunu — oturum sonuçları yeniden '
+                  'açıldığında manuel eşleştirme için gerekir.',
+    )
 
     booklet = models.CharField('Kitapçık', max_length=1, blank=True)
     booklet_auto_detected = models.BooleanField(

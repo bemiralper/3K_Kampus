@@ -307,7 +307,18 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
             )
         pending.append((room, name))
         keep_ids.append(room.pk)
-    ExamRoom.objects.filter(exam=exam).exclude(pk__in=keep_ids).delete()
+    removed_ids = list(
+        ExamRoom.objects.filter(exam=exam)
+        .exclude(pk__in=keep_ids)
+        .values_list('id', flat=True)
+    )
+    if removed_ids:
+        # room FK SET_NULL olduğu için sıra numarası salonsuz kalıp
+        # "Salonsuz — sıra 7" gibi hayalet kayıtlar üretiyordu.
+        ExamParticipant.objects.filter(exam=exam, room_id__in=removed_ids).update(
+            room=None, seat_no=None, desk_no='',
+        )
+        ExamRoom.objects.filter(pk__in=removed_ids).delete()
     used = set()
     for room, name in pending:
         final = name
@@ -803,9 +814,13 @@ def enrich_participants(exam, rows: list[dict]) -> list[dict]:
     from apps.ogrenci.domain.models import OgrenciKayit, OgrenciVeli
 
     ids = [r['student_id'] for r in rows]
+    # Kayıt sınavın kurum/şubesinden olmalı; öğrenci başka şubede de kayıtlı
+    # olabildiği için filtresiz sorgu yanlış sınıf/okul no gösterebiliyordu.
     kayitlar = OgrenciKayit.objects.filter(
-        ogrenci_id__in=ids, aktif_mi=True,
+        ogrenci_id__in=ids, aktif_mi=True, kurum_id=exam.kurum_id,
     ).select_related('sinif', 'sinif_seviyesi', 'sinif__sinif_seviyesi')
+    if exam.sube_id:
+        kayitlar = kayitlar.filter(sube_id=exam.sube_id)
     if exam.egitim_yili_id:
         kayitlar = kayitlar.filter(egitim_yili_id=exam.egitim_yili_id)
     by = {}
