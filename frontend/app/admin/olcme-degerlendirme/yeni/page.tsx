@@ -284,8 +284,7 @@ export default function YeniSinavPage() {
 
     if (!form.name.trim()) errs.name = 'Sınav adı zorunludur.';
     if (!form.exam_type)   errs.exam_type = 'Sınav türü seçiniz.';
-    if ((isManualSectionExamType(form.exam_type) || !form.apply_template)
-      && rangesFromCounts(manualSections).length === 0) {
+    if (editingTemplate && rangesFromCounts(manualSections).length === 0) {
       errs.sections = 'En az bir üst ders giriniz veya hazır şablona dönün.';
     }
 
@@ -318,7 +317,7 @@ export default function YeniSinavPage() {
     });
 
     return errs;
-  }, [form, sessions, manualSections]);
+  }, [form, sessions, manualSections, editingTemplate]);
 
   useEffect(() => {
     if (touched) setFieldErrors(validate());

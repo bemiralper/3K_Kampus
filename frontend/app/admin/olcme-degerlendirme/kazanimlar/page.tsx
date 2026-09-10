@@ -76,9 +76,13 @@ export default function KazanimlarPage() {
     try {
       const data = await curriculumApi.getSubject(id);
       setSelectedSubject(data);
-      // Tüm konuları aç
-      const topicIds = new Set((data.topics || []).map((t: TopicItem) => t.id));
-      setOpenTopics(topicIds);
+      // İlk açılışta ağacı kapalı tut (yüzlerce kazanım DOM'a dökülmesin).
+      // Sonradan yenilemede kullanıcının açık bıraktığı konular korunur.
+      setOpenTopics(prev => {
+        const available = new Set((data.topics || []).map((t: TopicItem) => t.id));
+        const kept = new Set([...prev].filter(id => available.has(id)));
+        return kept;
+      });
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'Detay yüklenemedi', 'error');
     } finally {

@@ -9,6 +9,7 @@ from apps.coaching.olcme_degerlendirme.models import Exam
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 
 User = get_user_model()
 
@@ -27,6 +28,7 @@ class OlcmeSubeIsolationAPITest(TestCase):
             aktif_mi=True,
         )
         self.user = User.objects.create_user(username='olcmeiso', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client.force_authenticate(user=self.user)
 
         self.exam_a = Exam.objects.create(
@@ -85,7 +87,7 @@ class OlcmeSubeIsolationAPITest(TestCase):
             data={
                 'name': 'Yeni Sınav',
                 'exam_type': 'DENEME',
-                'apply_template': False,
+                'apply_template': True,
             },
             format='json',
             HTTP_X_KURUM_ID=str(self.kurum.id),

@@ -79,6 +79,32 @@ function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   return '';
 }
 
+function firstOutcomeForImported(topics: TopicItem[], raw: string): OutcomeItem | null {
+  const code = (raw || '').trim().replace(/\.+$/, '').toLowerCase();
+  if (!code) return null;
+  const prefix = `${code}.`;
+  for (const t of topics) {
+    if (isDumpTopic(t)) continue;
+    const topicCode = (t.code || '').trim().replace(/\.+$/, '').toLowerCase();
+    const outcomes = t.outcomes ?? [];
+    if (topicCode && (topicCode === code || code.startsWith(`${topicCode}.`))) {
+      return outcomes[0] ?? null;
+    }
+    const child = outcomes.find(o => (o.code || '').toLowerCase() === code);
+    if (child) return child;
+    if (outcomes.some(o => (o.code || '').toLowerCase().startsWith(prefix))) {
+      return outcomes[0] ?? null;
+    }
+  }
+  const needle = code;
+  for (const t of topics) {
+    if (isDumpTopic(t)) continue;
+    const hit = (t.outcomes ?? []).find(o => (o.text || '').trim().toLowerCase() === needle);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 function topicNameFromCode(topics: TopicItem[], raw: string): string {
   const code = (raw || '').trim().replace(/\.+$/, '').toLowerCase();
   if (!code) return '';
@@ -199,21 +225,17 @@ export default function OutcomesTab({ exam }: Props) {
         autoLinkedRef.current = true;
         try { await examApi.linkSubjects(exam.id); } catch { /* */ }
       }
-      try {
-        setAllSubjects(await curriculumApi.listSubjects());
-      } catch { /* */ }
-      // 0) Güncel exam verisini çek (yeni oluşturulan alt bölümleri de görmek için)
-      const freshExam = await examApi.detail(exam.id);
+      const [listedSubjects, freshExam, keys, subjectsTree] = await Promise.all([
+        curriculumApi.listSubjects().catch(() => [] as SubjectItem[]),
+        examApi.detail(exam.id),
+        answerKeyApi.list(exam.id),
+        answerKeyApi.outcomes(exam.id),
+      ]);
+      setAllSubjects(listedSubjects);
       const allSections: ExamSection[] = freshExam.sections ?? [];
       const freshSubSections = allSections.filter(sec => sec.is_sub_section);
       const freshMainSections = allSections.filter(sec => !sec.is_sub_section);
-
-      // 1) Cevap anahtarlarını yükle
-      const keys = await answerKeyApi.list(exam.id);
       setAnswerKeys(keys);
-
-      // 2) Kazanım ağacını yükle (sınav türüne göre filtrelenmiş)
-      const subjectsTree = await answerKeyApi.outcomes(exam.id);
 
       // 3) Alt bölümlerin bağlı Subject'lerini bul
       //    Alt bölümü olan ana bölümler → alt bölümlerle temsil edilir
@@ -269,14 +291,20 @@ export default function OutcomesTab({ exam }: Props) {
         const newRows: OutcomeRow[] = primary.items.map(item => {
           // Bu sorunun ait olduğu alt bölümü bul
           const ssInfo = ssInfos.find(ss => ss.section.id === item.section);
+          const resolved = (!item.outcome && ssInfo)
+            ? firstOutcomeForImported(ssInfo.topics, item.imported_outcome_text || item.outcome_code || '')
+            : null;
+          const outcomeId = item.outcome || resolved?.id || null;
+          const outcomeCode = item.outcome_code || resolved?.code || '';
+          const outcomeText = item.outcome_text || resolved?.text || '';
           const topicName = item.topic_name
-            || (item.outcome && ssInfo ? findTopicForOutcome(ssInfo.topics, item.outcome) : '')
-            || (ssInfo ? topicNameFromCode(ssInfo.topics, item.imported_outcome_text || item.outcome_code || '') : '');
-          const matchScore = item.outcome
-            ? calcMatchScore(item.outcome_code, item.outcome_text, {
-                id: item.outcome,
-                code: item.outcome_code,
-                text: item.outcome_text,
+            || (outcomeId && ssInfo ? findTopicForOutcome(ssInfo.topics, outcomeId) : '')
+            || (ssInfo ? topicNameFromCode(ssInfo.topics, item.imported_outcome_text || outcomeCode) : '');
+          const matchScore = outcomeId
+            ? calcMatchScore(outcomeCode, outcomeText, {
+                id: outcomeId,
+                code: outcomeCode,
+                text: outcomeText,
               })
             : 0;
 
@@ -288,12 +316,12 @@ export default function OutcomesTab({ exam }: Props) {
             section_id: item.section,
             section_name: item.section_name,
             imported_outcome_text: item.imported_outcome_text || '',
-            outcome_id: item.outcome,
+            outcome_id: outcomeId,
             sub_outcome_id: item.sub_outcome ?? null,
-            outcome_code: item.outcome_code || '',
-            outcome_text: item.outcome_text || '',
+            outcome_code: outcomeCode,
+            outcome_text: outcomeText,
             topic_name: topicName,
-            match_score: item.outcome ? matchScore || 50 : 0, // atanmışsa en az 50
+            match_score: outcomeId ? matchScore || 50 : 0,
           };
         });
         setRows(newRows);
@@ -310,10 +338,11 @@ export default function OutcomesTab({ exam }: Props) {
 
   /* ── İstatistikler ─── */
   const totalQuestions = rows.length;
-  const matchedCount  = rows.filter(r => r.outcome_id).length;
+  const isRowMatched = (r: OutcomeRow) => !!(r.outcome_id || (r.outcome_code && r.outcome_text));
+  const matchedCount  = rows.filter(isRowMatched).length;
   const unmatchedCount = totalQuestions - matchedCount;
   const avgScore = matchedCount > 0
-    ? Math.round(rows.filter(r => r.outcome_id).reduce((s, r) => s + r.match_score, 0) / matchedCount)
+    ? Math.round(rows.filter(isRowMatched).reduce((s, r) => s + r.match_score, 0) / matchedCount)
     : 0;
 
   /* ── Filtreleme ─── */
@@ -323,9 +352,9 @@ export default function OutcomesTab({ exam }: Props) {
       result = result.filter(r => r.section_id === filterSection);
     }
     if (filterMatch === 'matched') {
-      result = result.filter(r => r.outcome_id !== null);
+      result = result.filter(r => !!(r.outcome_id || (r.outcome_code && r.outcome_text)));
     } else if (filterMatch === 'unmatched') {
-      result = result.filter(r => r.outcome_id === null);
+      result = result.filter(r => !(r.outcome_id || (r.outcome_code && r.outcome_text)));
     }
     return result;
   }, [rows, filterSection, filterMatch]);
@@ -741,7 +770,7 @@ export default function OutcomesTab({ exam }: Props) {
       {sectionGroups.map(sg => {
         const sectionRows = filteredRows.filter(r => r.section_id === sg.section.id);
         if (filterSection !== null && filterSection !== sg.section.id) return null;
-        const secMatched = sectionRows.filter(r => r.outcome_id).length;
+        const secMatched = sectionRows.filter(r => r.outcome_id || (r.outcome_code && r.outcome_text)).length;
         const secTotal = rows.filter(r => r.section_id === sg.section.id).length;
 
         return (

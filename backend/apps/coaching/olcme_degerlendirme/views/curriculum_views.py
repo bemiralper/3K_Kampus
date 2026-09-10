@@ -23,6 +23,7 @@ import re
 import unicodedata
 
 from django.db import transaction
+from django.db.models import Count, Prefetch, Q
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -48,6 +49,37 @@ from ..serializers.curriculum import (
 from . import CsrfExemptSessionAuthentication
 
 logger = logging.getLogger(__name__)
+
+
+def _subject_tree_qs():
+    """Konu → kazanım → alt kazanım ağacını tek seferde yükler (N+1 yok)."""
+    return Subject.objects.prefetch_related(
+        Prefetch(
+            'topics',
+            queryset=Topic.objects.order_by('order').prefetch_related(
+                Prefetch(
+                    'outcomes',
+                    queryset=Outcome.objects.filter(is_active=True).order_by('order').prefetch_related(
+                        Prefetch(
+                            'sub_outcomes',
+                            queryset=SubOutcome.objects.filter(is_active=True).order_by('order'),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        Prefetch(
+            'exam_sections',
+            queryset=ExamSection.objects.select_related('exam').order_by('-exam__exam_date', '-id'),
+        ),
+    ).annotate(
+        topic_count=Count('topics', distinct=True),
+        outcome_count=Count(
+            'topics__outcomes',
+            filter=Q(topics__outcomes__is_active=True),
+            distinct=True,
+        ),
+    )
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -188,7 +220,19 @@ def subject_list(request):
     if request.method == 'GET':
         exam_type = request.query_params.get('exam_type', None)
         band = (request.query_params.get('band') or '').strip().upper()
-        qs = Subject.objects.all().order_by('order', 'name')
+        qs = Subject.objects.annotate(
+            topic_count=Count('topics', distinct=True),
+            outcome_count=Count(
+                'topics__outcomes',
+                filter=Q(topics__outcomes__is_active=True),
+                distinct=True,
+            ),
+        ).prefetch_related(
+            Prefetch(
+                'exam_sections',
+                queryset=ExamSection.objects.select_related('exam').order_by('-exam__exam_date', '-id'),
+            ),
+        ).order_by('order', 'name')
         if exam_type and not band:
             qs = qs.filter(exam_type_filter__in=['ALL', exam_type])
         if band in ('YKS', 'LGS'):
@@ -220,6 +264,7 @@ def subject_detail(request, subject_pk):
     subject = get_object_or_404(Subject, pk=subject_pk)
 
     if request.method == 'GET':
+        subject = _subject_tree_qs().get(pk=subject.pk)
         serializer = SubjectDetailSerializer(subject)
         return Response(serializer.data)
 
@@ -227,7 +272,7 @@ def subject_detail(request, subject_pk):
         serializer = SubjectCreateSerializer(subject, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
-        return Response(SubjectDetailSerializer(subject).data)
+        return Response(SubjectDetailSerializer(_subject_tree_qs().get(pk=subject.pk)).data)
 
     # DELETE
     subject.delete()
@@ -978,15 +1023,39 @@ def _heading_owns_code(topic, query_lower: str) -> bool:
     if topic_code == query_lower:
         return True
     prefix = f'{query_lower}.'
+    cache = getattr(topic, '_prefetched_objects_cache', None)
+    if cache and 'outcomes' in cache:
+        return any((o.code or '').lower().startswith(prefix) for o in topic.outcomes.all())
     return topic.outcomes.filter(code__istartswith=prefix).exists()
 
 
+def _first_active_outcome(topic):
+    cache = getattr(topic, '_prefetched_objects_cache', None)
+    if cache and 'outcomes' in cache:
+        for outcome in topic.outcomes.all():
+            if getattr(outcome, 'is_active', True):
+                return outcome
+        return None
+    return topic.outcomes.filter(is_active=True).order_by('order').first()
+
+
 def _match_heading_as_itself(query_stripped: str, query_lower: str, topics):
-    """Başlık kodunu çocuk kazanıma düşürmeden kendisi olarak döndür."""
+    """Başlık kodunu çocuk kazanıma düşürmeden eşleştir; kazanım varsa onu bağla."""
     for topic in topics:
         if not _heading_owns_code(topic, query_lower):
             continue
         title = _topic_display_name(topic.name) or query_stripped
+        outcome = _first_active_outcome(topic)
+        if outcome:
+            return {
+                'outcome_id': outcome.id,
+                'sub_outcome_id': None,
+                'outcome_code': outcome.code or query_stripped,
+                'outcome_text': outcome.text or title,
+                'topic_name': title,
+                'match_score': 100,
+                'match_type': 'outcome',
+            }
         return {
             'outcome_id': None,
             'sub_outcome_id': None,
@@ -1040,12 +1109,20 @@ def _resolve_topic_for_import(subject, text):
     return None
 
 
+def _cached_match_single_text(cache: dict, text: str, subject):
+    key = (getattr(subject, 'pk', None), text)
+    if key not in cache:
+        cache[key] = _match_single_text(text, subject)
+    return cache[key]
+
+
 def relink_dump_answer_key(answer_key) -> int:
     """Toplu Yükleme'ye düşmüş satırları gerçek müfredata geri bağla."""
     items = answer_key.items.select_related(
         'outcome__topic', 'section', 'section__subject',
     )
     updated = 0
+    match_cache: dict = {}
     for item in items:
         topic = getattr(getattr(item, 'outcome', None), 'topic', None)
         if not topic_is_bulk_dump(topic):
@@ -1054,7 +1131,7 @@ def relink_dump_answer_key(answer_key) -> int:
         if not text and item.outcome_id:
             text = (item.outcome.text or '').strip()
         subject = item.section.subject if item.section_id else None
-        match = _match_single_text(text, subject) if text and subject else None
+        match = _cached_match_single_text(match_cache, text, subject) if text and subject else None
         if match and match.get('outcome_id'):
             item.outcome_id = match['outcome_id']
             item.sub_outcome_id = match.get('sub_outcome_id')
@@ -1064,6 +1141,31 @@ def relink_dump_answer_key(answer_key) -> int:
         if text and not item.imported_outcome_text:
             item.imported_outcome_text = text
         item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
+        updated += 1
+    return updated
+
+
+def relink_unbound_answer_key(answer_key) -> int:
+    """outcome_id boş satırları girilen metinle yeniden eşleştir (canlı eklenen kazanımlar)."""
+    items = list(
+        answer_key.items.select_related('section', 'section__subject')
+        .filter(outcome_id__isnull=True)
+    )
+    updated = 0
+    match_cache: dict = {}
+    for item in items:
+        text = (item.imported_outcome_text or '').strip()
+        if not text:
+            continue
+        subject = item.section.subject if item.section_id else None
+        if not subject:
+            continue
+        match = _cached_match_single_text(match_cache, text, subject)
+        if not match or not match.get('outcome_id'):
+            continue
+        item.outcome_id = match['outcome_id']
+        item.sub_outcome_id = match.get('sub_outcome_id')
+        item.save(update_fields=['outcome_id', 'sub_outcome_id'])
         updated += 1
     return updated
 
@@ -1127,15 +1229,26 @@ def _match_single_text(query: str, subject: Subject):
     query_stems = _extract_stems(query_stripped)
     query_is_code = _is_dotted_code(query_stripped)
 
-    topics = Topic.objects.filter(subject=subject).order_by('order')
-    
+    topics = list(
+        Topic.objects.filter(subject=subject)
+        .prefetch_related(
+            Prefetch(
+                'outcomes',
+                queryset=Outcome.objects.order_by('order').prefetch_related(
+                    Prefetch('sub_outcomes', queryset=SubOutcome.objects.order_by('order')),
+                ),
+            ),
+        )
+        .order_by('order')
+    )
+
     candidates = []  # [(score, order_key, outcome, match_type, sub_or_none)]
     
     for topic in topics:
         topic_norm = _normalize_turkish(topic.name)
         topic_kw = _extract_keywords(topic.name)
         
-        outcomes = list(Outcome.objects.filter(topic=topic).order_by('order'))
+        outcomes = list(topic.outcomes.all())
         
         # ── 1. Konu başlığı eşleşmesi ──
         # Konu başlığı eşleşirse → o konunun son kazanımını ata
@@ -1250,7 +1363,7 @@ def _match_single_text(query: str, subject: Subject):
                 ))
             
             # ── 3. Alt kazanım eşleşmesi ──
-            sub_outcomes = SubOutcome.objects.filter(outcome=outcome).order_by('order')
+            sub_outcomes = list(outcome.sub_outcomes.all())
             for sub in sub_outcomes:
                 sub_code_lower = (sub.code or '').lower()
                 sub_norm = _normalize_turkish(sub.text)
@@ -1325,7 +1438,7 @@ def _match_single_text(query: str, subject: Subject):
     # Konu adını bul
     topic_name = ''
     try:
-        topic_name = best_outcome.topic.name
+        topic_name = _topic_display_name(best_outcome.topic.name)
     except Exception:
         pass
     

@@ -261,6 +261,7 @@ const navItems: MenuItem[] = [
     label: "Ölçme & Değerlendirme",
     emoji: "",
     icon: icons.assessment,
+    requiredPermissions: ["olcme.read", "olcme.write", "olcme.manage"],
     children: [
       { label: "Sınav Listesi", href: "/admin/olcme-degerlendirme", group: "Sınavlar" },
       { label: "Yeni Sınav Oluştur", href: "/admin/olcme-degerlendirme/yeni", group: "Sınavlar" },

@@ -126,10 +126,12 @@ def apply_roster_payload(exam, data: dict) -> dict:
         if err:
             return {'ok': False, 'error': err}
     sessions = list(exam.exam_sessions.order_by('order', 'id'))
-    if assignments and len(sessions) <= 1:
-        seating = apply_explicit_seating(
-            exam, assignments, exam_session=sessions[0] if sessions else None,
-        )
+    if assignments:
+        # Sihirbaz önizlemesi oturum başına aynı salon/sıra düzenini gösterir;
+        # 2+ oturumda da kaydedilen atamayı uygula (yeniden karıştırma).
+        seating = apply_explicit_seating(exam, assignments)
+        if not seating.get('ok'):
+            return seating
     elif seating_mode and rooms:
         seating = apply_seating(exam, mode=seating_mode)
         if not seating.get('ok'):

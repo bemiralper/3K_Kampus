@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 from django.db import transaction
+from django.db.models import Prefetch
 from rest_framework import viewsets, status
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -92,9 +93,10 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
-        from ..views.curriculum_views import relink_dump_answer_key
+        from ..views.curriculum_views import relink_dump_answer_key, relink_unbound_answer_key
         for answer_key in self.filter_queryset(self.get_queryset()):
             relink_dump_answer_key(answer_key)
+            relink_unbound_answer_key(answer_key)
         return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -107,8 +109,10 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
-        from ..views.curriculum_views import relink_dump_answer_key
-        relink_dump_answer_key(self.get_object())
+        from ..views.curriculum_views import relink_dump_answer_key, relink_unbound_answer_key
+        obj = self.get_object()
+        relink_dump_answer_key(obj)
+        relink_unbound_answer_key(obj)
         return super().retrieve(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -255,26 +259,43 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         linked_ids = set(
             exam.sections.exclude(subject_id=None).values_list('subject_id', flat=True)
         )
-        subjects = Subject.objects.all().order_by('order', 'name')
+        subjects = (
+            Subject.objects
+            .prefetch_related(
+                Prefetch(
+                    'topics',
+                    queryset=Topic.objects.order_by('order').prefetch_related(
+                        Prefetch(
+                            'outcomes',
+                            queryset=Outcome.objects.filter(is_active=True).order_by('order').prefetch_related(
+                                Prefetch(
+                                    'sub_outcomes',
+                                    queryset=SubOutcome.objects.filter(is_active=True).order_by('order'),
+                                ),
+                            ),
+                        ),
+                    ),
+                ),
+            )
+            .order_by('order', 'name')
+        )
 
         result = []
         for subj in subjects:
             if not subject_matches_band(subj, band) and subj.id not in linked_ids:
                 continue
             topics_data = []
-            for topic in subj.topics.order_by('order'):
+            for topic in subj.topics.all():
                 if topic_is_bulk_dump(topic):
                     continue
                 if not topic_matches_band(topic, band):
                     continue
                 outcomes_data = []
-                for outcome in topic.outcomes.filter(is_active=True).order_by('order'):
-                    sub_outcomes = list(
-                        outcome.sub_outcomes
-                        .filter(is_active=True)
-                        .order_by('order')
-                        .values('id', 'code', 'text')
-                    )
+                for outcome in topic.outcomes.all():
+                    sub_outcomes = [
+                        {'id': sub.id, 'code': sub.code, 'text': sub.text}
+                        for sub in outcome.sub_outcomes.all()
+                    ]
                     outcomes_data.append({
                         'id': outcome.id,
                         'code': outcome.code,

@@ -34,6 +34,7 @@ from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
 from apps.sube.domain.models import Sube
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 
 User = get_user_model()
 EXAMS_URL = '/api/coaching/olcme-degerlendirme/exams/'
@@ -45,6 +46,7 @@ class OlcmePublishDispatchTest(TestCase):
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='YAYN-M')
         self.yil = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
         self.user = User.objects.create_user(username='yayin', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
         self.headers = {

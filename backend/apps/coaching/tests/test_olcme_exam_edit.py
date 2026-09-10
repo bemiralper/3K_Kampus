@@ -16,6 +16,7 @@ from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 
 User = get_user_model()
 
@@ -31,6 +32,7 @@ class OlcmeExamEditAPITest(TestCase):
             baslangic_yil=2025, bitis_yil=2026, aktif_mi=True,
         )
         self.user = User.objects.create_user(username='duzenleme', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client.force_authenticate(user=self.user)
 
         self.sinif_a = Sinif.objects.create(
@@ -330,3 +332,33 @@ class OlcmeExamEditAPITest(TestCase):
         self.assertEqual(res.status_code, 200)
         self.exam.refresh_from_db()
         self.assertEqual(self.exam.name, 'Deneme 1 (revize)')
+
+    def test_create_kurum_ici_without_sections_rejected(self):
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': 'Boş Kurum İçi',
+                'exam_type': 'KURUM_ICI',
+                'apply_template': True,
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertFalse(Exam.objects.filter(name='Boş Kurum İçi').exists())
+
+    def test_create_without_olcme_write_is_forbidden(self):
+        from apps.roller.models import UserRole
+        UserRole.objects.filter(user=self.user).delete()
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': 'Yetkisiz',
+                'exam_type': 'YKS_TYT',
+                'apply_template': True,
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 403)
+        self.assertFalse(Exam.objects.filter(name='Yetkisiz').exists())

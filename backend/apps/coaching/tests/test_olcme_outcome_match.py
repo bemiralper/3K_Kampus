@@ -8,6 +8,7 @@ from apps.coaching.olcme_degerlendirme.serializers.answer_key import AnswerKeyIt
 from apps.coaching.olcme_degerlendirme.views.curriculum_views import (
     _match_single_text,
     relink_dump_answer_key,
+    relink_unbound_answer_key,
     topic_is_bulk_dump,
 )
 
@@ -144,13 +145,15 @@ class HeadingCodeStaysExactTest(TestCase):
     def test_heading_code_stays_heading(self):
         match = _match_single_text('21.10', self.subject)
         self.assertIsNotNone(match)
-        self.assertEqual(match['match_type'], 'topic')
-        self.assertIsNone(match['outcome_id'])
-        self.assertEqual(match['outcome_code'], '21.10')
-        self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
+        self.assertEqual(match['match_type'], 'outcome')
+        self.assertEqual(match['outcome_id'], self.first.id)
+        self.assertEqual(match['outcome_code'], '21.10.1')
+        self.assertEqual(match['outcome_text'], 'Fonksiyon tanımı')
+        self.assertEqual(match['topic_name'], 'FONKSİYONLAR')
 
     def test_heading_code_does_not_match_sibling_unit(self):
         match = _match_single_text('21.10', self.subject)
+        self.assertNotEqual(match['outcome_id'], self.other.id)
         self.assertNotEqual(match['outcome_code'], '21.1.1')
 
     def test_heading_inferred_from_child_codes(self):
@@ -158,15 +161,22 @@ class HeadingCodeStaysExactTest(TestCase):
         self.topic.save(update_fields=['code'])
         match = _match_single_text('21.10', self.subject)
         self.assertIsNotNone(match)
-        self.assertIsNone(match['outcome_id'])
-        self.assertEqual(match['outcome_code'], '21.10')
-        self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
+        self.assertEqual(match['outcome_id'], self.first.id)
+        self.assertEqual(match['outcome_text'], 'Fonksiyon tanımı')
 
     def test_trailing_dot_heading_code(self):
         match = _match_single_text('21.10.', self.subject)
         self.assertIsNotNone(match)
-        self.assertEqual(match['outcome_code'], '21.10')
+        self.assertEqual(match['outcome_id'], self.first.id)
+        self.assertNotEqual(match['outcome_id'], self.last.id)
+
+    def test_heading_without_outcomes_stays_topic(self):
+        self.topic.outcomes.all().delete()
+        match = _match_single_text('21.10', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['match_type'], 'topic')
         self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
 
 
 class AnswerKeySubOutcomeDisplayTest(TestCase):
@@ -262,9 +272,10 @@ class BulkDumpTopicRelinkTest(TestCase):
         )
         self.assertEqual(relink_dump_answer_key(self.ak), 1)
         item.refresh_from_db()
-        self.assertIsNone(item.outcome_id)
+        self.assertEqual(item.outcome_id, self.real_out.id)
         data = AnswerKeyItemSerializer(item).data
         self.assertEqual(data['topic_name'], 'FONKSİYONLAR')
+        self.assertEqual(data['outcome_text'], 'Fonksiyon grafiği')
         self.assertNotEqual(data['topic_name'], 'Toplu Yükleme')
 
     def test_relink_exact_child_code(self):
@@ -279,3 +290,37 @@ class BulkDumpTopicRelinkTest(TestCase):
         relink_dump_answer_key(self.ak)
         item.refresh_from_db()
         self.assertEqual(item.outcome_id, self.real_out.id)
+
+
+class UnboundHeadingRelinkTest(TestCase):
+    """Canlı eklenen kazanım sonrası başlık satırı bağlanmalı."""
+
+    def setUp(self):
+        self.subject = Subject.objects.create(code='MATR', name='Matematik')
+        self.topic = Topic.objects.create(
+            subject=self.subject, code='21.10', name='SHG21 · FONKSİYONLAR',
+        )
+        self.exam = Exam.objects.create(name='Relink', exam_type='YKS_TYT')
+        self.section = ExamSection.objects.create(
+            exam=self.exam, name='Matematik', question_start=1, question_end=2,
+            subject=self.subject,
+        )
+        self.ak = AnswerKey.objects.create(exam=self.exam, booklet='')
+        self.item = AnswerKeyItem.objects.create(
+            answer_key=self.ak, section=self.section, question_number=1,
+            correct_answer='A', imported_outcome_text='21.10',
+        )
+
+    def test_unbound_heading_links_after_outcome_added(self):
+        self.assertEqual(relink_unbound_answer_key(self.ak), 0)
+        self.item.refresh_from_db()
+        self.assertIsNone(self.item.outcome_id)
+
+        added = Outcome.objects.create(
+            topic=self.topic, code='21.10.1', text='Fonksiyon kavramını açıklar.',
+        )
+        self.assertEqual(relink_unbound_answer_key(self.ak), 1)
+        self.item.refresh_from_db()
+        self.assertEqual(self.item.outcome_id, added.id)
+        data = AnswerKeyItemSerializer(self.item).data
+        self.assertEqual(data['outcome_text'], 'Fonksiyon kavramını açıklar.')

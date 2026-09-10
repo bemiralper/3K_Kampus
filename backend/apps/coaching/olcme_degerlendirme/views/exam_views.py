@@ -7,6 +7,8 @@ from rest_framework.decorators import action, api_view, authentication_classes, 
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 
+from shared.permissions import OlcmeModulePermission
+
 from ..models import Exam, ExamSection, ExamSessionModel
 from ..serializers.exam import (
     ExamListSerializer,
@@ -91,7 +93,7 @@ class ExamViewSet(viewsets.ModelViewSet):
     """Sınav CRUD + yardımcı action'lar."""
 
     authentication_classes = [CsrfExemptSessionAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, OlcmeModulePermission]
 
     def _apply_tenant_scope(self, qs):
         ctx = getattr(self, '_olcme_ctx', None)
@@ -758,13 +760,18 @@ class ExamViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'], url_path='sinif-seviyeleri')
     def sinif_seviyeleri(self, request):
-        """Sınıf seviyesi listesi (9, 10, 11, 12 gibi)."""
+        """Aktif tenant'a ait sınıf seviyesi listesi (9, 10, 11, 12 gibi)."""
         from apps.egitim_tanimlari.models import SinifSeviyesi
-        data = list(
-            SinifSeviyesi.objects.all()
-            .values('id', 'ad', 'kod')
-            .order_by('ad')
+
+        ctx, err = mandatory_olcme_context(request)
+        if err:
+            return err
+        qs = SinifSeviyesi.objects.filter(
+            aktif_mi=True,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
         )
+        data = list(qs.values('id', 'ad', 'kod').order_by('sira', 'ad'))
         return Response(data)
 
     # ── KİLİT ────────────────────────────────────────────────────────────────

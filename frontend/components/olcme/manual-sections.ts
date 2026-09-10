@@ -1,4 +1,4 @@
-export const MANUAL_SECTION_EXAM_TYPES = ['KONU_TARAMA', 'KAZANIM', 'OZEL'] as const;
+export const MANUAL_SECTION_EXAM_TYPES = ['KURUM_ICI', 'KONU_TARAMA', 'KAZANIM', 'OZEL'] as const;
 
 export type ManualSectionDraft = {
   name: string;

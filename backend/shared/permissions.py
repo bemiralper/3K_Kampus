@@ -25,6 +25,7 @@ AKADEMIK_FULL_ACCESS_MODULES = frozenset({
     'egitim_tanimlari',
     'ozel_ders',
     'egitim_paketleri',
+    'olcme',
 })
 
 
@@ -220,6 +221,26 @@ class CoachAssignmentManagePermission(BasePermission):
 
     def has_permission(self, request, view):
         return user_can_manage_coach_assignment(request.user)
+
+
+class OlcmeModulePermission(BasePermission):
+    """Ölçme & Değerlendirme — liste/okuma giriş yapmış kullanıcıya açık;
+    oluşturma/güncelleme/silme için olcme.write veya olcme.manage.
+
+    `olcme` akademik tam yetki modüllerindedir: süper admin, sistem.admin
+    ve muhasebe rolü ek yetki satırı olmadan yazabilir.
+    """
+
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        if request.method in SAFE_METHODS:
+            return True
+        return user_has_any_permission(
+            request.user,
+            'olcme.write',
+            'olcme.manage',
+        )
 
 
 def _permission_denied_json():

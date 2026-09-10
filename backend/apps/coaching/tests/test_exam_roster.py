@@ -22,6 +22,7 @@ from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciKayit
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 
 User = get_user_model()
 EXAMS_URL = '/api/coaching/olcme-degerlendirme/exams/'
@@ -209,6 +210,7 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
     def setUp(self):
         self._setup_roster()
         self.user = User.objects.create_user(username='roster', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
         self.headers = {
@@ -264,6 +266,41 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         self.assertTrue(exam.participants.filter(student=self.in_class).exists())
         p = exam.participants.get(student=self.in_class)
         self.assertEqual(p.seat_no, 1)
+
+    def test_create_multi_session_keeps_explicit_seating(self):
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': 'Çift Oturum',
+                'exam_type': 'YKS_TYT',
+                'sinif_ids': [self.sinif_a.id],
+                'rooms': [{'name': 'A', 'capacity': 40}],
+                'seating_mode': 'shuffle',
+                'seat_assignments': [
+                    {
+                        'student_id': self.in_class.id,
+                        'room_name': 'A',
+                        'room_index': 0,
+                        'seat_no': 7,
+                    },
+                ],
+                'sessions': [
+                    {'name': '1. Oturum', 'order': 0, 'schedule_preference': 'FARKETMEZ'},
+                    {'name': '2. Oturum', 'order': 1, 'schedule_preference': 'FARKETMEZ'},
+                ],
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 201, res.content[:400])
+        exam = Exam.objects.get(id=res.json()['id'])
+        self.assertEqual(exam.exam_sessions.count(), 2)
+        seats = list(
+            exam.participants.filter(student=self.in_class)
+            .values_list('exam_session_id', 'seat_no')
+        )
+        self.assertEqual(len(seats), 2)
+        self.assertTrue(all(seat == 7 for _sid, seat in seats))
 
     def test_manual_add_rejects_duplicate(self):
         ExamParticipant.objects.create(exam=self.exam, student=self.in_class)

@@ -69,6 +69,13 @@ export const ModulePermissions = {
     MANAGE: 'egitim_paketleri.manage',
   },
   
+  // Ölçme & Değerlendirme
+  OLCME: {
+    READ: 'olcme.read',
+    WRITE: 'olcme.write',
+    MANAGE: 'olcme.manage',
+  },
+
   // Sınıf Modülü
   SINIF: {
     READ: 'sinif.read',

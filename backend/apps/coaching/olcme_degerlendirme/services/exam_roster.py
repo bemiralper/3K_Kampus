@@ -566,8 +566,45 @@ def apply_seating(exam, *, mode: str = 'shuffle', only_unassigned: bool = False,
     }
 
 
+def _assignment_session_id(raw: dict, sessions: list) -> int | None:
+    """Atamadaki oturum anahtarını çöz; yoksa None (tüm oturumlara uygula)."""
+    if not isinstance(raw, dict):
+        return None
+    for key in ('exam_session_id', 'session_id'):
+        if raw.get(key) not in (None, ''):
+            try:
+                return int(raw[key])
+            except (TypeError, ValueError):
+                return None
+    if raw.get('session_index') not in (None, ''):
+        try:
+            idx = int(raw['session_index'])
+        except (TypeError, ValueError):
+            return None
+        if 0 <= idx < len(sessions):
+            return sessions[idx].pk
+    return None
+
+
 def apply_explicit_seating(exam, assignments: list[dict], exam_session=None) -> dict:
     """Sihirbazda onaylanan salon/sıra düzenini kaydet."""
+    sessions = list(exam.exam_sessions.order_by('order', 'id'))
+    if exam_session is None and sessions:
+        placed = 0
+        keyed = any(_assignment_session_id(raw, sessions) for raw in (assignments or []))
+        for sess in sessions:
+            rows = assignments or []
+            if keyed:
+                rows = [
+                    raw for raw in rows
+                    if _assignment_session_id(raw, sessions) in (None, sess.pk)
+                ]
+            last = apply_explicit_seating(exam, rows, exam_session=sess)
+            if not last.get('ok'):
+                return last
+            placed += last.get('placed') or 0
+        return {'ok': True, 'placed': placed, 'mode': 'explicit'}
+
     rooms = list(exam.rooms.order_by('order', 'id'))
     by_name = {r.name: r for r in rooms}
     by_index = {i: r for i, r in enumerate(rooms)}

@@ -8,6 +8,7 @@ from ..services.exam_templates import (
     create_sections_from_payload,
     create_sections_from_template,
     get_default_duration,
+    get_template_sections,
     sync_optional_philosophy_section,
 )
 from ..models.scoring_settings import MANAGED_PUAN_YILLARI
@@ -317,6 +318,14 @@ class ExamCreateSerializer(serializers.ModelSerializer):
         attrs['curriculum_band'] = normalize_band(
             attrs.get('curriculum_band'), attrs.get('exam_type'),
         )
+        apply_template = attrs.get('apply_template', True)
+        sections = attrs.get('sections') or []
+        exam_type = attrs.get('exam_type')
+        has_template = bool(get_template_sections(exam_type)) if exam_type else False
+        if not sections and not (apply_template and has_template):
+            raise serializers.ValidationError({
+                'sections': 'En az bir ders/bölüm girilmelidir.',
+            })
         return attrs
 
     @transaction.atomic
@@ -338,8 +347,11 @@ class ExamCreateSerializer(serializers.ModelSerializer):
             validated_data['kurum_id'] = ctx['kurum_id']
             validated_data['sube_id'] = ctx['sube_id']
             ey_id = get_secili_egitim_yili_id(request)
-            if ey_id:
-                validated_data['egitim_yili_id'] = ey_id
+            if not ey_id:
+                raise serializers.ValidationError({
+                    'egitim_yili': 'Eğitim yılı seçimi zorunludur.',
+                })
+            validated_data['egitim_yili_id'] = ey_id
 
         # Duration otomatik
         if not validated_data.get('duration_minutes'):

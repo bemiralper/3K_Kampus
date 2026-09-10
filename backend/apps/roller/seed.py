@@ -67,6 +67,9 @@ PERMISSIONS_DATA = [
     {'code': 'ozel_ders.write', 'name': 'Özel Ders Düzenleme', 'module': 'ozel_ders', 'permission_type': 'write', 'description': 'Özel ders programı, yoklama ve oturum yönetebilir'},
     {'code': 'ozel_ders.manage', 'name': 'Özel Ders Yönetimi', 'module': 'ozel_ders', 'permission_type': 'manage', 'description': 'Özel ders modülünün tüm yetkilerine sahip'},
     {'code': 'ozel_ders.hakedis_approve', 'name': 'Özel Ders Hakediş Onayı', 'module': 'ozel_ders', 'permission_type': 'manage', 'description': 'Birebir ders hakedişlerini onaylayabilir'},
+    {'code': 'olcme.read', 'name': 'Ölçme Görüntüleme', 'module': 'olcme', 'permission_type': 'read', 'description': 'Sınav listesi, sonuç ve kazanımları görüntüleyebilir'},
+    {'code': 'olcme.write', 'name': 'Ölçme Düzenleme', 'module': 'olcme', 'permission_type': 'write', 'description': 'Sınav oluşturabilir, cevap anahtarı ve kazanım eşleştirmesi yapabilir'},
+    {'code': 'olcme.manage', 'name': 'Ölçme Yönetimi', 'module': 'olcme', 'permission_type': 'manage', 'description': 'Ölçme & değerlendirme modülünün tüm yetkilerine sahip'},
 ]
 
 ROLES_DATA = [
@@ -93,6 +96,7 @@ ROLES_DATA = [
             'demo.manage', 'yedekleme.read', 'yedekleme.create', 'yedekleme.manage',
             'website.manage',
             'ozel_ders.manage', 'ozel_ders.hakedis_approve',
+            'olcme.manage',
         ],
     },
     {
@@ -108,6 +112,7 @@ ROLES_DATA = [
             'sinif.manage', 'rapor.read',
             'gorev.manage', 'gorev.analytics',
             'website.read',
+            'olcme.manage',
         ],
     },
     {
@@ -120,6 +125,7 @@ ROLES_DATA = [
             'egitim_tanimlari.manage', 'egitim_paketleri.manage',
             'sinif.manage', 'ogrenci.read', 'personel.read', 'rapor.read',
             'ozel_ders.manage',
+            'olcme.manage',
         ],
     },
     {
@@ -132,6 +138,7 @@ ROLES_DATA = [
             'ogrenci.read', 'sinif.read', 'sinif.write', 'egitim_tanimlari.read',
             'egitim_paketleri.read', 'rapor.read',
             'ozel_ders.read', 'ozel_ders.write',
+            'olcme.read', 'olcme.write',
         ],
     },
     {
@@ -146,6 +153,7 @@ ROLES_DATA = [
             'egitim_tanimlari.read',
             'communication.read', 'communication.write', 'communication.bulk',
             'gorev.read', 'gorev.write',
+            'olcme.read',
         ],
     },
     {
@@ -165,6 +173,7 @@ ROLES_DATA = [
             'communication.read', 'communication.write', 'communication.bulk',
             'rapor.read', 'rapor.export',
             'gorev.read', 'gorev.write',
+            'olcme.manage',
         ],
     },
     {
@@ -221,6 +230,7 @@ ROLES_DATA = [
         'permissions': [
             'ogrenci.read', 'personel.read', 'sinif.read',
             'egitim_tanimlari.read', 'rapor.read',
+            'olcme.read',
         ],
     },
     {
@@ -240,6 +250,7 @@ ROLES_DATA = [
             'sinif.read', 'rapor.read', 'roller.read',
             'sistem_yonetimi.read', 'gorev.read', 'gorev.analytics',
             'yedekleme.read', 'demo.read', 'website.read', 'ozel_ders.read',
+            'olcme.read',
             # İletişim: tam inceleme (gönder / al / hesaplar / inbox)
             'communication.read', 'communication.write',
             'communication.manage', 'communication.config', 'communication.bulk',

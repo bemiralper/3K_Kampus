@@ -43,6 +43,9 @@ class OutcomeSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
     def get_sub_outcome_count(self, obj):
+        cache = getattr(obj, '_prefetched_objects_cache', None)
+        if cache and 'sub_outcomes' in cache:
+            return len(obj.sub_outcomes.all())
         return obj.sub_outcomes.filter(is_active=True).count()
 
 
@@ -71,6 +74,9 @@ class TopicSerializer(serializers.ModelSerializer):
         read_only_fields = ['id']
 
     def get_outcome_count(self, obj):
+        cache = getattr(obj, '_prefetched_objects_cache', None)
+        if cache and 'outcomes' in cache:
+            return len(obj.outcomes.all())
         return obj.outcomes.filter(is_active=True).count()
 
 
@@ -101,17 +107,28 @@ class SubjectListSerializer(serializers.ModelSerializer):
         ]
 
     def get_topic_count(self, obj):
+        value = getattr(obj, 'topic_count', None)
+        if isinstance(value, int):
+            return value
         return obj.topics.count()
 
     def get_outcome_count(self, obj):
+        value = getattr(obj, 'outcome_count', None)
+        if isinstance(value, int):
+            return value
         return Outcome.objects.filter(topic__subject=obj, is_active=True).count()
 
     def get_linked_sections(self, obj):
         """Bu derse bağlı sınav bölümlerini döndürür."""
-        from ..models.exam import ExamSection
-        sections = ExamSection.objects.filter(
-            subject=obj
-        ).select_related('exam').order_by('-exam__exam_date')[:5]
+        cache = getattr(obj, '_prefetched_objects_cache', None)
+        if cache and 'exam_sections' in cache:
+            sections = list(obj.exam_sections.all())[:5]
+        else:
+            from ..models.exam import ExamSection
+            sections = list(
+                ExamSection.objects.filter(subject=obj)
+                .select_related('exam').order_by('-exam__exam_date')[:5]
+            )
         return [
             {
                 'id': s.id,
@@ -141,24 +158,45 @@ class SubjectDetailSerializer(serializers.ModelSerializer):
         ]
 
     def get_topic_count(self, obj):
+        value = getattr(obj, 'topic_count', None)
+        if isinstance(value, int):
+            return value
+        cache = getattr(obj, '_prefetched_objects_cache', None)
+        if cache and 'topics' in cache:
+            return len(obj.topics.all())
         return obj.topics.count()
 
     def get_total_outcomes(self, obj):
+        cache = getattr(obj, '_prefetched_objects_cache', None)
+        if cache and 'topics' in cache:
+            return sum(len(topic.outcomes.all()) for topic in obj.topics.all())
         return Outcome.objects.filter(
             topic__subject=obj, is_active=True,
         ).count()
 
     def get_total_sub_outcomes(self, obj):
+        cache = getattr(obj, '_prefetched_objects_cache', None)
+        if cache and 'topics' in cache:
+            return sum(
+                len(outcome.sub_outcomes.all())
+                for topic in obj.topics.all()
+                for outcome in topic.outcomes.all()
+            )
         return SubOutcome.objects.filter(
             outcome__topic__subject=obj, is_active=True,
         ).count()
 
     def get_linked_sections(self, obj):
         """Bu derse bağlı sınav bölümlerini döndürür."""
-        from ..models.exam import ExamSection
-        sections = ExamSection.objects.filter(
-            subject=obj
-        ).select_related('exam').order_by('-exam__exam_date')[:5]
+        cache = getattr(obj, '_prefetched_objects_cache', None)
+        if cache and 'exam_sections' in cache:
+            sections = list(obj.exam_sections.all())[:5]
+        else:
+            from ..models.exam import ExamSection
+            sections = list(
+                ExamSection.objects.filter(subject=obj)
+                .select_related('exam').order_by('-exam__exam_date')[:5]
+            )
         return [
             {
                 'id': s.id,

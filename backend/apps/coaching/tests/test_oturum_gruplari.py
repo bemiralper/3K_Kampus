@@ -17,6 +17,7 @@ from apps.coaching.olcme_degerlendirme.services.exam_schedule_groups import (
     is_mezun_seviye, resolve_student_groups,
 )
 from apps.coaching.olcme_degerlendirme.views.roster_views import _hatirlatma_ctx
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 from apps.coaching.tests.test_exam_roster import RosterFixtureMixin
 from apps.egitim_tanimlari.models import SinifSeviyesi
 from apps.egitim_yili.domain.models import EgitimYili
@@ -236,6 +237,7 @@ class ExamCreateWithSessionsTest(RosterFixtureMixin, TestCase):
         self.mezun_ogr = self._ogr('Mert', 'Mezun', seviye=self.mezun)
         ensure_seviye_defaults(self.sube.id)
         self.user = User.objects.create_user(username='create-sess', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
         self.headers = {
