@@ -1017,45 +1017,35 @@ def _is_heading_code(text: str) -> bool:
     return _is_dotted_code(stripped) and _dotted_segment_count(stripped) == 2
 
 
+def _dotted_parts(text: str) -> list[str]:
+    return [p for p in (text or '').strip().rstrip('.').lower().split('.') if p]
+
+
+def _code_is_under(code: str, parent: str) -> bool:
+    """21.1 → 21.1.2 evet; 21.1 → 21.10.2 hayır (string prefix değil, segment)."""
+    child = _dotted_parts(code)
+    root = _dotted_parts(parent)
+    return bool(root) and len(child) > len(root) and child[:len(root)] == root
+
+
 def _heading_owns_code(topic, query_lower: str) -> bool:
     """Konu kodu 21.10 veya çocuk kazanımlar 21.10.* ise bu başlığa aittir."""
     topic_code = (topic.code or '').strip().rstrip('.').lower()
     if topic_code == query_lower:
         return True
-    prefix = f'{query_lower}.'
-    cache = getattr(topic, '_prefetched_objects_cache', None)
-    if cache and 'outcomes' in cache:
-        return any((o.code or '').lower().startswith(prefix) for o in topic.outcomes.all())
-    return topic.outcomes.filter(code__istartswith=prefix).exists()
-
-
-def _first_active_outcome(topic):
-    cache = getattr(topic, '_prefetched_objects_cache', None)
-    if cache and 'outcomes' in cache:
-        for outcome in topic.outcomes.all():
-            if getattr(outcome, 'is_active', True):
-                return outcome
-        return None
-    return topic.outcomes.filter(is_active=True).order_by('order').first()
+    outcomes = topic.outcomes.all()
+    return any(
+        (o.code or '').strip().rstrip('.').lower() == query_lower or _code_is_under(o.code or '', query_lower)
+        for o in outcomes
+    )
 
 
 def _match_heading_as_itself(query_stripped: str, query_lower: str, topics):
-    """Başlık kodunu çocuk kazanıma düşürmeden eşleştir; kazanım varsa onu bağla."""
+    """Başlık kodunu çocuk kazanıma düşürmeden konu olarak eşleştir."""
     for topic in topics:
         if not _heading_owns_code(topic, query_lower):
             continue
         title = _topic_display_name(topic.name) or query_stripped
-        outcome = _first_active_outcome(topic)
-        if outcome:
-            return {
-                'outcome_id': outcome.id,
-                'sub_outcome_id': None,
-                'outcome_code': outcome.code or query_stripped,
-                'outcome_text': outcome.text or title,
-                'topic_name': title,
-                'match_score': 100,
-                'match_type': 'outcome',
-            }
         return {
             'outcome_id': None,
             'sub_outcome_id': None,
@@ -1094,7 +1084,7 @@ def _resolve_topic_for_import(subject, text):
         if _heading_owns_code(topic, query_lower):
             return topic
         topic_code = (topic.code or '').strip().rstrip('.').lower()
-        parts = query_lower.split('.')
+        parts = _dotted_parts(query_lower)
         if len(parts) >= 2 and topic_code == '.'.join(parts[:2]):
             return topic
     match = _match_single_text(query, subject)
@@ -1145,8 +1135,28 @@ def relink_dump_answer_key(answer_key) -> int:
     return updated
 
 
+def detach_false_heading_binds(answer_key) -> int:
+    """Başlık koduna (21.1) yanlış bağlanmış çocuk kazanımı (21.10.1) çöz."""
+    items = list(
+        answer_key.items.select_related('outcome').exclude(outcome_id=None)
+    )
+    updated = 0
+    for item in items:
+        text = (item.imported_outcome_text or '').strip().rstrip('.')
+        if not _is_heading_code(text):
+            continue
+        bound = (getattr(item.outcome, 'code', None) or '').strip().rstrip('.')
+        if bound.lower() == text.lower():
+            continue
+        item.outcome_id = None
+        item.sub_outcome_id = None
+        item.save(update_fields=['outcome_id', 'sub_outcome_id'])
+        updated += 1
+    return updated
+
+
 def relink_unbound_answer_key(answer_key) -> int:
-    """outcome_id boş satırları girilen metinle yeniden eşleştir (canlı eklenen kazanımlar)."""
+    """Boş satırları yalnızca tam kazanım/alt kazanım kodu veya metniyle bağla."""
     items = list(
         answer_key.items.select_related('section', 'section__subject')
         .filter(outcome_id__isnull=True)
@@ -1163,6 +1173,12 @@ def relink_unbound_answer_key(answer_key) -> int:
         match = _cached_match_single_text(match_cache, text, subject)
         if not match or not match.get('outcome_id'):
             continue
+        if match.get('match_type') not in ('outcome', 'sub_outcome'):
+            continue
+        if _is_heading_code(text):
+            bound = (match.get('outcome_code') or '').strip().rstrip('.')
+            if bound.lower() != text.lower():
+                continue
         item.outcome_id = match['outcome_id']
         item.sub_outcome_id = match.get('sub_outcome_id')
         item.save(update_fields=['outcome_id', 'sub_outcome_id'])
@@ -1241,6 +1257,12 @@ def _match_single_text(query: str, subject: Subject):
         )
         .order_by('order')
     )
+
+    # İki parçalı başlık (21.1) asla 21.10.* çocuğuna veya ilk kazanıma düşmez.
+    if query_is_code and _is_heading_code(query_stripped):
+        heading = _match_heading_as_itself(query_stripped, query_lower, topics)
+        if heading:
+            return heading
 
     candidates = []  # [(score, order_key, outcome, match_type, sub_or_none)]
     

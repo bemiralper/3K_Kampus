@@ -6,7 +6,9 @@ from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject
 from apps.coaching.olcme_degerlendirme.models.exam import Exam, ExamSection
 from apps.coaching.olcme_degerlendirme.serializers.answer_key import AnswerKeyItemSerializer
 from apps.coaching.olcme_degerlendirme.views.curriculum_views import (
+    _code_is_under,
     _match_single_text,
+    detach_false_heading_binds,
     relink_dump_answer_key,
     relink_unbound_answer_key,
     topic_is_bulk_dump,
@@ -145,30 +147,32 @@ class HeadingCodeStaysExactTest(TestCase):
     def test_heading_code_stays_heading(self):
         match = _match_single_text('21.10', self.subject)
         self.assertIsNotNone(match)
-        self.assertEqual(match['match_type'], 'outcome')
-        self.assertEqual(match['outcome_id'], self.first.id)
-        self.assertEqual(match['outcome_code'], '21.10.1')
-        self.assertEqual(match['outcome_text'], 'Fonksiyon tanımı')
+        self.assertEqual(match['match_type'], 'topic')
+        self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['outcome_code'], '21.10')
+        self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
         self.assertEqual(match['topic_name'], 'FONKSİYONLAR')
 
     def test_heading_code_does_not_match_sibling_unit(self):
         match = _match_single_text('21.10', self.subject)
-        self.assertNotEqual(match['outcome_id'], self.other.id)
+        self.assertIsNone(match['outcome_id'])
         self.assertNotEqual(match['outcome_code'], '21.1.1')
+        self.assertEqual(match['topic_name'], 'FONKSİYONLAR')
 
     def test_heading_inferred_from_child_codes(self):
         self.topic.code = ''
         self.topic.save(update_fields=['code'])
         match = _match_single_text('21.10', self.subject)
         self.assertIsNotNone(match)
-        self.assertEqual(match['outcome_id'], self.first.id)
-        self.assertEqual(match['outcome_text'], 'Fonksiyon tanımı')
+        self.assertEqual(match['match_type'], 'topic')
+        self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
 
     def test_trailing_dot_heading_code(self):
         match = _match_single_text('21.10.', self.subject)
         self.assertIsNotNone(match)
-        self.assertEqual(match['outcome_id'], self.first.id)
-        self.assertNotEqual(match['outcome_id'], self.last.id)
+        self.assertEqual(match['match_type'], 'topic')
+        self.assertIsNone(match['outcome_id'])
 
     def test_heading_without_outcomes_stays_topic(self):
         self.topic.outcomes.all().delete()
@@ -177,6 +181,14 @@ class HeadingCodeStaysExactTest(TestCase):
         self.assertEqual(match['match_type'], 'topic')
         self.assertIsNone(match['outcome_id'])
         self.assertEqual(match['outcome_text'], 'FONKSİYONLAR')
+
+    def test_short_unit_does_not_own_longer_sibling(self):
+        match = _match_single_text('21.1', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['match_type'], 'topic')
+        self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['topic_name'], 'SAYILAR')
+        self.assertNotEqual(match['outcome_text'], 'Fonksiyon tanımı')
 
 
 class AnswerKeySubOutcomeDisplayTest(TestCase):
@@ -272,10 +284,11 @@ class BulkDumpTopicRelinkTest(TestCase):
         )
         self.assertEqual(relink_dump_answer_key(self.ak), 1)
         item.refresh_from_db()
-        self.assertEqual(item.outcome_id, self.real_out.id)
+        self.assertIsNone(item.outcome_id)
         data = AnswerKeyItemSerializer(item).data
         self.assertEqual(data['topic_name'], 'FONKSİYONLAR')
-        self.assertEqual(data['outcome_text'], 'Fonksiyon grafiği')
+        self.assertEqual(data['outcome_code'], '21.10')
+        self.assertNotEqual(data['outcome_text'], 'Fonksiyon grafiği')
         self.assertNotEqual(data['topic_name'], 'Toplu Yükleme')
 
     def test_relink_exact_child_code(self):
@@ -293,7 +306,7 @@ class BulkDumpTopicRelinkTest(TestCase):
 
 
 class UnboundHeadingRelinkTest(TestCase):
-    """Canlı eklenen kazanım sonrası başlık satırı bağlanmalı."""
+    """Başlık satırı çocuk kazanıma yapışmaz; tam kod sonra bağlanır."""
 
     def setUp(self):
         self.subject = Subject.objects.create(code='MATR', name='Matematik')
@@ -311,10 +324,19 @@ class UnboundHeadingRelinkTest(TestCase):
             correct_answer='A', imported_outcome_text='21.10',
         )
 
-    def test_unbound_heading_links_after_outcome_added(self):
+    def test_heading_does_not_bind_first_child(self):
+        self.assertEqual(relink_unbound_answer_key(self.ak), 0)
+        Outcome.objects.create(
+            topic=self.topic, code='21.10.1', text='Fonksiyon kavramını açıklar.',
+        )
         self.assertEqual(relink_unbound_answer_key(self.ak), 0)
         self.item.refresh_from_db()
         self.assertIsNone(self.item.outcome_id)
+
+    def test_exact_child_code_links_after_outcome_added(self):
+        self.item.imported_outcome_text = '21.10.1'
+        self.item.save(update_fields=['imported_outcome_text'])
+        self.assertEqual(relink_unbound_answer_key(self.ak), 0)
 
         added = Outcome.objects.create(
             topic=self.topic, code='21.10.1', text='Fonksiyon kavramını açıklar.',
@@ -324,3 +346,103 @@ class UnboundHeadingRelinkTest(TestCase):
         self.assertEqual(self.item.outcome_id, added.id)
         data = AnswerKeyItemSerializer(self.item).data
         self.assertEqual(data['outcome_text'], 'Fonksiyon kavramını açıklar.')
+
+
+class HeadingPrefixIsolationTest(TestCase):
+    """21.1 Türkçe ünitesi 21.10 Geometri çocuklarını yutmamalı."""
+
+    def setUp(self):
+        self.subject = Subject.objects.create(code='MIX', name='Karışık')
+        self.turkce = Topic.objects.create(
+            subject=self.subject, code='21.1', name='SHG21 · SÖZEL', order=1,
+        )
+        self.geo = Topic.objects.create(
+            subject=self.subject, code='21.10', name='SHG21 · GEOMETRİ', order=10,
+        )
+        self.tr_out = Outcome.objects.create(
+            topic=self.turkce, code='21.1.1', text='Türkçe kazanım', order=0,
+        )
+        self.geo_out = Outcome.objects.create(
+            topic=self.geo, code='21.10.1', text='Geometri kazanım', order=0,
+        )
+
+    def test_code_is_under_uses_segments(self):
+        self.assertTrue(_code_is_under('21.1.2', '21.1'))
+        self.assertFalse(_code_is_under('21.10.2', '21.1'))
+        self.assertTrue(_code_is_under('21.10.1', '21.10'))
+        self.assertFalse(_code_is_under('21.1.1', '21.10'))
+
+    def test_heading_21_1_stays_verbal_topic(self):
+        match = _match_single_text('21.1', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['match_type'], 'topic')
+        self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['topic_name'], 'SÖZEL')
+
+    def test_heading_21_10_stays_geometry_topic(self):
+        match = _match_single_text('21.10', self.subject)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['match_type'], 'topic')
+        self.assertIsNone(match['outcome_id'])
+        self.assertEqual(match['topic_name'], 'GEOMETRİ')
+
+    def test_child_codes_stay_in_own_unit(self):
+        match = _match_single_text('21.1.1', self.subject)
+        self.assertEqual(match['outcome_id'], self.tr_out.id)
+        match = _match_single_text('21.10.1', self.subject)
+        self.assertEqual(match['outcome_id'], self.geo_out.id)
+
+
+class DetachFalseHeadingBindsTest(TestCase):
+    """Önceki prefix hatasının yazdığı başlık→çocuk bağlarını çözer."""
+
+    def setUp(self):
+        self.subject = Subject.objects.create(code='FIX', name='Düzelt')
+        self.turkce = Topic.objects.create(
+            subject=self.subject, code='21.1', name='SHG21 · SÖZEL',
+        )
+        self.geo = Topic.objects.create(
+            subject=self.subject, code='21.10', name='SHG21 · GEOMETRİ',
+        )
+        self.tr_out = Outcome.objects.create(
+            topic=self.turkce, code='21.1.1', text='Türkçe kazanım',
+        )
+        self.geo_out = Outcome.objects.create(
+            topic=self.geo, code='21.10.1', text='Geometri kazanım',
+        )
+        self.exam = Exam.objects.create(name='Detach', exam_type='YKS_TYT')
+        self.section = ExamSection.objects.create(
+            exam=self.exam, name='Karışık', question_start=1, question_end=3,
+            subject=self.subject,
+        )
+        self.ak = AnswerKey.objects.create(exam=self.exam, booklet='')
+
+    def test_detaches_heading_bound_to_other_unit_child(self):
+        item = AnswerKeyItem.objects.create(
+            answer_key=self.ak, section=self.section, question_number=1,
+            correct_answer='A', outcome=self.geo_out,
+            imported_outcome_text='21.1',
+        )
+        self.assertEqual(detach_false_heading_binds(self.ak), 1)
+        item.refresh_from_db()
+        self.assertIsNone(item.outcome_id)
+
+    def test_detaches_heading_bound_to_own_first_child(self):
+        item = AnswerKeyItem.objects.create(
+            answer_key=self.ak, section=self.section, question_number=2,
+            correct_answer='B', outcome=self.geo_out,
+            imported_outcome_text='21.10',
+        )
+        self.assertEqual(detach_false_heading_binds(self.ak), 1)
+        item.refresh_from_db()
+        self.assertIsNone(item.outcome_id)
+
+    def test_keeps_exact_child_code_bind(self):
+        item = AnswerKeyItem.objects.create(
+            answer_key=self.ak, section=self.section, question_number=3,
+            correct_answer='C', outcome=self.geo_out,
+            imported_outcome_text='21.10.1',
+        )
+        self.assertEqual(detach_false_heading_binds(self.ak), 0)
+        item.refresh_from_db()
+        self.assertEqual(item.outcome_id, self.geo_out.id)

@@ -80,6 +80,21 @@
   border-color: var(--primary, #6366f1);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
+.searchInput {
+  min-width: 220px;
+  flex: 1 1 220px;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: white;
+  font-size: 14px;
+  color: var(--text-primary, #1e293b);
+  outline: none;
+}
+.searchInput:focus {
+  border-color: var(--primary, #6366f1);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
 
 /* ── Layout ── */
 .layout {

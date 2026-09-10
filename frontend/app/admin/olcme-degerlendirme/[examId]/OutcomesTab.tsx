@@ -79,24 +79,27 @@ function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   return '';
 }
 
+function dottedParts(raw: string): string[] {
+  return (raw || '').trim().replace(/\.+$/, '').toLowerCase().split('.').filter(Boolean);
+}
+
 function firstOutcomeForImported(topics: TopicItem[], raw: string): OutcomeItem | null {
   const code = (raw || '').trim().replace(/\.+$/, '').toLowerCase();
   if (!code) return null;
-  const prefix = `${code}.`;
+  const queryParts = dottedParts(code);
   for (const t of topics) {
     if (isDumpTopic(t)) continue;
-    const topicCode = (t.code || '').trim().replace(/\.+$/, '').toLowerCase();
     const outcomes = t.outcomes ?? [];
-    if (topicCode && (topicCode === code || code.startsWith(`${topicCode}.`))) {
-      return outcomes[0] ?? null;
-    }
-    const child = outcomes.find(o => (o.code || '').toLowerCase() === code);
-    if (child) return child;
-    if (outcomes.some(o => (o.code || '').toLowerCase().startsWith(prefix))) {
-      return outcomes[0] ?? null;
-    }
+    const exact = outcomes.find(o => (o.code || '').trim().replace(/\.+$/, '').toLowerCase() === code);
+    if (exact) return exact;
+    const under = outcomes.find(o => {
+      const parts = dottedParts(o.code || '');
+      return parts.length > queryParts.length && queryParts.every((p, i) => parts[i] === p);
+    });
+    if (under && queryParts.length >= 3) return under;
   }
-  const needle = code;
+  const needle = (raw || '').trim().toLowerCase();
+  if (!needle) return null;
   for (const t of topics) {
     if (isDumpTopic(t)) continue;
     const hit = (t.outcomes ?? []).find(o => (o.text || '').trim().toLowerCase() === needle);
@@ -105,11 +108,16 @@ function firstOutcomeForImported(topics: TopicItem[], raw: string): OutcomeItem 
   return null;
 }
 
+function codeIsUnder(code: string, parent: string): boolean {
+  const child = dottedParts(code);
+  const root = dottedParts(parent);
+  return root.length > 0 && child.length > root.length && root.every((p, i) => child[i] === p);
+}
+
 function topicNameFromCode(topics: TopicItem[], raw: string): string {
   const code = (raw || '').trim().replace(/\.+$/, '').toLowerCase();
   if (!code) return '';
-  const prefix = `${code}.`;
-  const parent = code.split('.').slice(0, 2).join('.');
+  const parent = dottedParts(code).slice(0, 2).join('.');
   for (const t of topics) {
     if (isDumpTopic(t)) continue;
     const topicCode = (t.code || '').trim().replace(/\.+$/, '').toLowerCase();
@@ -117,8 +125,8 @@ function topicNameFromCode(topics: TopicItem[], raw: string): string {
       return topicDisplayName(t.name);
     }
     for (const o of t.outcomes ?? []) {
-      const oc = (o.code || '').toLowerCase();
-      if (oc === code || oc.startsWith(prefix)) return topicDisplayName(t.name);
+      const oc = (o.code || '').trim().replace(/\.+$/, '').toLowerCase();
+      if (oc === code || codeIsUnder(oc, code)) return topicDisplayName(t.name);
     }
   }
   return '';
@@ -1131,12 +1139,12 @@ function OutcomePickerModal({
       ...topic,
       outcomes: (topic.outcomes ?? []).filter(o =>
         !lower ||
-        o.code.toLowerCase().includes(lower) ||
-        o.text.toLowerCase().includes(lower) ||
-        topic.name.toLowerCase().includes(lower) ||
+        (o.code || '').toLowerCase().includes(lower) ||
+        (o.text || '').toLowerCase().includes(lower) ||
+        (topic.name || '').toLowerCase().includes(lower) ||
         (o.sub_outcomes ?? []).some(sub =>
-          sub.code.toLowerCase().includes(lower) ||
-          sub.text.toLowerCase().includes(lower),
+          (sub.code || '').toLowerCase().includes(lower) ||
+          (sub.text || '').toLowerCase().includes(lower),
         )
       ),
     }))

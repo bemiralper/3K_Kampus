@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import { curriculumApi } from '../../../../components/olcme/api';
 import type { SubjectItem, TopicItem, OutcomeItem, SubOutcomeItem } from '../../../../components/olcme/types';
 import styles from './kazanimlar.module.css';
@@ -23,6 +23,7 @@ export default function KazanimlarPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
   const [examTypeFilter, setExamTypeFilter] = useState('');
+  const [treeSearch, setTreeSearch] = useState('');
 
   // Ağaç açma/kapama durumları
   const [openTopics, setOpenTopics] = useState<Set<number>>(new Set());
@@ -371,6 +372,58 @@ export default function KazanimlarPage() {
     setDragOverTopicId(null);
   };
 
+  const treeQuery = treeSearch.trim().toLowerCase();
+  const visibleTopics = useMemo(() => {
+    const topics = selectedSubject?.topics || [];
+    if (!treeQuery) return topics;
+    return topics
+      .map(topic => {
+        const topicHit =
+          (topic.code || '').toLowerCase().includes(treeQuery) ||
+          (topic.name || '').toLowerCase().includes(treeQuery);
+        const outcomes = (topic.outcomes || []).filter(o =>
+          topicHit ||
+          (o.code || '').toLowerCase().includes(treeQuery) ||
+          (o.text || '').toLowerCase().includes(treeQuery) ||
+          (o.sub_outcomes || []).some(sub =>
+            (sub.code || '').toLowerCase().includes(treeQuery) ||
+            (sub.text || '').toLowerCase().includes(treeQuery),
+          ),
+        );
+        if (!topicHit && outcomes.length === 0) return null;
+        return { ...topic, outcomes: topicHit ? (topic.outcomes || []) : outcomes };
+      })
+      .filter((t): t is TopicItem => t != null);
+  }, [selectedSubject, treeQuery]);
+
+  useEffect(() => {
+    if (!treeQuery || !selectedSubject?.topics) return;
+    const nextTopics = new Set<number>();
+    const nextOutcomes = new Set<number>();
+    for (const topic of selectedSubject.topics) {
+      const topicHit =
+        (topic.code || '').toLowerCase().includes(treeQuery) ||
+        (topic.name || '').toLowerCase().includes(treeQuery);
+      let topicHasHit = topicHit;
+      for (const o of topic.outcomes || []) {
+        const outcomeHit =
+          (o.code || '').toLowerCase().includes(treeQuery) ||
+          (o.text || '').toLowerCase().includes(treeQuery) ||
+          (o.sub_outcomes || []).some(sub =>
+            (sub.code || '').toLowerCase().includes(treeQuery) ||
+            (sub.text || '').toLowerCase().includes(treeQuery),
+          );
+        if (outcomeHit) {
+          topicHasHit = true;
+          nextOutcomes.add(o.id);
+        }
+      }
+      if (topicHasHit) nextTopics.add(topic.id);
+    }
+    setOpenTopics(nextTopics);
+    setOpenOutcomes(nextOutcomes);
+  }, [treeQuery, selectedSubject]);
+
   /* ═══════════════════════════════════════════════════════════════════════════ */
   /*  RENDER                                                                    */
   /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -480,6 +533,13 @@ export default function KazanimlarPage() {
                   </div>
                 </div>
                 <div className={styles.detailActions}>
+                  <input
+                    className={styles.searchInput}
+                    type="search"
+                    placeholder="Konu veya kazanım ara…"
+                    value={treeSearch}
+                    onChange={e => setTreeSearch(e.target.value)}
+                  />
                   <button className={styles.btnOutline} onClick={expandAll} title="Tümünü Aç">
                     🔽 Aç
                   </button>
@@ -524,7 +584,7 @@ export default function KazanimlarPage() {
 
               {/* Konu → Kazanım → Alt Kazanım Ağacı */}
               <div className={styles.tree}>
-                {(selectedSubject.topics || []).map(topic => (
+                {visibleTopics.map(topic => (
                   <div
                     key={topic.id}
                     className={`${styles.topicNode}${dragTopicId === topic.id ? ` ${styles.dragging}` : ''}${dragOverTopicId === topic.id ? ` ${styles.dragOver}` : ''}`}
@@ -576,7 +636,11 @@ export default function KazanimlarPage() {
                             >✏️</button>
                             <button
                               className={styles.btnSmOutline}
-                              onClick={() => { setAddingOutcomeTo(topic.id); setNewOutcomeForm({ code: '', text: '' }); }}
+                              onClick={() => {
+                                setOpenTopics(prev => new Set(prev).add(topic.id));
+                                setAddingOutcomeTo(topic.id);
+                                setNewOutcomeForm({ code: '', text: '' });
+                              }}
                               title="Kazanım Ekle"
                             >➕</button>
                             <button
@@ -656,7 +720,12 @@ export default function KazanimlarPage() {
                                     >✏️</button>
                                     <button
                                       className={styles.btnSmOutline}
-                                      onClick={() => { setAddingSubOutcomeTo(outcome.id); setNewSubOutcomeForm({ code: '', text: '' }); }}
+                                      onClick={() => {
+                                        setOpenTopics(prev => new Set(prev).add(topic.id));
+                                        setOpenOutcomes(prev => new Set(prev).add(outcome.id));
+                                        setAddingSubOutcomeTo(outcome.id);
+                                        setNewSubOutcomeForm({ code: '', text: '' });
+                                      }}
                                       title="Alt Kazanım Ekle"
                                     >➕</button>
                                     <button
@@ -756,6 +825,12 @@ export default function KazanimlarPage() {
                     )}
                   </div>
                 ))}
+
+                {treeQuery && visibleTopics.length === 0 && (selectedSubject.topics || []).length > 0 && (
+                  <div className={styles.emptyTree}>
+                    <p>Aramayla eşleşen konu veya kazanım yok.</p>
+                  </div>
+                )}
 
                 {(!selectedSubject.topics || selectedSubject.topics.length === 0) && (
                   <div className={styles.emptyTree}>
