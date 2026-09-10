@@ -524,6 +524,9 @@ def _outcome_texts_for_codes(codes: set[str]) -> dict[str, str]:
                 .first()
             )
             if child and child.topic_id:
+                from ..views.curriculum_views import topic_is_bulk_dump
+                if topic_is_bulk_dump(child.topic):
+                    continue
                 title = topic_display_name(child.topic.name or '')
                 if title:
                     mapping[code] = title
@@ -543,9 +546,11 @@ def _topic_block_label(item, code_texts: dict[str, str] | None = None) -> str:
         return code_texts[key]
     if item.outcome_id and getattr(item.outcome, 'topic_id', None):
         from ..services.curriculum_band import topic_display_name
-        topic = topic_display_name(item.outcome.topic.name or '')
-        if topic:
-            return topic
+        from ..views.curriculum_views import topic_is_bulk_dump
+        if not topic_is_bulk_dump(item.outcome.topic):
+            topic = topic_display_name(item.outcome.topic.name or '')
+            if topic:
+                return topic
     return imported
 
 

@@ -92,6 +92,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
+        from ..views.curriculum_views import relink_dump_answer_key
+        for answer_key in self.filter_queryset(self.get_queryset()):
+            relink_dump_answer_key(answer_key)
         return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -104,6 +107,8 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
+        from ..views.curriculum_views import relink_dump_answer_key
+        relink_dump_answer_key(self.get_object())
         return super().retrieve(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -119,7 +124,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             .filter(exam_id=exam_id)
             .prefetch_related(
                 'items__section',
+                'items__section__subject',
                 'items__outcome',
+                'items__outcome__topic',
                 'items__sub_outcome',
             )
             .order_by('booklet')
@@ -242,6 +249,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         from ..services.curriculum_band import (
             resolved_band, subject_matches_band, topic_display_name, topic_matches_band,
         )
+        from ..views.curriculum_views import topic_is_bulk_dump
 
         band = resolved_band(exam)
         linked_ids = set(
@@ -255,6 +263,8 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                 continue
             topics_data = []
             for topic in subj.topics.order_by('order'):
+                if topic_is_bulk_dump(topic):
+                    continue
                 if not topic_matches_band(topic, band):
                     continue
                 outcomes_data = []
@@ -367,7 +377,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
         answer_key = self.get_object()
         texts = request.data.get('texts', [])
-        create_if_missing = bool(request.data.get('create_if_missing', True))
+        create_if_missing = bool(request.data.get('create_if_missing', False))
         if not isinstance(texts, list):
             return Response({'error': 'texts bir liste olmalıdır.'}, status=400)
 
@@ -417,33 +427,67 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     })
                     matched_count += 1
                 elif create_if_missing and subject:
-                    topic, _ = Topic.objects.get_or_create(
-                        subject=subject,
-                        name='Toplu Yükleme',
-                        defaults={'code': 'TOPLU', 'order': 999},
+                    from ..services.curriculum_band import topic_display_name
+                    from ..views.curriculum_views import (
+                        _is_dotted_code,
+                        _is_heading_code,
+                        _resolve_topic_for_import,
+                        topic_is_bulk_dump,
                     )
-                    next_order = (topic.outcomes.count() or 0) + 1
-                    outcome = Outcome.objects.create(
-                        topic=topic,
-                        code=f'{subject.code}-{item.question_number}',
-                        text=text,
-                        order=next_order,
+
+                    real_topic = _resolve_topic_for_import(subject, text)
+                    if real_topic is None or topic_is_bulk_dump(real_topic):
+                        item.imported_outcome_text = text
+                        item.save(update_fields=['imported_outcome_text'])
+                        results.append(row)
+                        continue
+                    title = topic_display_name(real_topic.name or '') or real_topic.name
+                    if _is_heading_code(text):
+                        item.outcome_id = None
+                        item.sub_outcome_id = None
+                        item.imported_outcome_text = text
+                        item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
+                        row.update({
+                            'outcome_code': text.strip().rstrip('.'),
+                            'outcome_text': title,
+                            'topic_name': title,
+                            'match_score': 100,
+                            'match_type': 'topic',
+                        })
+                        matched_count += 1
+                        results.append(row)
+                        continue
+                    code = text.strip().rstrip('.')
+                    if not _is_dotted_code(code):
+                        code = ''
+                    found = (
+                        real_topic.outcomes.filter(code__iexact=code).first()
+                        if code else None
                     )
-                    item.outcome_id = outcome.id
+                    if found is None:
+                        next_order = (real_topic.outcomes.count() or 0) + 1
+                        found = Outcome.objects.create(
+                            topic=real_topic,
+                            code=code or f'{real_topic.code}.{next_order}'.strip('.'),
+                            text=text,
+                            order=next_order,
+                        )
+                        created_count += 1
+                        row['created'] = True
+                    item.outcome_id = found.id
                     item.sub_outcome_id = None
                     item.imported_outcome_text = text
                     item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
                     row.update({
-                        'outcome_id': outcome.id,
+                        'outcome_id': found.id,
                         'sub_outcome_id': None,
-                        'outcome_code': outcome.code,
-                        'outcome_text': outcome.text,
-                        'topic_name': topic.name,
+                        'outcome_code': found.code,
+                        'outcome_text': found.text,
+                        'topic_name': title,
                         'match_score': 100,
-                        'match_type': 'created',
-                        'created': True,
+                        'match_type': 'created' if row.get('created') else 'outcome',
                     })
-                    created_count += 1
+                    matched_count += 1
                 else:
                     item.imported_outcome_text = text
                     item.save(update_fields=['imported_outcome_text'])

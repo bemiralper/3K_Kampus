@@ -351,6 +351,7 @@ export interface AnswerKeyItem {
   sub_outcome: number | null;
   outcome_code: string;
   outcome_text: string;
+  topic_name?: string;
   imported_outcome_text: string;
   b_question_number: number | null;
 }

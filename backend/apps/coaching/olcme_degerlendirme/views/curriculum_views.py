@@ -999,6 +999,75 @@ def _match_heading_as_itself(query_stripped: str, query_lower: str, topics):
     return None
 
 
+DUMP_TOPIC_NAME = 'Toplu Yükleme'
+DUMP_TOPIC_CODE = 'TOPLU'
+
+
+def topic_is_bulk_dump(topic) -> bool:
+    if not topic:
+        return False
+    return (
+        (topic.name or '').strip() == DUMP_TOPIC_NAME
+        or (topic.code or '').strip().upper() == DUMP_TOPIC_CODE
+    )
+
+
+def _resolve_topic_for_import(subject, text):
+    """Girilen kodun gerçek konusunu bul; Toplu Yükleme asla dönmez."""
+    query = (text or '').strip().rstrip('.')
+    if not subject or not query:
+        return None
+    query_lower = query.lower()
+    topics = list(subject.topics.order_by('order'))
+    for topic in topics:
+        if topic_is_bulk_dump(topic):
+            continue
+        if _heading_owns_code(topic, query_lower):
+            return topic
+        topic_code = (topic.code or '').strip().rstrip('.').lower()
+        parts = query_lower.split('.')
+        if len(parts) >= 2 and topic_code == '.'.join(parts[:2]):
+            return topic
+    match = _match_single_text(query, subject)
+    if match and match.get('outcome_id'):
+        try:
+            outcome = Outcome.objects.select_related('topic').get(pk=match['outcome_id'])
+        except Outcome.DoesNotExist:
+            return None
+        if topic_is_bulk_dump(outcome.topic):
+            return None
+        return outcome.topic
+    return None
+
+
+def relink_dump_answer_key(answer_key) -> int:
+    """Toplu Yükleme'ye düşmüş satırları gerçek müfredata geri bağla."""
+    items = answer_key.items.select_related(
+        'outcome__topic', 'section', 'section__subject',
+    )
+    updated = 0
+    for item in items:
+        topic = getattr(getattr(item, 'outcome', None), 'topic', None)
+        if not topic_is_bulk_dump(topic):
+            continue
+        text = (item.imported_outcome_text or '').strip()
+        if not text and item.outcome_id:
+            text = (item.outcome.text or '').strip()
+        subject = item.section.subject if item.section_id else None
+        match = _match_single_text(text, subject) if text and subject else None
+        if match and match.get('outcome_id'):
+            item.outcome_id = match['outcome_id']
+            item.sub_outcome_id = match.get('sub_outcome_id')
+        else:
+            item.outcome_id = None
+            item.sub_outcome_id = None
+        if text and not item.imported_outcome_text:
+            item.imported_outcome_text = text
+        item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
+        updated += 1
+    return updated
+
+
 def _topic_display_name(name: str) -> str:
     """'SHG21 · SAYILAR' / '9. sınıf · KÜMELER' → asıl konu başlığı."""
     from ..services.curriculum_band import topic_display_name

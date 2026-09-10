@@ -67,9 +67,33 @@ function flattenOutcomes(topics: TopicItem[]): OutcomeItem[] {
 }
 
 /** Konu bilgisini outcome'dan bul */
+function isDumpTopic(topic: TopicItem): boolean {
+  return (topic.name || '').trim() === 'Toplu Yükleme' || (topic.code || '').trim().toUpperCase() === 'TOPLU';
+}
+
 function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   for (const t of topics) {
+    if (isDumpTopic(t)) continue;
     if ((t.outcomes ?? []).some(o => o.id === outcomeId)) return topicDisplayName(t.name);
+  }
+  return '';
+}
+
+function topicNameFromCode(topics: TopicItem[], raw: string): string {
+  const code = (raw || '').trim().replace(/\.+$/, '').toLowerCase();
+  if (!code) return '';
+  const prefix = `${code}.`;
+  const parent = code.split('.').slice(0, 2).join('.');
+  for (const t of topics) {
+    if (isDumpTopic(t)) continue;
+    const topicCode = (t.code || '').trim().replace(/\.+$/, '').toLowerCase();
+    if (topicCode && (topicCode === code || topicCode === parent)) {
+      return topicDisplayName(t.name);
+    }
+    for (const o of t.outcomes ?? []) {
+      const oc = (o.code || '').toLowerCase();
+      if (oc === code || oc.startsWith(prefix)) return topicDisplayName(t.name);
+    }
   }
   return '';
 }
@@ -157,7 +181,7 @@ export default function OutcomesTab({ exam }: Props) {
   const [bulkOpen, setBulkOpen]             = useState(false);
   const [bulkSectionId, setBulkSectionId]   = useState<number | 'all' | null>(null);
   const [bulkText, setBulkText]             = useState('');
-  const [bulkCreateMissing, setBulkCreateMissing] = useState(true);
+  const [bulkCreateMissing, setBulkCreateMissing] = useState(false);
   const [bulkProgress, setBulkProgress]     = useState<{ pct: number; label: string } | null>(null);
   const [allSubjects, setAllSubjects]       = useState<SubjectItem[]>([]);
   const [linkingSectionId, setLinkingSectionId] = useState<number | null>(null);
@@ -245,9 +269,9 @@ export default function OutcomesTab({ exam }: Props) {
         const newRows: OutcomeRow[] = primary.items.map(item => {
           // Bu sorunun ait olduğu alt bölümü bul
           const ssInfo = ssInfos.find(ss => ss.section.id === item.section);
-          const topicName = item.outcome && ssInfo
-            ? findTopicForOutcome(ssInfo.topics, item.outcome)
-            : '';
+          const topicName = item.topic_name
+            || (item.outcome && ssInfo ? findTopicForOutcome(ssInfo.topics, item.outcome) : '')
+            || (ssInfo ? topicNameFromCode(ssInfo.topics, item.imported_outcome_text || item.outcome_code || '') : '');
           const matchScore = item.outcome
             ? calcMatchScore(item.outcome_code, item.outcome_text, {
                 id: item.outcome,

@@ -5,7 +5,11 @@ from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, Answe
 from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, SubOutcome, Topic
 from apps.coaching.olcme_degerlendirme.models.exam import Exam, ExamSection
 from apps.coaching.olcme_degerlendirme.serializers.answer_key import AnswerKeyItemSerializer
-from apps.coaching.olcme_degerlendirme.views.curriculum_views import _match_single_text
+from apps.coaching.olcme_degerlendirme.views.curriculum_views import (
+    _match_single_text,
+    relink_dump_answer_key,
+    topic_is_bulk_dump,
+)
 
 
 class SubOutcomeCodeMatchTest(TestCase):
@@ -222,3 +226,56 @@ class AnswerKeySubOutcomeDisplayTest(TestCase):
         data = AnswerKeyItemSerializer(item).data
         self.assertEqual(data['outcome_code'], '10.3.1')
         self.assertEqual(data['sub_outcome'], None)
+
+
+class BulkDumpTopicRelinkTest(TestCase):
+    def setUp(self):
+        self.subject = Subject.objects.create(code='MATD', name='Matematik')
+        self.real = Topic.objects.create(
+            subject=self.subject, code='21.10', name='SHG21 · FONKSİYONLAR',
+        )
+        self.real_out = Outcome.objects.create(
+            topic=self.real, code='21.10.2', text='Fonksiyon grafiği',
+        )
+        self.dump = Topic.objects.create(
+            subject=self.subject, code='TOPLU', name='Toplu Yükleme', order=999,
+        )
+        self.dump_out = Outcome.objects.create(
+            topic=self.dump, code='MATD-1', text='21.10',
+        )
+        self.exam = Exam.objects.create(name='Dump', exam_type='YKS_TYT')
+        self.section = ExamSection.objects.create(
+            exam=self.exam, name='Matematik', question_start=1, question_end=2,
+            subject=self.subject,
+        )
+        self.ak = AnswerKey.objects.create(exam=self.exam, booklet='')
+
+    def test_dump_topic_detected(self):
+        self.assertTrue(topic_is_bulk_dump(self.dump))
+        self.assertFalse(topic_is_bulk_dump(self.real))
+
+    def test_relink_heading_keeps_real_topic_name(self):
+        item = AnswerKeyItem.objects.create(
+            answer_key=self.ak, section=self.section, question_number=1,
+            correct_answer='A', outcome=self.dump_out,
+            imported_outcome_text='21.10',
+        )
+        self.assertEqual(relink_dump_answer_key(self.ak), 1)
+        item.refresh_from_db()
+        self.assertIsNone(item.outcome_id)
+        data = AnswerKeyItemSerializer(item).data
+        self.assertEqual(data['topic_name'], 'FONKSİYONLAR')
+        self.assertNotEqual(data['topic_name'], 'Toplu Yükleme')
+
+    def test_relink_exact_child_code(self):
+        dump_child = Outcome.objects.create(
+            topic=self.dump, code='MATD-2', text='21.10.2',
+        )
+        item = AnswerKeyItem.objects.create(
+            answer_key=self.ak, section=self.section, question_number=2,
+            correct_answer='B', outcome=dump_child,
+            imported_outcome_text='21.10.2',
+        )
+        relink_dump_answer_key(self.ak)
+        item.refresh_from_db()
+        self.assertEqual(item.outcome_id, self.real_out.id)

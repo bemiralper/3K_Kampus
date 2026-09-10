@@ -17,6 +17,7 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
     section_name = serializers.CharField(source='section.name', read_only=True)
     outcome_code = serializers.SerializerMethodField()
     outcome_text = serializers.SerializerMethodField()
+    topic_name = serializers.SerializerMethodField()
 
     class Meta:
         model = AnswerKeyItem
@@ -24,7 +25,7 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
             'id', 'question_number', 'correct_answer',
             'is_cancelled', 'section', 'section_name',
             'outcome', 'sub_outcome',
-            'outcome_code', 'outcome_text',
+            'outcome_code', 'outcome_text', 'topic_name',
             'imported_outcome_text',
             'b_question_number',
         ]
@@ -35,6 +36,23 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
 
     def get_outcome_text(self, obj):
         return obj.display_outcome_text()
+
+    def get_topic_name(self, obj):
+        from ..services.curriculum_band import topic_display_name
+        from ..views.curriculum_views import (
+            _resolve_topic_for_import,
+            topic_is_bulk_dump,
+        )
+
+        topic = getattr(getattr(obj, 'outcome', None), 'topic', None)
+        if topic and not topic_is_bulk_dump(topic):
+            return topic_display_name(topic.name or '')
+        text = (obj.imported_outcome_text or obj.display_outcome_code() or '').strip()
+        subject = getattr(getattr(obj, 'section', None), 'subject', None)
+        resolved = _resolve_topic_for_import(subject, text) if text and subject else None
+        if resolved and not topic_is_bulk_dump(resolved):
+            return topic_display_name(resolved.name or '')
+        return ''
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
