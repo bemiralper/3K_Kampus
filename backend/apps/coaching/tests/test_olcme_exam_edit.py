@@ -348,8 +348,10 @@ class OlcmeExamEditAPITest(TestCase):
         self.assertFalse(Exam.objects.filter(name='Boş Kurum İçi').exists())
 
     def test_create_without_olcme_write_is_forbidden(self):
-        from apps.roller.models import UserRole
-        UserRole.objects.filter(user=self.user).delete()
+        # Ayrı kullanıcı: setUp'taki user.user_role OneToOne önbelleği
+        # silindikten sonra bile yazma iznini taşırdı.
+        other = User.objects.create_user(username='no-olcme', password='test')
+        self.client.force_authenticate(user=other)
         res = self.client.post(
             EXAMS_URL,
             {
