@@ -499,7 +499,7 @@ export default function YeniSinavPage() {
           </button>
         </div>
         <div className={y.metrics}>
-          <div className={y.metric}>
+          <div className={y.metric} title={typeMeta?.hint}>
             <span className={y.metricValue}>{typeMeta?.short || '—'}</span>
             <span className={y.metricLabel}><Icon name="exam" size={12} />Tür</span>
           </div>

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
+from datetime import date, time
 from dataclasses import dataclass
 from typing import Iterable
 
@@ -736,13 +737,33 @@ def create_exam_sessions(exam, rows: list[dict]) -> list[ExamSessionModel]:
         def _empty(val):
             return None if val in (None, '') else val
 
+        def _date(val):
+            val = _empty(val)
+            if val in (None,) or not isinstance(val, str):
+                return val
+            # Sihirbazdan gelen bozuk tarih tüm create isteğini 500'e
+            # düşürüyordu; geçersiz değeri boş bırakıp sınavı kurtarıyoruz.
+            try:
+                return date.fromisoformat(val)
+            except ValueError:
+                return None
+
+        def _time(val):
+            val = _empty(val)
+            if val in (None,) or not isinstance(val, str):
+                return val
+            try:
+                return time.fromisoformat(val)
+            except ValueError:
+                return None
+
         session = ExamSessionModel(
             exam=exam,
             name=name,
             order=int(raw.get('order') or i),
-            session_date=_empty(raw.get('session_date')),
-            start_time=_empty(raw.get('start_time')),
-            end_time=_empty(raw.get('end_time')),
+            session_date=_date(raw.get('session_date')),
+            start_time=_time(raw.get('start_time')),
+            end_time=_time(raw.get('end_time')),
             duration_minutes=_empty(raw.get('duration_minutes')),
             schedule_preference=pref,
             description=(raw.get('description') or '').strip(),

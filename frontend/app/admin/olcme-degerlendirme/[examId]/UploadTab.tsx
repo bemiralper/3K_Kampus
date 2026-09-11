@@ -289,7 +289,6 @@ export default function UploadTab({ exam }: Props) {
   const [mappings, setMappings]         = useState<FieldMapping[]>([]);
   const [selStart, setSelStart]         = useState<number | null>(null);
   const [selEnd, setSelEnd]             = useState<number | null>(null);
-  const [, setIsDragging]               = useState(false);
 
   // Context menu
   const [ctxMenu, setCtxMenu]           = useState<{ x: number; y: number } | null>(null);
@@ -302,7 +301,7 @@ export default function UploadTab({ exam }: Props) {
 
   // Previous sessions
   const [sessions, setSessions]         = useState<DATSessionItem[]>([]);
-  const [, setLoadingSessions]          = useState(false);
+  const [loadingSessions, setLoadingSessions] = useState(false);
   const [loadingSessionResults, setLoadingSessionResults] = useState(false);
 
   // Manuel eşleştirme dialog
@@ -449,7 +448,9 @@ export default function UploadTab({ exam }: Props) {
     try {
       const data = await uploadApi.listSessions(exam.id);
       setSessions(data);
-    } catch { /* */ }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Önceki yüklemeler listelenemedi.');
+    }
     setLoadingSessions(false);
   }, [exam.id]);
 
@@ -517,7 +518,6 @@ export default function UploadTab({ exam }: Props) {
 
     setSelStart(pos);
     setSelEnd(pos);
-    setIsDragging(true);
     draggingRef.current = true;
     setCtxMenu(null);
   };
@@ -531,16 +531,12 @@ export default function UploadTab({ exam }: Props) {
   const onGridMouseUp = (_e: React.MouseEvent) => {
     if (!draggingRef.current) return;
     draggingRef.current = false;
-    setIsDragging(false);
   };
 
   // Document-level mouseup to catch releases outside grid
   useEffect(() => {
     const handleGlobalMouseUp = () => {
-      if (draggingRef.current) {
-        draggingRef.current = false;
-        setIsDragging(false);
-      }
+      draggingRef.current = false;
     };
     document.addEventListener('mouseup', handleGlobalMouseUp);
     return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
@@ -701,7 +697,9 @@ export default function UploadTab({ exam }: Props) {
     try {
       await mappingTemplateApi.delete(tplId);
       fetchTemplates();
-    } catch { /* */ }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Şablon silinemedi.');
+    }
   };
 
   /* ── Parse & Score ──────────────────────────────────────────────────────── */
@@ -754,7 +752,9 @@ export default function UploadTab({ exam }: Props) {
       setResults([]);
       setTotalRows(0);
       setResultsSessionId(null);
-    } catch { /* */ }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Yükleme oturumu silinemedi.');
+    }
   };
 
   /* ── Session Sonuçlarını Yükle ─────────────────────────────────────────── */
@@ -1138,6 +1138,12 @@ export default function UploadTab({ exam }: Props) {
             </div>
 
             {/* Önceki Yüklemeler */}
+            {loadingSessions && sessions.length === 0 && (
+              <div className={s.prevSessionsLoading}>
+                <Icon name="refresh" size={14} className={s.olcmeSpinning} />
+                Önceki yüklemeler getiriliyor…
+              </div>
+            )}
             {sessions.length > 0 && (
               <div className={s.prevSessionsWrap}>
                 <h4 className={s.prevSessionsTitle}>

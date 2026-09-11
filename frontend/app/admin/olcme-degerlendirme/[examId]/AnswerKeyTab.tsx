@@ -11,6 +11,7 @@ import type {
   OutcomeItem,
 } from '../../../../components/olcme/types';
 import s from '../olcme.module.css';
+import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
 import {
   filterTopicsByQuery,
   findOutcomeByText,
@@ -148,11 +149,7 @@ export default function AnswerKeyTab({ exam }: Props) {
       const keys = await answerKeyApi.list(exam.id);
       setAnswerKeys(keys);
 
-      // En çok soruya sahip olan primary key'i seç
-      const primaryCandidates = keys.filter(k => k.is_primary && k.items.length > 0);
-      const primary = primaryCandidates.length > 0
-        ? primaryCandidates.reduce((best, k) => k.items.length > best.items.length ? k : best)
-        : keys.find(k => k.items.length > 0) ?? keys[0];
+      const primary = pickPrimaryAnswerKey(keys);
       if (primary && primary.items.length > 0) {
         setRows(
           primary.items.map(item => ({
@@ -177,7 +174,11 @@ export default function AnswerKeyTab({ exam }: Props) {
         setHasExistingData(false);
         setStep('answers');
       }
-    } catch { /* */ }
+    } catch (err: unknown) {
+      setMsg(`❌ Cevap anahtarı yüklenemedi: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`);
+      setRows(buildEmptyGrid());
+      setHasExistingData(false);
+    }
     finally { setLoading(false); }
   }, [exam.id, buildEmptyGrid]);
 
@@ -355,13 +356,23 @@ export default function AnswerKeyTab({ exam }: Props) {
 
   /** Toplu kaydet */
   const handleSave = async () => {
-    const filled = rows.filter(r => r.correct_answer && r.correct_answer !== ('' as AnswerChoice));
-    if (filled.length === 0) { setMsg('En az bir sorunun cevabını girin.'); return; }
+    const answered = rows.filter(r => r.correct_answer && r.correct_answer !== ('' as AnswerChoice));
+    if (answered.length === 0) { setMsg('En az bir sorunun cevabını girin.'); return; }
+
+    // Cevabı boş ama kazanımı işaretlenmiş satırlar da gönderilir; aksi
+    // hâlde sunucu tarafında o satırların kazanım bağı kayboluyordu.
+    const toSave = rows.filter(r =>
+      (r.correct_answer && r.correct_answer !== ('' as AnswerChoice))
+      || r.outcome_id !== null
+      || r.sub_outcome_id !== null
+      || r.imported_outcome_text
+      || r.b_question_number !== null,
+    );
 
     setSaving(true);
     setMsg('');
     try {
-      const items: BulkAnswerKeyRow[] = filled.map(r => ({
+      const items: BulkAnswerKeyRow[] = toSave.map(r => ({
         question_number: r.question_number,
         correct_answer: r.correct_answer,
         is_cancelled: r.is_cancelled,
@@ -419,12 +430,20 @@ export default function AnswerKeyTab({ exam }: Props) {
     return letters.sort();
   }, [answerKeys]);
 
-  const downloadPdf = (source?: 'uploaded' | 'generated') =>
-    examApi.downloadAnswerKeyPdf(exam.id, {
-      source,
-      copies: pdfCopies,
-      booklet: pdfBooklet || undefined,
-    }).catch(err => setMsg(err.message));
+  const downloadPdf = async (source?: 'uploaded' | 'generated') => {
+    setPdfBusy(source || 'generated');
+    try {
+      await examApi.downloadAnswerKeyPdf(exam.id, {
+        source,
+        copies: pdfCopies,
+        booklet: pdfBooklet || undefined,
+      });
+    } catch (err: unknown) {
+      setMsg(err instanceof Error ? err.message : 'PDF indirilemedi.');
+    } finally {
+      setPdfBusy('');
+    }
+  };
 
   const canDownloadPdf = Boolean(hasExistingData || pdfMeta?.can_generate || pdfMeta?.has_uploaded);
   const filledCount  = rows.filter(r => r.correct_answer && r.correct_answer !== ('' as AnswerChoice)).length;
@@ -494,7 +513,7 @@ export default function AnswerKeyTab({ exam }: Props) {
               title={canDownloadPdf ? 'Cevap anahtarı PDF indir' : 'Önce cevapları kaydedin'}
               onClick={() => downloadPdf('generated')}
             >
-              PDF indir
+              {pdfBusy ? 'Hazırlanıyor…' : 'PDF indir'}
             </button>
           </div>
         </div>
@@ -510,16 +529,6 @@ export default function AnswerKeyTab({ exam }: Props) {
             Cevap Anahtarı
           </h3>
           <div className="card-modern-header-actions">
-            <button
-              type="button"
-              className="btn-modern btn-primary"
-              disabled={pdfBusy !== '' || !canDownloadPdf}
-              title={canDownloadPdf ? 'Cevap anahtarı PDF indir' : 'Önce cevapları kaydedin'}
-              style={{ padding: '6px 14px', fontSize: 12 }}
-              onClick={() => downloadPdf('generated')}
-            >
-              PDF indir
-            </button>
             {hasExistingData && (
               <button className="btn-modern" onClick={handleReset}
                 style={{ padding: '6px 14px', fontSize: 12, color: 'var(--danger)', border: '1px solid #fecaca' }}>

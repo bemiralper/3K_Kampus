@@ -16,13 +16,13 @@ from django.db import transaction
 from django.db.models import Q
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, parser_classes, authentication_classes
-from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.parsers import MultiPartParser, FormParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from ..models import (
-    Exam, ExamSection, ExamSession,
-    AnswerKey, AnswerKeyItem,
+    Exam, ExamSession,
+    AnswerKey,
     StudentAnswer, StudentSectionScore,
 )
 from ..serializers.result import (
@@ -538,8 +538,6 @@ def parse_dat(request, exam_pk, session_pk):
     # ── Bölümler & Mapping ───────────────────────────────────────────────────
     sections = list(exam.sections.filter(is_sub_section=False).order_by('order'))
     sub_sections = list(exam.sections.filter(is_sub_section=True).order_by('order'))
-    all_sections_map = {sec.id: sec for sec in sections + sub_sections}
-    section_map = {sec.id: sec for sec in sections}
 
     data = request.data
     field_mappings = data.get('field_mappings', [])
@@ -608,7 +606,6 @@ def parse_dat(request, exam_pk, session_pk):
     # Section field'ların ana mı alt mı olduğunu belirle
     # Alt bölüm ID'leri → parent bölüm ID'leri haritası
     sub_section_to_parent = {sec.id: sec.parent_section_id for sec in sub_sections}
-    main_section_ids = {sec.id for sec in sections}
 
     # section_fields içindeki ID'leri ayıkla
     mapped_section_ids = set()

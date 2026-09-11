@@ -224,7 +224,7 @@ class OlcmeExamEditAPITest(TestCase):
     def test_add_sub_section_under_parent(self):
         parent = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/add_section/',
-            {'name': 'Fen Bilimleri', 'question_start': 1, 'question_end': 10},
+            {'name': 'Fen Bilimleri', 'question_start': 41, 'question_end': 50},
             format='json',
             **self.headers,
         )
@@ -242,7 +242,18 @@ class OlcmeExamEditAPITest(TestCase):
         fizik = next(row for row in res.json()['sections'] if row['name'] == 'Fizik')
         self.assertTrue(fizik['is_sub_section'])
         self.assertEqual(fizik['parent_section'], parent_id)
-        self.assertEqual((fizik['question_start'], fizik['question_end']), (1, 6))
+        self.assertEqual((fizik['question_start'], fizik['question_end']), (41, 46))
+
+    def test_add_section_rejects_overlapping_range(self):
+        """Aynı düzeydeki bölümler aynı soru numaralarını paylaşamaz."""
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/add_section/',
+            {'name': 'Matematik', 'question_start': 30, 'question_end': 60},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 400, res.content[:400])
+        self.assertIn('çakış', res.json()['error'])
 
     def test_deneme_fields_accept_null(self):
         """Deneme hizmeti/paketi temizlenebilmeli (SET_NULL alanlar)."""

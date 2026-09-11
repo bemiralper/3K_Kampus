@@ -189,6 +189,7 @@ class OturumAyarAPITest(RosterFixtureMixin, TestCase):
             kurum=self.other_kurum, sube=self.other_sube, ad='12. Sınıf', kod='12',
         )
         self.user = User.objects.create_user(username='ayar', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
         self.headers = {

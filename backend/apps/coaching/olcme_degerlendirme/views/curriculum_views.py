@@ -38,11 +38,8 @@ from ..serializers.curriculum import (
     SubjectDetailSerializer,
     SubjectCreateSerializer,
     TopicSerializer,
-    TopicCreateSerializer,
     OutcomeSerializer,
-    OutcomeCreateSerializer,
     SubOutcomeSerializer,
-    SubOutcomeCreateSerializer,
     BulkCurriculumImportSerializer,
     BulkTextImportSerializer,
 )

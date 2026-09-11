@@ -6,7 +6,7 @@ AnswerKeyItemSerializer     → Tekil soru cevabı
 BulkAnswerKeyImportSerializer → Toplu içe aktarma (sütun yapıştır + Excel)
 """
 from rest_framework import serializers
-from ..models import AnswerKey, AnswerKeyItem, ExamSection, Outcome
+from ..models import AnswerKey, AnswerKeyItem
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

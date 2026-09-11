@@ -15,7 +15,6 @@ from ..serializers.exam import (
     ExamDetailSerializer,
     ExamCreateSerializer,
     ExamUpdateSerializer,
-    ExamSectionSerializer,
     ExamSessionSerializer,
 )
 from ..services.exam_templates import (
@@ -28,11 +27,10 @@ from ..services.exam_templates import (
     _resolve_payload_subject,
     sync_optional_philosophy_section,
 )
-from shared.context import get_secili_kurum_id, get_secili_egitim_yili_id
+from shared.context import get_secili_egitim_yili_id
 from ..interfaces.sube_context import (
     assert_olcme_exam_access,
     mandatory_olcme_context,
-    resolve_mandatory_olcme_sube,
 )
 from ..views import CsrfExemptSessionAuthentication
 

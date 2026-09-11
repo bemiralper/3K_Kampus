@@ -8,7 +8,6 @@ Kaynak: ertansinansahin.com/yks-tyt-ayt-puan-hesaplama-ve-siralama-hesaplama
 Her yılın katsayıları ÖSYM sonuçlarından elde edilmiştir.
 """
 import math
-from decimal import Decimal
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  TYT KATSAYILARI  (ÖSYM — yıllara göre)
@@ -353,7 +352,7 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
     tyt_exam = exam.linked_tyt_exam
 
     # Lazy import — circular dependency önleme
-    from ..models.result import StudentAnswer, StudentSectionScore
+    from ..models.result import StudentAnswer
 
     tyt_answer = None
 

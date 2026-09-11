@@ -264,12 +264,6 @@ export const examApi = {
       `${BASE}/${examId}/participants/`,
     ),
 
-  saveParticipants: (examId: number, data: Record<string, unknown>) =>
-    request<{ count: number; participants: ExamParticipantRow[]; rooms: ExamRoomItem[] }>(
-      `${BASE}/${examId}/participants/`,
-      { method: 'POST', body: JSON.stringify(data) },
-    ),
-
   addParticipant: (
     examId: number,
     studentId: number,
@@ -347,20 +341,6 @@ export const examApi = {
       method: 'PUT',
       body: JSON.stringify({ audience }),
     }),
-
-  rosterExportUrl: (examId: number, kind: 'yoklama' | 'salon' | 'oturma') =>
-    `${BASE}/${examId}/roster-export/?kind=${kind}`,
-
-  downloadRoster: async (examId: number, kind: 'yoklama' | 'salon' | 'oturma') => {
-    const res = await fetch(`${BASE}/${examId}/roster-export/?kind=${kind}`, {
-      credentials: 'include',
-      headers: getContextHeaders(),
-    });
-    if (!res.ok) throw new Error('Liste indirilemedi.');
-    const blob = await res.blob();
-    const { downloadBlob } = await import('@/lib/download-file');
-    downloadBlob(blob, `${kind}.xlsx`);
-  },
 
   bulkAttendance: (
     examId: number,
@@ -631,10 +611,6 @@ export const uploadApi = {
       { method: 'POST', body: JSON.stringify(payload) },
     ),
 
-  /** Sınava ait sonuçlar */
-  listResults: (examId: number) =>
-    request<StudentAnswerItem[]>(`${BASE}/${examId}/results/`),
-
   /** Yükleme oturumlarını getir */
   listSessions: (examId: number) =>
     request<DATSessionItem[]>(`${BASE}/${examId}/results/sessions/`),
@@ -820,6 +796,7 @@ export const analysisApi = {
     if (alan) params.set('alan', alan);
     const res = await fetch(`${BASE}/${examId}/analysis/rankings/?${params}`, {
       credentials: 'include',
+      headers: getContextHeaders(),
     });
     if (!res.ok) {
       throw new Error(format === 'xlsx' ? 'Excel dışa aktarma başarısız' : 'CSV dışa aktarma başarısız');

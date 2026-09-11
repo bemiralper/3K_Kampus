@@ -102,10 +102,6 @@ export default function ExamDetailPage() {
     ? (requestedTab as TabKey)
     : 'genel';
 
-  /* Sınav oluşturuldu ama bazı oturumlar kaydedilemediyse uyarı gösterilir */
-  const sessionError = searchParams.get('sessionError');
-  const [sessionWarning, setSessionWarning] = useState(sessionError);
-
   const [exam, setExam]           = useState<ExamDetail | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
@@ -196,24 +192,6 @@ export default function ExamDetailPage() {
       />
 
       {actionError && <ErrorBar message={actionError} onClose={() => setActionError('')} />}
-
-      {sessionWarning && (
-        <div style={{
-          padding: '14px 20px', background: '#fffbeb', border: '1px solid #fde68a',
-          borderRadius: 12, color: '#92400e', marginBottom: 16, fontSize: 13,
-          display: 'flex', alignItems: 'center', gap: 12,
-        }}>
-          <span style={{ flex: 1 }}>
-            <strong>Sınav oluşturuldu</strong>, ancak şu oturumlar kaydedilemedi:{' '}
-            {sessionWarning}. Aşağıdaki <strong>Sınav Oturumları</strong> bölümünden
-            tekrar ekleyebilirsiniz.
-          </span>
-          <button onClick={() => setSessionWarning(null)} aria-label="Kapat"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18, color: '#b45309' }}>
-            ×
-          </button>
-        </div>
-      )}
 
       {/* ── Tab Nav ───────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, overflowX: 'auto', paddingBottom: 2 }}>
@@ -537,7 +515,10 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                             try {
                               const updated = await examApi.setOptionalPhilosophy(exam.id, include);
                               onExamUpdate(updated);
-                            } catch { /* */ }
+                            } catch (err) {
+                              e.target.checked = !include;
+                              setTabError(errText(err, 'Felsefe (Seçmeli) tercihi kaydedilemedi.'));
+                            }
                           }}
                         />
                         {exam.include_optional_philosophy !== false ? 'Dahil (Sosyal Bilimler / DKAB sonrası)' : 'Hariç'}
@@ -634,10 +615,14 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                             type="checkbox"
                             checked={exam.include_optional_philosophy !== false}
                             onChange={async e => {
+                              const include = e.target.checked;
                               try {
-                                const updated = await examApi.setOptionalPhilosophy(exam.id, e.target.checked);
+                                const updated = await examApi.setOptionalPhilosophy(exam.id, include);
                                 onExamUpdate(updated);
-                              } catch { /* */ }
+                              } catch (err) {
+                                e.target.checked = !include;
+                                setTabError(errText(err, 'Felsefe (Seçmeli) tercihi kaydedilemedi.'));
+                              }
                             }}
                           />
                           Felsefe (Seçmeli) dahil
@@ -826,7 +811,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
               key={sess.id}
               session={sess}
               index={idx}
-              editing={editing}
               onRemove={handleRemoveSession}
               onUpdate={handleUpdateSession}
             />
@@ -879,7 +863,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
           showTytSelect={showTytSelect}
           setShowTytSelect={setShowTytSelect}
           onExamUpdate={onExamUpdate}
-          onRefresh={onRefresh}
         />
       )}
     </div>
@@ -887,10 +870,9 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 }
 
 /* ── Session Card ──────────────────────────────────────────────────────────── */
-function SessionCard({ session, index, editing, onRemove, onUpdate }: {
+function SessionCard({ session, index, onRemove, onUpdate }: {
   session: ExamSessionItem;
   index: number;
-  editing: boolean;
   onRemove: (id: number) => void;
   onUpdate: (id: number, data: Record<string, unknown>) => void;
 }) {
@@ -1085,7 +1067,7 @@ function lookupNames(options: LookupItem[], ids: number[]) {
 function TytLinkCard({
   exam, tytExams, setTytExams, loadingTyt, setLoadingTyt,
   linkingTyt, setLinkingTyt, showTytSelect, setShowTytSelect,
-  onExamUpdate, onRefresh,
+  onExamUpdate,
 }: {
   exam: ExamDetail;
   tytExams: { id: number; name: string; exam_date: string | null; status: string; already_linked: boolean }[];
@@ -1097,8 +1079,9 @@ function TytLinkCard({
   showTytSelect: boolean;
   setShowTytSelect: (v: boolean) => void;
   onExamUpdate: (e: ExamDetail) => void;
-  onRefresh: () => void;
 }) {
+  const [linkError, setLinkError] = useState('');
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -1106,14 +1089,14 @@ function TytLinkCard({
       try {
         const data = await examApi.tytExams();
         if (!cancelled) setTytExams(data);
-      } catch { /* */ }
+      } catch (err) {
+        if (!cancelled) setLinkError(errText(err, 'TYT sınav listesi yüklenemedi.'));
+      }
       finally { if (!cancelled) setLoadingTyt(false); }
     })();
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const [linkError, setLinkError] = useState('');
 
   const handleLink = async (tytId: number) => {
     setLinkingTyt(true);

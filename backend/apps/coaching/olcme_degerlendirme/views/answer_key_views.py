@@ -32,7 +32,7 @@ from ..serializers.answer_key import (
     BulkAnswerKeyImportSerializer,
 )
 from . import CsrfExemptSessionAuthentication
-from ..interfaces.sube_context import get_exam_or_response, assert_olcme_exam_access
+from ..interfaces.sube_context import get_exam_or_response
 
 logger = logging.getLogger(__name__)
 

@@ -10,20 +10,13 @@ Tüm analiz endpoint'leri:
   - exam_analysis_classes     → Sınıf/Şube analizi
   - exam_analysis_strategy    → Strateji önerisi (otomatik yorum)
 """
-import math
 import logging
 import os
 import re
 from collections import defaultdict
-from decimal import Decimal
 
-from django.db.models import (
-    Avg, Sum, Max, Min, Count, Q, F, Value, CharField,
-    DecimalField, FloatField,
-)
-from django.db.models.functions import Concat, Cast
+from django.db.models import Max, Q
 
-from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes, renderer_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
@@ -32,7 +25,7 @@ from rest_framework.response import Response
 from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 
 from ..models import (
-    Exam, ExamSection, ExamSession, ExamSessionModel,
+    Exam, ExamSession, ExamSessionModel,
     AnswerKey, AnswerKeyItem,
     StudentAnswer, StudentSectionScore,
     Outcome, SubOutcome,
@@ -42,15 +35,13 @@ from ..interfaces.sube_context import get_exam_or_response
 from ..services.scoring import (
     calculate_score_for_exam,
     calculate_all_ayt_scores,
-    calculate_ayt_score,
     _get_linked_tyt_nets,
     estimate_ranking,
     calculate_percentile,
     calculate_std_dev,
 )
 
-from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
-from apps.sinif.domain.models import Sinif
+from apps.ogrenci.domain.models import OgrenciKayit
 
 logger = logging.getLogger(__name__)
 
@@ -710,7 +701,6 @@ def exam_analysis_summary(request, exam_pk):
 
     total_students = answers.count()
     nets = [_safe_float(a.total_net) for a in answers]
-    corrects = [a.total_correct for a in answers]
 
     is_ayt = exam.exam_type == 'YKS_AYT'
 
@@ -1498,8 +1488,6 @@ def exam_analysis_rankings(request, exam_pk):
     if not answers.exists():
         return Response({'rankings': [], 'message': 'Sonuç yok.'})
 
-    sec_map = _build_section_map(exam)
-
     # Section sıralama bilgisi (frontend tablo başlıkları için)
     all_sections = exam.sections.all().order_by('order')
     sections_info = []
@@ -1902,7 +1890,6 @@ def exam_analysis_strategy(request, exam_pk):
     if not answers.exists():
         return Response({'strategies': [], 'message': 'Sonuç yok.'})
 
-    total_students = answers.count()
     strategies = []
 
     # Ders bazlı analiz
@@ -1924,7 +1911,6 @@ def exam_analysis_strategy(request, exam_pk):
             continue
         avg_net = sum(nets) / len(nets)
         avg_empty = sum(data['empties']) / len(data['empties'])
-        avg_wrong = sum(data['wrongs']) / len(data['wrongs'])
         q_count = data.get('q_count', 1) or 1
 
         # Düşük net uyarısı
@@ -2061,14 +2047,16 @@ def exam_analysis_comparison(request, exam_pk):
     if err:
         return err
 
-    # Aynı türdeki son 5 sınav
+    # Aynı türdeki son 5 sınav — yalnız aynı kurum/şube ve silinmemiş olanlar.
     past_exams = (
         Exam.objects
         .filter(
             exam_type=exam.exam_type,
             kurum=exam.kurum,
+            is_active=True,
             status__in=['RESULTS_UPLOADED', 'COMPLETED'],
         )
+        .filter(Q(sube_id=exam.sube_id) if exam.sube_id else Q())
         .order_by('-exam_date', '-created_at')[:6]
     )
 

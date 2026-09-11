@@ -25,6 +25,13 @@ class MappingTemplate(models.Model):
         ('OZEL',        'Özel Sınav'),
     ]
 
+    kurum = models.ForeignKey(
+        'kurum.Kurum', on_delete=models.CASCADE,
+        related_name='olcme_mapping_sablonlari', verbose_name='Kurum',
+        null=True, blank=True,
+        help_text='Şablonlar kuruma özeldir; eşleştirmeler o kurumun bölüm '
+                  "ID'lerini taşıdığı için başka kuruma sızdırılmamalıdır.",
+    )
     name = models.CharField('Şablon Adı', max_length=120)
     exam_type = models.CharField(
         'Sınav Türü', max_length=20,

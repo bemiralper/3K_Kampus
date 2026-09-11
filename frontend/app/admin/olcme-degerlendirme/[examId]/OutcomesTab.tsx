@@ -12,6 +12,7 @@ import type {
   MatchResult,
 } from '../../../../components/olcme/types';
 import { topicDisplayName } from '../../../../components/olcme/curriculum-band';
+import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
 import {
   dottedParts,
   filterTopicsByQuery,
@@ -238,7 +239,14 @@ export default function OutcomesTab({ exam }: Props) {
     try {
       if (!autoLinkedRef.current) {
         autoLinkedRef.current = true;
-        try { await examApi.linkSubjects(exam.id); } catch { /* */ }
+        // Otomatik ders bağlama en iyi çaba: başarısız olursa kazanım ağacı
+        // yine yüklenir, ancak kullanıcı neden ders göremediğini bilmeli.
+        try {
+          await examApi.linkSubjects(exam.id);
+        } catch (err) {
+          setMsg('⚠️ Bölümlere müfredat dersi otomatik bağlanamadı: '
+            + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+        }
       }
       const [listedSubjects, freshExam, keys, subjectsTree] = await Promise.all([
         curriculumApi.listSubjects().catch(() => [] as SubjectItem[]),
@@ -301,7 +309,7 @@ export default function OutcomesTab({ exam }: Props) {
       setSubSections(ssInfos);
 
       // 4) Cevap anahtarı satırlarını OutcomeRow'a dönüştür
-      const primary = keys.find(k => k.is_primary) ?? keys[0];
+      const primary = pickPrimaryAnswerKey(keys);
       if (primary && primary.items.length > 0) {
         const newRows: OutcomeRow[] = primary.items.map(item => {
           // Bu sorunun ait olduğu alt bölümü bul
@@ -402,7 +410,7 @@ export default function OutcomesTab({ exam }: Props) {
     });
 
     // API'ye kaydet
-    const primary = answerKeys.find(k => k.is_primary) ?? answerKeys[0];
+    const primary = pickPrimaryAnswerKey(answerKeys);
     if (primary) {
       try {
         await answerKeyApi.updateItem(exam.id, primary.id, {
@@ -451,8 +459,12 @@ export default function OutcomesTab({ exam }: Props) {
   const handleBulkPaste = useCallback(async () => {
     if (!bulkSectionId || !bulkText.trim()) return;
 
-    const lines = bulkText.split('\n').map(l => l.trim()).filter(l => l.length > 0);
-    const primary = answerKeys.find(k => k.is_primary) ?? answerKeys[0];
+    // Boş satırlar atılmaz: soru sırası ile satır sırası birebir hizalı
+    // olmalı, aksi halde boş bırakılan sorudan sonrası kayıyordu.
+    const lines = bulkText.split('\n').map(l => l.trim());
+    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
+    if (lines.every(l => l === '')) return;
+    const primary = pickPrimaryAnswerKey(answerKeys);
     if (!primary) {
       setMsg('⚠️ Cevap anahtarı bulunamadı.');
       return;
@@ -582,7 +594,7 @@ export default function OutcomesTab({ exam }: Props) {
     if (!confirm('Tüm kazanım eşleştirmelerini kaldırmak istediğinize emin misiniz?')) return;
 
     setSaving(true);
-    const primary = answerKeys.find(k => k.is_primary) ?? answerKeys[0];
+    const primary = pickPrimaryAnswerKey(answerKeys);
     const newRows = [...rows];
 
     for (let i = 0; i < newRows.length; i++) {
@@ -1081,13 +1093,21 @@ export default function OutcomesTab({ exam }: Props) {
                 );
               })()}
 
-              <label className={s.checkRow} style={{ marginTop: 10, fontSize: 12 }}>
+              <label
+                className={s.checkRow}
+                style={{ marginTop: 10, fontSize: 12, opacity: bulkSectionId === 'all' ? 1 : 0.5 }}
+                title={bulkSectionId === 'all'
+                  ? 'Eşleşmeyen satırlar için müfredata yeni kazanım açılır.'
+                  : 'Yalnızca “Tüm bölümler” seçiliyken kullanılabilir.'}
+              >
                 <input
                   type="checkbox"
-                  checked={bulkCreateMissing}
+                  checked={bulkSectionId === 'all' && bulkCreateMissing}
+                  disabled={bulkSectionId !== 'all'}
                   onChange={e => setBulkCreateMissing(e.target.checked)}
                 />
                 Eşleşmeyenleri müfredata yeni kazanım olarak ekle
+                {bulkSectionId !== 'all' && ' (yalnızca “Tüm bölümler” modunda)'}
               </label>
 
               {bulkProgress && (

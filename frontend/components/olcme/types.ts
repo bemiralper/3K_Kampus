@@ -338,7 +338,8 @@ export const ANSWER_CHOICES = [
   { value: 'INVALID', label: 'İptal' },
 ] as const;
 
-export type AnswerChoice = typeof ANSWER_CHOICES[number]['value'];
+/** '' → doğru cevabı henüz girilmemiş satır (yalnız kazanım işaretli olabilir). */
+export type AnswerChoice = typeof ANSWER_CHOICES[number]['value'] | '';
 
 export interface AnswerKeyItem {
   id: number;
@@ -441,7 +442,9 @@ export interface MatchResult {
   outcome_text: string | null;
   topic_name: string | null;
   match_score: number;
-  match_type: 'topic' | 'outcome' | 'sub_outcome' | null;
+  match_type: 'topic' | 'outcome' | 'sub_outcome' | 'created' | null;
+  /** bulk-assign-outcomes: satır için müfredata yeni kazanım açıldı mı */
+  created?: boolean;
 }
 
 // ── Sonuç Yükleme (DAT Upload) ──────────────────────────────────────────────

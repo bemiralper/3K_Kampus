@@ -8,22 +8,17 @@ Endpoint:
 """
 import logging
 from collections import defaultdict
-from decimal import Decimal
 
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
-from ..models import (
-    Exam, ExamSection, StudentAnswer, StudentSectionScore,
-)
+from ..models import StudentAnswer
 from apps.coaching.services.coach_access import user_can_access_student
 from ..views import CsrfExemptSessionAuthentication
 from ..services.scoring import (
     calculate_score_for_exam,
     estimate_ranking,
-    calculate_percentile,
-    calculate_std_dev,
 )
 from ..services.scoring_settings import resolve_puan_yili
 
