@@ -1234,9 +1234,11 @@ def text_belongs_to_other_subject(text: str, home_subject) -> bool:
         return False
 
     in_home = (
-        Outcome.objects.filter(topic__subject_id=home_id, text__iexact=prose).exists()
+        Outcome.objects.filter(
+            topic__subject_id=home_id, text__iexact=prose, is_active=True,
+        ).exists()
         or SubOutcome.objects.filter(
-            outcome__topic__subject_id=home_id, text__iexact=prose,
+            outcome__topic__subject_id=home_id, text__iexact=prose, is_active=True,
         ).exists()
     )
     if in_home:
@@ -1244,9 +1246,9 @@ def text_belongs_to_other_subject(text: str, home_subject) -> bool:
 
     return (
         Outcome.objects.exclude(topic__subject_id=home_id)
-        .filter(text__iexact=prose).exists()
+        .filter(text__iexact=prose, is_active=True).exists()
         or SubOutcome.objects.exclude(outcome__topic__subject_id=home_id)
-        .filter(text__iexact=prose).exists()
+        .filter(text__iexact=prose, is_active=True).exists()
     )
 
 

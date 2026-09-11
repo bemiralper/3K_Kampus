@@ -80,6 +80,14 @@ class TextBelongsToOtherSubjectTest(CurriculumFixture):
         )
         self.assertFalse(text_belongs_to_other_subject('Kümeler', self.matematik))
 
+    def test_inactive_copy_under_home_still_counts_as_foreign(self):
+        """Temizlik is_active=False yapınca kopya ev derste durur; yine yabancı sayılmalı."""
+        Outcome.objects.create(
+            topic=self.mat_topic, code='21.5.2', text=TURKCE_METNI,
+            order=1, is_active=False,
+        )
+        self.assertTrue(text_belongs_to_other_subject(TURKCE_METNI, self.matematik))
+
     def test_sub_outcome_text_also_detected(self):
         outcome = Outcome.objects.get(code='21.5.1', topic__subject=self.turkce)
         SubOutcome.objects.create(
@@ -171,6 +179,21 @@ class BulkAssignDoesNotPolluteCurriculumTest(CurriculumFixture):
             f'{EXAMS_URL}{self.exam.id}/answer-keys/{self.key.id}/bulk-assign-outcomes/',
             {'texts': texts, 'create_if_missing': create_if_missing},
             format='json', **self.headers,
+        )
+
+    def test_inactive_copy_does_not_disable_the_guard(self):
+        """Canlıdaki pasif kopya, yeni yapıştırmanın tekrar yazılmasına izin vermemeli."""
+        Outcome.objects.create(
+            topic=self.mat_topic, code='21.5.2', text=TURKCE_METNI,
+            order=1, is_active=False,
+        )
+        before = Outcome.objects.filter(topic__subject=self.matematik, is_active=True).count()
+        res = self._assign([TURKCE_METNI])
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.assertEqual(res.json()['foreign_subject'], 1)
+        self.assertEqual(
+            Outcome.objects.filter(topic__subject=self.matematik, is_active=True).count(),
+            before,
         )
 
     def test_turkce_text_is_not_created_under_matematik(self):
