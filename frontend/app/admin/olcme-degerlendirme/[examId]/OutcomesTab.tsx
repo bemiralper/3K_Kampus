@@ -9,7 +9,6 @@ import type {
   SubjectItem,
   TopicItem,
   OutcomeItem,
-  MatchResult,
 } from '../../../../components/olcme/types';
 import { topicDisplayName } from '../../../../components/olcme/curriculum-band';
 import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
@@ -470,121 +469,55 @@ export default function OutcomesTab({ exam }: Props) {
       return;
     }
 
-    setSaving(true);
-
-    try {
-      if (bulkSectionId === 'all') {
-        setBulkProgress({ pct: 15, label: 'Soru sırasına göre dağıtılıyor…' });
-        const ordered = [...rows].sort((a, b) => a.question_number - b.question_number);
-        const aligned = ordered.map((_, i) => lines[i] ?? '');
-        setBulkProgress({ pct: 45, label: `${aligned.length} kazanım eşleştiriliyor…` });
-        const result = await answerKeyApi.bulkAssignOutcomes(
-          exam.id, primary.id, aligned, bulkCreateMissing,
-        );
-        setBulkProgress({ pct: 90, label: 'Sonuçlar uygulanıyor…' });
-        await fetchData();
-        setBulkProgress({ pct: 100, label: 'Tamamlandı' });
-        setSaving(false);
-        setBulkOpen(false);
-        setBulkText('');
-        setBulkProgress(null);
-        const leftover = Math.max(0, lines.length - result.total);
-        const parts = [
-          result.matched ? `${result.matched} eşleşti` : '',
-          result.created ? `${result.created} yeni eklendi` : '',
-        ].filter(Boolean).join(', ');
-        setMsg(
-          `✅ ${result.total} soruya kazanım işlendi${parts ? ` (${parts})` : ''}`
-          + (leftover ? ` · ⚠️ ${leftover} satır fazla, yok sayıldı.` : '.')
-          + (result.foreign_subject
-            ? ` · ⛔ ${result.foreign_subject} satır başka dersin kazanımı olduğu için`
-              + ' müfredata yazılmadı; satır sırasını kontrol edin.'
-            : ''),
-        );
-        return;
-      }
-
+    if (bulkSectionId !== 'all') {
       const ssInfo = subSections.find(ss => ss.section.id === bulkSectionId);
       if (!ssInfo || !ssInfo.subject) {
-        setSaving(false);
         setMsg('⚠️ Bu bölüme ders bağlanmamış. Önce üstteki listeden müfredat dersi bağlayın.');
         return;
       }
-
-      const sectionRows = rows
-        .map((r, idx) => ({ row: r, idx }))
-        .filter(item => item.row.section_id === bulkSectionId);
-
-      if (sectionRows.length === 0) {
-        setSaving(false);
+      if (!rows.some(r => r.section_id === bulkSectionId)) {
         setMsg('⚠️ Bu bölümde soru bulunamadı.');
         return;
       }
+    }
 
-      setBulkProgress({ pct: 20, label: 'Eşleştirme yapılıyor…' });
-      const { results } = await curriculumApi.matchOutcomes(ssInfo.subject.id, lines);
-      setBulkProgress({ pct: 60, label: 'Kazanımlar kaydediliyor…' });
+    setSaving(true);
 
-      let matched = 0;
-      let unmatched = 0;
-      const newRows = [...rows];
-      const updates: { item_id: number; outcome_id?: number | null; sub_outcome_id?: number | null; imported_outcome_text?: string }[] = [];
-
-      for (let i = 0; i < Math.min(results.length, sectionRows.length); i++) {
-        const result: MatchResult = results[i];
-        const { row, idx } = sectionRows[i];
-        newRows[idx] = {
-          ...newRows[idx],
-          imported_outcome_text: result.input_text,
-        };
-        if (result.outcome_id || (result.match_type === 'topic' && result.outcome_code)) {
-          newRows[idx] = {
-            ...newRows[idx],
-            outcome_id: result.outcome_id,
-            sub_outcome_id: result.sub_outcome_id ?? null,
-            outcome_code: result.outcome_code ?? '',
-            outcome_text: result.outcome_text ?? '',
-            topic_name: result.topic_name ?? '',
-            match_score: result.match_score,
-          };
-          matched++;
-          updates.push({
-            item_id: row.item_id,
-            outcome_id: result.outcome_id,
-            sub_outcome_id: result.sub_outcome_id ?? null,
-            imported_outcome_text: result.input_text,
-          });
-        } else {
-          unmatched++;
-          updates.push({
-            item_id: row.item_id,
-            imported_outcome_text: result.input_text,
-          });
-        }
-      }
-
-      if (updates.length) {
-        await answerKeyApi.bulkUpdateItems(exam.id, primary.id, updates);
-      }
-      setRows(newRows);
+    try {
+      // Tek bölüm de aynı backend ucundan geçer: yabancı ders müfredata yazılmaz.
+      setBulkProgress({ pct: 15, label: 'Soru sırasına göre dağıtılıyor…' });
+      const ordered = [...rows].sort((a, b) => a.question_number - b.question_number);
+      let lineIdx = 0;
+      const aligned = ordered.map(r => (
+        bulkSectionId === 'all' || r.section_id === bulkSectionId
+          ? (lines[lineIdx++] ?? '')
+          : ''
+      ));
+      const targeted = aligned.filter(Boolean).length;
+      setBulkProgress({ pct: 45, label: `${targeted} kazanım eşleştiriliyor…` });
+      const result = await answerKeyApi.bulkAssignOutcomes(
+        exam.id, primary.id, aligned, bulkCreateMissing,
+      );
+      setBulkProgress({ pct: 90, label: 'Sonuçlar uygulanıyor…' });
+      await fetchData();
       setBulkProgress({ pct: 100, label: 'Tamamlandı' });
       setSaving(false);
       setBulkOpen(false);
       setBulkText('');
       setBulkProgress(null);
-
-      const matchTypes = results.filter(r => r.outcome_id).reduce((acc, r) => {
-        const type = r.match_type === 'topic' ? '📂 Konu' : r.match_type === 'sub_outcome' ? '📎 Alt Kazanım' : '📋 Kazanım';
-        acc[type] = (acc[type] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-      const typeInfo = Object.entries(matchTypes).map(([k, v]) => `${k}: ${v}`).join(', ');
-
-      if (unmatched > 0) {
-        setMsg(`✅ ${matched} eşleştirildi (${typeInfo}) · ⚠️ ${unmatched} eşleşemedi.`);
-      } else {
-        setMsg(`✅ ${matched} kazanım başarıyla eşleştirildi. (${typeInfo})`);
-      }
+      const leftover = Math.max(0, lines.length - targeted);
+      const parts = [
+        result.matched ? `${result.matched} eşleşti` : '',
+        result.created ? `${result.created} yeni eklendi` : '',
+      ].filter(Boolean).join(', ');
+      setMsg(
+        `✅ ${result.total} soruya kazanım işlendi${parts ? ` (${parts})` : ''}`
+        + (leftover ? ` · ⚠️ ${leftover} satır fazla, yok sayıldı.` : '.')
+        + (result.foreign_subject
+          ? ` · ⛔ ${result.foreign_subject} satır başka dersin kazanımı olduğu için`
+            + ' müfredata yazılmadı; satır sırasını kontrol edin.'
+          : ''),
+      );
     } catch (err) {
       console.error('Bulk match error:', err);
       setSaving(false);
@@ -1099,19 +1032,15 @@ export default function OutcomesTab({ exam }: Props) {
 
               <label
                 className={s.checkRow}
-                style={{ marginTop: 10, fontSize: 12, opacity: bulkSectionId === 'all' ? 1 : 0.5 }}
-                title={bulkSectionId === 'all'
-                  ? 'Eşleşmeyen satırlar için müfredata yeni kazanım açılır.'
-                  : 'Yalnızca “Tüm bölümler” seçiliyken kullanılabilir.'}
+                style={{ marginTop: 10, fontSize: 12 }}
+                title="Eşleşmeyen satırlar için yalnız bu dersin müfredatına yeni kazanım açılır. Başka dersin metni yazılmaz."
               >
                 <input
                   type="checkbox"
-                  checked={bulkSectionId === 'all' && bulkCreateMissing}
-                  disabled={bulkSectionId !== 'all'}
+                  checked={bulkCreateMissing}
                   onChange={e => setBulkCreateMissing(e.target.checked)}
                 />
                 Eşleşmeyenleri müfredata yeni kazanım olarak ekle
-                {bulkSectionId !== 'all' && ' (yalnızca “Tüm bölümler” modunda)'}
               </label>
 
               {bulkProgress && (
