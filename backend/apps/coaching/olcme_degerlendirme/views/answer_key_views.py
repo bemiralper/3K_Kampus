@@ -465,6 +465,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     'match_score': 0,
                     'match_type': None,
                     'created': False,
+                    'foreign_subject': False,
                 }
                 if not text:
                     results.append(row)
@@ -492,8 +493,19 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                         _is_dotted_code,
                         _is_heading_code,
                         _resolve_topic_for_import,
+                        text_belongs_to_other_subject,
                         topic_is_bulk_dump,
                     )
+
+                    # Yanlış bölüme yapıştırılmış satır paylaşılan müfredata
+                    # yazılmamalı: bir kez yazılınca o ders tüm kurumlarda
+                    # başka dersin kazanımlarını göstermeye başlıyor.
+                    if text_belongs_to_other_subject(text, subject):
+                        item.imported_outcome_text = text
+                        item.save(update_fields=['imported_outcome_text'])
+                        row['foreign_subject'] = True
+                        results.append(row)
+                        continue
 
                     real_topic = _resolve_topic_for_import(subject, text)
                     if real_topic is None or topic_is_bulk_dump(real_topic):
@@ -549,13 +561,18 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     })
                     matched_count += 1
                 else:
+                    from ..views.curriculum_views import text_belongs_to_other_subject
+
                     item.imported_outcome_text = text
                     item.save(update_fields=['imported_outcome_text'])
+                    if subject and text_belongs_to_other_subject(text, subject):
+                        row['foreign_subject'] = True
                 results.append(row)
 
         return Response({
             'matched': matched_count,
             'created': created_count,
+            'foreign_subject': sum(1 for r in results if r.get('foreign_subject')),
             'total': len(items),
             'results': results,
         })

@@ -1211,6 +1211,45 @@ def _resolve_topic_for_import(subject, text):
     return None
 
 
+def outcome_prose(text: str) -> str:
+    """Baştaki noktalı kodu atıp yalnız kazanım metnini döner."""
+    stripped = (text or '').strip()
+    match = re.match(r'^\s*\d+(?:\.\d+)+\.?\s*', stripped)
+    return (stripped[match.end():] if match else stripped).strip()
+
+
+def text_belongs_to_other_subject(text: str, home_subject) -> bool:
+    """Yapıştırılan metin başka bir dersin kazanımı mı?
+
+    Kodlar dersler arasında meşru biçimde tekrar ettiği için yalnız metne
+    bakılır. Metin ev dersinde de varsa karar verilemez, serbest bırakılır.
+    Bu kontrol olmadan yanlış bölüme yapıştırılan satırlar, paylaşılan
+    müfredat ağacına o dersin kazanımı olarak yazılıyor ve tüm kurumlarda
+    dersler birbirine karışıyordu.
+    """
+    prose = outcome_prose(text)
+    home_id = getattr(home_subject, 'pk', None)
+    # Kısa metin ayırt edici değil (ör. "Kümeler"); yalnız kod girilmişse boş.
+    if not home_id or len(prose) < 12:
+        return False
+
+    in_home = (
+        Outcome.objects.filter(topic__subject_id=home_id, text__iexact=prose).exists()
+        or SubOutcome.objects.filter(
+            outcome__topic__subject_id=home_id, text__iexact=prose,
+        ).exists()
+    )
+    if in_home:
+        return False
+
+    return (
+        Outcome.objects.exclude(topic__subject_id=home_id)
+        .filter(text__iexact=prose).exists()
+        or SubOutcome.objects.exclude(outcome__topic__subject_id=home_id)
+        .filter(text__iexact=prose).exists()
+    )
+
+
 def _cached_match_single_text(cache: dict, text: str, subject):
     key = (getattr(subject, 'pk', None), text)
     if key not in cache:

@@ -560,6 +560,8 @@ export const answerKeyApi = {
     request<{
       matched: number;
       created: number;
+      /** Başka derse ait olduğu için yazılmayan satır sayısı */
+      foreign_subject: number;
       total: number;
       results: {
         item_id: number;
@@ -575,6 +577,8 @@ export const answerKeyApi = {
         match_score: number;
         match_type: string | null;
         created: boolean;
+        /** Metin başka dersin kazanımı — bu bölüme yazılmadı */
+        foreign_subject: boolean;
       }[];
     }>(
       `${BASE}/${examId}/answer-keys/${akId}/bulk-assign-outcomes/`,

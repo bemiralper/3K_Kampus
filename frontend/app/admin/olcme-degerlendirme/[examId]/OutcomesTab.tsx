@@ -495,7 +495,11 @@ export default function OutcomesTab({ exam }: Props) {
         ].filter(Boolean).join(', ');
         setMsg(
           `✅ ${result.total} soruya kazanım işlendi${parts ? ` (${parts})` : ''}`
-          + (leftover ? ` · ⚠️ ${leftover} satır fazla, yok sayıldı.` : '.'),
+          + (leftover ? ` · ⚠️ ${leftover} satır fazla, yok sayıldı.` : '.')
+          + (result.foreign_subject
+            ? ` · ⛔ ${result.foreign_subject} satır başka dersin kazanımı olduğu için`
+              + ' müfredata yazılmadı; satır sırasını kontrol edin.'
+            : ''),
         );
         return;
       }
