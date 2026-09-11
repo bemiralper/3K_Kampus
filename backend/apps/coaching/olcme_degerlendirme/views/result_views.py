@@ -284,6 +284,47 @@ def upload_dat(request, exam_pk):
 #  YARDIMCI — skorlama fonksiyonları
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def _assemble_section_answers(
+    line, sections, sub_sections, section_fields, total_questions,
+    use_sub_sections,
+):
+    """Her bölümün optik sütununu kendi global soru aralığına yerleştirir.
+
+    Bölümleri arka arkaya eklemek, bir sütunun genişliği bölümün soru
+    sayısıyla uyuşmadığında sonraki tüm bölümleri kaydırıyordu; hata en çok
+    son alt bölümde (TYT'de Biyoloji) birikip netleri bozuyordu. Aralığa
+    yazmak, yanlış genişlikteki bir sütunun etkisini o bölümle sınırlar.
+    """
+    span_end = max(
+        [sec.question_end for sec in sections] + [total_questions or 0]
+    )
+    slots = [' '] * span_end
+
+    def place(sec, field_key):
+        if field_key not in section_fields:
+            return
+        span = sec.question_end - sec.question_start + 1
+        start, end = section_fields[field_key]
+        chunk = line[start:end]
+        # Sütun dar geldiyse boşlukla tamamla, geniş geldiyse kırp.
+        chunk = (chunk + ' ' * span)[:span]
+        base = sec.question_start - 1
+        for offset, ch in enumerate(chunk):
+            pos = base + offset
+            if 0 <= pos < span_end:
+                slots[pos] = ch
+
+    for sec in sections:
+        children = [ss for ss in sub_sections if ss.parent_section_id == sec.id]
+        if use_sub_sections and children:
+            for child in sorted(children, key=lambda x: x.question_start):
+                place(child, f'ders_{child.id}')
+        else:
+            place(sec, f'ders_{sec.id}')
+
+    return ''.join(slots)
+
+
 def _score_answers(answers_raw, total_questions, booklet,
                    correct_map_a, b_to_a_map, correct_map_b,
                    sections, wrong_penalty, sub_sections=None,
@@ -536,8 +577,10 @@ def parse_dat(request, exam_pk, session_pk):
     ))
 
     # ── Bölümler & Mapping ───────────────────────────────────────────────────
-    sections = list(exam.sections.filter(is_sub_section=False).order_by('order'))
-    sub_sections = list(exam.sections.filter(is_sub_section=True).order_by('order'))
+    # Sıralama question_start'a göre: cevap dizisi global soru numarasıyla
+    # hizalanır, `order` alanı aralıklarla tutarsız olabilir.
+    sections = list(exam.sections.filter(is_sub_section=False).order_by('question_start'))
+    sub_sections = list(exam.sections.filter(is_sub_section=True).order_by('question_start'))
 
     data = request.data
     field_mappings = data.get('field_mappings', [])
@@ -708,44 +751,10 @@ def parse_dat(request, exam_pk, session_pk):
                     s, e = mapping['cevaplar']
                     answers_raw = line[s:e]
                 elif section_fields:
-                    answers_raw = ''
-                    if has_sub_section_mapping:
-                        # Alt bölüm bazlı eşleştirme — parent bölümleri
-                        # alt bölümlerden birleştirerek oluştur
-                        for sec in sections:
-                            children = [
-                                ss for ss in sub_sections
-                                if ss.parent_section_id == sec.id
-                            ]
-                            if children:
-                                # Alt bölümler eşleştirilmiş — sırayla birleştir
-                                for child in sorted(children, key=lambda x: x.order):
-                                    child_field = f'ders_{child.id}'
-                                    if child_field in section_fields:
-                                        sf_s, sf_e = section_fields[child_field]
-                                        answers_raw += line[sf_s:sf_e]
-                                    else:
-                                        q_count = child.question_end - child.question_start + 1
-                                        answers_raw += ' ' * q_count
-                            else:
-                                # Alt bölüm yok — ana bölümü kullan
-                                sec_field = f'ders_{sec.id}'
-                                if sec_field in section_fields:
-                                    sf_s, sf_e = section_fields[sec_field]
-                                    answers_raw += line[sf_s:sf_e]
-                                else:
-                                    q_count = sec.question_end - sec.question_start + 1
-                                    answers_raw += ' ' * q_count
-                    else:
-                        # Ana bölüm bazlı eşleştirme (mevcut davranış)
-                        for sec in sections:
-                            sec_field = f'ders_{sec.id}'
-                            if sec_field in section_fields:
-                                sf_s, sf_e = section_fields[sec_field]
-                                answers_raw += line[sf_s:sf_e]
-                            else:
-                                q_count = sec.question_end - sec.question_start + 1
-                                answers_raw += ' ' * q_count
+                    answers_raw = _assemble_section_answers(
+                        line, sections, sub_sections, section_fields,
+                        total_questions, has_sub_section_mapping,
+                    )
 
                 raw_id = (tc or sid if identity_is_tc else sid or tc) or str(row_num)
 
