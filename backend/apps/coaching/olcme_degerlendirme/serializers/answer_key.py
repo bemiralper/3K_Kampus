@@ -31,13 +31,12 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ['id']
 
-    def get_outcome_code(self, obj):
-        return obj.display_outcome_code()
+    def _topic_title(self, obj):
+        """Satırın konu başlığı — kazanım bağı yoksa girilen koddan çözülür.
 
-    def get_outcome_text(self, obj):
-        return obj.display_outcome_text()
-
-    def get_topic_name(self, obj):
+        Konu taraması ders başına bir kez yapılır: 120 soruluk anahtarda her
+        satır için ayrı tarama yapmak sekmeyi gözle görülür biçimde yavaşlatır.
+        """
         from ..services.curriculum_band import topic_display_name
         from ..views.curriculum_views import (
             _resolve_topic_for_import,
@@ -47,12 +46,40 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
         topic = getattr(getattr(obj, 'outcome', None), 'topic', None)
         if topic and not topic_is_bulk_dump(topic):
             return topic_display_name(topic.name or '')
+
         text = (obj.imported_outcome_text or obj.display_outcome_code() or '').strip()
         subject = getattr(getattr(obj, 'section', None), 'subject', None)
-        resolved = _resolve_topic_for_import(subject, text) if text and subject else None
-        if resolved and not topic_is_bulk_dump(resolved):
-            return topic_display_name(resolved.name or '')
+        if not text or not subject:
+            return ''
+
+        cache = getattr(self, '_topic_title_cache', None)
+        if cache is None:
+            cache = self._topic_title_cache = {}
+        key = (subject.id, text.lower())
+        if key not in cache:
+            resolved = _resolve_topic_for_import(subject, text)
+            cache[key] = (
+                topic_display_name(resolved.name or '')
+                if resolved and not topic_is_bulk_dump(resolved)
+                else ''
+            )
+        return cache[key]
+
+    def get_outcome_code(self, obj):
+        return obj.display_outcome_code()
+
+    def get_outcome_text(self, obj):
+        text = obj.display_outcome_text()
+        if text:
+            return text
+        # Başlık kodu (21.5) bilerek bir kazanıma bağlanmaz; açıklaması konu
+        # başlığıdır. Boş dönersek satır "Kazanım atanmamış" görünüyordu.
+        if obj.is_heading_row():
+            return self._topic_title(obj)
         return ''
+
+    def get_topic_name(self, obj):
+        return self._topic_title(obj)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

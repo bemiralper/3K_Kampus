@@ -163,5 +163,16 @@ class AnswerKeyItem(models.Model):
             return getattr(self.outcome, 'text', '') or ''
         return ''
 
+    def is_heading_row(self) -> bool:
+        """Girilen kod bir konu başlığı mı (21.5) — kazanım (21.5.1) değil mi?
+
+        Başlık kodları bilerek kazanıma bağlanmaz; açıklama olarak konu
+        başlığı gösterilir.
+        """
+        if self.outcome_id or self.sub_outcome_id:
+            return False
+        code = (self.imported_outcome_text or '').strip().rstrip('.')
+        return bool(re.fullmatch(r'\d+\.\d+', code))
+
     def __str__(self):
         return f'Soru {self.question_number}: {self.correct_answer}'
