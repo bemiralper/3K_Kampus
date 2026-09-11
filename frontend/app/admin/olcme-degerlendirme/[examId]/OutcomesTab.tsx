@@ -15,6 +15,7 @@ import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
 import {
   dottedParts,
   filterTopicsByQuery,
+  isHeadingCode,
   topicNameBelongsElsewhere,
 } from '../../../../components/olcme/outcome-search';
 import s from '../olcme.module.css';
@@ -325,13 +326,17 @@ export default function OutcomesTab({ exam }: Props) {
           const topicName = item.topic_name
             || (outcomeId && ssInfo ? findTopicForOutcome(ssInfo.topics, outcomeId) : '')
             || (ssInfo ? topicNameFromCode(ssInfo.topics, item.imported_outcome_text || outcomeCode) : '');
+          const importedCode = item.imported_outcome_text || item.outcome_code || '';
+          const headingHit = !outcomeId && isHeadingCode(importedCode) && !!(topicName || outcomeText);
           const matchScore = outcomeId
-            ? calcMatchScore(outcomeCode, outcomeText, {
+            ? (calcMatchScore(outcomeCode, outcomeText, {
                 id: outcomeId,
                 code: outcomeCode,
                 text: outcomeText,
-              })
-            : 0;
+              }) || 50)
+            : headingHit
+              ? 100
+              : 0;
 
           return {
             item_id: item.id,
@@ -346,7 +351,7 @@ export default function OutcomesTab({ exam }: Props) {
             outcome_code: outcomeCode,
             outcome_text: outcomeText,
             topic_name: topicName,
-            match_score: outcomeId ? matchScore || 50 : 0,
+            match_score: matchScore,
           };
         });
         setRows(newRows);

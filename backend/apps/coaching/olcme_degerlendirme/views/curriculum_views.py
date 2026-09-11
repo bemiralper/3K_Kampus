@@ -217,7 +217,9 @@ def subject_list(request):
     """
     if request.method == 'GET':
         from ..services.curriculum_heal import uygula_karisan_kazanim_temizligi
+        from ..services.exam_templates import purge_empty_exam_type_stubs
         uygula_karisan_kazanim_temizligi()
+        purge_empty_exam_type_stubs()
         exam_type = request.query_params.get('exam_type', None)
         band = (request.query_params.get('band') or '').strip().upper()
         qs = Subject.objects.annotate(
@@ -235,6 +237,11 @@ def subject_list(request):
         ).order_by('order', 'name')
         if exam_type and not band:
             qs = qs.filter(exam_type_filter__in=['ALL', exam_type])
+        # Boş TYT/AYT/LGS kopyalarını listede gösterme — asıl müfredat kısa kodda.
+        qs = qs.exclude(
+            Q(code__endswith='_TYT') | Q(code__endswith='_AYT') | Q(code__endswith='_LGS'),
+            topic_count=0,
+        )
         if band in ('YKS', 'LGS'):
             from ..services.curriculum_band import subjects_for_band
             allowed_ids = [s.id for s in subjects_for_band(band)]

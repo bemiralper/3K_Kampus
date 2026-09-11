@@ -25,6 +25,7 @@ from ..services.exam_templates import (
     ensure_sub_sections,
     _auto_link_subjects,
     _resolve_payload_subject,
+    purge_empty_exam_type_stubs,
     sync_optional_philosophy_section,
 )
 from shared.context import get_secili_egitim_yili_id
@@ -562,13 +563,14 @@ class ExamViewSet(viewsets.ModelViewSet):
     def link_subjects_action(self, request, pk=None):
         """
         Mevcut sınav bölümlerine müfredat derslerini (Subject) otomatik bağlar.
-        Zaten subject bağlı olan bölümlere dokunmaz.
+        Boş TYT/AYT kopyasına bağlı bölümleri asıl müfredat dersine taşır.
         """
         exam = self.get_object()
         from ..models.exam import ExamSection
         sync_optional_philosophy_section(exam)
         all_sections = list(ExamSection.objects.filter(exam=exam))
         _auto_link_subjects(exam, all_sections)
+        purge_empty_exam_type_stubs()
 
         linked_count = ExamSection.objects.filter(
             exam=exam, subject__isnull=False

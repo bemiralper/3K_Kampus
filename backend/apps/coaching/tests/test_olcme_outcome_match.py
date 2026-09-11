@@ -351,6 +351,30 @@ class UnboundHeadingRelinkTest(TestCase):
         self.assertEqual(data['outcome_text'], 'Fonksiyon kavramını açıklar.')
 
 
+class HeadingViaEmptyTytStubTest(TestCase):
+    """Bölüm boş TURKCE_TYT'ye bağlı olsa da 21.2 konu başlığını asıl dersten alır."""
+
+    def test_heading_21_2_uses_real_turkce_topic_title(self):
+        stub = Subject.objects.create(code='TURKCE_TYT', name='Türkçe', display_name='Türkçe')
+        real = Subject.objects.create(code='TURKCE', name='Türkçe', display_name='Türkçe')
+        Topic.objects.create(
+            subject=real, code='21.2', name='SHG21 · SÖZCÜKTE ANLAM',
+        )
+        exam = Exam.objects.create(name='Acil TYT', exam_type='YKS_TYT')
+        section = ExamSection.objects.create(
+            exam=exam, name='Türkçe', question_start=1, question_end=40, subject=stub,
+        )
+        ak = AnswerKey.objects.create(exam=exam, booklet='')
+        item = AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=1,
+            correct_answer='A', imported_outcome_text='21.2',
+        )
+        data = AnswerKeyItemSerializer(item).data
+        self.assertEqual(data['outcome_code'], '21.2')
+        self.assertEqual(data['topic_name'], 'SÖZCÜKTE ANLAM')
+        self.assertEqual(data['outcome_text'], 'SÖZCÜKTE ANLAM')
+
+
 class HeadingPrefixIsolationTest(TestCase):
     """21.1 Türkçe ünitesi 21.10 Geometri çocuklarını yutmamalı."""
 

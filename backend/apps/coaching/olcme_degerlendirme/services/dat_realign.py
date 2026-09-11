@@ -12,7 +12,7 @@ from ..models import AnswerKey, ExamSession, StudentAnswer, StudentSectionScore
 
 logger = logging.getLogger(__name__)
 
-CURRENT_ALIGN_VERSION = 1
+CURRENT_ALIGN_VERSION = 3
 
 
 def _read_dat_lines(session):
@@ -155,7 +155,8 @@ def realign_session(session) -> int:
         except ValueError:
             pass
     use_subs = any(sid in sub_ids for sid in mapped_ids)
-    total_questions = sum(sec.question_end - sec.question_start + 1 for sec in sections)
+    from ..views.result_views import exam_question_span
+    total_questions = exam_question_span(sections, sub_sections)
     wrong_penalty = exam.wrong_answer_count
 
     existing = list(

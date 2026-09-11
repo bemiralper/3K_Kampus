@@ -235,52 +235,52 @@ def get_default_duration(exam_type: str) -> int:
 _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
     'YKS_TYT': {
         # alt bölüm adı → (code, görünen ad, exam_type_filter)
-        'Türkçe':         ('TURKCE_TYT',     'Türkçe',          'YKS_TYT'),
-        'Tarih':          ('TARIH_TYT',      'Tarih',           'YKS_TYT'),
-        'Coğrafya':       ('COGRAFYA_TYT',   'Coğrafya',        'YKS_TYT'),
-        'Felsefe':        ('FELSEFE_TYT',    'Felsefe',         'YKS_TYT'),
-        OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE_TYT', 'Felsefe',    'YKS_TYT'),
-        'Din Kültürü':    ('DINKUL_TYT',     'Din Kültürü',     'YKS_TYT'),
-        'Matematik':      ('MAT_TYT',        'Matematik',       'YKS_TYT'),
-        'Geometri':       ('GEO_TYT',        'Geometri',        'YKS_TYT'),
-        'Fizik':          ('FIZ_TYT',        'Fizik',           'YKS_TYT'),
-        'Kimya':          ('KIM_TYT',        'Kimya',           'YKS_TYT'),
-        'Biyoloji':       ('BIO_TYT',        'Biyoloji',        'YKS_TYT'),
+        'Türkçe':         ('TURKCE',     'Türkçe',          'YKS_TYT'),
+        'Tarih':          ('TARIH',      'Tarih',           'YKS_TYT'),
+        'Coğrafya':       ('COGRAFYA',   'Coğrafya',        'YKS_TYT'),
+        'Felsefe':        ('FELSEFE',    'Felsefe',         'YKS_TYT'),
+        OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE', 'Felsefe',    'YKS_TYT'),
+        'Din Kültürü':    ('DKAB',       'Din Kültürü',     'YKS_TYT'),
+        'Matematik':      ('MATEMATIK',  'Matematik',       'YKS_TYT'),
+        'Geometri':       ('GEOMETRI',   'Geometri',        'YKS_TYT'),
+        'Fizik':          ('FIZIK',      'Fizik',           'YKS_TYT'),
+        'Kimya':          ('KIMYA',      'Kimya',           'YKS_TYT'),
+        'Biyoloji':       ('BIYOLOJI',   'Biyoloji',        'YKS_TYT'),
     },
     'YKS_AYT': {
-        'Türk Dili ve Edebiyatı':          ('TDE_AYT',      'Türk Dili ve Edebiyatı', 'YKS_AYT'),
-        'Tarih-1':                          ('TARIH1_AYT',   'Tarih-1',                'YKS_AYT'),
-        'Coğrafya-1':                       ('COG1_AYT',     'Coğrafya-1',             'YKS_AYT'),
-        'Tarih-2':                          ('TARIH2_AYT',   'Tarih-2',                'YKS_AYT'),
-        'Coğrafya-2':                       ('COG2_AYT',     'Coğrafya-2',             'YKS_AYT'),
-        'Felsefe Grubu':                    ('FELSEFE_AYT',  'Felsefe Grubu',          'YKS_AYT'),
-        'Din Kültürü ve Ahlak Bilgisi':     ('DKAB_AYT',     'Din Kültürü ve Ahlak Bilgisi', 'YKS_AYT'),
-        'Matematik':                        ('MAT_AYT',      'Matematik',              'YKS_AYT'),
-        'Geometri':                         ('GEO_AYT',      'Geometri',               'YKS_AYT'),
-        'Fizik':                            ('FIZ_AYT',      'Fizik',                  'YKS_AYT'),
-        'Kimya':                            ('KIM_AYT',      'Kimya',                  'YKS_AYT'),
-        'Biyoloji':                         ('BIO_AYT',      'Biyoloji',               'YKS_AYT'),
+        'Türk Dili ve Edebiyatı':          ('TDE',       'Türk Dili ve Edebiyatı', 'YKS_AYT'),
+        'Tarih-1':                          ('TARIH',     'Tarih',                  'YKS_AYT'),
+        'Coğrafya-1':                       ('COGRAFYA',  'Coğrafya',               'YKS_AYT'),
+        'Tarih-2':                          ('TARIH',     'Tarih',                  'YKS_AYT'),
+        'Coğrafya-2':                       ('COGRAFYA',  'Coğrafya',               'YKS_AYT'),
+        'Felsefe Grubu':                    ('FELSEFE',   'Felsefe',                'YKS_AYT'),
+        'Din Kültürü ve Ahlak Bilgisi':     ('DKAB',      'Din Kültürü ve Ahlak Bilgisi', 'YKS_AYT'),
+        'Matematik':                        ('MATEMATIK', 'Matematik',              'YKS_AYT'),
+        'Geometri':                         ('GEOMETRI',  'Geometri',               'YKS_AYT'),
+        'Fizik':                            ('FIZIK',     'Fizik',                  'YKS_AYT'),
+        'Kimya':                            ('KIMYA',     'Kimya',                  'YKS_AYT'),
+        'Biyoloji':                         ('BIYOLOJI',  'Biyoloji',               'YKS_AYT'),
     },
     'LGS': {
-        'Türkçe':          ('TURKCE_LGS',    'Türkçe',          'LGS'),
-        'İnkılap Tarihi':  ('INKILAP_LGS',   'İnkılap Tarihi',  'LGS'),
-        'Din Kültürü':     ('DINKUL_LGS',    'Din Kültürü',     'LGS'),
-        'Yabancı Dil':     ('YABDIL_LGS',    'Yabancı Dil',     'LGS'),
-        'Matematik':       ('MAT_LGS',       'Matematik',       'LGS'),
-        'Fen Bilimleri':   ('FEN_LGS',       'Fen Bilimleri',   'LGS'),
+        'Türkçe':          ('TURKCE',    'Türkçe',          'LGS'),
+        'İnkılap Tarihi':  ('INKILAP',   'İnkılap Tarihi',  'LGS'),
+        'Din Kültürü':     ('DKAB',      'Din Kültürü',     'LGS'),
+        'Yabancı Dil':     ('INGILIZCE', 'Yabancı Dil',     'LGS'),
+        'Matematik':       ('MATEMATIK', 'Matematik',       'LGS'),
+        'Fen Bilimleri':   ('FEN',       'Fen Bilimleri',   'LGS'),
     },
     'DENEME': {
-        'Türkçe':         ('TURKCE_TYT',     'Türkçe',          'YKS_TYT'),
-        'Tarih':          ('TARIH_TYT',      'Tarih',           'YKS_TYT'),
-        'Coğrafya':       ('COGRAFYA_TYT',   'Coğrafya',        'YKS_TYT'),
-        'Felsefe':        ('FELSEFE_TYT',    'Felsefe',         'YKS_TYT'),
-        OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE_TYT', 'Felsefe',    'YKS_TYT'),
-        'Din Kültürü':    ('DINKUL_TYT',     'Din Kültürü',     'YKS_TYT'),
-        'Matematik':      ('MAT_TYT',        'Matematik',       'YKS_TYT'),
-        'Geometri':       ('GEO_TYT',        'Geometri',        'YKS_TYT'),
-        'Fizik':          ('FIZ_TYT',        'Fizik',           'YKS_TYT'),
-        'Kimya':          ('KIM_TYT',        'Kimya',           'YKS_TYT'),
-        'Biyoloji':       ('BIO_TYT',        'Biyoloji',        'YKS_TYT'),
+        'Türkçe':         ('TURKCE',     'Türkçe',          'YKS_TYT'),
+        'Tarih':          ('TARIH',      'Tarih',           'YKS_TYT'),
+        'Coğrafya':       ('COGRAFYA',   'Coğrafya',        'YKS_TYT'),
+        'Felsefe':        ('FELSEFE',    'Felsefe',         'YKS_TYT'),
+        OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE', 'Felsefe',    'YKS_TYT'),
+        'Din Kültürü':    ('DKAB',       'Din Kültürü',     'YKS_TYT'),
+        'Matematik':      ('MATEMATIK',  'Matematik',       'YKS_TYT'),
+        'Geometri':       ('GEOMETRI',   'Geometri',        'YKS_TYT'),
+        'Fizik':          ('FIZIK',      'Fizik',           'YKS_TYT'),
+        'Kimya':          ('KIMYA',      'Kimya',           'YKS_TYT'),
+        'Biyoloji':       ('BIYOLOJI',   'Biyoloji',        'YKS_TYT'),
     },
 }
 
@@ -288,38 +288,59 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
 _SUBJECT_CODE_SUFFIXES = ('_TYT', '_AYT', '_LGS')
 
 
-def _resolve_curriculum_subject(code: str, display_name: str, exam_type_filter: str):
-    """
-    Müfredat dersini bul. Şablon kodu (FELSEFE_TYT) ile canlıdaki kısa kod
-    (FELSEFE) veya aynı isimli ders varsa onu kullan; yeni boş ders açma.
-    """
-    from ..models.curriculum import Subject
+def _subject_has_curriculum(subject) -> bool:
+    return bool(subject) and subject.topics.exists()
 
-    subject = Subject.objects.filter(code=code).first()
-    if subject:
-        return subject
 
-    aliases = [
+def _alias_codes(code: str) -> list[str]:
+    return [
         code[: -len(suffix)]
         for suffix in _SUBJECT_CODE_SUFFIXES
         if code.endswith(suffix)
     ]
-    if aliases:
-        subject = Subject.objects.filter(code__in=aliases).first()
-        if subject:
-            return subject
 
-    subject = (
-        Subject.objects.filter(name__iexact=display_name).first()
-        or Subject.objects.filter(display_name__iexact=display_name)
-        .exclude(display_name='')
-        .first()
+
+def _resolve_curriculum_subject(code: str, display_name: str, exam_type_filter: str):
+    """
+    Müfredat dersini bul. Şablon kodu (FELSEFE_TYT) ile canlıdaki kısa kod
+    (FELSEFE) veya aynı isimli ders varsa onu kullan; yeni boş ders açma.
+
+    Boş TYT/AYT kopyası (0 konu) duruyorsa kazanımlı asıl derse düş.
+    """
+    from django.db.models import Q
+
+    from ..models.curriculum import Subject
+
+    by_code = Subject.objects.filter(code=code).first()
+    aliases = _alias_codes(code)
+    by_alias = Subject.objects.filter(code__in=aliases).first() if aliases else None
+    if _subject_has_curriculum(by_alias):
+        return by_alias
+    if _subject_has_curriculum(by_code):
+        return by_code
+    if by_alias:
+        return by_alias
+
+    named = list(
+        Subject.objects.filter(
+            Q(name__iexact=display_name)
+            | (Q(display_name__iexact=display_name) & ~Q(display_name=''))
+        )
     )
-    if subject:
-        return subject
+    named_with = next((s for s in named if _subject_has_curriculum(s)), None)
+    if not named_with:
+        extra = Subject.objects.filter(name__istartswith=display_name)
+        named_with = next((s for s in extra if _subject_has_curriculum(s)), None)
+    if named_with:
+        return named_with
+    if by_code:
+        return by_code
+    if named:
+        return named[0]
 
+    create_code = aliases[0] if aliases else code
     subject, _created = Subject.objects.get_or_create(
-        code=code,
+        code=create_code,
         defaults={
             'name': display_name,
             'display_name': display_name,
@@ -329,10 +350,36 @@ def _resolve_curriculum_subject(code: str, display_name: str, exam_type_filter: 
     return subject
 
 
+def purge_empty_exam_type_stubs() -> int:
+    """Kazanımsız TYT/AYT/LGS kopyalarını sil; bölümleri asıl derse taşı."""
+    from django.db.models import Count, Q
+
+    from ..models.curriculum import Subject
+    from ..models.exam import ExamSection
+
+    stubs = list(
+        Subject.objects.annotate(topic_count=Count('topics')).filter(
+            Q(code__endswith='_TYT') | Q(code__endswith='_AYT') | Q(code__endswith='_LGS'),
+            topic_count=0,
+        )
+    )
+    deleted = 0
+    for stub in stubs:
+        replacement = _resolve_curriculum_subject(
+            stub.code, stub.name or stub.display_name, stub.exam_type_filter or 'YKS_TYT',
+        )
+        if replacement.id != stub.id:
+            ExamSection.objects.filter(subject=stub).update(subject=replacement)
+        if not stub.exam_sections.exists() and not stub.topics.exists():
+            stub.delete()
+            deleted += 1
+    return deleted
+
+
 def _felsefe_subject_for_exam(exam, sections: list):
     """Felsefe (Seçmeli) ayrı ders değil; TYT Felsefe müfredatını paylaşır."""
     for section in sections:
-        if section.name == 'Felsefe' and section.subject_id:
+        if section.name == 'Felsefe' and _subject_has_curriculum(section.subject):
             return section.subject
 
     from ..models.exam import ExamSection
@@ -343,7 +390,7 @@ def _felsefe_subject_for_exam(exam, sections: list):
         .select_related('subject')
         .first()
     )
-    if sibling:
+    if sibling and _subject_has_curriculum(sibling.subject):
         return sibling.subject
 
     return _resolve_curriculum_subject('FELSEFE_TYT', 'Felsefe', 'YKS_TYT')
@@ -389,7 +436,7 @@ def _auto_link_subjects(exam, sections: list) -> None:
                 section.save(update_fields=['subject'])
             continue
 
-        if section.subject_id:
+        if section.subject_id and _subject_has_curriculum(section.subject):
             continue
 
         section_name = section.name
@@ -404,22 +451,11 @@ def _auto_link_subjects(exam, sections: list) -> None:
         subject = None
         if mapping:
             code, display_name, _legacy_filter = mapping
-            existing = Subject.objects.filter(code=code).first()
-            if existing and not subject_allowed_for_exam(exam, existing):
+            subject = _resolve_curriculum_subject(code, display_name, default_filter)
+            if subject and not subject_allowed_for_exam(exam, subject):
                 subject = (
                     existing_by_name.get(_name_key(section_name))
                     or existing_by_name.get(_name_key(display_name))
-                )
-            elif existing:
-                subject = existing
-            else:
-                subject, _created = Subject.objects.get_or_create(
-                    code=code,
-                    defaults={
-                        'name': display_name,
-                        'display_name': display_name,
-                        'exam_type_filter': default_filter,
-                    },
                 )
         else:
             subject = existing_by_name.get(_name_key(section_name))

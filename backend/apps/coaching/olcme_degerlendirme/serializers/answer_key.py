@@ -49,6 +49,12 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
 
         text = (obj.imported_outcome_text or obj.display_outcome_code() or '').strip()
         subject = getattr(getattr(obj, 'section', None), 'subject', None)
+        if subject and not subject.topics.exists():
+            from ..services.exam_templates import _resolve_curriculum_subject
+            code = getattr(subject, 'code', '') or ''
+            subject = _resolve_curriculum_subject(
+                code, getattr(subject, 'name', '') or '', 'YKS_TYT',
+            )
         if not text or not subject:
             return ''
 

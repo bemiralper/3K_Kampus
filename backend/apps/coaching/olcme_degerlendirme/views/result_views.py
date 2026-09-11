@@ -35,6 +35,19 @@ from ..interfaces.sube_context import get_exam_or_response
 logger = logging.getLogger(__name__)
 
 
+def exam_question_span(sections, sub_sections=None) -> int:
+    """Skorlanacak son global soru no.
+
+    Seçmeli felsefe gibi ara alt bölümler ana bölüm uzunluklarının
+    toplamına girmez ama numarayı kaydırır (TYT 120 soru → 1–125).
+    Toplamı kullanmak Biyoloji gibi sondaki alt bölümü keser.
+    """
+    ends = [sec.question_end for sec in sections]
+    if sub_sections:
+        ends.extend(sec.question_end for sec in sub_sections)
+    return max(ends) if ends else 0
+
+
 def _normalize_name(name: str) -> str:
     """Türkçe karakter ve büyük/küçük harf normalleştirme."""
     if not name:
@@ -295,9 +308,11 @@ def _assemble_section_answers(
     son alt bölümde (TYT'de Biyoloji) birikip netleri bozuyordu. Aralığa
     yazmak, yanlış genişlikteki bir sütunun etkisini o bölümle sınırlar.
     """
-    span_end = max(
-        [sec.question_end for sec in sections] + [total_questions or 0]
+    span_end = exam_question_span(
+        sections, sub_sections if use_sub_sections else None,
     )
+    if total_questions:
+        span_end = max(span_end, total_questions)
     slots = [' '] * span_end
 
     def place(sec, field_key):
@@ -686,9 +701,7 @@ def parse_dat(request, exam_pk, session_pk):
     # En yaygın uzunluğa göre kısa satırları başa boşluk ekleyerek hizala.
     lines = _normalize_lines(lines)
 
-    total_questions = sum(
-        sec.question_end - sec.question_start + 1 for sec in sections
-    )
+    total_questions = exam_question_span(sections, sub_sections)
     wrong_penalty = exam.wrong_answer_count
 
     # ── Öğrenci eşleştirme hazırlığı ────────────────────────────────────────
@@ -965,7 +978,7 @@ def update_student_booklet(request, exam_pk, answer_pk):
 
     sections = list(exam.sections.filter(is_sub_section=False).order_by('order'))
     sub_sections = list(exam.sections.filter(is_sub_section=True).order_by('order'))
-    total_questions = sum(sec.question_end - sec.question_start + 1 for sec in sections)
+    total_questions = exam_question_span(sections, sub_sections)
     wrong_penalty = exam.wrong_answer_count
 
     # Mevcut answers_dict'ten cevap string'i oluştur

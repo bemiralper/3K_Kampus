@@ -10,6 +10,7 @@ from apps.coaching.olcme_degerlendirme.services.exam_templates import (
     _resolve_curriculum_subject,
     get_template_sections,
     get_template_sub_sections,
+    purge_empty_exam_type_stubs,
 )
 
 
@@ -19,6 +20,48 @@ class ResolveCurriculumSubjectTest(TestCase):
         resolved = _resolve_curriculum_subject('FELSEFE_TYT', 'Felsefe', 'YKS_TYT')
         self.assertEqual(resolved.id, existing.id)
         self.assertFalse(Subject.objects.filter(code='FELSEFE_TYT').exists())
+
+    def test_prefers_named_curriculum_over_empty_tyt_stub(self):
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Topic
+
+        stub = Subject.objects.create(code='BIO_TYT', name='Biyoloji', display_name='Biyoloji')
+        real = Subject.objects.create(code='BIYOLOJI', name='Biyoloji', display_name='Biyoloji')
+        Topic.objects.create(subject=real, code='9.1', name='Hücre')
+        resolved = _resolve_curriculum_subject('BIO_TYT', 'Biyoloji', 'YKS_TYT')
+        self.assertEqual(resolved.id, real.id)
+        self.assertEqual(stub.topics.count(), 0)
+
+    def test_creates_short_code_not_tyt_alias(self):
+        resolved = _resolve_curriculum_subject('FELSEFE_TYT', 'Felsefe', 'YKS_TYT')
+        self.assertEqual(resolved.code, 'FELSEFE')
+        self.assertFalse(Subject.objects.filter(code='FELSEFE_TYT').exists())
+
+    def test_purges_empty_tyt_stub_after_relink(self):
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Topic
+
+        stub = Subject.objects.create(code='BIO_TYT', name='Biyoloji', display_name='Biyoloji')
+        real = Subject.objects.create(code='BIYOLOJI', name='Biyoloji', display_name='Biyoloji')
+        Topic.objects.create(subject=real, code='9.1', name='Hücre')
+        exam = Exam.objects.create(name='TYT', exam_type='YKS_TYT')
+        bio = ExamSection.objects.create(
+            exam=exam, name='Biyoloji', question_start=120, question_end=125, subject=stub,
+        )
+        self.assertEqual(purge_empty_exam_type_stubs(), 1)
+        bio.refresh_from_db()
+        self.assertEqual(bio.subject_id, real.id)
+        self.assertFalse(Subject.objects.filter(code='BIO_TYT').exists())
+
+    def test_din_kulturu_uses_longer_curriculum_name(self):
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Topic
+
+        stub = Subject.objects.create(code='DINKUL_TYT', name='Din Kültürü', display_name='Din Kültürü')
+        real = Subject.objects.create(
+            code='DKAB', name='Din Kültürü ve Ahlak Bilgisi', display_name='DKAB',
+        )
+        Topic.objects.create(subject=real, code='9.1', name='İnanç')
+        resolved = _resolve_curriculum_subject('DINKUL_TYT', 'Din Kültürü', 'YKS_TYT')
+        self.assertEqual(resolved.id, real.id)
+        self.assertEqual(stub.topics.count(), 0)
 
 
 class OptionalPhilosophySharesFelsefeSubjectTest(TestCase):
@@ -95,3 +138,25 @@ class OptionalPhilosophyIsSocialSubSectionTest(TestCase):
                 exam=exam, name=OPTIONAL_PHILOSOPHY_NAME, is_sub_section=False,
             ).exists()
         )
+
+
+class EmptyTytStubRelinkTest(TestCase):
+    """Sınav bölümü boş BIO_TYT kopyasına bağlıysa asıl Biyoloji'ye taşınır."""
+
+    def test_biyoloji_section_leaves_empty_stub(self):
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Topic
+
+        stub = Subject.objects.create(code='BIO_TYT', name='Biyoloji', display_name='Biyoloji')
+        real = Subject.objects.create(code='BIYOLOJI', name='Biyoloji', display_name='Biyoloji')
+        Topic.objects.create(subject=real, code='9.1', name='Hücre')
+        exam = Exam.objects.create(name='Acil TYT', exam_type='YKS_TYT')
+        fen = ExamSection.objects.create(
+            exam=exam, name='Fen Bilimleri', question_start=106, question_end=125,
+        )
+        bio = ExamSection.objects.create(
+            exam=exam, name='Biyoloji', question_start=120, question_end=125,
+            is_sub_section=True, parent_section=fen, subject=stub,
+        )
+        _auto_link_subjects(exam, [fen, bio])
+        bio.refresh_from_db()
+        self.assertEqual(bio.subject_id, real.id)

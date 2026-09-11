@@ -40,6 +40,11 @@ export function isDottedCode(value: string): boolean {
   return /^\d+(?:\.\d+)+$/.test((value || '').trim().replace(/\.+$/, ''));
 }
 
+/** Konu başlığı kodu: 21.10 evet, 21.10.1 hayır. */
+export function isHeadingCode(value: string): boolean {
+  return /^\d+\.\d+$/.test((value || '').trim().replace(/\.+$/, ''));
+}
+
 /** 21.1 → 21.1.2 evet; 21.1 → 21.10.2 hayır. */
 export function codeQueryHits(code: string | null | undefined, query: string): boolean {
   const q = (query || '').trim().replace(/\.+$/, '').toLowerCase();

@@ -12,6 +12,7 @@ from apps.coaching.olcme_degerlendirme.models.exam import Exam, ExamSection
 from apps.coaching.olcme_degerlendirme.views.result_views import (
     _assemble_section_answers,
     _score_answers,
+    exam_question_span,
 )
 
 
@@ -247,3 +248,54 @@ class BiyolojiNetTest(TestCase):
         )
         self.assertEqual(bio.correct, 7)
         self.assertEqual(float(bio.net), 7.0)
+
+
+class OptionalPhilosophyQuestionSpanTest(TestCase):
+    """Seçmeli felsefe 61–65 ekler; Fen/Biyoloji 106–125 / 120–125 olur.
+
+    Ana bölüm uzunlukları toplamı 120 kalır; skor aralığı son soru no (125)
+    olmazsa Biyoloji 121–125 hiç sayılmaz.
+    """
+
+    def setUp(self):
+        self.turkce = _Sec(1, 1, 40)
+        self.sosyal = _Sec(2, 41, 60)
+        self.mat = _Sec(3, 66, 105)
+        self.fen = _Sec(4, 106, 125)
+        self.felsefe = _Sec(5, 61, 65, parent=2)
+        self.fizik = _Sec(6, 106, 114, parent=4)
+        self.kimya = _Sec(7, 115, 119, parent=4)
+        self.biyoloji = _Sec(8, 120, 125, parent=4)
+        self.sections = [self.turkce, self.sosyal, self.mat, self.fen]
+        self.subs = [self.felsefe, self.fizik, self.kimya, self.biyoloji]
+
+    def test_span_is_last_question_not_main_sum(self):
+        self.assertEqual(sum(s.question_end - s.question_start + 1 for s in self.sections), 120)
+        self.assertEqual(exam_question_span(self.sections, self.subs), 125)
+
+    def test_biyoloji_six_questions_are_scored(self):
+        answers = ['A'] * 125
+        answers[119] = 'E'  # 120
+        answers[120] = 'A'
+        answers[121] = 'B'
+        answers[122] = 'C'
+        answers[123] = 'D'
+        answers[124] = 'E'
+        correct_map = {q: {'answer': 'A', 'is_cancelled': False} for q in range(1, 126)}
+        for q, ch in zip(range(120, 126), 'EABCDE'):
+            correct_map[q] = {'answer': ch, 'is_cancelled': False}
+
+        _, _, scores_cut, _ = _score_answers(
+            ''.join(answers), 120, 'A', correct_map, {}, {},
+            self.sections, 4, self.subs,
+        )
+        self.assertEqual(scores_cut[self.biyoloji.id]['correct'], 1)
+        self.assertEqual(scores_cut[self.biyoloji.id]['empty'], 5)
+
+        _, _, scores, _ = _score_answers(
+            ''.join(answers), 125, 'A', correct_map, {}, {},
+            self.sections, 4, self.subs,
+        )
+        biyo = scores[self.biyoloji.id]
+        self.assertEqual((biyo['correct'], biyo['wrong'], biyo['empty']), (6, 0, 0))
+        self.assertEqual(biyo['net'], 6.0)

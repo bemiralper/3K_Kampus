@@ -74,10 +74,12 @@ class Command(BaseCommand):
                     'section_id': item.section_id,
                 }
 
-        total_questions = sum(sec.question_end - sec.question_start + 1 for sec in sections)
+        from apps.coaching.olcme_degerlendirme.views.result_views import (
+            _score_answers,
+            exam_question_span,
+        )
+        total_questions = exam_question_span(sections, sub_sections)
         wrong_penalty = exam.wrong_answer_count
-
-        from apps.coaching.olcme_degerlendirme.views.result_views import _score_answers
 
         sessions = ExamSession.objects.filter(exam=exam)
         answers = (
