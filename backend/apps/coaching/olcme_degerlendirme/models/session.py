@@ -56,6 +56,11 @@ class ExamSession(models.Model):
     field_mappings = models.JSONField(
         'Alan Eşleştirmeleri', default=list, blank=True,
     )
+    align_version = models.PositiveSmallIntegerField(
+        'Hizalama Sürümü', default=0,
+        help_text='0: sütunlar ardışık eklenmiş eski parse. '
+                  '1+: her bölüm kendi question_start ofsetine yazılır.',
+    )
 
     # İstatistik
     total_rows      = models.PositiveIntegerField('Toplam Satır', default=0)

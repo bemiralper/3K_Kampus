@@ -1,0 +1,63 @@
+"""Canlıda başka dersin altına yazılmış kazanımları pasifleştirir."""
+from collections import defaultdict
+
+from django.db import transaction
+
+from ..models.answer_key import AnswerKeyItem
+from ..models.curriculum import Outcome
+from ..views.curriculum_views import outcome_prose
+
+MIN_METIN_UZUNLUGU = 12
+
+
+def karisan_kazanimlari_bul():
+    """Metni birden çok derste geçen kazanımlarda, sonradan yazılanları döner."""
+    by_text = defaultdict(list)
+    qs = (
+        Outcome.objects
+        .filter(is_active=True)
+        .select_related('topic', 'topic__subject')
+        .order_by('id')
+    )
+    for outcome in qs.iterator():
+        prose = outcome_prose(outcome.text or '').lower()
+        if len(prose) < MIN_METIN_UZUNLUGU:
+            continue
+        by_text[prose].append(outcome)
+
+    kopyalar = []
+    for grup in by_text.values():
+        subject_ids = {o.topic.subject_id for o in grup}
+        if len(subject_ids) < 2:
+            continue
+        ozgun_subject = grup[0].topic.subject_id
+        kopyalar.extend(o for o in grup if o.topic.subject_id != ozgun_subject)
+    return kopyalar
+
+
+def uygula_karisan_kazanim_temizligi():
+    """Kopyaları pasifleştirir, cevap anahtarı bağlarını koparır.
+
+    Dönüş: (pasifleştirilen_kazanim, koparılan_satır)
+    """
+    kopyalar = karisan_kazanimlari_bul()
+    if not kopyalar:
+        return 0, 0
+
+    ids = [o.id for o in kopyalar]
+    bagli = 0
+    with transaction.atomic():
+        items = list(
+            AnswerKeyItem.objects.filter(outcome_id__in=ids).select_related('outcome')
+        )
+        bagli = len(items)
+        for item in items:
+            if not (item.imported_outcome_text or '').strip():
+                item.imported_outcome_text = item.outcome.text
+            item.outcome = None
+            item.sub_outcome = None
+            item.save(
+                update_fields=['imported_outcome_text', 'outcome', 'sub_outcome'],
+            )
+        Outcome.objects.filter(id__in=ids).update(is_active=False)
+    return len(kopyalar), bagli

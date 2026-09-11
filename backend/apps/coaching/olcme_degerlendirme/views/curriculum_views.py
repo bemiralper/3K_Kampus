@@ -216,6 +216,8 @@ def subject_list(request):
     POST → Yeni ders oluştur
     """
     if request.method == 'GET':
+        from ..services.curriculum_heal import uygula_karisan_kazanim_temizligi
+        uygula_karisan_kazanim_temizligi()
         exam_type = request.query_params.get('exam_type', None)
         band = (request.query_params.get('band') or '').strip().upper()
         qs = Subject.objects.annotate(
@@ -262,6 +264,8 @@ def subject_detail(request, subject_pk):
     subject = get_object_or_404(Subject, pk=subject_pk)
 
     if request.method == 'GET':
+        from ..services.curriculum_heal import uygula_karisan_kazanim_temizligi
+        uygula_karisan_kazanim_temizligi()
         subject = _subject_tree_qs().get(pk=subject.pk)
         serializer = SubjectDetailSerializer(subject)
         return Response(serializer.data)
@@ -1286,6 +1290,49 @@ def relink_dump_answer_key(answer_key) -> int:
         item.save(update_fields=['outcome_id', 'sub_outcome_id', 'imported_outcome_text'])
         updated += 1
     return updated
+
+
+def detach_polluted_text_binds(answer_key) -> int:
+    """FK aynı derste olsa bile metni başka dersten kopyalanmış bağı çöz.
+
+    create_if_missing Türkçe metnini Matematik Outcome'u olarak yazınca
+    detach_foreign_outcome_binds göremez (subject_id ev dersiyle aynı).
+    Temizlik kopyayı pasifleştirdikten sonra bu fonksiyon bağı koparır.
+    """
+    items = list(
+        answer_key.items.select_related(
+            'outcome__topic__subject', 'section__subject',
+        ).exclude(outcome_id=None)
+    )
+    updated = 0
+    for item in items:
+        outcome = item.outcome
+        if not outcome:
+            continue
+        home = getattr(getattr(item, 'section', None), 'subject', None)
+        stale = (not outcome.is_active) or (
+            home is not None and text_belongs_to_other_subject(outcome.text, home)
+        )
+        if not stale:
+            continue
+        if not (item.imported_outcome_text or '').strip():
+            item.imported_outcome_text = outcome.text
+        item.outcome_id = None
+        item.sub_outcome_id = None
+        item.save(update_fields=['imported_outcome_text', 'outcome_id', 'sub_outcome_id'])
+        updated += 1
+    return updated
+
+
+def heal_answer_key_curriculum(answer_key) -> None:
+    """GET sırasında canlı kirliliği temizle: kopya → pasif, yanlış bağ → kopar."""
+    from ..services.curriculum_heal import uygula_karisan_kazanim_temizligi
+    uygula_karisan_kazanim_temizligi()
+    relink_dump_answer_key(answer_key)
+    detach_false_heading_binds(answer_key)
+    detach_foreign_outcome_binds(answer_key)
+    detach_polluted_text_binds(answer_key)
+    relink_unbound_answer_key(answer_key)
 
 
 def detach_foreign_outcome_binds(answer_key) -> int:

@@ -860,6 +860,8 @@ def parse_dat(request, exam_pk, session_pk):
             session.field_mappings = field_mappings
             session.student_id_field = student_id_field
             session.first_line_is_header = first_line_is_header
+            from ..services.dat_realign import CURRENT_ALIGN_VERSION
+            session.align_version = CURRENT_ALIGN_VERSION
             session.save()
 
     except Exception as e:
@@ -1018,9 +1020,11 @@ def list_results(request, exam_pk):
     """
     GET /exams/{exam_pk}/results/
     """
-    _, err = get_exam_or_response(request, exam_pk)
+    exam, err = get_exam_or_response(request, exam_pk)
     if err:
         return err
+    from ..services.dat_realign import realign_exam_if_needed
+    realign_exam_if_needed(exam)
 
     qs = (
         StudentAnswer.objects

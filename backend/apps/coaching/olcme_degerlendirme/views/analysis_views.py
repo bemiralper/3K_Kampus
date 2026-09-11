@@ -295,6 +295,8 @@ def _get_exam_or_404(request, exam_pk):
         ).get(pk=exam.pk)
     except Exam.DoesNotExist:
         return None, Response({'error': 'Sınav bulunamadı.'}, status=404)
+    from ..services.dat_realign import realign_exam_if_needed
+    realign_exam_if_needed(exam)
     return exam, None
 
 

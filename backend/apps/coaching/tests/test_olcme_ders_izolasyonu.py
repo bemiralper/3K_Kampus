@@ -216,6 +216,27 @@ class BulkAssignDoesNotPolluteCurriculumTest(CurriculumFixture):
             ).exists(),
         )
 
+    def test_answer_key_get_heals_already_written_copy(self):
+        """Kazanımlar sekmesi açılınca canlıdaki kopya pasifleşir, bağ kopar."""
+        kopya = Outcome.objects.create(
+            topic=self.mat_topic, code='21.5.2', text=TURKCE_METNI, order=1,
+        )
+        item = AnswerKeyItem.objects.get(answer_key=self.key, question_number=1)
+        item.outcome = kopya
+        item.imported_outcome_text = TURKCE_METNI
+        item.save()
+
+        res = self.client.get(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/{self.key.id}/',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        kopya.refresh_from_db()
+        item.refresh_from_db()
+        self.assertFalse(kopya.is_active)
+        self.assertIsNone(item.outcome_id)
+        self.assertEqual(item.imported_outcome_text, TURKCE_METNI)
+
     def test_input_text_is_still_preserved_for_the_user(self):
         """Satır reddedilse de kullanıcının yapıştırdığı metin kaybolmamalı."""
         self._assign([TURKCE_METNI])

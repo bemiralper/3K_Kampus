@@ -91,17 +91,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
-        from ..views.curriculum_views import (
-            detach_false_heading_binds,
-            detach_foreign_outcome_binds,
-            relink_dump_answer_key,
-            relink_unbound_answer_key,
-        )
+        from ..views.curriculum_views import heal_answer_key_curriculum
         for answer_key in self.filter_queryset(self.get_queryset()):
-            relink_dump_answer_key(answer_key)
-            detach_false_heading_binds(answer_key)
-            detach_foreign_outcome_binds(answer_key)
-            relink_unbound_answer_key(answer_key)
+            heal_answer_key_curriculum(answer_key)
         return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -114,17 +106,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
-        from ..views.curriculum_views import (
-            detach_false_heading_binds,
-            detach_foreign_outcome_binds,
-            relink_dump_answer_key,
-            relink_unbound_answer_key,
-        )
+        from ..views.curriculum_views import heal_answer_key_curriculum
         obj = self.get_object()
-        relink_dump_answer_key(obj)
-        detach_false_heading_binds(obj)
-        detach_foreign_outcome_binds(obj)
-        relink_unbound_answer_key(obj)
+        heal_answer_key_curriculum(obj)
         return super().retrieve(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):

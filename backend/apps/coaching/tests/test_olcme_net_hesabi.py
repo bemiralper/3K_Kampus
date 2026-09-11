@@ -186,3 +186,64 @@ class BiyolojiNetTest(TestCase):
         biyo = section_scores[self.biyoloji.id]
         self.assertEqual((biyo['correct'], biyo['wrong'], biyo['empty']), (3, 4, 0))
         self.assertEqual(biyo['net'], 2.0)
+
+    def test_realign_from_stored_dat_fixes_shifted_biyoloji(self):
+        from django.core.files.base import ContentFile
+
+        from apps.coaching.olcme_degerlendirme.models.answer_key import (
+            AnswerKey, AnswerKeyItem,
+        )
+        from apps.coaching.olcme_degerlendirme.models.result import (
+            StudentAnswer, StudentSectionScore,
+        )
+        from apps.coaching.olcme_degerlendirme.models.session import ExamSession
+        from apps.coaching.olcme_degerlendirme.services.dat_realign import (
+            realign_session,
+        )
+
+        key = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
+        for q in range(1, 11):
+            AnswerKeyItem.objects.create(
+                answer_key=key, section=self.turkce,
+                question_number=q, correct_answer='A',
+            )
+        for q in range(11, 19):
+            AnswerKeyItem.objects.create(
+                answer_key=key, section=self.fizik,
+                question_number=q, correct_answer='B',
+            )
+        for q, ch in enumerate('EABCDEA', start=19):
+            AnswerKeyItem.objects.create(
+                answer_key=key, section=self.biyoloji,
+                question_number=q, correct_answer=ch,
+            )
+
+        line = 'A' * 10 + 'B' * 8 + 'EABCDEA'
+        session = ExamSession.objects.create(
+            exam=self.exam,
+            first_line_is_header=False,
+            field_mappings=[
+                {'field': f'ders_{self.turkce.id}', 'start': 0, 'end': 10, 'label': 'Türkçe'},
+                {'field': f'ders_{self.fizik.id}', 'start': 10, 'end': 19, 'label': 'Fizik'},
+                {'field': f'ders_{self.biyoloji.id}', 'start': 18, 'end': 25, 'label': 'Biyoloji'},
+            ],
+            align_version=0,
+        )
+        session.dat_file.save('t.dat', ContentFile(line.encode()), save=True)
+
+        sa = StudentAnswer.objects.create(
+            session=session, raw_student_id='1',
+            answers={str(i): 'X' for i in range(1, 26)},
+            total_net=0,
+        )
+        StudentSectionScore.objects.create(
+            student_answer=sa, section=self.biyoloji,
+            correct=0, wrong=7, empty=0, net=0,
+        )
+
+        self.assertEqual(realign_session(session), 1)
+        bio = StudentSectionScore.objects.get(
+            student_answer=sa, section=self.biyoloji,
+        )
+        self.assertEqual(bio.correct, 7)
+        self.assertEqual(float(bio.net), 7.0)
