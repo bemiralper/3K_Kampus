@@ -22,6 +22,9 @@ class NotificationSummaryView(CommunicationAPIView):
         qs = filter_conversations_for_user(
             qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
         )
+        department = (request.query_params.get('department') or '').strip()
+        if department:
+            qs = qs.filter(department=department)
         unread_qs = qs.filter(unread_count_coach__gt=0)
         unread_qs = ConversationRepository.exclude_cleared_notifications(
             unread_qs, request.user,

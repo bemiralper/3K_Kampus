@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { resolveInboxPortal, rewriteConversationInboxUrl } from '@/lib/communication-api';
 import {
   fetchScreenNotifications,
   markScreenNotificationShown,
@@ -15,6 +16,7 @@ const SESSION_SOUND_KEY = 'gorev-ekran-sound-played';
 
 export default function GorevEkranMesajiOverlay() {
   const router = useRouter();
+  const pathname = usePathname() || '';
   const { loading: kurumLoading, activeKurum } = useKurum();
   const [queue, setQueue] = useState<AppNotification[]>([]);
   const [current, setCurrent] = useState<AppNotification | null>(null);
@@ -81,7 +83,10 @@ export default function GorevEkranMesajiOverlay() {
       setCurrent(remaining[0]);
     } else {
       setCurrent(null);
-      if (goToTask && url) router.push(url);
+      if (goToTask && url) {
+        const portal = resolveInboxPortal(pathname);
+        router.push(rewriteConversationInboxUrl(url, portal) || url);
+      }
     }
   };
 

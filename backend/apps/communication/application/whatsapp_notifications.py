@@ -164,17 +164,28 @@ def _load_users(user_ids) -> dict[int, object]:
         return {}
 
 
-def _inbox_url_for_user(user, conversation_id) -> str:
+def _inbox_url_for_user(user, conversation) -> str:
+    """Sohbetin departmanına göre portal URL'si.
+
+    Muhasebe thread'i asla /admin'e gitmesin: yalnızca muhasebe portalı
+    kullanan kullanıcı admin rotasında dashboard'a düşer, mesaj kaybolur.
     """
-    Koç profili olan ve communication.manage olmayan kullanıcı → /coach/...
-    Muhasebe personeli (koç değil, yönetici değil) → /muhasebe/...
-    Diğerleri → /admin/...
-    """
+    conversation_id = getattr(conversation, 'id', conversation)
+    department = getattr(conversation, 'department', None)
     try:
         from apps.coaching.services.coach_access import get_coach_profile
         from apps.communication.application.account_resolver import _is_accounting_staff
+        from apps.communication.domain.enums import CommunicationDepartment
         from shared.permissions import user_has_any_permission
 
+        if department == CommunicationDepartment.ACCOUNTING:
+            return f'/muhasebe/iletisim/sohbetler?conversation={conversation_id}'
+        if department == CommunicationDepartment.COACHING and get_coach_profile(user):
+            if not (
+                getattr(user, 'is_superuser', False)
+                or user_has_any_permission(user, 'communication.manage')
+            ):
+                return f'/coach/sohbetler?conversation={conversation_id}'
         if getattr(user, 'is_superuser', False) or user_has_any_permission(
             user, 'communication.manage',
         ):
@@ -216,7 +227,7 @@ def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
     for user_id in user_ids:
         user = users_by_id.get(user_id)
         url = (
-            _inbox_url_for_user(user, conversation.id)
+            _inbox_url_for_user(user, conversation)
             if user is not None
             else f'/admin/iletisim/sohbetler?conversation={conversation.id}'
         )
@@ -288,7 +299,7 @@ def notify_sla_breach(conversation, *, sla_minutes: int) -> int:
     for user_id in user_ids:
         user = users_by_id.get(user_id)
         url = (
-            _inbox_url_for_user(user, conversation.id)
+            _inbox_url_for_user(user, conversation)
             if user is not None
             else f'/admin/iletisim/sohbetler?conversation={conversation.id}'
         )

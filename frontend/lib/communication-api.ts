@@ -637,10 +637,15 @@ export interface NotificationSummary {
   cards?: ConversationListItem[];
 }
 
-export async function fetchNotificationSummary(): Promise<NotificationSummary> {
+export async function fetchNotificationSummary(options?: {
+  department?: string;
+}): Promise<NotificationSummary> {
+  const search = new URLSearchParams();
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
-  return request<NotificationSummary>(`/notifications/summary/${qs}`);
+  if (kurumId) search.set('kurum_id', kurumId);
+  if (options?.department) search.set('department', options.department);
+  const qs = search.toString();
+  return request<NotificationSummary>(`/notifications/summary/${qs ? `?${qs}` : ''}`);
 }
 
 export async function fetchConversationMessages(
@@ -1634,6 +1639,31 @@ export function conversationInboxPath(
   const resolved: InboxPortal =
     portal === true ? 'admin' : portal === false ? 'coach' : portal;
   return `${conversationInboxBase(resolved)}?conversation=${conversationId}`;
+}
+
+const INBOX_PATH_RE =
+  /\/(admin\/iletisim\/(sohbetler|mesajlar)|coach\/(sohbetler|mesajlar)|muhasebe\/iletisim\/(sohbetler|mesajlar))/;
+
+export function extractConversationIdFromUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url, 'http://local');
+    return parsed.searchParams.get('conversation');
+  } catch {
+    const match = url.match(/[?&]conversation=([^&]+)/);
+    return match?.[1] ? decodeURIComponent(match[1]) : null;
+  }
+}
+
+/** Bildirimdeki admin/koç/eski mesajlar yolunu o anki portalın sohbetler sayfasına çevir. */
+export function rewriteConversationInboxUrl(
+  url: string | null | undefined,
+  portal: InboxPortal,
+): string | null {
+  if (!url) return null;
+  const convId = extractConversationIdFromUrl(url);
+  if (!convId || !INBOX_PATH_RE.test(url)) return url;
+  return conversationInboxPath(convId, portal);
 }
 
 /** Veli sohbetinde "… velisi" alt satırı; öğrenci sohbetinde veli adı (varsa). */

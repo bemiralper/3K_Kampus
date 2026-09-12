@@ -414,6 +414,13 @@ def user_can_access_conversation(user, conversation) -> bool:
     if _user_sent_in_conversation(user, conversation):
         return True
 
+    from apps.communication.application.account_resolver import _is_accounting_staff
+    if (
+        _is_accounting_staff(user)
+        and getattr(conversation, 'department', None) == CommunicationDepartment.ACCOUNTING
+    ):
+        return True
+
     if not _user_can_access_conversation_account(user, conversation):
         return False
 
@@ -427,7 +434,9 @@ def user_can_access_conversation(user, conversation) -> bool:
                 return conversation.ogrenci_id in allowed
             return False
         if _has_staff_messaging_access(user):
-            return bool(conversation.ogrenci_id or conversation.veli_id)
+            return bool(
+                conversation.ogrenci_id or conversation.veli_id or conversation.contact_phone
+            )
         if conversation.ogrenci_id:
             allowed = scoped_student_ids(user)
             if allowed is None:

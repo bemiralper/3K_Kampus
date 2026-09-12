@@ -1,10 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import {
   fetchNotifications, markNotificationRead, markAllNotificationsRead,
   type AppNotification,
 } from '@/lib/takvim-api';
+import {
+  resolveInboxPortal,
+  rewriteConversationInboxUrl,
+} from '@/lib/communication-api';
 
 /* ════════════════════════════════════════════
    BİLDİRİMLER TAM SAYFA
@@ -12,6 +17,8 @@ import {
 
 export default function BildirimlerClient({ variant = "default" }: { variant?: "default" | "coach" }) {
   const isCoach = variant === "coach";
+  const pathname = usePathname() || '';
+  const inboxPortal = resolveInboxPortal(pathname);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<'all' | 'unread'>('all');
@@ -121,7 +128,8 @@ export default function BildirimlerClient({ variant = "default" }: { variant?: "
               key={n.id}
               onClick={() => {
                 if (!n.is_read) handleRead(n.id);
-                if (n.url) window.location.href = n.url;
+                const target = rewriteConversationInboxUrl(n.url, inboxPortal) || n.url;
+                if (target) window.location.href = target;
               }}
               style={{
                 display: 'flex', gap: 14, padding: '14px 16px',

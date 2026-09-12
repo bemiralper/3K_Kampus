@@ -9,10 +9,12 @@ import {
 } from '@/lib/takvim-api';
 import {
   conversationInboxPath,
+  extractConversationIdFromUrl,
   fetchNotificationSummary as fetchWhatsAppNotificationSummary,
+  inboxPortalDepartment,
   markConversationRead,
   resolveInboxPortal,
-  type InboxPortal,
+  rewriteConversationInboxUrl,
 } from '@/lib/communication-api';
 import {
   playNotificationSound,
@@ -43,30 +45,7 @@ function notifFingerprint(n: AppNotification): string {
 
 function extractConversationId(n: AppNotification): string | null {
   if (n.id.startsWith('wa-')) return n.id.slice(3);
-  if (!n.url) return null;
-  try {
-    const u = new URL(n.url, typeof window !== 'undefined' ? window.location.origin : 'http://local');
-    return u.searchParams.get('conversation');
-  } catch {
-    const m = n.url.match(/[?&]conversation=([^&]+)/);
-    return m?.[1] ? decodeURIComponent(m[1]) : null;
-  }
-}
-
-function rewriteInboxUrl(url: string | null | undefined, portal: InboxPortal): string | null {
-  if (!url) return null;
-  const convId = (() => {
-    try {
-      const u = new URL(url, typeof window !== 'undefined' ? window.location.origin : 'http://local');
-      return u.searchParams.get('conversation');
-    } catch {
-      const m = url.match(/[?&]conversation=([^&]+)/);
-      return m?.[1] ? decodeURIComponent(m[1]) : null;
-    }
-  })();
-  if (!convId) return url;
-  if (!/\/(admin\/iletisim\/mesajlar|coach\/mesajlar|muhasebe\/iletisim\/mesajlar)/.test(url)) return url;
-  return conversationInboxPath(convId, portal);
+  return extractConversationIdFromUrl(n.url);
 }
 
 /** Portal bazlı bildirimler listesi — koç/muhasebe /admin'e yönlendirilmez. */
@@ -96,7 +75,9 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
   const load = useCallback(async () => {
     const [res, wa] = await Promise.all([
       fetchNotificationSummary(),
-      fetchWhatsAppNotificationSummary().catch(() => null),
+      fetchWhatsAppNotificationSummary({
+        department: inboxPortalDepartment(inboxPortal),
+      }).catch(() => null),
     ]);
 
     const waCards = wa?.cards || [];
@@ -120,7 +101,7 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     const waUrls = new Set(waItems.map((n) => n.url).filter(Boolean));
     const filteredBase = baseRecent
       .map((n) => {
-        const rewritten = rewriteInboxUrl(n.url, inboxPortal);
+        const rewritten = rewriteConversationInboxUrl(n.url, inboxPortal);
         return rewritten && rewritten !== n.url ? { ...n, url: rewritten } : n;
       })
       .filter((n) => !(n.url && waUrls.has(n.url)));
@@ -140,7 +121,7 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     const takvimUnread = res.success && res.data ? (res.data.unread_count || 0) : 0;
     const waDupInTakvim = baseRecent.filter(
       (n) => !n.is_read && n.url && (
-        waUrls.has(n.url) || waUrls.has(rewriteInboxUrl(n.url, inboxPortal) || '')
+        waUrls.has(n.url) || waUrls.has(rewriteConversationInboxUrl(n.url, inboxPortal) || '')
       ),
     ).length;
     setUnreadCount(Math.max(0, takvimUnread - waDupInTakvim) + (waUnread || 0));
@@ -256,7 +237,7 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     }
     await Promise.allSettled(tasks);
 
-    const target = rewriteInboxUrl(n.url, inboxPortal) || n.url;
+    const target = rewriteConversationInboxUrl(n.url, inboxPortal) || n.url;
     if (target) {
       window.location.href = target;
     }

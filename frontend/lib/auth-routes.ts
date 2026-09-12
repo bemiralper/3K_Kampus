@@ -72,3 +72,21 @@ export function getDefaultHomePath(user: User | null): string {
   if (isMuhasebeOnlyUser(user)) return "/muhasebe/dashboard";
   return "/dashboard";
 }
+
+/** Admin iletişim derin bağlantısını portal kullanıcısının sohbetler sayfasına taşı. */
+export function toPortalInboxPath(
+  user: User | null,
+  pathname: string,
+  search = "",
+): string | null {
+  const isInbox =
+    pathname.startsWith("/admin/iletisim/sohbetler")
+    || pathname.startsWith("/admin/iletisim/mesajlar");
+  if (!isInbox) return null;
+  const conv = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search)
+    .get("conversation");
+  const suffix = conv ? `?conversation=${encodeURIComponent(conv)}` : "";
+  if (isMuhasebeOnlyUser(user)) return `/muhasebe/iletisim/sohbetler${suffix}`;
+  if (isCoachOnlyUser(user)) return `/coach/sohbetler${suffix}`;
+  return null;
+}

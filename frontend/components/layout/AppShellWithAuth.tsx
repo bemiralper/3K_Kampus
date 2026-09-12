@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { getDefaultHomePath, isCoachOnlyUser, isMuhasebeOnlyUser } from "@/lib/auth-routes";
+import { getDefaultHomePath, isCoachOnlyUser, isMuhasebeOnlyUser, toPortalInboxPath } from "@/lib/auth-routes";
 import { toMuhasebeAkademikPath } from "@/lib/akademik-routes";
 import { getContextGate, STORAGE_POST_LOGIN_ROUTING } from "@/lib/post-login-routing";
 import AppShell from "@/components/layout/AppShell";
@@ -148,14 +148,20 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
     ) {
       // Akademik linkleri bazen /akademik-planlama altına düşer — dashboard'a atma,
       // muhasebe portalındaki eşdeğer rotaya taşı.
+      const search =
+        typeof window !== "undefined" ? window.location.search : "";
       if (
         isMuhasebeOnlyUser(user) &&
         (pathname === "/akademik-planlama" || pathname.startsWith("/akademik-planlama/"))
       ) {
-        const search =
-          typeof window !== "undefined" ? window.location.search : "";
         hasRedirectedRef.current = true;
         hardReplace(toMuhasebeAkademikPath(pathname, search));
+        return;
+      }
+      const inboxPath = toPortalInboxPath(user, pathname, search);
+      if (inboxPath) {
+        hasRedirectedRef.current = true;
+        hardReplace(inboxPath);
         return;
       }
       const home = getDefaultHomePath(user);

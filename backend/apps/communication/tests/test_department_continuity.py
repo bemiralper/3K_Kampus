@@ -325,3 +325,60 @@ class WhatsAppNotifyRecipientsTest(TestCase):
             sube_id=self.sube.id,
         )
         self.assertIn(conv.id, qs.values_list('id', flat=True))
+
+    def test_accounting_can_open_phone_only_thread(self):
+        from apps.communication.application.coach_scope import user_can_access_conversation
+
+        muhasebe = User.objects.create_user(username='acc_open', password='x')
+        _grant(muhasebe, 'acc_open_role', [
+            'communication.read', 'communication.write', 'finans.read',
+        ])
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905321110001',
+            department=CommunicationDepartment.ACCOUNTING,
+        )
+        self.assertTrue(user_can_access_conversation(muhasebe, conv))
+
+    def test_accounting_notification_url_stays_in_muhasebe_portal(self):
+        from apps.communication.application.whatsapp_notifications import (
+            _inbox_url_for_user,
+            notify_inbound_whatsapp,
+        )
+        from apps.takvim.domain.models import AppNotification
+
+        muhasebe = User.objects.create_user(username='acc_url', password='x')
+        _grant(muhasebe, 'acc_url_role', [
+            'communication.read', 'communication.write', 'communication.manage',
+            'finans.manage',
+        ])
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905321110002',
+            department=CommunicationDepartment.ACCOUNTING,
+            last_message_preview='Taksit',
+        )
+        from apps.communication.domain.enums import (
+            MessageDirection,
+            MessageStatus,
+            MessageType,
+        )
+
+        Message.objects.create(
+            conversation=conv,
+            direction=MessageDirection.OUTBOUND,
+            message_type=MessageType.TEXT,
+            status=MessageStatus.SENT,
+            body='Taksit',
+            sender_user=muhasebe,
+        )
+        url = _inbox_url_for_user(muhasebe, conv)
+        self.assertIn('/muhasebe/iletisim/sohbetler?conversation=', url)
+        notify_inbound_whatsapp(conv, preview='Cevap')
+        notif = AppNotification.objects.filter(user_id=muhasebe.id).order_by('-id').first()
+        self.assertIsNotNone(notif)
+        self.assertIn('/muhasebe/iletisim/sohbetler?conversation=', notif.url)

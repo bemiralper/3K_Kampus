@@ -107,6 +107,13 @@ export function ChatWorkspace({
   const [detached, setDetached] = useState<ConversationListItem | null>(null);
   const [detachedError, setDetachedError] = useState<string | null>(null);
 
+  useEffect(() => {
+    if (!initialConversationId) return;
+    setSelectedId(initialConversationId);
+    setMobilePane("thread");
+    setDetachedError(null);
+  }, [initialConversationId]);
+
   const listSelected = useMemo(
     () => list.items.find((c) => c.id === selectedId) ?? null,
     [list.items, selectedId],
