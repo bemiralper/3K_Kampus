@@ -139,6 +139,43 @@ class KarisanKazanimTemizligiTest(CurriculumFixture):
         )
         self.assertEqual([o.id for o in karisan_kazanimlari_bul()], [kopya.id])
 
+    def test_shared_okulizyon_konu_title_is_not_pollution(self):
+        """Fen ve Kimya'da aynı konu adı (Periyodik Sistem) katalogdur, kopya değil."""
+        from apps.coaching.olcme_degerlendirme.models.curriculum import SubOutcome
+        from apps.coaching.olcme_degerlendirme.services.curriculum_heal import (
+            restore_catalog_konu_outcomes,
+            uygula_karisan_kazanim_temizligi,
+        )
+        from apps.coaching.olcme_degerlendirme.views.curriculum_views import (
+            _match_single_text,
+        )
+
+        fen = Subject.objects.create(code='FEN', name='Fen Bilimleri')
+        kimya = Subject.objects.create(code='KIMYA', name='Kimya')
+        fen_topic = Topic.objects.create(subject=fen, code='8.4', name='8. sınıf · PERİYODİK SİSTEM')
+        kimya_topic = Topic.objects.create(subject=kimya, code='9.2', name='9. sınıf · ATOM VE PERİYODİK SİSTEM')
+        fen_out = Outcome.objects.create(topic=fen_topic, code='8.4.1', text='Periyodik Sistem')
+        kimya_out = Outcome.objects.create(
+            topic=kimya_topic, code='9.2.3', text='Periyodik Sistem', is_active=False,
+        )
+        SubOutcome.objects.create(
+            outcome=kimya_out, code='9.2.3.3',
+            text='Periyodik özelliklerin değişme eğilimlerini açıklar.',
+        )
+
+        self.assertEqual(karisan_kazanimlari_bul(), [])
+        self.assertGreaterEqual(restore_catalog_konu_outcomes(), 1)
+        kimya_out.refresh_from_db()
+        self.assertTrue(kimya_out.is_active)
+        uygula_karisan_kazanim_temizligi()
+        kimya_out.refresh_from_db()
+        self.assertTrue(kimya_out.is_active)
+
+        match = _match_single_text('9.2.3.3', kimya)
+        self.assertIsNotNone(match)
+        self.assertEqual(match['match_type'], 'sub_outcome')
+        self.assertEqual(match['outcome_code'], '9.2.3.3')
+
 
 class BulkAssignDoesNotPolluteCurriculumTest(CurriculumFixture):
     def setUp(self):
