@@ -855,9 +855,25 @@ export const analysisApi = {
     );
   },
 
+  karneNotifyBulkStart: (
+    examId: number,
+    payload: { answer_ids: number[]; expected_recipients: number },
+  ) => {
+    return request<KarneBulkStartResponse>(
+      `${BASE}/${examId}/analysis/students/notify-bulk-start/`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    );
+  },
+
   karneNotifyBulkSend: (
     examId: number,
-    payload: { answer_ids: number[]; include_veli: boolean; include_student: boolean },
+    payload: {
+      answer_ids: number[];
+      include_veli: boolean;
+      include_student: boolean;
+      campaign_id?: string;
+      expected_recipients?: number;
+    },
     rankingYear?: number,
   ) => {
     const qs = rankingYear ? `?ranking_year=${rankingYear}` : '';
@@ -925,7 +941,19 @@ export interface KarneBulkPreviewResponse {
     students: KarneBulkStudentRow[];
     sendable: number;
     total: number;
+    veli_total?: number;
+    ogrenci_total?: number;
+    kisi_total?: number;
     scheduled_warning?: ExamPublishDispatch | null;
+  };
+}
+
+export interface KarneBulkStartResponse {
+  success: boolean;
+  error?: string;
+  data?: {
+    campaign_id: string;
+    expected_recipients: number;
   };
 }
 

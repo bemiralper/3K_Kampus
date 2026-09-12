@@ -173,6 +173,9 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertEqual(data['sendable'], 1)
         self.assertEqual(data['students'][0]['veli_count'], 1)
         self.assertTrue(data['students'][0]['has_student'])
+        self.assertEqual(data['veli_total'], 1)
+        self.assertEqual(data['ogrenci_total'], 1)
+        self.assertEqual(data['kisi_total'], 2)
 
     @patch('apps.coaching.application.olcme_karne_notify.dispatch_event')
     def test_bulk_notify_send(self, mock_dispatch):
@@ -180,14 +183,27 @@ class OlcmeKarnePdfNotifyTest(TestCase):
             success = True
             errors = []
             message_status = 'QUEUED'
+            message_id = '11111111-1111-1111-1111-111111111111'
 
         mock_dispatch.return_value = FakeResult()
+        start = self.client.post(
+            f'{self.base}/students/notify-bulk-start/',
+            {'answer_ids': [self.answer.id], 'expected_recipients': 2},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(start.status_code, 200)
+        campaign_id = start.json()['data']['campaign_id']
+        self.assertTrue(campaign_id)
+
         res = self.client.post(
             f'{self.base}/students/notify-bulk/',
             {
                 'answer_ids': [self.answer.id],
                 'include_veli': True,
                 'include_student': True,
+                'campaign_id': campaign_id,
+                'expected_recipients': 2,
             },
             format='json',
             **self.headers,
@@ -196,6 +212,11 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         body = res.json()
         self.assertTrue(body['success'])
         self.assertEqual(body['data']['sent'], 2)
+        self.assertEqual(body['data']['campaign_id'], campaign_id)
+        self.assertEqual(
+            body['data']['message_ids'],
+            ['11111111-1111-1111-1111-111111111111'] * 2,
+        )
         self.assertGreaterEqual(mock_dispatch.call_count, 2)
 
     def test_student_detail_includes_profil_foto(self):

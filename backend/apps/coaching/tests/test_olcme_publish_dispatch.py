@@ -356,6 +356,7 @@ class OlcmePublishDispatchTest(TestCase):
         row = ExamScheduledDispatch.objects.get(exam=self.exam, kind=KIND_KARNE)
         self.assertFalse(row.is_enabled)
         self.assertEqual(row.status, ExamScheduledDispatch.Status.CANCELLED)
+        self.assertEqual(str(row.campaign_id), res.json()['data']['campaign_id'])
 
     def test_send_now_api_requires_ready_answer_key(self):
         res = self.client.post(

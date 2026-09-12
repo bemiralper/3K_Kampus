@@ -237,19 +237,34 @@ def send_karne_notify(
     skipped = 0
     errors: list[str] = []
     sent_details: list[dict] = []
+    message_ids: list[str] = []
+    skipped_recipients: list[dict] = []
+    student_name = karne.get('student_name') or preview.student_name or ''
+
+    def _fail(item: KarneNotifyRecipient, reason: str) -> None:
+        nonlocal skipped
+        skipped += 1
+        errors.append(f'{item.display_name}: {reason}')
+        skipped_recipients.append({
+            'contact_name': item.display_name,
+            'phone': item.telefon or '',
+            'contact_type': 'VELI' if item.recipient_type == 'veli' else 'OGRENCI',
+            'student_name': student_name,
+            'status': 'FAILED',
+            'failed_reason': reason,
+        })
 
     for item in preview.recipients:
         if item.recipient_type == 'veli':
             if not item.veli_id or item.veli_id not in selected_veli:
                 continue
             if item.skip_reason:
-                skipped += 1
-                errors.append(f'{item.display_name}: {item.skip_reason}')
+                _fail(item, item.skip_reason)
                 continue
             from apps.ogrenci.domain.models import OgrenciVeli
             veli = OgrenciVeli.objects.filter(id=item.veli_id).first()
             if not veli:
-                skipped += 1
+                _fail(item, 'Veli kaydı bulunamadı')
                 continue
             ctx = _context(karne, veli=veli)
             body = _fallback_body(karne, for_veli=True, veli=veli)
@@ -269,22 +284,24 @@ def send_karne_notify(
             )
             if result and result.success:
                 sent += 1
+                mid = getattr(result, 'message_id', None)
+                if mid:
+                    message_ids.append(str(mid))
                 sent_details.append({
                     'recipient_type': 'veli',
                     'display_name': item.display_name,
                     'telefon': item.telefon,
                     'message_status': result.message_status or 'SENT',
+                    'message_id': str(mid) if mid else None,
                 })
             else:
-                skipped += 1
-                errors.append(
-                    f'{item.display_name}: '
-                    f'{"; ".join(result.errors) if result and result.errors else "gönderilemedi"}'
+                _fail(
+                    item,
+                    '; '.join(result.errors) if result and result.errors else 'gönderilemedi',
                 )
         elif item.recipient_type == 'ogrenci' and include_student:
             if item.skip_reason:
-                skipped += 1
-                errors.append(f'{item.display_name}: {item.skip_reason}')
+                _fail(item, item.skip_reason)
                 continue
             ctx = _context(karne)
             body = _fallback_body(karne, for_veli=False)
@@ -304,17 +321,20 @@ def send_karne_notify(
             )
             if result and result.success:
                 sent += 1
+                mid = getattr(result, 'message_id', None)
+                if mid:
+                    message_ids.append(str(mid))
                 sent_details.append({
                     'recipient_type': 'ogrenci',
                     'display_name': item.display_name,
                     'telefon': item.telefon,
                     'message_status': result.message_status or 'SENT',
+                    'message_id': str(mid) if mid else None,
                 })
             else:
-                skipped += 1
-                errors.append(
-                    f'{item.display_name}: '
-                    f'{"; ".join(result.errors) if result and result.errors else "gönderilemedi"}'
+                _fail(
+                    item,
+                    '; '.join(result.errors) if result and result.errors else 'gönderilemedi',
                 )
 
     if sent:
@@ -331,6 +351,8 @@ def send_karne_notify(
         'skipped': skipped,
         'errors': errors,
         'sent_details': sent_details,
+        'message_ids': message_ids,
+        'skipped_recipients': skipped_recipients,
     }
 
 
@@ -363,6 +385,7 @@ def send_karne_notify_bulk(
     include_student: bool = True,
     sent_by_user_id: int | None = None,
     sube_id: int | None = None,
+    veli_ids: list[int] | None = None,
 ) -> dict:
     """items: [{answer_id, karne, pdf_bytes, filename, sube_id?}]"""
     sent = 0
@@ -370,25 +393,38 @@ def send_karne_notify_bulk(
     errors: list[str] = []
     sent_details: list[dict] = []
     student_results: list[dict] = []
+    message_ids: list[str] = []
+    skipped_recipients: list[dict] = []
+    allowed_veli = {int(x) for x in veli_ids} if veli_ids is not None else None
 
     for item in items:
         karne = item['karne']
+        student_name = karne.get('student_name') or 'Öğrenci'
         preview = preview_karne_notify(kurum_id, karne)
-        veli_ids = [
+        selected = [
             r.veli_id for r in preview.recipients
             if r.recipient_type == 'veli' and r.veli_id and not r.skip_reason
+            and (allowed_veli is None or r.veli_id in allowed_veli)
         ] if include_veli else []
         send_student = include_student and any(
             r.recipient_type == 'ogrenci' and not r.skip_reason
             for r in preview.recipients
         )
-        if not veli_ids and not send_student:
+        if not selected and not send_student:
             skipped += 1
             reason = summarize_preview(preview)['skip_reason'] or 'Alıcı yok'
-            errors.append(f"{karne.get('student_name') or 'Öğrenci'}: {reason}")
+            errors.append(f'{student_name}: {reason}')
+            skipped_recipients.append({
+                'contact_name': student_name,
+                'phone': '',
+                'contact_type': '',
+                'student_name': student_name,
+                'status': 'FAILED',
+                'failed_reason': reason,
+            })
             student_results.append({
                 'answer_id': item['answer_id'],
-                'student_name': karne.get('student_name') or '',
+                'student_name': student_name,
                 'sent': 0,
                 'errors': [reason],
             })
@@ -401,17 +437,25 @@ def send_karne_notify_bulk(
                 karne=karne,
                 pdf_bytes=item['pdf_bytes'],
                 filename=item['filename'],
-                veli_ids=veli_ids,
+                veli_ids=selected,
                 include_student=send_student,
                 sent_by_user_id=sent_by_user_id,
                 sube_id=item.get('sube_id') or sube_id,
             )
         except ValueError as exc:
             skipped += 1
-            errors.append(f"{karne.get('student_name') or 'Öğrenci'}: {exc}")
+            errors.append(f'{student_name}: {exc}')
+            skipped_recipients.append({
+                'contact_name': student_name,
+                'phone': '',
+                'contact_type': '',
+                'student_name': student_name,
+                'status': 'FAILED',
+                'failed_reason': str(exc),
+            })
             student_results.append({
                 'answer_id': item['answer_id'],
-                'student_name': karne.get('student_name') or '',
+                'student_name': student_name,
                 'sent': 0,
                 'errors': [str(exc)],
             })
@@ -420,9 +464,11 @@ def send_karne_notify_bulk(
         skipped += result['skipped']
         errors.extend(result['errors'])
         sent_details.extend(result.get('sent_details') or [])
+        message_ids.extend(result.get('message_ids') or [])
+        skipped_recipients.extend(result.get('skipped_recipients') or [])
         student_results.append({
             'answer_id': item['answer_id'],
-            'student_name': karne.get('student_name') or '',
+            'student_name': student_name,
             'sent': result['sent'],
             'errors': result['errors'],
         })
@@ -433,4 +479,6 @@ def send_karne_notify_bulk(
         'errors': errors,
         'sent_details': sent_details,
         'student_results': student_results,
+        'message_ids': message_ids,
+        'skipped_recipients': skipped_recipients,
     }

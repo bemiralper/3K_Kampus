@@ -288,6 +288,35 @@ class CampaignAudienceTest(TestCase):
         self.assertEqual(again.status, CampaignStatus.QUEUED)
         self.assertEqual(OutboundQueueItem.objects.filter(campaign=campaign).count(), 2)
 
+    def test_campaign_deliveries_include_olcme_skipped(self):
+        from apps.communication.domain.enums import CampaignStatus, Channel
+        from apps.communication.domain.models import OutboundCampaign
+
+        campaign = OutboundCampaign.objects.create(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            title='Karne PDF',
+            status=CampaignStatus.QUEUED,
+            channel=Channel.WHATSAPP,
+            total_recipients=1,
+            send_options_json={
+                'source': 'olcme_publish',
+                'skipped_recipients': [{
+                    'contact_name': 'Ayşe Veli',
+                    'phone': '0532***66',
+                    'contact_type': 'VELI',
+                    'student_name': 'Hamza',
+                    'status': 'FAILED',
+                    'failed_reason': 'Telefon yok',
+                }],
+            },
+        )
+        rows = _campaign_deliveries(campaign)
+        self.assertEqual(len(rows), 1)
+        self.assertIn('Ayşe Veli', rows[0]['contact_name'])
+        self.assertEqual(rows[0]['status'], 'FAILED')
+        self.assertEqual(rows[0]['failed_reason'], 'Telefon yok')
+
     def test_campaign_deliveries_use_person_name_not_phone(self):
         service = CampaignService()
         campaign = service.create_draft(

@@ -1,6 +1,7 @@
 """Sınav karne / cevap anahtarı zamanlanmış gönderim."""
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 
 from django.db import transaction
@@ -189,26 +190,85 @@ def attach_publish_campaign(
     message_ids: list[str],
     *,
     sent_by_user_id: int | None = None,
+    campaign: object | None = None,
+    expected_total: int | None = None,
+    skipped_recipients: list[dict] | None = None,
 ) -> object:
     from apps.communication.application.campaign_service import CampaignStatsService
     from apps.communication.domain.enums import CampaignStatus, Channel
     from apps.communication.domain.models import Message, OutboundCampaign, OutboundQueueItem
 
     label = 'Karne PDF' if kind == KIND_KARNE else 'Cevap anahtarı PDF'
-    campaign = OutboundCampaign.objects.create(
-        kurum_id=exam.kurum_id,
-        sube_id=exam.sube_id,
-        created_by_id=sent_by_user_id,
-        title=f'{exam.name} — {label}'[:200],
-        status=CampaignStatus.QUEUED,
-        channel=Channel.WHATSAPP,
-        total_recipients=len(message_ids),
-        send_options_json={'source': 'olcme_publish', 'kind': kind, 'exam_id': exam.id},
-    )
+    if campaign is None:
+        campaign = OutboundCampaign.objects.create(
+            kurum_id=exam.kurum_id,
+            sube_id=exam.sube_id,
+            created_by_id=sent_by_user_id,
+            title=f'{exam.name} — {label}'[:200],
+            status=CampaignStatus.QUEUED,
+            channel=Channel.WHATSAPP,
+            total_recipients=len(message_ids),
+            send_options_json={'source': 'olcme_publish', 'kind': kind, 'exam_id': exam.id},
+        )
+    opts = dict(campaign.send_options_json or {})
+    if expected_total is not None:
+        opts['expected_recipients'] = int(expected_total)
+    if skipped_recipients:
+        existing = list(opts.get('skipped_recipients') or [])
+        existing.extend(skipped_recipients)
+        opts['skipped_recipients'] = existing
+    if opts != (campaign.send_options_json or {}):
+        campaign.send_options_json = opts
+        campaign.save(update_fields=['send_options_json', 'updated_at'])
     if message_ids:
-        Message.objects.filter(pk__in=message_ids).update(campaign_id=campaign.id)
-        OutboundQueueItem.objects.filter(message_id__in=message_ids).update(campaign_id=campaign.id)
-    CampaignStatsService.refresh_campaign_stats(campaign.id)
+        valid_ids = []
+        for raw in message_ids:
+            try:
+                valid_ids.append(str(uuid.UUID(str(raw))))
+            except (TypeError, ValueError, AttributeError):
+                continue
+        if valid_ids:
+            Message.objects.filter(pk__in=valid_ids).update(campaign_id=campaign.id)
+            OutboundQueueItem.objects.filter(message_id__in=valid_ids).update(campaign_id=campaign.id)
+    msg_n = Message.objects.filter(campaign_id=campaign.id).count()
+    skip_n = len((campaign.send_options_json or {}).get('skipped_recipients') or [])
+    total = msg_n + skip_n
+    if campaign.total_recipients != total:
+        campaign.total_recipients = total
+        campaign.save(update_fields=['total_recipients', 'updated_at'])
+    if msg_n or skip_n:
+        CampaignStatsService.refresh_campaign_stats(campaign.id)
+        if skip_n:
+            campaign.refresh_from_db()
+            campaign.failed_count = (campaign.failed_count or 0) + skip_n
+            campaign.save(update_fields=['failed_count', 'updated_at'])
+    bind_publish_campaign(exam, kind, campaign)
+    return campaign
+
+
+def bind_publish_campaign(exam: Exam, kind: str, campaign) -> ExamScheduledDispatch:
+    """Banner’daki ‘Gönderim geçmişi’ linkinin bu kampanyayı göstermesini sağlar."""
+    row, _ = ExamScheduledDispatch.objects.get_or_create(
+        exam=exam, kind=kind,
+        defaults={'status': ST_PENDING, 'is_enabled': False},
+    )
+    if row.campaign_id != getattr(campaign, 'id', None):
+        row.campaign_id = campaign.id
+        row.save(update_fields=['campaign_id', 'updated_at'])
+    return row
+
+
+def load_publish_campaign(exam: Exam, campaign_id: str | None):
+    if not campaign_id:
+        return None
+    from apps.communication.domain.models import OutboundCampaign
+
+    campaign = OutboundCampaign.objects.filter(id=campaign_id, kurum_id=exam.kurum_id).first()
+    if not campaign:
+        return None
+    opts = campaign.send_options_json if isinstance(campaign.send_options_json, dict) else {}
+    if opts.get('exam_id') not in (exam.id, str(exam.id)):
+        return None
     return campaign
 
 

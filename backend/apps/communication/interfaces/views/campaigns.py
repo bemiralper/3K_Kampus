@@ -87,6 +87,34 @@ def _campaign_deliveries(campaign, *, limit=500):
             'attempt_count': item.attempt_count if item is not None else 0,
             'queue_note': _queue_note(msg, item, raw_reason),
         })
+    opts = campaign.send_options_json if isinstance(getattr(campaign, 'send_options_json', None), dict) else {}
+    seen_names = {(row['contact_name'], row['phone']) for row in rows}
+    for index, skipped in enumerate(opts.get('skipped_recipients') or []):
+        if not isinstance(skipped, dict):
+            continue
+        name = (skipped.get('contact_name') or '').strip()
+        phone = (skipped.get('phone') or '').strip()
+        student = (skipped.get('student_name') or '').strip()
+        if student and student != name:
+            name = f'{name} · {student}' if name else student
+        key = (name, phone)
+        if key in seen_names:
+            continue
+        seen_names.add(key)
+        reason = (skipped.get('failed_reason') or '').strip()
+        rows.append({
+            'id': f'skip-{index}-{phone}-{name}'[:80],
+            'contact_name': name,
+            'phone': phone,
+            'contact_type': skipped.get('contact_type') or '',
+            'status': skipped.get('status') or 'FAILED',
+            'failed_reason': reason,
+            'failed_reason_short': reason,
+            'sent_at': None,
+            'next_attempt_at': None,
+            'attempt_count': 0,
+            'queue_note': '',
+        })
     return rows
 
 
@@ -233,7 +261,9 @@ class CampaignDetailView(CampaignBulkView):
         data = CampaignDetailSerializer(campaign).data
         limit = 500
         data['deliveries'] = _campaign_deliveries(campaign, limit=limit)
-        data['deliveries_total'] = Message.objects.filter(campaign=campaign).count()
+        opts = campaign.send_options_json if isinstance(campaign.send_options_json, dict) else {}
+        skipped_n = len(opts.get('skipped_recipients') or [])
+        data['deliveries_total'] = Message.objects.filter(campaign=campaign).count() + skipped_n
         data['deliveries_limit'] = limit
         return Response(data)
 

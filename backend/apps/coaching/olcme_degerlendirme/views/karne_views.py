@@ -245,6 +245,8 @@ def exam_karne_notify_bulk_preview(request, exam_pk):
     from apps.coaching.application.olcme_publish import karne_schedule_active
 
     scheduled = karne_schedule_active(exam)
+    veli_total = sum(r['veli_count'] for r in students if not r['skip_reason'])
+    ogrenci_total = sum(1 for r in students if r['has_student'] and not r['skip_reason'])
     return Response({
         'success': True,
         'data': {
@@ -253,7 +255,52 @@ def exam_karne_notify_bulk_preview(request, exam_pk):
             'students': students,
             'sendable': sendable,
             'total': len(students),
+            'veli_total': veli_total,
+            'ogrenci_total': ogrenci_total,
+            'kisi_total': veli_total + ogrenci_total,
             'scheduled_warning': scheduled,
+        },
+    })
+
+
+def _expected_recipients(body) -> int | None:
+    raw = body.get('expected_recipients')
+    if raw in (None, ''):
+        return None
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if value >= 0 else None
+
+
+@api_view(['POST'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def exam_karne_notify_bulk_start(request, exam_pk):
+    """Kampanyayı gönderimden önce açar — 504 olsa bile geçmiş oluşur."""
+    exam, err = _get_exam_or_404(request, exam_pk)
+    if err:
+        return err
+    body = request.data or {}
+    answer_ids, err = _parse_answer_ids(body.get('answer_ids'))
+    if err:
+        return err
+    from apps.coaching.application.olcme_publish import KIND_KARNE, attach_publish_campaign
+
+    expected = _expected_recipients(body)
+    if expected is None:
+        expected = len(answer_ids)
+    campaign = attach_publish_campaign(
+        exam, KIND_KARNE, [],
+        sent_by_user_id=getattr(request.user, 'id', None),
+        expected_total=expected,
+    )
+    return Response({
+        'success': True,
+        'data': {
+            'campaign_id': str(campaign.id),
+            'expected_recipients': expected,
         },
     })
 
@@ -297,6 +344,7 @@ def exam_karne_notify_bulk_send(request, exam_pk):
         KIND_KARNE,
         attach_publish_campaign,
         cancel_enabled_karne_schedule,
+        load_publish_campaign,
     )
 
     result = send_karne_notify_bulk(
@@ -308,11 +356,16 @@ def exam_karne_notify_bulk_send(request, exam_pk):
         sent_by_user_id=getattr(request.user, 'id', None),
         sube_id=exam.sube_id,
     )
-    if result.get('sent'):
-        result['schedule_cancelled'] = cancel_enabled_karne_schedule(exam)
+    campaign = load_publish_campaign(exam, body.get('campaign_id'))
+    if result.get('sent') or result.get('skipped_recipients') or result.get('message_ids') or campaign:
+        if result.get('sent'):
+            result['schedule_cancelled'] = cancel_enabled_karne_schedule(exam)
         campaign = attach_publish_campaign(
             exam, KIND_KARNE, result.get('message_ids') or [],
             sent_by_user_id=getattr(request.user, 'id', None),
+            campaign=campaign,
+            expected_total=_expected_recipients(body),
+            skipped_recipients=result.get('skipped_recipients') or [],
         )
         result['campaign_id'] = str(campaign.id)
     return Response({'success': True, 'data': result})
