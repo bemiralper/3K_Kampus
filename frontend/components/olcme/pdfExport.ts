@@ -517,7 +517,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     ptList.forEach(pt => {
       ptStarts.push(ptci);
       r0[ptci] = pt;
-      r1[ptci] = 'Puan'; r1[ptci + 1] = 'Kurs'; r1[ptci + 2] = 'Genel';
+      r1[ptci] = 'Puan'; r1[ptci + 1] = 'Kurs'; r1[ptci + 2] = 'YKS Tah.';
       ptci += 3;
     });
 
@@ -537,7 +537,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     });
     h.push('T.Net');
     if (showTytPuan) h.push('Puan');
-    ptList.forEach(pt => { ptStarts.push(h.length); h.push(pt, 'Kurs', 'Genel'); });
+    ptList.forEach(pt => { ptStarts.push(h.length); h.push(pt, 'Kurs', 'YKS Tah.'); });
     suffixAfterPT.forEach(s => h.push(s));
     headRows = [h];
   }
@@ -640,7 +640,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
       const ptInfo = r.puan_turleri?.[pt];
       row[pci] = ptInfo?.puan != null ? String(ptInfo.puan) : '';
       row[pci + 1] = ptRank[pt]?.get(r.answer_id) != null ? String(ptRank[pt].get(r.answer_id)) : '';
-      // Genel sıralama: alan-bazlı tahmini_siralama
+      // YKS tahmini (yayınevi deneme TG sırası değil)
       const genelSira = ptInfo?.tahmini_siralama ?? r.tahmini_siralama;
       row[pci + 2] = genelSira ? genelSira.toLocaleString('tr-TR') : '';
       pci += 3;
@@ -770,7 +770,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
           }
           else if (ci === TNET_COL || (showTytPuan && ci === PUAN_COL)) { data.cell.colSpan = 0; }
           else if (ci >= TNET_COL + 1 + tytPuanCols && ci < TNET_COL + 1 + tytPuanCols + ptColCount) {
-            // PT satır1: Puan|Kurs|Genel — her hücre kendi başına
+            // PT satır1: Puan|Kurs|YKS Tah. — her hücre kendi başına
           }
           else { data.cell.colSpan = 0; }
         }

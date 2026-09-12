@@ -697,9 +697,9 @@ export interface StudentAnalysis {
   puan: number;
   ham_puan: number;
   puan_turleri: {
-    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number };
-    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number };
-    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number };
+    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
+    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
+    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
   } | null;
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
@@ -763,9 +763,9 @@ export interface StudentDetailResponse {
   puan: number;
   ham_puan: number;
   puan_turleri: {
-    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number };
-    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number };
-    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number };
+    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
+    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
+    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
   } | null;
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
@@ -831,6 +831,7 @@ export interface RankingPuanTuruInfo {
   puan: number;
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
+  kurum_ici_sira?: number;
 }
 
 export interface RankingItem {

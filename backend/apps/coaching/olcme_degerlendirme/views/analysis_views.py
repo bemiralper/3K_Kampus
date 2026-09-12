@@ -148,6 +148,25 @@ _PUAN_TURU_TO_EXAM_TYPE = {
 }
 
 
+def _ayt_pt_puan(row: dict, pt: str = 'SAY') -> float:
+    info = (row.get('puan_turleri') or {}).get(pt) or {}
+    return float(info.get('puan') or 0)
+
+
+def _assign_ayt_kurum_ranks(rows: list) -> None:
+    """Yayınevi PDF gibi her puan türüne ayrı kurum sırası yaz; varsayılan sıra SAY."""
+    for pt in ('SAY', 'EA', 'SOZ'):
+        ordered = sorted(rows, key=lambda r: _ayt_pt_puan(r, pt), reverse=True)
+        for idx, row in enumerate(ordered, 1):
+            pts = row.get('puan_turleri')
+            if pts and pt in pts:
+                pts[pt]['kurum_ici_sira'] = idx
+    rows.sort(key=lambda r: _ayt_pt_puan(r, 'SAY'), reverse=True)
+    for idx, row in enumerate(rows, 1):
+        row['kurum_ici_sira'] = idx
+        row['toplam_ogrenci'] = len(rows)
+
+
 def _leaf_area_sections(sections: list, sec_map: dict | None = None) -> list:
     """Alt dersler + çocuğu olmayan ana bölümler (üst toplamlar elenir)."""
     enriched = []
@@ -1063,15 +1082,19 @@ def exam_analysis_students(request, exam_pk):
             pt_key = _ALAN_TO_PUAN_TURU.get(alan_kodu, 'SAY')
             score_data = all_scores_data[pt_key]
             ranking_exam_type = _PUAN_TURU_TO_EXAM_TYPE[pt_key]
-            puan_turleri_student = {
-                pt: {
+            puan_turleri_student = {}
+            for pt, d in all_scores_data.items():
+                pt_est = estimate_ranking(
+                    d['puan'], _PUAN_TURU_TO_EXAM_TYPE.get(pt, 'YKS_AYT'), ranking_year,
+                )
+                puan_turleri_student[pt] = {
                     'puan': d['puan'],
                     'ham_puan': d['ham_puan'],
                     'ayt_net': d['ayt_net'],
                     'tyt_net': d.get('tyt_net', 0),
+                    'tahmini_siralama': pt_est.get('tahmini_siralama'),
+                    'yuzdelik_dilim': pt_est.get('yuzdelik_dilim'),
                 }
-                for pt, d in all_scores_data.items()
-            }
         else:
             score_data = calculate_score_for_exam(exam, sec_nets, year=ranking_year, student_id=a.student_id, raw_student_name=a.raw_student_name, raw_student_id=a.raw_student_id)
             ranking_exam_type = exam.exam_type
@@ -1123,13 +1146,13 @@ def exam_analysis_students(request, exam_pk):
     if student_id:
         student_list = [s for s in student_list if str(s.get('student_id')) == student_id]
 
-    # Puana göre sırala
-    student_list.sort(key=lambda x: x['puan'], reverse=True)
-
-    # Kurum içi sıralama ekle
-    for idx, s in enumerate(student_list, 1):
-        s['kurum_ici_sira'] = idx
-        s['toplam_ogrenci'] = len(student_list)
+    if is_ayt:
+        _assign_ayt_kurum_ranks(student_list)
+    else:
+        student_list.sort(key=lambda x: x['puan'], reverse=True)
+        for idx, s in enumerate(student_list, 1):
+            s['kurum_ici_sira'] = idx
+            s['toplam_ogrenci'] = len(student_list)
 
     # Öğrenci geçmiş sınavları (net gelişim trendi)
     if student_id:
@@ -1333,9 +1356,28 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     ranking_data = estimate_ranking(score_data['puan'], ranking_exam_type, ranking_year)
     kurum_percentile = calculate_percentile(student_net, all_nets)
 
-    # Kurum sırası
-    sorted_all_nets = sorted(all_nets, reverse=True)
-    kurum_sira = sorted_all_nets.index(student_net) + 1 if student_net in sorted_all_nets else 0
+    # Kurum sırası — AYT'de yayınevi gibi SAY puanına göre
+    if is_ayt:
+        say_scores = []
+        for other in all_answers:
+            other_nets = _build_scoring_nets(other, exam)
+            other_tyt = (
+                _get_linked_tyt_nets(
+                    exam, other.student_id, other.raw_student_name, other.raw_student_id,
+                )
+                if getattr(exam, 'linked_tyt_exam_id', None)
+                else {}
+            )
+            other_say = calculate_all_ayt_scores(
+                other_nets, other_tyt, year=ranking_year, kurum_id=exam.kurum_id,
+            )['SAY']['puan']
+            say_scores.append(other_say)
+        my_say = all_scores_data['SAY']['puan']
+        sorted_say = sorted(say_scores, reverse=True)
+        kurum_sira = sorted_say.index(my_say) + 1 if my_say in sorted_say else 0
+    else:
+        sorted_all_nets = sorted(all_nets, reverse=True)
+        kurum_sira = sorted_all_nets.index(student_net) + 1 if student_net in sorted_all_nets else 0
 
     strong, weak = _pick_strong_weak_areas(
         section_details, exam.exam_type, alan_kodu, sec_map,
@@ -1652,16 +1694,21 @@ def exam_analysis_rankings(request, exam_pk):
             'alan': alan_kodu,
         })
 
-    # Puana göre sırala
-    ranking_list.sort(key=lambda x: x['puan'], reverse=True)
+    if is_ayt:
+        _assign_ayt_kurum_ranks(ranking_list)
+        all_scores = [_ayt_pt_puan(r, 'SAY') for r in ranking_list]
+    else:
+        ranking_list.sort(key=lambda x: x['puan'], reverse=True)
+        all_scores = [r['puan'] for r in ranking_list]
+        for idx, r in enumerate(ranking_list, 1):
+            r['kurum_ici_sira'] = idx
+            r['toplam_ogrenci'] = len(ranking_list)
 
-    all_scores = [r['puan'] for r in ranking_list]
     total = len(ranking_list)
-
-    for idx, r in enumerate(ranking_list, 1):
-        r['kurum_ici_sira'] = idx
+    for r in ranking_list:
         r['toplam_ogrenci'] = total
-        r['kurum_ici_yuzdelik'] = calculate_percentile(r['puan'], all_scores)
+        score_for_pct = _ayt_pt_puan(r, 'SAY') if is_ayt else r['puan']
+        r['kurum_ici_yuzdelik'] = calculate_percentile(score_for_pct, all_scores)
 
     # Yüzdelik dilim dağılımı
     top_10_count = sum(1 for r in ranking_list if r['kurum_ici_yuzdelik'] >= 90)
@@ -1751,7 +1798,10 @@ def exam_analysis_rankings(request, exam_pk):
             else:
                 export_list.sort(key=lambda r: r.get('puan') or 0, reverse=True)
         else:
-            export_list.sort(key=lambda r: r.get('puan') or 0, reverse=True)
+            export_list.sort(
+                key=lambda r: _ayt_pt_puan(r, 'SAY') if is_ayt else (r.get('puan') or 0),
+                reverse=True,
+            )
         for idx, r in enumerate(export_list, 1):
             r['kurum_ici_sira'] = idx
 

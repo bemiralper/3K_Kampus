@@ -9,8 +9,8 @@ import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 export const TIPS: Record<string, string> = {
-  tahminiSiralama: '2024 YKS yerleştirme sonuçları referans alınarak lineer interpolasyon yöntemiyle hesaplanmıştır. Gerçek sınav ortamındaki öğrenci popülasyonunu yansıtmaz; yalnızca tahmini bir göstergedir.',
-  yuzdelikDilim: 'Kurum içindeki öğrencilerin kaçını geçtiğini gösterir. Örn: %75 = öğrencilerin %75\'inden daha iyi performans.',
+  tahminiSiralama: 'ÖSYM YKS yerleştirme tahmini (seçilen yıla göre). Yayınevi PDF’deki Genel sıra bu denemedeki katılımcılara göredir (ör. 71 kişi); ikisi aynı şey değildir.',
+  yuzdelikDilim: 'ÖSYM tahmini yüzdelik dilim. Kurum içi yüzde soldaki Kurum % sütunudur.',
   medyan: 'Ortanca değer. Tüm öğrenciler sıralandığında tam ortadaki değer. Ortalamadan farklı olarak uç değerlerden etkilenmez.',
   stdSapma: 'Verilerin ortalamadan ne kadar uzaklaştığını gösterir. Düşük = homojen grup (herkes benzer seviyede), Yüksek = heterojen grup (seviye farkı çok).',
   ayirtEdicilik: 'Üst %27 ile alt %27 gruplarının doğru cevap oranları farkı. ≥0.30 iyi ayırt edici, 0.15–0.30 orta, <0.15 zayıf ayırt edici.',

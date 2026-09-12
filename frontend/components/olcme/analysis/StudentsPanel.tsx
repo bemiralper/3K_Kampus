@@ -10,6 +10,12 @@ import { ALAN_LABELS } from '../pdfExport';
 import type { StudentAnalysis } from '../types';
 import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
 
+const ALAN_TO_PT: Record<string, 'SAY' | 'EA' | 'SOZ'> = {
+  SAYISAL: 'SAY',
+  ESIT_AGIRLIK: 'EA',
+  SOZEL: 'SOZ',
+};
+
 export default function StudentsPanel({
   students, search, onSearch, onSelect, examName, examType, examId, rankingYear,
 }: {
@@ -43,9 +49,22 @@ export default function StudentsPanel({
     return <div className={s.analysisEmpty}>Öğrenci verisi yok.</div>;
   }
 
-  const displayStudents = alanViewFilter
-    ? students.filter(st => st.alan === alanViewFilter)
-    : students;
+  const displayStudents = (() => {
+    const list = alanViewFilter
+      ? students.filter(st => st.alan === alanViewFilter)
+      : [...students];
+    if (alanViewFilter) {
+      const ptKey = ALAN_TO_PT[alanViewFilter];
+      if (ptKey) {
+        list.sort((a, b) => {
+          const pa = a.puan_turleri?.[ptKey]?.puan ?? a.puan;
+          const pb = b.puan_turleri?.[ptKey]?.puan ?? b.puan;
+          return pb - pa;
+        });
+      }
+    }
+    return list;
+  })();
 
   const uniqueSiniflar = Array.from(new Set(students.map(st => st.sinif).filter(Boolean))) as string[];
 
@@ -151,7 +170,7 @@ export default function StudentsPanel({
           <tbody>
             {displayStudents.map((st, idx) => (
               <tr key={st.answer_id}>
-                <td style={{ color: '#94a3b8', fontSize: 12 }}>{st.kurum_ici_sira}</td>
+                <td style={{ color: '#94a3b8', fontSize: 12 }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}</td>
                 <td style={{ fontWeight: 600 }}>{st.student_name}</td>
                 <td>{st.sinif || '—'}</td>
                 <td style={{ textAlign: 'center', fontWeight: 700 }}>{st.toplam_net}</td>
@@ -163,9 +182,15 @@ export default function StudentsPanel({
                     <td style={{ textAlign: 'center', fontWeight: 600, color: '#059669', fontSize: 12 }}>{st.puan_turleri.SOZ.puan}</td>
                   </>
                 )}
-                <td style={{ textAlign: 'center' }}>{st.kurum_ici_sira}/{st.toplam_ogrenci}</td>
+                <td style={{ textAlign: 'center' }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}/{alanViewFilter ? displayStudents.length : st.toplam_ogrenci}</td>
                 <td style={{ textAlign: 'center', fontSize: 12 }}>
-                  {st.tahmini_siralama ? st.tahmini_siralama.toLocaleString('tr-TR') : '—'}
+                  {(() => {
+                    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : (examType === 'YKS_AYT' ? 'SAY' : null);
+                    const sira = ptKey && st.puan_turleri?.[ptKey as 'SAY' | 'EA' | 'SOZ']?.tahmini_siralama
+                      ? st.puan_turleri[ptKey as 'SAY' | 'EA' | 'SOZ'].tahmini_siralama
+                      : st.tahmini_siralama;
+                    return sira ? sira.toLocaleString('tr-TR') : '—';
+                  })()}
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   <span className={`${s.percentileBadge} ${st.kurum_ici_yuzdelik >= 75 ? s.percentileHigh : st.kurum_ici_yuzdelik >= 50 ? s.percentileMid : s.percentileLow}`}>

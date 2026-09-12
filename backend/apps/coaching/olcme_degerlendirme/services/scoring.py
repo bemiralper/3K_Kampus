@@ -63,6 +63,73 @@ AYT_SOZ_KATSAYILAR = {
 # Diploma notu ağırlığı
 DIPLOMA_KATSAYI = 0.6   # OBP = diploma_notu × 0.6
 
+TYT_ANA_BOLUMLER = frozenset({'Türkçe', 'Sosyal Bilimler', 'Temel Matematik', 'Fen Bilimleri'})
+TYT_SOZ_EXTRA = frozenset({'Felsefe Grubu'})
+_GENERIC_LINK_IDS = frozenset({'0', '00', '000', '-', '.', 'none', 'null'})
+
+
+def is_reliable_tyt_link_code(raw_id: str | None) -> bool:
+    """Sıra no / 0 gibi zayıf kodlarla başka öğrencinin TYT neti bağlanmasın."""
+    if not raw_id:
+        return False
+    s = str(raw_id).strip()
+    if not s or s.lower() in _GENERIC_LINK_IDS:
+        return False
+    if s.isdigit() and len(s) == 11:
+        return True
+    if s.isdigit() and len(s) <= 3:
+        return False
+    return len(s) >= 4
+
+
+def _collapse_tyt_main_nets(tyt_nets: dict | None, *, include_soz_extra: bool = False) -> dict:
+    """
+    TYT ana test netlerini tekilleştir.
+
+    Linked TYT hem ana bölüm (Temel Matematik 40q) hem alt bölüm (Matematik 30q)
+    içerir. Alt ad TYT bağlamında Temel Matematik'e alias olduğu için ikisini
+    toplamak puanı ~40 puan şişirir. Aynı anahtara düşen netlerden büyüğünü al.
+    """
+    if not tyt_nets:
+        return {}
+    allowed = set(TYT_ANA_BOLUMLER)
+    if include_soz_extra:
+        allowed |= set(TYT_SOZ_EXTRA)
+    collapsed = {}
+    for section_name, net in tyt_nets.items():
+        net_val = float(net) if net else 0.0
+        normalized = _normalize_section_name(section_name, context='tyt')
+        if normalized not in allowed:
+            continue
+        prev = collapsed.get(normalized)
+        if prev is None or net_val > prev:
+            collapsed[normalized] = net_val
+    return collapsed
+
+
+def _ensure_ayt_math_net(section_nets: dict | None) -> dict:
+    """Matematik-2 + Geometri varsa Matematik (40q) netini tamamla."""
+    if not section_nets:
+        return {}
+    nets = dict(section_nets)
+    parent = 0.0
+    mat2 = 0.0
+    geo = 0.0
+    for name, net in nets.items():
+        net_val = float(net) if net else 0.0
+        normalized = _normalize_section_name(name, context='ayt')
+        compact = normalized.replace(' ', '').replace('-', '').lower()
+        if normalized == 'Matematik':
+            parent = max(parent, net_val)
+        elif compact in {'matematik2', 'mat2'}:
+            mat2 += net_val
+        elif normalized == 'Geometri':
+            geo += net_val
+    combo = mat2 + geo
+    if mat2 and combo > parent:
+        nets['Matematik'] = combo
+    return nets
+
 
 def _normalize_section_name(name: str, context: str = 'tyt') -> str:
     """
@@ -198,27 +265,15 @@ def calculate_ayt_score(section_nets: dict, tyt_nets: dict = None, puan_turu: st
     ayt_toplam_net = 0.0
     tyt_toplam_net = 0.0
 
-    # TYT katkısı (TYT netleri AYT katsayılarıyla çarpılır)
-    # SADECE 4 ana TYT bölümü kullanılır: Türkçe, Sosyal Bilimler, Temel Matematik, Fen Bilimleri
-    # TYT alt bölüm netleri (Tarih, Coğrafya, Felsefe, Fizik, Kimya, Biyoloji vb.) KULLANILMAZ
-    # çünkü bunların aynı isimli AYT katsayıları var ve çift sayıma neden olur.
-    TYT_ANA_BOLUMLER = {'Türkçe', 'Sosyal Bilimler', 'Temel Matematik', 'Fen Bilimleri'}
-    TYT_SOZ_EXTRA = {'Felsefe Grubu'}
-    if tyt_nets:
-        for section_name, net in tyt_nets.items():
-            net_val = float(net) if net else 0.0
-            normalized = _normalize_section_name(section_name, context='tyt')
-            if normalized not in TYT_ANA_BOLUMLER:
-                if puan_turu == 'SOZ' and normalized in TYT_SOZ_EXTRA:
-                    k = coef.get(normalized, 0)
-                    if k > 0:
-                        tyt_toplam_net += net_val
-                        ham_puan += net_val * k
-                continue
-            k = coef.get(normalized, 0)
-            if k > 0:
-                tyt_toplam_net += net_val
-                ham_puan += net_val * k
+    # TYT katkısı — sadece 4 ana test; aynı anahtara düşen alt bölümler tekilleşir.
+    collapsed_tyt = _collapse_tyt_main_nets(
+        tyt_nets, include_soz_extra=(puan_turu == 'SOZ'),
+    )
+    for section_name, net_val in collapsed_tyt.items():
+        k = coef.get(section_name, 0)
+        if k > 0:
+            tyt_toplam_net += net_val
+            ham_puan += net_val * k
 
     # AYT dersleri
     # AYT'de 'Matematik' = 40 sorunun toplam neti (Geometri dahil)
@@ -227,6 +282,7 @@ def calculate_ayt_score(section_nets: dict, tyt_nets: dict = None, puan_turu: st
     # ÖNEMLİ: TYT bölüm adlarıyla aynı isme sahip AYT ana bölümleri
     # (ör: "Fen Bilimleri" ana bölüm) TYT katsayısıyla çarpılmamalı.
     # TYT katkısı zaten tyt_nets parametresinden hesaplanıyor.
+    section_nets = _ensure_ayt_math_net(section_nets)
     TYT_SECTION_NAMES = {'Türkçe', 'Sosyal Bilimler', 'Temel Matematik', 'Fen Bilimleri'}
     for section_name, net in section_nets.items():
         net_val = float(net) if net else 0.0
@@ -289,7 +345,7 @@ def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
 
     student_id: AYT sınavında linked TYT'den öğrencinin netleri çekilir.
     raw_student_name: student_id yoksa ad-soyad ile eşleştirme yapılır.
-    raw_student_id: Son çare olarak sıra numarası ile eşleştirme.
+    raw_student_id: Yalnızca TC / güvenilir okul no ile eşleştirme.
     puan_turu: AYT puan türü ('SAY', 'EA', 'SOZ')
     """
     exam_type = exam.exam_type
@@ -344,7 +400,7 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
       1. student_id (DB'de kayıtlı öğrenci FK) — en güvenilir
       2. TC kimlik no (student FK varsa → tc_kimlik_no ile diğer sınavda ara)
       3. raw_student_name (ad-soyad) — önce birebir, sonra fuzzy (Türkçe normalize)
-      4. raw_student_id (sıra numarası) — son çare
+      4. raw_student_id — yalnızca TC / güvenilir okul no (0, 1, 105 gibi sıra no değil)
     """
     if not hasattr(exam, 'linked_tyt_exam') or not exam.linked_tyt_exam:
         return {}
@@ -419,8 +475,8 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
                     tyt_answer = candidate
                     break
 
-    # ── 4. raw_student_id — son çare ─────────────────────────────────
-    if not tyt_answer and raw_student_id:
+    # ── 4. raw_student_id — yalnızca güvenilir kod (TC / okul no) ──
+    if not tyt_answer and is_reliable_tyt_link_code(raw_student_id):
         tyt_answer = (
             StudentAnswer.objects
             .filter(
@@ -434,6 +490,8 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
     if tyt_answer:
         tyt_nets = {}
         for ss in tyt_answer.section_scores.select_related('section').all():
+            if ss.section.is_sub_section:
+                continue
             tyt_nets[ss.section.name] = float(ss.net) if ss.net else 0.0
         return tyt_nets
 

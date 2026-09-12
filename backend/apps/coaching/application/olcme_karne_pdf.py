@@ -403,6 +403,55 @@ def _fit_canvas_text(canv, text: str, font: str, size: float, max_w: float) -> t
     return t, s
 
 
+def _fit_wrapped_canvas_text(canv, text: str, font: str, max_w: float, sizes=(10, 9, 8.2, 7.4), max_lines=2):
+    """Uzun metni önce küçültüp sonra satır kırar."""
+    chosen_size = sizes[-1]
+    lines = ['']
+    for size in sizes:
+        lines = _wrap_canvas_text(canv, text, font, size, max_w, max_lines=max_lines)
+        chosen_size = size
+        if all('…' not in line for line in lines):
+            break
+    return lines, chosen_size
+
+
+def _hero_brand_layout(canv, exam_name: str, font_bold: str, left_w=176, header_h=112, pad=14) -> dict:
+    """Sol marka panelinde logo ve sınav adı çakışmasın."""
+    title_w = left_w - pad * 2
+    exam_lines, title_size = _fit_wrapped_canvas_text(
+        canv, exam_name or 'Sınav', font_bold, title_w,
+    )
+    leading = title_size + 2
+    exam_bottom_y = 34
+    exam_top_baseline = exam_bottom_y + leading * (len(exam_lines) - 1)
+    exam_top = exam_top_baseline + title_size * 0.85
+    logo_gap = 6
+    logo_top_margin = 8
+    max_logo_h = header_h - logo_top_margin - exam_top - logo_gap
+    logo_h = min(52, max(26, max_logo_h))
+    logo_w = logo_h * (546 / 407)
+    if logo_w > title_w:
+        logo_w = title_w
+        logo_h = logo_w * (407 / 546)
+    logo_y = header_h - logo_top_margin - logo_h
+    if logo_y < exam_top + logo_gap:
+        logo_h = max(22, logo_y + logo_h - (exam_top + logo_gap))
+        logo_w = min(title_w, logo_h * (546 / 407))
+        logo_y = exam_top + logo_gap
+    return {
+        'title_w': title_w,
+        'title_size': title_size,
+        'exam_lines': exam_lines,
+        'leading': leading,
+        'exam_top_baseline': exam_top_baseline,
+        'exam_top': exam_top,
+        'logo_x': pad,
+        'logo_y': logo_y,
+        'logo_w': logo_w,
+        'logo_h': logo_h,
+    }
+
+
 def _wrap_canvas_text(canv, text: str, font: str, size: float, max_w: float, max_lines=2) -> list[str]:
     """Sabit puntoda satır kırar; taşanı son satırda üç noktayla keser."""
     words = (text or '').split()
@@ -494,10 +543,11 @@ def _hero_header(ctx: _Ctx, data: dict):
             c.restoreState()
 
             pad = 14
-            title_w = left_w - pad * 2
-            title_size = 10
             exam_name = (data.get('exam_name') or 'Sınav').strip()
-            exam_lines = _wrap_canvas_text(c, exam_name, ctx.font_bold, title_size, title_w, max_lines=2)
+            brand = _hero_brand_layout(c, exam_name, ctx.font_bold, left_w=left_w, header_h=h, pad=pad)
+            title_w = brand['title_w']
+            title_size = brand['title_size']
+            exam_lines = brand['exam_lines']
 
             when = _format_session_when(data)
             sube = (data.get('sube_ad') or '').strip()
@@ -505,13 +555,8 @@ def _hero_header(ctx: _Ctx, data: dict):
             place = sube if sube and sube.lower() != kurum.lower() else ''
             caption = '  ·  '.join(b for b in (place, when) if b)
 
-            logo_h = 52
-            logo_w = logo_h * (546 / 407)
-            if logo_w > left_w - pad * 2:
-                logo_w = left_w - pad * 2
-                logo_h = logo_w * (407 / 546)
-            logo_x = pad
-            logo_y = h - 10 - logo_h
+            logo_x, logo_y = brand['logo_x'], brand['logo_y']
+            logo_w, logo_h = brand['logo_w'], brand['logo_h']
 
             if ctx.logo:
                 try:
@@ -525,11 +570,11 @@ def _hero_header(ctx: _Ctx, data: dict):
                     c.setFont(ctx.font_bold, 13)
                     c.drawString(pad, logo_y + logo_h / 3, '3K Kampüs')
 
-            exam_y = 42 + 12 * (len(exam_lines) - 1)
             c.setFillColor(colors.white)
             c.setFont(ctx.font_bold, title_size)
             for i, line in enumerate(exam_lines):
-                c.drawString(pad, exam_y - i * 12, line)
+                c.drawString(pad, brand['exam_top_baseline'] - i * brand['leading'], line)
+            c.setFont(ctx.font_bold, 8)
             c.drawString(pad, 26, 'Sınav Sonuç Belgesi')
             if caption:
                 cap, cap_s = _fit_canvas_text(c, caption, ctx.font, 6.5, title_w)

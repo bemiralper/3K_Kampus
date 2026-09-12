@@ -430,7 +430,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                 <td style={{ textAlign: 'center', fontSize: 11 }}>
                   {(() => {
                     // Alan filtresi aktifse o alana ait tahmini sıralamayı göster
-                    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : null;
+                    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : (examType === 'YKS_AYT' ? 'SAY' : null);
                     const sira = ptKey && r.puan_turleri?.[ptKey]?.tahmini_siralama
                       ? r.puan_turleri[ptKey].tahmini_siralama
                       : r.tahmini_siralama;
@@ -439,7 +439,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   {(() => {
-                    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : null;
+                    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : (examType === 'YKS_AYT' ? 'SAY' : null);
                     const yd = ptKey && r.puan_turleri?.[ptKey]?.yuzdelik_dilim != null
                       ? r.puan_turleri[ptKey].yuzdelik_dilim
                       : r.yuzdelik_dilim;
@@ -453,7 +453,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
       </div>
 
       <div className={s.analysisDisclaimer}>
-        ⚠️ Tahmini Türkiye sıralaması ve yüzdelik dilim, {meta.referans_yil} YKS verileri referans alınarak hesaplanmıştır. Kesin değildir.
+        ⚠️ Tahmini TR sıra ÖSYM YKS yerleştirme tahminidir ({meta.referans_yil}). Yayınevi PDF’deki Genel sıra bu denemedeki katılımcılara göredir; aynı şey değildir.
       </div>
     </div>
   );

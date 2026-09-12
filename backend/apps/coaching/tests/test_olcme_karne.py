@@ -476,3 +476,35 @@ class KarnePdfLongTopicTableTest(TestCase):
         })
         self.assertTrue(pdf.startswith(b'%PDF'))
         self.assertGreater(len(pdf), 1500)
+
+
+class KarnePdfHeaderOverlapTest(TestCase):
+    def test_long_exam_name_stays_below_logo(self):
+        from reportlab.pdfgen import canvas as pdf_canvas
+
+        from apps.coaching.application.olcme_karne_pdf import (
+            _hero_brand_layout,
+            _register_fonts,
+            render_karne_pdf,
+        )
+
+        _, font_bold = _register_fonts()
+        c = pdf_canvas.Canvas(io.BytesIO())
+        layout = _hero_brand_layout(
+            c, '3K KAMPÜS BRANŞLAR KARMASI TG AYT 2', font_bold,
+        )
+        self.assertGreaterEqual(layout['logo_y'], layout['exam_top'] + 5)
+        self.assertLessEqual(len(layout['exam_lines']), 2)
+        self.assertTrue(all(layout['exam_lines']))
+
+        pdf = render_karne_pdf({
+            'exam_name': '3K KAMPÜS BRANŞLAR KARMASI TG AYT 2',
+            'student_name': 'Arda Yayla',
+            'sube_ad': 'Merkez',
+            'kurum_ad': '3K Kampüs',
+            'toplam_net': 71.25,
+            'topic_blocks': [],
+            'section_details': [],
+            'answer_grids': [],
+        })
+        self.assertTrue(pdf.startswith(b'%PDF'))
