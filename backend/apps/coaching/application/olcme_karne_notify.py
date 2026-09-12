@@ -64,14 +64,39 @@ def _fmt_num(n, digits=2) -> str:
         return '—'
 
 
+def _fmt_tr_date(value) -> str:
+    """ISO / date → 14.03.2026. Hatırlatma şablonlarıyla aynı biçim."""
+    if not value:
+        return ''
+    if hasattr(value, 'strftime'):
+        return value.strftime('%d.%m.%Y')
+    text = str(value).strip()
+    if len(text) >= 10 and text[4] == '-':
+        parts = text[:10].split('-')
+        if len(parts) == 3:
+            year, month, day = parts
+            return f'{day}.{month}.{year}'
+    return text
+
+
 def _context(karne: dict, *, veli=None) -> dict[str, Any]:
     veli_ad = ''
     if veli is not None:
         veli_ad = getattr(veli, 'tam_ad', None) or f'{getattr(veli, "ad", "")} {getattr(veli, "soyad", "")}'.strip()
+    sinav_ad = karne.get('exam_name') or ''
+    tarih = _fmt_tr_date(karne.get('session_date') or karne.get('exam_date'))
+    baslama = karne.get('session_start_time') or ''
+    bitis = karne.get('session_end_time') or ''
     return {
         'ogrenci_ad': karne.get('student_name') or '',
         'veli_ad': veli_ad,
-        'sinav_ad': karne.get('exam_name') or '',
+        'sinav_ad': sinav_ad,
+        'sinav_adi': sinav_ad,
+        'sinav_tarihi': tarih,
+        'tarih': tarih,
+        'baslama_saati': baslama,
+        'bitis_saati': bitis,
+        'oturum_ad': karne.get('session_name') or '',
         'puan': _fmt_num(karne.get('puan'), 3),
         'net': _fmt_num(karne.get('toplam_net'), 2),
         'pdf_baslik': PDF_TITLE,

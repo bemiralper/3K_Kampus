@@ -47,10 +47,13 @@ class AnswerKeyStudentPreview:
 
 
 def _context(exam, student, *, veli=None) -> dict[str, Any]:
+    from apps.coaching.olcme_degerlendirme.views.roster_views import _exam_schedule
+
     veli_ad = ''
     if veli is not None:
         veli_ad = getattr(veli, 'tam_ad', None) or f'{getattr(veli, "ad", "")} {getattr(veli, "soyad", "")}'.strip()
     ogrenci_ad = f'{student.ad} {student.soyad}'.strip() if student else ''
+    schedule = _exam_schedule(exam)
     return {
         'ogrenci_ad': ogrenci_ad,
         'veli_ad': veli_ad,
@@ -59,6 +62,7 @@ def _context(exam, student, *, veli=None) -> dict[str, Any]:
         'pdf_baslik': PDF_TITLE,
         'kurum_ad': getattr(getattr(exam, 'kurum', None), 'ad', '') or '',
         'sube': getattr(getattr(exam, 'sube', None), 'ad', '') or '',
+        **schedule,
     }
 
 

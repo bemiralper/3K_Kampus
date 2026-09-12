@@ -662,7 +662,12 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         recipients=(VELI, OGRENCI),
         opt_in_category='duyuru',
         has_document=True,
-        variables=('ogrenci_ad', 'veli_ad', 'sinav_ad', 'puan', 'net', 'pdf_baslik'),
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'sinav_ad', 'sinav_adi', 'sinav_tarihi', 'tarih',
+            'baslama_saati', 'bitis_saati', 'oturum_ad',
+            'puan', 'net', 'pdf_baslik',
+        ),
         meta_name_base='sinav_karne',
         default_bodies=MappingProxyType({
             VELI: (
@@ -686,7 +691,12 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         recipients=(VELI, OGRENCI),
         opt_in_category='duyuru',
         has_document=True,
-        variables=('ogrenci_ad', 'veli_ad', 'sinav_ad', 'pdf_baslik'),
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'sinav_ad', 'sinav_adi', 'sinav_tarihi', 'tarih',
+            'baslama_saati', 'bitis_saati',
+            'pdf_baslik',
+        ),
         meta_name_base='sinav_cevap_anahtari',
         default_bodies=MappingProxyType({
             VELI: (

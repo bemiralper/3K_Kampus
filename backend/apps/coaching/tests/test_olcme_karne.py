@@ -101,6 +101,8 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertTrue(event.has_document)
         self.assertIn('VELI', event.recipients)
         self.assertIn('OGRENCI', event.recipients)
+        for name in ('sinav_ad', 'sinav_adi', 'sinav_tarihi', 'tarih', 'puan', 'net'):
+            self.assertIn(name, event.all_variables())
 
     def test_single_karne_pdf_is_original_pdf(self):
         res = self.client.get(
@@ -209,6 +211,22 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertEqual(data['session_start_time'], '10:00')
         self.assertEqual(data['session_name'], '1. Oturum')
         self.assertEqual(data['kurum_ici_sira'], 1)
+
+        from apps.coaching.application.olcme_karne_notify import _context
+        from apps.communication.application.variable_resolver import resolve_variables
+
+        ctx = _context(data)
+        self.assertEqual(ctx['sinav_tarihi'], '14.03.2026')
+        self.assertEqual(ctx['tarih'], '14.03.2026')
+        self.assertEqual(ctx['sinav_adi'], 'DK TYT 2')
+        self.assertEqual(ctx['baslama_saati'], '10:00')
+        body = resolve_variables(
+            'Değerli öğrencimiz, *{{sinav_tarihi}}* tarihinde yapılan *"{{sinav_ad}}"* '
+            'sınav sonuç belgen ektedir.',
+            ctx,
+        )
+        self.assertNotIn('{{sinav_tarihi}}', body)
+        self.assertIn('14.03.2026', body)
 
     def test_karne_uses_matching_session_datetime(self):
         other = ExamSection.objects.create(

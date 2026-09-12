@@ -99,6 +99,13 @@ class NotificationEventCatalogTest(TestCase):
             ):
                 self.assertIn(name, names, f'{key} eksik: {name}')
 
+    def test_sinav_karne_and_answer_key_expose_date_variables(self):
+        for key in ('sinav.karne', 'sinav.cevap_anahtari'):
+            event = get_event(key)
+            names = event.all_variables()
+            for name in ('sinav_ad', 'sinav_adi', 'sinav_tarihi', 'tarih', 'baslama_saati', 'bitis_saati'):
+                self.assertIn(name, names, f'{key} eksik: {name}')
+
     def test_odeme_events_discover_live_meta_names(self):
         self.assertIn(
             'odeme_plan_veli',

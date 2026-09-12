@@ -656,8 +656,6 @@ class AttendanceService:
                     changed = True
             elif record.izinli_mi:
                 record.izinli_mi = False
-                if record.durum == AttendanceStatus.EXCUSED:
-                    record.durum = AttendanceStatus.ABSENT
                 changed = True
             if changed and persist:
                 record.save(update_fields=['izinli_mi', 'durum'])
@@ -910,8 +908,6 @@ class AttendanceService:
                 record_data['izinli_mi'] = True
             else:
                 record_data['izinli_mi'] = False
-                if record_data.get('durum') == AttendanceStatus.EXCUSED:
-                    record_data['durum'] = AttendanceStatus.ABSENT
 
             existing = AttendanceRecord.objects.filter(
                 attendance_session_id=session_id,

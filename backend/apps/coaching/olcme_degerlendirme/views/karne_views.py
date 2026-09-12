@@ -198,13 +198,17 @@ def _karne_stub(exam, answer) -> dict:
         name = f'{answer.student.ad} {answer.student.soyad}'.strip()
     else:
         name = answer.raw_student_name or answer.raw_student_id or 'Öğrenci'
+    from apps.coaching.olcme_degerlendirme.views.analysis_views import _student_session_fields
+
     return {
         'answer_id': answer.id,
         'student_id': answer.student_id,
         'student_name': name,
         'exam_name': exam.name,
+        'exam_date': str(exam.exam_date) if exam.exam_date else None,
         'toplam_net': float(answer.total_net or 0),
         'puan': None,
+        **_student_session_fields(exam, answer),
     }
 
 
