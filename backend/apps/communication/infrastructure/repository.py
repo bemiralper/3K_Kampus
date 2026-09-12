@@ -13,6 +13,7 @@ from django.utils import timezone
 
 from apps.communication.domain.enums import (
     Channel,
+    CommunicationDepartment,
     ConversationStatus,
     MessageDirection,
     MessageStatus,
@@ -423,12 +424,14 @@ class ConversationRepository:
     ) -> str | None:
         """Gelen mesaj hangi departmanın sohbetine düşmeli.
 
-        Aynı WhatsApp hattında koçluk ve muhasebe ayrı thread tutuyor. Kişi
-        muhasebenin gönderdiği mesaja cevap verdiğinde cevabın muhasebe
-        sohbetinde kalması gerekir; bu yüzden hattı belirleyen departman değil,
-        kişiyle en son konuşan sohbetin departmanı esas alınır. Hiç sohbet
-        yoksa hattın departmanına düşülür.
+        Muhasebe olarak tanımlı hat (WABA) her zaman muhasebe portalına düşer.
+        Aksi halde aynı numarayı paylaşan hatlarda kişiyle en son konuşan
+        sohbetin departmanı esas alınır; hiç sohbet yoksa hattın departmanı.
         """
+        cfg_dept = getattr(channel_config, 'department', None)
+        if cfg_dept == CommunicationDepartment.ACCOUNTING:
+            return cfg_dept
+
         cfg_id = getattr(channel_config, 'id', None)
         base = Conversation.objects.filter(
             kurum_id=kurum_id,
@@ -456,6 +459,18 @@ class ConversationRepository:
             if department:
                 return department
         return getattr(channel_config, 'department', None)
+
+    @staticmethod
+    def align_accounting_line_conversations(channel_config) -> int:
+        """Muhasebe hattına yazılmış koçluk etiketli sohbetleri portalın göreceği departmana çek."""
+        if getattr(channel_config, 'department', None) != CommunicationDepartment.ACCOUNTING:
+            return 0
+        return Conversation.objects.filter(
+            channel_config=channel_config,
+            deleted_at__isnull=True,
+        ).exclude(
+            department=CommunicationDepartment.ACCOUNTING,
+        ).update(department=CommunicationDepartment.ACCOUNTING)
 
     @staticmethod
     def _pick_existing_conversation(

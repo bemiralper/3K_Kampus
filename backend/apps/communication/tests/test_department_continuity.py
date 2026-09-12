@@ -135,6 +135,36 @@ class InboundDepartmentContinuityTest(TestCase):
         conv = Conversation.objects.get(kurum=self.kurum, contact_phone=PHONE)
         self.assertEqual(conv.department, CommunicationDepartment.COACHING)
 
+    def test_accounting_line_stays_accounting_even_if_coaching_spoke_last(self):
+        self.config.department = CommunicationDepartment.ACCOUNTING
+        self.config.save(update_fields=['department'])
+        self._conv(CommunicationDepartment.COACHING, minutes_ago=1)
+
+        self._inbound(msg_id='wamid.acct-line')
+
+        conv = Conversation.objects.filter(
+            kurum=self.kurum, contact_phone=PHONE,
+            department=CommunicationDepartment.ACCOUNTING,
+        ).first()
+        self.assertIsNotNone(conv)
+        self.assertEqual(Message.objects.filter(conversation=conv).count(), 1)
+        self.assertEqual(
+            Message.objects.filter(
+                conversation__department=CommunicationDepartment.COACHING,
+            ).count(),
+            0,
+        )
+
+    def test_align_moves_coaching_threads_on_accounting_line(self):
+        self.config.department = CommunicationDepartment.ACCOUNTING
+        self.config.save(update_fields=['department'])
+        stuck = self._conv(CommunicationDepartment.COACHING, minutes_ago=2)
+
+        moved = ConversationRepository.align_accounting_line_conversations(self.config)
+        stuck.refresh_from_db()
+        self.assertEqual(moved, 1)
+        self.assertEqual(stuck.department, CommunicationDepartment.ACCOUNTING)
+
     def test_inbound_department_helper_ignores_other_line(self):
         other_config = CommunicationChannelConfig.objects.create(
             kurum=self.kurum,

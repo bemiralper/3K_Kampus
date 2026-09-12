@@ -501,7 +501,6 @@ def get_ogrenci_ids_by_enrollment_kalem_filters(ctx, filter_specs, use_all_years
             qs = OgrenciEkHizmet.objects.filter(
                 ek_hizmet_id=filter_id,
                 aktif_mi=True,
-                dahil_mi=False,
             )
             if not use_all_years and ctx.get('egitim_yili_id'):
                 qs = qs.filter(
@@ -518,7 +517,6 @@ def get_ogrenci_ids_by_enrollment_kalem_filters(ctx, filter_specs, use_all_years
             paket_turu=filter_turu,
             paket_id=filter_id,
             aktif_mi=True,
-            dahil_mi=False,
         ).values_list('ogrenci_id', flat=True)
 
         kayit_qs = OgrenciKayit.objects.filter(
@@ -617,11 +615,17 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
         sozlesme_qs = Sozlesme.objects.filter(
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
-            durum__in=[SozlesmeDurum.AKTIF, SozlesmeDurum.TASLAK, SozlesmeDurum.TAMAMLANDI],
+            durum__in=[
+                SozlesmeDurum.AKTIF,
+                SozlesmeDurum.TASLAK,
+                SozlesmeDurum.TAMAMLANDI,
+                SozlesmeDurum.DONDURULMUS,
+            ],
         )
         if not use_all_years and ctx.get('egitim_yili_id'):
             sozlesme_qs = sozlesme_qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
 
+        # Sözleşme + kayıt paketi. Aktif sözleşme yoksa kayıt satırı yeter.
         ogrenci_ids = get_ogrenci_ids_by_kalem_filters(sozlesme_qs, filter_kalemler)
         ogrenci_ids |= get_ogrenci_ids_by_enrollment_kalem_filters(
             ctx, filter_kalemler, use_all_years,
@@ -736,12 +740,11 @@ def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
             if dedupe not in entries:
                 entries[dedupe] = entry
 
-    # Yalnızca özel ders / deneme — grup/yayın/ek hizmet zaten sözleşmeden geliyor;
-    # tüm kayıt paketlerini eklemek eski yıl satırlarını bu yıla taşıyabilirdi.
+    # Sözleşme henüz aktif değilse kalemler kayıt paketinden gelsin.
     for ep in OgrenciEgitimPaketi.objects.filter(
         ogrenci_id__in=ogrenci_ids,
         aktif_mi=True,
-        paket_turu__in=('ozel_ders', 'deneme'),
+        paket_turu__in=PAKET_CATALOG_TURLERI,
     ):
         adi = (
             ep.paket_adi

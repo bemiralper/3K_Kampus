@@ -11,6 +11,7 @@ from apps.odeme_takip.domain.enums import KalemTuru, PaketTuru, SozlesmeDurum
 from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
 from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciEkHizmet, OgrenciKayit
 from apps.ogrenci.interfaces.list_helpers import (
+    build_kayit_queryset,
     build_ogrenci_kalemler_map,
     resolve_kalem_filter_turu,
     resolve_sinif_seviyesi_ad,
@@ -171,3 +172,114 @@ class BuildOgrenciKalemlerMapTest(TestCase):
         turler = self._turler()
         self.assertIn(('ozel_ders', 'Matematik Özel'), turler)
         self.assertIn(('deneme', 'TYT Deneme Paketi'), turler)
+
+    def test_enrollment_grup_dersi_appears_without_sozlesme(self):
+        self.sozlesme.delete()
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.ogrenci,
+            paket_turu='grup_dersi',
+            paket_id=self.grup.id,
+            paket_adi=self.grup.ad,
+            aktif_mi=True,
+            dahil_mi=True,
+        )
+        self.assertIn(('grup_dersi', '12 TYT Grup'), self._turler())
+
+
+def _list_params(**overrides):
+    params = {
+        'q': '',
+        'all_years': False,
+        'durum': 'aktif',
+        'sinif_seviyesi_ids': [],
+        'giris_turu': None,
+        'kayit_turu': None,
+        'cinsiyet': None,
+        'paket_id': None,
+        'paket_turu': None,
+        'kalemler': [],
+        'sinif_ids': [],
+        'school_ids': [],
+        'alan_ids': [],
+        'coach_ids': [],
+        'kayit_tarihi_bas': None,
+        'kayit_tarihi_bit': None,
+        'sort': 'created_at_desc',
+        'page': 1,
+        'page_size': 25,
+    }
+    params.update(overrides)
+    return params
+
+
+class BuildKayitQuerysetEnrollmentTest(TestCase):
+    """Kayıtlı ama sözleşmesi aktif olmayan öğrenci paket filtresinde kalsın."""
+
+    def setUp(self):
+        self.kurum = Kurum.objects.create(ad='Liste Kurum', kod='LST')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='LST-M')
+        self.yil = EgitimYili.objects.create(
+            baslangic_yil=2025, bitis_yil=2026, aktif_mi=True,
+        )
+        self.ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Ada', soyad='Kayit', aktif_mi=True,
+        )
+        self.kayit = OgrenciKayit.objects.create(
+            ogrenci=self.ogrenci,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+            aktif_mi=True,
+        )
+        self.grup = GrupDersi.objects.create(
+            ad='11 TYT Grup', kod='G11',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        self.ctx = {
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'egitim_yili_id': self.yil.id,
+        }
+
+    def _ids(self, **overrides):
+        qs, _ = build_kayit_queryset(self.ctx, _list_params(**overrides))
+        return set(qs.values_list('ogrenci_id', flat=True))
+
+    def test_kayit_only_student_visible_without_kalem_filter(self):
+        self.assertIn(self.ogrenci.id, self._ids())
+
+    def test_kayit_package_without_sozlesme_matches_kalem_filter(self):
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.ogrenci,
+            paket_turu='grup_dersi',
+            paket_id=self.grup.id,
+            paket_adi=self.grup.ad,
+            aktif_mi=True,
+            dahil_mi=True,
+        )
+        ids = self._ids(kalemler=[('grup_dersi', self.grup.id)])
+        self.assertIn(self.ogrenci.id, ids)
+
+    def test_dondurulmus_sozlesme_matches_kalem_filter(self):
+        soz = Sozlesme.objects.create(
+            sozlesme_no='SZ-LST-DND',
+            ogrenci=self.ogrenci,
+            ogrenci_kayit=self.kayit,
+            egitim_yili=self.yil,
+            kurum=self.kurum,
+            sube=self.sube,
+            baslangic_tarihi=date(2025, 9, 1),
+            bitis_tarihi=date(2026, 6, 30),
+            paket_turu=PaketTuru.GRUP_DERSI,
+            paket_id=self.grup.id,
+            paket_adi=self.grup.ad,
+            durum=SozlesmeDurum.DONDURULMUS,
+        )
+        SozlesmeKalemi.objects.create(
+            sozlesme=soz,
+            kalem_turu=KalemTuru.PAKET,
+            kalem_id=self.grup.id,
+            kalem_adi=self.grup.ad,
+        )
+        ids = self._ids(kalemler=[('grup_dersi', self.grup.id)])
+        self.assertIn(self.ogrenci.id, ids)
