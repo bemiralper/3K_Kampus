@@ -311,12 +311,12 @@ class KarneTopicBlockUsesOutcomeTextTest(TestCase):
             exam=exam, name='Sosyal Bilimler', order=1,
             question_start=41, question_end=60, is_sub_section=False,
         )
+        subject = Subject.objects.create(code='COG', name='Coğrafya')
         cografya = ExamSection.objects.create(
             exam=exam, name='Coğrafya', order=1,
             question_start=46, question_end=50, is_sub_section=True,
-            parent_section=parent,
+            parent_section=parent, subject=subject,
         )
-        subject = Subject.objects.create(code='COG', name='Coğrafya')
         topic = Topic.objects.create(subject=subject, name='9. sınıf · HARİTA', order=1)
         Outcome.objects.create(
             topic=topic, code='9.1.1.4', text='Harita bilgilerini kullanır.',
@@ -346,10 +346,11 @@ class KarneTopicBlockUsesOutcomeTextTest(TestCase):
         from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
 
         exam = Exam.objects.create(name='Karne Başlık', exam_type='YKS_TYT')
+        subject = Subject.objects.create(code='MAT2', name='Matematik')
         section = ExamSection.objects.create(
             exam=exam, name='Matematik', order=1, question_start=1, question_end=2,
+            subject=subject,
         )
-        subject = Subject.objects.create(code='MAT2', name='Matematik')
         topic = Topic.objects.create(
             subject=subject, code='21.10', name='SHG21 · FONKSİYONLAR', order=1,
         )
@@ -366,6 +367,48 @@ class KarneTopicBlockUsesOutcomeTextTest(TestCase):
         self.assertEqual(rows[0]['name'], 'FONKSİYONLAR')
         self.assertNotIn('21.10.2', rows[0]['name'])
         self.assertNotIn('Fonksiyon grafiği', rows[0]['name'])
+
+    def test_heading_code_stays_on_section_subject(self):
+        """21.10 Türkçe'de AD SOYLU; DKAB'daki İslam düşüncesi karneye sızmamalı."""
+        from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
+        from apps.coaching.olcme_degerlendirme.models.curriculum import Subject, Topic
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_topic_blocks
+
+        exam = Exam.objects.create(name='Karne Ders Sızıntısı', exam_type='YKS_TYT')
+        turkce = Subject.objects.create(code='TURKCE', name='Türkçe')
+        dkab = Subject.objects.create(code='DKAB', name='Din Kültürü ve Ahlak Bilgisi')
+        Topic.objects.create(
+            subject=turkce, code='21.10', name='SHG21 · AD SOYLU SÖZCÜKLER', order=1,
+        )
+        Topic.objects.create(
+            subject=dkab, code='21.10',
+            name='SHG21 · İSLAM DÜŞÜNCESİNDE İTİKADİ, SİYASİ VE FIKHİ YORUMLAR',
+            order=2,
+        )
+        section = ExamSection.objects.create(
+            exam=exam, name='Türkçe', order=1, question_start=1, question_end=2,
+            subject=turkce,
+        )
+        ak = AnswerKey.objects.create(exam=exam, booklet='')
+        AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=1,
+            correct_answer='A', imported_outcome_text='21.10',
+        )
+        AnswerKeyItem.objects.create(
+            answer_key=ak, section=section, question_number=2,
+            correct_answer='B', imported_outcome_text='21.10',
+        )
+
+        blocks = _build_topic_blocks(exam, {
+            '1': {'result': 'correct'},
+            '2': {'result': 'wrong'},
+        }, '')
+        rows = [row for block in blocks for table in block['tables'] for row in table['rows']]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['name'], 'AD SOYLU SÖZCÜKLER')
+        self.assertEqual(rows[0]['soru'], 2)
+        self.assertNotIn('İSLAM', rows[0]['name'])
+        self.assertNotIn('İTİKADİ', rows[0]['name'])
 
 
 class KarnePdfLongTopicTableTest(TestCase):

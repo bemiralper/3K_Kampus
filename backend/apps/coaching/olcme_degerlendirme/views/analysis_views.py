@@ -506,17 +506,44 @@ def _looks_like_outcome_code(text: str) -> bool:
     return bool(_OUTCOME_CODE_RE.fullmatch(_normalize_outcome_code(text)))
 
 
-def _outcome_texts_for_codes(codes: set[str]) -> dict[str, str]:
+def _section_curriculum_subject(item, cache: dict):
+    """Sınav bölümünün müfredat dersi — boş TYT kopyası varsa asıl ders."""
+    subject = getattr(getattr(item, 'section', None), 'subject', None)
+    if subject is None:
+        return None
+    if subject.id in cache:
+        return cache[subject.id]
+    resolved = subject
+    if not subject.topics.exists():
+        from ..services.exam_templates import _resolve_curriculum_subject
+        resolved = _resolve_curriculum_subject(
+            getattr(subject, 'code', '') or '',
+            getattr(subject, 'name', '') or '',
+            'YKS_TYT',
+        )
+    cache[subject.id] = resolved
+    return resolved
+
+
+def _outcome_texts_for_codes(codes: set[str], subject=None) -> dict[str, str]:
     cleaned = {_normalize_outcome_code(code) for code in codes if _looks_like_outcome_code(code)}
-    if not cleaned:
+    if not cleaned or subject is None:
         return {}
     mapping: dict[str, str] = {}
-    for sub in SubOutcome.objects.filter(code__in=cleaned, is_active=True).only('code', 'text'):
+    for sub in (
+        SubOutcome.objects
+        .filter(code__in=cleaned, is_active=True, outcome__topic__subject=subject)
+        .only('code', 'text')
+    ):
         if sub.text:
             mapping[sub.code] = sub.text
     remaining = cleaned - set(mapping)
     if remaining:
-        for outcome in Outcome.objects.filter(code__in=remaining, is_active=True).only('code', 'text'):
+        for outcome in (
+            Outcome.objects
+            .filter(code__in=remaining, is_active=True, topic__subject=subject)
+            .only('code', 'text')
+        ):
             if outcome.text:
                 mapping[outcome.code] = outcome.text
     remaining = cleaned - set(mapping)
@@ -524,7 +551,7 @@ def _outcome_texts_for_codes(codes: set[str]) -> dict[str, str]:
         from ..services.curriculum_band import topic_display_name
         from ..models.curriculum import Topic
 
-        for topic in Topic.objects.filter(code__in=remaining).only('code', 'name'):
+        for topic in Topic.objects.filter(code__in=remaining, subject=subject).only('code', 'name'):
             title = topic_display_name(topic.name or '')
             if title:
                 mapping[topic.code] = title
@@ -532,7 +559,9 @@ def _outcome_texts_for_codes(codes: set[str]) -> dict[str, str]:
         for code in leftover:
             prefix = f'{code}.'
             child = (
-                Outcome.objects.filter(code__startswith=prefix, is_active=True)
+                Outcome.objects.filter(
+                    code__startswith=prefix, is_active=True, topic__subject=subject,
+                )
                 .select_related('topic')
                 .only('code', 'topic__name')
                 .first()
@@ -579,19 +608,35 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         return []
     items = list(
         ak.items
-        .select_related('section', 'section__parent_section', 'outcome__topic', 'sub_outcome')
+        .select_related(
+            'section', 'section__parent_section', 'section__subject',
+            'outcome__topic', 'sub_outcome',
+        )
         .order_by('section__order', 'question_number')
     )
-    code_texts = _outcome_texts_for_codes({
-        item.imported_outcome_text
-        for item in items
-        if not (item.display_outcome_text() or '').strip()
-        and _looks_like_outcome_code(item.imported_outcome_text or '')
-    })
+    subject_cache: dict = {}
+    codes_by_subject: dict = defaultdict(set)
+    subject_by_id: dict = {}
+    for item in items:
+        subject = _section_curriculum_subject(item, subject_cache)
+        if subject is None:
+            continue
+        if (item.display_outcome_text() or '').strip():
+            continue
+        if not _looks_like_outcome_code(item.imported_outcome_text or ''):
+            continue
+        subject_by_id[subject.id] = subject
+        codes_by_subject[subject.id].add(item.imported_outcome_text)
+    code_texts_by_subject = {
+        sid: _outcome_texts_for_codes(codes, subject=subject_by_id[sid])
+        for sid, codes in codes_by_subject.items()
+    }
     use_b = (booklet or '').upper() == 'B'
     blocks_map: OrderedDict = OrderedDict()
     for item in items:
-        label = _topic_block_label(item, code_texts)
+        subject = _section_curriculum_subject(item, subject_cache)
+        sid = getattr(subject, 'id', None)
+        label = _topic_block_label(item, code_texts_by_subject.get(sid))
         if not label:
             continue
         lookup_q = item.booklet_b_global() if use_b else item.question_number
