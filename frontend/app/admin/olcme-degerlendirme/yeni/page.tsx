@@ -8,6 +8,8 @@ import {
   BOOKLET_TYPES,
   SCHEDULE_PREFERENCES,
   EXAM_CREATE_FORM_DEFAULT,
+  examSupportsOptionalPhilosophy,
+  optionalPhilosophyHint,
 } from '../../../../components/olcme/types';
 import type {
   ExamCreateForm,
@@ -764,11 +766,11 @@ export default function YeniSinavPage() {
                     onChange={e => setField('booklet_auto_detect', e.target.checked)} />
                   <span>Kitapçık otomatik tespit</span>
                 </label>
-                {(form.exam_type === 'YKS_TYT' || form.exam_type === 'DENEME') && (
+                {examSupportsOptionalPhilosophy(form.exam_type) && (
                   <label className={y.toggle}>
                     <input type="checkbox" checked={form.include_optional_philosophy}
                       onChange={e => setField('include_optional_philosophy', e.target.checked)} />
-                    <span>Felsefe (Seçmeli) dahil — Sosyal Bilimler içinde, Din Kültürü sonrası</span>
+                    <span>Felsefe (Seçmeli) dahil — {optionalPhilosophyHint(form.exam_type)}</span>
                   </label>
                 )}
               </div>

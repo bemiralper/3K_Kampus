@@ -18,6 +18,18 @@ export const EXAM_TYPES = [
 
 export type ExamTypeValue = typeof EXAM_TYPES[number]['value'];
 
+export const OPTIONAL_PHILOSOPHY_EXAM_TYPES = ['YKS_TYT', 'YKS_AYT', 'DENEME'] as const;
+
+export function examSupportsOptionalPhilosophy(examType: string): boolean {
+  return (OPTIONAL_PHILOSOPHY_EXAM_TYPES as readonly string[]).includes(examType);
+}
+
+export function optionalPhilosophyHint(examType: string): string {
+  return examType === 'YKS_AYT'
+    ? 'Sosyal Bilimler-2 içinde, Din Kültürü sonrası'
+    : 'Sosyal Bilimler içinde, Din Kültürü sonrası';
+}
+
 export const EXAM_STATUS = [
   { value: 'DRAFT',            label: 'Taslak',                color: 'gray'   },
   { value: 'ANSWER_KEY_READY', label: 'Cevap Anahtarı Hazır', color: 'blue'   },

@@ -18,6 +18,7 @@ import {
   isHeadingCode,
   topicNameBelongsElsewhere,
 } from '../../../../components/olcme/outcome-search';
+import { leafSectionForQuestion } from '../../../../components/olcme/section-ranges';
 import s from '../olcme.module.css';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -312,8 +313,9 @@ export default function OutcomesTab({ exam }: Props) {
       const primary = pickPrimaryAnswerKey(keys);
       if (primary && primary.items.length > 0) {
         const newRows: OutcomeRow[] = primary.items.map(item => {
-          // Bu sorunun ait olduğu alt bölümü bul
-          const ssInfo = ssInfos.find(ss => ss.section.id === item.section);
+          const leaf = leafSectionForQuestion(allSections, item.question_number);
+          const ssInfo = (leaf && ssInfos.find(ss => ss.section.id === leaf.id))
+            || ssInfos.find(ss => ss.section.id === item.section);
           const resolved = (!item.outcome && ssInfo)
             ? firstOutcomeForImported(
                 ssInfo.topics,
@@ -343,8 +345,8 @@ export default function OutcomesTab({ exam }: Props) {
             question_number: item.question_number,
             correct_answer: item.correct_answer,
             is_cancelled: item.is_cancelled,
-            section_id: item.section,
-            section_name: item.section_name,
+            section_id: leaf?.id ?? item.section,
+            section_name: leaf?.name ?? item.section_name,
             imported_outcome_text: item.imported_outcome_text || '',
             outcome_id: outcomeId,
             sub_outcome_id: item.sub_outcome ?? null,

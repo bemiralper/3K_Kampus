@@ -18,6 +18,7 @@ import {
   flattenSubjectOutcomes,
   subjectsForSection,
 } from '../../../../components/olcme/outcome-search';
+import { leafExamSections, leafSectionForQuestion } from '../../../../components/olcme/section-ranges';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  Yardımcı Tipler & Fonksiyonlar                                           */
@@ -88,24 +89,7 @@ export default function AnswerKeyTab({ exam }: Props) {
 
   /* Türemiş değerler */
   // Alt bölümlerle tamamen kapsanan ana bölümleri hariç tut
-  const sections = useMemo(() => {
-    const allSecs = exam.sections ?? [];
-    const subSecs = allSecs.filter(s => s.is_sub_section);
-    const parentsWithChildren = new Set(subSecs.map(s => s.parent_section).filter(Boolean));
-
-    // Alt bölümleri olan ana bölümleri çıkar, alt bölümlerini ekle
-    const result: typeof allSecs = [];
-    for (const sec of allSecs) {
-      if (!sec.is_sub_section && parentsWithChildren.has(sec.id)) continue; // alt bölümü var → atla
-      if (!sec.is_sub_section) result.push(sec); // alt bölümü yok → ekle
-    }
-    // Alt bölümleri ekle (soru başlangıcına göre sıralı)
-    for (const sec of subSecs) {
-      result.push(sec);
-    }
-    // Soru başlangıcına göre sırala
-    return result.sort((a, b) => a.question_start - b.question_start);
-  }, [exam.sections]);
+  const sections = useMemo(() => leafExamSections(exam.sections), [exam.sections]);
   const hasB = exam.booklet_type === 'AB' || exam.booklet_type === 'ABCD';
 
   const totalQuestions = useMemo(
@@ -152,12 +136,14 @@ export default function AnswerKeyTab({ exam }: Props) {
       const primary = pickPrimaryAnswerKey(keys);
       if (primary && primary.items.length > 0) {
         setRows(
-          primary.items.map(item => ({
+          primary.items.map(item => {
+            const leaf = leafSectionForQuestion(exam.sections, item.question_number);
+            return {
             question_number: item.question_number,
             correct_answer: item.correct_answer,
             is_cancelled: item.is_cancelled,
-            section_id: item.section,
-            section_name: item.section_name,
+            section_id: leaf?.id ?? item.section,
+            section_name: leaf?.name ?? item.section_name,
             outcome_id: item.outcome,
             sub_outcome_id: item.sub_outcome ?? null,
             outcome_code: item.outcome_code || '',
@@ -165,7 +151,8 @@ export default function AnswerKeyTab({ exam }: Props) {
             imported_outcome_text: item.imported_outcome_text || '',
             b_question_number: item.b_question_number ?? null,
             item_id: item.id,
-          })),
+            };
+          }),
         );
         setHasExistingData(true);
         setStep('preview');

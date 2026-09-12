@@ -25,7 +25,7 @@ from rest_framework.response import Response
 from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
 
 from ..models import (
-    Exam, ExamSession, ExamSessionModel,
+    Exam, ExamSection, ExamSession, ExamSessionModel,
     AnswerKey, AnswerKeyItem,
     StudentAnswer, StudentSectionScore,
     Outcome, SubOutcome,
@@ -137,7 +137,7 @@ _AYT_ALAN_SECTION_KEYS = {
     'ESIT_AGIRLIK': {'edebiyat', 'tarih1', 'cografya1', 'matematik', 'geometri'},
     'SOZEL': {
         'edebiyat', 'tarih1', 'cografya1',
-        'tarih2', 'cografya2', 'felsefegrubu', 'dkab',
+        'tarih2', 'cografya2', 'felsefegrubu', 'dkab', 'felsefesecmeli',
     },
 }
 
@@ -296,7 +296,9 @@ def _get_exam_or_404(request, exam_pk):
     except Exam.DoesNotExist:
         return None, Response({'error': 'Sınav bulunamadı.'}, status=404)
     from ..services.dat_realign import realign_exam_if_needed
+    from ..services.exam_templates import realign_section_bindings
     realign_exam_if_needed(exam)
+    realign_section_bindings(exam)
     return exam, None
 
 
@@ -474,9 +476,37 @@ def _pick_answer_key(exam, booklet: str):
     return qs.filter(is_primary=True).first() or qs.first()
 
 
+def _leaf_section_for_question(exam, question_number: int):
+    """Soru numarasının güncel yaprak dersini bul (eski answer-key FK'sine güvenme)."""
+    sections = list(exam.sections.all())
+    parents_with_children = {
+        sec.parent_section_id for sec in sections
+        if sec.is_sub_section and sec.parent_section_id
+    }
+    leaves = [
+        sec for sec in sections
+        if sec.is_sub_section or sec.id not in parents_with_children
+    ]
+    return next(
+        (sec for sec in leaves if sec.question_start <= question_number <= sec.question_end),
+        None,
+    )
+
+
 def _build_answer_grids(exam, comparison: dict) -> list:
+    """Yaprak ders ızgarası — seçmeli felsefe gibi ana blok dışındaki 5 soru da görünür."""
+    sections = list(exam.sections.all().order_by('order', 'question_start'))
+    parents_with_children = {
+        sec.parent_section_id
+        for sec in sections
+        if sec.is_sub_section and sec.parent_section_id
+    }
+    leaves = [
+        sec for sec in sections
+        if sec.is_sub_section or sec.id not in parents_with_children
+    ]
     grids = []
-    for sec in exam.sections.filter(is_sub_section=False).order_by('order'):
+    for sec in leaves:
         questions = []
         for q in range(sec.question_start, sec.question_end + 1):
             comp = comparison.get(str(q)) or {}
@@ -1791,7 +1821,14 @@ def exam_analysis_questions(request, exam_pk):
         correct_answer='',
     ).select_related('section', 'outcome', 'sub_outcome')
     if section_id:
-        ak_items = ak_items.filter(section_id=section_id)
+        try:
+            leaf = exam.sections.get(pk=int(section_id))
+            ak_items = ak_items.filter(
+                question_number__gte=leaf.question_start,
+                question_number__lte=leaf.question_end,
+            )
+        except (ExamSection.DoesNotExist, TypeError, ValueError):
+            ak_items = ak_items.filter(section_id=section_id)
     ak_items = ak_items.order_by('question_number')
 
     # Öğrenci cevaplarını topla
@@ -1799,12 +1836,13 @@ def exam_analysis_questions(request, exam_pk):
     question_stats = {}
     for item in ak_items:
         q_no = str(item.question_number)
+        leaf = _leaf_section_for_question(exam, item.question_number)
         question_stats[q_no] = {
             'question_number': item.question_number,
             'correct_answer': item.correct_answer,
             'is_cancelled': item.is_cancelled,
-            'section_id': item.section_id,
-            'section_name': item.section.name,
+            'section_id': leaf.id if leaf else item.section_id,
+            'section_name': leaf.name if leaf else item.section.name,
             'outcome_id': item.outcome_id,
             'outcome_code': item.display_outcome_code(),
             'outcome_text': item.display_outcome_text(),

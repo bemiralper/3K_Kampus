@@ -122,8 +122,37 @@ _SUB_SECTIONS: dict[str, dict[str, list[tuple]]] = {
 OPTIONAL_PHILOSOPHY_NAME = 'Felsefe (Seçmeli)'
 OPTIONAL_PHILOSOPHY_COUNT = 5
 OPTIONAL_PHILOSOPHY_AFTER = 'Sosyal Bilimler'
-OPTIONAL_PHILOSOPHY_EXAM_TYPES = ('YKS_TYT', 'DENEME')
 _SHIFT_PARENTS = ('Temel Matematik', 'Fen Bilimleri')
+
+# TYT / Deneme: Sosyal 41–60, seçmeli 61–65, Mat/Fen +5.
+# AYT: Sosyal-2 41–80, seçmeli 81–85, Mat/Fen +5.
+# Ana sosyal blok uzunluğu değişmez (TYT 4'lü / AYT 40'lı formül bozulmasın).
+_OPTIONAL_PHILOSOPHY_LAYOUT: dict[str, dict] = {
+    'YKS_TYT': {
+        'after': 'Sosyal Bilimler',
+        'shift_parents': ('Temel Matematik', 'Fen Bilimleri'),
+        'social_end': 60,
+        'trailing_start': 121,
+    },
+    'DENEME': {
+        'after': 'Sosyal Bilimler',
+        'shift_parents': ('Temel Matematik', 'Fen Bilimleri'),
+        'social_end': 60,
+        'trailing_start': 121,
+    },
+    'YKS_AYT': {
+        'after': 'Sosyal Bilimler-2',
+        'shift_parents': ('Matematik', 'Fen Bilimleri'),
+        'social_end': 80,
+        'trailing_start': 161,
+    },
+}
+OPTIONAL_PHILOSOPHY_EXAM_TYPES = tuple(_OPTIONAL_PHILOSOPHY_LAYOUT)
+_FELSEFE_SIBLING_NAMES = ('Felsefe', 'Felsefe Grubu')
+
+
+def _optional_layout(exam_type: str) -> dict | None:
+    return _OPTIONAL_PHILOSOPHY_LAYOUT.get(exam_type)
 
 
 def _rows_to_dicts(rows: list[tuple]) -> list[dict]:
@@ -139,18 +168,26 @@ def _rows_to_dicts(rows: list[tuple]) -> list[dict]:
     ]
 
 
-def _with_optional_philosophy(main_rows: list[tuple], sub_map: dict[str, list[tuple]]):
+def _with_optional_philosophy(
+    main_rows: list[tuple],
+    sub_map: dict[str, list[tuple]],
+    layout: dict | None = None,
+):
     """
-    Seçmeli felsefe ayrı üst test değildir; Sosyal Bilimler içinde
-    Din Kültürü'nün alternatif 5 sorusudur (kitapçıkta 61–65).
-    Matematik / Fen numaraları +5 kayar. Sosyal ana blok 20 soruda kalır
-    (TYT 4'lü puan formülü bozulmasın).
+    Seçmeli felsefe ayrı üst test değildir; Sosyal / Sosyal-2 içinde
+    Din Kültürü'nün alternatif 5 sorusudur (TYT 61–65, AYT 81–85).
+    Matematik / Fen numaraları +5 kayar. Sosyal ana blok uzunluğu aynı kalır.
     """
+    layout = layout or _OPTIONAL_PHILOSOPHY_LAYOUT['YKS_TYT']
+    after = layout['after']
+    shift_parents = layout['shift_parents']
+    default_end = layout['social_end']
+
     mains: list[tuple] = []
     inserted = False
     sosyal_end = None
     for name, qs, qe, order in main_rows:
-        if name == OPTIONAL_PHILOSOPHY_AFTER:
+        if name == after:
             mains.append((name, qs, qe, order))
             sosyal_end = qe
             inserted = True
@@ -164,15 +201,15 @@ def _with_optional_philosophy(main_rows: list[tuple], sub_map: dict[str, list[tu
 
     shifted_subs: dict[str, list[tuple]] = {}
     for parent, rows in sub_map.items():
-        if parent == OPTIONAL_PHILOSOPHY_AFTER:
-            last_end = rows[-1][2] if rows else (sosyal_end or 60)
+        if parent == after:
+            last_end = rows[-1][2] if rows else (sosyal_end or default_end)
             shifted_subs[parent] = list(rows) + [(
                 OPTIONAL_PHILOSOPHY_NAME,
                 last_end + 1,
                 last_end + OPTIONAL_PHILOSOPHY_COUNT,
                 len(rows),
             )]
-        elif parent in _SHIFT_PARENTS:
+        elif parent in shift_parents:
             shifted_subs[parent] = [
                 (n, s + OPTIONAL_PHILOSOPHY_COUNT, e + OPTIONAL_PHILOSOPHY_COUNT, o)
                 for n, s, e, o in rows
@@ -202,8 +239,9 @@ def get_template_sections(exam_type: str, include_optional_philosophy: bool = Tr
     """Sınav türüne göre şablon alan listesi döner."""
     rows = list(_TEMPLATES.get(exam_type, []))
     subs = {k: list(v) for k, v in _SUB_SECTIONS.get(exam_type, {}).items()}
-    if include_optional_philosophy and exam_type in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
-        rows, _ = _with_optional_philosophy(rows, subs)
+    layout = _optional_layout(exam_type)
+    if include_optional_philosophy and layout:
+        rows, _ = _with_optional_philosophy(rows, subs, layout)
     return _rows_to_dicts(rows)
 
 
@@ -211,8 +249,9 @@ def get_template_sub_sections(exam_type: str, include_optional_philosophy: bool 
     """Sınav türüne göre ders listesi döner. {parent_name: [{...}]}"""
     mains = list(_TEMPLATES.get(exam_type, []))
     subs_def = {k: list(v) for k, v in _SUB_SECTIONS.get(exam_type, {}).items()}
-    if include_optional_philosophy and exam_type in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
-        _, subs_def = _with_optional_philosophy(mains, subs_def)
+    layout = _optional_layout(exam_type)
+    if include_optional_philosophy and layout:
+        _, subs_def = _with_optional_philosophy(mains, subs_def, layout)
     return {parent: _rows_to_dicts(rows) for parent, rows in subs_def.items()}
 
 
@@ -254,6 +293,7 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
         'Tarih-2':                          ('TARIH',     'Tarih',                  'YKS_AYT'),
         'Coğrafya-2':                       ('COGRAFYA',  'Coğrafya',               'YKS_AYT'),
         'Felsefe Grubu':                    ('FELSEFE',   'Felsefe',                'YKS_AYT'),
+        OPTIONAL_PHILOSOPHY_NAME:           ('FELSEFE',   'Felsefe',                'YKS_AYT'),
         'Din Kültürü ve Ahlak Bilgisi':     ('DKAB',      'Din Kültürü ve Ahlak Bilgisi', 'YKS_AYT'),
         'Matematik':                        ('MATEMATIK', 'Matematik',              'YKS_AYT'),
         'Geometri':                         ('GEOMETRI',  'Geometri',               'YKS_AYT'),
@@ -377,23 +417,24 @@ def purge_empty_exam_type_stubs() -> int:
 
 
 def _felsefe_subject_for_exam(exam, sections: list):
-    """Felsefe (Seçmeli) ayrı ders değil; TYT Felsefe müfredatını paylaşır."""
+    """Felsefe (Seçmeli) ayrı ders değil; Felsefe / Felsefe Grubu müfredatını paylaşır."""
     for section in sections:
-        if section.name == 'Felsefe' and _subject_has_curriculum(section.subject):
+        if section.name in _FELSEFE_SIBLING_NAMES and _subject_has_curriculum(section.subject):
             return section.subject
 
     from ..models.exam import ExamSection
 
     sibling = (
         ExamSection.objects
-        .filter(exam=exam, name='Felsefe', subject__isnull=False)
+        .filter(exam=exam, name__in=_FELSEFE_SIBLING_NAMES, subject__isnull=False)
         .select_related('subject')
         .first()
     )
     if sibling and _subject_has_curriculum(sibling.subject):
         return sibling.subject
 
-    return _resolve_curriculum_subject('FELSEFE_TYT', 'Felsefe', 'YKS_TYT')
+    exam_filter = 'YKS_AYT' if getattr(exam, 'exam_type', '') == 'YKS_AYT' else 'YKS_TYT'
+    return _resolve_curriculum_subject('FELSEFE', 'Felsefe', exam_filter)
 
 
 def _auto_link_subjects(exam, sections: list) -> None:
@@ -404,7 +445,7 @@ def _auto_link_subjects(exam, sections: list) -> None:
     - Alt bölümler varsa → alt bölümlere bağla
     - Alt bölüm yoksa (LGS gibi) → ana bölümlere bağla
     - Yalnız sınavın müfredat bandındaki (YKS 9–12 / LGS 5–8) dersler bağlanır
-    - Felsefe (Seçmeli) her zaman TYT Felsefe müfredatını paylaşır
+    - Felsefe (Seçmeli) her zaman Felsefe / Felsefe Grubu müfredatını paylaşır
     """
     from ..models.curriculum import Subject
 
@@ -589,47 +630,47 @@ def _philosophy_layout(exam) -> str:
     phil = ExamSection.objects.filter(exam=exam, name=OPTIONAL_PHILOSOPHY_NAME).first()
     if not phil:
         return 'none'
-    if phil.question_start >= 121:
+    layout = _optional_layout(exam.exam_type) or _OPTIONAL_PHILOSOPHY_LAYOUT['YKS_TYT']
+    if phil.question_start >= layout['trailing_start']:
         return 'trailing'
     return 'after_dkab'
 
 
-def _remap_q_trailing_to_after_dkab(n: int) -> int:
-    if n <= 60:
+def _remap_q_trailing_to_after_dkab(n: int, social_end: int, count: int, old_last: int):
+    if n <= social_end:
         return n
-    if 61 <= n <= 120:
-        return n + OPTIONAL_PHILOSOPHY_COUNT
-    if 121 <= n <= 125:
-        return n - 60
+    if n <= old_last:
+        return n + count
+    if n <= old_last + count:
+        return n - old_last + social_end
     return n
 
 
-def _remap_q_insert_after_dkab(n: int) -> int:
-    if n <= 60:
+def _remap_q_insert_after_dkab(n: int, social_end: int, count: int):
+    if n <= social_end:
         return n
-    return n + OPTIONAL_PHILOSOPHY_COUNT
+    return n + count
 
 
-def _remap_q_remove_after_dkab(n: int) -> int:
-    if n <= 60:
+def _remap_q_remove_after_dkab(n: int, social_end: int, count: int):
+    if n <= social_end:
         return n
-    if 61 <= n <= 65:
+    if n <= social_end + count:
         return None
-    if n >= 66:
-        return n - OPTIONAL_PHILOSOPHY_COUNT
-    return n
+    return n - count
 
 
-def _remap_exam_question_numbers(exam, mapper) -> None:
+def _remap_exam_question_numbers(exam, mapper, *, shift_after: int = 60) -> None:
     """Cevap anahtarı ve öğrenci cevaplarındaki soru numaralarını dönüştürür."""
     from ..models.answer_key import AnswerKeyItem
     from ..models.result import StudentAnswer
 
+    b_threshold = shift_after + 1
     items = list(AnswerKeyItem.objects.filter(answer_key__exam=exam))
     if items:
         for item in items:
             item.question_number += 10000
-            if item.b_question_number and item.b_question_number >= 61:
+            if item.b_question_number and item.b_question_number >= b_threshold:
                 item.b_question_number += 10000
         AnswerKeyItem.objects.bulk_update(items, ['question_number', 'b_question_number'])
 
@@ -641,7 +682,7 @@ def _remap_exam_question_numbers(exam, mapper) -> None:
                 drop_ids.append(item.id)
                 continue
             item.question_number = new_q
-            if item.b_question_number and item.b_question_number >= 10061:
+            if item.b_question_number and item.b_question_number >= 10000 + b_threshold:
                 mapped_b = mapper(item.b_question_number - 10000)
                 item.b_question_number = mapped_b
             keep.append(item)
@@ -733,22 +774,105 @@ def _apply_template_ranges(exam, include: bool) -> None:
             ])
 
 
+def slide_adjacent_sibling_ranges(section, new_start: int, new_end: int) -> str | None:
+    """
+    Alt ders aralığını kaydır; komşu alt dersin paylaştığı sınırı kaydırır.
+
+    AYT Matematik +1 / Geometri -1 gibi iç sınır hareketinde overlap hatası
+    yerine komşu ders otomatik daralır/genişler. En az 1 soru kalmalı.
+    Hata mesajı veya None döner.
+    """
+    from ..models.exam import ExamSection
+
+    parent = section.parent_section
+    if parent is None:
+        return 'Komşu kaydırma yalnızca alt dersler için geçerlidir.'
+
+    siblings = list(
+        ExamSection.objects.filter(
+            exam=section.exam, is_sub_section=True, parent_section=parent,
+        ).order_by('question_start', 'order', 'id')
+    )
+    try:
+        idx = next(i for i, row in enumerate(siblings) if row.pk == section.pk)
+    except StopIteration:
+        return 'Bölüm bulunamadı.'
+
+    prev_s = siblings[idx - 1] if idx > 0 else None
+    next_s = siblings[idx + 1] if idx + 1 < len(siblings) else None
+
+    if new_start != section.question_start:
+        if prev_s is None:
+            return (
+                'İlk alt dersin başlangıcı komşu dersle kaydırılamaz. '
+                'Sınırı sonraki ders üzerinden değiştirin.'
+            )
+        if new_start <= prev_s.question_start:
+            return (
+                f'Başlangıç, önceki ders "{prev_s.name}" için en az 1 soru bırakmalı '
+                f'({prev_s.question_start}–{prev_s.question_end}).'
+            )
+        prev_s.question_end = new_start - 1
+        prev_s.save(update_fields=['question_end', 'question_count'])
+
+    if new_end != section.question_end:
+        if next_s is None:
+            return (
+                'Son alt dersin bitişi komşu dersle kaydırılamaz. '
+                'Sınırı önceki ders üzerinden değiştirin.'
+            )
+        if new_end >= next_s.question_end:
+            return (
+                f'Bitiş, sonraki ders "{next_s.name}" için en az 1 soru bırakmalı '
+                f'({next_s.question_start}–{next_s.question_end}).'
+            )
+        next_s.question_start = new_end + 1
+        next_s.save(update_fields=['question_start', 'question_count'])
+
+    section.question_start = new_start
+    section.question_end = new_end
+    section.save(update_fields=['question_start', 'question_end', 'question_count'])
+    return None
+
+
 def sync_optional_philosophy_section(exam) -> None:
-    """TYT / Deneme felsefe bloğunu Din Kültürü sonrasına yerleştirir veya kaldırır."""
-    if exam.exam_type not in OPTIONAL_PHILOSOPHY_EXAM_TYPES:
+    """TYT / Deneme / AYT felsefe bloğunu Din Kültürü sonrasına yerleştirir veya kaldırır."""
+    layout = _optional_layout(exam.exam_type)
+    if not layout:
         return
 
     include = getattr(exam, 'include_optional_philosophy', True)
     current = _philosophy_layout(exam)
+    social_end = layout['social_end']
+    count = OPTIONAL_PHILOSOPHY_COUNT
+    old_last = layout['trailing_start'] - 1
 
+    needs_apply = False
     if include and current == 'trailing':
-        _remap_exam_question_numbers(exam, _remap_q_trailing_to_after_dkab)
+        _remap_exam_question_numbers(
+            exam,
+            lambda n: _remap_q_trailing_to_after_dkab(n, social_end, count, old_last),
+            shift_after=social_end,
+        )
+        needs_apply = True
     elif include and current == 'none':
-        _remap_exam_question_numbers(exam, _remap_q_insert_after_dkab)
+        _remap_exam_question_numbers(
+            exam,
+            lambda n: _remap_q_insert_after_dkab(n, social_end, count),
+            shift_after=social_end,
+        )
+        needs_apply = True
     elif not include and current == 'after_dkab':
-        _remap_exam_question_numbers(exam, _remap_q_remove_after_dkab)
+        _remap_exam_question_numbers(
+            exam,
+            lambda n: _remap_q_remove_after_dkab(n, social_end, count),
+            shift_after=social_end,
+        )
+        needs_apply = True
 
-    _apply_template_ranges(exam, include)
+    # Yerleşim zaten doğruysa şablon aralıklarını yazma — Mat/Geo özel sayıları silinmesin.
+    if needs_apply:
+        _apply_template_ranges(exam, include)
     _reassign_subjects_and_items(exam)
 
 
@@ -801,7 +925,6 @@ def _reassign_subjects_and_items(exam):
                 main.save(update_fields=['subject'])
 
         # 2) Cevap anahtarı item'larını alt bölümlere yeniden eşle
-        # Ana bölüme atanmış item'ları bul ve soru numarasına göre alt bölüme taşı
         items = AnswerKeyItem.objects.filter(section=main)
         for item in items:
             for child in children:
@@ -809,6 +932,49 @@ def _reassign_subjects_and_items(exam):
                     item.section = child
                     item.save(update_fields=['section'])
                     break
+
+    _rebind_items_to_leaf_sections(exam)
+
+
+def _rebind_items_to_leaf_sections(exam) -> int:
+    """Soru no hangi yaprak dersteyse cevap anahtarı satırını oraya taşı."""
+    from ..models.answer_key import AnswerKeyItem
+    from ..models.exam import ExamSection
+
+    sections = list(ExamSection.objects.filter(exam=exam))
+    parents_with_children = {
+        sec.parent_section_id for sec in sections
+        if sec.is_sub_section and sec.parent_section_id
+    }
+    leaves = [
+        sec for sec in sections
+        if sec.is_sub_section or sec.id not in parents_with_children
+    ]
+    leaves.sort(key=lambda sec: (sec.question_start, sec.order, sec.id))
+    changed = []
+    for item in AnswerKeyItem.objects.filter(answer_key__exam=exam):
+        match = next(
+            (
+                sec for sec in leaves
+                if sec.question_start <= item.question_number <= sec.question_end
+            ),
+            None,
+        )
+        if match and item.section_id != match.id:
+            item.section = match
+            changed.append(item)
+    if changed:
+        AnswerKeyItem.objects.bulk_update(changed, ['section'])
+    return len(changed)
+
+
+def realign_section_bindings(exam) -> int:
+    """Eski bölüm FK'lerini güncel aralığa taşı; taşınma varsa netleri yeniden hesapla."""
+    moved = _rebind_items_to_leaf_sections(exam)
+    if moved:
+        from .exam_rescore import rescore_exam_results
+        rescore_exam_results(exam)
+    return moved
 
 
 def _payload_int(raw, default=None):

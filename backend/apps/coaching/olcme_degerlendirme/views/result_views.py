@@ -39,7 +39,7 @@ def exam_question_span(sections, sub_sections=None) -> int:
     """Skorlanacak son global soru no.
 
     Seçmeli felsefe gibi ara alt bölümler ana bölüm uzunluklarının
-    toplamına girmez ama numarayı kaydırır (TYT 120 soru → 1–125).
+    toplamına girmez ama numarayı kaydırır (TYT 120 → 1–125, AYT 160 → 1–165).
     Toplamı kullanmak Biyoloji gibi sondaki alt bölümü keser.
     """
     ends = [sec.question_end for sec in sections]

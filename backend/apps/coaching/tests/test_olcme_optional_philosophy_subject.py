@@ -8,9 +8,11 @@ from apps.coaching.olcme_degerlendirme.services.exam_templates import (
     _apply_template_ranges,
     _auto_link_subjects,
     _resolve_curriculum_subject,
+    create_sections_from_template,
     get_template_sections,
     get_template_sub_sections,
     purge_empty_exam_type_stubs,
+    sync_optional_philosophy_section,
 )
 
 
@@ -160,3 +162,115 @@ class EmptyTytStubRelinkTest(TestCase):
         _auto_link_subjects(exam, [fen, bio])
         bio.refresh_from_db()
         self.assertEqual(bio.subject_id, real.id)
+
+
+class OptionalPhilosophyAytTemplateTest(TestCase):
+    def test_template_nests_under_sosyal_2_not_as_main(self):
+        mains = get_template_sections('YKS_AYT', include_optional_philosophy=True)
+        subs = get_template_sub_sections('YKS_AYT', include_optional_philosophy=True)
+        self.assertNotIn(OPTIONAL_PHILOSOPHY_NAME, [row['name'] for row in mains])
+        self.assertEqual(
+            [row['name'] for row in mains],
+            ['TDE-Sosyal Bilimler-1', 'Sosyal Bilimler-2', 'Matematik', 'Fen Bilimleri'],
+        )
+        tde = next(row for row in mains if row['name'] == 'TDE-Sosyal Bilimler-1')
+        sosyal = next(row for row in mains if row['name'] == 'Sosyal Bilimler-2')
+        mat = next(row for row in mains if row['name'] == 'Matematik')
+        fen = next(row for row in mains if row['name'] == 'Fen Bilimleri')
+        self.assertEqual((tde['question_start'], tde['question_end']), (1, 40))
+        self.assertEqual((sosyal['question_start'], sosyal['question_end']), (41, 80))
+        self.assertEqual((mat['question_start'], mat['question_end']), (86, 125))
+        self.assertEqual((fen['question_start'], fen['question_end']), (126, 165))
+
+        sosyal_subs = [row['name'] for row in subs['Sosyal Bilimler-2']]
+        self.assertEqual(
+            sosyal_subs,
+            [
+                'Tarih-2', 'Coğrafya-2', 'Felsefe Grubu',
+                'Din Kültürü ve Ahlak Bilgisi', OPTIONAL_PHILOSOPHY_NAME,
+            ],
+        )
+        phil = next(row for row in subs['Sosyal Bilimler-2'] if row['name'] == OPTIONAL_PHILOSOPHY_NAME)
+        self.assertEqual((phil['question_start'], phil['question_end']), (81, 85))
+        bio = next(row for row in subs['Fen Bilimleri'] if row['name'] == 'Biyoloji')
+        self.assertEqual((bio['question_start'], bio['question_end']), (153, 165))
+
+    def test_template_without_optional_keeps_classic_ranges(self):
+        mains = get_template_sections('YKS_AYT', include_optional_philosophy=False)
+        subs = get_template_sub_sections('YKS_AYT', include_optional_philosophy=False)
+        mat = next(row for row in mains if row['name'] == 'Matematik')
+        fen = next(row for row in mains if row['name'] == 'Fen Bilimleri')
+        self.assertEqual((mat['question_start'], mat['question_end']), (81, 120))
+        self.assertEqual((fen['question_start'], fen['question_end']), (121, 160))
+        self.assertNotIn(
+            OPTIONAL_PHILOSOPHY_NAME,
+            [row['name'] for row in subs['Sosyal Bilimler-2']],
+        )
+
+    def test_create_sections_links_to_felsefe_grubu_subject(self):
+        subject = Subject.objects.create(code='FELSEFE', name='Felsefe', display_name='Felsefe')
+        exam = Exam.objects.create(
+            name='AYT Deneme', exam_type='YKS_AYT', include_optional_philosophy=True,
+        )
+        created = create_sections_from_template(exam)
+        names = {sec.name: sec for sec in created}
+        self.assertIn(OPTIONAL_PHILOSOPHY_NAME, names)
+        phil = names[OPTIONAL_PHILOSOPHY_NAME]
+        self.assertTrue(phil.is_sub_section)
+        self.assertEqual(phil.parent_section.name, 'Sosyal Bilimler-2')
+        self.assertEqual((phil.question_start, phil.question_end), (81, 85))
+        self.assertEqual(phil.subject_id, subject.id)
+        self.assertEqual(names['Felsefe Grubu'].subject_id, subject.id)
+
+    def test_sync_insert_shifts_math_and_fen_keys(self):
+        from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
+
+        exam = Exam.objects.create(
+            name='AYT Sync', exam_type='YKS_AYT', include_optional_philosophy=False,
+        )
+        create_sections_from_template(exam)
+        mat = exam.sections.get(name='Matematik', is_sub_section=True)
+        self.assertEqual((mat.question_start, mat.question_end), (81, 110))
+        key = AnswerKey.objects.create(exam=exam, booklet='A', is_primary=True)
+        item = AnswerKeyItem.objects.create(
+            answer_key=key, section=mat, question_number=81, correct_answer='A',
+        )
+
+        exam.include_optional_philosophy = True
+        exam.save(update_fields=['include_optional_philosophy'])
+        sync_optional_philosophy_section(exam)
+
+        item.refresh_from_db()
+        self.assertEqual(item.question_number, 86)
+        phil = exam.sections.get(name=OPTIONAL_PHILOSOPHY_NAME)
+        self.assertEqual((phil.question_start, phil.question_end), (81, 85))
+        mat.refresh_from_db()
+        self.assertEqual((mat.question_start, mat.question_end), (86, 115))
+
+    def test_sync_off_does_not_invent_section(self):
+        exam = Exam.objects.create(
+            name='AYT Classic', exam_type='YKS_AYT', include_optional_philosophy=False,
+        )
+        create_sections_from_template(exam)
+        sync_optional_philosophy_section(exam)
+        self.assertFalse(
+            exam.sections.filter(name=OPTIONAL_PHILOSOPHY_NAME).exists(),
+        )
+        mat = exam.sections.get(name='Matematik', is_sub_section=False)
+        self.assertEqual((mat.question_start, mat.question_end), (81, 120))
+
+
+class OptionalPhilosophyAnswerGridTest(TestCase):
+    def test_ayt_grid_includes_optional_block(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_answer_grids
+
+        exam = Exam.objects.create(
+            name='AYT Grid', exam_type='YKS_AYT', include_optional_philosophy=True,
+        )
+        create_sections_from_template(exam)
+        grids = _build_answer_grids(exam, {})
+        names = [g['section_name'] for g in grids]
+        self.assertIn(OPTIONAL_PHILOSOPHY_NAME, names)
+        self.assertNotIn('Sosyal Bilimler-2', names)
+        phil = next(g for g in grids if g['section_name'] == OPTIONAL_PHILOSOPHY_NAME)
+        self.assertEqual([q['q'] for q in phil['questions']], [81, 82, 83, 84, 85])

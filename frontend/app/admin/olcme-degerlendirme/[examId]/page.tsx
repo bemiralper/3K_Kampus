@@ -8,6 +8,8 @@ import {
   EXAM_STATUS,
   BOOKLET_TYPES,
   SCHEDULE_PREFERENCES,
+  examSupportsOptionalPhilosophy,
+  optionalPhilosophyHint,
 } from '../../../../components/olcme/types';
 import type {
   ExamDetail,
@@ -498,7 +500,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   label="Puan yılı"
                   value={exam.puan_yili ? `${exam.puan_yili} YKS` : `Kurum varsayılanı (${kurumDefaultYear})`}
                 />
-                {(exam.exam_type === 'YKS_TYT' || exam.exam_type === 'DENEME') && (
+                {examSupportsOptionalPhilosophy(exam.exam_type) && (
                   <div className={s.infoItem}>
                     <span className={s.infoLabel}>Felsefe (Seçmeli)</span>
                     <span className={s.infoValue}>
@@ -508,7 +510,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                           checked={exam.include_optional_philosophy !== false}
                           onChange={async e => {
                             const include = e.target.checked;
-                            if (!include && !confirm('Sosyal Bilimler içindeki Felsefe (Seçmeli) soruları kaldırılsın mı?')) {
+                            if (!include && !confirm(`${optionalPhilosophyHint(exam.exam_type)} Felsefe (Seçmeli) soruları kaldırılsın mı?`)) {
                               e.target.checked = true;
                               return;
                             }
@@ -521,7 +523,9 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                             }
                           }}
                         />
-                        {exam.include_optional_philosophy !== false ? 'Dahil (Sosyal Bilimler / DKAB sonrası)' : 'Hariç'}
+                        {exam.include_optional_philosophy !== false
+                          ? `Dahil (${optionalPhilosophyHint(exam.exam_type)})`
+                          : 'Hariç'}
                       </label>
                     </span>
                   </div>
@@ -609,7 +613,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                           onChange={e => setEf({ booklet_auto_detect: e.target.checked })} />
                         Kitapçık oto-algıla
                       </label>
-                      {(exam.exam_type === 'YKS_TYT' || exam.exam_type === 'DENEME') && (
+                      {examSupportsOptionalPhilosophy(exam.exam_type) && (
                         <label className={s.checkRow}>
                           <input
                             type="checkbox"

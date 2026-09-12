@@ -24,8 +24,10 @@ from ..services.exam_templates import (
     create_sections_from_template,
     ensure_sub_sections,
     _auto_link_subjects,
+    _reassign_subjects_and_items,
     _resolve_payload_subject,
     purge_empty_exam_type_stubs,
+    slide_adjacent_sibling_ranges,
     sync_optional_philosophy_section,
 )
 from shared.context import get_secili_egitim_yili_id
@@ -488,6 +490,7 @@ class ExamViewSet(viewsets.ModelViewSet):
                 )
             section.name = new_name
 
+        range_changed = False
         if 'question_start' in request.data or 'question_end' in request.data:
             start, end, err = _validate_question_range(
                 request.data.get('question_start', section.question_start),
@@ -495,13 +498,26 @@ class ExamViewSet(viewsets.ModelViewSet):
             )
             if err:
                 return Response({'error': err}, status=status.HTTP_400_BAD_REQUEST)
-            overlap = _range_overlap_error(
-                exam, start, end, section.parent_section, exclude_pk=section.pk,
-            )
-            if overlap:
-                return Response({'error': overlap}, status=status.HTTP_400_BAD_REQUEST)
-            section.question_start = start
-            section.question_end = end
+            old_start, old_end = section.question_start, section.question_end
+            if (
+                section.is_sub_section
+                and section.parent_section_id
+                and (start != old_start or end != old_end)
+            ):
+                slide_err = slide_adjacent_sibling_ranges(section, start, end)
+                if slide_err:
+                    return Response({'error': slide_err}, status=status.HTTP_400_BAD_REQUEST)
+                section.refresh_from_db()
+                range_changed = True
+            else:
+                overlap = _range_overlap_error(
+                    exam, start, end, section.parent_section, exclude_pk=section.pk,
+                )
+                if overlap:
+                    return Response({'error': overlap}, status=status.HTTP_400_BAD_REQUEST)
+                section.question_start = start
+                section.question_end = end
+                range_changed = start != old_start or end != old_end
 
         if 'order' in request.data:
             try:
@@ -517,6 +533,10 @@ class ExamViewSet(viewsets.ModelViewSet):
                 except DrfValidationError as exc:
                     return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         section.save()
+        if range_changed:
+            _reassign_subjects_and_items(exam)
+            from ..services.exam_rescore import rescore_exam_results
+            rescore_exam_results(exam)
         return Response(_fresh_exam_payload(exam))
 
     @action(detail=True, methods=['post'], url_path='reorder_sections')
@@ -549,7 +569,7 @@ class ExamViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='set_optional_philosophy')
     def set_optional_philosophy(self, request, pk=None):
-        """TYT seçmeli felsefe bloğunu aç/kapat ve bölümleri senkronize et."""
+        """TYT / AYT seçmeli felsefe bloğunu aç/kapat ve bölümleri senkronize et."""
         exam = self.get_object()
         include = request.data.get('include', True)
         if isinstance(include, str):
@@ -571,6 +591,8 @@ class ExamViewSet(viewsets.ModelViewSet):
         all_sections = list(ExamSection.objects.filter(exam=exam))
         _auto_link_subjects(exam, all_sections)
         purge_empty_exam_type_stubs()
+        from ..services.exam_templates import realign_section_bindings
+        realign_section_bindings(exam)
 
         linked_count = ExamSection.objects.filter(
             exam=exam, subject__isnull=False

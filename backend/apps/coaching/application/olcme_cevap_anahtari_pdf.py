@@ -253,15 +253,14 @@ def _group_items(items, *, include_empty=False):
                 ),
             }
         buckets[key]['items'].append(item)
-        if not buckets[key].get('locked'):
-            item_sec = getattr(item, 'section', None)
-            if item_sec is not None:
-                s1 = getattr(item_sec, 'question_end', None)
-                if s1 and (buckets[key]['end'] is None or s1 > buckets[key]['end']):
-                    buckets[key]['end'] = s1
-                s0 = getattr(item_sec, 'question_start', None)
-                if s0 and buckets[key]['start'] is None:
-                    buckets[key]['start'] = s0
+        item_sec = getattr(item, 'section', None)
+        if item_sec is not None:
+            s1 = getattr(item_sec, 'question_end', None)
+            if s1 and (buckets[key]['end'] is None or s1 > buckets[key]['end']):
+                buckets[key]['end'] = s1
+            s0 = getattr(item_sec, 'question_start', None)
+            if s0 and (buckets[key]['start'] is None or s0 < buckets[key]['start']):
+                buckets[key]['start'] = s0
     groups: OrderedDict[str, dict] = OrderedDict()
     for bucket in sorted(buckets.values(), key=lambda row: row['order']):
         if not bucket['items'] and not include_empty:

@@ -188,7 +188,7 @@ export const examApi = {
       { method: 'POST' },
     ),
 
-  /** TYT Felsefe (Seçmeli) bloğunu aç/kapat */
+  /** TYT / AYT Felsefe (Seçmeli) bloğunu aç/kapat */
   setOptionalPhilosophy: (examId: number, include: boolean) =>
     request<ExamDetail>(`${BASE}/${examId}/set_optional_philosophy/`, {
       method: 'POST',

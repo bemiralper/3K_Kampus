@@ -375,3 +375,175 @@ class OlcmeExamEditAPITest(TestCase):
         )
         self.assertEqual(res.status_code, 403)
         self.assertFalse(Exam.objects.filter(name='Yetkisiz').exists())
+
+
+class AytMathGeometryRangeEditTest(TestCase):
+    """AYT Matematik/Geometri soru sayısı değişince anahtar, net ve kazanım hizalansın."""
+
+    def setUp(self):
+        self.client = APIClient()
+        self.kurum = Kurum.objects.create(ad='AYT Aralık', kod='AYTR')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='AYTR-M')
+        self.egitim_yili = EgitimYili.objects.create(
+            baslangic_yil=2025, bitis_yil=2026, aktif_mi=True,
+        )
+        self.user = User.objects.create_user(username='ayt-aralik', password='test')
+        grant_olcme_write(self.user, self.kurum)
+        self.client.force_authenticate(user=self.user)
+
+        self.exam = Exam.objects.create(
+            name='AYT Aralık', exam_type='YKS_AYT',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+            include_optional_philosophy=False,
+        )
+        self.parent = ExamSection.objects.create(
+            exam=self.exam, name='Matematik', order=2,
+            question_start=81, question_end=120,
+        )
+        self.mat = ExamSection.objects.create(
+            exam=self.exam, name='Matematik', order=0,
+            question_start=81, question_end=110,
+            is_sub_section=True, parent_section=self.parent,
+        )
+        self.geo = ExamSection.objects.create(
+            exam=self.exam, name='Geometri', order=1,
+            question_start=111, question_end=120,
+            is_sub_section=True, parent_section=self.parent,
+        )
+
+    @property
+    def headers(self):
+        return {
+            'HTTP_X_KURUM_ID': str(self.kurum.id),
+            'HTTP_X_SUBE_ID': str(self.sube.id),
+            'HTTP_X_EGITIMYILI_ID': str(self.egitim_yili.id),
+        }
+
+    def test_growing_math_slides_geometry(self):
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/update_section/',
+            {
+                'section_id': self.mat.id,
+                'question_start': 81,
+                'question_end': 111,
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.mat.refresh_from_db()
+        self.geo.refresh_from_db()
+        self.parent.refresh_from_db()
+        self.assertEqual((self.mat.question_start, self.mat.question_end), (81, 111))
+        self.assertEqual(self.mat.question_count, 31)
+        self.assertEqual((self.geo.question_start, self.geo.question_end), (112, 120))
+        self.assertEqual(self.geo.question_count, 9)
+        self.assertEqual((self.parent.question_start, self.parent.question_end), (81, 120))
+
+    def test_shrinking_geometry_slides_math(self):
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/update_section/',
+            {
+                'section_id': self.geo.id,
+                'question_start': 112,
+                'question_end': 120,
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.mat.refresh_from_db()
+        self.geo.refresh_from_db()
+        self.assertEqual((self.mat.question_start, self.mat.question_end), (81, 111))
+        self.assertEqual((self.geo.question_start, self.geo.question_end), (112, 120))
+
+    def test_boundary_answer_key_and_score_follow_new_range(self):
+        from apps.coaching.olcme_degerlendirme.models import (
+            AnswerKey, AnswerKeyItem, ExamSession, StudentAnswer, StudentSectionScore,
+        )
+
+        key = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
+        item = AnswerKeyItem.objects.create(
+            answer_key=key, section=self.geo, question_number=111, correct_answer='C',
+        )
+        for q in range(81, 121):
+            if q == 111:
+                continue
+            AnswerKeyItem.objects.create(
+                answer_key=key,
+                section=self.mat if q <= 110 else self.geo,
+                question_number=q,
+                correct_answer='A',
+            )
+
+        session = ExamSession.objects.create(exam=self.exam)
+        answers = {str(q): 'A' for q in range(81, 121)}
+        answers['111'] = 'C'
+        sa = StudentAnswer.objects.create(
+            session=session, raw_student_id='1', booklet='A', answers=answers,
+        )
+        StudentSectionScore.objects.create(
+            student_answer=sa, section=self.mat, correct=30, wrong=0, empty=0, net=30,
+        )
+        StudentSectionScore.objects.create(
+            student_answer=sa, section=self.geo, correct=10, wrong=0, empty=0, net=10,
+        )
+
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/update_section/',
+            {
+                'section_id': self.mat.id,
+                'question_start': 81,
+                'question_end': 111,
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        item.refresh_from_db()
+        self.assertEqual(item.section_id, self.mat.id)
+
+        mat_score = StudentSectionScore.objects.get(student_answer=sa, section=self.mat)
+        geo_score = StudentSectionScore.objects.get(student_answer=sa, section=self.geo)
+        self.assertEqual(mat_score.correct, 31)
+        self.assertEqual(geo_score.correct, 9)
+
+    def test_link_subjects_does_not_reset_custom_math_geo(self):
+        from apps.coaching.olcme_degerlendirme.models import AnswerKey, AnswerKeyItem
+
+        self.mat.question_end = 111
+        self.mat.save()
+        self.geo.question_start = 112
+        self.geo.save()
+        key = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
+        item = AnswerKeyItem.objects.create(
+            answer_key=key, section=self.geo, question_number=111, correct_answer='C',
+        )
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/link_subjects/',
+            {},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.mat.refresh_from_db()
+        self.geo.refresh_from_db()
+        item.refresh_from_db()
+        self.assertEqual((self.mat.question_start, self.mat.question_end), (81, 111))
+        self.assertEqual((self.geo.question_start, self.geo.question_end), (112, 120))
+        self.assertEqual(item.section_id, self.mat.id)
+
+    def test_cannot_consume_entire_neighbor(self):
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/update_section/',
+            {
+                'section_id': self.mat.id,
+                'question_start': 81,
+                'question_end': 120,
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 400)
+        self.mat.refresh_from_db()
+        self.assertEqual(self.mat.question_end, 110)

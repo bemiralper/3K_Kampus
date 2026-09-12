@@ -40,6 +40,7 @@ AYT_SECTIONS = [
     _sec(22, 'Coğrafya-2', 5, is_sub=True, parent_id=20),
     _sec(23, 'Felsefe Grubu', 4, is_sub=True, parent_id=20),
     _sec(24, 'Din Kültürü ve Ahlak Bilgisi', 3, is_sub=True, parent_id=20),
+    _sec(25, 'Felsefe (Seçmeli)', 2, is_sub=True, parent_id=20),
     _sec(30, 'Matematik', 25),
     _sec(31, 'Matematik', 18, is_sub=True, parent_id=30),
     _sec(32, 'Geometri', 7, is_sub=True, parent_id=30),
@@ -82,9 +83,18 @@ class StrongWeakAreaFilterTest(SimpleTestCase):
     def test_ayt_sozel_excludes_fen_and_uses_sosyal_2(self):
         names = [r['section_name'] for r in _areas_for_student(AYT_SECTIONS, 'YKS_AYT', 'SOZEL')]
         self.assertIn('Felsefe Grubu', names)
+        self.assertIn('Felsefe (Seçmeli)', names)
         self.assertIn('Tarih-2', names)
         self.assertNotIn('Fizik', names)
         self.assertNotIn('Geometri', names)
+
+    def test_ayt_hides_optional_philosophy_unless_sozel(self):
+        say_names = [r['section_name'] for r in _areas_for_student(AYT_SECTIONS, 'YKS_AYT', 'SAYISAL')]
+        ea_names = [r['section_name'] for r in _areas_for_student(AYT_SECTIONS, 'YKS_AYT', 'ESIT_AGIRLIK')]
+        soz_names = [r['section_name'] for r in _areas_for_student(AYT_SECTIONS, 'YKS_AYT', 'SOZEL')]
+        self.assertNotIn('Felsefe (Seçmeli)', say_names)
+        self.assertNotIn('Felsefe (Seçmeli)', ea_names)
+        self.assertIn('Felsefe (Seçmeli)', soz_names)
 
     def test_live_short_codes(self):
         sys_names = [r['section_name'] for r in _areas_for_student(AYT_SECTIONS, 'YKS_AYT', 'sys')]
