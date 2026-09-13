@@ -245,6 +245,125 @@ class FinansExpansionTest(TestCase):
         self.assertTrue(content.startswith('\ufeff') or 'Sözleşme No' in content)
         self.assertIn(';', content)
 
+    def test_overdue_payments_csv_export_groups_student_installments(self):
+        Taksit.objects.create(
+            sozlesme=self.sozlesme,
+            taksit_no=3,
+            vade_tarihi=timezone.localdate() - timedelta(days=3),
+            tutar=2500,
+            odenen_tutar=0,
+            kalan_tutar=2500,
+            durum=TaksitDurum.BEKLEMEDE,
+        )
+        response = self.client.get(
+            '/finans/api/overdue-payments/',
+            {
+                'kurum_id': self.kurum.id,
+                'sube_id': self.sube.id,
+                'format': 'csv',
+                'columns': 'ogrenci_adi,taksit_no,kalan_tutar,toplam_gecikmis_tutar',
+            },
+        )
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8-sig')
+        data_rows = [
+            line for line in content.splitlines()
+            if line and not line.startswith('Öğrenci') and 'Geciken' not in line
+            and 'Rapor' not in line and 'Kurum' not in line and 'Adet' not in line
+        ]
+        # 2 taksit + 1 toplam satırı
+        self.assertGreaterEqual(len(data_rows), 3)
+        self.assertEqual(sum(1 for line in data_rows if self.ogrenci.ad in line), 1)
+        self.assertTrue(any(';1;' in line or line.endswith(';1') or ';1' in line for line in data_rows))
+        self.assertTrue(any('Toplam' in line and '7500' in line.replace('.', '') for line in data_rows))
+        self.assertTrue(any('Toplam geciken' in line or '7500' in line.replace('.', '') for line in data_rows))
+        self.assertTrue(any(';3;' in line or line.endswith(';3') for line in data_rows))
+        self.assertTrue(any('2500' in line.replace('.', '') for line in data_rows))
+
+        from apps.finans.application.export.report_html_template import _render_finans_tbody
+
+        html_body = _render_finans_tbody(
+            [
+                {
+                    'ogrenci_adi': 'Ayşe Test',
+                    'taksit_no': 1,
+                    'kalan_tutar': 5000,
+                    '_group_first': True,
+                    '_group_span': 3,
+                    '_omit_ogrenci': False,
+                },
+                {
+                    'ogrenci_adi': '',
+                    'taksit_no': 3,
+                    'kalan_tutar': 2500,
+                    '_group_first': False,
+                    '_omit_ogrenci': True,
+                },
+                {
+                    'ogrenci_adi': '',
+                    'taksit_no': 'Toplam',
+                    'kalan_tutar': 7500,
+                    'toplam_gecikmis_tutar': 7500,
+                    '_row_type': 'subtotal',
+                    '_omit_ogrenci': True,
+                },
+            ],
+            ['ogrenci_adi', 'taksit_no', 'kalan_tutar'],
+        )
+        self.assertIn('rowspan="3"', html_body)
+        self.assertIn('Ayşe Test', html_body)
+        self.assertIn('row-subtotal', html_body)
+        self.assertEqual(html_body.count('<tr'), 3)
+
+    def test_overdue_export_keeps_fields_on_later_installments(self):
+        from apps.finans.application.overdue_tracking_service import (
+            OverdueTrackingParams,
+            OverdueTrackingService,
+        )
+
+        Taksit.objects.create(
+            sozlesme=self.sozlesme,
+            taksit_no=3,
+            vade_tarihi=timezone.localdate() - timedelta(days=3),
+            tutar=2500,
+            odenen_tutar=0,
+            kalan_tutar=2500,
+            durum=TaksitDurum.BEKLEMEDE,
+        )
+        rows = OverdueTrackingService().export_rows(
+            OverdueTrackingParams(kurum_id=self.kurum.id, sube_id=self.sube.id),
+        )
+        installments = [r for r in rows if r.get('_row_type') != 'subtotal']
+        self.assertGreaterEqual(len(installments), 2)
+        first, second = installments[0], installments[1]
+        self.assertTrue(first.get('ogrenci_adi'))
+        self.assertEqual(second.get('ogrenci_adi'), '')
+        self.assertEqual(second.get('taksit_no'), 3)
+        self.assertEqual(second.get('kalan_tutar'), 2500)
+        self.assertEqual(second.get('veli_adi'), self.veli.tam_ad)
+        self.assertTrue(second.get('vade_tarihi'))
+        self.assertTrue(second.get('toplam_gecikmis_tutar'))
+
+    def test_overdue_pdf_header_label_and_logo(self):
+        from apps.finans.application.export.report_html_template import (
+            _resolve_logo,
+            build_finans_report_html,
+        )
+
+        logo = _resolve_logo({'kurum_id': self.kurum.id, 'sube_id': self.sube.id})
+        self.assertTrue(logo and logo.startswith('data:image'))
+        html_doc = build_finans_report_html(
+            title='Geciken Taksitler',
+            columns=[{'key': 'ogrenci_adi', 'label': 'Öğrenci'}],
+            rows=[{'ogrenci_adi': 'Ayşe Test'}],
+            filters_meta={'kurum_id': self.kurum.id, 'sube_id': self.sube.id},
+            summary={'Toplam Geciken': 7500, 'Öğrenci': 1},
+        )
+        self.assertIn('Toplam Geciken', html_doc)
+        self.assertNotIn('Toplam Kalan', html_doc)
+        self.assertIn('<img', html_doc)
+        self.assertIn('data:image', html_doc)
+
     def test_overdue_payments_csv_export_respects_columns(self):
         response = self.client.get(
             '/finans/api/overdue-payments/',

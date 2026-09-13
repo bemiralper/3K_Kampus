@@ -226,8 +226,18 @@ class OverduePaymentsView(ExportFormatMixin, FinansAPIView):
                 'sube_id': sube_id or '',
                 'egitim_yili_id': params.egitim_yili_id or '',
                 'durum': params.durum,
-                'toplam_kalan': ozet.get('toplam_geciken_tutar'),
-                'adet': ozet.get('toplam_taksit_sayisi'),
+                'summary_chips': [
+                    {
+                        'label': 'Toplam Geciken',
+                        'value': ozet.get('toplam_geciken_tutar'),
+                        'type': 'currency',
+                    },
+                    {
+                        'label': 'Öğrenci',
+                        'value': ozet.get('geciken_ogrenci_sayisi'),
+                        'type': 'integer',
+                    },
+                ],
             }
             return _export_or_json(
                 request,

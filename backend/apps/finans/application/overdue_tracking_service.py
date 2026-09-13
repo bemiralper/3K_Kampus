@@ -367,9 +367,82 @@ class OverdueTrackingService:
         return sorted(groups, key=sort_key, reverse=reverse)
 
     def export_rows(self, params: OverdueTrackingParams) -> list[dict]:
+        """PDF/CSV/Excel: öğrenci adı bir kez, taksitler ayrı satır, sonra toplam."""
         qs = self.build_queryset(params)
-        taksitler = list(qs[:10000])
-        return self._serialize_rows(taksitler, params.kurum_id, params.durum)
+        groups = self._sort_student_groups(self._student_groups(qs), params.ordering)
+        if len(groups) > 5000:
+            groups = groups[:5000]
+        ogrenci_ids = [g.get('sozlesme__ogrenci_id') for g in groups]
+        known_ids = [oid for oid in ogrenci_ids if oid is not None]
+        filt = Q()
+        if known_ids:
+            filt |= Q(sozlesme__ogrenci_id__in=known_ids)
+        if any(oid is None for oid in ogrenci_ids):
+            filt |= Q(sozlesme__ogrenci_id__isnull=True)
+        taksitler = list(qs.filter(filt)) if (known_ids or any(oid is None for oid in ogrenci_ids)) else []
+        return self._serialize_export_grouped_rows(
+            taksitler, groups, params.kurum_id, params.durum,
+        )
+
+    def _serialize_export_grouped_rows(
+        self,
+        taksitler: list[Taksit],
+        page_groups: list[dict],
+        kurum_id: int,
+        liste_durumu: str,
+    ) -> list[dict]:
+        if not taksitler or not page_groups:
+            return []
+
+        by_ogrenci: dict[int, list[Taksit]] = defaultdict(list)
+        for t in taksitler:
+            by_ogrenci[t.sozlesme.ogrenci_id or 0].append(t)
+
+        rows: list[dict] = []
+        for alt, g in enumerate(page_groups):
+            oid = g.get('sozlesme__ogrenci_id') or 0
+            group = sorted(
+                by_ogrenci.get(oid) or [],
+                key=lambda t: (t.vade_tarihi or date.max, t.taksit_no or 0, t.id),
+            )
+            if not group:
+                continue
+            serialized = self._serialize_rows(group, kurum_id, liste_durumu)
+            multi = len(serialized) > 1
+            span = len(serialized) + (1 if multi else 0)
+            grup_kalan = sum(int(t.kalan_tutar or 0) for t in group)
+            grup_tutar = sum(int(t.tutar or 0) for t in group)
+
+            for i, raw in enumerate(serialized):
+                row = dict(raw)
+                row['_group_key'] = oid
+                row['_group_first'] = i == 0
+                row['_group_span'] = span if i == 0 else 0
+                row['_omit_ogrenci'] = i > 0
+                row['_group_alt'] = bool(alt % 2)
+                if i > 0:
+                    # Ad rowspan ile bir kez yazılır; vade, tutar, veli vb. her taksitte kalır.
+                    row['ogrenci_adi'] = ''
+                rows.append(row)
+
+            if multi:
+                blank = {key: '' for key in serialized[0]}
+                blank.update({
+                    'ogrenci_adi': '',
+                    'taksit_no': 'Toplam',
+                    'kalan_tutar': grup_kalan,
+                    'taksit_tutari': grup_tutar,
+                    'toplam_gecikmis_tutar': grup_kalan,
+                    'durum_label': 'Toplam geciken',
+                    '_row_type': 'subtotal',
+                    '_group_key': oid,
+                    '_group_first': False,
+                    '_group_span': 0,
+                    '_omit_ogrenci': True,
+                    '_group_alt': bool(alt % 2),
+                })
+                rows.append(blank)
+        return rows
 
     def get_detail(self, taksit_id: int, kurum_id: int, *, sube_id: int | None = None) -> dict | None:
         filters = {'id': taksit_id, 'sozlesme__kurum_id': kurum_id}
@@ -605,8 +678,10 @@ class OverdueTrackingService:
                         )
                     )
 
+            nolar = [t.taksit_no for t in group]
             row.update({
                 'taksit_ids': tids,
+                'taksit_nolar': nolar,
                 'taksit_sayisi': len(group),
                 'kalan_tutar': grup_kalan,
                 'taksit_tutari': grup_tutar,

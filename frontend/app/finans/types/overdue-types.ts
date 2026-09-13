@@ -198,7 +198,7 @@ export type GecikenColumnKey =
 
 /** UI kolon anahtarı → export API sütun anahtarları */
 export const GECIKEN_COLUMN_EXPORT_KEYS: Record<GecikenColumnKey, string[]> = {
-  ogrenci: ["ogrenci_adi", "ogrenci_no"],
+  ogrenci: ["ogrenci_adi", "ogrenci_no", "taksit_no"],
   veli: ["veli_adi"],
   telefon: ["veli_telefon"],
   sube: ["sube_ad"],

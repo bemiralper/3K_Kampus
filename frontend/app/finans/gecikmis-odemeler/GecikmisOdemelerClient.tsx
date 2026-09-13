@@ -52,7 +52,7 @@ import {
 import GecikenDetayDrawer from "./GecikenDetayDrawer";
 
 const { RangePicker } = DatePicker;
-const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v4";
+const COLUMN_STORAGE_KEY = "geciken_taksitler_columns_v5";
 
 type ColDef = {
   key: GecikenColumnKey;
@@ -95,7 +95,8 @@ const ALL_COLUMNS: ColDef[] = [
 
 const DEFAULT_VISIBLE: GecikenColumnKey[] = [
   "ogrenci", "veli", "telefon",
-  "vade", "gecikme", "sozlesme_tutari", "son_odeme", "toplam_gecikmis", "toplam_kalan", "son_tahsilat", "durum",
+  "vade", "gecikme", "taksit_tutari", "sozlesme_tutari", "son_odeme",
+  "toplam_gecikmis", "toplam_kalan", "kalan", "son_tahsilat", "durum",
 ];
 
 const VALID_KEYS = new Set<GecikenColumnKey>(ALL_COLUMNS.map((c) => c.key));
@@ -127,6 +128,9 @@ function exportKeysFromVisible(visible: GecikenColumnKey[]): string[] {
   const keys: string[] = [];
   for (const col of ALL_COLUMNS) {
     if (visible.includes(col.key)) keys.push(...GECIKEN_COLUMN_EXPORT_KEYS[col.key]);
+  }
+  for (const extra of ["taksit_no", "vade_tarihi", "gecikme_gun", "taksit_tutari", "kalan_tutar"]) {
+    if (!keys.includes(extra)) keys.push(extra);
   }
   return keys;
 }

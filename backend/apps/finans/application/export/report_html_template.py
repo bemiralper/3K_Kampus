@@ -161,10 +161,10 @@ def _mime_for(path: Path) -> str:
 
 
 def _kurum_logo_data_uri(kurum_id, sube_id=None) -> str | None:
-    """Şube/Kurum'a yüklenmiş kurumsal logoyu (app_logo) data URI olarak döner.
+    """Açık zemin belge logosu: yalnızca app_logo (koyu).
 
-    Öncelik: şube app_logo → kurum app_logo → şube/kurum login_logo.
-    Bulunamazsa None (çağıran taraf statik 3K logosuna düşer).
+    login_logo beyazdır; beyaz PDF başlığında görünmez. Öncelik:
+    şube app_logo → kurum app_logo. Yoksa None (çağıran koyu 3K'ya düşer).
     """
     entities = []
     try:
@@ -182,10 +182,9 @@ def _kurum_logo_data_uri(kurum_id, sube_id=None) -> str | None:
         return None
 
     for entity in entities:
-        for field in ("app_logo", "login_logo"):
-            uri = _image_field_data_uri(getattr(entity, field, None))
-            if uri:
-                return uri
+        uri = _image_field_data_uri(getattr(entity, "app_logo", None))
+        if uri:
+            return uri
     return None
 
 
@@ -299,14 +298,46 @@ def resolve_document_logo(
 
 
 def _resolve_logo(filters_meta: dict | None) -> str | None:
-    """Rapor başlığı için logo: önce kurum/şube logosu, yoksa statik 3K logosu."""
+    """Açık zemin rapor başlığı: app_logo, yoksa koyu 3K. Beyaz login logosu yok."""
     meta = filters_meta or {}
     kurum_id = meta.get("kurum_id")
     sube_id = meta.get("sube_id")
+    if sube_id in ("", None):
+        sube_id = None
     logo = _kurum_logo_data_uri(kurum_id, sube_id)
     if logo:
         return logo
-    return _logo_data_uri()
+    return _app_logo_static_data_uri()
+
+
+def _render_finans_tbody(rows: list[dict[str, Any]], keys: list[str], limit: int = 500) -> str:
+    """Öğrenci grubu (rowspan) ve ara toplam satırlarını PDF tablosuna yazar."""
+    tbody = ""
+    for row in rows[:limit]:
+        classes = []
+        if row.get("_row_type") == "subtotal":
+            classes.append("row-subtotal")
+        elif row.get("_group_first"):
+            classes.append("row-group-start")
+        elif row.get("_omit_ogrenci"):
+            classes.append("row-group-cont")
+        if row.get("_group_alt"):
+            classes.append("row-group-alt")
+        cls = f' class="{" ".join(classes)}"' if classes else ""
+        cells = []
+        for k in keys:
+            if k == "ogrenci_adi":
+                span = int(row.get("_group_span") or 0)
+                if row.get("_group_first") and span > 1:
+                    cells.append(
+                        f'<td rowspan="{span}" class="cell-group">{_format_cell(row.get(k))}</td>'
+                    )
+                    continue
+                if row.get("_omit_ogrenci"):
+                    continue
+            cells.append(f"<td>{_format_cell(row.get(k))}</td>")
+        tbody += f"<tr{cls}>{''.join(cells)}</tr>"
+    return tbody
 
 
 def _format_cell(value: Any) -> str:
@@ -329,6 +360,7 @@ def _format_filter_label(key: str) -> str:
         "mode": "Mod",
         "kaynak": "Kaynak",
         "odeme_yontemi_tipi": "Ödeme Yöntemi",
+        "durum": "Durum",
     }
     return labels.get(key, key.replace("_", " ").title())
 
@@ -382,7 +414,7 @@ def build_finans_report_html(
     _meta_skip = {
         "raporu_olusturan", "report_kind", "report_totals", "rapor_adi",
         "kurum_ad", "sube_ad", "sube", "kurum_id", "sube_id",
-        "toplam", "toplam_tutar", "adet", "count", "toplam_kalan",
+        "toplam", "toplam_tutar", "adet", "count", "toplam_kalan", "toplam_geciken",
     }
     filter_rows = ""
     if filters_meta:
@@ -394,15 +426,24 @@ def build_finans_report_html(
                 f'<span class="meta-value">{html.escape(str(fv))}</span></div>'
             )
 
+    _summary_labels = {
+        "toplam": "Toplam",
+        "toplam_tutar": "Toplam Tutar",
+        "adet": "Adet",
+        "count": "Kayıt",
+        "toplam_kalan": "Toplam Kalan",
+        "toplam_geciken": "Toplam Geciken",
+    }
     summary_html = ""
     if summary:
         chips = ""
         for sk, sv in summary.items():
             if sv in (None, ""):
                 continue
+            chip_label = _summary_labels.get(sk, sk.replace("_", " "))
             chips += (
                 f'<div class="summary-chip">'
-                f'<div class="summary-chip-label">{html.escape(sk.replace("_", " "))}</div>'
+                f'<div class="summary-chip-label">{html.escape(chip_label)}</div>'
                 f'<div class="summary-chip-value">{_format_cell(sv)}</div>'
                 f"</div>"
             )
@@ -410,10 +451,7 @@ def build_finans_report_html(
             summary_html = f'<div class="summary-row">{chips}</div>'
 
     thead = "".join(f"<th>{html.escape(lbl)}</th>" for lbl in labels)
-    tbody = ""
-    for row in rows[:500]:
-        cells = "".join(f"<td>{_format_cell(row.get(k))}</td>" for k in keys)
-        tbody += f"<tr>{cells}</tr>"
+    tbody = _render_finans_tbody(rows, keys)
 
     extra_note = ""
     if len(rows) > 500:
@@ -456,7 +494,7 @@ def build_finans_report_html(
       margin-bottom: 16px;
     }}
     .header-left {{ display: flex; align-items: center; gap: 12px; }}
-    .logo {{ width: 42px; height: 42px; object-fit: contain; }}
+    .logo {{ width: 56px; height: 56px; object-fit: contain; }}
     .logo-fallback {{
       width: 42px; height: 42px; border-radius: 10px;
       background: {BRAND_PRIMARY}; color: #fff;
@@ -498,6 +536,19 @@ def build_finans_report_html(
       vertical-align: top;
     }}
     tbody tr:nth-child(even) {{ background: #f8fafc; }}
+    tbody tr.row-group-alt td {{ background: #f8fafc; }}
+    tbody tr.row-group-start td, tbody tr.row-group-cont td {{ background: #fff; }}
+    tbody tr.row-group-alt.row-group-start td,
+    tbody tr.row-group-alt.row-group-cont td {{ background: #f8fafc; }}
+    tbody tr.row-subtotal td {{
+      background: #fef2f2; font-weight: 700; color: #991b1b;
+      border-top: 1px solid #fecaca;
+    }}
+    td.cell-group {{
+      vertical-align: middle; font-weight: 700; color: #0f172a;
+      border-right: 1px solid #cbd5e1; background: #fff;
+    }}
+    tbody tr.row-group-alt td.cell-group {{ background: #f8fafc; }}
     tbody tr:hover {{ background: #eff6ff; }}
     .footer {{
       margin-top: 18px; padding-top: 10px; border-top: 1px solid #e2e8f0;

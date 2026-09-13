@@ -213,6 +213,7 @@ class ExportService:
             ('count', 'Kayıt', 'integer'),
             ('toplam_tutar', 'Toplam Tutar', 'currency'),
             ('toplam_kalan', 'Toplam Kalan', 'currency'),
+            ('toplam_geciken', 'Toplam Geciken', 'currency'),
         ):
             if key in meta and meta[key] not in (None, '') and label.lower() not in seen:
                 seen.add(label.lower())
@@ -322,7 +323,7 @@ class ExportService:
                     lbl = chip.get("label")
                     if lbl:
                         summary[lbl] = chip.get("value")
-                for k in ("toplam", "toplam_tutar", "adet", "count", "toplam_kalan"):
+                for k in ("toplam", "toplam_tutar", "adet", "count", "toplam_kalan", "toplam_geciken"):
                     if k in (filters_meta or {}):
                         summary[k] = filters_meta[k]
 
