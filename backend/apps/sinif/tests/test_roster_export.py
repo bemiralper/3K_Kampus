@@ -47,10 +47,12 @@ class SinifRosterExportTest(TestCase):
         )
         self.sinif_11a = Sinif.objects.create(
             kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+            term=self.term,
             ad='11-A', kod='11A', kapasite=30, sinif_seviyesi=self.seviye_11, aktif_mi=True,
         )
         self.sinif_12a = Sinif.objects.create(
             kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+            term=self.term,
             ad='12-A', kod='12A', kapasite=30, sinif_seviyesi=self.seviye_12, aktif_mi=True,
         )
         self.ogrenci = Ogrenci.objects.create(

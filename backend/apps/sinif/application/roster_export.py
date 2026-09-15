@@ -79,6 +79,7 @@ def resolve_siniflar_for_scope(
     sinif_id: int | None = None,
     sinif_seviyesi_id: int | None = None,
     sinif_ids: list[int] | None = None,
+    term_id: int | None = None,
 ) -> list[Sinif]:
     qs = Sinif.objects.filter(
         kurum_id=kurum_id,
@@ -103,6 +104,9 @@ def resolve_siniflar_for_scope(
         qs = qs.filter(id__in=sinif_ids)
     elif scope != 'all':
         raise ValueError('Geçersiz scope')
+
+    if term_id and scope in ('all', 'seviye'):
+        qs = qs.filter(term_id=term_id)
 
     return list(qs.order_by('sinif_seviyesi__sira', 'sinif_seviyesi__ad', 'ad'))
 

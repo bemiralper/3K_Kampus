@@ -12,9 +12,9 @@ class Sinif(models.Model):
     YILLIK VARLIK - Her eğitim yılında sıfırdan oluşturulur
     
     KURALLAR:
-    - Her eğitim yılı için ayrı sınıflar tanımlanır
-    - Aynı sınıf adı farklı yıllarda olabilir
-    - Tenant isolation: kurum + sube + egitim_yili
+    - Her eğitim dönemi için ayrı sınıflar tanımlanır
+    - Aynı sınıf adı farklı dönemlerde olabilir
+    - Tenant isolation: kurum + sube + egitim_yili + term
     - Odaya atanabilir (fiziksel mekan ilişkisi)
     """
     
@@ -36,6 +36,18 @@ class Sinif(models.Model):
         on_delete=models.CASCADE,
         related_name='siniflar',
         verbose_name='Eğitim Yılı'
+    )
+    
+    # YILLIK VARLIK — eğitim yılı + aktif dönem kapsamında
+    # Dönem değişince yeni dönemde sınıflar boş başlar (eski dönem kayıtları durur)
+    term = models.ForeignKey(
+        'term.Term',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='siniflar',
+        verbose_name='Eğitim Dönemi',
+        help_text='Sınıfın ait olduğu eğitim dönemi. Dönem değişince listelenmez.',
     )
     
     # Sınıf bilgileri
@@ -89,10 +101,9 @@ class Sinif(models.Model):
         verbose_name_plural = 'Sınıflar'
         ordering = ['egitim_yili', 'ad']
         constraints = [
-            # Aynı kurum+sube+yıl için aynı sınıf adı olmaz
             models.UniqueConstraint(
-                fields=['kurum', 'sube', 'egitim_yili', 'ad'],
-                name='unique_sinif_per_year'
+                fields=['kurum', 'sube', 'egitim_yili', 'term', 'ad'],
+                name='unique_sinif_per_term',
             )
         ]
         indexes = [

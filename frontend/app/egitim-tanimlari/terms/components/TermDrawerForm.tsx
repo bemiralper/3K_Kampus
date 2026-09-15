@@ -48,18 +48,22 @@ const styles = {
   overlay: {
     position: 'fixed' as const,
     inset: 0,
+    height: '100%',
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     zIndex: 1000,
     display: 'flex',
     justifyContent: 'flex-end',
+    alignItems: 'stretch',
   },
   drawer: {
     width: '500px',
     maxWidth: '100%',
     backgroundColor: '#fff',
     height: '100%',
+    maxHeight: '100dvh',
     display: 'flex',
     flexDirection: 'column' as const,
+    overflow: 'hidden',
     boxShadow: '-4px 0 20px rgba(0, 0, 0, 0.15)',
   },
   header: {
@@ -68,6 +72,7 @@ const styles = {
     display: 'flex',
     justifyContent: 'space-between',
     alignItems: 'center',
+    flexShrink: 0,
   },
   title: {
     fontSize: '18px',
@@ -84,6 +89,7 @@ const styles = {
   },
   content: {
     flex: 1,
+    minHeight: 0,
     overflowY: 'auto' as const,
     padding: '24px',
   },
@@ -171,6 +177,8 @@ const styles = {
     display: 'flex',
     justifyContent: 'flex-end',
     gap: '12px',
+    flexShrink: 0,
+    backgroundColor: '#fff',
   },
   btnCancel: {
     padding: '10px 20px',
@@ -292,7 +300,7 @@ export default function TermDrawerForm({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1 }}>
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
           <div style={styles.content}>
             {/* Aktif Yıl Badge */}
             <div style={styles.yearBadge}>

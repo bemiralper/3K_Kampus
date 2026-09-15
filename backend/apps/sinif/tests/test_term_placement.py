@@ -22,6 +22,8 @@ class SinifTermPlacementApiTest(TestCase):
         self.kurum = Kurum.objects.create(ad='Placement Kurum', kod='PLC')
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='PLC-M')
         self.user = User.objects.create_user(username='placementtest', password='test')
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
         self.client.force_login(self.user)
 
         self.egitim_yili = EgitimYili.objects.create(
@@ -46,6 +48,7 @@ class SinifTermPlacementApiTest(TestCase):
             kurum=self.kurum,
             sube=self.sube,
             egitim_yili=self.egitim_yili,
+            term=self.term,
             ad='9-A',
             kod='9A',
             kapasite=30,
@@ -56,6 +59,7 @@ class SinifTermPlacementApiTest(TestCase):
             kurum=self.kurum,
             sube=self.sube,
             egitim_yili=self.egitim_yili,
+            term=self.term,
             ad='9-B',
             kod='9B',
             kapasite=30,

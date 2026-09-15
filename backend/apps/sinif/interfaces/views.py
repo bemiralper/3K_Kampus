@@ -207,6 +207,7 @@ def sinif_list_api(request):
         return term_err
 
     if term:
+        sinif_list = [s for s in sinif_list if s.term_id == term.id]
         counts = placement_counts_for_term(term.id, [s.id for s in sinif_list])
         data = [_serialize_sinif_row(s, counts.get(s.id, 0)) for s in sinif_list]
         return JsonResponse({
@@ -262,6 +263,8 @@ def sinif_list_export_api(request):
     term, term_err = _resolve_term_for_request(request, kurum_id, sube_id)
     if term_err:
         return term_err
+    if term:
+        sinif_list = [s for s in sinif_list if s.term_id == term.id]
     mevcutluk_map = {}
     if term:
         from apps.sinif.application.roster_export import mevcutluk_map_for_siniflar
@@ -384,15 +387,21 @@ def sinif_create_api(request):
     
     # Şube — zorunlu bağlam
     request_sube_id = sube_id
+
+    term, term_err = _resolve_term_for_request(request, kurum_id, request_sube_id)
+    if term_err:
+        return term_err
     
-    # Aynı yıl+şube'de aynı isimde sınıf var mı?
-    if Sinif.objects.filter(
+    # Aynı dönem+şube'de aynı isimde sınıf var mı?
+    dup = Sinif.objects.filter(
         kurum_id=kurum_id, 
         sube_id=request_sube_id,
         egitim_yili=egitim_yili, 
-        ad=ad
-    ).exists():
-        return JsonResponse({'error': 'Bu eğitim yılında aynı isimde sınıf zaten var'}, status=400)
+        ad=ad,
+        term_id=term.id if term else None,
+    )
+    if dup.exists():
+        return JsonResponse({'error': 'Bu dönemde aynı isimde sınıf zaten var'}, status=400)
     
     # Oda kontrolü (opsiyonel)
     oda = None
@@ -419,6 +428,7 @@ def sinif_create_api(request):
         kurum_id=kurum_id,
         sube_id=request_sube_id,
         egitim_yili=egitim_yili,
+        term=term,
         ad=ad,
         kod=data.get('kod', ''),
         kapasite=data.get('kapasite', 30),
@@ -497,9 +507,10 @@ def sinif_update_api(request, sinif_id):
                 kurum_id=kurum_id,
                 sube=sinif.sube,
                 egitim_yili=sinif.egitim_yili,
+                term_id=sinif.term_id,
                 ad=new_ad
             ).exclude(id=sinif_id).exists():
-                return JsonResponse({'error': 'Bu eğitim yılında aynı isimde sınıf zaten var'}, status=400)
+                return JsonResponse({'error': 'Bu dönemde aynı isimde sınıf zaten var'}, status=400)
             sinif.ad = new_ad
     
     if 'kod' in data:
@@ -849,6 +860,7 @@ def sinif_roster_export_api(request):
             sinif_id=sinif_id,
             sinif_seviyesi_id=sinif_seviyesi_id,
             sinif_ids=sinif_ids,
+            term_id=term.id,
         )
     except ValueError as exc:
         return JsonResponse({'error': str(exc)}, status=400)

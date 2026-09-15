@@ -13,6 +13,7 @@ from apps.term.domain.models import Term
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
+from apps.term.application.service import activate_term
 from shared.context import (
     get_secili_egitim_yili_id,
     resolve_tenant_context,
@@ -225,6 +226,8 @@ def term_create_api(request):
             auto_generate_enabled=data.get('auto_generate_enabled', True),
             allow_conflict_override=data.get('allow_conflict_override', False),
         )
+        if term.is_active:
+            activate_term(term)
         
         return JsonResponse({
             'success': True,
@@ -313,10 +316,14 @@ def term_update_api(request, term_id):
     if 'allow_conflict_override' in data:
         term.allow_conflict_override = data['allow_conflict_override']
     
+    becoming_active = bool(data.get('is_active')) if 'is_active' in data else term.is_active
+
     try:
         term.full_clean()
         term.save()
-        
+        if becoming_active:
+            activate_term(term)
+
         return JsonResponse({
             'success': True,
             'message': f'"{term.name}" dönemi başarıyla güncellendi'
