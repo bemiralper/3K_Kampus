@@ -3647,6 +3647,7 @@
   font-size: 9px;
   line-height: 1.15;
   overflow: hidden;
+  white-space: nowrap;
 }
 .karneGrid thead th {
   background: #eaf2fa;

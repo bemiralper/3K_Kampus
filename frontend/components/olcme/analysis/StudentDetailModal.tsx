@@ -146,7 +146,7 @@ function AnswerGrid({
   questions,
 }: {
   title: string;
-  questions: { q: number; given: string; correct: string; result: string }[];
+  questions: { q: number; n?: number; given: string; correct: string; result: string }[];
 }) {
   if (!questions.length) return null;
   const chunk = 20;
@@ -161,8 +161,8 @@ function AnswerGrid({
           <thead>
             <tr>
               <th className={s.karneGridLabel} />
-              {part.map((q, i) => (
-                <th key={q.q}>{i + 1 + ri * chunk}</th>
+              {part.map(q => (
+                <th key={q.q}>{q.n || q.q}</th>
               ))}
             </tr>
           </thead>

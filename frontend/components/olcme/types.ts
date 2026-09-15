@@ -796,7 +796,7 @@ export interface StudentDetailResponse {
   answer_grids?: {
     section_id: number;
     section_name: string;
-    questions: { q: number; given: string; correct: string; result: string }[];
+    questions: { q: number; n?: number; given: string; correct: string; result: string }[];
   }[];
   topic_blocks?: {
     heading: string;

@@ -606,9 +606,24 @@ def _leaf_section_for_question(exam, question_number: int):
     )
 
 
+def _answer_grid_group_key(sec) -> tuple:
+    """Aynı ana testteki yaprakları birleştir; seçmeli felsefe ayrı blok kalır."""
+    from ..services.exam_templates import OPTIONAL_PHILOSOPHY_NAME
+
+    if (sec.name or '') == OPTIONAL_PHILOSOPHY_NAME:
+        return ('opt', sec.id)
+    if sec.is_sub_section and sec.parent_section_id:
+        return ('parent', sec.parent_section_id)
+    return ('leaf', sec.id)
+
+
 def _build_answer_grids(exam, comparison: dict) -> list:
-    """Yaprak ders ızgarası — seçmeli felsefe gibi ana blok dışındaki 5 soru da görünür."""
-    sections = list(exam.sections.all().order_by('order', 'question_start'))
+    """Optik form ders sırası: ana test blokları, her blokta 1…n."""
+    sections = list(
+        exam.sections.all()
+        .select_related('parent_section')
+        .order_by('question_start', 'id')
+    )
     parents_with_children = {
         sec.parent_section_id
         for sec in sections
@@ -618,21 +633,39 @@ def _build_answer_grids(exam, comparison: dict) -> list:
         sec for sec in sections
         if sec.is_sub_section or sec.id not in parents_with_children
     ]
-    grids = []
+
+    grouped: list[tuple[tuple, list]] = []
     for sec in leaves:
+        key = _answer_grid_group_key(sec)
+        if grouped and grouped[-1][0] == key:
+            grouped[-1][1].append(sec)
+        else:
+            grouped.append((key, [sec]))
+
+    grids = []
+    for key, secs in grouped:
+        kind, _gid = key
+        first = secs[0]
+        parent = first.parent_section if kind == 'parent' else None
+        section_id = parent.id if parent else first.id
+        section_name = parent.name if parent else first.name
         questions = []
-        for q in range(sec.question_start, sec.question_end + 1):
-            comp = comparison.get(str(q)) or {}
-            questions.append({
-                'q': q,
-                'given': (comp.get('given') or '').strip().upper(),
-                'correct': (comp.get('correct') or '').strip().upper(),
-                'result': comp.get('result') or 'empty',
-            })
+        n = 0
+        for sec in secs:
+            for q in range(sec.question_start, sec.question_end + 1):
+                n += 1
+                comp = comparison.get(str(q)) or {}
+                questions.append({
+                    'q': q,
+                    'n': n,
+                    'given': (comp.get('given') or '').strip().upper(),
+                    'correct': (comp.get('correct') or '').strip().upper(),
+                    'result': comp.get('result') or 'empty',
+                })
         if questions:
             grids.append({
-                'section_id': sec.id,
-                'section_name': sec.name,
+                'section_id': section_id,
+                'section_name': section_name,
                 'questions': questions,
             })
     return grids

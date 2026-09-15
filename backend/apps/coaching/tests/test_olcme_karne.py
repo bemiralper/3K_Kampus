@@ -508,3 +508,40 @@ class KarnePdfHeaderOverlapTest(TestCase):
             'answer_grids': [],
         })
         self.assertTrue(pdf.startswith(b'%PDF'))
+
+
+class KarnePdfAnswerGridTest(TestCase):
+    def test_grid_headers_use_local_ders_sirasi(self):
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+
+        questions = [
+            {
+                'q': 100 + i, 'n': i, 'given': 'A', 'correct': 'B', 'result': 'wrong',
+            }
+            for i in range(1, 21)
+        ]
+        pdf = render_karne_pdf({
+            'exam_name': 'TYT',
+            'student_name': 'Test Öğrenci',
+            'sube_ad': 'Merkez',
+            'kurum_ad': '3K',
+            'toplam_net': 10,
+            'topic_blocks': [],
+            'section_details': [],
+            'answer_grids': [{
+                'section_id': 1,
+                'section_name': 'Fen Bilimleri',
+                'questions': questions,
+            }],
+        })
+        self.assertTrue(pdf.startswith(b'%PDF'))
+        try:
+            from pypdf import PdfReader
+        except ImportError:
+            from PyPDF2 import PdfReader
+        text = ''.join(
+            (page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf)).pages
+        )
+        self.assertIn('Fen Bilimleri', text)
+        self.assertNotIn('101', text)
+        self.assertNotIn('120', text)

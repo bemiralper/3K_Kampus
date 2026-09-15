@@ -335,7 +335,7 @@ def _build_styles(font: str, font_bold: str) -> dict[str, Any]:
         'areaItem': mk('KAreaItem', size=8, color=INK, leading=11),
         'areaEmpty': mk('KAreaEmpty', size=8, color=MUTED, align=1),
         # Cevap anahtarı
-        'gridNum': mk('KGridNum', size=6, bold=True, color=INK_SOFT, align=1),
+        'gridNum': mk('KGridNum', size=6.5, bold=True, color=INK_SOFT, align=1, leading=8),
         'gridAns': mk('KGridAns', size=7, bold=True, color=INK, align=1),
         'gridAnsWrong': mk('KGridAnsWrong', size=7, bold=True, color=RED, align=1),
         'gridRowLabel': mk('KGridRowLabel', size=6, bold=True, color=MUTED, align=0),
@@ -1409,8 +1409,9 @@ def _answer_grids(ctx: _Ctx, data: dict) -> list[Any]:
                 col = offset + 1
                 result = question.get('result') or 'empty'
                 answer = (question.get('given') or '').strip()
+                ders_no = question.get('n') or question.get('q') or start + offset + 1
 
-                nums.append(Paragraph(str(question.get('q') or start + offset + 1), ctx.s('gridNum')))
+                nums.append(Paragraph(str(ders_no), ctx.s('gridNum')))
                 if result == 'wrong' and answer:
                     given.append(Paragraph(answer.upper(), ctx.s('gridAnsWrong')))
                     cmds.append(('BACKGROUND', (col, 1), (col, 1), bad_bg))

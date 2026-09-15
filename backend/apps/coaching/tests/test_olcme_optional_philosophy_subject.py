@@ -271,6 +271,35 @@ class OptionalPhilosophyAnswerGridTest(TestCase):
         grids = _build_answer_grids(exam, {})
         names = [g['section_name'] for g in grids]
         self.assertIn(OPTIONAL_PHILOSOPHY_NAME, names)
-        self.assertNotIn('Sosyal Bilimler-2', names)
+        self.assertIn('Sosyal Bilimler-2', names)
+        self.assertNotIn('Fizik', names)
+        self.assertEqual(
+            names[:3],
+            ['TDE-Sosyal Bilimler-1', 'Sosyal Bilimler-2', OPTIONAL_PHILOSOPHY_NAME],
+        )
         phil = next(g for g in grids if g['section_name'] == OPTIONAL_PHILOSOPHY_NAME)
         self.assertEqual([q['q'] for q in phil['questions']], [81, 82, 83, 84, 85])
+        self.assertEqual([q['n'] for q in phil['questions']], [1, 2, 3, 4, 5])
+        fen = next(g for g in grids if g['section_name'] == 'Fen Bilimleri')
+        self.assertEqual(fen['questions'][0]['n'], 1)
+        self.assertEqual(len(fen['questions']), 40)
+
+    def test_tyt_grids_follow_booklet_order_not_section_order_field(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _build_answer_grids
+
+        exam = Exam.objects.create(
+            name='TYT Grid', exam_type='YKS_TYT', include_optional_philosophy=False,
+        )
+        create_sections_from_template(exam)
+        for i, sec in enumerate(exam.sections.all()):
+            sec.order = 99 - i
+            sec.save(update_fields=['order'])
+        grids = _build_answer_grids(exam, {})
+        self.assertEqual(
+            [g['section_name'] for g in grids],
+            ['Türkçe', 'Sosyal Bilimler', 'Temel Matematik', 'Fen Bilimleri'],
+        )
+        fen = grids[-1]
+        self.assertEqual(fen['questions'][0]['n'], 1)
+        self.assertEqual(fen['questions'][0]['q'], 101)
+        self.assertEqual([q['n'] for q in fen['questions']], list(range(1, 21)))
