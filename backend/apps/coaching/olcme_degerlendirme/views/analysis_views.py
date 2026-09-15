@@ -35,6 +35,7 @@ from ..interfaces.sube_context import get_exam_or_response
 from ..services.scoring import (
     calculate_score_for_exam,
     calculate_all_ayt_scores,
+    _get_linked_tyt_answer,
     _get_linked_tyt_nets,
     estimate_ranking,
     calculate_percentile,
@@ -309,8 +310,9 @@ def _get_exam_or_404(request, exam_pk):
     if err:
         return None, err
     try:
-        exam = Exam.objects.select_related('kurum', 'sube').prefetch_related(
+        exam = Exam.objects.select_related('kurum', 'sube', 'linked_tyt_exam').prefetch_related(
             'sections', 'sections__sub_sections',
+            'linked_tyt_exam__sections',
         ).get(pk=exam.pk)
     except Exam.DoesNotExist:
         return None, Response({'error': 'Sınav bulunamadı.'}, status=404)
@@ -475,6 +477,98 @@ def _build_section_map(exam):
             'parent_id': sec.parent_section_id,
         }
     return sec_map
+
+
+def _section_score_detail(ss, sec_info, kurum_avg, sinif_avg, *, source='ayt', name=None):
+    """Karne Ders/Test satırı — AYT ve bağlı TYT aynı şema."""
+    q_count = sec_info.get('question_count', 1) or 1
+    net_val = _safe_float(ss.net)
+    attempted = ss.correct + ss.wrong
+    return {
+        'section_id': ss.section_id,
+        'section_name': name if name is not None else ss.section.name,
+        'is_sub_section': sec_info.get('is_sub', False),
+        'parent_id': sec_info.get('parent_id'),
+        'correct': ss.correct,
+        'wrong': ss.wrong,
+        'empty': ss.empty,
+        'net': net_val,
+        'question_count': q_count,
+        'verimlilik': round((net_val / q_count) * 100, 1) if q_count else 0,
+        'kurum_avg_net': kurum_avg,
+        'sinif_avg_net': sinif_avg,
+        'kurum_verimlilik': round((kurum_avg / q_count) * 100, 1) if q_count else 0,
+        'sinif_verimlilik': round((sinif_avg / q_count) * 100, 1) if q_count else 0,
+        'diff_kurum': round(net_val - kurum_avg, 2),
+        'diff_sinif': round(net_val - sinif_avg, 2),
+        'bos_potansiyel': round(ss.empty * 0.25, 2),
+        'hata_orani': round((ss.wrong / attempted) * 100, 1) if attempted else 0,
+        'source': source,
+    }
+
+
+def _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids):
+    """AYT karnesine bağlı TYT sınavının Ders/Test satırlarını ekler."""
+    if not getattr(exam, 'linked_tyt_exam_id', None):
+        return []
+
+    tyt_answer = _get_linked_tyt_answer(
+        exam, answer.student_id, answer.raw_student_name, answer.raw_student_id,
+    )
+    if not tyt_answer:
+        return []
+
+    tyt_exam = exam.linked_tyt_exam
+    tyt_sec_map = _build_section_map(tyt_exam)
+    ayt_student_ids = [a.student_id for a in all_answers if a.student_id]
+    tyt_cohort = list(
+        StudentAnswer.objects
+        .filter(
+            session__exam=tyt_exam,
+            session__status='COMPLETED',
+            student_id__in=ayt_student_ids,
+        )
+        .prefetch_related('section_scores__section')
+    )
+    cohort_ids = {ta.id for ta in tyt_cohort}
+    if tyt_answer.id not in cohort_ids:
+        tyt_cohort.append(tyt_answer)
+
+    kurum_nets = defaultdict(list)
+    sinif_nets = defaultdict(list)
+    sinif_id_set = set(sinif_student_ids or [])
+    for ta in tyt_cohort:
+        for ss in ta.section_scores.all():
+            n = _safe_float(ss.net)
+            kurum_nets[ss.section_id].append(n)
+            if ta.student_id and ta.student_id in sinif_id_set:
+                sinif_nets[ss.section_id].append(n)
+
+    kurum_avgs = {
+        sec_id: round(sum(vals) / len(vals), 2) if vals else 0
+        for sec_id, vals in kurum_nets.items()
+    }
+    sinif_avgs = {
+        sec_id: round(sum(vals) / len(vals), 2) if vals else 0
+        for sec_id, vals in sinif_nets.items()
+    }
+
+    score_by_sec = {ss.section_id: ss for ss in tyt_answer.section_scores.all()}
+    rows = []
+    for sec in tyt_exam.sections.all().order_by('order'):
+        ss = score_by_sec.get(sec.id)
+        if not ss:
+            continue
+        info = tyt_sec_map.get(sec.id, {})
+        display = sec.name if info.get('is_sub') else f'TYT · {sec.name}'
+        rows.append(_section_score_detail(
+            ss, info,
+            kurum_avgs.get(sec.id, 0),
+            sinif_avgs.get(sec.id, 0),
+            source='tyt',
+            name=display,
+        ))
+    return rows
 
 
 def _exam_type_short(exam_type: str) -> str:
@@ -1243,6 +1337,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
 
     has_kutuphane = False
     has_deneme = False
+    sinif_student_ids = []
     if answer.student:
         has_kutuphane = answer.student_id in _kutuphane_student_ids(
             [answer.student_id], exam.egitim_yili,
@@ -1289,43 +1384,17 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     section_details = []
     for ss in answer.section_scores.all():
         sec_info = sec_map.get(ss.section_id, {})
-        q_count = sec_info.get('question_count', 1) or 1
-        net_val = _safe_float(ss.net)
-        kurum_avg = kurum_section_avgs.get(ss.section_id, 0)
-        sinif_avg = sinif_section_avgs.get(ss.section_id, 0)
+        section_details.append(_section_score_detail(
+            ss, sec_info,
+            kurum_section_avgs.get(ss.section_id, 0),
+            sinif_section_avgs.get(ss.section_id, 0),
+            source='ayt',
+        ))
 
-        # Verimlilik: net / soru sayısı * 100
-        verimlilik = round((net_val / q_count) * 100, 1) if q_count else 0
-        kurum_verimlilik = round((kurum_avg / q_count) * 100, 1) if q_count else 0
-        sinif_verimlilik = round((sinif_avg / q_count) * 100, 1) if q_count else 0
-
-        # Boş bırakma maliyeti: boş * (1/4) potansiyel net kaybı
-        bos_maliyet = round(ss.empty * 0.25, 2)
-
-        # Yanlış / (Doğru + Yanlış) oranı — hız vs doğruluk
-        attempted = ss.correct + ss.wrong
-        hata_orani = round((ss.wrong / attempted) * 100, 1) if attempted else 0
-
-        section_details.append({
-            'section_id': ss.section_id,
-            'section_name': ss.section.name,
-            'is_sub_section': sec_info.get('is_sub', False),
-            'parent_id': sec_info.get('parent_id'),
-            'correct': ss.correct,
-            'wrong': ss.wrong,
-            'empty': ss.empty,
-            'net': net_val,
-            'question_count': q_count,
-            'verimlilik': verimlilik,
-            'kurum_avg_net': kurum_avg,
-            'sinif_avg_net': sinif_avg,
-            'kurum_verimlilik': kurum_verimlilik,
-            'sinif_verimlilik': sinif_verimlilik,
-            'diff_kurum': round(net_val - kurum_avg, 2),
-            'diff_sinif': round(net_val - sinif_avg, 2),
-            'bos_potansiyel': bos_maliyet,
-            'hata_orani': hata_orani,
-        })
+    if exam.exam_type == 'YKS_AYT':
+        section_details.extend(
+            _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids)
+        )
 
     # ── Genel bilgiler ────────────────────────────────────────────────────
     student_net = _safe_float(answer.total_net)
@@ -1380,7 +1449,8 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         kurum_sira = sorted_all_nets.index(student_net) + 1 if student_net in sorted_all_nets else 0
 
     strong, weak = _pick_strong_weak_areas(
-        section_details, exam.exam_type, alan_kodu, sec_map,
+        [sd for sd in section_details if sd.get('source') != 'tyt'],
+        exam.exam_type, alan_kodu, sec_map,
     )
 
     # ── Net gelişim trendi ────────────────────────────────────────────────
@@ -1449,6 +1519,19 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         pt: round(sum(vals) / len(vals), 3) if vals else 0
         for pt, vals in pt_score_lists.items()
     } if is_ayt else {}
+
+    if is_ayt and puan_turleri_detail:
+        for pt, d in all_scores_data.items():
+            pt_est = estimate_ranking(
+                d['puan'], _PUAN_TURU_TO_EXAM_TYPE.get(pt, 'YKS_AYT'), ranking_year,
+            )
+            sorted_pt = sorted(pt_score_lists.get(pt) or [], reverse=True)
+            my_pt = d['puan']
+            puan_turleri_detail[pt]['tahmini_siralama'] = pt_est.get('tahmini_siralama')
+            puan_turleri_detail[pt]['yuzdelik_dilim'] = pt_est.get('yuzdelik_dilim')
+            puan_turleri_detail[pt]['kurum_ici_sira'] = (
+                sorted_pt.index(my_pt) + 1 if my_pt in sorted_pt else 0
+            )
 
     return {
         'answer_id': answer.id,

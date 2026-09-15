@@ -739,6 +739,7 @@ export interface StudentDetailSectionItem {
   diff_sinif: number;
   bos_potansiyel: number;
   hata_orani: number;
+  source?: 'ayt' | 'tyt';
 }
 
 export interface StudentDetailResponse {

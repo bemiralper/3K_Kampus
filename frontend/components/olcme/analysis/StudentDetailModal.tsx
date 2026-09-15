@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { analysisApi } from '../api';
 import KarneNotifyModal from './KarneNotifyModal';
 import type { StudentAnalysis, StudentDetailResponse, StudentDetailSectionItem } from '../types';
@@ -281,9 +281,17 @@ export default function StudentDetailModal({
         label: pt === 'SOZ' ? 'SÖZ' : pt,
         puan: detail.puan_turleri![pt].puan,
         avg: detail.puan_turleri_avgs?.[pt] ?? detail.kurum_avg_puan ?? 0,
+        tahmini: detail.puan_turleri![pt].tahmini_siralama ?? null,
+        kurumSira: detail.puan_turleri![pt].kurum_ici_sira ?? null,
       }));
     }
-    return [{ label: typeLabel, puan: detail.puan, avg: detail.kurum_avg_puan ?? 0 }];
+    return [{
+      label: typeLabel,
+      puan: detail.puan,
+      avg: detail.kurum_avg_puan ?? 0,
+      tahmini: detail.tahmini_siralama,
+      kurumSira: detail.kurum_ici_sira,
+    }];
   })();
 
   const hasClass = detail?.has_class ?? Boolean(detail?.sinif_student_count || detail?.sinif_rank);
@@ -379,8 +387,8 @@ export default function StudentDetailModal({
                         <td>{fmt(row.puan, 2)}</td>
                         <td>{fmt(row.avg, 2)}</td>
                         <td>{i === 0 ? (hasClass && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—') : ''}</td>
-                        <td>{i === 0 ? fmtInt(detail.kurum_ici_sira) : ''}</td>
-                        <td>{i === 0 ? (detail.tahmini_siralama ? fmtInt(detail.tahmini_siralama) : '—') : ''}</td>
+                        <td>{row.kurumSira ? fmtInt(row.kurumSira) : '—'}</td>
+                        <td>{row.tahmini ? fmtInt(row.tahmini) : '—'}</td>
                       </tr>
                     ))}
                     <tr>
@@ -412,27 +420,42 @@ export default function StudentDetailModal({
                     </tr>
                   </thead>
                   <tbody>
-                    {sectionRows.map(({ sd, main }) => {
-                      const ds = hasClass ? diffLabel(sd.diff_sinif) : { text: '—', cls: s.karneMuted };
-                      const dk = diffLabel(sd.diff_kurum);
-                      return (
-                        <tr key={sd.section_id} className={main ? s.karneMainRow : undefined}>
-                          <td className={main ? s.karneLeft : s.karneSub}>{sd.section_name}</td>
-                          <td>{sd.question_count}</td>
-                          <td>{sd.correct}</td>
-                          <td>{sd.wrong}</td>
-                          <td>{sd.empty}</td>
-                          <td>{fmt(sd.net, 2)}</td>
-                          <td style={{ color: verimColor(sd.verimlilik), fontWeight: 700 }}>
-                            %{Math.round(sd.verimlilik)}
-                          </td>
-                          <td>{hasClass ? fmt(sd.sinif_avg_net, 2) : '—'}</td>
-                          <td className={ds.cls}>{ds.text}</td>
-                          <td>{fmt(sd.kurum_avg_net, 2)}</td>
-                          <td className={dk.cls}>{dk.text}</td>
-                        </tr>
-                      );
-                    })}
+                    {(() => {
+                      let tytHead = false;
+                      return sectionRows.map(({ sd, main }) => {
+                        const ds = hasClass ? diffLabel(sd.diff_sinif) : { text: '—', cls: s.karneMuted };
+                        const dk = diffLabel(sd.diff_kurum);
+                        const row = (
+                          <tr key={sd.section_id} className={main ? s.karneMainRow : undefined}>
+                            <td className={main ? s.karneLeft : s.karneSub}>{sd.section_name}</td>
+                            <td>{sd.question_count}</td>
+                            <td>{sd.correct}</td>
+                            <td>{sd.wrong}</td>
+                            <td>{sd.empty}</td>
+                            <td>{fmt(sd.net, 2)}</td>
+                            <td style={{ color: verimColor(sd.verimlilik), fontWeight: 700 }}>
+                              %{Math.round(sd.verimlilik)}
+                            </td>
+                            <td>{hasClass ? fmt(sd.sinif_avg_net, 2) : '—'}</td>
+                            <td className={ds.cls}>{ds.text}</td>
+                            <td>{fmt(sd.kurum_avg_net, 2)}</td>
+                            <td className={dk.cls}>{dk.text}</td>
+                          </tr>
+                        );
+                        if (sd.source === 'tyt' && !tytHead) {
+                          tytHead = true;
+                          return (
+                            <Fragment key={`tyt-${sd.section_id}`}>
+                              <tr className={s.karneMainRow}>
+                                <td className={s.karneLeft} colSpan={11}>TYT (bağlı sınav)</td>
+                              </tr>
+                              {row}
+                            </Fragment>
+                          );
+                        }
+                        return row;
+                      });
+                    })()}
                   </tbody>
                 </table>
               </div>

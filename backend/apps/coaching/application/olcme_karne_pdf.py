@@ -974,8 +974,8 @@ def _ranking_table(ctx: _Ctx, data: dict):
                 Paragraph(_fmt(info.get('puan'), 2), td),
                 Paragraph(_fmt(avgs.get(key, data.get('kurum_avg_puan')), 2), td),
                 Paragraph(sinif_rank() if first else '', td),
-                Paragraph(_fmt_int(data.get('kurum_ici_sira')) if first else '', td),
-                Paragraph(_fmt_int(info.get('tahmini_siralama') or data.get('tahmini_siralama')), td),
+                Paragraph(_fmt_int(info.get('kurum_ici_sira')), td),
+                Paragraph(_fmt_int(info.get('tahmini_siralama')), td),
             ])
             first = False
     else:
@@ -1029,7 +1029,15 @@ def _performance_table(ctx: _Ctx, data: dict):
     ]]
 
     main_rows: list[int] = []
+    group_rows: list[int] = []
+    seen_tyt = False
     for sd, is_main in _ordered_sections(data):
+        if sd.get('source') == 'tyt' and not seen_tyt:
+            seen_tyt = True
+            group_rows.append(len(rows))
+            empty = [Paragraph('', td)] * 10
+            rows.append([Paragraph('TYT (bağlı sınav)', ctx.s('tdName')), *empty])
+
         if is_main:
             main_rows.append(len(rows))
 
@@ -1064,6 +1072,9 @@ def _performance_table(ctx: _Ctx, data: dict):
     cmds = _hairline_table_style(ctx, zebra=False)
     for r in main_rows:
         cmds.append(('BACKGROUND', (0, r), (-1, r), colors.HexColor(BRAND_SOFT)))
+    for r in group_rows:
+        cmds.append(('SPAN', (0, r), (-1, r)))
+        cmds.append(('BACKGROUND', (0, r), (-1, r), colors.HexColor('#E8F1F8')))
     tbl.setStyle(TableStyle(cmds))
     return tbl
 

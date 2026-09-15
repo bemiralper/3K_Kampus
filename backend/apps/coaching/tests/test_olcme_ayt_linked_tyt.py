@@ -109,3 +109,54 @@ class LinkedTytNetsTest(TestCase):
         r = calculate_ayt_score(ayt, tyt, puan_turu='SAY', year=2025)
         self.assertAlmostEqual(r['tyt_net'], 100.0, places=2)
         self.assertLess(abs(r['puan'] - 451.413), 1.1)
+
+
+class LinkedTytKarneDetailTest(LinkedTytNetsTest):
+    def setUp(self):
+        super().setUp()
+        mat = ExamSection.objects.create(
+            exam=self.ayt, name='Matematik', order=1,
+            question_start=1, question_end=40,
+        )
+        ayt_session = ExamSession.objects.create(
+            exam=self.ayt, status=ExamSession.Status.COMPLETED,
+            original_filename='ayt.dat',
+        )
+        self.ayt_answer = StudentAnswer.objects.create(
+            session=ayt_session,
+            student=self.ogrenci,
+            raw_student_id='0',
+            raw_student_name='ARDA YAYLA',
+            total_net=Decimal('37.50'),
+        )
+        StudentSectionScore.objects.create(
+            student_answer=self.ayt_answer, section=mat,
+            correct=38, wrong=2, empty=0, net=Decimal('37.50'),
+        )
+
+    def test_karne_includes_linked_tyt_sections_and_distinct_rankings(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import (
+            build_student_detail_payload,
+        )
+
+        data = build_student_detail_payload(
+            self.ayt, self.ayt_answer, 2025, include_trend=False,
+        )
+        tyt_rows = [sd for sd in data['section_details'] if sd.get('source') == 'tyt']
+        tyt_mains = [sd for sd in tyt_rows if not sd['is_sub_section']]
+        self.assertTrue(tyt_mains)
+        self.assertTrue(any('Temel Matematik' in sd['section_name'] for sd in tyt_mains))
+        self.assertEqual(tyt_mains[0]['net'], 36.25)
+        self.assertFalse(any(sd['section_name'] == 'Matematik' for sd in tyt_mains))
+
+        pts = data['puan_turleri']
+        self.assertIsNotNone(pts['SAY'].get('tahmini_siralama'))
+        self.assertIsNotNone(pts['EA'].get('tahmini_siralama'))
+        self.assertIsNotNone(pts['SOZ'].get('tahmini_siralama'))
+        self.assertNotEqual(pts['SAY']['tahmini_siralama'], pts['EA']['tahmini_siralama'])
+        self.assertNotEqual(pts['EA']['tahmini_siralama'], pts['SOZ']['tahmini_siralama'])
+
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+        pdf = render_karne_pdf(data)
+        self.assertTrue(pdf.startswith(b'%PDF'))
+        self.assertGreater(len(pdf), 500)

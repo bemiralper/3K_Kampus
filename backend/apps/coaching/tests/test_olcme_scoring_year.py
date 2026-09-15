@@ -101,6 +101,16 @@ class AytLinkedTytScoreTest(SimpleTestCase):
         self.assertLess(est['tahmini_siralama'], 10_000)
         self.assertGreater(est['tahmini_siralama'], 1_000)
 
+    def test_same_score_differs_by_puan_turu(self):
+        say = estimate_ranking(400, 'YKS_AYT', 2025)['tahmini_siralama']
+        ea = estimate_ranking(400, 'YKS_AYT_EA', 2025)['tahmini_siralama']
+        soz = estimate_ranking(400, 'YKS_AYT_SOZ', 2025)['tahmini_siralama']
+        self.assertEqual(say, 40_857)
+        self.assertEqual(ea, 2_823)
+        self.assertEqual(soz, 652)
+        self.assertGreater(say, ea)
+        self.assertGreater(ea, soz)
+
 
 class TytLinkCodeTest(SimpleTestCase):
     def test_rejects_generic_row_numbers(self):

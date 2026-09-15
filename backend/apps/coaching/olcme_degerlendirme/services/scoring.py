@@ -390,11 +390,11 @@ def _normalize_name_for_matching(name: str) -> str:
     return s.upper()
 
 
-def _get_linked_tyt_nets(exam, student_id: int = None,
-                         raw_student_name: str = None,
-                         raw_student_id: str = None) -> dict:
+def _get_linked_tyt_answer(exam, student_id: int = None,
+                           raw_student_name: str = None,
+                           raw_student_id: str = None):
     """
-    Bağlantılı TYT sınavından öğrencinin bölüm netleri çeker.
+    Bağlantılı TYT sınavından öğrencinin StudentAnswer kaydını döndürür.
 
     Eşleştirme önceliği:
       1. student_id (DB'de kayıtlı öğrenci FK) — en güvenilir
@@ -403,7 +403,7 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
       4. raw_student_id — yalnızca TC / güvenilir okul no (0, 1, 105 gibi sıra no değil)
     """
     if not hasattr(exam, 'linked_tyt_exam') or not exam.linked_tyt_exam:
-        return {}
+        return None
 
     tyt_exam = exam.linked_tyt_exam
 
@@ -460,7 +460,6 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
     if not tyt_answer and raw_student_name:
         normalized_name = _normalize_name_for_matching(raw_student_name)
         if normalized_name and len(normalized_name) >= 4:
-            # TYT öğrencilerini al ve normalize isimlerle karşılaştır
             tyt_candidates = (
                 StudentAnswer.objects
                 .filter(
@@ -487,25 +486,34 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
             .first()
         )
 
-    if tyt_answer:
-        tyt_nets = {}
-        for ss in tyt_answer.section_scores.select_related('section').all():
-            if ss.section.is_sub_section:
-                continue
-            tyt_nets[ss.section.name] = float(ss.net) if ss.net else 0.0
-        return tyt_nets
+    return tyt_answer
 
-    return {}
+
+def _get_linked_tyt_nets(exam, student_id: int = None,
+                         raw_student_name: str = None,
+                         raw_student_id: str = None) -> dict:
+    """Bağlantılı TYT sınavından öğrencinin ana bölüm netlerini çeker."""
+    tyt_answer = _get_linked_tyt_answer(exam, student_id, raw_student_name, raw_student_id)
+    if not tyt_answer:
+        return {}
+
+    tyt_nets = {}
+    for ss in tyt_answer.section_scores.select_related('section').all():
+        if ss.section.is_sub_section:
+            continue
+        tyt_nets[ss.section.name] = float(ss.net) if ss.net else 0.0
+    return tyt_nets
 
 
 def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int = 2025) -> dict:
     """
     Geçmiş yıl verilerine göre tahmini Türkiye sıralaması.
-    ÖSYM gerçek sonuç verileri referans alınmıştır.
-    ranking_year parametresi ile istenen yıl seçilebilir (varsayılan: 2025).
+
+    2025 AYT/TYT tabloları ÖSYM «YKS sınav puanlarının yığınsal dağılımı»
+    (ham puan, OBP'siz) dilimleridir. SAY / EA / SÖZ aynı puanda çok farklı
+    sıralama üretir — yerleştirme tabloları kopyalanmamalı.
 
     NOT: Bu bir tahmindir, kesin değildir. Gerçek sıralama ÖSYM tarafından belirlenir.
-    Tablolar ÖSYM sonuç istatistiklerinden derlenmiştir.
     """
     # ── TYT Sıralama Tabloları (puan → yaklaşık sıralama) ────────────────
     # 2022+ yıllarında başlangıç puanı ~145 olduğundan tablo buna göre ayarlanmıştır
@@ -555,24 +563,25 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
         ],
         2025: [
             (500, 1),
-            (480, 110),
-            (460, 1_300),
-            (440, 6_000),
-            (420, 19_000),
-            (400, 52_000),
-            (380, 115_000),
-            (360, 220_000),
-            (340, 390_000),
-            (320, 600_000),
-            (300, 880_000),
-            (280, 1_230_000),
-            (260, 1_620_000),
-            (240, 1_990_000),
-            (220, 2_340_000),
-            (200, 2_640_000),
-            (180, 2_890_000),
-            (160, 3_090_000),
-            (145, 3_400_000),
+            (480, 180),
+            (460, 2_050),
+            (440, 8_163),
+            (420, 21_061),
+            (400, 44_193),
+            (380, 79_260),
+            (360, 127_655),
+            (340, 193_064),
+            (320, 282_276),
+            (300, 404_024),
+            (280, 570_335),
+            (260, 794_784),
+            (240, 1_073_527),
+            (220, 1_379_866),
+            (200, 1_686_626),
+            (180, 1_977_665),
+            (160, 2_210_463),
+            (140, 2_303_695),
+            (120, 2_310_493),
         ],
     }
 
@@ -622,74 +631,77 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
         ],
         2025: [
             (500, 1),
-            (480, 140),
-            (460, 1_700),
-            (440, 6_800),
-            (420, 17_000),
-            (400, 39_000),
-            (380, 78_000),
-            (360, 138_000),
-            (340, 225_000),
-            (320, 355_000),
-            (300, 520_000),
-            (280, 730_000),
-            (260, 970_000),
-            (240, 1_240_000),
-            (220, 1_540_000),
-            (200, 1_840_000),
-            (180, 2_090_000),
-            (160, 2_290_000),
-            (133, 2_600_000),
+            (480, 701),
+            (460, 4_715),
+            (440, 12_449),
+            (420, 24_779),
+            (400, 40_857),
+            (380, 60_085),
+            (360, 81_946),
+            (340, 106_251),
+            (320, 134_493),
+            (300, 169_418),
+            (280, 213_365),
+            (260, 270_804),
+            (240, 348_345),
+            (220, 458_302),
+            (200, 627_659),
+            (180, 892_884),
+            (160, 1_149_472),
+            (140, 1_277_493),
+            (120, 1_291_435),
         ],
     }
 
-    # ── AYT EA Sıralama Tabloları ────────────────────────────────────
+    # ── AYT EA Sıralama Tabloları (ÖSYM 2025 ham puan yığınsal dağılımı) ─
     ayt_ea_tables = {
         2025: [
             (500, 1),
-            (480, 120),
-            (460, 1_500),
-            (440, 6_200),
-            (420, 16_500),
-            (400, 38_000),
-            (380, 76_000),
-            (360, 135_000),
-            (340, 225_000),
-            (320, 355_000),
-            (300, 520_000),
-            (280, 720_000),
-            (260, 960_000),
-            (240, 1_230_000),
-            (220, 1_530_000),
-            (200, 1_830_000),
-            (180, 2_080_000),
-            (160, 2_280_000),
-            (130, 2_600_000),
+            (480, 32),
+            (460, 175),
+            (440, 560),
+            (420, 1_325),
+            (400, 2_823),
+            (380, 6_028),
+            (360, 15_691),
+            (340, 35_436),
+            (320, 68_083),
+            (300, 115_961),
+            (280, 185_253),
+            (260, 285_967),
+            (240, 431_085),
+            (220, 629_436),
+            (200, 875_112),
+            (180, 1_134_243),
+            (160, 1_350_772),
+            (140, 1_474_465),
+            (120, 1_494_355),
         ],
     }
 
-    # ── AYT SÖZ Sıralama Tabloları ───────────────────────────────────
+    # ── AYT SÖZ Sıralama Tabloları (ÖSYM 2025 ham puan yığınsal dağılımı) ─
     ayt_soz_tables = {
         2025: [
             (500, 1),
-            (480, 100),
-            (460, 1_300),
-            (440, 5_500),
-            (420, 15_000),
-            (400, 36_000),
-            (380, 72_000),
-            (360, 130_000),
-            (340, 218_000),
-            (320, 345_000),
-            (300, 510_000),
-            (280, 710_000),
-            (260, 950_000),
-            (240, 1_220_000),
-            (220, 1_520_000),
-            (200, 1_820_000),
-            (180, 2_070_000),
-            (160, 2_270_000),
-            (130, 2_600_000),
+            (480, 4),
+            (460, 21),
+            (440, 76),
+            (420, 227),
+            (400, 652),
+            (380, 1_782),
+            (360, 4_912),
+            (340, 12_653),
+            (320, 29_315),
+            (300, 60_680),
+            (280, 115_851),
+            (260, 205_996),
+            (240, 338_388),
+            (220, 515_827),
+            (200, 723_293),
+            (180, 920_945),
+            (160, 1_070_609),
+            (140, 1_155_714),
+            (120, 1_173_742),
         ],
     }
 
