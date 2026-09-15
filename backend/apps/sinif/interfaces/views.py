@@ -201,13 +201,14 @@ def sinif_list_api(request):
     elif aktif == 'false':
         siniflar = siniflar.filter(aktif_mi=False)
 
-    sinif_list = list(siniflar)
     term, term_err = _resolve_term_for_request(request, kurum_id, sube_id)
     if term_err:
         return term_err
 
     if term:
-        sinif_list = [s for s in sinif_list if s.term_id == term.id]
+        from apps.term.application.service import rehome_inherited_classes
+        rehome_inherited_classes(term)
+        sinif_list = [s for s in siniflar if s.term_id == term.id]
         counts = placement_counts_for_term(term.id, [s.id for s in sinif_list])
         data = [_serialize_sinif_row(s, counts.get(s.id, 0)) for s in sinif_list]
         return JsonResponse({
@@ -215,7 +216,7 @@ def sinif_list_api(request):
             'aktif_donem': term_to_dict(term),
         })
 
-    data = [_serialize_sinif_row(s, s.mevcutluk) for s in sinif_list]
+    data = [_serialize_sinif_row(s, s.mevcutluk) for s in siniflar]
     return JsonResponse({'siniflar': data})
 
 
@@ -583,31 +584,37 @@ def sinif_delete_api(request, sinif_id):
     if gate:
         return JsonResponse({'error': gate['error']}, status=gate['status'])
     
-    # Sınıfa kayıtlı öğrenci var mı kontrol et (dönem yerleşimi + yıllık kayıt)
+    # Sınıfa kayıtlı öğrenci — yalnız bu sınıfın döneminde (listede görünen sayı)
     from apps.academic.domain.student_class_placement import StudentClassPlacement
-    from apps.academic.services.active_academic_year import get_active_academic_year
+    from apps.term.application.service import rehome_inherited_classes
 
-    placement_count = 0
-    try:
-        active_year = get_active_academic_year()
-        placement_count = StudentClassPlacement.objects.filter(
-            academic_year=active_year,
-            classroom_id=sinif.id,
-            is_active=True,
-        ).count()
-    except Exception:
-        placement_count = 0
+    active_term = get_active_term_or_none(kurum_id=kurum_id, sube_id=sinif.sube_id)
+    if active_term:
+        rehome_inherited_classes(active_term)
+        sinif.refresh_from_db()
+        if sinif.term_id and sinif.term_id != active_term.id:
+            return JsonResponse({
+                'success': True,
+                'message': (
+                    f'"{sinif.ad}" önceki döneme ait olduğu için aktif dönem '
+                    'listesinden kaldırıldı.'
+                ),
+            })
 
-    try:
-        ogrenci_count = sinif.kayitlar.filter(aktif_mi=True).count() if hasattr(sinif, 'kayitlar') else 0
-    except Exception:
-        ogrenci_count = 0
+    term_id = sinif.term_id or (active_term.id if active_term else None)
+    placement_qs = StudentClassPlacement.objects.filter(
+        classroom_id=sinif.id,
+        is_active=True,
+    )
+    if term_id:
+        placement_count = placement_qs.filter(term_id=term_id).count()
+    else:
+        placement_count = placement_qs.count()
 
-    block_count = max(placement_count, ogrenci_count)
-    if block_count > 0:
+    if placement_count > 0:
         return JsonResponse({
             'error': (
-                f'Bu sınıfta {block_count} öğrenci yerleşimi/kaydı var. '
+                f'Bu sınıfta {placement_count} öğrenci yerleşimi/kaydı var. '
                 'Önce öğrencileri başka sınıfa taşıyın.'
             ),
         }, status=400)

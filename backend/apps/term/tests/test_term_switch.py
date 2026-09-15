@@ -171,3 +171,80 @@ class TermSwitchResetsClassesTest(TestCase):
         self.assertEqual(listed['siniflar'], [])
         self.kayit.refresh_from_db()
         self.assertIsNone(self.kayit.sinif_id)
+
+    def test_backfilled_class_on_new_term_is_rehomed_and_hidden(self):
+        """Canlı 0003 backfill: sınıf yeni döneme yazılmış, yerleşim eski dönemde."""
+        today = date.today()
+        term2 = Term.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+            name='2. Dönem',
+            code='D2',
+            start_date=today + timedelta(days=61),
+            end_date=today + timedelta(days=180),
+            order_no=2,
+            is_active=True,
+        )
+        self.term1.is_active = False
+        self.term1.save(update_fields=['is_active'])
+        self.sinif.term = term2
+        self.sinif.save(update_fields=['term'])
+
+        listed = self.client.get('/siniflar/api/', **self._headers()).json()
+        self.assertEqual(listed['aktif_donem']['id'], term2.id)
+        self.assertEqual(listed['siniflar'], [])
+        self.sinif.refresh_from_db()
+        self.assertEqual(self.sinif.term_id, self.term1.id)
+
+    def test_delete_leftover_class_removes_from_active_term_without_destroying(self):
+        import json
+
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        today = date.today()
+        term2 = Term.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+            name='2. Dönem',
+            code='D2',
+            start_date=today + timedelta(days=61),
+            end_date=today + timedelta(days=180),
+            order_no=2,
+            is_active=True,
+        )
+        self.term1.is_active = False
+        self.term1.save(update_fields=['is_active'])
+        self.sinif.term = term2
+        self.sinif.save(update_fields=['term'])
+
+        res = self.client.delete(
+            f'/siniflar/api/{self.sinif.id}/delete/',
+            **self._headers(),
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(Sinif.objects.filter(pk=self.sinif.id).exists())
+        self.sinif.refresh_from_db()
+        self.assertEqual(self.sinif.term_id, self.term1.id)
+
+    def test_empty_class_in_active_term_can_be_deleted(self):
+        self.user.is_superuser = True
+        self.user.save(update_fields=['is_superuser'])
+        empty = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+            term=self.term1,
+            ad='11-B',
+            kod='11B',
+            kapasite=30,
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        res = self.client.delete(
+            f'/siniflar/api/{empty.id}/delete/',
+            **self._headers(),
+        )
+        self.assertEqual(res.status_code, 200)
+        self.assertFalse(Sinif.objects.filter(pk=empty.id).exists())
