@@ -233,11 +233,33 @@ class CalendarIntegrationService:
             logger.debug(f"Exam {exam.id} exam_date yok, takvim atlanıyor")
             return None
 
-        # Başlangıç zamanı: sınav tarihi + 09:00
-        baslangic = timezone.make_aware(
-            datetime.combine(exam.exam_date, dtime(9, 0))
-        )
+        start_clock = dtime(9, 0)
         sure = exam.duration_minutes or 180
+        exam_day = exam.exam_date
+        try:
+            from apps.coaching.olcme_degerlendirme.models import ExamSessionModel
+            first_sess = (
+                ExamSessionModel.objects.filter(exam=exam)
+                .order_by('session_date', 'start_time', 'order', 'id')
+                .first()
+            )
+            if first_sess:
+                if first_sess.session_date:
+                    exam_day = first_sess.session_date
+                if first_sess.start_time:
+                    start_clock = first_sess.start_time
+                if first_sess.duration_minutes:
+                    sure = first_sess.duration_minutes
+                elif first_sess.start_time and first_sess.end_time:
+                    delta = datetime.combine(exam_day, first_sess.end_time) - datetime.combine(
+                        exam_day, first_sess.start_time,
+                    )
+                    if delta.total_seconds() > 0:
+                        sure = int(delta.total_seconds() // 60)
+        except Exception:
+            pass
+
+        baslangic = timezone.make_aware(datetime.combine(exam_day, start_clock))
         bitis = baslangic + timedelta(minutes=sure)
 
         # Sınıf ID'leri — katılımcı listesi varsa onların sınıflarını da ekle

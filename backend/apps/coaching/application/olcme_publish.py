@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime
 
 from django.db import transaction
+from django.db.models import Max
 from django.utils import timezone
 
 from apps.coaching.olcme_degerlendirme.models import (
@@ -79,7 +80,11 @@ def publish_status(exam: Exam) -> dict:
         'graded': exam_is_graded(exam),
         'answer_key_ready': answer_key_ready(exam),
         'has_uploaded_pdf': bool(getattr(exam, 'answer_key_pdf', None) and exam.answer_key_pdf),
-        'karne_students': StudentAnswer.objects.filter(session__exam=exam).count(),
+        'karne_students': StudentAnswer.objects.filter(
+            session__exam=exam,
+            session__status='COMPLETED',
+            student__isnull=False,
+        ).values('student_id').annotate(latest_id=Max('id')).count(),
         'answer_key_students': ExamParticipant.objects.filter(
             exam=exam, attendance=ExamParticipant.Attendance.PRESENT,
         ).count(),

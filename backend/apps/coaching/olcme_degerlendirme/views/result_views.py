@@ -17,8 +17,9 @@ from django.db.models import Q
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, parser_classes, authentication_classes
 from rest_framework.parsers import MultiPartParser, FormParser
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from shared.permissions import OlcmeModulePermission
 
 from ..models import (
     Exam, ExamSession,
@@ -30,9 +31,28 @@ from ..serializers.result import (
     StudentAnswerSerializer,
 )
 from ..views import CsrfExemptSessionAuthentication
-from ..interfaces.sube_context import get_exam_or_response
+from ..interfaces.sube_context import get_exam_or_response, reject_if_exam_locked
 
 logger = logging.getLogger(__name__)
+
+
+MAX_DAT_BYTES = 10 * 1024 * 1024
+ALLOWED_DAT_SUFFIXES = ('.dat', '.txt', '.csv')
+
+
+def _answer_key_score_info(item):
+    """EMPTY skor dışı; INVALID iptal sayılır."""
+    ans = (item.correct_answer or '').strip().upper()
+    cancelled = bool(item.is_cancelled) or ans in ('INVALID', 'IPTAL')
+    if ans in ('EMPTY', 'BOS', 'BOŞ'):
+        return None
+    if not ans and not cancelled:
+        return None
+    return {
+        'answer': ans or 'INVALID',
+        'is_cancelled': cancelled,
+        'section_id': item.section_id,
+    }
 
 
 def exam_question_span(sections, sub_sections=None) -> int:
@@ -147,9 +167,12 @@ def _match_student(
             match_method = best_method
 
     if not matched_student and sid:
+        from ..services.student_matching import normalize_student_no
         key = sid.strip()
         if key:
-            matched_student = ogrenci_by_okul_no.get(key)
+            matched_student = ogrenci_by_okul_no.get(key) or ogrenci_by_okul_no.get(
+                normalize_student_no(key),
+            )
             if matched_student:
                 match_score = 1.0
                 match_method = 'id'
@@ -165,11 +188,14 @@ def _match_student(
     return matched_student, match_score, match_method
 
 
-def _build_student_pool(kurum_id, sube_id):
+def _build_student_pool(exam):
     """TC + okul_no + isim listesi. Django PK asla öğrenci numarası sayılmaz."""
     from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
+    from ..services.student_matching import normalize_student_no
 
-    qs = Ogrenci.objects.filter(aktif_mi=True, kurum_id=kurum_id, sube_id=sube_id)
+    qs = Ogrenci.objects.filter(
+        aktif_mi=True, kurum_id=exam.kurum_id, sube_id=exam.sube_id,
+    )
     by_tc: dict = {}
     by_okul_no: dict = {}
     olist = []
@@ -185,10 +211,16 @@ def _build_student_pool(kurum_id, sube_id):
         .exclude(okul_no='')
         .only('okul_no', 'ogrenci_id')
     )
+    if exam.egitim_yili_id:
+        kayitlar = kayitlar.filter(egitim_yili_id=exam.egitim_yili_id)
     for kayit in kayitlar:
         no = (kayit.okul_no or '').strip()
         if no and kayit.ogrenci_id in ogr_by_pk:
-            by_okul_no[no] = ogr_by_pk[kayit.ogrenci_id]
+            ogr = ogr_by_pk[kayit.ogrenci_id]
+            by_okul_no[no] = ogr
+            norm = normalize_student_no(no)
+            if norm:
+                by_okul_no.setdefault(norm, ogr)
 
     return by_tc, by_okul_no, olist
 
@@ -234,7 +266,7 @@ def _build_ordered_section_nets(section_scores_data: dict, sections: list, sub_s
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 @parser_classes([MultiPartParser, FormParser])
 def upload_dat(request, exam_pk):
     """
@@ -246,10 +278,19 @@ def upload_dat(request, exam_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
         return err
+    locked = reject_if_exam_locked(exam)
+    if locked:
+        return locked
 
     dat_file = request.FILES.get('dat_file')
     if not dat_file:
         return Response({'error': 'dat_file alanı zorunludur.'}, status=400)
+    size = getattr(dat_file, 'size', 0) or 0
+    if size > MAX_DAT_BYTES:
+        return Response({'error': 'DAT dosyası 10 MB sınırını aşıyor.'}, status=413)
+    fname = (dat_file.name or '').lower()
+    if not fname.endswith(ALLOWED_DAT_SUFFIXES):
+        return Response({'error': 'Yalnız .dat, .txt veya .csv dosyaları kabul edilir.'}, status=400)
 
     # Oturum oluştur
     session = ExamSession.objects.create(
@@ -483,7 +524,7 @@ def _normalize_lines(lines):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def parse_dat(request, exam_pk, session_pk):
     """
     Yüklenen DAT dosyasını field_mappings ile oku ve skorla.
@@ -503,6 +544,9 @@ def parse_dat(request, exam_pk, session_pk):
     exam, err = get_exam_or_response(request, exam_pk)
     if err:
         return err
+    locked = reject_if_exam_locked(exam)
+    if locked:
+        return locked
 
     try:
         exam = Exam.objects.prefetch_related('sections').get(pk=exam.pk)
@@ -540,11 +584,10 @@ def parse_dat(request, exam_pk, session_pk):
     }
     b_to_a_map = {}
     for item in answer_key.items.select_related('section').all():
-        correct_map_a[item.question_number] = {
-            'answer': item.correct_answer,
-            'is_cancelled': item.is_cancelled,
-            'section_id': item.section_id,
-        }
+        info = _answer_key_score_info(item)
+        if not info:
+            continue
+        correct_map_a[item.question_number] = info
         if item.b_question_number is not None:
             # Alt bölümse parent'ın offset'i, değilse kendi offset'i
             sec_id = item.section_id
@@ -565,11 +608,9 @@ def parse_dat(request, exam_pk, session_pk):
     )
     if b_answer_key:
         for item in b_answer_key.items.all():
-            correct_map_b[item.question_number] = {
-                'answer': item.correct_answer,
-                'is_cancelled': item.is_cancelled,
-                'section_id': item.section_id,
-            }
+            info = _answer_key_score_info(item)
+            if info:
+                correct_map_b[item.question_number] = info
 
     # Geriye dönük uyumluluk: b_to_a_map yoksa section bazlı oluştur
     if not b_to_a_map and correct_map_b:
@@ -705,9 +746,7 @@ def parse_dat(request, exam_pk, session_pk):
     wrong_penalty = exam.wrong_answer_count
 
     # ── Öğrenci eşleştirme hazırlığı ────────────────────────────────────────
-    ogrenci_by_tc, ogrenci_by_okul_no, ogrenci_list = _build_student_pool(
-        exam.kurum_id, exam.sube_id,
-    )
+    ogrenci_by_tc, ogrenci_by_okul_no, ogrenci_list = _build_student_pool(exam)
 
     # ── PARSE & SCORE ────────────────────────────────────────────────────────
     results = []
@@ -911,7 +950,7 @@ def parse_dat(request, exam_pk, session_pk):
 
 @api_view(['PATCH'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def update_student_booklet(request, exam_pk, answer_pk):
     """
     Öğrencinin kitapçık türünü değiştir ve sonuçları tekrar skorla.
@@ -951,11 +990,10 @@ def update_student_booklet(request, exam_pk, answer_pk):
     correct_map_a = {}
     b_to_a_map = {}
     for item in a_key.items.select_related('section').all():
-        correct_map_a[item.question_number] = {
-            'answer': item.correct_answer,
-            'is_cancelled': item.is_cancelled,
-            'section_id': item.section_id,
-        }
+        info = _answer_key_score_info(item)
+        if not info:
+            continue
+        correct_map_a[item.question_number] = info
         if item.b_question_number is not None:
             sec_id = item.section_id
             if sec_id in sub_to_parent:
@@ -970,11 +1008,9 @@ def update_student_booklet(request, exam_pk, answer_pk):
     b_key = AnswerKey.objects.filter(exam=exam, booklet='B').prefetch_related('items').first()
     if b_key:
         for item in b_key.items.all():
-            correct_map_b[item.question_number] = {
-                'answer': item.correct_answer,
-                'is_cancelled': item.is_cancelled,
-                'section_id': item.section_id,
-            }
+            info = _answer_key_score_info(item)
+            if info:
+                correct_map_b[item.question_number] = info
 
     sections = list(exam.sections.filter(is_sub_section=False).order_by('order'))
     sub_sections = list(exam.sections.filter(is_sub_section=True).order_by('order'))
@@ -1028,7 +1064,7 @@ def update_student_booklet(request, exam_pk, answer_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def list_results(request, exam_pk):
     """
     GET /exams/{exam_pk}/results/
@@ -1056,7 +1092,7 @@ def list_results(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def list_sessions(request, exam_pk):
     _, err = get_exam_or_response(request, exam_pk)
     if err:
@@ -1068,11 +1104,14 @@ def list_sessions(request, exam_pk):
 
 @api_view(['DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def delete_session(request, exam_pk, session_pk):
-    _, err = get_exam_or_response(request, exam_pk)
+    exam, err = get_exam_or_response(request, exam_pk)
     if err:
         return err
+    locked = reject_if_exam_locked(exam)
+    if locked:
+        return locked
     try:
         session = ExamSession.objects.get(pk=session_pk, exam_id=exam_pk)
     except ExamSession.DoesNotExist:
@@ -1087,7 +1126,7 @@ def delete_session(request, exam_pk, session_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def session_results(request, exam_pk, session_pk):
     """
     GET /exams/{exam_pk}/results/sessions/{session_pk}/results/
@@ -1170,7 +1209,7 @@ def session_results(request, exam_pk, session_pk):
 
 @api_view(['PATCH'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def update_student_match(request, exam_pk, answer_pk):
     """
     Öğrenci cevabının eşleştirildiği öğrenciyi manuel değiştir veya kaldır.
@@ -1255,7 +1294,7 @@ def update_student_match(request, exam_pk, answer_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def search_students(request, exam_pk):
     """
     Sınav havuzunda öğrenci ara. Eşleştirilmiş öğrenciler dönmez.
@@ -1289,7 +1328,10 @@ def search_students(request, exam_pk):
     if except_id:
         try:
             sa = StudentAnswer.objects.get(pk=except_id, session__exam=exam)
-            dat = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+            dat = identity_from_raw(
+                sa.raw_student_name or '', sa.raw_student_id or '',
+                tc=sa.raw_tc_kimlik or '',
+            )
         except StudentAnswer.DoesNotExist:
             dat = None
 
@@ -1319,7 +1361,7 @@ def search_students(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def suggest_students(request, exam_pk, answer_pk):
     """DAT kaydı için skorlanmış aday listesi. Çakışan öğrenciler yoktur."""
     from ..services.student_matching import (
@@ -1335,7 +1377,10 @@ def suggest_students(request, exam_pk, answer_pk):
     except StudentAnswer.DoesNotExist:
         return Response({'error': 'Öğrenci cevabı bulunamadı.'}, status=404)
 
-    dat = identity_from_raw(sa.raw_student_name or '', sa.raw_student_id or '')
+    dat = identity_from_raw(
+        sa.raw_student_name or '', sa.raw_student_id or '',
+        tc=sa.raw_tc_kimlik or '',
+    )
     pool = exam_student_pool(exam)
     taken = taken_student_ids(exam, except_answer_id=sa.pk)
     hits = rank_candidates(dat, pool, exclude_ids=taken, limit=12)
@@ -1357,7 +1402,7 @@ def suggest_students(request, exam_pk, answer_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def rematch_unmatched(request, exam_pk):
     """
     Eşleşmemiş (student=NULL) StudentAnswer kayıtlarını güncel öğrenci
@@ -1397,9 +1442,7 @@ def rematch_unmatched(request, exam_pk):
     for sa in all_answers.filter(student__isnull=False):
         used_student_ids.add(sa.student_id)
 
-    ogrenci_by_tc, ogrenci_by_okul_no, ogrenci_list = _build_student_pool(
-        exam.kurum_id, exam.sube_id,
-    )
+    ogrenci_by_tc, ogrenci_by_okul_no, ogrenci_list = _build_student_pool(exam)
 
     # Eşleşmemiş kayıtları tek tek yeniden eşleştir
     newly_matched = []
@@ -1409,10 +1452,8 @@ def rematch_unmatched(request, exam_pk):
             # DAT parse sırasında raw_student_id olarak sid veya tc veya row_num saklanmış olabilir
             sid = sa.raw_student_id or ''
             name_raw = sa.raw_student_name or ''
-
-            # TC kimlik bilgisi raw_student_id'de olabilir (11 haneli sayı)
-            tc = ''
-            if sid and len(sid) == 11 and sid.isdigit():
+            tc = (sa.raw_tc_kimlik or '').strip()
+            if not tc and sid and len(sid) == 11 and sid.isdigit():
                 tc = sid
 
             matched_student, match_score, match_method = _match_student(
@@ -1460,7 +1501,7 @@ def rematch_unmatched(request, exam_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def rematch_all_exams(request):
     """
     TÜM sınavlardaki eşleşmemiş (student=NULL) StudentAnswer kayıtlarını
@@ -1502,14 +1543,13 @@ def rematch_all_exams(request):
         })
 
     # Her sınav için kurum farklı olabilir, kurum bazlı öğrenci havuzunu cache'le
-    kurum_pools: dict[int, tuple] = {}  # (kurum_id, sube_id) → (by_tc, by_okul_no, ogrenci_list)
+    kurum_pools: dict[tuple, tuple] = {}
 
-    def _get_pool(kurum_id, sube_id):
-        if (kurum_id, sube_id) in kurum_pools:
-            return kurum_pools[(kurum_id, sube_id)]
-        pool = _build_student_pool(kurum_id, sube_id)
-        kurum_pools[(kurum_id, sube_id)] = pool
-        return pool
+    def _get_pool(exam_obj):
+        key = (exam_obj.kurum_id, exam_obj.sube_id, exam_obj.egitim_yili_id)
+        if key not in kurum_pools:
+            kurum_pools[key] = _build_student_pool(exam_obj)
+        return kurum_pools[key]
 
     total_unmatched = 0
     total_newly_matched = 0
@@ -1531,16 +1571,14 @@ def rematch_all_exams(request):
             for sa in all_answers.filter(student__isnull=False):
                 used_ids.add(sa.student_id)
 
-            kurum_id = exam.kurum_id if hasattr(exam, 'kurum_id') else None
-            sube_id = exam.sube_id if hasattr(exam, 'sube_id') else None
-            by_tc, by_okul_no, olist = _get_pool(kurum_id, sube_id)
+            by_tc, by_okul_no, olist = _get_pool(exam)
 
             exam_matched = 0
             for sa in unmatched:
                 sid = sa.raw_student_id or ''
                 name_raw = sa.raw_student_name or ''
-                tc = ''
-                if sid and len(sid) == 11 and sid.isdigit():
+                tc = (sa.raw_tc_kimlik or '').strip()
+                if not tc and sid and len(sid) == 11 and sid.isdigit():
                     tc = sid
 
                 matched_student, match_score, match_method = _match_student(

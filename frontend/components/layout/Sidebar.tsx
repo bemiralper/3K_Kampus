@@ -265,8 +265,6 @@ const navItems: MenuItem[] = [
     children: [
       { label: "Sınav Listesi", href: "/admin/olcme-degerlendirme", group: "Sınavlar" },
       { label: "Yeni Sınav Oluştur", href: "/admin/olcme-degerlendirme/yeni", group: "Sınavlar" },
-      { label: "Sonuç Analizi", href: "/admin/olcme-degerlendirme/analiz", group: "Analiz" },
-      { label: "Karşılaştırma", href: "/admin/olcme-degerlendirme/karsilastirma", group: "Analiz" },
       { label: "Konu & Kazanımlar", href: "/admin/olcme-degerlendirme/kazanimlar", group: "Tanımlar" },
       { label: "Puan Katsayıları", href: "/admin/olcme-degerlendirme/ayarlar", group: "Tanımlar" },
       { label: "Oturum grupları", href: "/admin/olcme-degerlendirme/oturum-gruplari", group: "Tanımlar" },

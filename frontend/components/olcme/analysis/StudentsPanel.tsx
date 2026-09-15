@@ -161,6 +161,7 @@ export default function StudentsPanel({
               )}
               <th style={{ textAlign: 'center' }}>Kurum Sıra</th>
               <th style={{ textAlign: 'center' }}>Tah. TR Sıra <InfoTip tip="tahminiSiralama" /></th>
+              <th style={{ textAlign: 'center' }}>Kurum % <InfoTip tip="kurumIciYuzdelik" /></th>
               <th style={{ textAlign: 'center' }}>Yüzdelik <InfoTip tip="yuzdelikDilim" /></th>
               <th>Güçlü</th>
               <th>Zayıf</th>
@@ -196,6 +197,11 @@ export default function StudentsPanel({
                   <span className={`${s.percentileBadge} ${st.kurum_ici_yuzdelik >= 75 ? s.percentileHigh : st.kurum_ici_yuzdelik >= 50 ? s.percentileMid : s.percentileLow}`}>
                     %{st.kurum_ici_yuzdelik}
                   </span>
+                </td>
+                <td style={{ textAlign: 'center' }}>
+                  {st.yuzdelik_dilim != null
+                    ? <span className={s.percentileBadge}>%{st.yuzdelik_dilim}</span>
+                    : '—'}
                 </td>
                 <td style={{ fontSize: 12 }}>
                   {st.strong_areas.map(a => a.name).join(', ') || '—'}

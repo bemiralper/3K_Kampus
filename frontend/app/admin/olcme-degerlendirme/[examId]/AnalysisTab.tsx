@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { analysisApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import type {
@@ -110,64 +110,54 @@ export default function AnalysisTab({ exam }: Props) {
     }).catch(() => {});
   }, [exam.puan_yili]);
 
+  const loadGen = useRef(0);
+
+  const runLoad = useCallback(async (fn: () => Promise<void>) => {
+    const id = ++loadGen.current;
+    setLoading(true);
+    setError('');
+    try {
+      await fn();
+    } catch (e: unknown) {
+      if (id !== loadGen.current) return;
+      setError(e instanceof Error ? e.message : 'Yüklenemedi');
+    } finally {
+      if (id === loadGen.current) setLoading(false);
+    }
+  }, []);
+
   /* ── LOADERS ─────────────────────────────────────────────────────────────── */
 
   const loadSummary = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.summary(exam.id, sessionFilter, rankingYear);
       setSummary(data);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, rankingYear]);
+    });
+  }, [exam.id, sessionFilter, rankingYear, runLoad]);
 
   const loadSections = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.sections(exam.id, sessionFilter);
       setSections(data.sections);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter]);
+    });
+  }, [exam.id, sessionFilter, runLoad]);
 
   const loadStudents = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.students(exam.id, sessionFilter, undefined, rankingYear);
       setStudents(data.students);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, rankingYear]);
+    });
+  }, [exam.id, sessionFilter, rankingYear, runLoad]);
 
   const loadClasses = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.classes(exam.id, sessionFilter);
       setClasses(data.classes);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter]);
+    });
+  }, [exam.id, sessionFilter, runLoad]);
 
   const loadRankings = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.rankings(exam.id, sessionFilter, rankingYear);
       setRankings(data.rankings);
       setRankingMeta({ top_10_count: data.top_10_count, bottom_10_count: data.bottom_10_count, avg_score: data.avg_score, referans_yil: data.referans_yil });
@@ -176,51 +166,36 @@ export default function AnalysisTab({ exam }: Props) {
       setRankingAvgNet(data.avg_net || 0);
       setRankingPuanTurleriAvgs(data.puan_turleri_avgs || {});
       setRankingSinifAvgs(data.sinif_avgs || {});
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, rankingYear]);
+    });
+  }, [exam.id, sessionFilter, rankingYear, runLoad]);
 
   const loadQuestions = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.questions(exam.id, sessionFilter, questionSectionFilter);
       setQuestions(data.questions);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, questionSectionFilter]);
+    });
+  }, [exam.id, sessionFilter, questionSectionFilter, runLoad]);
 
   const loadStrategies = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.strategy(exam.id, sessionFilter);
       setStrategies(data.strategies);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter]);
+    });
+  }, [exam.id, sessionFilter, runLoad]);
 
   const loadComparisons = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
+    await runLoad(async () => {
       const data = await analysisApi.comparison(exam.id);
       setComparisons(data.comparisons);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id]);
+    });
+  }, [exam.id, runLoad]);
+
+  /* DAT oturum filtresi tüm panellerde görünsün */
+  useEffect(() => {
+    analysisApi.summary(exam.id, undefined, rankingYear)
+      .then(data => setSummary(prev => prev ?? data))
+      .catch(() => {});
+  }, [exam.id, rankingYear]);
 
   /* ── PANEL DEĞİŞİMİNDE VERİ YÜKLE ────────────────────────────────────── */
 

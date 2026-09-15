@@ -34,6 +34,7 @@ from shared.context import get_secili_egitim_yili_id
 from ..interfaces.sube_context import (
     assert_olcme_exam_access,
     mandatory_olcme_context,
+    reject_if_exam_locked,
 )
 from ..views import CsrfExemptSessionAuthentication
 
@@ -149,6 +150,9 @@ class ExamViewSet(viewsets.ModelViewSet):
             qs = qs.filter(name__icontains=search)
 
         if self.action == 'list':
+            ey_id = get_secili_egitim_yili_id(self.request)
+            if ey_id:
+                qs = qs.filter(egitim_yili_id=ey_id)
             qs = self._annotate_list_counts(qs)
             qs = self._apply_ordering(qs)
 
@@ -369,6 +373,9 @@ class ExamViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='add_section')
     def add_section(self, request, pk=None):
         exam = self.get_object()
+        locked = reject_if_exam_locked(exam)
+        if locked:
+            return locked
         name = (request.data.get('name') or '').strip()
         if not name:
             return Response({'error': 'Bölüm adı zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -453,6 +460,9 @@ class ExamViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='remove_section')
     def remove_section(self, request, pk=None):
         exam = self.get_object()
+        locked = reject_if_exam_locked(exam)
+        if locked:
+            return locked
         section_id = request.data.get('section_id')
         section = ExamSection.objects.filter(exam=exam, id=section_id).first()
         if section is None:
@@ -470,6 +480,9 @@ class ExamViewSet(viewsets.ModelViewSet):
     def update_section(self, request, pk=None):
         """Bölüm bilgilerini güncelle (soru aralığı, isim, subject vb.)."""
         exam = self.get_object()
+        locked = reject_if_exam_locked(exam)
+        if locked:
+            return locked
         section_id = request.data.get('section_id')
         try:
             section = ExamSection.objects.get(exam=exam, id=section_id)
@@ -542,6 +555,9 @@ class ExamViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='reorder_sections')
     def reorder_sections(self, request, pk=None):
         exam = self.get_object()
+        locked = reject_if_exam_locked(exam)
+        if locked:
+            return locked
         section_ids = request.data.get('section_ids', [])
         for idx, sid in enumerate(section_ids):
             ExamSection.objects.filter(exam=exam, id=sid).update(order=idx)
@@ -550,6 +566,9 @@ class ExamViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='apply_template')
     def apply_template(self, request, pk=None):
         exam = self.get_object()
+        locked = reject_if_exam_locked(exam)
+        if locked:
+            return locked
         exam.sections.all().delete()
         create_sections_from_template(exam)
         return Response({

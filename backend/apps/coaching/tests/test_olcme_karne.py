@@ -12,6 +12,7 @@ from rest_framework.test import APIClient
 from apps.coaching.olcme_degerlendirme.models import (
     Exam, ExamSection, ExamSession, ExamSessionModel, StudentAnswer, StudentSectionScore,
 )
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 from apps.communication.application.notification_events import get_event
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
@@ -30,6 +31,7 @@ class OlcmeKarnePdfNotifyTest(TestCase):
             baslangic_yil=2025, bitis_yil=2026, aktif_mi=True,
         )
         self.user = User.objects.create_user(username='karneuser', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client.force_authenticate(user=self.user)
 
         self.exam = Exam.objects.create(

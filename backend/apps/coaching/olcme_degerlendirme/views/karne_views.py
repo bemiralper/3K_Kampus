@@ -3,8 +3,9 @@ from urllib.parse import quote
 
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from shared.permissions import OlcmeModulePermission
 
 from apps.coaching.application.olcme_karne_notify import (
     preview_karne_notify,
@@ -49,7 +50,7 @@ def _load_answer(exam, answer_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_karne_pdf(request, exam_pk, answer_pk):
     """Tek öğrenci orijinal karne PDF."""
     exam, err = _get_exam_or_404(request, exam_pk)
@@ -65,7 +66,7 @@ def exam_karne_pdf(request, exam_pk, answer_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_karneler_pdf(request, exam_pk):
     """Seçilen öğrencilerin karneleri — tek çok sayfalı PDF."""
     exam, err = _get_exam_or_404(request, exam_pk)
@@ -112,7 +113,7 @@ def exam_karneler_pdf(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_karne_notify_preview(request, exam_pk, answer_pk):
     exam, err = _get_exam_or_404(request, exam_pk)
     if err:
@@ -130,7 +131,7 @@ def exam_karne_notify_preview(request, exam_pk, answer_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_karne_notify_send(request, exam_pk, answer_pk):
     exam, err = _get_exam_or_404(request, exam_pk)
     if err:
@@ -214,7 +215,7 @@ def _karne_stub(exam, answer) -> dict:
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_karne_notify_bulk_preview(request, exam_pk):
     exam, err = _get_exam_or_404(request, exam_pk)
     if err:
@@ -276,7 +277,7 @@ def _expected_recipients(body) -> int | None:
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_karne_notify_bulk_start(request, exam_pk):
     """Kampanyayı gönderimden önce açar — 504 olsa bile geçmiş oluşur."""
     exam, err = _get_exam_or_404(request, exam_pk)
@@ -307,7 +308,7 @@ def exam_karne_notify_bulk_start(request, exam_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_karne_notify_bulk_send(request, exam_pk):
     exam, err = _get_exam_or_404(request, exam_pk)
     if err:

@@ -274,7 +274,11 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
         <div className={s.analysisStatCard}>
           <div className={s.analysisStatValue} style={{ color: '#0262a7' }}>
             {alanViewFilter && displayRankings.length > 0
-              ? (displayRankings.reduce((sum, r) => sum + r.puan, 0) / displayRankings.length).toFixed(2)
+              ? (displayRankings.reduce((sum, r) => {
+                  const pt = ALAN_TO_PT[alanViewFilter];
+                  const val = r.puan_turleri?.[pt as 'SAY' | 'EA' | 'SOZ']?.puan ?? r.puan;
+                  return sum + (val || 0);
+                }, 0) / displayRankings.length).toFixed(2)
               : meta.avg_score
             }
           </div>
@@ -283,7 +287,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
         <div className={s.analysisStatCard}>
           <div className={s.analysisStatValue} style={{ color: '#16a34a' }}>
             {alanViewFilter
-              ? displayRankings.filter(r => r.kurum_ici_yuzdelik >= 90).length
+              ? Math.max(1, Math.ceil(displayRankings.length * 0.1))
               : meta.top_10_count
             }
           </div>
@@ -292,7 +296,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
         <div className={s.analysisStatCard}>
           <div className={s.analysisStatValue} style={{ color: '#ef4444' }}>
             {alanViewFilter
-              ? displayRankings.filter(r => r.kurum_ici_yuzdelik <= 10).length
+              ? Math.max(1, Math.ceil(displayRankings.length * 0.1))
               : meta.bottom_10_count
             }
           </div>

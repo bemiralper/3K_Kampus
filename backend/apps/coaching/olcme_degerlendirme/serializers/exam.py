@@ -386,6 +386,10 @@ class ExamCreateSerializer(serializers.ModelSerializer):
             validated_data['duration_minutes'] = get_default_duration(
                 validated_data['exam_type'],
             )
+        if validated_data.get('exam_type') == 'LGS':
+            raw = request.data if request is not None and hasattr(request, 'data') else {}
+            if raw.get('wrong_answer_count') in (None, ''):
+                validated_data['wrong_answer_count'] = 3
 
         exam = Exam.objects.create(**validated_data)
 

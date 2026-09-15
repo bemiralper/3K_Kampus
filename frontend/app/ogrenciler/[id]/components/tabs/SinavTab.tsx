@@ -22,7 +22,19 @@ const fmtDate = (v: string | null | undefined) => {
   return new Date(v).toLocaleDateString("tr-TR", { day: "numeric", month: "short", year: "numeric" });
 };
 
-const netCls = (n: number) => (n >= 80 ? s.netHigh : n >= 50 ? s.netMid : s.netLow);
+const netMaxForExam = (exam: StudentExamResult) => {
+  if (exam.exam_type === "YKS_TYT" || exam.exam_type === "DENEME") return 120;
+  if (exam.exam_type === "YKS_AYT") return 160;
+  if (exam.exam_type === "LGS") return 86;
+  const q = exam.section_details
+    ?.filter(sec => !sec.is_sub_section)
+    .reduce((sum, sec) => sum + (sec.question_count || 0), 0) ?? 0;
+  return q || 100;
+};
+const netCls = (n: number, max = 120) => {
+  const r = max > 0 ? n / max : 0;
+  return r >= 0.7 ? s.netHigh : r >= 0.4 ? s.netMid : s.netLow;
+};
 const rankCls = (r: number) => (r === 1 ? s.rankGold : r === 2 ? s.rankSilver : r === 3 ? s.rankBronze : s.rankNormal);
 const typeBadge = (t: string) => {
   if (t === "YKS_TYT") return s.badgeBlue;
@@ -78,10 +90,8 @@ export default function SinavTab({ ogrenciId }: { ogrenciId: number }) {
     setLoading(true); setError(null);
     try {
       const result = await studentExamApi.results(ogrenciId);
-      console.log('[SinavTab] ogrenciId=', ogrenciId, 'response=', result);
       setData(result);
     } catch (err) {
-      console.error('[SinavTab] Hata:', err);
       setError("Veriler yüklenirken hata oluştu");
       setToast({ message: "Veriler yüklenirken hata oluştu", type: "error" });
     } finally { setLoading(false); }
@@ -109,12 +119,18 @@ export default function SinavTab({ ogrenciId }: { ogrenciId: number }) {
 
   const segment = useMemo(() => {
     if (!kpi || kpi.toplam_sinav === 0) return null;
+    const last = exams[exams.length - 1];
+    const dilim = last?.yuzdelik_dilim;
+    if (dilim != null && dilim >= 90) return { icon: "🏆", label: "Üst Düzey Performans", desc: "Mükemmel — İlk %10 diliminde yer alıyor", cls: s.top };
+    if (dilim != null && dilim >= 70) return { icon: "📈", label: "Orta-Üst Düzey", desc: "İyi performans gösteriyor, gelişim potansiyeli yüksek", cls: s.mid };
+    const maxNet = last ? netMaxForExam(last) : 120;
     const n = kpi.ortalama_net;
-    if (n >= 90) return { icon: "🏆", label: "Üst Düzey Performans", desc: "Mükemmel — İlk %10 diliminde yer alıyor", cls: s.top };
-    if (n >= 65) return { icon: "📈", label: "Orta-Üst Düzey", desc: "İyi performans gösteriyor, gelişim potansiyeli yüksek", cls: s.mid };
-    if (n >= 40) return { icon: "📊", label: "Orta Düzey", desc: "Belirli alanlarda gelişim desteğine ihtiyaç duyuyor", cls: s.low };
+    const ratio = maxNet > 0 ? n / maxNet : 0;
+    if (ratio >= 0.7) return { icon: "🏆", label: "Üst Düzey Performans", desc: "Net oranı güçlü", cls: s.top };
+    if (ratio >= 0.5) return { icon: "📈", label: "Orta-Üst Düzey", desc: "İyi performans gösteriyor, gelişim potansiyeli yüksek", cls: s.mid };
+    if (ratio >= 0.3) return { icon: "📊", label: "Orta Düzey", desc: "Belirli alanlarda gelişim desteğine ihtiyaç duyuyor", cls: s.low };
     return { icon: "⚠️", label: "Destek Gerekli", desc: "Acil müdahale ve bireysel takip önerilir", cls: s.risk };
-  }, [kpi]);
+  }, [kpi, exams]);
 
   /* ─── RENDER ─── */
   if (loading) return (
@@ -281,9 +297,9 @@ function ExamRow({ exam, open, toggle }: { exam: StudentExamResult; open: boolea
         <td className={s.center} style={{ color: "#7088a4" }}>{exam.total_empty}</td>
         <td className={s.center}>
           <div className={s.netMiniBar}>
-            <span className={netCls(exam.total_net)} style={{ fontSize: 14 }}>{fmt(exam.total_net)}</span>
+            <span className={netCls(exam.total_net, netMaxForExam(exam))} style={{ fontSize: 14 }}>{fmt(exam.total_net)}</span>
             <div className={s.netMiniTrack}>
-              <div className={s.netMiniFill} style={{ width: `${Math.min(100, (exam.total_net / 120) * 100)}%`, background: exam.total_net >= 80 ? "#059669" : exam.total_net >= 50 ? "#0262a7" : "#dc2626" }} />
+              <div className={s.netMiniFill} style={{ width: `${Math.min(100, (exam.total_net / netMaxForExam(exam)) * 100)}%`, background: exam.total_net / netMaxForExam(exam) >= 0.7 ? "#059669" : exam.total_net / netMaxForExam(exam) >= 0.4 ? "#0262a7" : "#dc2626" }} />
             </div>
           </div>
         </td>
@@ -351,7 +367,7 @@ function SectionRow({ sec, isSub }: { sec: StudentExamSectionDetail; isSub: bool
       <td className={s.center} style={{ color: "#7088a4" }}>{sec.empty}</td>
       <td className={s.center}>
         <div className={s.netMiniBar}>
-          <span className={netCls(sec.net)} style={{ fontSize: 13 }}>{fmt(sec.net)}</span>
+          <span className={netCls(sec.net, sec.question_count || 40)} style={{ fontSize: 13 }}>{fmt(sec.net)}</span>
           <div className={s.netMiniTrack}>
             <div className={s.netMiniFill} style={{ width: `${Math.max(pct, 4)}%`, background: pct >= 70 ? "#059669" : pct >= 40 ? "#0262a7" : "#dc2626" }} />
           </div>

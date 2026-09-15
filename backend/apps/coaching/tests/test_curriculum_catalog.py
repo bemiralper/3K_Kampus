@@ -12,6 +12,7 @@ from apps.coaching.olcme_degerlendirme.services.curriculum_catalog import (
     export_catalog,
     import_catalog,
 )
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
@@ -26,6 +27,7 @@ class CurriculumCatalogTest(TestCase):
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='KATK-M')
         self.yil = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
         self.user = User.objects.create_user(username='katuser', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client = APIClient()
         self.client.force_authenticate(user=self.user)
         self.headers = {
