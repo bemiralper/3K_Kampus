@@ -120,7 +120,10 @@ export default function KutuphaneTab({ studentId, studentName }: KutuphaneTabPro
         >
           Atamaları yönet
         </Link>
-        <Link href={kutuphaneHref(COACH_KUTUPHANE_BASE, 'izinler')} className="coach-link-btn">
+        <Link
+          href={`${kutuphaneHref(COACH_KUTUPHANE_BASE, 'izinler')}?ogrenci_id=${studentId}`}
+          className="coach-link-btn"
+        >
           İzinler
         </Link>
       </div>

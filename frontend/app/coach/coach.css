@@ -8986,3 +8986,494 @@
     min-width: 180px;
   }
 }
+
+/* Student 360 — UX pass (compact ödev, program, mesaj, tablet chrome) */
+.s360-panel-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 750;
+  color: var(--s360-ink, #172033);
+  letter-spacing: -0.02em;
+}
+
+.s360-panel-sub {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--s360-muted, #697386);
+}
+
+@media (min-width: 768px) and (max-width: 1279px) {
+  .student360-main {
+    order: 4;
+  }
+
+  .student360-page .coach-quick-action-bar {
+    display: none !important;
+  }
+
+  .s360-profile-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 767px) {
+  .student360-page .student360-quick-bar-inner {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.odev360-card-body {
+  padding: 10px 12px;
+}
+
+.odev360-card-top {
+  margin-bottom: 8px;
+}
+
+.odev360-card-title {
+  font-size: 14px;
+}
+
+.odev360-meta-inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-bottom: 8px;
+  font-size: 11.5px;
+  color: #64748b;
+}
+
+.odev360-meta-inline strong {
+  color: #334155;
+  font-weight: 650;
+}
+
+.odev360-meta-tag {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: #fffbeb;
+  color: #b45309;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.odev360-progress-compact {
+  margin-top: 2px;
+}
+
+.odev360-progress-compact .odev360-progress-detail {
+  width: 100%;
+}
+
+.odev360-card-footer {
+  margin-top: 8px;
+  padding-top: 8px;
+}
+
+.s360-program-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.s360-program-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.s360-program-create-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--s360-line, #e7ebf0);
+  border-radius: 10px;
+  background: #fff;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.s360-program-create-btn.primary {
+  border-color: var(--s360-blue, #0f6cbd);
+  background: var(--s360-blue, #0f6cbd);
+  color: #fff;
+}
+
+.s360-program-section-label {
+  margin: 0 0 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #98a2b3;
+}
+
+.s360-program-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--s360-line, #e7ebf0);
+  border-radius: 12px;
+  background: #fff;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.s360-program-card:hover {
+  border-color: #bfd9f0;
+  box-shadow: 0 4px 14px rgba(15, 108, 189, 0.08);
+}
+
+.s360-program-card.is-current {
+  border-color: #93c5fd;
+  background: linear-gradient(180deg, #f0f7fc 0%, #fff 55%);
+}
+
+.s360-program-card.is-compact {
+  padding: 10px 12px;
+}
+
+.s360-program-card-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.s360-program-card-dates {
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+.s360-program-card-stats {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.s360-program-load-badge {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.s360-program-card-cta {
+  color: #98a2b3;
+  font-size: 16px;
+}
+
+.s360-program-month-group {
+  margin-bottom: 14px;
+}
+
+.s360-program-month-label {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 650;
+  color: #475467;
+}
+
+.s360-program-month-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.s360-mesajlar-panel {
+  padding: 0;
+}
+
+.s360-mesajlar-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.s360-chat-shell {
+  display: grid;
+  grid-template-columns: minmax(200px, 260px) minmax(0, 1fr);
+  gap: 0;
+  min-height: min(68vh, 640px);
+  border: 1px solid var(--s360-line, #e7ebf0);
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.s360-chat-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-right: 1px solid var(--s360-line, #e7ebf0);
+  background: #f8fafc;
+}
+
+.s360-chat-sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 12px 10px;
+  border-bottom: 1px solid var(--s360-line, #e7ebf0);
+}
+
+.s360-chat-sidebar-head h3 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: #344054;
+}
+
+.s360-chat-conv-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.s360-chat-conv-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.s360-chat-conv-item:hover {
+  background: #fff;
+  border-color: #e7ebf0;
+}
+
+.s360-chat-conv-item.active {
+  background: #fff;
+  border-color: #bfd9f0;
+  box-shadow: 0 2px 8px rgba(15, 108, 189, 0.06);
+}
+
+.s360-chat-conv-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 12px;
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-size: 14px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.s360-chat-conv-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.s360-chat-conv-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.s360-chat-conv-top strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s360-chat-conv-top time {
+  flex-shrink: 0;
+  color: #98a2b3;
+  font-size: 10px;
+}
+
+.s360-chat-conv-preview {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.s360-chat-unread {
+  flex-shrink: 0;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #0f6cbd;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.s360-chat-sidebar-empty,
+.s360-chat-sidebar-loading {
+  padding: 16px 12px;
+  font-size: 12px;
+}
+
+.s360-chat-empty-title {
+  margin: 0 0 6px;
+  font-weight: 650;
+  color: #344054;
+}
+
+.s360-chat-thread {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: #fff;
+}
+
+.s360-chat-thread-head {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--s360-line, #e7ebf0);
+}
+
+.s360-chat-thread-head strong {
+  display: block;
+  font-size: 14px;
+  color: #172033;
+}
+
+.s360-chat-thread-phone {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: #98a2b3;
+}
+
+.s360-chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: linear-gradient(180deg, #f8fafc 0%, #fff 120px);
+}
+
+.s360-chat-bubble-row {
+  display: flex;
+}
+
+.s360-chat-bubble-row.inbound {
+  justify-content: flex-start;
+}
+
+.s360-chat-bubble-row.outbound {
+  justify-content: flex-end;
+}
+
+.s360-chat-bubble {
+  max-width: min(88%, 420px);
+  padding: 8px 11px;
+  border-radius: 14px;
+  background: #fff;
+  border: 1px solid #e7ebf0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #1e293b;
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+}
+
+.s360-chat-bubble.outbound {
+  background: #dcf8c6;
+  border-color: #bbf7d0;
+}
+
+.s360-chat-bubble-meta {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: #64748b;
+  text-align: right;
+}
+
+.s360-chat-load-older {
+  align-self: center;
+  margin-bottom: 4px;
+  padding: 6px 12px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 999px;
+  background: #fff;
+  font-size: 11px;
+  color: #475467;
+  cursor: pointer;
+}
+
+.s360-chat-thread-empty,
+.s360-chat-messages-empty,
+.s360-chat-messages-loading,
+.s360-chat-messages-error {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  color: #64748b;
+}
+
+.s360-chat-thread-empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+}
+
+.s360-chat-compose-wrap {
+  border-top: 1px solid var(--s360-line, #e7ebf0);
+  padding: 8px 10px;
+  background: #fff;
+}
+
+.s360-chat-compose-wrap .chat-composer {
+  border: 0;
+  padding: 0;
+  box-shadow: none;
+}
+
+@media (max-width: 767px) {
+  .s360-chat-shell {
+    grid-template-columns: 1fr;
+    min-height: 70vh;
+  }
+
+  .s360-chat-sidebar {
+    max-height: 38vh;
+    border-right: 0;
+    border-bottom: 1px solid var(--s360-line, #e7ebf0);
+  }
+}

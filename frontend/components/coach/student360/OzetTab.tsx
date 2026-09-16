@@ -185,11 +185,6 @@ export default function OzetTab({ profile, onNavigateTab, onAction }: OzetTabPro
           <h2>Öğrenci özeti</h2>
           <p>Önemli sinyaller, güncel durum ve sıradaki aksiyonlar.</p>
         </div>
-        {riskLevel && (
-          <span className={`coach-risk-badge ${coachRiskCssClass(riskLevel)}`}>
-            {COACH_RISK_LABELS[riskLevel]}
-          </span>
-        )}
       </div>
 
       <section className="s360-metric-grid" aria-label="Öğrenci performans özeti">

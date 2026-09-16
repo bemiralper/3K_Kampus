@@ -29,7 +29,7 @@ const ACTIONS: {
   { id: 'risk', label: 'Risk bildir', shortLabel: 'Risk', icon: 'risk', variant: 'danger' },
 ];
 
-export default function QuickActionBar({ onAction, onMesaj }: QuickActionBarProps) {
+export default function QuickActionBar({ onAction }: QuickActionBarProps) {
   return (
     <nav className="coach-quick-action-bar student360-quick-bar" aria-label="Hızlı işlemler">
       <div className="s360-quick-heading">
@@ -37,14 +37,6 @@ export default function QuickActionBar({ onAction, onMesaj }: QuickActionBarProp
         <small>Sık kullanılan aksiyonlar</small>
       </div>
       <div className="student360-quick-bar-inner">
-        {onMesaj && (
-          <button type="button" className="coach-qa-btn" onClick={onMesaj} title="WhatsApp mesajları">
-            <span className="coach-qa-icon">
-              <Student360Icon name="message" size={19} />
-            </span>
-            <span className="coach-qa-label">Mesaj</span>
-          </button>
-        )}
         {ACTIONS.map((action) => {
           const className = [
             'coach-qa-btn',

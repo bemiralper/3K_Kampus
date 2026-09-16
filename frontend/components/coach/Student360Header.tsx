@@ -20,7 +20,6 @@ interface Student360HeaderProps {
   onRefresh?: () => void;
   refreshing?: boolean;
   onAction?: (action: Student360ActionId) => void;
-  onMesaj?: () => void;
 }
 
 export default function Student360Header({
@@ -32,7 +31,6 @@ export default function Student360Header({
   onRefresh,
   refreshing = false,
   onAction,
-  onMesaj,
 }: Student360HeaderProps) {
   const { student, risk, last_meeting } = profile;
   const sinifLabel =
@@ -138,12 +136,6 @@ export default function Student360Header({
       </div>
 
       <div className="s360-profile-actions" aria-label="Öğrenci hızlı işlemleri">
-        {onMesaj && (
-          <button type="button" className="s360-profile-action" onClick={onMesaj}>
-            <Student360Icon name="message" size={17} />
-            Mesaj
-          </button>
-        )}
         {onAction && (
           <>
             <button
@@ -153,6 +145,14 @@ export default function Student360Header({
             >
               <Student360Icon name="meeting" size={17} />
               Görüşme
+            </button>
+            <button
+              type="button"
+              className="s360-profile-action"
+              onClick={() => onAction('program')}
+            >
+              <Student360Icon name="calendar" size={17} />
+              Program
             </button>
             <button
               type="button"

@@ -13,15 +13,6 @@ import {
   isDueToday,
   NON_SUBMISSION_LABELS,
 } from '@/components/odev/statusTokens';
-function fmtDate(d?: string | null) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('tr-TR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
 function fmtDateShort(d?: string | null) {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' });
@@ -279,42 +270,14 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
                   </div>
                 </div>
 
-                <div className="odev360-meta-grid">
-                  <div className="odev360-meta-item">
-                    <span className="odev360-meta-label">Atanma</span>
-                    <span className="odev360-meta-value">{fmtDateShort(a.assigned_date)}</span>
-                  </div>
-                  <div className="odev360-meta-item">
-                    <span className="odev360-meta-label">Son tarih</span>
-                    <span
-                      className="odev360-meta-value"
-                      style={{
-                        color: overdue ? '#dc2626' : dueToday ? '#d97706' : undefined,
-                        fontWeight: overdue || dueToday ? 600 : 500,
-                      }}
-                    >
-                      {fmtDate(a.due_date)}
-                      {dueToday && !overdue ? ' · bugün' : ''}
-                    </span>
-                  </div>
-                  {a.priority_display && (
-                    <div className="odev360-meta-item">
-                      <span className="odev360-meta-label">Öncelik</span>
-                      <span className="odev360-meta-value">{a.priority_display}</span>
-                    </div>
-                  )}
-                  {(a.lesson_count ?? 0) > 0 && (
-                    <div className="odev360-meta-item">
-                      <span className="odev360-meta-label">Ders</span>
-                      <span className="odev360-meta-value">{a.lesson_count} blok</span>
-                    </div>
-                  )}
+                <div className="odev360-meta-inline">
+                  <span>Son: <strong>{fmtDateShort(a.due_date)}</strong></span>
+                  {dueToday && !overdue ? <span className="odev360-meta-tag">Bugün</span> : null}
+                  {a.priority_display ? <span>{a.priority_display}</span> : null}
+                  {(a.lesson_count ?? 0) > 0 ? <span>{a.lesson_count} ders</span> : null}
                 </div>
 
-                <div className="odev360-progress-row">
-                  <div className="odev360-ring" style={{ '--pct': pct, '--ring-color': barColor } as React.CSSProperties}>
-                    <span className="odev360-ring-value">%{pct}</span>
-                  </div>
+                <div className="odev360-progress-row odev360-progress-compact">
                   <div className="odev360-progress-detail">
                     <div className="odev360-progress-head">
                       <span>Tamamlanma</span>
@@ -323,22 +286,17 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
                     <div className="odev360-progress-bar">
                       <div className="odev360-progress-fill" style={{ width: `${pct}%`, background: barColor }} />
                     </div>
-                    <div className="odev360-task-chips">
-                      {taskCount > 0 && (
-                        <>
-                          <span className="odev360-chip">{taskCount} görev</span>
-                          {evaluated > 0 && (
-                            <span className="odev360-chip is-green">{evaluated} değerlendirildi</span>
-                          )}
-                          {pendingTasks > 0 && (
-                            <span className="odev360-chip is-muted">{pendingTasks} bekliyor</span>
-                          )}
-                        </>
-                      )}
-                      {taskCount === 0 && (
-                        <span className="odev360-chip is-muted">Görev tanımlı değil</span>
-                      )}
-                    </div>
+                    {taskCount > 0 && (
+                      <div className="odev360-task-chips">
+                        <span className="odev360-chip">{taskCount} görev</span>
+                        {evaluated > 0 && (
+                          <span className="odev360-chip is-green">{evaluated} değ.</span>
+                        )}
+                        {pendingTasks > 0 && (
+                          <span className="odev360-chip is-muted">{pendingTasks} bekliyor</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
 

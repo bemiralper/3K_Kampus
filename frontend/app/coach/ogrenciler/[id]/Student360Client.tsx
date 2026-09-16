@@ -306,7 +306,6 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           onRefresh={() => loadProfile({ silent: true })}
           refreshing={refreshing}
           onAction={handleAction}
-          onMesaj={() => setTab('mesajlar')}
         />
         <Student360GroupNav activeTab={activeTab} onTabChange={setTab} />
       </aside>
@@ -317,7 +316,7 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
         </div>
       </main>
 
-      <QuickActionBar onAction={handleAction} onMesaj={() => setTab('mesajlar')} />
+      <QuickActionBar onAction={handleAction} />
 
       {showGorusmeDrawer && (
         <GorusmeEkleDrawer
