@@ -34,6 +34,7 @@ from apps.academic.interfaces.sube_context import (
     gate_sinif_drf,
     mandatory_academic_context_drf,
 )
+from apps.academic.services.grid_engine import collapse_lesson_slots_by_time
 from apps.egitim_yili.domain.models import EgitimYili
 
 
@@ -137,6 +138,8 @@ def serialize_grid_response(cells, days, slots):
         cells: [...]
     }
     """
+    display_slots, timeslot_id_map = collapse_lesson_slots_by_time(slots)
+
     # Günleri serialize et
     days_data = [
         {
@@ -148,7 +151,7 @@ def serialize_grid_response(cells, days, slots):
         for d in days
     ]
     
-    # Slotları serialize et
+    # Slotları serialize et — aynı saatteki şablon kopyaları tek satır
     slots_data = [
         {
             "id": s.id,
@@ -157,7 +160,7 @@ def serialize_grid_response(cells, days, slots):
             "end": s.end_time.strftime("%H:%M") if s.end_time else None,
             "order": s.order
         }
-        for s in slots
+        for s in display_slots
     ]
     
     # Hücreleri serialize et
@@ -166,7 +169,7 @@ def serialize_grid_response(cells, days, slots):
         cell_data = {
             "id": c.id,
             "day_id": c.weekly_day_id,
-            "timeslot_id": c.timeslot_id,
+            "timeslot_id": timeslot_id_map.get(c.timeslot_id, c.timeslot_id),
             "status": c.status,
             "status_display": c.get_status_display(),
             "class_lesson_plan_id": c.class_lesson_plan_id,

@@ -434,7 +434,7 @@ export default function CalismaTakvimiClient() {
     <PageShell>
       <PageHead
         title="Çalışma Takvimi"
-        description="Haftalık eğitim düzenlerini yönetin: hangi günler ders var ve her gün hangi ders saati şablonunu kullanıyor."
+        description="Haftanın hangi günlerinde ders olduğunu ve her günün hangi ders saati şablonunu kullandığını tanımlayın. Sınıflara atama Ders Programı’nda sınıf seçerek yapılır."
         actions={
           <>
             <Button icon={<ImportOutlined />} onClick={() => importRef.current?.click()}>

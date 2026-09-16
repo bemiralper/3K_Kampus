@@ -25,12 +25,16 @@ export default function SinifProgramiClient() {
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
-  // Seçili çalışma takvimine ait sınıflar; eşleşme yoksa tüm sınıflar
+  // Tüm aktif sınıflar — takvime bağlı olanlar üstte
   const classrooms = useMemo(() => {
-    const all = context?.classrooms || [];
+    const all = [...(context?.classrooms || [])];
     if (!calendarId) return all;
-    const scoped = all.filter((c) => c.weekly_cycle_ids?.includes(calendarId));
-    return scoped.length ? scoped : all;
+    return all.sort((a, b) => {
+      const aOn = a.weekly_cycle_ids?.includes(calendarId) ? 0 : 1;
+      const bOn = b.weekly_cycle_ids?.includes(calendarId) ? 0 : 1;
+      if (aOn !== bOn) return aOn - bOn;
+      return a.ad.localeCompare(b.ad, 'tr');
+    });
   }, [context, calendarId]);
 
   useEffect(() => {
@@ -113,10 +117,16 @@ export default function SinifProgramiClient() {
               onChange={setClassroomId}
               showSearch
               optionFilterProp="label"
-              options={classrooms.map((c) => ({
-                value: c.id,
-                label: c.oda_ad ? `${c.ad} · ${c.oda_ad}` : c.ad,
-              }))}
+              options={classrooms.map((c) => {
+                const onCal = calendarId
+                  ? Boolean(c.weekly_cycle_ids?.includes(calendarId))
+                  : false;
+                const base = c.oda_ad ? `${c.ad} · ${c.oda_ad}` : c.ad;
+                return {
+                  value: c.id,
+                  label: onCal ? `${base} · bu takvimde` : base,
+                };
+              })}
               placeholder="Sınıf seçin"
             />
           </Field>

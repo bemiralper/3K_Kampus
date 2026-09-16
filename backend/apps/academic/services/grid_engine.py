@@ -66,6 +66,16 @@ class VersionGridEnsureResult:
     total_cells: int
 
 
+@dataclass
+class VersionGridUnbindResult:
+    """Sınıfı çalışma takviminden ayırma sonucu."""
+    schedule_version_id: int
+    classroom_id: int
+    cell_count: int
+    filled_count: int
+    deactivated_count: int
+
+
 class GridEngine:
     """
     Program Grid oluşturma motoru.
@@ -453,3 +463,82 @@ def ensure_version_classroom_grid(
         existing_count=existing_count,
         total_cells=existing_count + created_count,
     )
+
+
+class CalendarUnbindNeedsConfirm(Exception):
+    """Dolu hücre varken force olmadan ayırma denendi."""
+
+    def __init__(self, filled_count: int, cell_count: int):
+        self.filled_count = filled_count
+        self.cell_count = cell_count
+        super().__init__(
+            f'Bu sınıfta {filled_count} yerleştirilmiş ders var. '
+            'Ayırmak bu takvimdeki dersleri kaldırır.'
+        )
+
+
+def unbind_classroom_calendar_grid(
+    *,
+    schedule_version_id: int,
+    classroom_id: int,
+    force: bool = False,
+) -> VersionGridUnbindResult:
+    """
+    Sınıfın bu programdaki aktif grid hücrelerini pasife alır.
+
+    Ayrı bir atama kaydı yok; bağ = aktif hücre. Ayırınca sınıf bu takvimden
+    düşer. force=False ve dolu hücre varsa onay ister.
+    """
+    qs = ProgramGridCell.objects.filter(
+        schedule_version_id=schedule_version_id,
+        sinif_id=classroom_id,
+        is_active=True,
+    )
+    cell_count = qs.count()
+    filled_count = qs.filter(status=CellStatus.FILLED).count()
+    if filled_count and not force:
+        raise CalendarUnbindNeedsConfirm(filled_count, cell_count)
+
+    deactivated_count = qs.update(
+        is_active=False,
+        status=CellStatus.EMPTY,
+        ders=None,
+        ogretmen=None,
+        class_lesson_plan=None,
+        is_double_block_start=False,
+        double_block_partner=None,
+    )
+    return VersionGridUnbindResult(
+        schedule_version_id=schedule_version_id,
+        classroom_id=classroom_id,
+        cell_count=cell_count,
+        filled_count=filled_count,
+        deactivated_count=deactivated_count,
+    )
+
+
+def collapse_lesson_slots_by_time(slots):
+    """
+    Aynı giriş-çıkış saatine sahip LESSON slotlarını tek satırda birleştir.
+
+    Çalışma takviminde günler farklı şablon kullansa da saatler aynıysa
+    (ör. iki şablonda da 1. Ders 08:00–08:40) tabloda iki satır görünmesin.
+    Dönüş: (görünen slot listesi, gerçek_timeslot_id → kanonik_id).
+    """
+    from datetime import time as dt_time
+
+    slot_list = list(slots)
+    canonical_by_time = {}
+    for slot in sorted(slot_list, key=lambda s: (s.order, s.id)):
+        key = (slot.start_time, slot.end_time)
+        if key not in canonical_by_time:
+            canonical_by_time[key] = slot
+    id_map = {
+        slot.id: canonical_by_time[(slot.start_time, slot.end_time)].id
+        for slot in slot_list
+    }
+    display = sorted(
+        canonical_by_time.values(),
+        key=lambda s: (s.order, s.start_time or dt_time.min, s.id),
+    )
+    return display, id_map

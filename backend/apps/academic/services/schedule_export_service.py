@@ -11,6 +11,7 @@ from apps.academic.domain.program_grid_cell import CellStatus, ProgramGridCell
 from apps.academic.domain.schedule_version import ScheduleVersion
 from apps.academic.domain.timeslot import TimeSlot
 from apps.academic.domain.weekly_day import WeeklyDay
+from apps.academic.services.grid_engine import collapse_lesson_slots_by_time
 from apps.sinif.domain.models import Sinif
 from apps.term.domain.models import Term
 
@@ -172,6 +173,7 @@ def build_classroom_schedule_payload(
         ).order_by('order')
     )
     slots = _slots_for_version(version, [d.id for d in days])
+    slots, timeslot_id_map = collapse_lesson_slots_by_time(slots)
 
     classrooms = list(
         Sinif.objects.filter(
@@ -219,7 +221,7 @@ def build_classroom_schedule_payload(
 
         cell_map: dict[str, dict[str, Any]] = {}
         for c in cells:
-            key = f'{c.weekly_day_id}:{c.timeslot_id}'
+            key = f'{c.weekly_day_id}:{timeslot_id_map.get(c.timeslot_id, c.timeslot_id)}'
             lesson_name = resolve_ders_display_name(
                 ders=c.ders if c.ders_id else None,
                 plan=getattr(c, 'class_lesson_plan', None),

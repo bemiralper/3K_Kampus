@@ -859,3 +859,112 @@ class DersProgramiGridApiTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         row = next(c for c in res.json()['classrooms'] if c['id'] == self.sinif.id)
         self.assertIn(self.cycle.id, row.get('weekly_cycle_ids') or [])
+
+    def test_unbind_classroom_requires_confirm_when_filled(self):
+        self._fill_single_cell()
+        res = self.client.post(
+            '/api/academic/program-grid/unbind-classroom/',
+            data={
+                'classroom_id': self.sinif.id,
+                'term_id': self.term.id,
+                'weekly_cycle_id': self.cycle.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 409, res.content)
+        body = res.json()
+        self.assertTrue(body.get('requires_confirm'))
+        self.assertEqual(body.get('filled_count'), 1)
+        self.assertTrue(
+            ProgramGridCell.objects.filter(
+                schedule_version=self.version, sinif=self.sinif, is_active=True,
+            ).exists()
+        )
+
+    def test_unbind_classroom_force_detaches_and_clears_context(self):
+        self._fill_single_cell()
+        res = self.client.post(
+            '/api/academic/program-grid/unbind-classroom/',
+            data={
+                'classroom_id': self.sinif.id,
+                'term_id': self.term.id,
+                'weekly_cycle_id': self.cycle.id,
+                'force': True,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res.json()['deactivated_count'], 1)
+        self.assertFalse(
+            ProgramGridCell.objects.filter(
+                schedule_version=self.version, sinif=self.sinif, is_active=True,
+            ).exists()
+        )
+        ctx = self.client.get('/api/academic/class-lesson-plan/context/', **self.headers)
+        row = next(c for c in ctx.json()['classrooms'] if c['id'] == self.sinif.id)
+        self.assertNotIn(self.cycle.id, row.get('weekly_cycle_ids') or [])
+
+    def test_unbind_empty_grid_without_force(self):
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': self.version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+        res = self.client.post(
+            '/api/academic/program-grid/unbind-classroom/',
+            data={
+                'classroom_id': self.sinif.id,
+                'term_id': self.term.id,
+                'weekly_cycle_id': self.cycle.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertGreaterEqual(res.json()['deactivated_count'], 1)
+
+    def test_class_schedule_collapses_same_time_slots_from_two_templates(self):
+        """Hafta içi ve hafta sonu şablonunda aynı saatli 1. Ders tek satır olsun."""
+        template2 = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='Hafta Sonu Şablon',
+        )
+        TimeSlot.objects.create(
+            schedule_template=template2,
+            name='1. Ders',
+            start_time=time(8, 0),
+            end_time=time(8, 40),
+            order=1,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        WeeklyDay.objects.create(
+            weekly_cycle=self.cycle,
+            day_of_week=DayOfWeek.SATURDAY,
+            name='Cumartesi',
+            order=6,
+            is_active=True,
+            schedule_template=template2,
+        )
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': self.version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+
+        res = self.client.get(
+            f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
+            f'&term_id={self.term.id}&weekly_cycle_id={self.cycle.id}',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        slots = res.json()['slots']
+        names = [s['name'] for s in slots]
+        self.assertEqual(names.count('1. Ders'), 1)
+        time_keys = {(s.get('start'), s.get('end')) for s in slots}
+        self.assertEqual(len(time_keys), len(slots))

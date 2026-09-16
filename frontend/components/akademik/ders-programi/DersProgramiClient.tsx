@@ -9,8 +9,9 @@ import {
   type DragEvent,
 } from 'react';
 import Link from 'next/link';
-import { Alert, Button, Modal, Select, Typography, message } from 'antd';
+import { Alert, Button, Input, Modal, Select, Typography, message } from 'antd';
 import {
+  DisconnectOutlined,
   DownloadOutlined,
   LockOutlined,
   ReloadOutlined,
@@ -24,6 +25,7 @@ import {
   CLASS_LESSON_PLAN_CHANGED_EVENT,
   clearScheduleCell,
   ensureClassroomScheduleGrid,
+  unbindClassroomScheduleGrid,
   fetchAcademicScheduleVersions,
   fetchClassLessonPlanContext,
   fetchClassLessonPlans,
@@ -36,6 +38,7 @@ import {
   type AcademicScheduleVersion,
   type ClassLessonPlan,
   type ClassLessonPlanChangedDetail,
+  type ClassLessonPlanClassroom,
   type ClassLessonPlanContext,
   type ClassScheduleGrid,
   type ScheduleGridCell,
@@ -95,6 +98,16 @@ function calendarTemplateLabel(c: WorkCalendar): string {
   return '';
 }
 
+const EMPTY_CLASSROOMS: ClassLessonPlanClassroom[] = [];
+
+function classroomOnCalendar(
+  classroom: ClassLessonPlanClassroom | null | undefined,
+  calendarId: number | null,
+): boolean {
+  if (!calendarId || !classroom) return false;
+  return (classroom.weekly_cycle_ids || []).includes(calendarId);
+}
+
 function parseDragPayload(raw: string): DragPayload | null {
   try {
     const data = JSON.parse(raw) as DragPayload;
@@ -146,6 +159,7 @@ export default function DersProgramiClient() {
   /** Dönem + çalışma takviminin programı — kullanıcıya gösterilmez, otomatik çözülür. */
   const [program, setProgram] = useState<AcademicScheduleVersion | null>(null);
   const [classroomId, setClassroomId] = useState<number | null>(urlClassroomId);
+  const [classSearch, setClassSearch] = useState('');
 
   const sinifDersPlanlariParams = new URLSearchParams();
   if (classroomId) sinifDersPlanlariParams.set('classroom_id', String(classroomId));
@@ -169,6 +183,8 @@ export default function DersProgramiClient() {
   /** Sürükleme sonrası sahte click ile temizleme modalını engelle */
   const suppressClickRef = useRef(false);
   const scrollYRef = useRef(0);
+  const bindingIdsRef = useRef<Set<number>>(new Set());
+  const gridReqRef = useRef(0);
 
   useEffect(() => {
     setColorBy(getScheduleColorBy());
@@ -185,12 +201,30 @@ export default function DersProgramiClient() {
     () => calendars.find((c) => c.id === calendarId) || null,
     [calendarId, calendars],
   );
-  const visibleClassrooms = useMemo(() => {
-    const all = context?.classrooms || [];
-    if (!calendarId) return all;
-    const assigned = all.filter((c) => (c.weekly_cycle_ids || []).includes(calendarId));
-    return assigned.length ? assigned : all;
-  }, [calendarId, context?.classrooms]);
+  const classrooms = context?.classrooms ?? EMPTY_CLASSROOMS;
+  const sortedClassrooms = useMemo(() => {
+    return [...classrooms].sort((a, b) => {
+      const aOn = classroomOnCalendar(a, calendarId) ? 0 : 1;
+      const bOn = classroomOnCalendar(b, calendarId) ? 0 : 1;
+      if (aOn !== bOn) return aOn - bOn;
+      return a.ad.localeCompare(b.ad, 'tr');
+    });
+  }, [calendarId, classrooms]);
+  const filteredClassrooms = useMemo(() => {
+    const q = classSearch.trim().toLowerCase();
+    if (!q) return sortedClassrooms;
+    return sortedClassrooms.filter(
+      (c) =>
+        c.ad.toLowerCase().includes(q) ||
+        (c.alan_ad || '').toLowerCase().includes(q) ||
+        (c.sinif_seviyesi_ad || '').toLowerCase().includes(q) ||
+        (c.oda_ad || '').toLowerCase().includes(q),
+    );
+  }, [classSearch, sortedClassrooms]);
+  const assignedCount = useMemo(
+    () => classrooms.filter((c) => classroomOnCalendar(c, calendarId)).length,
+    [calendarId, classrooms],
+  );
   const selectedTerm = useMemo(
     () => context?.terms.find((t) => t.id === termId) || null,
     [context?.terms, termId],
@@ -243,10 +277,9 @@ export default function DersProgramiClient() {
       setClassroomId((prev) => {
         if (prev && ctx.classrooms.some((c) => c.id === prev)) return prev;
         const assigned = defaultCalId
-          ? ctx.classrooms.filter((c) => (c.weekly_cycle_ids || []).includes(defaultCalId))
+          ? ctx.classrooms.filter((c) => classroomOnCalendar(c, defaultCalId))
           : [];
-        const pool = assigned.length ? assigned : ctx.classrooms;
-        return pool[0]?.id ?? null;
+        return assigned[0]?.id ?? null;
       });
     } catch (e) {
       message.error(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
@@ -287,13 +320,14 @@ export default function DersProgramiClient() {
   }, [loadProgram]);
 
   useEffect(() => {
-    if (!visibleClassrooms.length) {
+    if (!classrooms.length) {
       if (classroomId != null) setClassroomId(null);
       return;
     }
-    if (classroomId && visibleClassrooms.some((c) => c.id === classroomId)) return;
-    setClassroomId(visibleClassrooms[0].id);
-  }, [visibleClassrooms, classroomId]);
+    if (classroomId && classrooms.some((c) => c.id === classroomId)) return;
+    const assigned = classrooms.filter((c) => classroomOnCalendar(c, calendarId));
+    setClassroomId(assigned[0]?.id ?? null);
+  }, [classrooms, classroomId, calendarId]);
 
   const loadPlans = useCallback(async () => {
     if (!classroomId || !termId) {
@@ -327,61 +361,149 @@ export default function DersProgramiClient() {
     if (silent && typeof window !== 'undefined') {
       scrollYRef.current = window.scrollY;
     }
-    const programLocked = Boolean(program?.is_locked || selectedTerm?.schedule_locked);
+    const req = ++gridReqRef.current;
     try {
-      if (!silent && !programLocked) {
-        try {
-          // Program yoksa burada oluşur; boş hücre iskeleti de hazırlanır.
-          const ensured = await ensureClassroomScheduleGrid({
-            classroom_id: classroomId,
-            term_id: termId,
-            weekly_cycle_id: calendarId,
-          });
-          if (ensured.schedule_version_id && ensured.schedule_version_id !== program?.id) {
-            void loadProgram();
-          }
-          // Sınıf artık bu takvimde programlı — takvim filtresi onu göstersin
-          setContext((prev) => {
-            if (!prev) return prev;
-            return {
-              ...prev,
-              classrooms: prev.classrooms.map((c) => {
-                if (c.id !== classroomId) return c;
-                const ids = c.weekly_cycle_ids || [];
-                if (ids.includes(calendarId)) return c;
-                return { ...c, weekly_cycle_ids: [...ids, calendarId] };
-              }),
-            };
-          });
-        } catch {
-          // İskelet oluşturma başarısız olsa da mevcut grid'i yüklemeyi dene
-          // (örn. program bu arada kilitlendi, hücreler zaten mevcut vb.)
-        }
-      }
       const data = await fetchClassScheduleGrid({
         classroom_id: classroomId,
         term_id: termId,
         weekly_cycle_id: calendarId,
       });
+      if (req !== gridReqRef.current) return;
       setGrid(data);
       if (data.empty_message) setGridError(data.empty_message);
     } catch (e) {
+      if (req !== gridReqRef.current) return;
       setGrid(null);
       const msg = e instanceof Error ? e.message : 'Program yüklenemedi';
       setGridError(msg);
       message.error(msg);
     } finally {
+      if (req !== gridReqRef.current) return;
       if (!silent) setLoading(false);
       if (silent && typeof window !== 'undefined') {
         const y = scrollYRef.current;
         requestAnimationFrame(() => window.scrollTo({ top: y, left: 0, behavior: 'auto' }));
       }
     }
-  }, [classroomId, termId, calendarId, program, selectedTerm, loadProgram]);
+  }, [classroomId, termId, calendarId]);
 
   useEffect(() => {
+    if (classroomId != null && bindingIdsRef.current.has(classroomId)) return;
     void loadGrid();
-  }, [loadGrid]);
+  }, [loadGrid, classroomId]);
+
+  const markClassroomBound = useCallback(
+    (id: number, bound: boolean) => {
+      if (!calendarId) return;
+      setContext((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          classrooms: prev.classrooms.map((c) => {
+            if (c.id !== id) return c;
+            const ids = c.weekly_cycle_ids || [];
+            if (bound) {
+              if (ids.includes(calendarId)) return c;
+              return { ...c, weekly_cycle_ids: [...ids, calendarId] };
+            }
+            return { ...c, weekly_cycle_ids: ids.filter((cid) => cid !== calendarId) };
+          }),
+        };
+      });
+    },
+    [calendarId],
+  );
+
+  const bindClassroom = async (id: number) => {
+    if (!termId || !calendarId) return;
+    if (readOnly) {
+      message.warning('Program kilitli; bağlanamaz.');
+      return;
+    }
+    bindingIdsRef.current.add(id);
+    const req = ++gridReqRef.current;
+    setClassroomId(id);
+    setLoading(true);
+    setGridError(null);
+    try {
+      const ensured = await ensureClassroomScheduleGrid({
+        classroom_id: id,
+        term_id: termId,
+        weekly_cycle_id: calendarId,
+      });
+      if (ensured.schedule_version_id && ensured.schedule_version_id !== program?.id) {
+        void loadProgram();
+      }
+      markClassroomBound(id, true);
+      const data = await fetchClassScheduleGrid({
+        classroom_id: id,
+        term_id: termId,
+        weekly_cycle_id: calendarId,
+      });
+      if (req !== gridReqRef.current) return;
+      setGrid(data);
+      if (data.empty_message) setGridError(data.empty_message);
+    } catch (e) {
+      if (req !== gridReqRef.current) return;
+      message.error(e instanceof Error ? e.message : 'Bağlama başarısız');
+      await loadGrid();
+    } finally {
+      bindingIdsRef.current.delete(id);
+      if (req === gridReqRef.current) setLoading(false);
+    }
+  };
+
+  const unbindClassroom = (classroom: ClassLessonPlanClassroom) => {
+    if (!termId || !calendarId) return;
+    if (readOnly) {
+      message.warning('Program kilitli; bağ ayrılamaz.');
+      return;
+    }
+    const filledHere =
+      classroom.id === classroomId
+        ? (grid?.cells || []).filter((c) => c.status === 'FILLED').length
+        : 0;
+    const run = async (force: boolean) => {
+      try {
+        await unbindClassroomScheduleGrid({
+          classroom_id: classroom.id,
+          term_id: termId,
+          weekly_cycle_id: calendarId,
+          force,
+        });
+        markClassroomBound(classroom.id, false);
+        message.success(`${classroom.ad} bu takvimden ayrıldı`);
+        if (classroom.id === classroomId) {
+          setGrid(null);
+          setGridError(null);
+          void loadGrid();
+        }
+      } catch (e) {
+        const err = e as Error & { requiresConfirm?: boolean; filledCount?: number };
+        if (err.requiresConfirm && !force) {
+          Modal.confirm({
+            title: 'Yerleştirilmiş dersler var',
+            content: `${classroom.ad} sınıfında ${err.filledCount ?? filledHere} ders bu takvimde. Ayırmak bu dersleri kaldırır.`,
+            okText: 'Ayır',
+            okButtonProps: { danger: true },
+            onOk: () => run(true),
+          });
+          return;
+        }
+        message.error(e instanceof Error ? e.message : 'Ayırma başarısız');
+      }
+    };
+    Modal.confirm({
+      title: 'Takvimden ayrılsın mı?',
+      content:
+        filledHere > 0
+          ? `${classroom.ad} sınıfında ${filledHere} yerleştirilmiş ders var. Ayırmak bu takvimdeki dersleri kaldırır.`
+          : `${classroom.ad} bu çalışma takviminden ayrılacak. Tekrar bağlamak için listeden seçmeniz yeterli.`,
+      okText: 'Ayır',
+      okButtonProps: { danger: true },
+      onOk: () => run(filledHere > 0),
+    });
+  };
 
   // SDP'de öğretmen / görünen ad değişince grid + havuzu sessiz yenile
   useEffect(() => {
@@ -706,7 +828,7 @@ export default function DersProgramiClient() {
   return (
     <PageShell>
       <PageHead
-        description="Soldaki dersleri hücrelere sürükleyin. Öğretmen bilgisi Sınıf Ders Planları’ndan gelir."
+        description="Soldan sınıf seçin — seçmek bu çalışma takvimine bağlar. Ayır ile bağı koparın. Dersleri hücrelere sürükleyin."
         actions={
           <>
             {context?.active_year ? <Badge tone="info">{context.active_year.yil_str}</Badge> : null}
@@ -772,22 +894,6 @@ export default function DersProgramiClient() {
               };
             })}
             placeholder="Takvim seçin"
-          />
-        </Field>
-        <Field
-          label={
-            calendarId && visibleClassrooms.length !== (context?.classrooms.length || 0)
-              ? `Sınıf (${visibleClassrooms.length})`
-              : 'Sınıf'
-          }
-          width={180}
-        >
-          <Select
-            value={classroomId ?? undefined}
-            onChange={setClassroomId}
-            options={visibleClassrooms.map((c) => ({ value: c.id, label: c.ad }))}
-            showSearch
-            optionFilterProp="label"
           />
         </Field>
         <Field label="Hücre rengi">
@@ -870,7 +976,82 @@ export default function DersProgramiClient() {
         />
       ) : null}
 
-      <div className="dp-workspace">
+      <div className="dp-layout">
+        <aside className="dp-class-aside">
+          <div className="dp-class-aside-head">
+            <Text strong>Sınıflar</Text>
+            <span className="dp-class-count">
+              {assignedCount}/{classrooms.length}
+            </span>
+          </div>
+          <div className="dp-class-aside-body">
+            <Input.Search
+              allowClear
+              placeholder="Sınıf ara…"
+              value={classSearch}
+              onChange={(e) => setClassSearch(e.target.value)}
+            />
+            <p className="dp-class-hint">
+              Sınıf seçmek bu takvime bağlar. Ayır ile bağı koparın.
+              {assignedCount > 0 && assignedCount < classrooms.length
+                ? ` ${assignedCount} sınıf bağlı.`
+                : ''}
+            </p>
+            {bootLoading && classrooms.length === 0 ? (
+              <div className="dp-empty" style={{ padding: 16 }}>Yükleniyor…</div>
+            ) : filteredClassrooms.length === 0 ? (
+              <div className="dp-empty" style={{ padding: 16 }}>
+                {classSearch ? 'Aramayla eşleşen sınıf yok' : 'Aktif sınıf yok'}
+              </div>
+            ) : (
+              <div className="dp-class-list">
+                {filteredClassrooms.map((c) => {
+                  const onCal = classroomOnCalendar(c, calendarId);
+                  return (
+                    <div
+                      key={c.id}
+                      role="button"
+                      tabIndex={0}
+                      className={`dp-class-item${classroomId === c.id ? ' is-active' : ''}${onCal ? ' is-linked' : ''}`}
+                      onClick={() => {
+                        if (onCal || readOnly) setClassroomId(c.id);
+                        else void bindClassroom(c.id);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (onCal || readOnly) setClassroomId(c.id);
+                          else void bindClassroom(c.id);
+                        }
+                      }}
+                    >
+                      <span className="dp-class-item-title">{c.ad}</span>
+                      {onCal ? (
+                        <button
+                          type="button"
+                          className="dp-class-item-unbind"
+                          disabled={readOnly}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            unbindClassroom(c);
+                          }}
+                        >
+                          Ayır
+                        </button>
+                      ) : null}
+                      <span className="dp-class-item-meta">
+                        {[c.sinif_seviyesi_ad, c.alan_ad, c.oda_ad].filter(Boolean).join(' · ') ||
+                          `${c.ogrenci_sayisi} öğrenci`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <div className="dp-workspace">
         <aside
           className={`dp-pool${poolDropActive ? ' is-drop-target' : ''}`}
           onDragOver={onPoolDragOver}
@@ -954,14 +1135,32 @@ export default function DersProgramiClient() {
               {(context?.classrooms.find((c) => c.id === classroomId)?.ad) || 'Sınıf'}
               {selectedCalendar ? ` · ${selectedCalendar.name}` : ''}
             </Text>
-            <Text type="secondary">
-              {grid
-                ? `${grid.cells.filter((c) => c.status === 'FILLED').length} / ${grid.cells.length} dolu`
-                : bootLoading || loading
-                  ? 'Yükleniyor…'
-                  : '—'}
-              {saving ? ' · kaydediliyor…' : ''}
-            </Text>
+            <div className="dp-card-head-meta">
+              <Text type="secondary">
+                {grid
+                  ? `${grid.cells.filter((c) => c.status === 'FILLED').length} / ${grid.cells.length} dolu`
+                  : bootLoading || loading
+                    ? 'Yükleniyor…'
+                    : '—'}
+                {saving ? ' · kaydediliyor…' : ''}
+              </Text>
+              {classroomOnCalendar(
+                context?.classrooms.find((c) => c.id === classroomId),
+                calendarId,
+              ) ? (
+                <Button
+                  size="small"
+                  icon={<DisconnectOutlined />}
+                  disabled={readOnly}
+                  onClick={() => {
+                    const row = context?.classrooms.find((c) => c.id === classroomId);
+                    if (row) unbindClassroom(row);
+                  }}
+                >
+                  Ayır
+                </Button>
+              ) : null}
+            </div>
           </div>
           <div className="dp-card-body">
             {!hasGrid ? (
@@ -1103,6 +1302,7 @@ export default function DersProgramiClient() {
             )}
           </div>
         </div>
+        </div>
       </div>
 
       <ScheduleExportModal
@@ -1111,7 +1311,7 @@ export default function DersProgramiClient() {
         termId={termId}
         versionId={versionId}
         currentClassroomId={classroomId}
-        classrooms={visibleClassrooms}
+        classrooms={sortedClassrooms}
       />
 
       <ScheduleNotifyModal
@@ -1120,7 +1320,7 @@ export default function DersProgramiClient() {
         termId={termId}
         versionId={versionId}
         currentClassroomId={classroomId}
-        classrooms={visibleClassrooms}
+        classrooms={sortedClassrooms}
       />
     </PageShell>
   );

@@ -647,7 +647,9 @@ export type ClassLessonPlanClassroom = {
   alan_id: number | null;
   alan_ad: string | null;
   oda_ad: string | null;
-  /** Bu sınıfın ders programı grid'inde yer aldığı çalışma takvimleri */
+  /** Bu sınıfın ders programı grid'inde yer aldığı çalışma takvimleri.
+   *  Ayrı bir atama kaydı yok: sınıfa Ders Programı'nda bakılınca (veya ders
+   *  yerleştirilince) grid oluşur ve takvim burada görünür. */
   weekly_cycle_ids?: number[];
 };
 
@@ -1227,6 +1229,44 @@ export async function ensureClassroomScheduleGrid(params: {
     method: 'POST',
     body: JSON.stringify(params),
   });
+  return unwrap(res);
+}
+
+export async function unbindClassroomScheduleGrid(params: {
+  classroom_id: number;
+  term_id?: number;
+  weekly_cycle_id?: number;
+  version_id?: number;
+  force?: boolean;
+}): Promise<{
+  schedule_version_id: number | null;
+  classroom_id: number;
+  cell_count: number;
+  filled_count: number;
+  deactivated_count: number;
+}> {
+  const res = await apiFetch<{
+    schedule_version_id: number | null;
+    classroom_id: number;
+    cell_count: number;
+    filled_count: number;
+    deactivated_count: number;
+    requires_confirm?: boolean;
+  }>('/api/academic/program-grid/unbind-classroom/', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+  if (!res.success) {
+    const err = new Error(res.error || 'Ayırma başarısız') as Error & {
+      requiresConfirm?: boolean;
+      filledCount?: number;
+    };
+    if (res.data?.requires_confirm) {
+      err.requiresConfirm = true;
+      err.filledCount = res.data.filled_count;
+    }
+    throw err;
+  }
   return unwrap(res);
 }
 

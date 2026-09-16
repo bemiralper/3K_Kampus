@@ -21,6 +21,8 @@ from apps.academic.interfaces.sube_context import (
 from apps.academic.services.grid_engine import (
     GridEngine,
     ensure_version_classroom_grid,
+    unbind_classroom_calendar_grid,
+    CalendarUnbindNeedsConfirm,
     generate_preview,
     generate_cells,
     get_grid_matrix,
@@ -336,6 +338,125 @@ def grid_ensure_version_api(request):
             f'{result.existing_count} hücre zaten vardı.'
         ),
     }, status=status.HTTP_201_CREATED if result.created_count else status.HTTP_200_OK)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
+def grid_unbind_classroom_api(request):
+    """
+    POST /api/academic/program-grid/unbind-classroom/
+
+    Body: {
+      "classroom_id": 1,
+      "term_id": 2,
+      "weekly_cycle_id": 3,
+      "force": false
+    }
+
+    Sınıfı seçili dönem + çalışma takviminden ayırır (aktif grid hücrelerini
+    pasife alır). Dolu hücre varsa force=true gerekir.
+    """
+    classroom_id = request.data.get('classroom_id')
+    term_id = request.data.get('term_id')
+    weekly_cycle_id = request.data.get('weekly_cycle_id')
+    version_id = request.data.get('version_id')
+    force = bool(request.data.get('force'))
+    if not classroom_id:
+        return Response(
+            {'error': 'classroom_id zorunludur.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not version_id and not (term_id and weekly_cycle_id):
+        return Response(
+            {'error': 'version_id veya (term_id + weekly_cycle_id) zorunludur.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if version_id:
+        try:
+            version = ScheduleVersion.objects.select_related('schedule_template', 'term').get(
+                pk=int(version_id),
+            )
+        except ScheduleVersion.DoesNotExist:
+            return Response({'error': 'Program bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+    else:
+        from apps.academic.domain.weekly_cycle import WeeklyCycle
+        from apps.term.domain.models import Term
+
+        try:
+            term = Term.objects.select_related('egitim_yili').get(pk=int(term_id))
+            weekly_cycle = WeeklyCycle.objects.get(pk=int(weekly_cycle_id))
+        except (Term.DoesNotExist, WeeklyCycle.DoesNotExist):
+            return Response(
+                {'error': 'Dönem veya çalışma takvimi bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        version = ScheduleVersion.resolve_default(
+            term=term, weekly_cycle=weekly_cycle, create=False,
+        )
+        if version is None:
+            return Response(
+                {
+                    'schedule_version_id': None,
+                    'classroom_id': int(classroom_id),
+                    'cell_count': 0,
+                    'filled_count': 0,
+                    'deactivated_count': 0,
+                    'message': 'Bu sınıf bu takvime bağlı değil.',
+                }
+            )
+
+    _, _, gate_err = gate_schedule_template_drf(request, version.schedule_template_id)
+    if gate_err:
+        return gate_err
+    _, _, gate_err = gate_sinif_drf(request, int(classroom_id))
+    if gate_err:
+        return gate_err
+
+    if version.is_locked:
+        return Response(
+            {'error': 'Program kilitli; bağ ayrılamaz.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if version.term_id and version.term.schedule_locked:
+        return Response(
+            {'error': 'Dönem programı kilitli; bağ ayrılamaz.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        result = unbind_classroom_calendar_grid(
+            schedule_version_id=version.id,
+            classroom_id=int(classroom_id),
+            force=force,
+        )
+    except CalendarUnbindNeedsConfirm as e:
+        return Response(
+            {
+                'error': str(e),
+                'requires_confirm': True,
+                'filled_count': e.filled_count,
+                'cell_count': e.cell_count,
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+    return Response({
+        'schedule_version_id': result.schedule_version_id,
+        'classroom_id': result.classroom_id,
+        'cell_count': result.cell_count,
+        'filled_count': result.filled_count,
+        'deactivated_count': result.deactivated_count,
+        'message': (
+            f'{result.deactivated_count} hücre kaldırıldı.'
+            if result.deactivated_count
+            else 'Bu sınıf bu takvime bağlı değil.'
+        ),
+    })
 
 
 @csrf_exempt
