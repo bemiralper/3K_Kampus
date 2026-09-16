@@ -58,6 +58,16 @@ def assert_olcme_exam_access(request, exam):
     return assert_olcme_record_sube_access(request, exam.kurum_id, exam.sube_id)
 
 
+def reject_if_exam_locked(exam):
+    """Kilitli sınavda yapı/sonuç mutasyonunu 409 ile kes."""
+    if exam is not None and getattr(exam, 'is_locked', False):
+        return Response(
+            {'error': 'Sınav kilitli. Bu işlem yapılamaz.'},
+            status=409,
+        )
+    return None
+
+
 def get_exam_or_response(request, exam_pk, *, active_only=True):
     """Sınavı getir ve şube erişimini doğrula."""
     from apps.coaching.olcme_degerlendirme.models import Exam

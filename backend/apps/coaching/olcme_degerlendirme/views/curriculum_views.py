@@ -28,8 +28,9 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from shared.permissions import OlcmeModulePermission
 
 from ..models.curriculum import Subject, Topic, Outcome, SubOutcome
 from ..models.exam import ExamSection
@@ -209,7 +210,7 @@ def _renumber_all_codes(subject: Subject, prefix: str | None = None):
 
 @api_view(['GET', 'POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def subject_list(request):
     """
     GET  → Ders listesi (özet)
@@ -261,7 +262,7 @@ def subject_list(request):
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def subject_detail(request, subject_pk):
     """
     GET    → Ders detayı (tüm konu/kazanım ağacı)
@@ -294,7 +295,7 @@ def subject_detail(request, subject_pk):
 
 @api_view(['GET', 'POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def topic_list(request, subject_pk):
     """
     GET  → Derse ait konu listesi
@@ -330,7 +331,7 @@ def topic_list(request, subject_pk):
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def topic_detail(request, subject_pk, topic_pk):
     """
     GET    → Konu detayı (kazanımlar dahil)
@@ -365,7 +366,7 @@ def topic_detail(request, subject_pk, topic_pk):
 
 @api_view(['GET', 'POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def outcome_list(request, subject_pk, topic_pk):
     """
     GET  → Konuya ait kazanım listesi
@@ -407,7 +408,7 @@ def outcome_list(request, subject_pk, topic_pk):
 
 @api_view(['GET', 'PUT', 'DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def outcome_detail(request, subject_pk, topic_pk, outcome_pk):
     """
     GET    → Kazanım detayı (alt kazanımlar dahil)
@@ -446,7 +447,7 @@ def outcome_detail(request, subject_pk, topic_pk, outcome_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def sub_outcome_create(request, subject_pk, topic_pk, outcome_pk):
     """Alt kazanım ekle."""
     outcome = get_object_or_404(
@@ -469,7 +470,7 @@ def sub_outcome_create(request, subject_pk, topic_pk, outcome_pk):
 
 @api_view(['PUT', 'DELETE'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def sub_outcome_detail(request, subject_pk, topic_pk, outcome_pk, sub_outcome_pk):
     """
     PUT    → Alt kazanım güncelle
@@ -507,7 +508,7 @@ def sub_outcome_detail(request, subject_pk, topic_pk, outcome_pk, sub_outcome_pk
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def bulk_import(request):
     """
     JSON formatında toplu müfredat içe aktarımı.
@@ -581,7 +582,7 @@ def bulk_import(request):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def bulk_text_import(request):
     """
     Metin formatında toplu müfredat içe aktarımı (kopyala-yapıştır).
@@ -652,7 +653,7 @@ def bulk_text_import(request):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def reorder_topics(request, subject_pk):
     """
     Konuları yeniden sırala ve tüm kodları otomatik yeniden numarala.
@@ -707,7 +708,7 @@ def reorder_topics(request, subject_pk):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def link_subject_to_section(request):
     """
     Dersi sınav bölümüne bağla.
@@ -736,7 +737,7 @@ def link_subject_to_section(request):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def unlink_subject_from_section(request):
     """
     Sınav bölümünden ders bağlantısını kaldır.
@@ -1714,7 +1715,7 @@ def _match_single_text(query: str, subject: Subject):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def match_outcomes(request, subject_pk):
     """
     Toplu kazanım eşleştirme.
@@ -1793,7 +1794,7 @@ def match_outcomes(request, subject_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def catalog_export(request):
     """Tüm (veya seçili) kazanım kataloğunu ID'siz JSON olarak indirir."""
     from apps.coaching.olcme_degerlendirme.services.curriculum_catalog import (
@@ -1812,7 +1813,7 @@ def catalog_export(request):
 
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def catalog_import(request):
     """Kazanım kataloğu JSON (veya Okulizyon Excel) yükler."""
     from apps.coaching.olcme_degerlendirme.services.curriculum_catalog import (

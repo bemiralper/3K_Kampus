@@ -9,10 +9,8 @@ Eşleştirme Şablonu View'ları
 bölüm ID'lerini taşır, bu yüzden başka kurumun şablonu listelenmemeli ve
 silinememelidir. Kurumu boş olan eski kayıtlar geçiş dönemi için görünür kalır.
 """
-from django.db.models import Q
 from rest_framework import status as http_status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from shared.context import get_secili_kurum_id
@@ -27,13 +25,13 @@ def _visible_templates(request):
     kurum_id = get_secili_kurum_id(request)
     qs = MappingTemplate.objects.all()
     if kurum_id:
-        return qs.filter(Q(kurum_id=kurum_id) | Q(kurum__isnull=True))
-    return qs.filter(kurum__isnull=True)
+        return qs.filter(kurum_id=kurum_id)
+    return qs.none()
 
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def list_mapping_templates(request):
     """
     GET /exams/mapping-templates/?exam_type=YKS_TYT
@@ -58,8 +56,11 @@ def create_mapping_template(request):
     serializer = MappingTemplateSerializer(data=request.data)
     if not serializer.is_valid():
         return Response(serializer.errors, status=http_status.HTTP_400_BAD_REQUEST)
+    kurum_id = get_secili_kurum_id(request)
+    if not kurum_id:
+        return Response({'error': 'Kurum bağlamı zorunludur.'}, status=400)
     serializer.save(
-        kurum_id=get_secili_kurum_id(request),
+        kurum_id=kurum_id,
         created_by=request.user if request.user.is_authenticated else None,
     )
     return Response(serializer.data, status=http_status.HTTP_201_CREATED)

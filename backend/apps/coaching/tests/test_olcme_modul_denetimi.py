@@ -233,3 +233,96 @@ class SessionDateParsingTest(OlcmeModulFixture):
         self.assertIsNotNone(first.start_time)
         self.assertIsNotNone(second.session_date)
         self.assertIsNone(second.start_time)
+
+
+class CurriculumWritePermissionTest(OlcmeModulFixture):
+    def test_subject_create_requires_olcme_write(self):
+        reader = User.objects.create_user(username='mufredat_okur', password='test')
+        client = APIClient()
+        client.force_authenticate(user=reader)
+        res = client.post(
+            '/api/coaching/olcme-degerlendirme/curriculum/subjects/',
+            {'name': 'Hack Ders', 'code': 'HACK'},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 403, res.content[:300])
+
+
+class ResultWritePermissionTest(OlcmeModulFixture):
+    def test_dat_upload_requires_olcme_write(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+
+        reader = User.objects.create_user(username='dat_okur', password='test')
+        client = APIClient()
+        client.force_authenticate(user=reader)
+        res = client.post(
+            f'{EXAMS_URL}{self.exam.id}/results/upload/',
+            {'dat_file': SimpleUploadedFile('x.dat', b'ABC')},
+            format='multipart', **self.headers,
+        )
+        self.assertEqual(res.status_code, 403, res.content[:300])
+
+
+class LgsScoringTest(OlcmeModulFixture):
+    def test_lgs_does_not_use_tyt_coefficients(self):
+        from apps.coaching.olcme_degerlendirme.services.scoring import (
+            calculate_lgs_score, calculate_score_for_exam, estimate_ranking,
+        )
+
+        nets = {
+            'Türkçe': 20, 'Matematik': 20, 'Fen Bilimleri': 20,
+            'İnkılap Tarihi': 10, 'Din Kültürü': 8, 'Yabancı Dil': 8,
+        }
+        lgs = calculate_lgs_score(nets)
+        self.assertGreaterEqual(lgs['puan'], 499)
+        self.exam.exam_type = 'LGS'
+        routed = calculate_score_for_exam(self.exam, nets)
+        self.assertAlmostEqual(routed['puan'], lgs['puan'])
+        ranking = estimate_ranking(lgs['puan'], 'LGS', 2025)
+        self.assertIsNone(ranking['tahmini_siralama'])
+
+    def test_tyt_scoring_nets_skip_math_subsection(self):
+        from apps.coaching.olcme_degerlendirme.models import StudentSectionScore
+        from apps.coaching.olcme_degerlendirme.models.session import ExamSession
+        from apps.coaching.olcme_degerlendirme.models.result import StudentAnswer
+        from apps.coaching.olcme_degerlendirme.services.scoring import (
+            build_scoring_nets, calculate_tyt_score,
+        )
+
+        self.exam.exam_type = 'YKS_TYT'
+        self.exam.save(update_fields=['exam_type'])
+        mat_main = ExamSection.objects.create(
+            exam=self.exam, name='Temel Matematik', order=1,
+            question_start=61, question_end=100,
+        )
+        mat_sub = ExamSection.objects.create(
+            exam=self.exam, name='Matematik', order=2,
+            question_start=61, question_end=90,
+            is_sub_section=True, parent_section=mat_main,
+        )
+        session = ExamSession.objects.create(
+            exam=self.exam, original_filename='t.dat',
+            status=ExamSession.Status.COMPLETED,
+        )
+        answer = StudentAnswer.objects.create(
+            session=session, total_net=40,
+            is_processed=True,
+        )
+        StudentSectionScore.objects.create(
+            student_answer=answer, section=mat_main, net=17.5,
+        )
+        StudentSectionScore.objects.create(
+            student_answer=answer, section=mat_sub, net=14,
+        )
+        StudentSectionScore.objects.create(
+            student_answer=answer, section=self.section, net=30,
+        )
+        nets = build_scoring_nets(answer, self.exam)
+        self.assertIn('Temel Matematik', nets)
+        self.assertNotIn('Matematik', nets)
+        with_sub = dict(nets)
+        with_sub['Matematik'] = 14
+        inflated = calculate_tyt_score(with_sub)['puan']
+        correct = calculate_tyt_score(nets)['puan']
+        self.assertGreater(inflated, correct)
+

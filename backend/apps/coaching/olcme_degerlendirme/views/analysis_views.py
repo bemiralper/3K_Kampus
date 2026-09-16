@@ -18,11 +18,11 @@ from collections import defaultdict
 from django.db.models import Max, Q
 
 from rest_framework.decorators import api_view, permission_classes, authentication_classes, renderer_classes
-from rest_framework.permissions import IsAuthenticated
 from rest_framework.renderers import JSONRenderer
 from rest_framework.response import Response
 
 from shared.export.drf_renderers import CsvRenderer, XlsxRenderer
+from shared.permissions import OlcmeModulePermission
 
 from ..models import (
     Exam, ExamSection, ExamSession, ExamSessionModel,
@@ -33,6 +33,7 @@ from ..models import (
 from ..views import CsrfExemptSessionAuthentication
 from ..interfaces.sube_context import get_exam_or_response
 from ..services.scoring import (
+    build_scoring_nets as _scoring_nets_from_answer,
     calculate_score_for_exam,
     calculate_all_ayt_scores,
     _get_linked_tyt_answer,
@@ -475,8 +476,51 @@ def _build_section_map(exam):
             'question_end': sec.question_end,
             'is_sub': sec.is_sub_section,
             'parent_id': sec.parent_section_id,
+            'order': sec.order,
         }
     return sec_map
+
+
+def _optical_q_for_item(item, booklet: str) -> str:
+    """comparison dict anahtarı: B kitapçığında optik (B) pozisyon."""
+    if (booklet or '').upper() == 'B':
+        b = item.booklet_b_global()
+        if b:
+            return str(b)
+    return str(item.question_number)
+
+
+def _a_to_optical_map(ak_items, booklet: str) -> dict:
+    """A soru no (str) → comparison anahtarı."""
+    if (booklet or '').upper() != 'B':
+        return {}
+    mapping = {}
+    for item in ak_items:
+        b = item.booklet_b_global()
+        if b:
+            mapping[str(item.question_number)] = str(b)
+    return mapping
+
+
+def _comp_for_a_question(comparison, q_no, optical_map: dict) -> dict:
+    key = optical_map.get(str(q_no), str(q_no))
+    return comparison.get(key) or comparison.get(str(q_no)) or {}
+
+
+def _previous_exam(exam):
+    """Aynı kurum+şube+türde bir önceki sonuçlu sınav."""
+    qs = Exam.objects.filter(
+        exam_type=exam.exam_type,
+        kurum=exam.kurum,
+        pk__lt=exam.pk,
+        is_active=True,
+        status__in=['RESULTS_UPLOADED', 'COMPLETED'],
+    )
+    if exam.sube_id:
+        qs = qs.filter(sube_id=exam.sube_id)
+    if exam.egitim_yili_id:
+        qs = qs.filter(egitim_yili_id=exam.egitim_yili_id)
+    return qs.order_by('-pk').first()
 
 
 def _section_score_detail(ss, sec_info, kurum_avg, sinif_avg, *, source='ayt', name=None):
@@ -521,13 +565,19 @@ def _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids):
     tyt_exam = exam.linked_tyt_exam
     tyt_sec_map = _build_section_map(tyt_exam)
     ayt_student_ids = [a.student_id for a in all_answers if a.student_id]
+    tyt_qs = StudentAnswer.objects.filter(
+        session__exam=tyt_exam,
+        session__status='COMPLETED',
+        student_id__in=ayt_student_ids,
+    )
+    latest_ids = (
+        tyt_qs.values('student_id')
+        .annotate(latest_id=Max('id'))
+        .values_list('latest_id', flat=True)
+    )
     tyt_cohort = list(
         StudentAnswer.objects
-        .filter(
-            session__exam=tyt_exam,
-            session__status='COMPLETED',
-            student_id__in=ayt_student_ids,
-        )
+        .filter(id__in=latest_ids)
         .prefetch_related('section_scores__section')
     )
     cohort_ids = {ta.id for ta in tyt_cohort}
@@ -617,7 +667,7 @@ def _answer_grid_group_key(sec) -> tuple:
     return ('leaf', sec.id)
 
 
-def _build_answer_grids(exam, comparison: dict) -> list:
+def _build_answer_grids(exam, comparison: dict, booklet: str = '') -> list:
     """Optik form ders sırası: ana test blokları, her blokta 1…n."""
     sections = list(
         exam.sections.all()
@@ -633,6 +683,10 @@ def _build_answer_grids(exam, comparison: dict) -> list:
         sec for sec in sections
         if sec.is_sub_section or sec.id not in parents_with_children
     ]
+
+    ak = AnswerKey.primary_for(exam)
+    ak_items = list(ak.items.select_related('section', 'section__parent_section').all()) if ak else []
+    optical_map = _a_to_optical_map(ak_items, booklet)
 
     grouped: list[tuple[tuple, list]] = []
     for sec in leaves:
@@ -654,7 +708,7 @@ def _build_answer_grids(exam, comparison: dict) -> list:
         for sec in secs:
             for q in range(sec.question_start, sec.question_end + 1):
                 n += 1
-                comp = comparison.get(str(q)) or {}
+                comp = _comp_for_a_question(comparison, q, optical_map)
                 questions.append({
                     'q': q,
                     'n': n,
@@ -826,7 +880,7 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         row = table.setdefault(label, {'soru': 0, 'dogru': 0, 'yanlis': 0, 'bos': 0})
         row['soru'] += 1
         result = (comparison.get(str(lookup_q)) or {}).get('result')
-        if result == 'correct':
+        if result in ('correct', 'cancelled'):
             row['dogru'] += 1
         elif result == 'wrong':
             row['yanlis'] += 1
@@ -859,37 +913,8 @@ def _build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
 
 
 def _build_scoring_nets(answer, exam) -> dict:
-    """
-    Puan hesaplama için section_nets sözlüğü oluştur.
-
-    TYT: Sadece 4 ana bölüm (Türkçe, Sosyal Bilimler, Temel Matematik, Fen Bilimleri).
-         Alt bölümler (Fizik, Kimya, Matematik vb.) ana bölümün içinde zaten sayılıyor.
-         Alt bölüm gönderilirse çift sayım olur — ÖRN: "Matematik" alt bölüm → "Temel Matematik"
-         katsayısı ikinci kez uygulanır ve puan 500'ü aşar!
-
-    AYT: Ana bölüm neti öncelikli. Alt bölüm neti sadece ana bölümle
-         isim çakışması yoksa eklenir (ör: Fizik, Kimya, Biyoloji ayrı katsayılı).
-    """
-    is_tyt = exam.exam_type in ('YKS_TYT', 'DENEME', 'LGS')
-
-    result = {}
-    for ss in answer.section_scores.all():
-        sec = ss.section
-        net_val = _safe_float(ss.net)
-
-        if is_tyt:
-            # TYT: Sadece ana bölümlerin netlerini al
-            if not sec.is_sub_section:
-                result[sec.name] = net_val
-        else:
-            # AYT: Ana bölüm öncelikli, alt bölüm çakışmazsa eklenir
-            if not sec.is_sub_section:
-                result[sec.name] = net_val
-            else:
-                if sec.name not in result:
-                    result[sec.name] = net_val
-
-    return result
+    """Puan net haritası — scoring.build_scoring_nets ile aynı kural."""
+    return _scoring_nets_from_answer(answer, exam)
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -898,7 +923,7 @@ def _build_scoring_nets(answer, exam) -> dict:
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_summary(request, exam_pk):
     """
     Genel sınav özet paneli.
@@ -972,17 +997,7 @@ def exam_analysis_summary(request, exam_pk):
     success_pct = round((success_count / total_students) * 100, 1) if total_students else 0
 
     # Önceki sınava göre değişim
-    prev_exam = (
-        Exam.objects
-        .filter(
-            exam_type=exam.exam_type,
-            kurum=exam.kurum,
-            pk__lt=exam.pk,
-            status__in=['RESULTS_UPLOADED', 'COMPLETED'],
-        )
-        .order_by('-pk')
-        .first()
-    )
+    prev_exam = _previous_exam(exam)
     trend = None
     if prev_exam:
         prev_answers = _get_session_answers(prev_exam)
@@ -1043,7 +1058,7 @@ def exam_analysis_summary(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_sections(request, exam_pk):
     """
     Ders bazlı analiz.
@@ -1155,7 +1170,7 @@ def exam_analysis_sections(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_students(request, exam_pk):
     """
     Öğrenci bazlı detay analiz.
@@ -1319,7 +1334,7 @@ def exam_analysis_students(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_student_detail(request, exam_pk, answer_pk):
     """
     Tek öğrencinin detaylı analizi — sınıf/kurum ortalamalarıyla kıyaslama.
@@ -1525,7 +1540,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     profil_foto, profil_foto_path = _student_photo_fields(answer.student)
 
     comparison = answer.comparison or {}
-    answer_grids = _build_answer_grids(exam, comparison)
+    answer_grids = _build_answer_grids(exam, comparison, answer.booklet or '')
     topic_blocks = _build_topic_blocks(exam, comparison, answer.booklet or '')
 
     kurum_scores = []
@@ -1622,7 +1637,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_classes(request, exam_pk):
     """
     Sınıf/Şube analizi.
@@ -1704,7 +1719,7 @@ def exam_analysis_classes(request, exam_pk):
 @api_view(['GET'])
 @renderer_classes([JSONRenderer, XlsxRenderer, CsvRenderer])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_rankings(request, exam_pk):
     """
     Sıralama ve yüzdelik dilim analizi.
@@ -1957,7 +1972,7 @@ def exam_analysis_rankings(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_questions(request, exam_pk):
     """
     Madde (soru) analizi — zorluk derecesi, ayırt edicilik, çeldirici analizi.
@@ -2027,10 +2042,22 @@ def exam_analysis_questions(request, exam_pk):
     top_correct = defaultdict(int)
     bottom_correct = defaultdict(int)
 
+    items_list = list(ak_items)
+    optical_maps: dict[str, dict] = {}
+
+    def _opt_map(booklet: str) -> dict:
+        key = (booklet or '').upper()
+        if key not in optical_maps:
+            optical_maps[key] = _a_to_optical_map(items_list, key)
+        return optical_maps[key]
+
     for a in answers:
         comp = a.comparison or {}
+        opt = _opt_map(a.booklet)
         for q_no, q_data in question_stats.items():
-            c = comp.get(q_no, {})
+            if q_data['is_cancelled']:
+                continue
+            c = _comp_for_a_question(comp, q_no, opt)
             given = c.get('given', '')
             result = c.get('result', 'empty')
 
@@ -2039,7 +2066,7 @@ def exam_analysis_questions(request, exam_pk):
             else:
                 q_data['choices']['EMPTY'] += 1
 
-            if result == 'correct' or result == 'cancelled':
+            if result == 'correct':
                 q_data['correct_count'] += 1
             elif result == 'wrong':
                 q_data['wrong_count'] += 1
@@ -2049,16 +2076,22 @@ def exam_analysis_questions(request, exam_pk):
     # Üst-alt grup analizi
     for a in top_group:
         comp = a.comparison or {}
-        for q_no in question_stats:
-            c = comp.get(q_no, {})
-            if c.get('result') in ('correct', 'cancelled'):
+        opt = _opt_map(a.booklet)
+        for q_no, q_data in question_stats.items():
+            if q_data['is_cancelled']:
+                continue
+            c = _comp_for_a_question(comp, q_no, opt)
+            if c.get('result') == 'correct':
                 top_correct[q_no] += 1
 
     for a in bottom_group:
         comp = a.comparison or {}
-        for q_no in question_stats:
-            c = comp.get(q_no, {})
-            if c.get('result') in ('correct', 'cancelled'):
+        opt = _opt_map(a.booklet)
+        for q_no, q_data in question_stats.items():
+            if q_data['is_cancelled']:
+                continue
+            c = _comp_for_a_question(comp, q_no, opt)
+            if c.get('result') == 'correct':
                 bottom_correct[q_no] += 1
 
     # Sonuçları derle
@@ -2069,7 +2102,10 @@ def exam_analysis_questions(request, exam_pk):
         empty_pct = round((q_data['empty_count'] / total_students) * 100, 1) if total_students else 0
 
         # Zorluk seviyesi
-        if correct_pct >= 70:
+        if q_data['is_cancelled']:
+            difficulty = 'İptal'
+            discrimination = 0
+        elif correct_pct >= 70:
             difficulty = 'Kolay'
         elif correct_pct >= 40:
             difficulty = 'Orta'
@@ -2077,9 +2113,10 @@ def exam_analysis_questions(request, exam_pk):
             difficulty = 'Zor'
 
         # Ayırt edicilik indeksi: (Üst %27 doğru oranı - Alt %27 doğru oranı)
-        top_pct = (top_correct.get(q_no, 0) / top_27_count) if top_27_count else 0
-        bot_pct = (bottom_correct.get(q_no, 0) / top_27_count) if top_27_count else 0
-        discrimination = round(top_pct - bot_pct, 3)
+        if not q_data['is_cancelled']:
+            top_pct = (top_correct.get(q_no, 0) / top_27_count) if top_27_count else 0
+            bot_pct = (bottom_correct.get(q_no, 0) / top_27_count) if top_27_count else 0
+            discrimination = round(top_pct - bot_pct, 3)
 
         # Çeldirici analizi — en çok seçilen yanlış şık
         wrong_choices = {
@@ -2124,7 +2161,7 @@ def exam_analysis_questions(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_strategy(request, exam_pk):
     """
     Otomatik strateji önerileri.
@@ -2205,17 +2242,7 @@ def exam_analysis_strategy(request, exam_pk):
             })
 
     # Trend analizi
-    prev_exam = (
-        Exam.objects
-        .filter(
-            exam_type=exam.exam_type,
-            kurum=exam.kurum,
-            pk__lt=exam.pk,
-            status__in=['RESULTS_UPLOADED', 'COMPLETED'],
-        )
-        .order_by('-pk')
-        .first()
-    )
+    prev_exam = _previous_exam(exam)
     if prev_exam:
         prev_answers = _get_session_answers(prev_exam)
         if prev_answers.exists():
@@ -2245,18 +2272,22 @@ def exam_analysis_strategy(request, exam_pk):
     # Kazanım bazlı zayıf noktalar (eğer cevap anahtarında kazanım varsa)
     ak = AnswerKey.primary_for(exam)
     if ak:
-        outcome_items = AnswerKeyItem.objects.filter(
+        outcome_items = list(AnswerKeyItem.objects.filter(
             answer_key=ak,
             outcome__isnull=False,
-        ).select_related('outcome', 'section')
+        ).select_related('outcome', 'section', 'section__parent_section'))
 
-        if outcome_items.exists():
+        if outcome_items:
             outcome_stats = defaultdict(lambda: {'correct': 0, 'total': 0, 'name': '', 'section': ''})
-            for item in outcome_items:
-                q_no = str(item.question_number)
-                for a in answers:
-                    comp = a.comparison or {}
-                    c = comp.get(q_no, {})
+            opt_by_booklet: dict[str, dict] = {}
+            for a in answers:
+                bkey = (a.booklet or '').upper()
+                if bkey not in opt_by_booklet:
+                    opt_by_booklet[bkey] = _a_to_optical_map(outcome_items, bkey)
+                comp = a.comparison or {}
+                opt = opt_by_booklet[bkey]
+                for item in outcome_items:
+                    c = _comp_for_a_question(comp, item.question_number, opt)
                     outcome_stats[item.outcome_id]['total'] += 1
                     outcome_stats[item.outcome_id]['name'] = item.outcome.text[:80]
                     outcome_stats[item.outcome_id]['section'] = item.section.name
@@ -2287,7 +2318,7 @@ def exam_analysis_strategy(request, exam_pk):
 
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
-@permission_classes([IsAuthenticated])
+@permission_classes([OlcmeModulePermission])
 def exam_analysis_comparison(request, exam_pk):
     """
     Karşılaştırmalı analiz — önceki sınavlarla karşılaştırma.

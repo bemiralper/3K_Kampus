@@ -242,11 +242,14 @@ export default function OutcomesTab({ exam }: Props) {
         autoLinkedRef.current = true;
         // Otomatik ders bağlama en iyi çaba: başarısız olursa kazanım ağacı
         // yine yüklenir, ancak kullanıcı neden ders göremediğini bilmeli.
-        try {
-          await examApi.linkSubjects(exam.id);
-        } catch (err) {
-          setMsg('⚠️ Bölümlere müfredat dersi otomatik bağlanamadı: '
-            + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+        const missingSubject = (exam.sections ?? []).some(sec => !sec.subject);
+        if (missingSubject) {
+          try {
+            await examApi.linkSubjects(exam.id);
+          } catch (err) {
+            setMsg('⚠️ Bölümlere müfredat dersi otomatik bağlanamadı: '
+              + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+          }
         }
       }
       const [listedSubjects, freshExam, keys, subjectsTree] = await Promise.all([

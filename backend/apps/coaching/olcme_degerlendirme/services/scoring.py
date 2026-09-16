@@ -337,6 +337,95 @@ def calculate_all_ayt_scores(section_nets: dict, tyt_nets: dict = None,
     return results
 
 
+# MEB LGS ağırlıkları (8. sınıf). Standart puan için kitle ort/ss yok;
+# kurum içi 100–500 ham puan: 100 + (ağırlıklı net / max) × 400.
+LGS_WEIGHTS = {
+    'Türkçe': 4,
+    'İnkılap Tarihi': 1,
+    'T.C. İnkılap Tarihi': 1,
+    'T.C. İnkılap Tarihi ve Atatürkçülük': 1,
+    'Din Kültürü': 1,
+    'Din Kültürü ve Ahlak Bilgisi': 1,
+    'Yabancı Dil': 1,
+    'İngilizce': 1,
+    'Matematik': 4,
+    'Fen Bilimleri': 4,
+    'Fen': 4,
+}
+LGS_NAME_ALIASES = {
+    'Inkılap Tarihi': 'İnkılap Tarihi',
+    'İnkılap': 'İnkılap Tarihi',
+    'Inkılap': 'İnkılap Tarihi',
+    'T.C. İnkılap': 'İnkılap Tarihi',
+    'Din': 'Din Kültürü',
+    'DKAB': 'Din Kültürü',
+    'Ingilizce': 'İngilizce',
+    'English': 'Yabancı Dil',
+}
+# Resmi LGS: 20+20+20 Türkçe/Mat/Fen (×4) + 10 İnkılap + 8 Din + 8 Dil (×1) = 266
+LGS_MAX_WEIGHTED = 20 * 4 + 20 * 4 + 20 * 4 + 10 * 1 + 8 * 1 + 8 * 1
+
+TYT_MAIN_EXAM_TYPES = frozenset({'YKS_TYT', 'DENEME'})
+TYT_SOZ_EXTRA_SUB_NAMES = frozenset({
+    'Felsefe (Seçmeli)', 'Felsefe Seçmeli', 'Felsefe Grubu', 'İlave Felsefe',
+})
+
+
+def _normalize_lgs_section_name(name: str) -> str:
+    n = (name or '').strip()
+    n = LGS_NAME_ALIASES.get(n, n)
+    return n
+
+
+def calculate_lgs_score(section_nets: dict, year: int = 2025) -> dict:
+    """LGS ağırlıklı ham puan (100–500). ÖSYM/YKS katsayısı kullanılmaz."""
+    weighted = 0.0
+    toplam_net = 0.0
+    for name, net in (section_nets or {}).items():
+        net_val = float(net) if net else 0.0
+        key = _normalize_lgs_section_name(name)
+        w = LGS_WEIGHTS.get(key, 0)
+        if not w:
+            continue
+        toplam_net += net_val
+        weighted += net_val * w
+    ham = 100.0
+    if LGS_MAX_WEIGHTED:
+        ham = 100.0 + (weighted / LGS_MAX_WEIGHTED) * 400.0
+    ham = max(100.0, min(ham, 500.0))
+    return {
+        'ham_puan': round(ham, 2),
+        'toplam_net': round(toplam_net, 2),
+        'puan': round(ham, 2),
+        'diploma_ek': 0.0,
+        'max_puan': 500.0,
+        'referans_yil': year,
+        'skor_turu': 'LGS',
+    }
+
+
+def build_scoring_nets(answer, exam) -> dict:
+    """Puan hesabı için bölüm netleri — TYT/LGS ana bölüm; AYT ana + çakışmayan alt.
+
+    TYT alt 'Matematik' (30q) 'Temel Matematik' katsayısıyla ikinci kez
+    çarpılmasın diye ana bölümler dışındaki netler atılır.
+    """
+    is_main_only = exam.exam_type in TYT_MAIN_EXAM_TYPES or exam.exam_type == 'LGS'
+    result = {}
+    for ss in answer.section_scores.all():
+        sec = ss.section
+        net_val = float(ss.net) if ss.net else 0.0
+        if is_main_only:
+            if not sec.is_sub_section:
+                result[sec.name] = net_val
+            continue
+        if not sec.is_sub_section:
+            result[sec.name] = net_val
+        elif sec.name not in result:
+            result[sec.name] = net_val
+    return result
+
+
 def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
                               student_id: int = None, raw_student_name: str = None,
                               raw_student_id: str = None, puan_turu: str = 'SAY') -> dict:
@@ -354,16 +443,16 @@ def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
     if exam_type == 'YKS_TYT':
         coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
         return calculate_tyt_score(section_nets, year=year, coefficients=coef)
-    elif exam_type == 'YKS_AYT':
-        # AYT için TYT netleri linked exam'dan gelir
+    if exam_type == 'YKS_AYT':
         tyt_nets = _get_linked_tyt_nets(exam, student_id, raw_student_name, raw_student_id)
         kind = {'EA': 'AYT_EA', 'SOZ': 'AYT_SOZ'}.get(puan_turu, 'AYT_SAY')
         coef = _lookup_db_coefficients(kurum_id, year, kind)
         return calculate_ayt_score(section_nets, tyt_nets, puan_turu=puan_turu, year=year, coefficients=coef)
-    else:
-        # Genel sınav: TYT formülüyle hesapla
-        coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
-        return calculate_tyt_score(section_nets, year=year, coefficients=coef)
+    if exam_type == 'LGS':
+        return calculate_lgs_score(section_nets, year=year)
+    # DENEME / KURUM_ICI / diğer: TYT şablonuna yakın denemeler
+    coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
+    return calculate_tyt_score(section_nets, year=year, coefficients=coef)
 
 
 def _normalize_name_for_matching(name: str) -> str:
@@ -498,10 +587,19 @@ def _get_linked_tyt_nets(exam, student_id: int = None,
         return {}
 
     tyt_nets = {}
+    soz_extra = 0.0
     for ss in tyt_answer.section_scores.select_related('section').all():
+        name = (ss.section.name or '').strip()
+        net_val = float(ss.net) if ss.net else 0.0
         if ss.section.is_sub_section:
+            # Seçmeli felsefe Sosyal altında alt bölümdür; SÖZ TYT katkısı bunu ister.
+            normalized = _normalize_section_name(name, context='tyt')
+            if name in TYT_SOZ_EXTRA_SUB_NAMES or normalized == 'Felsefe Grubu':
+                soz_extra = max(soz_extra, net_val)
             continue
-        tyt_nets[ss.section.name] = float(ss.net) if ss.net else 0.0
+        tyt_nets[name] = net_val
+    if soz_extra:
+        tyt_nets['Felsefe (Seçmeli)'] = soz_extra
     return tyt_nets
 
 
@@ -705,7 +803,16 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
         ],
     }
 
-    if exam_type in ('YKS_TYT', 'LGS', 'DENEME'):
+    if exam_type == 'LGS':
+        # LGS için ÖSYM YKS yığınsal tablosu yok — tahmini TR sıra üretilmez.
+        return {
+            'tahmini_siralama': None,
+            'yuzdelik_dilim': None,
+            'tahmini': True,
+            'referans_yil': ranking_year,
+        }
+
+    if exam_type in ('YKS_TYT', 'DENEME'):
         tables = tyt_tables
     elif exam_type == 'YKS_AYT_EA':
         tables = ayt_ea_tables

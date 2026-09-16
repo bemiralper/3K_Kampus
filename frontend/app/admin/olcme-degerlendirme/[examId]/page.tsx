@@ -110,6 +110,13 @@ export default function ExamDetailPage() {
   const [actionError, setActionError] = useState('');
   const [activeTab, setActiveTab] = useState<TabKey>(initialTab);
 
+  const goTab = (tab: TabKey) => {
+    setActiveTab(tab);
+    const params = new URLSearchParams(searchParams.toString());
+    params.set('tab', tab);
+    router.replace(`/admin/olcme-degerlendirme/${examId}?${params.toString()}`, { scroll: false });
+  };
+
   /* Yükle */
   const fetchExam = useCallback(async () => {
     setLoading(true);
@@ -187,7 +194,7 @@ export default function ExamDetailPage() {
       <ExamHeader
         exam={exam}
         onBack={() => router.push('/admin/olcme-degerlendirme')}
-        onTabChange={tab => setActiveTab(tab as TabKey)}
+        onTabChange={tab => goTab(tab as TabKey)}
         onToggleLock={handleLock}
         onCopy={handleCopy}
         onDelete={handleDelete}
@@ -198,7 +205,7 @@ export default function ExamDetailPage() {
       {/* ── Tab Nav ───────────────────────────────────────────────────────── */}
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, overflowX: 'auto', paddingBottom: 2 }}>
         {TABS.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)}
+          <button key={t.key} onClick={() => goTab(t.key)}
             className={`tab-modern ${activeTab === t.key ? 'active' : ''}`}>
             <Icon name={t.icon} size={16} />
             {t.label}

@@ -14,6 +14,7 @@ from apps.coaching.olcme_degerlendirme.services.student_matching import (
     rank_candidates,
     score_student,
 )
+from apps.coaching.tests.olcme_helpers import grant_olcme_write
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
@@ -104,6 +105,7 @@ class MatchingApiCollisionTest(TestCase):
             baslangic_yil=2025, bitis_yil=2026, aktif_mi=True,
         )
         self.user = User.objects.create_user(username='matchuser', password='test')
+        grant_olcme_write(self.user, self.kurum)
         self.client.force_authenticate(user=self.user)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
         self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
