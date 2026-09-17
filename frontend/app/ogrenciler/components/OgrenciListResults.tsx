@@ -63,6 +63,12 @@ export type OgrenciRow = {
   koc_adi?: string;
   veli_ad_soyad?: string;
   veli_telefon?: string;
+  veliler?: {
+    id: number;
+    ad_soyad: string;
+    telefon?: string;
+    yakinlik_display?: string;
+  }[];
 };
 
 interface OgrenciListResultsProps {
@@ -302,13 +308,34 @@ function renderDataCell(
     case 'veli_ad_soyad':
       return (
         <td key={colId}>
-          <span className="date-text">{ogrenci.veli_ad_soyad || '—'}</span>
+          {ogrenci.veliler && ogrenci.veliler.length > 0 ? (
+            <div className="veli-stack">
+              {ogrenci.veliler.map((veli) => (
+                <div key={veli.id} className="veli-stack-item">
+                  <span className="date-text">{veli.ad_soyad || '—'}</span>
+                  {veli.yakinlik_display ? <span className="veli-rel">{veli.yakinlik_display}</span> : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="date-text">{ogrenci.veli_ad_soyad || '—'}</span>
+          )}
         </td>
       );
     case 'veli_telefon':
       return (
         <td key={colId}>
-          <span className="date-text">{ogrenci.veli_telefon || '—'}</span>
+          {ogrenci.veliler && ogrenci.veliler.length > 0 ? (
+            <div className="veli-stack">
+              {ogrenci.veliler.map((veli) => (
+                <div key={`${veli.id}-tel`} className="veli-stack-item">
+                  <span className="date-text">{veli.telefon || '—'}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <span className="date-text">{ogrenci.veli_telefon || '—'}</span>
+          )}
         </td>
       );
     case 'actions':

@@ -488,7 +488,7 @@ export default function HaftalikSablonlariClient() {
     if (!detailLesson) return;
     if (
       !window.confirm(
-        'Bu dersi bugün itibarıyla kapatmak istediğinize emin misiniz? İşlenen oturumlar kalır, ilerideki planlı dersler kapanır.',
+        'Bu dersi seçilen günden itibaren kapatmak istediğinize emin misiniz? İşlenen oturumlar kalır; seçilen ders ve sonraki planlı dersler kapanır.',
       )
     ) {
       return;
@@ -496,7 +496,7 @@ export default function HaftalikSablonlariClient() {
     setEndingEarly(true);
     try {
       await endSlotEarly(detailLesson.id);
-      show('Ders erken bitirildi. Kalan planlı oturumlar kapatıldı.');
+      show('Ders sonlandırıldı. Seçilen ders ve sonraki planlı oturumlar kapatıldı.');
       setDetailLesson(null);
       await reloadLessons();
     } catch (err) {

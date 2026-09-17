@@ -53,10 +53,21 @@ class TahsilatRepository:
         # Gelişmiş filtreler
         if filters:
             if filters.get('ogrenci_adi'):
+                from django.db.models import CharField, Value
+                from django.db.models.functions import Concat
+
                 search = filters['ogrenci_adi']
-                qs = qs.filter(
+                qs = qs.annotate(
+                    _ogrenci_tam_ad=Concat(
+                        'sozlesme__ogrenci__ad',
+                        Value(' '),
+                        'sozlesme__ogrenci__soyad',
+                        output_field=CharField(),
+                    )
+                ).filter(
                     Q(sozlesme__ogrenci__ad__icontains=search) |
-                    Q(sozlesme__ogrenci__soyad__icontains=search)
+                    Q(sozlesme__ogrenci__soyad__icontains=search) |
+                    Q(_ogrenci_tam_ad__icontains=search)
                 )
             if filters.get('sozlesme_no'):
                 qs = qs.filter(sozlesme__sozlesme_no__icontains=filters['sozlesme_no'])

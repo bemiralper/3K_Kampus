@@ -41,15 +41,13 @@ _LOCKED_HAKEDIS = (HakedisDurumu.ONAYLANDI, HakedisDurumu.BORDOYA_ISLENDI)
 _FUTURE_SYNC_DAYS = 62
 
 
-def _oturum_can_follow_slot(oturum: BirebirDersOturumu, today: date) -> bool:
-    """Yalnızca henüz işlenmemiş gelecek/bugünkü planlı özel ders oturumları."""
+def _oturum_can_follow_slot(oturum: BirebirDersOturumu, today: date | None = None) -> bool:
+    """Henüz işlem görmemiş planlı özel ders oturumları (geçmiş tarihler dahil)."""
     if not oturum.is_active:
         return False
     if oturum.durum != OturumDurumu.PLANLANDI:
         return False
     if oturum.oturum_turu != OturumTuru.OZEL:
-        return False
-    if oturum.session_date < today:
         return False
     if BirebirHakedis.objects.filter(oturum_id=oturum.id, durum__in=_LOCKED_HAKEDIS).exists():
         return False
@@ -93,13 +91,13 @@ def _apply_slot_fields(oturum: BirebirDersOturumu, slot: BirebirHaftalikSlot) ->
     return True
 
 
-def _future_planlandi_qs(slot: BirebirHaftalikSlot, today: date):
+def _planlandi_qs(slot: BirebirHaftalikSlot, today: date | None = None):
+    """İşlenmemiş planlı oturumlar — geçmiş tarihler de şablonu izler."""
     return BirebirDersOturumu.objects.filter(
         source_slot_id=slot.id,
         is_active=True,
         durum=OturumDurumu.PLANLANDI,
         oturum_turu=OturumTuru.OZEL,
-        session_date__gte=today,
     )
 
 
@@ -110,17 +108,17 @@ def sync_future_sessions_for_slot(
     rematerialize: bool = True,
 ) -> dict:
     """
-    Şablon değişince yalnızca planlı gelecek oturumları hizalar.
+    Şablon değişince işlem görmemiş planlı oturumları hizalar.
 
-    Geçmiş günler, yoklaması alınmış kayıtlar, telafi/ek ders ve kilitli
-    hakedişler dokunulmaz.
+    Yoklaması alınmış / işlenmiş kayıtlar, telafi/ek ders ve kilitli
+    hakedişler dokunulmaz. Geçmiş PLANLANDI oturumlar da taşınabilir.
     """
     today = timezone.localdate()
     program = slot.program
     updated = 0
     deactivated = 0
 
-    qs = _future_planlandi_qs(slot, today)
+    qs = _planlandi_qs(slot)
     locked_ids = set(
         BirebirHakedis.objects.filter(
             oturum__source_slot_id=slot.id,
@@ -144,11 +142,9 @@ def sync_future_sessions_for_slot(
         before_window = slot_start and oturum.session_date < slot_start
         after_window = slot_end and oturum.session_date > slot_end
         if wrong_day or before_window or after_window:
-            # Bugünkü dersi şablon günü değişse bile silme (yoklama / hakediş günü).
-            if oturum.session_date > today:
-                oturum.is_active = False
-                oturum.save(update_fields=['is_active', 'updated_at'])
-                deactivated += 1
+            oturum.is_active = False
+            oturum.save(update_fields=['is_active', 'updated_at'])
+            deactivated += 1
             continue
 
         if _apply_slot_fields(oturum, slot):
@@ -167,7 +163,7 @@ def sync_future_sessions_for_slot(
 
     created = 0
     if rematerialize and slot.aktif and program.durum == ProgramDurumu.AKTIF:
-        created = _rematerialize_from_today(slot, user=user)
+        created = _rematerialize_slot_window(slot, user=user)
 
     return {
         'updated': updated,
@@ -176,10 +172,11 @@ def sync_future_sessions_for_slot(
     }
 
 
-def _rematerialize_from_today(slot: BirebirHaftalikSlot, *, user=None) -> int:
+def _rematerialize_slot_window(slot: BirebirHaftalikSlot, *, user=None) -> int:
+    """Pencerenin başından (geçmiş dahil) ufka kadar oturum üretir."""
     program = slot.program
     today = timezone.localdate()
-    start = max(today, slot.baslangic_tarihi or program.baslangic_tarihi or today)
+    start = slot.baslangic_tarihi or program.baslangic_tarihi or today
     horizon = today + timedelta(days=_FUTURE_SYNC_DAYS)
     end = min(slot.bitis_tarihi or program.bitis_tarihi or horizon, horizon)
     if end < start:

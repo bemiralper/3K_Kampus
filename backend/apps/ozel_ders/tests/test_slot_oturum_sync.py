@@ -113,6 +113,25 @@ class SlotOturumSyncTests(TestCase):
         self.assertEqual(future.end_time, time(14, 50))
         self.assertEqual(future.durum, OturumDurumu.PLANLANDI)
 
+    def test_saat_degisince_gecmis_planlandi_de_guncellenir(self):
+        past_plan = self._oturum(self.today - timedelta(days=7), durum=OturumDurumu.PLANLANDI)
+        past_done = self._oturum(self.today - timedelta(days=14), durum=OturumDurumu.ISLENDI)
+
+        with patch('apps.ozel_ders.services.materialize_service.materialize_program', return_value={'created': 0}):
+            update_slot(
+                self.slot.id,
+                {'baslangic': '15:00', 'bitis': '15:50'},
+                kurum_id=self.kurum.id,
+                sube_id=self.sube.id,
+            )
+
+        past_plan.refresh_from_db()
+        past_done.refresh_from_db()
+        self.assertEqual(past_plan.start_time, time(15, 0))
+        self.assertEqual(past_plan.end_time, time(15, 50))
+        self.assertEqual(past_done.start_time, time(13, 0))
+        self.assertEqual(past_done.durum, OturumDurumu.ISLENDI)
+
     def test_ogretmen_degisince_islendi_dokunulmaz(self):
         marked = self._oturum(self._next_weekday(self.gun), durum=OturumDurumu.ISLENDI)
         planned = self._oturum(self._next_weekday(self.gun, after=marked.session_date))
@@ -235,7 +254,21 @@ class SlotOturumSyncTests(TestCase):
         future.refresh_from_db()
         self.assertTrue(past.is_active)
         self.assertEqual(past.durum, OturumDurumu.ISLENDI)
-        self.assertTrue(today_session.is_active)
+        self.assertFalse(today_session.is_active)
         self.assertFalse(future.is_active)
         self.assertEqual(updated.bitis_tarihi, self.today)
         self.assertEqual(updated.hedef_dakika, 50)
+
+    def test_rematerialize_gecmis_tarihli_planli_uretır(self):
+        from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
+
+        result = sync_future_sessions_for_slot(self.slot)
+        self.assertGreaterEqual(result['created'], 1)
+        self.assertTrue(
+            BirebirDersOturumu.objects.filter(
+                source_slot=self.slot,
+                is_active=True,
+                durum=OturumDurumu.PLANLANDI,
+                session_date__lt=self.today,
+            ).exists()
+        )

@@ -201,7 +201,17 @@ export default function DersProgramiClient() {
     () => calendars.find((c) => c.id === calendarId) || null,
     [calendarId, calendars],
   );
-  const classrooms = context?.classrooms ?? EMPTY_CLASSROOMS;
+  const classrooms = useMemo(() => {
+    const all = context?.classrooms ?? EMPTY_CLASSROOMS;
+    if (!termId) return all;
+    const matched = all.filter((c) => c.term_id === termId);
+    if (matched.length > 0) return matched;
+    const activeId = context?.active_term_id;
+    if (activeId && termId === activeId) {
+      return all.filter((c) => c.term_id == null || c.term_id === termId);
+    }
+    return matched;
+  }, [context?.active_term_id, context?.classrooms, termId]);
   const sortedClassrooms = useMemo(() => {
     return [...classrooms].sort((a, b) => {
       const aOn = classroomOnCalendar(a, calendarId) ? 0 : 1;

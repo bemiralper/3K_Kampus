@@ -456,23 +456,42 @@ class ClassLessonPlanService:
         except ActiveAcademicYearError:
             return "Aktif yıl yok"
 
-    def _classroom_weekly_cycle_ids(self, classroom_ids: List[int]) -> Dict[int, List[int]]:
-        """Sınıfın program grid'inde göründüğü çalışma takvimleri."""
+    def _classroom_weekly_cycle_ids(
+        self,
+        classroom_ids: List[int],
+        *,
+        active_term_id: Optional[int] = None,
+    ) -> Dict[int, List[int]]:
+        """Sınıfın kendi dönemindeki program grid'inde göründüğü çalışma takvimleri.
+
+        Önceki dönemin hücreleri bağ olarak sayılmaz; dönem değişince yeni
+        dönem programı boş başlar.
+        """
         from collections import defaultdict
 
         from apps.academic.domain.program_grid_cell import ProgramGridCell
+        from apps.sinif.domain.models import Sinif
 
         by_sinif: Dict[int, set] = defaultdict(set)
         if not classroom_ids:
             return {}
 
+        term_by_sinif = dict(
+            Sinif.objects.filter(id__in=classroom_ids).values_list('id', 'term_id')
+        )
         qs = ProgramGridCell.objects.filter(
             is_active=True,
             sinif_id__in=classroom_ids,
         )
-        for sinif_id, cycle_id, version_cycle_id in qs.values_list(
-            'sinif_id', 'weekly_cycle_id', 'schedule_version__weekly_cycle_id',
+        for sinif_id, cycle_id, version_cycle_id, version_term_id in qs.values_list(
+            'sinif_id',
+            'weekly_cycle_id',
+            'schedule_version__weekly_cycle_id',
+            'schedule_version__term_id',
         ):
+            sinif_term = term_by_sinif.get(sinif_id) or active_term_id
+            if sinif_term and version_term_id and version_term_id != sinif_term:
+                continue
             if cycle_id:
                 by_sinif[sinif_id].add(cycle_id)
             if version_cycle_id:
@@ -505,7 +524,11 @@ class ClassLessonPlanService:
             .order_by('ad')
         )
         classroom_list = list(classrooms)
-        cycles_by_sinif = self._classroom_weekly_cycle_ids([s.id for s in classroom_list])
+        active_term = next((t for t in terms if t.is_active), terms[0] if terms else None)
+        cycles_by_sinif = self._classroom_weekly_cycle_ids(
+            [s.id for s in classroom_list],
+            active_term_id=active_term.id if active_term else None,
+        )
 
         classroom_rows = []
         for s in classroom_list:
@@ -520,6 +543,7 @@ class ClassLessonPlanService:
                 'alan_id': s.alan_id,
                 'alan_ad': s.alan.ad if s.alan_id else None,
                 'oda_ad': s.oda.ad if s.oda_id else None,
+                'term_id': s.term_id,
                 'weekly_cycle_ids': cycles_by_sinif.get(s.id, []),
             })
 

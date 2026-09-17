@@ -647,6 +647,8 @@ export type ClassLessonPlanClassroom = {
   alan_id: number | null;
   alan_ad: string | null;
   oda_ad: string | null;
+  /** Sınıfın bağlı olduğu dönem. Dönem değişince eski program bağları düşer. */
+  term_id?: number | null;
   /** Bu sınıfın ders programı grid'inde yer aldığı çalışma takvimleri.
    *  Ayrı bir atama kaydı yok: sınıfa Ders Programı'nda bakılınca (veya ders
    *  yerleştirilince) grid oluşur ve takvim burada görünür. */

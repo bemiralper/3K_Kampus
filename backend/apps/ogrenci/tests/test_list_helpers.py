@@ -9,12 +9,14 @@ from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.odeme_takip.domain.enums import KalemTuru, PaketTuru, SozlesmeDurum
 from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
-from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciEkHizmet, OgrenciKayit
+from apps.ogrenci.domain.models import Ogrenci, OgrenciEgitimPaketi, OgrenciEkHizmet, OgrenciKayit, OgrenciVeli
 from apps.ogrenci.interfaces.list_helpers import (
     build_kayit_queryset,
     build_ogrenci_kalemler_map,
     resolve_kalem_filter_turu,
     resolve_sinif_seviyesi_ad,
+    serialize_kayit_row,
+    serialize_veli_fields,
 )
 from apps.sube.domain.models import Sube
 
@@ -283,3 +285,48 @@ class BuildKayitQuerysetEnrollmentTest(TestCase):
         )
         ids = self._ids(kalemler=[('grup_dersi', self.grup.id)])
         self.assertIn(self.ogrenci.id, ids)
+
+
+class SerializeVeliFieldsTest(TestCase):
+    def setUp(self):
+        self.kurum = Kurum.objects.create(ad='Veli Kurum', kod='VLK')
+        self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='VLK-M')
+        self.yil = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
+        self.ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Can', soyad='Yılmaz', aktif_mi=True,
+        )
+        self.kayit = OgrenciKayit.objects.create(
+            ogrenci=self.ogrenci,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+            aktif_mi=True,
+        )
+
+    def test_joins_all_guardians_for_list_and_export(self):
+        OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci,
+            veli_turu='anne',
+            ad='Ayşe',
+            soyad='Yılmaz',
+            telefon='05321112233',
+            varsayilan=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci,
+            veli_turu='baba',
+            ad='Mehmet',
+            soyad='Yılmaz',
+            telefon='05334445566',
+            varsayilan=False,
+        )
+        fields = serialize_veli_fields(self.ogrenci)
+        self.assertIn('Ayşe Yılmaz', fields['veli_ad_soyad'])
+        self.assertIn('Mehmet Yılmaz', fields['veli_ad_soyad'])
+        self.assertIn('05321112233', fields['veli_telefon'])
+        self.assertIn('05334445566', fields['veli_telefon'])
+        self.assertEqual(len(fields['veliler']), 2)
+
+        row = serialize_kayit_row(self.kayit)
+        self.assertIn('Mehmet Yılmaz', row['veli_ad_soyad'])
+        self.assertEqual(len(row['veliler']), 2)

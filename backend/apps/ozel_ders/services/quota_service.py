@@ -109,7 +109,7 @@ def close_future_planlandi(
     kurum_id: Optional[int] = None,
     today: Optional[date] = None,
 ) -> int:
-    """Bu dersin bugünden sonraki planlı oturumlarını kapatır (işlenenlere dokunmaz)."""
+    """Seçilen gün ve sonrasındaki planlı oturumları kapatır (işlenenlere dokunmaz)."""
     day = today or timezone.localdate()
     extras = (
         BirebirDersOturumu.objects.filter(
@@ -118,7 +118,7 @@ def close_future_planlandi(
             is_active=True,
             durum=OturumDurumu.PLANLANDI,
             oturum_turu=OturumTuru.OZEL,
-            session_date__gt=day,
+            session_date__gte=day,
         )
         .filter(Q(hakedis__isnull=True) | ~Q(hakedis__durum__in=_LOCKED_HAKEDIS))
     )

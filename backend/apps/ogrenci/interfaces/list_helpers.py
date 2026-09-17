@@ -477,6 +477,74 @@ def get_varsayilan_veli(ogrenci):
     return veli
 
 
+def _ogrenci_veliler(ogrenci):
+    """Prefetch varsa ekstra sorgu atmadan velileri varsayılan-önce sıralar."""
+    cache = getattr(ogrenci, '_prefetched_objects_cache', None)
+    if cache and 'veliler' in cache:
+        veliler = list(ogrenci.veliler.all())
+    else:
+        veliler = list(OgrenciVeli.objects.filter(ogrenci=ogrenci))
+    veliler.sort(key=lambda v: (not bool(getattr(v, 'varsayilan', False)), getattr(v, 'id', 0) or 0))
+    return veliler
+
+
+def serialize_veli_fields(ogrenci):
+    """Liste ve dışa aktarmada tüm velileri birleştirir (yalnızca varsayılan değil)."""
+    veliler = _ogrenci_veliler(ogrenci)
+    if not veliler:
+        yakinlik = getattr(ogrenci, 'veli_yakinlik', '') or ''
+        return {
+            'veli_ad_soyad': ogrenci.veli_ad_soyad or '',
+            'veli_id': None,
+            'veli_tc_kimlik_no': '',
+            'veli_telefon': ogrenci.veli_telefon or '',
+            'veli_yakinlik': yakinlik,
+            'veli_yakinlik_display': (
+                ogrenci.get_veli_yakinlik_display() if yakinlik else ''
+            ),
+            'veliler': [],
+        }
+
+    names: list[str] = []
+    phones: list[str] = []
+    tcs: list[str] = []
+    relations: list[str] = []
+    items: list[dict] = []
+    many = len(veliler) > 1
+    for veli in veliler:
+        name = f'{veli.ad or ""} {veli.soyad or ""}'.strip()
+        yakinlik = veli.get_veli_turu_display() if veli.veli_turu else ''
+        phone = (veli.telefon or '').strip()
+        tc = (veli.tc_kimlik_no or '').strip()
+        names.append(f'{name} ({yakinlik})' if many and name and yakinlik else name)
+        if phone:
+            phones.append(phone)
+        if tc:
+            tcs.append(tc)
+        if yakinlik:
+            relations.append(yakinlik)
+        items.append({
+            'id': veli.id,
+            'ad_soyad': name,
+            'telefon': phone,
+            'tc_kimlik_no': tc,
+            'yakinlik': veli.veli_turu,
+            'yakinlik_display': yakinlik,
+            'varsayilan': bool(veli.varsayilan),
+        })
+
+    primary = next((v for v in veliler if v.varsayilan), veliler[0])
+    return {
+        'veli_ad_soyad': ' · '.join(n for n in names if n),
+        'veli_id': primary.id,
+        'veli_tc_kimlik_no': ' · '.join(tcs),
+        'veli_telefon': ' · '.join(phones),
+        'veli_yakinlik': primary.veli_turu,
+        'veli_yakinlik_display': ' · '.join(relations),
+        'veliler': items,
+    }
+
+
 def resolve_sinif_seviyesi_ad(kayit):
     """Sınıf seviyesi: atanmış sınıf veya doğrudan kayıt FK'si."""
     if kayit.sinif and kayit.sinif.sinif_seviyesi:
@@ -891,7 +959,7 @@ def serialize_kayit_row(
     koc_adi='',
 ):
     ogrenci = kayit.ogrenci
-    veli = get_varsayilan_veli(ogrenci)
+    veli_fields = serialize_veli_fields(ogrenci)
 
     row = {
         'id': ogrenci.id,
@@ -903,18 +971,7 @@ def serialize_kayit_row(
         'tc_kimlik_no': ogrenci.tc_kimlik_no or '',
         'telefon': ogrenci.telefon or '',
         'email': ogrenci.email or '',
-        'veli_ad_soyad': f"{veli.ad} {veli.soyad}" if veli else (ogrenci.veli_ad_soyad or ''),
-        'veli_id': veli.id if veli else None,
-        'veli_tc_kimlik_no': (veli.tc_kimlik_no or '') if veli else '',
-        'veli_telefon': (
-            (veli.telefon or ogrenci.veli_telefon or '') if veli else (ogrenci.veli_telefon or '')
-        ),
-        'veli_yakinlik': veli.veli_turu if veli else (ogrenci.veli_yakinlik or ''),
-        'veli_yakinlik_display': (
-            veli.get_veli_turu_display() if veli else (
-                ogrenci.get_veli_yakinlik_display() if ogrenci.veli_yakinlik else ''
-            )
-        ),
+        **veli_fields,
         'aktif_mi': bool(kayit.aktif_mi and ogrenci.aktif_mi),
         'cinsiyet': ogrenci.cinsiyet or '',
         'sinif_id': kayit.sinif.id if kayit.sinif else None,

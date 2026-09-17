@@ -731,6 +731,209 @@
   }
 }
 
+.ot-export-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  z-index: 80;
+  padding: 0;
+}
+
+.ot-export-modal {
+  width: 100%;
+  max-width: min(720px, calc(100vw - 24px));
+  max-height: min(90vh, 760px);
+  background: #fff;
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -12px 40px rgba(15, 23, 42, 0.18);
+  display: flex;
+  flex-direction: column;
+}
+
+.ot-export-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px 16px;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.ot-export-header h3 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.ot-export-header p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: #64748b;
+}
+
+.ot-export-close {
+  border: none;
+  background: #f1f5f9;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  cursor: pointer;
+  color: #475569;
+}
+
+.ot-export-body {
+  padding: 20px 24px;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.ot-export-body h4 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.ot-export-seg {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ot-export-seg button {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  border-radius: 10px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  cursor: pointer;
+}
+
+.ot-export-seg button.active {
+  border-color: #0262a7;
+  background: #f0f7ff;
+  color: #0262a7;
+}
+
+.ot-export-cols-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ot-export-link {
+  border: none;
+  background: none;
+  color: #0262a7;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 10px;
+}
+
+.ot-export-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ot-export-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.ot-export-chip.selected {
+  border-color: #0262a7;
+  background: #e8f1f8;
+  color: #0262a7;
+  font-weight: 600;
+}
+
+.ot-export-chip em {
+  font-style: normal;
+  font-size: 11px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #0262a7;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ot-export-error {
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.ot-export-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 16px 24px 20px;
+  border-top: 1px solid #e5e7eb;
+}
+
+.ot-export-ghost,
+.ot-export-primary {
+  border-radius: 10px;
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ot-export-ghost {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #334155;
+}
+
+.ot-export-primary {
+  border: none;
+  background: #0262a7;
+  color: #fff;
+}
+
+.ot-export-primary:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+@media (min-width: 640px) {
+  .ot-export-overlay {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .ot-export-modal {
+    border-radius: 16px;
+  }
+}
+
 @media (max-width: 768px) {
   .odeme-hero {
     flex-direction: column;

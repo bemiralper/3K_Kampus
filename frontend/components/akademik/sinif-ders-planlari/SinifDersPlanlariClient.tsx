@@ -202,7 +202,12 @@ export default function SinifDersPlanlariClient() {
   }, [loadDersOptions, selectedClassroomId]);
 
   const filteredClassrooms = useMemo(() => {
-    const rows = context?.classrooms || [];
+    const rows = (context?.classrooms || []).filter((c) => {
+      if (!selectedTermId) return true;
+      if (c.term_id === selectedTermId) return true;
+      if (c.term_id == null && selectedTermId === context?.active_term_id) return true;
+      return false;
+    });
     const q = classSearch.trim().toLocaleLowerCase('tr-TR');
     if (!q) return rows;
     return rows.filter((c) => {
@@ -211,7 +216,18 @@ export default function SinifDersPlanlariClient() {
       );
       return hay.includes(q);
     });
-  }, [classSearch, context?.classrooms]);
+  }, [classSearch, context?.classrooms, selectedTermId]);
+
+  useEffect(() => {
+    if (!filteredClassrooms.length) {
+      if (selectedClassroomId != null) setSelectedClassroomId(null);
+      return;
+    }
+    if (selectedClassroomId && filteredClassrooms.some((c) => c.id === selectedClassroomId)) {
+      return;
+    }
+    setSelectedClassroomId(filteredClassrooms[0].id);
+  }, [filteredClassrooms, selectedClassroomId]);
 
   const usedDersIds = useMemo(() => new Set(plans.map((p) => p.ders)), [plans]);
 
@@ -941,7 +957,7 @@ export default function SinifDersPlanlariClient() {
             placeholder="Sınıf seçin"
             value={copyTargets}
             onChange={setCopyTargets}
-            options={(context?.classrooms || [])
+            options={filteredClassrooms
               .filter((c) => c.id !== selectedClassroomId)
               .map((c) => ({
                 value: c.id,

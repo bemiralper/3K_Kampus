@@ -323,7 +323,7 @@ def end_slot_early(
     sube_id: int,
     bitis_tarihi=None,
 ) -> BirebirHaftalikSlot:
-    """Dersi verilen süreden önce kapatır: pencere bugüne çekilir, kalan planlı oturumlar kapanır."""
+    """Dersi seçilen günden itibaren kapatır: o gün ve sonrası planlı oturumlar kapanır."""
     from django.utils import timezone
 
     try:

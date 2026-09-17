@@ -59,7 +59,7 @@ export function slotSureHint(form: SlotSureForm, opts: { gunLabel?: string; saat
   } else if (form.bitis_tarihi) {
     parts.push(`${dayjs(form.bitis_tarihi).format('DD.MM.YYYY')} tarihine kadar`);
   } else if (form.baslangic_tarihi) {
-    parts.push(`${dayjs(form.baslangic_tarihi).format('DD.MM.YYYY')} itibarıyla`);
+    parts.push(`${dayjs(form.baslangic_tarihi).format('DD.MM.YYYY')} başlangıç`);
   }
   if (form.hedef_saat.trim()) {
     const n = Number(form.hedef_saat.replace(',', '.'));

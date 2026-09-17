@@ -195,6 +195,7 @@ def _serialize_tahsilat(th):
         'odeme_yontemi': {
             'id': th.odeme_yontemi_id,
             'ad': th.odeme_yontemi.ad if th.odeme_yontemi else '',
+            'tip': getattr(th.odeme_yontemi, 'tip', '') or '',
         },
         'mali_hesap': {
             'id': th.mali_hesap_id,

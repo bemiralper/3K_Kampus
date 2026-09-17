@@ -27,7 +27,12 @@ export default function SinifProgramiClient() {
 
   // Tüm aktif sınıflar — takvime bağlı olanlar üstte
   const classrooms = useMemo(() => {
-    const all = [...(context?.classrooms || [])];
+    const all = [...(context?.classrooms || [])].filter((c) => {
+      if (!termId) return true;
+      if (c.term_id === termId) return true;
+      if (c.term_id == null && termId === context?.active_term_id) return true;
+      return false;
+    });
     if (!calendarId) return all;
     return all.sort((a, b) => {
       const aOn = a.weekly_cycle_ids?.includes(calendarId) ? 0 : 1;
@@ -35,7 +40,7 @@ export default function SinifProgramiClient() {
       if (aOn !== bOn) return aOn - bOn;
       return a.ad.localeCompare(b.ad, 'tr');
     });
-  }, [context, calendarId]);
+  }, [context, calendarId, termId]);
 
   useEffect(() => {
     if (!classrooms.length) {

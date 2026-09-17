@@ -108,6 +108,12 @@ export function isoWeekday(iso: string): number {
   return day === 0 ? 7 : day;
 }
 
+/** ISO hafta başı + gün (1=Pzt) → o haftadaki tarih. */
+export function dateOnIsoWeek(weekStart: string, gun: number): string {
+  const offset = Math.min(7, Math.max(1, gun)) - 1;
+  return addDaysIso(weekStart, offset);
+}
+
 export function todayIso(): string {
   const d = new Date();
   const y = d.getFullYear();

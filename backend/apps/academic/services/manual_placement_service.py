@@ -66,14 +66,22 @@ def _resolve_teacher(plan: ClassLessonPlan, ogretmen_id: Optional[int]) -> Perso
 
 
 def _check_teacher_conflict(cell: ProgramGridCell, teacher: Personel) -> None:
-    conflict = ProgramGridCell.objects.filter(
-        schedule_version_id=cell.schedule_version_id,
+    """Aynı dönem + aynı programdaki öğretmen çakışması. Eski dönem hücreleri sayılmaz."""
+    qs = ProgramGridCell.objects.filter(
         weekly_day_id=cell.weekly_day_id,
         timeslot_id=cell.timeslot_id,
         ogretmen_id=teacher.id,
         status=CellStatus.FILLED,
         is_active=True,
-    ).exclude(pk=cell.pk).select_related('sinif').first()
+    ).exclude(pk=cell.pk)
+    if cell.schedule_version_id:
+        qs = qs.filter(schedule_version_id=cell.schedule_version_id)
+        term_id = getattr(cell.schedule_version, 'term_id', None)
+        if term_id:
+            qs = qs.filter(schedule_version__term_id=term_id)
+    else:
+        qs = qs.filter(schedule_version__isnull=True)
+    conflict = qs.select_related('sinif').first()
     if conflict:
         sinif_ad = conflict.sinif.ad if conflict.sinif_id else '?'
         raise ManualPlacementError(

@@ -1,13 +1,18 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
-import { TahsilatItem, TahsilatFiltre, OdemeYontemi } from "../types";
-import { useKurum } from "@/lib/contexts/KurumContext";
+import { useState, useMemo, useEffect } from "react";
+import { TahsilatItem, TahsilatFiltre } from "../types";
 import {
   formatCurrency, formatDate, tahsilatTuruLabel, tahsilatDurumLabel,
-  DurumBadge, API_BASE, apiHeaders,
+  DurumBadge,
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
+import TahsilatExportModal from "../components/TahsilatExportModal";
+import {
+  applyTahsilatFilters,
+  tahsilatFilterActive,
+  tahsilatYontemOptions,
+} from "../lib/filterTahsilatlar";
 
 const KURUM_COLOR = "#0262a7";
 
@@ -32,60 +37,37 @@ export default function TahsilatlarTab({
   onMakbuz,
   onSelectSozlesme,
 }: Props) {
-  const { activeKurum, activeSube } = useKurum();
-  const kurumId = activeKurum?.id;
-  const [tahsilatlar, setTahsilatlar] = useState<TahsilatItem[]>(initialTahsilatlar);
   const [showFilters, setShowFilters] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [filters, setFilters] = useState<TahsilatFiltre>({});
-  const [odemeYontemleri, setOdemeYontemleri] = useState<OdemeYontemi[]>([]);
+  const yontemOptions = useMemo(
+    () => tahsilatYontemOptions(initialTahsilatlar),
+    [initialTahsilatlar],
+  );
 
-  useEffect(() => {
-    if (!kurumId || !activeSube?.id) return;
-    const url = `${API_BASE.replace("/odeme-takip/api", "/finans/api")}/odeme-yontemleri/dropdown/?kurum_id=${kurumId}&sube_id=${activeSube.id}`;
-    fetch(url, { credentials: "include", headers: apiHeaders() })
-      .then((r) => r.json())
-      .then((data) => setOdemeYontemleri(data?.odeme_yontemleri || []))
-      .catch(() => setOdemeYontemleri([]));
-  }, [kurumId, activeSube?.id]);
-
-  // Pagination
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
 
-  // initialTahsilatlar değiştiğinde güncelle (parent'tan gelen)
-  useEffect(() => {
-    setTahsilatlar(initialTahsilatlar);
-    setCurrentPage(1);
-  }, [initialTahsilatlar]);
+  const selectedYontem = useMemo(
+    () => yontemOptions.find((o) => o.key === filters.odeme_yontemi_id) || null,
+    [filters.odeme_yontemi_id, yontemOptions],
+  );
+  const tahsilatlar = useMemo(
+    () => applyTahsilatFilters(initialTahsilatlar, filters, selectedYontem
+      ? { tip: selectedYontem.key, ad: selectedYontem.label }
+      : null),
+    [initialTahsilatlar, filters, selectedYontem],
+  );
+  const hasActiveFilters = tahsilatFilterActive(filters);
 
-  const handleFilter = useCallback(async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      Object.entries(filters).forEach(([key, val]) => {
-        if (val) params.append(key, val);
-      });
-      const res = await fetch(`${API_BASE}/tahsilatlar/?${params.toString()}`, {
-        credentials: "include",
-        headers: apiHeaders(),
-      });
-      const data = await res.json();
-      setTahsilatlar(Array.isArray(data) ? data : []);
-      setCurrentPage(1);
-    } catch {
-      setTahsilatlar([]);
-    }
-    setLoading(false);
-  }, [filters]);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [filters, initialTahsilatlar]);
 
   const handleClearFilters = () => {
     setFilters({});
-    setTahsilatlar(initialTahsilatlar);
     setCurrentPage(1);
   };
-
-  const hasActiveFilters = Object.values(filters).some(v => v);
 
   // Toplam hesapla
   const aktifTahsilatlar = tahsilatlar.filter(t => t.durum === "aktif");
@@ -100,11 +82,30 @@ export default function TahsilatlarTab({
             Aktif Toplam: {formatCurrency(toplamTutar)}
           </span>
           {hasActiveFilters && (
-            <span style={{ marginLeft: 12, fontSize: 12, color: "#6b7280" }}>(filtrelenmiş)</span>
+            <span style={{ marginLeft: 12, fontSize: 12, color: "#6b7280" }}>
+              {tahsilatlar.length} kayıt (filtrelenmiş)
+            </span>
           )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           <button
+            type="button"
+            onClick={() => setShowExport(true)}
+            disabled={tahsilatlar.length === 0}
+            style={{
+              padding: "8px 16px", borderRadius: 8,
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              fontSize: 13, cursor: tahsilatlar.length === 0 ? "not-allowed" : "pointer",
+              color: "#374151",
+              display: "flex", alignItems: "center", gap: 6,
+              opacity: tahsilatlar.length === 0 ? 0.55 : 1,
+            }}
+          >
+            ⬇ Dışa Aktar
+          </button>
+          <button
+            type="button"
             onClick={() => setShowFilters(!showFilters)}
             style={{
               padding: "8px 16px", borderRadius: 8,
@@ -134,6 +135,7 @@ export default function TahsilatlarTab({
                 placeholder="Ara..."
                 value={filters.ogrenci_adi || ""}
                 onChange={(e) => setFilters({ ...filters, ogrenci_adi: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") setCurrentPage(1); }}
                 style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13 }}
               />
             </div>
@@ -146,6 +148,7 @@ export default function TahsilatlarTab({
                 placeholder="Ara..."
                 value={filters.sozlesme_no || ""}
                 onChange={(e) => setFilters({ ...filters, sozlesme_no: e.target.value })}
+                onKeyDown={(e) => { if (e.key === "Enter") setCurrentPage(1); }}
                 style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13 }}
               />
             </div>
@@ -210,31 +213,30 @@ export default function TahsilatlarTab({
                 style={{ width: "100%", padding: "8px 12px", border: "1px solid #d1d5db", borderRadius: 6, fontSize: 13 }}
               >
                 <option value="">Tümü</option>
-                {odemeYontemleri.map((o) => (
-                  <option key={o.id} value={String(o.id)}>{o.ad}</option>
+                {yontemOptions.map((o) => (
+                  <option key={o.key} value={o.key}>{o.label}</option>
                 ))}
               </select>
             </div>
           </div>
 
-          {/* Filtre butonları */}
           <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
             <button
+              type="button"
               onClick={handleClearFilters}
               style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #d1d5db", background: "#fff", fontSize: 13, cursor: "pointer" }}
             >
               Temizle
             </button>
             <button
-              onClick={handleFilter}
-              disabled={loading}
+              type="button"
+              onClick={() => setCurrentPage(1)}
               style={{
                 padding: "8px 20px", borderRadius: 6, border: "none",
                 background: KURUM_COLOR, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer",
-                opacity: loading ? 0.6 : 1,
               }}
             >
-              {loading ? "Aranıyor..." : "🔍 Filtrele"}
+              Filtrele
             </button>
           </div>
         </div>
@@ -368,6 +370,13 @@ export default function TahsilatlarTab({
           </div>
         </div>
       )}
+
+      <TahsilatExportModal
+        open={showExport}
+        onClose={() => setShowExport(false)}
+        rows={tahsilatlar}
+        filterSummary={hasActiveFilters ? `${tahsilatlar.length} kayıt (filtrelenmiş)` : undefined}
+      />
     </div>
   );
 }

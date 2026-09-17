@@ -3433,3 +3433,25 @@
     gap: 10px;
   }
 }
+
+.veli-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.veli-stack-item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.veli-stack-item .date-text {
+  font-weight: 600;
+  color: #334155;
+}
+
+.veli-rel {
+  font-size: 11px;
+  color: #64748b;
+}

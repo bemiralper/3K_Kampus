@@ -22,6 +22,7 @@ import {
   taksitPeriyoduLabel, tahsilatDurumLabel, gecmisIslemTuruText, islemYapanText,
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
+import { textMatches } from "../lib/filterTahsilatlar";
 import { extractApiError } from "@/lib/api";
 import {
   SozlesmeNot,
@@ -184,11 +185,11 @@ export default function SozlesmelerTab({
 
   // Filtreleme
   const filteredSozlesmeler = sozlesmeler.filter((s) => {
-    const term = searchTerm.toLowerCase();
-    const matchSearch = !term || (
-      s.sozlesme_no.toLowerCase().includes(term) ||
-      (s.ogrenci && `${s.ogrenci.ad} ${s.ogrenci.soyad}`.toLowerCase().includes(term)) ||
-      s.paket_adi.toLowerCase().includes(term)
+    const student = s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}` : "";
+    const matchSearch = !searchTerm.trim() || (
+      textMatches(s.sozlesme_no, searchTerm) ||
+      textMatches(student, searchTerm) ||
+      textMatches(s.paket_adi, searchTerm)
     );
     const matchDurum = !durumFilter || s.durum === durumFilter;
     const matchOdemesiz = !odemesizOnly || Number(s.toplam_odenen || 0) === 0;

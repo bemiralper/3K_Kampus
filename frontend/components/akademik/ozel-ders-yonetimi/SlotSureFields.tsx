@@ -50,7 +50,6 @@ export default function SlotSureFields({
           <input
             type="date"
             value={value.baslangic_tarihi}
-            min={programStart || undefined}
             max={programEnd || undefined}
             onChange={(e) => onChange({ ...value, baslangic_tarihi: e.target.value })}
           />
@@ -60,7 +59,7 @@ export default function SlotSureFields({
           <input
             type="date"
             value={value.bitis_tarihi}
-            min={value.baslangic_tarihi || programStart || undefined}
+            min={value.baslangic_tarihi || undefined}
             max={programEnd || undefined}
             onChange={(e) => onChange({ ...value, bitis_tarihi: e.target.value })}
           />
@@ -103,7 +102,7 @@ export default function SlotSureFields({
             {endingEarly ? 'Kapatılıyor…' : 'Dersi erken bitir'}
           </button>
           <span className="od-form-hint">
-            İşlenen dersler kalır; bugünden sonraki planlı oturumlar kapanır. Saat kotası varsa işlenen süreye çekilir.
+            İşlenen dersler kalır; seçilen ders ve sonrasındaki planlı oturumlar kapanır. Saat kotası varsa işlenen süreye çekilir.
           </span>
         </>
       ) : null}

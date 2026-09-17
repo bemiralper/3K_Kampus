@@ -90,6 +90,7 @@ import {
 import {
   addDaysIso,
   buildPeriods,
+  dateOnIsoWeek,
   formatDateTr,
   formatDurationDk,
   isoWeekday,
@@ -260,6 +261,7 @@ export default function OgrenciOzelDersClient() {
     ...EMPTY_SLOT_SURE,
   });
   const [detailLesson, setDetailLesson] = useState<BirebirSlot | null>(null);
+  const [detailEndDate, setDetailEndDate] = useState<string | null>(null);
   const [editForm, setEditForm] = useState({
     gun: '1',
     baslangic: '',
@@ -647,7 +649,7 @@ export default function OgrenciOzelDersClient() {
         bitis: period.bitis,
         sure_dk: config.sureDk,
       });
-      show('Ders taşındı. Gelecek haftalar da güncellendi.');
+      show('Ders taşındı. İşlenmemiş oturumlar güncellendi.');
       await Promise.all([reloadSlots(), loadWeek(weekStart)]);
       void refreshSummary(donem.baslangic, donem.bitis);
     } catch (err) {
@@ -757,7 +759,7 @@ export default function OgrenciOzelDersClient() {
         ...slotSurePayload(form),
       });
       setCreateOpen(false);
-      show('Ders programa eklendi. Bu haftadan itibaren takvimde görünür.');
+      show('Ders programa eklendi. Takvimde geçmiş tarihler dahil görünür.');
       await reloadLessons();
       await loadWeek(weekStart);
     } catch (err) {
@@ -767,8 +769,9 @@ export default function OgrenciOzelDersClient() {
     }
   }
 
-  function openDetail(lesson: BirebirSlot) {
+  function openDetail(lesson: BirebirSlot, sessionDate?: string) {
     setDetailLesson(lesson);
+    setDetailEndDate(sessionDate || dateOnIsoWeek(weekStart, lesson.gun));
     const sure = lesson.sure_dk || timeToMinutes(lesson.bitis) - timeToMinutes(lesson.baslangic);
     setEditForm({
       gun: String(lesson.gun),
@@ -797,6 +800,7 @@ export default function OgrenciOzelDersClient() {
       });
       show('Ders güncellendi.');
       setDetailLesson(null);
+      setDetailEndDate(null);
       await reloadLessons();
       await loadWeek(weekStart);
     } catch (err) {
@@ -808,19 +812,22 @@ export default function OgrenciOzelDersClient() {
 
   async function onEndEarly() {
     if (!detailLesson) return;
+    const fromDate = detailEndDate || dateOnIsoWeek(weekStart, detailLesson.gun);
     if (
       !window.confirm(
-        'Bu dersi bugün itibarıyla kapatmak istediğinize emin misiniz? İşlenen oturumlar kalır, ilerideki planlı dersler kapanır.',
+        `Bu dersi ${formatDateTr(fromDate)} ve sonrasında kapatmak istediğinize emin misiniz? İşlenen oturumlar kalır, seçilen ders ve ilerideki planlı dersler kapanır.`,
       )
     ) {
       return;
     }
     setEndingEarly(true);
     try {
-      await endSlotEarly(detailLesson.id);
-      show('Ders erken bitirildi. Kalan planlı oturumlar kapatıldı.');
+      await endSlotEarly(detailLesson.id, fromDate);
+      show('Ders sonlandırıldı. Seçilen ders ve sonraki planlı oturumlar kapatıldı.');
       setDetailLesson(null);
+      setDetailEndDate(null);
       await reloadLessons();
+      await loadWeek(weekStart);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Erken bitirme başarısız.', 'error');
     } finally {
@@ -841,9 +848,10 @@ export default function OgrenciOzelDersClient() {
       prev.filter((o) => o.source_slot !== slotId || o.durum !== 'PLANLANDI'),
     );
     setDetailLesson(null);
+    setDetailEndDate(null);
     try {
       await deleteSlot(slotId);
-      show('Ders pasifleştirildi. Geçmiş ve işlenmiş oturumlar değişmedi.');
+      show('Ders pasifleştirildi. İşlenmiş oturumlar değişmedi.');
       await reloadSlots();
       await loadWeek(weekStart);
       void refreshSummary(donem.baslangic, donem.bitis);
@@ -1973,8 +1981,9 @@ export default function OgrenciOzelDersClient() {
                   className="od-btn od-btn-secondary"
                   onClick={() => {
                     const slot = lessons.find((l) => l.id === detailOturum.source_slot);
+                    const sessionDate = detailOturum.session_date;
                     setDetailOturum(null);
-                    if (slot) openDetail(slot);
+                    if (slot) openDetail(slot, sessionDate);
                   }}
                 >
                   Şablonu düzenle
@@ -1988,7 +1997,7 @@ export default function OgrenciOzelDersClient() {
           <div className="od-form">
             <p className="od-form-hint" style={{ marginTop: 0 }}>
               Bu kart bu haftanın gerçek dersidir. İptal yalnızca bu tarihi etkiler.
-              Şablonu düzenlerseniz gelecek haftalar değişir.
+              Şablonu düzenlerseniz işlenmemiş oturumlar (geçmiş dahil) güncellenir.
             </p>
             <dl className="od-panel-kv">
               <dt>Durum</dt>
@@ -2008,7 +2017,10 @@ export default function OgrenciOzelDersClient() {
 
       <Drawer
         open={Boolean(detailLesson)}
-        onClose={() => setDetailLesson(null)}
+        onClose={() => {
+          setDetailLesson(null);
+          setDetailEndDate(null);
+        }}
         title={
           detailLesson
             ? `${GUN_LABELS[detailLesson.gun]} · ${resolveDersLabel(detailLesson, useKisaAd)}`

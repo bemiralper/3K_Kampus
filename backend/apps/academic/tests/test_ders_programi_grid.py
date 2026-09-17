@@ -859,6 +859,73 @@ class DersProgramiGridApiTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         row = next(c for c in res.json()['classrooms'] if c['id'] == self.sinif.id)
         self.assertIn(self.cycle.id, row.get('weekly_cycle_ids') or [])
+        self.assertIn('term_id', row)
+
+    def test_old_term_cells_do_not_bind_or_block_new_term(self):
+        """Dönem değişince eski program bağ/çakışma olarak görünmez."""
+        self.sinif.term = self.term
+        self.sinif.save(update_fields=['term'])
+        self._fill_single_cell()
+
+        term2 = Term.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            name='Bahar',
+            code='BHR',
+            start_date=date(2026, 2, 1),
+            end_date=date(2026, 6, 15),
+            is_active=False,
+        )
+        self.sinif.term = term2
+        self.sinif.save(update_fields=['term'])
+
+        ctx = self.client.get('/api/academic/class-lesson-plan/context/', **self.headers)
+        self.assertEqual(ctx.status_code, 200, ctx.content)
+        row = next(c for c in ctx.json()['classrooms'] if c['id'] == self.sinif.id)
+        self.assertEqual(row.get('term_id'), term2.id)
+        self.assertNotIn(self.cycle.id, row.get('weekly_cycle_ids') or [])
+
+        sinif2 = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            term=term2,
+            ad='9-B',
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        plan2 = ClassLessonPlan.objects.create(
+            egitim_yili=self.year,
+            term=term2,
+            sinif=sinif2,
+            ders=self.ders,
+            weekly_hours=2,
+            ogretmen=self.teacher,
+        )
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={
+                'term_id': term2.id,
+                'weekly_cycle_id': self.cycle.id,
+                'classroom_id': sinif2.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+        version2 = ScheduleVersion.objects.get(term=term2, weekly_cycle=self.cycle)
+        cell = ProgramGridCell.objects.get(schedule_version=version2, sinif=sinif2)
+        fill = self.client.post(
+            f'/api/academic/program-grid/cells/{cell.id}/fill/',
+            data={'class_lesson_plan_id': plan2.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
+        cell.refresh_from_db()
+        self.assertEqual(cell.status, CellStatus.FILLED)
+        self.assertEqual(cell.ogretmen_id, self.teacher.id)
 
     def test_unbind_classroom_requires_confirm_when_filled(self):
         self._fill_single_cell()
