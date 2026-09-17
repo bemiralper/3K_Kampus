@@ -290,6 +290,12 @@ class CoachStudentApiTest(TestCase):
         self.assertTrue(data['student']['kayit_tarihi'])
         self.assertTrue(data['student']['aktif_mi'])
         self.assertNotIn('ek_hizmetler', data['student'])
+        self.assertIsNone(data['student'].get('alan'))
+        self.assertEqual(data['packages']['egitim_paketleri'], [])
+        self.assertEqual(data['packages']['ek_hizmetler'], [])
+        self.assertEqual(data['attendance']['late'], 0)
+        self.assertEqual(data['attendance']['absent'], 0)
+        self.assertEqual(data['attendance']['exit'], 0)
         self.assertEqual(data['student']['veli']['telefon'], '05551234567')
         self.assertEqual(data['student']['veli']['veli_turu_display'], 'Anne')
         self.assertTrue(data['student']['veli']['tel_link'].startswith('tel:'))
@@ -309,6 +315,72 @@ class CoachStudentApiTest(TestCase):
 
         self.assertEqual(len(data['overview']['recent_meetings']), 1)
         self.assertTrue(data['overview']['recent_meetings'][0]['can_edit'])
+
+    def test_profile_includes_alan_packages_and_attendance(self):
+        from apps.egitim_paketleri.models import EkHizmet
+        from apps.egitim_tanimlari.models import Alan
+        from apps.ogrenci.domain.models import OgrenciEgitimPaketi, OgrenciEkHizmet
+
+        alan = Alan.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Sayısal', kod='SAY',
+        )
+        kayit = OgrenciKayit.objects.get(ogrenci=self.student)
+        kayit.alan = alan
+        kayit.save(update_fields=['alan'])
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.student,
+            paket_turu='grup_dersi',
+            paket_id=1,
+            paket_adi='Sayısal Grup',
+            aktif_mi=True,
+        )
+        hizmet = EkHizmet.objects.create(
+            ad='Koçluk',
+            kod='KOC',
+            hizmet_turu='kocluk',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.student,
+            ek_hizmet=hizmet,
+            aktif_mi=True,
+            egitim_yili=self.egitim_yili,
+        )
+
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.get(PROFILE_URL.format(self.student.id))
+        data = response.data['data']
+        self.assertEqual(data['student']['alan']['ad'], 'Sayısal')
+        self.assertNotIn('ek_hizmetler', data['student'])
+        self.assertEqual(data['packages']['egitim_paketleri'][0]['ad'], 'Sayısal Grup')
+        self.assertEqual(data['packages']['ek_hizmetler'][0]['ad'], 'Koçluk')
+        self.assertIn('events', data['attendance'])
+
+    def test_profile_collapses_duplicate_offer_label(self):
+        from apps.egitim_paketleri.models import EkHizmet
+        from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+        hizmet = EkHizmet.objects.create(
+            ad='Deneme — Deneme',
+            kod='DEN',
+            hizmet_turu='deneme',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.student,
+            ek_hizmet=hizmet,
+            aktif_mi=True,
+            egitim_yili=self.egitim_yili,
+        )
+
+        self.client.force_authenticate(user=self.coach_user)
+        response = self.client.get(PROFILE_URL.format(self.student.id))
+        data = response.data['data']
+        self.assertEqual(data['packages']['ek_hizmetler'][0]['ad'], 'Deneme')
 
     def test_profile_forbidden_for_unassigned_student(self):
         self.client.force_authenticate(user=self.coach_user)

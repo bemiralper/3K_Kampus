@@ -39,7 +39,15 @@ export default function PersonelDetayPage() {
           personel,
           gorevlendirmeler: (result.gorevlendirmeler ?? result.data?.gorevlendirmeler ?? []) as PersonelGorevlendirme[],
           aktivite_loglari: (result.aktivite_loglari ?? result.data?.aktivite_loglari ?? []) as AktiviteLog[],
-          stats: (result.stats ?? result.data?.stats) as PersonelStats,
+          stats: (result.stats ?? result.data?.stats ?? {
+            toplam_giris: 0,
+            son_giris: null,
+            son_cikis: null,
+            aktif_oturum_suresi: null,
+            bu_ay_giris: 0,
+            bu_hafta_giris: 0,
+            ortalama_oturum_suresi: null,
+          }) as PersonelStats,
         });
       } else {
         setError(true);

@@ -1,15 +1,16 @@
 'use client';
 
-import type { CoachStudentProfileStudent } from '@/lib/coach-api';
+import type { CoachStudentPackages, CoachStudentProfileStudent } from '@/lib/coach-api';
 import CoachStudentInfoPanel from '@/components/coach/CoachStudentInfoPanel';
 
 interface BilgiTabProps {
   student: CoachStudentProfileStudent;
+  packages?: CoachStudentPackages | null;
   onPhotoUpdate?: (url: string | null) => void;
   onNavigateVeli?: () => void;
 }
 
-export default function BilgiTab({ student, onPhotoUpdate, onNavigateVeli }: BilgiTabProps) {
+export default function BilgiTab({ student, packages, onPhotoUpdate, onNavigateVeli }: BilgiTabProps) {
   return (
     <div className="student360-panel student360-bilgi-panel">
       <p className="s360-kayit-hint">
@@ -18,6 +19,7 @@ export default function BilgiTab({ student, onPhotoUpdate, onNavigateVeli }: Bil
       </p>
       <CoachStudentInfoPanel
         student={student}
+        packages={packages}
         onPhotoUpdate={onPhotoUpdate}
         onNavigateVeli={onNavigateVeli}
         variant="panel"

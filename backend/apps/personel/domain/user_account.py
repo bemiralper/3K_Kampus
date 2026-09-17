@@ -67,6 +67,16 @@ def _find_sibling_with_user(personel: Personel) -> Personel | None:
     return None
 
 
+def personel_user_login_allowed(user) -> bool:
+    """Personel kaydı yoksa True; varsa yalnızca aktif personel giriş yapabilir."""
+    if not user:
+        return False
+    personel = Personel.objects.filter(user_id=user.pk).only('aktif_mi').first()
+    if personel is None:
+        return True
+    return bool(personel.aktif_mi)
+
+
 def resolve_personel_user(personel: Personel, *, heal_link: bool = False) -> User | None:
     """
     Personelin sisteme giriş User kaydını döndürür.

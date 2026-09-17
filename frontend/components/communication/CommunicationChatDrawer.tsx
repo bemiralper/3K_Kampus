@@ -20,6 +20,7 @@ import {
   WhatsAppAccount,
 } from "@/lib/communication-api";
 import type { ChatOpenParams } from "./CommunicationChatProvider";
+import "./communication.css";
 
 interface CommunicationChatDrawerProps {
   open: boolean;
@@ -154,6 +155,18 @@ export default function CommunicationChatDrawer({
     onClose();
   }, [onClose, setComposerState, setReplyTo]);
 
+  useEffect(() => {
+    if (!open) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevPad = document.documentElement.style.overflow;
+    document.body.style.overflow = 'hidden';
+    document.documentElement.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.documentElement.style.overflow = prevPad;
+    };
+  }, [open]);
+
   if (!open) return null;
 
   const combinedError = openError || error;
@@ -166,11 +179,12 @@ export default function CommunicationChatDrawer({
     : selected;
 
   return (
-    <div className="comm-drawer-overlay" onClick={handleClose} role="presentation">
+    <div className="comm-drawer-overlay comm-chat-drawer-overlay" onClick={handleClose} role="presentation">
       <aside
         className="comm-drawer comm-chat-drawer"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-label="WhatsApp mesajlaşma"
       >
         <header className="comm-drawer-header comm-chat-drawer-header">
@@ -202,8 +216,8 @@ export default function CommunicationChatDrawer({
         </header>
 
         {accounts.length > 0 && (
-          <div className="comm-chat-drawer-account" style={{ padding: "0.5rem 1rem" }}>
-            <label className="comm-form-field" style={{ margin: 0 }}>
+          <div className="comm-chat-drawer-account">
+            <label className="comm-form-field">
               <span style={{ fontSize: "0.8rem" }}>WhatsApp hesabı (birim)</span>
               <select
                 className="tplx-select"

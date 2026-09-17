@@ -47,7 +47,7 @@ from .views.karne_views import (
 from .views.mapping_template_views import (
     list_mapping_templates, create_mapping_template, delete_mapping_template,
 )
-from .views.student_exam_views import student_exam_results
+from .views.student_exam_views import student_exam_development, student_exam_results
 from .views.scoring_settings_views import (
     puan_ayarlari, puan_ayarlari_katsayilar, puan_ayarlari_reset,
 )
@@ -145,6 +145,7 @@ urlpatterns = [
     path('exams/<int:exam_pk>/results/rematch/', rematch_unmatched, name='result-rematch'),
 
     path('exams/<int:exam_pk>/analysis/summary/', exam_analysis_summary, name='analysis-summary'),
+    path('student-exams/<int:student_id>/development/', student_exam_development, name='student-exam-development'),
     path('student-exams/<int:student_id>/', student_exam_results, name='student-exam-results'),
     path('exams/<int:exam_pk>/analysis/sections/', exam_analysis_sections, name='analysis-sections'),
     path('exams/<int:exam_pk>/analysis/students/', exam_analysis_students, name='analysis-students'),

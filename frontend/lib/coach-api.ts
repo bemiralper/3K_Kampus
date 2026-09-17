@@ -185,6 +185,7 @@ export interface CoachStudentProfileStudent {
   kayit_tarihi?: string;
   okul_no?: string | null;
   profil_foto?: string | null;
+  alan?: { id: number; ad: string; kod?: string } | null;
   adresler?: Array<{
     id: number;
     adres_turu: string;
@@ -259,6 +260,37 @@ export interface CoachLastMeeting {
   durum_display?: string | null;
 }
 
+export interface CoachStudentPackageItem {
+  id: number;
+  ad: string;
+  turu?: string;
+  turu_display?: string;
+  dahil_mi?: boolean;
+}
+
+export interface CoachStudentPackages {
+  egitim_paketleri: CoachStudentPackageItem[];
+  ek_hizmetler: CoachStudentPackageItem[];
+}
+
+export interface CoachAttendanceEvent {
+  date: string | null;
+  source: 'kutuphane' | 'sinif' | string;
+  source_label: string;
+  kind: 'late' | 'absent' | 'exit' | string;
+  kind_label: string;
+  time?: string | null;
+  note?: string;
+  period?: string | null;
+}
+
+export interface CoachStudentAttendance {
+  late: number;
+  absent: number;
+  exit: number;
+  events: CoachAttendanceEvent[];
+}
+
 export interface CoachStudentProfileData {
   student: CoachStudentProfileStudent;
   coach_context: CoachStudentProfileCoachContext;
@@ -266,6 +298,8 @@ export interface CoachStudentProfileData {
   overview: CoachOverviewCard[];
   quick_stats: CoachStudentQuickStats;
   last_meeting?: CoachLastMeeting | null;
+  packages?: CoachStudentPackages;
+  attendance?: CoachStudentAttendance;
 }
 
 /** İçerik paneli (URL ?tab=) */

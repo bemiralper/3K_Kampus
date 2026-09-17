@@ -1,5 +1,15 @@
 'use client';
 
+/**
+ * Öğrenci Çalışma Merkezi — koç portalı öğrenci detay ekranı.
+ *
+ * Yerleşim: kimlik bandı + yatay bölüm çubuğu + içerik.
+ * Oluşturma işlemleri (görüşme / ödev / risk) başlıkta; program
+ * oluşturma Program sekmesinde sayfadan çıkmadan yapılır.
+ *
+ * URL sözleşmesi korunur: ?tab= bölüm, ?action= drawer.
+ */
+
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
@@ -11,15 +21,13 @@ import {
 } from '@/lib/coach-api';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { recordRecentVisit, togglePinnedStudent, isPinnedStudent } from '@/lib/coach-students-prefs';
-import Student360Header, { Student360HeaderSkeleton } from '@/components/coach/Student360Header';
-import Student360GroupNav from '@/components/coach/Student360GroupNav';
-import QuickActionBar from '@/components/coach/QuickActionBar';
+import WorkspaceHeader, { WorkspaceHeaderSkeleton } from '@/components/coach/student360/WorkspaceHeader';
+import WorkspaceNav from '@/components/coach/student360/WorkspaceNav';
+import WorkspaceOverview from '@/components/coach/student360/WorkspaceOverview';
 import GorusmeEkleDrawer from '@/components/coach/GorusmeEkleDrawer';
 import RiskBildirDrawer from '@/components/coach/RiskBildirDrawer';
-import CoachProgramSheet from '@/components/coach/CoachProgramSheet';
 import CoachStudentInfoDrawer from '@/components/coach/CoachStudentInfoDrawer';
 import {
-  OzetTab,
   BilgiTab,
   OdevlerTab,
   SinavlarTab,
@@ -32,7 +40,7 @@ import {
 } from '@/components/coach/student360';
 import '@/app/coach/coach.css';
 
-const VALID_ACTIONS = new Set<string>(['gorusme-ekle', 'program', 'risk']);
+const VALID_ACTIONS = new Set<string>(['gorusme-ekle', 'risk']);
 
 type PanelId = Exclude<Student360TabId, 'genel'>;
 
@@ -60,10 +68,15 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
 
   const activeAction = searchParams.get('action');
   const showGorusmeDrawer = activeAction === 'gorusme-ekle';
-  const showProgramSheet = activeAction === 'program';
   const showRiskDrawer = activeAction === 'risk';
 
   const studentDisplayName = profile?.student.full_name || profile?.student.tam_ad || '';
+  const overdueCount =
+    Number(
+      profile?.quick_stats?.overdue_homework_count ??
+        profile?.quick_stats?.overdue_homework ??
+        0
+    ) || 0;
 
   const loadProfile = useCallback(async (opts?: { silent?: boolean }) => {
     if (opts?.silent) setRefreshing(true);
@@ -130,9 +143,12 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
     [router, searchParams]
   );
 
-  const setTab = (tab: PanelId) => {
-    setQuery({ tab: tab === 'ozet' ? null : tab, action: null });
-  };
+  const setTab = useCallback(
+    (tab: PanelId) => {
+      setQuery({ tab: tab === 'ozet' ? null : tab, action: null });
+    },
+    [setQuery]
+  );
 
   const handlePhotoUpdate = useCallback(
     (url: string | null) => {
@@ -150,6 +166,10 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
       router.push(
         `/coach/odev/ver?student=${studentId}&locked=1&return=${encodeURIComponent(returnTo)}`
       );
+      return;
+    }
+    if (action === 'program') {
+      setQuery({ tab: 'program', action: null });
       return;
     }
     setQuery({ action });
@@ -176,7 +196,8 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
 
   const handleProgramOpen = (programId?: number) =>
     setQuery({
-      action: 'program',
+      tab: 'program',
+      action: null,
       program_id: programId ? String(programId) : null,
     });
 
@@ -186,6 +207,10 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
       router.replace(
         `/coach/odev/ver?student=${studentId}&locked=1&return=${encodeURIComponent(returnTo)}`
       );
+      return;
+    }
+    if (activeAction === 'program') {
+      setQuery({ tab: 'program', action: null });
       return;
     }
     if (activeAction && !VALID_ACTIONS.has(activeAction)) {
@@ -205,12 +230,13 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
     switch (activeTab) {
       case 'ozet':
         return (
-          <OzetTab profile={profile} onNavigateTab={setTab} onAction={handleAction} />
+          <WorkspaceOverview profile={profile} onNavigateTab={setTab} onAction={handleAction} />
         );
       case 'bilgi':
         return (
           <BilgiTab
             student={profile.student}
+            packages={profile.packages}
             onPhotoUpdate={handlePhotoUpdate}
             onNavigateVeli={() => setTab('veli')}
           />
@@ -242,6 +268,13 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           <ProgramTab
             key={`program-${tabReloadKey}`}
             studentId={studentId}
+            coachId={user?.coach_profile_id ?? undefined}
+            initialProgramId={
+              initialProgramId && Number.isFinite(initialProgramId) ? initialProgramId : undefined
+            }
+            initialWeekStart={weekStartParam}
+            initialWeekEnd={weekEndParam}
+            initialHomeworkId={homeworkIdParam}
             onOpenProgram={(id) => handleProgramOpen(id)}
           />
         );
@@ -260,18 +293,14 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
 
   if (loading) {
     return (
-      <div className="student360-page">
-        <aside className="s360-context-rail" aria-label="Öğrenci özeti yükleniyor">
-          <Student360HeaderSkeleton />
-          <Student360GroupNav activeTab="ozet" onTabChange={() => {}} disabled />
-        </aside>
-        <div className="student360-main">
-          <div className="student360-content">
-            <div className="s360-loading-grid">
-              <div className="coach-skeleton" style={{ height: 104, borderRadius: 16 }} />
-              <div className="coach-skeleton" style={{ height: 104, borderRadius: 16 }} />
-              <div className="coach-skeleton" style={{ height: 280, borderRadius: 18 }} />
-            </div>
+      <div className="s360w-page">
+        <WorkspaceHeaderSkeleton />
+        <WorkspaceNav activeTab="ozet" onTabChange={() => {}} disabled />
+        <div className="s360w-content">
+          <div className="s360-loading-grid">
+            <div className="coach-skeleton" style={{ height: 96, borderRadius: 16 }} />
+            <div className="coach-skeleton" style={{ height: 96, borderRadius: 16 }} />
+            <div className="coach-skeleton" style={{ height: 280, borderRadius: 18 }} />
           </div>
         </div>
       </div>
@@ -280,8 +309,8 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
 
   if (error || !profile) {
     return (
-      <div className="student360-page">
-        <div className="student360-main">
+      <div className="s360w-page">
+        <div className="s360w-content">
           <div className="coach-error-banner">
             {error || 'Öğrenci profili bulunamadı'}
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
@@ -296,28 +325,22 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
   }
 
   return (
-    <div className="student360-page">
-      <aside className="s360-context-rail" aria-label="Öğrenci gezinme ve bilgileri">
-        <Student360Header
-          profile={profile}
-          pinned={pinned}
-          onTogglePin={handleTogglePin}
-          onShowInfo={() => setShowInfoDrawer(true)}
-          onRefresh={() => loadProfile({ silent: true })}
-          refreshing={refreshing}
-          onAction={handleAction}
-          onMesaj={() => setTab('mesajlar')}
-        />
-        <Student360GroupNav activeTab={activeTab} onTabChange={setTab} />
-      </aside>
+    <div className="s360w-page">
+      <WorkspaceHeader
+        profile={profile}
+        pinned={pinned}
+        onTogglePin={handleTogglePin}
+        onShowInfo={() => setShowInfoDrawer(true)}
+        onRefresh={() => loadProfile({ silent: true })}
+        refreshing={refreshing}
+        onAction={handleAction}
+      />
 
-      <main className="student360-main">
-        <div className="student360-content" role="tabpanel" key={activeTab}>
-          {renderTab()}
-        </div>
+      <WorkspaceNav activeTab={activeTab} onTabChange={setTab} overdueCount={overdueCount} />
+
+      <main className="s360w-content" role="tabpanel" key={activeTab}>
+        {renderTab()}
       </main>
-
-      <QuickActionBar onAction={handleAction} onMesaj={() => setTab('mesajlar')} />
 
       {showGorusmeDrawer && (
         <GorusmeEkleDrawer
@@ -326,30 +349,6 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
           coachId={user?.coach_profile_id ?? undefined}
           onClose={closeDrawer}
           onSuccess={handleGorusmeSuccess}
-        />
-      )}
-
-      {showProgramSheet && (
-        <CoachProgramSheet
-          studentId={studentId}
-          studentName={studentDisplayName}
-          coachId={user?.coach_profile_id ?? undefined}
-          initialProgramId={
-            initialProgramId && Number.isFinite(initialProgramId) ? initialProgramId : undefined
-          }
-          initialWeekStart={weekStartParam}
-          initialWeekEnd={weekEndParam}
-          initialHomeworkId={homeworkIdParam}
-          onClose={() => {
-            setTabReloadKey((k) => k + 1);
-            setQuery({
-              action: null,
-              program_id: null,
-              week_start: null,
-              week_end: null,
-              homework_id: null,
-            });
-          }}
         />
       )}
 

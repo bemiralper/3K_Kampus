@@ -33,7 +33,7 @@ from apps.yedekleme.engine.notifications import (
     send_backup_notification,
     smtp_configured,
 )
-from apps.yedekleme.engine.storage import fetch_file, local_root
+from apps.yedekleme.engine.storage import fetch_file, local_root, make_work_dir
 from apps.yedekleme.registry import sync_registered_resources
 from shared.permissions import api_permission_required
 
@@ -594,7 +594,6 @@ def schedule_run_now_view(request):
 @api_permission_required('yedekleme.create', 'yedekleme.restore', 'yedekleme.manage', write_codes=['yedekleme.create', 'yedekleme.restore', 'yedekleme.manage'])
 def backup_upload_view(request):
     """İndirilmiş v2 yedek dosyasını (.zip / .zip.enc) sisteme kaydeder."""
-    import tempfile
     from pathlib import Path
 
     uploaded = request.FILES.get('file')
@@ -609,7 +608,7 @@ def backup_upload_view(request):
     if not (name.endswith('.zip') or name.endswith('.zip.enc') or name.endswith('.enc')):
         return JsonResponse({'error': 'Sadece .zip veya .zip.enc (yedekleme v2) yüklenebilir'}, status=400)
 
-    tmp = Path(tempfile.mkdtemp(prefix='backup_upload_')) / name
+    tmp = make_work_dir('backup_upload_') / name
     try:
         with tmp.open('wb') as fh:
             for chunk in uploaded.chunks():

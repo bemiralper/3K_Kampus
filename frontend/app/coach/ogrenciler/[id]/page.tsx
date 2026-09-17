@@ -1,6 +1,6 @@
 import { Suspense } from 'react';
 import Student360Client from './Student360Client';
-import { Student360HeaderSkeleton } from '@/components/coach/Student360Header';
+import { WorkspaceHeaderSkeleton } from '@/components/coach/student360/WorkspaceHeader';
 
 interface PageProps {
   params: { id: string };
@@ -8,17 +8,12 @@ interface PageProps {
 
 function Student360Fallback() {
   return (
-    <div className="student360-page">
-      <aside className="s360-context-rail" aria-label="Öğrenci bilgileri yükleniyor">
-        <Student360HeaderSkeleton />
-        <div className="coach-skeleton" style={{ height: 188, borderRadius: 17 }} />
-      </aside>
-      <div className="student360-main">
-        <div className="student360-content">
-          <div className="s360-loading-grid">
-            <div className="coach-skeleton" style={{ height: 104, borderRadius: 16 }} />
-            <div className="coach-skeleton" style={{ height: 280, borderRadius: 18 }} />
-          </div>
+    <div className="s360w-page">
+      <WorkspaceHeaderSkeleton />
+      <div className="s360w-content">
+        <div className="s360-loading-grid">
+          <div className="coach-skeleton" style={{ height: 96, borderRadius: 16 }} />
+          <div className="coach-skeleton" style={{ height: 280, borderRadius: 18 }} />
         </div>
       </div>
     </div>

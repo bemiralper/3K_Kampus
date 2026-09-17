@@ -5,7 +5,12 @@ from django.test import TestCase
 from apps.kimlik.domain.models import Kisi
 from apps.kurum.domain.models import Kurum
 from apps.personel.domain.models import Personel
-from apps.personel.domain.user_account import personel_user_account_meta, resolve_personel_user
+from apps.personel.application.services import PersonelService
+from apps.personel.domain.user_account import (
+    personel_user_account_meta,
+    personel_user_login_allowed,
+    resolve_personel_user,
+)
 from apps.sube.domain.models import Sube
 
 User = get_user_model()
@@ -75,3 +80,26 @@ class PersonelUserAccountTests(TestCase):
         self.assertEqual(meta['user_account_owner_sube_ad'], "Sube A")
         self.personel_b.refresh_from_db()
         self.assertIsNone(self.personel_b.user_id)
+
+    def test_toggle_passive_disables_user_login(self):
+        self.assertTrue(personel_user_login_allowed(self.user))
+        personel = PersonelService().toggle_active_status(self.personel_a.id)
+        self.assertFalse(personel.aktif_mi)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)
+        self.assertFalse(personel_user_login_allowed(self.user))
+
+    def test_toggle_active_enables_user_login(self):
+        PersonelService().toggle_active_status(self.personel_a.id)
+        personel = PersonelService().toggle_active_status(self.personel_a.id)
+        self.assertTrue(personel.aktif_mi)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.is_active)
+        self.assertTrue(personel_user_login_allowed(self.user))
+
+    def test_soft_delete_disables_user_login(self):
+        PersonelService().delete(self.personel_a.id)
+        self.personel_a.refresh_from_db()
+        self.assertFalse(self.personel_a.aktif_mi)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.is_active)

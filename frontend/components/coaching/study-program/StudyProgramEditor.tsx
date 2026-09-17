@@ -69,6 +69,8 @@ export interface StudyProgramEditorProps {
   embedded?: boolean;
   /** Koç portalı layout (geniş shell + responsive board) */
   coachLayout?: boolean;
+  /** Koç çalışma alanı listesine dön */
+  onExit?: () => void;
 }
 
 export { datesFromHomework } from '@/components/coaching/study-program/programDateUtils';
@@ -108,6 +110,7 @@ export default function StudyProgramEditor({
   initialHomeworkId,
   embedded = false,
   coachLayout = false,
+  onExit,
 }: StudyProgramEditorProps) {
   const isCoachUi = embedded || coachLayout;
   /* ─── State ─── */
@@ -1429,7 +1432,10 @@ export default function StudyProgramEditor({
               {rangeSaving ? 'Kaydediliyor…' : 'Aralığı Kaydet'}
             </button>
             <button
-              onClick={() => setProgram(null)}
+              onClick={() => {
+                if (onExit) onExit();
+                else setProgram(null);
+              }}
               style={{
                 padding: '8px 12px', borderRadius: '8px', border: '1px solid #e5e7eb',
                 backgroundColor: '#fff', fontSize: '12px', fontWeight: 600, color: '#6b7280', cursor: 'pointer',

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import type { CoachStudentProfileStudent } from '@/lib/coach-api';
+import type { CoachStudentPackageItem, CoachStudentPackages, CoachStudentProfileStudent } from '@/lib/coach-api';
 import { calculateAge, getAvatarGradient, getInitials } from '@/app/ogrenciler/[id]/utils';
 import ProfilFotoUpload from '@/app/ogrenciler/[id]/components/ProfilFotoUpload';
 import WhatsAppChatButton from '@/components/communication/WhatsAppChatButton';
@@ -10,6 +10,7 @@ import CoachPhotoLightbox from '@/components/coach/CoachPhotoLightbox';
 
 export interface CoachStudentInfoPanelProps {
   student: CoachStudentProfileStudent;
+  packages?: CoachStudentPackages | null;
   onPhotoUpdate?: (url: string | null) => void;
   onNavigateVeli?: () => void;
   /** drawer | panel — footer / spacing farkı */
@@ -22,8 +23,48 @@ function getFullPhotoUrl(photoUrl: string | null | undefined) {
   return photoUrl;
 }
 
+function OfferRow({
+  label,
+  items,
+  tone,
+}: {
+  label: string;
+  items: CoachStudentPackageItem[];
+  tone: 'teal' | 'amber';
+}) {
+  if (items.length === 0) return null;
+  return (
+    <div className="detail-item detail-item-full">
+      <div className={`detail-icon ${tone}`}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          {tone === 'teal' ? (
+            <>
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96" />
+              <line x1="12" y1="22.08" x2="12" y2="12" />
+            </>
+          ) : (
+            <>
+              <path d="M12 2l3 7h7l-5.5 4.1L18 21l-6-4.2L6 21l1.5-7.9L2 9h7z" />
+            </>
+          )}
+        </svg>
+      </div>
+      <div className="detail-content">
+        <span className="detail-label">{label}</span>
+        <div className="student-offer-chips">
+          {items.map((row) => (
+            <i key={row.id}>{row.ad}</i>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function CoachStudentInfoPanel({
   student,
+  packages,
   onPhotoUpdate,
   onNavigateVeli,
   variant = 'panel',
@@ -215,6 +256,21 @@ export default function CoachStudentInfoPanel({
               </div>
             </div>
 
+            {student.alan?.ad && (
+              <div className="detail-item">
+                <div className="detail-icon blue">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                  </svg>
+                </div>
+                <div className="detail-content">
+                  <span className="detail-label">Alan</span>
+                  <span className="detail-value">{student.alan.ad}</span>
+                </div>
+              </div>
+            )}
+
             <div className="detail-item">
               <div className="detail-icon cyan">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -308,6 +364,8 @@ export default function CoachStudentInfoPanel({
                 <span className="detail-value">{student.adres || '-'}</span>
               </div>
             </div>
+            <OfferRow label="Eğitim paketleri" tone="teal" items={packages?.egitim_paketleri ?? []} />
+            <OfferRow label="Ek hizmetler" tone="amber" items={packages?.ek_hizmetler ?? []} />
           </div>
 
           {onNavigateVeli && (

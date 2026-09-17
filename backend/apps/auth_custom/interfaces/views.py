@@ -10,9 +10,14 @@ from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.middleware.csrf import get_token
 import json
 
+from apps.personel.application.activity_log import log_personel_activity
+from apps.personel.domain.user_account import personel_user_login_allowed
 from shared.permissions import user_permission_codes
 
 User = get_user_model()
+
+INACTIVE_PERSONEL_LOGIN_ERROR = 'Bu personel kaydı pasif duruma alınmış. Giriş yapamazsınız.'
+INACTIVE_ACCOUNT_LOGIN_ERROR = 'Bu hesap devre dışı bırakılmış'
 
 
 def _resolve_login_username(raw: str) -> str:
@@ -65,23 +70,78 @@ def login_api(request):
                 'success': False,
                 'error': 'Kullanıcı adı ve şifre gereklidir'
             }, status=400)
+
+        candidate = User.objects.filter(username=username).first()
+        if candidate is not None and candidate.check_password(password):
+            if not personel_user_login_allowed(candidate):
+                log_personel_activity(
+                    user=candidate,
+                    eylem='LOGIN_FAILED',
+                    request=request,
+                    detay='Pasif personel giriş denemesi',
+                )
+                return JsonResponse({
+                    'success': False,
+                    'error': INACTIVE_PERSONEL_LOGIN_ERROR,
+                }, status=403)
+            if not candidate.is_active:
+                log_personel_activity(
+                    user=candidate,
+                    eylem='LOGIN_FAILED',
+                    request=request,
+                    detay='Devre dışı hesap giriş denemesi',
+                )
+                return JsonResponse({
+                    'success': False,
+                    'error': INACTIVE_ACCOUNT_LOGIN_ERROR,
+                }, status=403)
         
         user = authenticate(request, username=username, password=password)
         
         if user is not None:
+            if not personel_user_login_allowed(user):
+                log_personel_activity(
+                    user=user,
+                    eylem='LOGIN_FAILED',
+                    request=request,
+                    detay='Pasif personel giriş denemesi',
+                )
+                return JsonResponse({
+                    'success': False,
+                    'error': INACTIVE_PERSONEL_LOGIN_ERROR,
+                }, status=403)
             if user.is_active:
                 login(request, user)
                 get_token(request)
+                log_personel_activity(
+                    user=user,
+                    eylem='LOGIN',
+                    request=request,
+                    detay='Sisteme giriş yapıldı',
+                )
                 return JsonResponse({
                     'success': True,
                     'user': _build_user_data(user),
                 })
             else:
+                log_personel_activity(
+                    user=user,
+                    eylem='LOGIN_FAILED',
+                    request=request,
+                    detay='Devre dışı hesap giriş denemesi',
+                )
                 return JsonResponse({
                     'success': False,
-                    'error': 'Bu hesap devre dışı bırakılmış'
+                    'error': INACTIVE_ACCOUNT_LOGIN_ERROR,
                 }, status=403)
         else:
+            if candidate is not None:
+                log_personel_activity(
+                    user=candidate,
+                    eylem='LOGIN_FAILED',
+                    request=request,
+                    detay='Hatalı şifre',
+                )
             return JsonResponse({
                 'success': False,
                 'error': 'Geçersiz kullanıcı adı veya şifre'
@@ -106,6 +166,13 @@ def logout_api(request):
     Logout API endpoint
     """
     try:
+        user = request.user if getattr(request, 'user', None) and request.user.is_authenticated else None
+        log_personel_activity(
+            user=user,
+            eylem='LOGOUT',
+            request=request,
+            detay='Sistemden çıkış yapıldı',
+        )
         logout(request)
         return JsonResponse({
             'success': True,
@@ -189,6 +256,14 @@ def me_api(request):
             'user': None
         })
 
+    if not personel_user_login_allowed(request.user) or not request.user.is_active:
+        logout(request)
+        return JsonResponse({
+            'success': True,
+            'authenticated': False,
+            'user': None,
+        })
+
     if request.method == 'PATCH':
         return _update_profile(request)
 
@@ -244,6 +319,14 @@ def _update_profile(request):
                 personel.save(update_fields=list(personel_fields.keys()))
         except Exception:
             pass
+
+    if update_user_fields or personel_fields:
+        log_personel_activity(
+            user=user,
+            eylem='PROFILE_UPDATE',
+            request=request,
+            detay='Profil bilgileri güncellendi',
+        )
 
     return JsonResponse({
         'success': True,
@@ -317,6 +400,12 @@ def change_password_api(request):
         pass
 
     login(request, user)
+    log_personel_activity(
+        user=user,
+        eylem='PASSWORD_CHANGE',
+        request=request,
+        detay='Şifre değiştirildi',
+    )
 
     return JsonResponse({
         'success': True,

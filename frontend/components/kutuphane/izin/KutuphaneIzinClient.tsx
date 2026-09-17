@@ -53,6 +53,7 @@ export default function KutuphaneIzinClient() {
   const router = useRouter();
   const params = useSearchParams();
   const ogrenciParam = params.get('ogrenci_id');
+  const ogrenciAdParam = params.get('ad');
 
   const [izinler, setIzinler] = useState<OgrenciIzin[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,11 +106,12 @@ export default function KutuphaneIzinClient() {
     if (!id) return;
     const fromList = izinler.find((i) => i.ogrenci_id === id);
     setSelected((prev) => {
-      if (fromList) return { id, ad_soyad: fromList.ogrenci_adi || prev?.ad_soyad || `#${id}` };
-      if (prev?.id === id) return prev;
-      return { id, ad_soyad: prev?.ad_soyad || `#${id}` };
+      const name = fromList?.ogrenci_adi || ogrenciAdParam || prev?.ad_soyad || `#${id}`;
+      if (fromList) return { id, ad_soyad: name };
+      if (prev?.id === id && prev.ad_soyad && !prev.ad_soyad.startsWith('#')) return prev;
+      return { id, ad_soyad: name };
     });
-  }, [ogrenciParam, izinler]);
+  }, [ogrenciParam, ogrenciAdParam, izinler]);
 
   useEffect(() => {
     if (pickerQ.trim().length < 2) { setPickerOpts([]); return; }

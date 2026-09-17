@@ -16,11 +16,20 @@ from rest_framework.response import Response
 from ..models import StudentAnswer
 from apps.coaching.services.coach_access import user_can_access_student
 from ..views import CsrfExemptSessionAuthentication
+from ..services.development_analysis import build_development_analysis
 from ..services.scoring import (
     calculate_score_for_exam,
+    calculate_all_ayt_scores,
     estimate_ranking,
+    _get_linked_tyt_nets,
 )
 from ..services.scoring_settings import resolve_puan_yili
+from .analysis_views import (
+    _ALAN_TO_PUAN_TURU,
+    _PUAN_TURU_TO_EXAM_TYPE,
+    _build_scoring_nets,
+    _get_student_alan,
+)
 
 from apps.ogrenci.domain.models import Ogrenci
 
@@ -31,6 +40,51 @@ def _safe_float(val):
     if val is None:
         return 0.0
     return float(val)
+
+
+def _score_student_answer(exam, answer, year):
+    """Analiz / karne ile aynı puan formülü (alt bölüm çift sayımı yok)."""
+    sec_nets = _build_scoring_nets(answer, exam)
+    is_ayt = exam.exam_type == 'YKS_AYT'
+    puan_turleri = None
+    if is_ayt:
+        tyt_nets = {}
+        if getattr(exam, 'linked_tyt_exam_id', None) or getattr(exam, 'linked_tyt_exam', None):
+            tyt_nets = _get_linked_tyt_nets(
+                exam, answer.student_id, answer.raw_student_name, answer.raw_student_id,
+            )
+        all_scores = calculate_all_ayt_scores(
+            sec_nets, tyt_nets, year=year, kurum_id=exam.kurum_id,
+        )
+        alan_kodu = _get_student_alan(answer.student, exam.egitim_yili) if answer.student else None
+        pt_key = _ALAN_TO_PUAN_TURU.get(alan_kodu, 'SAY')
+        score_data = all_scores[pt_key]
+        ranking_exam_type = _PUAN_TURU_TO_EXAM_TYPE[pt_key]
+        puan_turleri = {}
+        for pt, data in all_scores.items():
+            pt_est = estimate_ranking(
+                data['puan'], _PUAN_TURU_TO_EXAM_TYPE.get(pt, 'YKS_AYT'), year,
+            )
+            puan_turleri[pt] = {
+                'puan': data['puan'],
+                'ham_puan': data['ham_puan'],
+                'ayt_net': data['ayt_net'],
+                'tyt_net': data.get('tyt_net', 0),
+                'tahmini_siralama': pt_est.get('tahmini_siralama'),
+                'yuzdelik_dilim': pt_est.get('yuzdelik_dilim'),
+            }
+    else:
+        score_data = calculate_score_for_exam(
+            exam,
+            sec_nets,
+            year=year,
+            student_id=answer.student_id,
+            raw_student_name=answer.raw_student_name,
+            raw_student_id=answer.raw_student_id,
+        )
+        ranking_exam_type = exam.exam_type
+    ranking_data = estimate_ranking(score_data['puan'], ranking_exam_type, year)
+    return score_data, ranking_data, puan_turleri
 
 
 @api_view(['GET'])
@@ -87,7 +141,7 @@ def student_exam_results(request, student_id):
             student=ogrenci,
             session__status='COMPLETED',
         )
-        .select_related('session__exam')
+        .select_related('session__exam', 'student')
         .prefetch_related('section_scores__section')
         .order_by('session__exam__exam_date', 'session__exam__created_at')
     )
@@ -101,6 +155,7 @@ def student_exam_results(request, student_id):
         logger.info('[student_exam_results] student_id=%s → Sınav kaydı yok, boş dönülüyor', student_id)
         return Response({
             'student_name': f'{ogrenci.ad} {ogrenci.soyad}',
+            'alan': None,
             'exams': [],
             'kpi': None,
             'net_trend': [],
@@ -116,12 +171,10 @@ def student_exam_results(request, student_id):
         exam = answer.session.exam
 
         # Section detayları
-        sec_nets = {}
         section_details = []
         for ss in answer.section_scores.all():
             sec_name = ss.section.name
             net_val = _safe_float(ss.net)
-            sec_nets[sec_name] = net_val
             section_details.append({
                 'section_id': ss.section_id,
                 'section_name': sec_name,
@@ -131,37 +184,28 @@ def student_exam_results(request, student_id):
                 'net': net_val,
                 'question_count': ss.section.question_count,
                 'is_sub_section': ss.section.is_sub_section,
+                'parent_section_id': ss.section.parent_section_id,
             })
             # Ders bazlı toplam (ana bölümler)
             if not ss.section.is_sub_section:
                 section_net_totals[sec_name].append(net_val)
 
         year = resolve_puan_yili(exam, request_year)
-        # Puan hesapla
-        score_data = calculate_score_for_exam(exam, sec_nets, year=year)
+        score_data, ranking_data, puan_turleri = _score_student_answer(exam, answer, year)
         puan = score_data['puan']
         ham_puan = score_data['ham_puan']
 
-        # Sıralama tahmini
-        ranking_data = estimate_ranking(puan, exam.exam_type, year)
-
-        # Kurum içi sıralama: bu sınavdaki tüm cevaplar
         all_exam_answers = (
             StudentAnswer.objects
             .filter(session__exam=exam, session__status='COMPLETED')
+            .select_related('student')
+            .prefetch_related('section_scores__section')
         )
-        all_exam_nets = [_safe_float(a.total_net) for a in all_exam_answers]
-        total_in_exam = len(all_exam_nets)
-
-        # Kurum içi sıra hesapla (puanla)
-        all_exam_scores = []
-        for ea in all_exam_answers:
-            ea_sec_nets = {}
-            for ess in ea.section_scores.all():
-                ea_sec_nets[ess.section.name] = _safe_float(ess.net)
-            ea_score = calculate_score_for_exam(exam, ea_sec_nets, year=year)['puan']
-            all_exam_scores.append(ea_score)
-
+        total_in_exam = all_exam_answers.count()
+        all_exam_scores = [
+            _score_student_answer(exam, ea, year)[0]['puan']
+            for ea in all_exam_answers
+        ]
         all_exam_scores_sorted = sorted(all_exam_scores, reverse=True)
         kurum_ici_sira = (
             all_exam_scores_sorted.index(puan) + 1
@@ -174,6 +218,7 @@ def student_exam_results(request, student_id):
         all_scores.append(puan)
 
         exam_row = {
+            'answer_id': answer.id,
             'exam_id': exam.id,
             'exam_name': exam.name,
             'exam_type': exam.exam_type,
@@ -186,6 +231,7 @@ def student_exam_results(request, student_id):
             'total_net': net_val,
             'puan': puan,
             'ham_puan': ham_puan,
+            'puan_turleri': puan_turleri,
             'tahmini_siralama': ranking_data.get('tahmini_siralama'),
             'yuzdelik_dilim': ranking_data.get('yuzdelik_dilim'),
             'kurum_ici_sira': kurum_ici_sira,
@@ -250,9 +296,47 @@ def student_exam_results(request, student_id):
         'en_zayif_ders': en_zayif_ders,
     }
 
+    last_exam = answers_qs.last().session.exam if answers_qs.exists() else None
+    alan = _get_student_alan(ogrenci, last_exam.egitim_yili) if last_exam else None
+
     return Response({
         'student_name': f'{ogrenci.ad} {ogrenci.soyad}',
+        'alan': alan,
         'exams': exam_results,
         'kpi': kpi,
         'net_trend': trend_data,
     })
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def student_exam_development(request, student_id):
+    """
+    Öğrencinin seçilen sınav penceresindeki ders / konu / kazanım gelişimi.
+
+    GET /student-exams/<student_id>/development/
+        ?exam_type=TYT|AYT|LGS|manuel
+        &window=1|3|5|10|all
+        &exam_ids=1,2,3
+        &date_from=YYYY-MM-DD
+        &date_to=YYYY-MM-DD
+    """
+    if not user_can_access_student(request.user, student_id):
+        return Response({'error': 'Bu öğrenciye erişim yetkiniz yok.'}, status=403)
+
+    try:
+        ogrenci = Ogrenci.objects.get(pk=student_id)
+    except Ogrenci.DoesNotExist:
+        return Response({'error': 'Öğrenci bulunamadı.'}, status=404)
+
+    exam_ids = request.query_params.getlist('exam_ids') or request.query_params.get('exam_ids')
+    payload = build_development_analysis(
+        ogrenci,
+        exam_type=request.query_params.get('exam_type'),
+        window=request.query_params.get('window'),
+        exam_ids=exam_ids,
+        date_from=request.query_params.get('date_from'),
+        date_to=request.query_params.get('date_to'),
+    )
+    return Response(payload)

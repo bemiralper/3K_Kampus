@@ -1,5 +1,8 @@
 export { default as GenelBakisTab } from './GenelBakisTab';
 export { default as OzetTab } from './OzetTab';
+export { default as WorkspaceHeader, WorkspaceHeaderSkeleton } from './WorkspaceHeader';
+export { default as WorkspaceNav } from './WorkspaceNav';
+export { default as WorkspaceOverview } from './WorkspaceOverview';
 export { default as BilgiTab } from './BilgiTab';
 export { default as OdevlerTab } from './OdevlerTab';
 export { default as SinavlarTab } from './SinavlarTab';

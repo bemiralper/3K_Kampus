@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -34,7 +33,13 @@ from apps.yedekleme.engine.plan import (
     order_restore_entries,
 )
 from apps.yedekleme.engine.selection import resolve_resources
-from apps.yedekleme.engine.storage import delete_file, fetch_file, store_file
+from apps.yedekleme.engine.storage import (
+    cleanup_stale_work_dirs,
+    delete_file,
+    fetch_file,
+    make_work_dir,
+    store_file,
+)
 
 
 MANIFEST_VERSION = '2.0'
@@ -83,37 +88,82 @@ class BackupEngine:
         except Exception:
             pass
 
-    def _preflight_disk_check(self) -> str | None:
-        """Yedek hedefinde yeterli boş alan var mı? Yoksa açıklayıcı hata metni döndürür.
+    def _estimate_required_bytes(self) -> int:
+        """Yedek sırasında peak disk ihtiyacı (ham dump + ZIP + kopya)."""
+        cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
+        min_free = int(cfg.get('min_free_bytes') or (256 * 1024 * 1024))
+        db_size = 0
+        try:
+            from django.db import connection as dj_conn
+            with dj_conn.cursor() as cur:
+                cur.execute('SELECT pg_database_size(current_database())')
+                db_size = int(cur.fetchone()[0] or 0)
+        except Exception:  # noqa: BLE001
+            pass
 
-        Gereken alan ≈ veritabanı boyutu × 1.3 (tahmini) veya yapılandırılan minimum.
+        media_size = 0
+        try:
+            roots = cfg.get('file_roots') or [getattr(settings, 'MEDIA_ROOT', None)]
+            for raw in roots:
+                if not raw:
+                    continue
+                path = Path(raw)
+                if not path.exists():
+                    continue
+                for child in path.rglob('*'):
+                    try:
+                        if child.is_file():
+                            media_size += child.stat().st_size
+                    except OSError:
+                        continue
+        except Exception:  # noqa: BLE001
+            pass
+
+        last_size = 0
+        try:
+            last = (
+                BackupArtifact.objects
+                .filter(status=BackupStatus.COMPLETED, size_bytes__gt=0)
+                .order_by('-started_at')
+                .values_list('size_bytes', flat=True)
+                .first()
+            )
+            last_size = int(last or 0)
+        except Exception:  # noqa: BLE001
+            pass
+
+        payload = db_size + media_size
+        # work + zip aynı diskte durur; medya zaten sıkışık olduğu için ~2.5×.
+        from_payload = int(payload * 2.5) if payload else 0
+        from_last = int(last_size * 3) if last_size else 0
+        return max(min_free, from_payload, from_last)
+
+    def _preflight_disk_check(self) -> str | None:
+        """Yedek / geçici dizinde yeterli boş alan var mı?
+
         Herhangi bir hata olursa (ör. disk_usage başarısız) kontrol atlanır (None).
         """
         try:
-            from apps.yedekleme.engine.storage import local_root
+            from apps.yedekleme.engine.storage import local_root, work_root
 
-            cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
-            min_free = int(cfg.get('min_free_bytes') or (256 * 1024 * 1024))
-
-            required = min_free
-            try:
-                from django.db import connection as dj_conn
-                with dj_conn.cursor() as cur:
-                    cur.execute('SELECT pg_database_size(current_database())')
-                    db_size = int(cur.fetchone()[0])
-                required = max(min_free, int(db_size * 1.3))
-            except Exception:  # noqa: BLE001
-                pass
-
-            root = local_root()
-            usage = shutil.disk_usage(str(root))
-            if usage.free < required:
-                free_mb = usage.free // (1024 * 1024)
-                req_mb = required // (1024 * 1024)
-                return (
-                    f'Yetersiz disk alanı: {free_mb} MB boş, ~{req_mb} MB gerekli. '
-                    f'Yedekleme iptal edildi.'
-                )
+            required = self._estimate_required_bytes()
+            seen_devs: set[int] = set()
+            for path in (work_root(), local_root()):
+                try:
+                    dev = path.resolve().stat().st_dev
+                except OSError:
+                    dev = id(path)
+                if dev in seen_devs:
+                    continue
+                seen_devs.add(dev)
+                usage = shutil.disk_usage(str(path))
+                if usage.free < required:
+                    free_mb = usage.free // (1024 * 1024)
+                    req_mb = required // (1024 * 1024)
+                    return (
+                        f'Yetersiz disk alanı ({path}): {free_mb} MB boş, '
+                        f'~{req_mb} MB gerekli. Yedekleme iptal edildi.'
+                    )
         except Exception:  # noqa: BLE001
             return None
         return None
@@ -309,6 +359,7 @@ class BackupEngine:
         cutoff = _now() - _timedelta(hours=max_age_hours)
         if trigger != BackupTrigger.PRE_RESTORE:
             self.fail_stale_running_jobs()
+            cleanup_stale_work_dirs(max_age_hours=max_age_hours)
             if BackupJob.objects.filter(
                 action=BackupOperationAction.CREATE,
                 status=BackupStatus.RUNNING,
@@ -380,7 +431,7 @@ class BackupEngine:
             self._log(action=BackupOperationAction.CREATE, artifact=artifact, job=job, step='Hata (disk)', success=False, error_message=disk_error)
             raise RuntimeError(disk_error)
 
-        work = Path(tempfile.mkdtemp(prefix='backup_work_'))
+        work = make_work_dir('backup_work_')
         out_dir = None
         started = _now()
         try:
@@ -452,7 +503,7 @@ class BackupEngine:
             write_checksums(work, files_for_hash)
             log.info('SHA oluşturuldu')
 
-            out_dir = Path(tempfile.mkdtemp(prefix='backup_out_'))
+            out_dir = make_work_dir('backup_out_')
             zip_path = out_dir / filename
             create_zip(work, zip_path, compress=compress)
             log.info('ZIP oluşturuldu', path=str(zip_path))
@@ -593,7 +644,7 @@ class BackupEngine:
         return extract_dir
 
     def verify(self, artifact: BackupArtifact) -> dict:
-        work = Path(tempfile.mkdtemp(prefix='backup_verify_'))
+        work = make_work_dir('backup_verify_')
         job = BackupJob.objects.create(
             artifact=artifact,
             action=BackupOperationAction.VERIFY,
@@ -633,7 +684,7 @@ class BackupEngine:
             shutil.rmtree(work, ignore_errors=True)
 
     def preview(self, artifact: BackupArtifact) -> dict:
-        work = Path(tempfile.mkdtemp(prefix='backup_preview_'))
+        work = make_work_dir('backup_preview_')
         try:
             extract_dir = self._extract_artifact(artifact, work)
             manifest = json.loads((extract_dir / 'manifest.json').read_text(encoding='utf-8'))
@@ -653,7 +704,7 @@ class BackupEngine:
     def analyze(self, artifact: BackupArtifact) -> dict:
         from apps.yedekleme.domain.models import BackupResource
 
-        work = Path(tempfile.mkdtemp(prefix='backup_analyze_'))
+        work = make_work_dir('backup_analyze_')
         job = BackupJob.objects.create(
             artifact=artifact,
             action=BackupOperationAction.ANALYZE,
@@ -709,7 +760,7 @@ class BackupEngine:
     def dry_run(self, artifact: BackupArtifact) -> dict:
         from apps.yedekleme.domain.models import BackupResource
 
-        work = Path(tempfile.mkdtemp(prefix='backup_dry_'))
+        work = make_work_dir('backup_dry_')
         job = BackupJob.objects.create(
             artifact=artifact,
             action=BackupOperationAction.DRY_RUN,
@@ -777,7 +828,7 @@ class BackupEngine:
 
         from apps.yedekleme.domain.models import BackupResource
 
-        work = Path(tempfile.mkdtemp(prefix='backup_restore_'))
+        work = make_work_dir('backup_restore_')
         if job is None:
             job = self.create_restore_job(artifact)
         else:
@@ -1013,7 +1064,7 @@ class BackupEngine:
         uid = uuid.uuid4().hex[:8]
         storage_key = f'import_{ts}_{uid}/{name}'
 
-        work = Path(tempfile.mkdtemp(prefix='backup_import_'))
+        work = make_work_dir('backup_import_')
         try:
             stored = store_file(src_path, storage_key)
             checksum = sha256_file(stored)

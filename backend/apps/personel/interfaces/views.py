@@ -12,6 +12,7 @@ from django.db import models
 from datetime import datetime
 import json
 
+from apps.personel.application.activity_log import log_personel_activity
 from apps.personel.application.services import (
     PersonelService,
     assign_user_role_for_personel,
@@ -388,6 +389,12 @@ def personel_update_api(request, pk):
     
     try:
         personel = service.update(pk, update_data)
+        log_personel_activity(
+            personel=personel,
+            eylem='DATA_UPDATE',
+            request=request,
+            detay='Personel kaydı güncellendi',
+        )
         
         return JsonResponse({
             'success': True,
@@ -420,6 +427,12 @@ def personel_delete_api(request, pk):
     
     try:
         service.delete(pk)
+        log_personel_activity(
+            personel=personel,
+            eylem='DATA_DELETE',
+            request=request,
+            detay='Personel pasif duruma alındı',
+        )
         return JsonResponse({
             'success': True,
             'message': f'{personel.tam_ad} pasif duruma alındı'
@@ -445,6 +458,12 @@ def personel_toggle_active_api(request, pk):
     try:
         personel = service.toggle_active_status(pk)
         status_text = 'aktif' if personel.aktif_mi else 'pasif'
+        log_personel_activity(
+            personel=personel,
+            eylem='DATA_UPDATE',
+            request=request,
+            detay=f'Personel {status_text} duruma alındı',
+        )
         
         return JsonResponse({
             'success': True,
@@ -480,6 +499,12 @@ def personel_create_user_account_api(request, pk):
     
     try:
         personel = service.create_user_account_for_personel(pk, password)
+        log_personel_activity(
+            personel=personel,
+            eylem='DATA_CREATE',
+            request=request,
+            detay='Kullanıcı hesabı oluşturuldu',
+        )
         
         return JsonResponse({
             'success': True,
@@ -1261,26 +1286,28 @@ def personel_full_detail_api(request, pk):
         for g in gorevlendirmeler
     ]
     
-    # Aktivite logları (son 50)
+    # Aktivite logları (son 100)
     try:
-        aktivite_loglari = PersonelAktiviteLog.objects.filter(
-            personel=personel
-        ).order_by('-created_at')[:50]
+        aktivite_qs = PersonelAktiviteLog.objects.filter(personel=personel)
+        eylem_filter = (request.GET.get('aktivite_eylem') or '').strip()
+        if eylem_filter:
+            aktivite_qs = aktivite_qs.filter(eylem=eylem_filter)
+        aktivite_loglari = aktivite_qs.order_by('-created_at')[:100]
         
         aktivite_list = [
             {
                 'id': a.id,
                 'eylem': a.eylem,
                 'eylem_display': a.get_eylem_display(),
-                'detay': a.detay,
-                'ip_adresi': a.ip_adresi,
+                'detay': a.detay or '',
+                'ip_adresi': a.ip_adresi or '',
                 'user_agent': a.user_agent[:100] if a.user_agent else '',
-                'sayfa_url': a.sayfa_url,
-                'created_at': format_datetime(a.created_at),
+                'sayfa_url': a.sayfa_url or '',
+                'created_at': a.created_at.isoformat() if a.created_at else None,
             }
             for a in aktivite_loglari
         ]
-    except:
+    except Exception:
         aktivite_list = []
     
     # İstatistikler
@@ -1310,14 +1337,14 @@ def personel_full_detail_api(request, pk):
             personel=personel, eylem='LOGIN'
         ).order_by('-created_at').first()
         if son_giris:
-            stats['son_giris'] = format_datetime(son_giris.created_at)
+            stats['son_giris'] = son_giris.created_at.isoformat()
         
         # Son çıkış
         son_cikis = PersonelAktiviteLog.objects.filter(
             personel=personel, eylem='LOGOUT'
         ).order_by('-created_at').first()
         if son_cikis:
-            stats['son_cikis'] = format_datetime(son_cikis.created_at)
+            stats['son_cikis'] = son_cikis.created_at.isoformat()
         
         # Bu ay giriş
         stats['bu_ay_giris'] = PersonelAktiviteLog.objects.filter(
@@ -1449,6 +1476,12 @@ def personel_create_user_api(request, pk):
             role_code=requested_role_code,
             must_change_password=True,
         )
+        log_personel_activity(
+            personel=personel,
+            eylem='DATA_CREATE',
+            request=request,
+            detay='Kullanıcı hesabı oluşturuldu',
+        )
         
         return JsonResponse({
             'success': True,
@@ -1546,6 +1579,13 @@ def personel_reset_password_api(request, pk):
             user_role.save()
         except UserRole.DoesNotExist:
             pass
+
+        log_personel_activity(
+            personel=personel,
+            eylem='PASSWORD_RESET',
+            request=request,
+            detay='Şifre TC kimlik numarasına sıfırlandı',
+        )
         
         return JsonResponse({
             'success': True,
@@ -1567,7 +1607,7 @@ def personel_reset_password_api(request, pk):
 @require_module_permission("personel")
 def personel_log_activity_api(request, pk):
     """Personel aktivite logu kaydet"""
-    from apps.personel.domain.models import Personel, PersonelAktiviteLog
+    from apps.personel.domain.models import Personel
     
     try:
         personel = Personel.objects.get(pk=pk)
@@ -1583,44 +1623,24 @@ def personel_log_activity_api(request, pk):
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
     
-    eylem = data.get('eylem', 'OTHER')
-    detay = data.get('detay', '')
-    sayfa_url = data.get('sayfa_url', '')
-    
-    # IP adresi
-    x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
-    if x_forwarded_for:
-        ip_adresi = x_forwarded_for.split(',')[0]
-    else:
-        ip_adresi = request.META.get('REMOTE_ADDR')
-    
-    # User agent
-    user_agent = request.META.get('HTTP_USER_AGENT', '')
-    
-    # Session ID
-    oturum_id = request.session.session_key or ''
-    
-    try:
-        log = PersonelAktiviteLog.objects.create(
-            personel=personel,
-            eylem=eylem,
-            detay=detay,
-            ip_adresi=ip_adresi,
-            user_agent=user_agent,
-            sayfa_url=sayfa_url,
-            oturum_id=oturum_id
-        )
-        
+    log = log_personel_activity(
+        personel=personel,
+        eylem=data.get('eylem', 'OTHER'),
+        request=request,
+        detay=data.get('detay', ''),
+        sayfa_url=data.get('sayfa_url', ''),
+    )
+    if not log:
         return JsonResponse({
-            'success': True,
-            'message': 'Aktivite kaydedildi',
-            'log_id': log.id
-        })
-    except Exception as e:
-        return JsonResponse({
-            'success': False, 
-            'error': f'Aktivite kaydedilemedi: {str(e)}'
+            'success': False,
+            'error': 'Aktivite kaydedilemedi',
         }, status=500)
+
+    return JsonResponse({
+        'success': True,
+        'message': 'Aktivite kaydedildi',
+        'log_id': log.id
+    })
 
 
 @csrf_exempt

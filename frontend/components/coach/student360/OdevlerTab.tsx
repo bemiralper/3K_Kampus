@@ -8,19 +8,10 @@ import {
 } from '@/lib/resources-api';
 import {
   getStatusColor,
-  getRiskColor,
   isOverdue,
   isDueToday,
   NON_SUBMISSION_LABELS,
 } from '@/components/odev/statusTokens';
-function fmtDate(d?: string | null) {
-  if (!d) return '—';
-  return new Date(d).toLocaleDateString('tr-TR', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-  });
-}
 
 function fmtDateShort(d?: string | null) {
   if (!d) return '—';
@@ -244,7 +235,7 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
           return (
             <article
               key={a.id}
-              className="odev360-card"
+              className="odev360-card odev360-card-compact"
               style={{ '--odev-accent': statusStyle.text } as React.CSSProperties}
               onClick={() => router.push(`/coach/odev/kontrol/${a.id}`)}
               role="button"
@@ -254,119 +245,40 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
               }}
             >
               <div className="odev360-card-accent" style={{ background: statusStyle.text }} />
-
               <div className="odev360-card-body">
-                <div className="odev360-card-top">
-                  <div className="odev360-card-title-wrap">
-                    <span className="odev360-status-icon">{statusStyle.icon}</span>
-                    <div>
-                      <h3 className="odev360-card-title">{a.title}</h3>
-                      {a.description && (
-                        <p className="odev360-card-desc">{a.description}</p>
+                <div className="odev360-compact-row">
+                  <div className="odev360-compact-main">
+                    <h3 className="odev360-card-title">{a.title}</h3>
+                    <div className="odev360-compact-meta">
+                      <span
+                        style={{
+                          color: overdue ? '#dc2626' : dueToday ? '#d97706' : undefined,
+                          fontWeight: overdue || dueToday ? 600 : 500,
+                        }}
+                      >
+                        {fmtDateShort(a.due_date)}
+                        {dueToday && !overdue ? ' · bugün' : ''}
+                        {overdue ? ' · gecikti' : ''}
+                      </span>
+                      {taskCount > 0 && (
+                        <span>
+                          {evaluated}/{taskCount} görev
+                        </span>
                       )}
+                      {pendingTasks > 0 && <span>{pendingTasks} bekliyor</span>}
+                      {nonSubmissionLabel && <span className="is-danger">{nonSubmissionLabel}</span>}
                     </div>
                   </div>
-                  <div className="odev360-card-badges">
+                  <div className="odev360-compact-aside">
                     <span
                       className="odev360-badge"
                       style={{ background: statusStyle.bg, color: statusStyle.text }}
                     >
                       {statusLabel}
                     </span>
-                    {a.is_control_locked && (
-                      <span className="odev360-badge odev360-badge-muted">🔒 Kilitli</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="odev360-meta-grid">
-                  <div className="odev360-meta-item">
-                    <span className="odev360-meta-label">Atanma</span>
-                    <span className="odev360-meta-value">{fmtDateShort(a.assigned_date)}</span>
-                  </div>
-                  <div className="odev360-meta-item">
-                    <span className="odev360-meta-label">Son tarih</span>
-                    <span
-                      className="odev360-meta-value"
-                      style={{
-                        color: overdue ? '#dc2626' : dueToday ? '#d97706' : undefined,
-                        fontWeight: overdue || dueToday ? 600 : 500,
-                      }}
-                    >
-                      {fmtDate(a.due_date)}
-                      {dueToday && !overdue ? ' · bugün' : ''}
+                    <span className="odev360-compact-pct" style={{ color: barColor }}>
+                      %{pct}
                     </span>
-                  </div>
-                  {a.priority_display && (
-                    <div className="odev360-meta-item">
-                      <span className="odev360-meta-label">Öncelik</span>
-                      <span className="odev360-meta-value">{a.priority_display}</span>
-                    </div>
-                  )}
-                  {(a.lesson_count ?? 0) > 0 && (
-                    <div className="odev360-meta-item">
-                      <span className="odev360-meta-label">Ders</span>
-                      <span className="odev360-meta-value">{a.lesson_count} blok</span>
-                    </div>
-                  )}
-                </div>
-
-                <div className="odev360-progress-row">
-                  <div className="odev360-ring" style={{ '--pct': pct, '--ring-color': barColor } as React.CSSProperties}>
-                    <span className="odev360-ring-value">%{pct}</span>
-                  </div>
-                  <div className="odev360-progress-detail">
-                    <div className="odev360-progress-head">
-                      <span>Tamamlanma</span>
-                      <span style={{ fontWeight: 700, color: barColor }}>%{pct}</span>
-                    </div>
-                    <div className="odev360-progress-bar">
-                      <div className="odev360-progress-fill" style={{ width: `${pct}%`, background: barColor }} />
-                    </div>
-                    <div className="odev360-task-chips">
-                      {taskCount > 0 && (
-                        <>
-                          <span className="odev360-chip">{taskCount} görev</span>
-                          {evaluated > 0 && (
-                            <span className="odev360-chip is-green">{evaluated} değerlendirildi</span>
-                          )}
-                          {pendingTasks > 0 && (
-                            <span className="odev360-chip is-muted">{pendingTasks} bekliyor</span>
-                          )}
-                        </>
-                      )}
-                      {taskCount === 0 && (
-                        <span className="odev360-chip is-muted">Görev tanımlı değil</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="odev360-card-footer">
-                  <div className="odev360-tags">
-                    {a.risk_status && a.risk_status !== 'PENDING' && a.risk_status !== 'NONE' && (
-                      <span
-                        className="odev360-tag"
-                        style={{
-                          background: getRiskColor(a.risk_status).bg,
-                          color: getRiskColor(a.risk_status).text,
-                        }}
-                      >
-                        {getRiskColor(a.risk_status).icon}{' '}
-                        {a.risk_status_display || a.risk_status}
-                      </span>
-                    )}
-                    {nonSubmissionLabel && (
-                      <span className="odev360-tag is-danger">🚫 {nonSubmissionLabel}</span>
-                    )}
-                    {(a.postpone_count ?? 0) > 0 && (
-                      <span className="odev360-tag is-warn">📅 {a.postpone_count}x ertelendi</span>
-                    )}
-                    {a.coach_name && (
-                      <span className="odev360-tag is-muted">Koç: {a.coach_name}</span>
-                    )}
-                  </div>
-                  <div className="odev360-card-action">
                     {isDraft ? (
                       <button
                         type="button"
@@ -374,12 +286,15 @@ export default function OdevlerTab({ studentId }: OdevlerTabProps) {
                         disabled={assigningId === a.id}
                         onClick={(e) => handleAssignDraft(e, a.id)}
                       >
-                        {assigningId === a.id ? 'Atanıyor…' : 'Öğrenciye ata'}
+                        {assigningId === a.id ? '…' : 'Ata'}
                       </button>
                     ) : (
-                      <span className="odev360-link">Kontrol et →</span>
+                      <span className="odev360-link">Aç</span>
                     )}
                   </div>
+                </div>
+                <div className="odev360-progress-bar odev360-compact-bar">
+                  <div className="odev360-progress-fill" style={{ width: `${pct}%`, background: barColor }} />
                 </div>
               </div>
             </article>

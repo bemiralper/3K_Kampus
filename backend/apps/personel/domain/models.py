@@ -145,6 +145,22 @@ class Personel(models.Model):
         """Personelin sisteme giriş hesabı var mı?"""
         return self.user is not None
 
+    def sync_user_login_access(self):
+        """Personel aktif/pasif durumunu bağlı giriş hesabına yansıtır."""
+        if not self.user_id:
+            return
+        user = self.user
+        if user is None:
+            return
+        desired = bool(self.aktif_mi)
+        if user.is_active != desired:
+            user.is_active = desired
+            user.save(update_fields=['is_active'])
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        self.sync_user_login_access()
+
 
 # NOT: PersonelRol ve Birim modelleri kaldırıldı (Migration 0003)
 # Artık roller 'roller.Role' modelinden geliyor

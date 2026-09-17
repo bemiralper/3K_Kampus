@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import stat
+import tempfile
+import time
 from pathlib import Path
 
 from django.conf import settings
+
+WORK_DIR_NAME = '.work'
 
 
 def local_root() -> Path:
@@ -15,6 +18,51 @@ def local_root() -> Path:
     root = Path(cfg.get('local_root') or (Path(settings.BASE_DIR) / 'private' / 'backups'))
     root.mkdir(parents=True, exist_ok=True)
     return root
+
+
+def work_root() -> Path:
+    """Ham dump + ZIP için disk üstü geçici dizin.
+
+    /tmp çoğu sunucuda küçük bir tmpfs'tir; tam yedek oraya sığmaz.
+    Varsayılan: yedeklerle aynı diskteki ``<local_root>/.work``.
+    """
+    cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
+    configured = cfg.get('work_root')
+    root = Path(configured) if configured else (local_root() / WORK_DIR_NAME)
+    root.mkdir(parents=True, exist_ok=True)
+    _apply_storage_mode(root)
+    return root
+
+
+def make_work_dir(prefix: str = 'backup_') -> Path:
+    path = Path(tempfile.mkdtemp(prefix=prefix, dir=str(work_root())))
+    _apply_storage_mode(path)
+    return path
+
+
+def cleanup_stale_work_dirs(*, max_age_hours: float = 3) -> int:
+    """Yarım kalmış geçici klasörleri siler (çökme / Errno 28 sonrası)."""
+    try:
+        root = work_root()
+    except OSError:
+        return 0
+    cutoff = time.time() - max(0.1, float(max_age_hours)) * 3600
+    removed = 0
+    try:
+        children = list(root.iterdir())
+    except OSError:
+        return 0
+    for child in children:
+        if not child.is_dir():
+            continue
+        try:
+            if child.stat().st_mtime >= cutoff:
+                continue
+            shutil.rmtree(child, ignore_errors=True)
+            removed += 1
+        except OSError:
+            continue
+    return removed
 
 
 def _apply_storage_mode(path: Path) -> None:

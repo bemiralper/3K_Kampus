@@ -73,6 +73,15 @@ export default function KutuphaneTab({ studentId, studentName }: KutuphaneTabPro
             Fiziksel kütüphane ataması (masa/dolap) henüz yok veya API bu öğrenci için
             veri döndürmedi.
           </p>
+          <Link
+            href={`${kutuphaneHref(COACH_KUTUPHANE_BASE, 'izinler')}?ogrenci_id=${studentId}${
+              studentName ? `&ad=${encodeURIComponent(studentName)}` : ''
+            }`}
+            className="coach-link-btn"
+            style={{ marginTop: 12 }}
+          >
+            İzinler
+          </Link>
         </div>
       </div>
     );
@@ -120,7 +129,12 @@ export default function KutuphaneTab({ studentId, studentName }: KutuphaneTabPro
         >
           Atamaları yönet
         </Link>
-        <Link href={kutuphaneHref(COACH_KUTUPHANE_BASE, 'izinler')} className="coach-link-btn">
+        <Link
+          href={`${kutuphaneHref(COACH_KUTUPHANE_BASE, 'izinler')}?ogrenci_id=${studentId}${
+            studentName ? `&ad=${encodeURIComponent(studentName)}` : ''
+          }`}
+          className="coach-link-btn"
+        >
           İzinler
         </Link>
       </div>

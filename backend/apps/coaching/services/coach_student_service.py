@@ -324,13 +324,172 @@ def _format_date(value, format_str='%d.%m.%Y'):
     return value.strftime(format_str) if value else ''
 
 
+def _format_time(value):
+    return value.strftime('%H:%M') if value else None
+
+
+def _student_alan(kayit, student_id):
+    from apps.egitim_tanimlari.models import Alan
+    from apps.ogrenci_kayit.application.enrollment_context import resolve_kayit_alan_id
+
+    alan_id = resolve_kayit_alan_id(
+        kayit,
+        student_id,
+        kayit.egitim_yili_id if kayit else None,
+    )
+    if not alan_id:
+        return None
+    alan = Alan.objects.filter(id=alan_id).only('id', 'ad', 'kod').first()
+    if not alan:
+        return None
+    return {'id': alan.id, 'ad': alan.ad, 'kod': alan.kod}
+
+
+def _offer_label(ad, turu_display=''):
+    name = (ad or '').strip()
+    if ' — ' in name:
+        left, right = name.split(' — ', 1)
+        if left.strip().casefold() == right.strip().casefold():
+            name = left.strip()
+    return name or (turu_display or '').strip()
+
+
+def _student_packages(student, kayit):
+    from apps.ogrenci.domain.models import OgrenciEgitimPaketi, OgrenciEkHizmet
+
+    year_id = kayit.egitim_yili_id if kayit else None
+    paketler = [
+        {
+            'id': row.id,
+            'ad': _offer_label(row.paket_adi, row.get_paket_turu_display()),
+            'turu': row.paket_turu,
+            'turu_display': row.get_paket_turu_display(),
+            'dahil_mi': row.dahil_mi,
+        }
+        for row in OgrenciEgitimPaketi.objects.filter(ogrenci=student, aktif_mi=True).order_by('paket_adi')
+    ]
+    eh_qs = OgrenciEkHizmet.objects.filter(
+        ogrenci=student, aktif_mi=True,
+    ).select_related('ek_hizmet')
+    if year_id:
+        eh_qs = eh_qs.filter(Q(egitim_yili_id=year_id) | Q(egitim_yili_id__isnull=True))
+    hizmetler = [
+        {
+            'id': row.id,
+            'ad': _offer_label(
+                row.ek_hizmet.ad if row.ek_hizmet else '',
+                row.ek_hizmet.get_hizmet_turu_display() if row.ek_hizmet else '',
+            ),
+            'turu': row.ek_hizmet.hizmet_turu if row.ek_hizmet else '',
+            'turu_display': row.ek_hizmet.get_hizmet_turu_display() if row.ek_hizmet else '',
+            'dahil_mi': row.dahil_mi,
+        }
+        for row in eh_qs
+    ]
+    return {'egitim_paketleri': paketler, 'ek_hizmetler': hizmetler}
+
+
+def _student_attendance(student_id):
+    from apps.academic.domain.class_period_attendance import ClassPeriodAttendanceRecord
+    from apps.academic.domain.lesson_attendance import StudentAttendanceStatus
+    from apps.kutuphane.domain.models import AttendanceRecord, AttendanceStatus
+
+    events = []
+    late = absent = exit_n = 0
+
+    for rec in AttendanceRecord.objects.filter(ogrenci_id=student_id).select_related(
+        'attendance_session'
+    ):
+        session = rec.attendance_session
+        tarih = session.tarih.isoformat() if session and session.tarih else None
+        period = session.get_periyot_kodu_display() if session else None
+        if rec.durum == AttendanceStatus.LATE:
+            late += 1
+            events.append({
+                'date': tarih,
+                'source': 'kutuphane',
+                'source_label': 'Kütüphane',
+                'kind': 'late',
+                'kind_label': 'Geç geldi',
+                'time': _format_time(rec.giris_saati),
+                'note': rec.notlar or '',
+                'period': period,
+            })
+        elif rec.durum == AttendanceStatus.ABSENT:
+            absent += 1
+            events.append({
+                'date': tarih,
+                'source': 'kutuphane',
+                'source_label': 'Kütüphane',
+                'kind': 'absent',
+                'kind_label': 'Gelmedi',
+                'time': None,
+                'note': rec.notlar or '',
+                'period': period,
+            })
+        if rec.cikis_saati:
+            exit_n += 1
+            events.append({
+                'date': tarih,
+                'source': 'kutuphane',
+                'source_label': 'Kütüphane',
+                'kind': 'exit',
+                'kind_label': 'Çıkış',
+                'time': _format_time(rec.cikis_saati),
+                'note': rec.notlar or '',
+                'period': period,
+            })
+
+    for rec in ClassPeriodAttendanceRecord.objects.filter(student_id=student_id).select_related(
+        'session'
+    ):
+        session = rec.session
+        tarih = session.session_date.isoformat() if session and session.session_date else None
+        period = session.period_label if session else None
+        if rec.status == StudentAttendanceStatus.LATE:
+            late += 1
+            events.append({
+                'date': tarih,
+                'source': 'sinif',
+                'source_label': 'Sınıf',
+                'kind': 'late',
+                'kind_label': 'Geç geldi',
+                'time': _format_time(rec.late_time),
+                'note': rec.note or '',
+                'period': period,
+            })
+        elif rec.status == StudentAttendanceStatus.ABSENT:
+            absent += 1
+            events.append({
+                'date': tarih,
+                'source': 'sinif',
+                'source_label': 'Sınıf',
+                'kind': 'absent',
+                'kind_label': 'Gelmedi',
+                'time': None,
+                'note': rec.note or '',
+                'period': period,
+            })
+
+    events.sort(key=lambda row: (row.get('date') or '', row.get('time') or ''), reverse=True)
+    return {
+        'late': late,
+        'absent': absent,
+        'exit': exit_n,
+        'events': events[:80],
+    }
+
+
 def _get_active_kayit_detail(student_id, request):
     """Profil için aktif kayıt — sınıf seviyesi ve eğitim yılı dahil."""
     egitim_yili_id = get_secili_egitim_yili_id(request)
     qs = OgrenciKayit.objects.filter(
         ogrenci_id=student_id,
         aktif_mi=True,
-    ).select_related('sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili')
+    ).select_related(
+        'sinif', 'sinif__sinif_seviyesi', 'sinif__alan', 'sinif_seviyesi',
+        'egitim_yili', 'alan',
+    )
     if egitim_yili_id:
         kayit = qs.filter(egitim_yili_id=egitim_yili_id).order_by('-id').first()
         if kayit:
@@ -464,6 +623,7 @@ def _build_coach_student_identity(student, kayit, veli_contact):
         'egitim_yili': egitim_yili_bilgi,
         'kayit_tarihi': kayit_tarihi,
         'profil_foto': profil_foto,
+        'alan': _student_alan(kayit, student.id),
     }
 
 
@@ -661,4 +821,6 @@ def build_coach_student_profile(user, request, student_id):
             if last_meeting
             else None
         ),
+        'packages': _student_packages(student, kayit),
+        'attendance': _student_attendance(student_id),
     }

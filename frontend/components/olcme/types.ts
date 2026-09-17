@@ -802,7 +802,16 @@ export interface StudentDetailResponse {
     heading: string;
     tables: {
       title: string;
-      rows: { name: string; soru: number; dogru: number; yanlis: number; bos: number; basari: number }[];
+      rows: {
+        name: string;
+        topic?: string;
+        outcome?: string;
+        soru: number;
+        dogru: number;
+        yanlis: number;
+        bos: number;
+        basari: number;
+      }[];
     }[];
   }[];
 }
@@ -903,9 +912,11 @@ export interface StudentExamSectionDetail {
   net: number;
   question_count: number;
   is_sub_section: boolean;
+  parent_section_id?: number | null;
 }
 
 export interface StudentExamResult {
+  answer_id?: number;
   exam_id: number;
   exam_name: string;
   exam_type: string;
@@ -918,6 +929,7 @@ export interface StudentExamResult {
   total_net: number;
   puan: number;
   ham_puan: number;
+  puan_turleri?: StudentDetailResponse['puan_turleri'];
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
   kurum_ici_sira: number;
@@ -952,9 +964,168 @@ export interface StudentExamTrend {
 
 export interface StudentExamResponse {
   student_name: string;
+  alan?: string | null;
   exams: StudentExamResult[];
   kpi: StudentExamKPI | null;
   net_trend: StudentExamTrend[];
+}
+
+export type DevelopmentWindow = '1' | '3' | '5' | '10' | 'all' | 'custom';
+export type DevelopmentTypeGroup = 'TYT' | 'AYT' | 'LGS' | 'manuel';
+export type DevelopmentStatus =
+  | 'insufficient_data'
+  | 'improving'
+  | 'strongly_improving'
+  | 'declining'
+  | 'strongly_declining'
+  | 'stable'
+  | 'yeni_olculdu';
+
+export interface DevelopmentExam {
+  exam_id: number;
+  name: string;
+  date: string | null;
+  exam_type: string;
+  booklet?: string;
+}
+
+export interface DevelopmentSeriesPoint {
+  exam_id: number;
+  exam_name: string;
+  exam_date: string | null;
+  net: number;
+  correct: number;
+  wrong: number;
+  empty: number;
+  question_count: number;
+  performance_rate: number;
+}
+
+export interface DevelopmentOutcomeSeriesPoint {
+  exam_id: number;
+  exam_name: string;
+  exam_date: string | null;
+  question_count: number;
+  correct: number;
+  wrong: number;
+  empty: number;
+  mastery_rate: number;
+  accuracy_rate: number | null;
+}
+
+export interface DevelopmentOutcome {
+  name: string;
+  subject: string;
+  topic: string;
+  question_count: number;
+  correct: number;
+  wrong: number;
+  empty: number;
+  mastery_rate: number | null;
+  accuracy_rate: number | null;
+  data_confidence: 'insufficient' | 'low' | 'medium' | 'high';
+  development_status: DevelopmentStatus;
+  is_volatile: boolean;
+  period_change: number | null;
+  period_status: string | null;
+  first_last_change: number | null;
+  change_label: string | null;
+  series: DevelopmentOutcomeSeriesPoint[];
+  narrative: string;
+  priority_score: number | null;
+  priority_level: 'critical' | 'high' | 'medium' | 'low' | null;
+}
+
+export interface DevelopmentSubject {
+  name: string;
+  exam_count: number;
+  average_net: number | null;
+  first_net: number | null;
+  last_net: number | null;
+  net_change: number | null;
+  average_performance_rate: number | null;
+  first_performance_rate: number | null;
+  last_performance_rate: number | null;
+  performance_level: 'very_high' | 'high' | 'medium' | 'needs_work' | 'low' | null;
+  development_status: DevelopmentStatus;
+  is_volatile: boolean;
+  confidence: number;
+  rates: {
+    first_last_change: number | null;
+    first_last_label: string | null;
+    period_change: number | null;
+    period_label: string | null;
+    slope: number | null;
+    slope_label: string | null;
+    volatility: number | null;
+    volatility_label: string | null;
+  };
+  series: DevelopmentSeriesPoint[];
+  strong_areas: { name: string; topic: string; mastery_rate: number; question_count: number }[];
+  growth_areas: { name: string; topic: string; mastery_rate: number; question_count: number }[];
+  topics: {
+    name: string;
+    question_count: number;
+    correct: number;
+    wrong: number;
+    empty: number;
+    mastery_rate: number | null;
+    outcomes: {
+      name: string;
+      question_count: number;
+      correct: number;
+      wrong: number;
+      empty: number;
+      mastery_rate: number | null;
+      accuracy_rate: number | null;
+      development_status: DevelopmentStatus;
+      data_confidence: string;
+    }[];
+  }[];
+  outcomes: DevelopmentOutcome[];
+  narrative: string;
+}
+
+export interface DevelopmentPriority {
+  outcome: string;
+  subject: string;
+  topic: string;
+  priority_score: number;
+  priority_level: 'critical' | 'high' | 'medium' | 'low';
+  mastery_rate: number | null;
+  question_count: number;
+  correct?: number;
+  exam_count?: number;
+  development_status: DevelopmentStatus;
+  narrative: string;
+}
+
+export interface DevelopmentResponse {
+  student_name: string;
+  filters: {
+    exam_type_group: DevelopmentTypeGroup | null;
+    alan?: string | null;
+    exam_types: string[];
+    window: string;
+    exam_ids: number[];
+    date_from: string | null;
+    date_to: string | null;
+  };
+  exam_count: number;
+  exams: DevelopmentExam[];
+  summary: {
+    improving: number;
+    stable: number;
+    declining: number;
+    insufficient: number;
+    top_improving: string | null;
+    top_declining: string | null;
+    most_stable: string | null;
+    most_volatile: string | null;
+    narratives: string[];
+  };
+  subjects: DevelopmentSubject[];
+  priorities: DevelopmentPriority[];
 }
 
 export type KatsayiKind = 'TYT' | 'AYT_SAY' | 'AYT_EA' | 'AYT_SOZ';

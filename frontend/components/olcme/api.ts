@@ -39,6 +39,7 @@ import type {
   ComparisonItem,
   StudentDetailResponse,
   StudentExamResponse,
+  DevelopmentResponse,
   TopicItem,
   OutcomeItem,
   SubOutcomeItem,
@@ -1013,6 +1014,26 @@ export const studentExamApi = {
     if (rankingYear) params.set('ranking_year', String(rankingYear));
     const qs = params.toString() ? `?${params}` : '';
     return request<StudentExamResponse>(`${STUDENT_EXAM_BASE}/${studentId}/${qs}`);
+  },
+
+  development: (
+    studentId: number,
+    params?: {
+      examType?: string;
+      window?: string;
+      examIds?: number[];
+      dateFrom?: string;
+      dateTo?: string;
+    }
+  ) => {
+    const qs = new URLSearchParams();
+    if (params?.examType) qs.set('exam_type', params.examType);
+    if (params?.window && params.window !== 'custom') qs.set('window', params.window);
+    if (params?.examIds?.length) qs.set('exam_ids', params.examIds.join(','));
+    if (params?.dateFrom) qs.set('date_from', params.dateFrom);
+    if (params?.dateTo) qs.set('date_to', params.dateTo);
+    const suffix = qs.toString() ? `?${qs}` : '';
+    return request<DevelopmentResponse>(`${STUDENT_EXAM_BASE}/${studentId}/development/${suffix}`);
   },
 };
 
