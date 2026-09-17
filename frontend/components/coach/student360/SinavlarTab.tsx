@@ -1325,9 +1325,8 @@ function GrowthPanel({
 }) {
   const visibleGroups = DEV_GROUPS.filter((g) => !(lise && g.value === 'LGS'));
   const [typeGroup, setTypeGroup] = useState<DevelopmentTypeGroup | ''>(() => {
-    const groups: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'LGS', 'manuel'].filter(
-      (g) => !(lise && g === 'LGS')
-    );
+    const allGroups: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'LGS', 'manuel'];
+    const groups = allGroups.filter((g) => !(lise && g === 'LGS'));
     return pickOverviewGroup(exams, groups.filter((g) => exams.some((e) => examGroup(e.exam_type) === g)));
   });
   const [windowPick, setWindowPick] = useState<DevelopmentWindow>('5');
