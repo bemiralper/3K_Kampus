@@ -18,10 +18,9 @@ import {
 import './study-plans.css';
 
 function mondayOf(value: Date): Date {
-  const copy = new Date(value);
+  const copy = new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
   const weekday = (copy.getDay() + 6) % 7;
   copy.setDate(copy.getDate() - weekday);
-  copy.setHours(12, 0, 0, 0);
   return copy;
 }
 
@@ -33,7 +32,7 @@ function toIso(value: Date): string {
 }
 
 function addDays(value: Date, days: number): Date {
-  const copy = new Date(value);
+  const copy = new Date(value.getFullYear(), value.getMonth(), value.getDate(), 12, 0, 0, 0);
   copy.setDate(copy.getDate() + days);
   return copy;
 }
@@ -78,16 +77,21 @@ export default function StudyPlanWorkspace({
   const weeks = useMemo(() => weekOptions(), []);
 
   useEffect(() => {
-    fetchCoachStudents().then((res) => {
-      if (res.success && res.data) setStudents(res.data);
-    });
-    fetchStudyTemplates().then((res) => {
-      if (res.success && res.data) {
-        setTemplates(res.data);
-        const standart = res.data.find((t) => t.scenario === 'STANDART') || res.data[0];
-        if (standart) setTemplateId(standart.id);
-      }
-    });
+    const loadLookups = () => {
+      fetchCoachStudents().then((res) => {
+        if (res.success && res.data) setStudents(res.data);
+      });
+      fetchStudyTemplates().then((res) => {
+        if (res.success && res.data) {
+          setTemplates(res.data);
+          const standart = res.data.find((t) => t.scenario === 'STANDART') || res.data[0];
+          if (standart) setTemplateId((current) => current || standart.id);
+        }
+      });
+    };
+    loadLookups();
+    window.addEventListener('3k:context-updated', loadLookups);
+    return () => window.removeEventListener('3k:context-updated', loadLookups);
   }, []);
 
   const loadExisting = useCallback(async (sid: number, start: string) => {
@@ -98,7 +102,11 @@ export default function StudyPlanWorkspace({
       return;
     }
     const detail = await fetchStudyProgram(first.id);
-    if (detail.success && detail.data) setProgram(detail.data);
+    if (detail.success && detail.data && detail.data.week_start === start) {
+      setProgram(detail.data);
+      return;
+    }
+    setProgram(null);
   }, []);
 
   useEffect(() => {
@@ -135,12 +143,20 @@ export default function StudyPlanWorkspace({
     });
     setLoading(false);
     if (res.already_exists && res.data) {
+      if (res.data.week_start !== weekStart) {
+        setError('Üretilen program seçilen haftaya ait değil.');
+        return;
+      }
       setProgram(res.data);
       setAlreadyExists(true);
       return;
     }
     if (!res.success || !res.data) {
       setError(res.error || 'Program oluşturulamadı.');
+      return;
+    }
+    if (res.data.week_start !== weekStart) {
+      setError('Üretilen program seçilen haftaya ait değil.');
       return;
     }
     setProgram(res.data);

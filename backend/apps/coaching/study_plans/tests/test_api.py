@@ -58,6 +58,7 @@ class StudyPlanApiTest(TestCase):
             student=student,
             title='Haftalık testler',
             status='ASSIGNED',
+            assigned_date=timezone.make_aware(datetime(2026, 9, 14, 9, 0)),
             due_date=timezone.make_aware(datetime(2026, 9, 21, 18, 0)),
             is_active=True,
         )
@@ -154,6 +155,38 @@ class StudyPlanApiTest(TestCase):
         self.assertEqual(b.status_code, 201, b.data)
         self.assertEqual(a.data['days'][0]['planned_tests'], 2)
         self.assertEqual(b.data['days'][0]['planned_tests'], 2)
+
+    def test_generate_uses_selected_week_only(self):
+        self._seed_homework(self.student, tests=10)
+        week_b = date(2026, 9, 21)
+        ManualAssignment.objects.create(
+            coach=self.coach,
+            student=self.student,
+            title='Hafta B ödevi',
+            status='ASSIGNED',
+            assigned_date=timezone.make_aware(datetime(2026, 9, 21, 9, 0)),
+            due_date=timezone.make_aware(datetime(2026, 9, 28, 18, 0)),
+            is_active=True,
+        )
+        with self._freeze_today():
+            a = self.client.post(GENERATE_URL, {
+                'student_id': self.student.id,
+                'week_start': self.week_start.isoformat(),
+                'template_id': self.template.id,
+            }, format='json')
+            b = self.client.post(GENERATE_URL, {
+                'student_id': self.student.id,
+                'week_start': week_b.isoformat(),
+                'template_id': self.template.id,
+            }, format='json')
+        self.assertEqual(a.status_code, 201, a.data)
+        self.assertEqual(a.data['week_start'], '2026-09-14')
+        self.assertTrue(all(d['day_date'] >= '2026-09-14' and d['day_date'] <= '2026-09-20' for d in a.data['days']))
+        self.assertEqual(a.data['summary']['tests']['planned'], 10)
+        self.assertEqual(b.status_code, 201, b.data)
+        self.assertEqual(b.data['week_start'], '2026-09-21')
+        self.assertTrue(all(d['day_date'] >= '2026-09-21' and d['day_date'] <= '2026-09-27' for d in b.data['days']))
+        self.assertEqual(b.data['summary']['tests']['planned'], 0)
 
     def test_preview_does_not_persist(self):
         self._seed_homework(self.student, tests=10)

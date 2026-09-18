@@ -52,6 +52,7 @@ class StudyPlanEngineTest(TestCase):
             student=self.student,
             title=title,
             status='ASSIGNED',
+            assigned_date=timezone.make_aware(datetime(2026, 9, 14, 9, 0)),
             due_date=timezone.make_aware(datetime(2026, 9, 21, 18, 0)),
             is_active=True,
             priority='MEDIUM',
@@ -92,6 +93,7 @@ class StudyPlanEngineTest(TestCase):
             student=self.student,
             title='100 Soru',
             status='ASSIGNED',
+            assigned_date=timezone.make_aware(datetime(2026, 9, 14, 9, 0)),
             due_date=timezone.make_aware(datetime(2026, 9, 21, 18, 0)),
             is_active=True,
         )
@@ -212,3 +214,132 @@ class StudyPlanEngineTest(TestCase):
         with self.assertRaises(Exception):
             persist_draft(student=self.student, coach=None, template=self.template, draft=draft)
         self.assertEqual(StudyProgram.objects.filter(student=self.student).count(), 1)
+
+    def _hw(self, title, assigned, due, tests=9, questions_each=10):
+        assignment = ManualAssignment.objects.create(
+            student=self.student,
+            title=title,
+            status='ASSIGNED',
+            assigned_date=timezone.make_aware(datetime.combine(assigned, datetime.min.time().replace(hour=9))),
+            due_date=timezone.make_aware(datetime.combine(due, datetime.min.time().replace(hour=18))),
+            is_active=True,
+        )
+        lesson = AssignmentLesson.objects.create(
+            assignment=assignment, lesson=self.ders, topic_name=title,
+        )
+        for i in range(tests):
+            AssignmentTask.objects.create(
+                lesson_block=lesson,
+                task_type=AssignmentTask.TaskType.SOLVE_TEST,
+                title=f'{title} {i + 1}',
+                question_count=questions_each,
+                estimated_duration_minutes=12,
+                order=i,
+            )
+        return assignment
+
+    def test_other_week_homework_not_ingested(self):
+        self._hw('Hafta A ödevi', date(2026, 9, 14), date(2026, 9, 21), tests=10)
+        self._hw('Hafta B ödevi', date(2026, 9, 21), date(2026, 9, 28), tests=10)
+        week_a = build_draft(
+            student_id=self.student.id,
+            week_start=date(2026, 9, 14),
+            template=self.template,
+            today=date(2026, 9, 14),
+            lock_past=False,
+        )
+        week_b = build_draft(
+            student_id=self.student.id,
+            week_start=date(2026, 9, 21),
+            template=self.template,
+            today=date(2026, 9, 14),
+            lock_past=False,
+        )
+        self.assertEqual({u.title for u in week_a.units}, {'Hafta A ödevi'})
+        self.assertEqual({u.title for u in week_b.units}, {'Hafta B ödevi'})
+        self.assertTrue(all(date(2026, 9, 14) <= d.day_date <= date(2026, 9, 20) for d in week_a.days))
+        self.assertTrue(all(date(2026, 9, 21) <= d.day_date <= date(2026, 9, 27) for d in week_b.days))
+        self.assertEqual(sum(u.tests for u in week_a.units), 10)
+        self.assertEqual(sum(u.tests for u in week_b.units), 10)
+
+    def test_three_week_homework_sliced_per_selected_week(self):
+        self._hw('Üç haftalık', date(2026, 9, 1), date(2026, 9, 21), tests=9)
+        shares = []
+        for start in (date(2026, 8, 31), date(2026, 9, 7), date(2026, 9, 14)):
+            draft = build_draft(
+                student_id=self.student.id,
+                week_start=start,
+                template=self.template,
+                today=date(2026, 8, 31),
+                lock_past=False,
+            )
+            shares.append(sum(u.tests for u in draft.units))
+            self.assertTrue(all(start <= d.day_date <= start + timedelta(days=6) for d in draft.days))
+        self.assertEqual(shares, [3, 3, 3])
+        other = build_draft(
+            student_id=self.student.id,
+            week_start=date(2026, 9, 21),
+            template=self.template,
+            today=date(2026, 8, 31),
+            lock_past=False,
+        )
+        self.assertEqual(sum(u.tests for u in other.units), 0)
+
+    def test_three_week_homework_sliced_across_separate_lessons(self):
+        """Canlı ödev gibi: 9 ders × 1 test, 3 haftaya 3+3+3 — hepsi ilk haftaya yığılmasın."""
+        assignment = ManualAssignment.objects.create(
+            student=self.student,
+            title='Üç haftalık ayrı dersler',
+            status='ASSIGNED',
+            assigned_date=timezone.make_aware(datetime(2026, 9, 1, 9, 0)),
+            due_date=timezone.make_aware(datetime(2026, 9, 21, 18, 0)),
+            is_active=True,
+        )
+        for i in range(9):
+            lesson = AssignmentLesson.objects.create(
+                assignment=assignment, lesson=self.ders, topic_name=f'Ders {i + 1}',
+            )
+            AssignmentTask.objects.create(
+                lesson_block=lesson,
+                task_type=AssignmentTask.TaskType.SOLVE_TEST,
+                title=f'Test {i + 1}',
+                question_count=10,
+                estimated_duration_minutes=12,
+                order=i,
+            )
+        shares = []
+        for start in (date(2026, 8, 31), date(2026, 9, 7), date(2026, 9, 14)):
+            draft = build_draft(
+                student_id=self.student.id,
+                week_start=start,
+                template=self.template,
+                today=date(2026, 8, 31),
+                lock_past=False,
+            )
+            shares.append(sum(u.tests for u in draft.units))
+            self.assertTrue(all(start <= d.day_date <= start + timedelta(days=6) for d in draft.days))
+        self.assertEqual(shares, [3, 3, 3])
+
+    def test_sunday_assign_stays_on_following_week(self):
+        """Pazar verilen '2. hafta' ödevi önceki Pazartesi haftasına dökülmez."""
+        self._hw('Eylül 2. Hafta', date(2026, 9, 13), date(2026, 9, 20), tests=10)
+        week_prev = build_draft(
+            student_id=self.student.id,
+            week_start=date(2026, 9, 7),
+            template=self.template,
+            today=date(2026, 9, 7),
+            lock_past=False,
+        )
+        week_work = build_draft(
+            student_id=self.student.id,
+            week_start=date(2026, 9, 14),
+            template=self.template,
+            today=date(2026, 9, 7),
+            lock_past=False,
+        )
+        self.assertEqual(sum(u.tests for u in week_prev.units), 0)
+        self.assertEqual(sum(u.tests for u in week_work.units), 10)
+        self.assertEqual([d.day_date for d in week_work.days], [
+            date(2026, 9, 14), date(2026, 9, 15), date(2026, 9, 16),
+            date(2026, 9, 17), date(2026, 9, 18),
+        ])

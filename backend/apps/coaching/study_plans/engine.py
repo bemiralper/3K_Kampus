@@ -7,7 +7,7 @@ Mevcut greedy auto_distribute kullanılmaz.
 from __future__ import annotations
 
 from dataclasses import dataclass, field, asdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Iterable
 
 from django.db import transaction
@@ -115,13 +115,85 @@ def week_end_of(week_start: date) -> date:
 
 
 def _as_date(value) -> date | None:
+    """Tarihi kurum yerel gününe çevir — UTC gece yarısı önceki/sonraki haftaya kaymasın."""
     if value is None:
         return None
-    if isinstance(value, date) and not hasattr(value, 'hour'):
-        return value
-    if hasattr(value, 'date'):
+    if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            return timezone.localtime(value).date()
         return value.date()
-    return value
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def homework_work_window(assignment, *, respect_due_date: bool = True) -> tuple[date, date] | None:
+    """
+    Ödevin çalışma penceresi: [assigned, due) — kontrol günü (due) iş günü değil.
+    Assigned yoksa due haftasına sıkışır.
+    """
+    due = _as_date(getattr(assignment, 'due_date', None))
+    assigned = _as_date(getattr(assignment, 'assigned_date', None))
+    if due is None and assigned is None:
+        return None
+    start = assigned or due
+    end = due or assigned
+    if start > end:
+        start, end = end, start
+    if respect_due_date and due is not None and end >= due:
+        end = due - timedelta(days=1)
+    if end < start:
+        end = start
+    return start, end
+
+
+def week_has_workdays(week_start: date, window_start: date, window_end: date, weekdays: list[int] | None = None) -> bool:
+    week_start = monday_of(week_start)
+    days = weekdays if weekdays is not None else [0, 1, 2, 3, 4]
+    for weekday in days:
+        day = week_start + timedelta(days=int(weekday))
+        if window_start <= day <= window_end:
+            return True
+    return False
+
+
+def overlapping_work_weeks(window_start: date, window_end: date, weekdays: list[int] | None = None) -> list[date]:
+    weeks = []
+    mon = monday_of(window_start)
+    last = monday_of(window_end)
+    while mon <= last:
+        if week_has_workdays(mon, window_start, window_end, weekdays):
+            weeks.append(mon)
+        mon += timedelta(days=7)
+    return weeks
+
+
+def assignment_belongs_to_week(assignment, week_start: date, week_end: date, *, respect_due_date: bool = True) -> bool:
+    window = homework_work_window(assignment, respect_due_date=respect_due_date)
+    if window is None:
+        return False
+    work_start, work_end = window
+    if work_end < week_start or work_start > week_end:
+        return False
+    return week_has_workdays(week_start, work_start, work_end)
+
+
+def slice_unit_for_week(unit: WorkUnit, work_weeks: list[date], week_start: date) -> WorkUnit | None:
+    """Çok haftalık ödevi haftalara böler; seçilen haftanın payını döner."""
+    if not work_weeks:
+        return None
+    week_start = monday_of(week_start)
+    if week_start not in work_weeks:
+        return None
+    if len(work_weeks) == 1:
+        return unit
+    idx = work_weeks.index(week_start)
+    t = split_even(unit.tests, len(work_weeks))[idx]
+    q = split_even(unit.questions, len(work_weeks))[idx]
+    m = split_even(unit.minutes, len(work_weeks))[idx]
+    if t <= 0 and q <= 0 and m <= 0:
+        return None
+    return WorkUnit(**{**asdict(unit), 'tests': t, 'questions': q, 'minutes': m})
 
 
 def _weight_for(template: StudyTemplate, weekday: int) -> float:
@@ -238,7 +310,15 @@ def unitize_task(task: AssignmentTask, assignment: ManualAssignment) -> WorkUnit
     )
 
 
-def collect_homework_units(student_id: int, week_start: date, week_end: date) -> list[WorkUnit]:
+def collect_homework_units(
+    student_id: int,
+    week_start: date,
+    week_end: date,
+    *,
+    respect_due_date: bool = True,
+) -> list[WorkUnit]:
+    week_start = monday_of(week_start)
+    week_end = week_end_of(week_start)
     assignments = (
         ManualAssignment.objects.filter(
             student_id=student_id,
@@ -252,26 +332,26 @@ def collect_homework_units(student_id: int, week_start: date, week_end: date) ->
             'lessons__tasks__content',
         )
     )
-    units: list[WorkUnit] = []
+    raw_units: list[WorkUnit] = []
+    work_weeks_by_assignment: dict[int, list[date]] = {}
     for assignment in assignments:
-        due = _as_date(assignment.due_date)
-        assigned = _as_date(assignment.assigned_date)
-        overlaps = True
-        if due and due < week_start and assignment.status != 'OVERDUE':
-            overlaps = False
-        if assigned and assigned > week_end:
-            overlaps = False
-        if not overlaps and due and not (week_start <= due <= week_end):
+        if not assignment_belongs_to_week(
+            assignment, week_start, week_end, respect_due_date=respect_due_date,
+        ):
             continue
+        window = homework_work_window(assignment, respect_due_date=respect_due_date)
+        work_weeks_by_assignment[assignment.id] = (
+            overlapping_work_weeks(window[0], window[1]) if window else [week_start]
+        )
+        due = _as_date(assignment.due_date)
 
         lessons = list(assignment.lessons.all())
         tasks: list[AssignmentTask] = []
         for lesson in lessons:
             tasks.extend(list(lesson.tasks.all()))
         if not tasks:
-            # Dersi/görevi olmayan açık ödev: 1 süre slotu
             title = strip_completion_title_suffix(assignment.title) or assignment.title
-            units.append(WorkUnit(
+            raw_units.append(WorkUnit(
                 source_assignment_id=assignment.id,
                 source_lesson_id=None,
                 source_task_id=None,
@@ -292,7 +372,14 @@ def collect_homework_units(student_id: int, week_start: date, week_end: date) ->
         for task in tasks:
             unit = unitize_task(task, assignment)
             if unit:
-                units.append(unit)
+                raw_units.append(unit)
+
+    units: list[WorkUnit] = []
+    for unit in merge_units_by_assignment(raw_units):
+        weeks = work_weeks_by_assignment.get(unit.source_assignment_id or 0) or [week_start]
+        sliced = slice_unit_for_week(unit, weeks, week_start)
+        if sliced:
+            units.append(sliced)
     return units
 
 
@@ -496,6 +583,45 @@ def _place_share(day: DayPlan, unit: WorkUnit, tests: int, questions: int, minut
     return tests - placed_t, questions - placed_q, minutes - placed_m
 
 
+def merge_units_by_assignment(units: list[WorkUnit]) -> list[WorkUnit]:
+    """Haftalık dilim için ödevi tek havuz yap — ders başına 1 test 3 haftaya [1,0,0] gitmesin."""
+    grouped: dict[int | None, WorkUnit] = {}
+    order: list[int | None] = []
+    for unit in units:
+        key = unit.source_assignment_id
+        if key not in grouped:
+            grouped[key] = WorkUnit(
+                source_assignment_id=unit.source_assignment_id,
+                source_lesson_id=None,
+                source_task_id=None,
+                source_kind=unit.source_kind,
+                title=unit.title,
+                lesson_id=None,
+                lesson_name=unit.lesson_name,
+                topic_name=unit.topic_name,
+                resource_name=unit.resource_name,
+                tests=0,
+                questions=0,
+                minutes=0,
+                priority=unit.priority,
+                due_date=unit.due_date,
+                warnings=list(unit.warnings),
+            )
+            order.append(key)
+        acc = grouped[key]
+        acc.tests += unit.tests
+        acc.questions += unit.questions
+        acc.minutes += unit.minutes
+        if _priority_rank(unit.priority) < _priority_rank(acc.priority):
+            acc.priority = unit.priority
+        if unit.due_date and (acc.due_date is None or unit.due_date < acc.due_date):
+            acc.due_date = unit.due_date
+        acc.warnings.extend(unit.warnings)
+        if unit.lesson_name and not acc.lesson_name:
+            acc.lesson_name = unit.lesson_name
+    return [grouped[k] for k in order]
+
+
 def merge_units_by_source(units: list[WorkUnit]) -> list[WorkUnit]:
     """Aynı ödev/ders birimlerini topla — 10 test tek kaynak olur, günlere bölünür."""
     grouped: dict[tuple, WorkUnit] = {}
@@ -628,13 +754,17 @@ def build_draft(
     if locked_days:
         locked_dates = {d.day_date for d in locked_days}
         days = [d for d in days if d.day_date not in locked_dates]
-        days = list(locked_days) + days
+        days = [d for d in locked_days if week_start <= d.day_date <= week_end] + days
         days.sort(key=lambda d: d.day_date)
+    days = [d for d in days if week_start <= d.day_date <= week_end]
 
     units: list[WorkUnit] = []
     warnings: list[str] = []
     if include_homework:
-        units.extend(collect_homework_units(student_id, week_start, week_end))
+        units.extend(collect_homework_units(
+            student_id, week_start, week_end,
+            respect_due_date=template.respect_due_date,
+        ))
         units.extend(collect_previous_leftovers(student_id, week_start))
     if extra_units:
         units.extend(extra_units)
