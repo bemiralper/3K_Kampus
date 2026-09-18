@@ -88,6 +88,21 @@ def _field(
     }
 
 
+def _resolve_catalog_year_id(egitim_yili_id) -> int | None:
+    """Bağlam yılı yoksa aktif eğitim yılını kullan — eski dönem sınıfları karışmasın."""
+    if egitim_yili_id:
+        try:
+            return int(egitim_yili_id)
+        except (TypeError, ValueError):
+            pass
+    from apps.egitim_yili.domain.models import EgitimYili
+
+    year = EgitimYili.objects.filter(aktif_mi=True).order_by('-baslangic_yil').first()
+    if not year:
+        year = EgitimYili.objects.order_by('-baslangic_yil').first()
+    return year.id if year else None
+
+
 def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
     from apps.egitim_paketleri.models import EkHizmet
     from apps.egitim_tanimlari.models import SinifSeviyesi
@@ -101,8 +116,14 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
     from apps.sinif.domain.models import Sinif
     from apps.sube.domain.models import Sube
 
+    year_id = _resolve_catalog_year_id(egitim_yili_id)
+
     sube_qs = Sube.objects.filter(kurum_id=kurum_id, aktif_mi=True).order_by('ad')
-    year_qs = EgitimYili.objects.filter(aktif_mi=True).order_by('-baslangic_yil')
+    year_qs = EgitimYili.objects.all().order_by('-baslangic_yil')
+    if year_id:
+        year_qs = year_qs.filter(id=year_id)
+    else:
+        year_qs = year_qs.filter(aktif_mi=True)
     seviye_qs = SinifSeviyesi.objects.filter(kurum_id=kurum_id, aktif_mi=True)
     if sube_id:
         seviye_qs = seviye_qs.filter(sube_id=sube_id)
@@ -111,14 +132,17 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
     sinif_qs = Sinif.objects.filter(kurum_id=kurum_id, aktif_mi=True)
     if sube_id:
         sinif_qs = sinif_qs.filter(sube_id=sube_id)
-    if egitim_yili_id:
-        sinif_qs = sinif_qs.filter(egitim_yili_id=egitim_yili_id)
+    if year_id:
+        sinif_qs = sinif_qs.filter(egitim_yili_id=year_id)
     if allowed is not None:
-        sinif_ids = OgrenciKayit.objects.filter(
+        kayit_qs = OgrenciKayit.objects.filter(
             kurum_id=kurum_id,
             ogrenci_id__in=allowed,
             aktif_mi=True,
-        ).values_list('sinif_id', flat=True)
+        )
+        if year_id:
+            kayit_qs = kayit_qs.filter(egitim_yili_id=year_id)
+        sinif_ids = kayit_qs.values_list('sinif_id', flat=True)
         sinif_qs = sinif_qs.filter(id__in=sinif_ids)
     sinif_qs = sinif_qs.order_by('ad')
 

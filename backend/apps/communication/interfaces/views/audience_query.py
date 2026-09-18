@@ -21,16 +21,20 @@ from shared.permissions import user_has_any_permission
 
 def _egitim_yili_id(request) -> int | None:
     raw = (
-        request.headers.get('X-Egitim-Yili-ID')
+        request.headers.get('X-EgitimYili-ID')
+        or request.headers.get('X-Egitim-Yili-ID')
         or request.query_params.get('egitim_yili_id')
-        or request.data.get('egitim_yili_id')
     )
-    if not raw:
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
+    if raw is None and request.method not in ('GET', 'HEAD'):
+        raw = request.data.get('egitim_yili_id')
+    if raw:
+        try:
+            return int(raw)
+        except (TypeError, ValueError):
+            pass
+    from shared.context import get_secili_egitim_yili_id
+
+    return get_secili_egitim_yili_id(request)
 
 
 def _query_from_request(request) -> dict:

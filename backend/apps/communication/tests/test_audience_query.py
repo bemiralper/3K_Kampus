@@ -285,6 +285,28 @@ class AudienceQueryScenarioTest(TestCase):
         self.assertEqual(quick['kutuphane_ogrenciler']['add_field'], 'ek_hizmet_turu')
         self.assertEqual(quick['kutuphane_ogrenciler']['add_value'], ['kutuphane'])
 
+    def test_catalog_defaults_to_active_year_classes(self):
+        from apps.communication.application.audience_catalog import build_audience_catalog
+
+        old_year = EgitimYili.objects.create(
+            baslangic_yil=2023, bitis_yil=2024, aktif_mi=False,
+        )
+        old_sinif = Sinif.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=old_year,
+            ad='10-Z', kod='10Z-OLD', sinif_seviyesi=self.seviye_11, aktif_mi=True,
+        )
+        catalog = build_audience_catalog(
+            self.kurum.id,
+            user=self.admin,
+            sube_id=self.sube.id,
+        )
+        fields = {f['key']: f for f in catalog['fields']}
+        sinif_ids = {o['value'] for o in fields['sinif_id']['options']}
+        year_ids = {o['value'] for o in fields['egitim_yili_id']['options']}
+        self.assertIn(self.sinif_11a.id, sinif_ids)
+        self.assertNotIn(old_sinif.id, sinif_ids)
+        self.assertEqual(year_ids, {self.year.id})
+
     def test_scenario_9_kayit_turu(self):
         result = self._resolve(_query(['ogrenci'], [_group(_f('kayit_turu', 'misafir'))]))
         self.assertEqual(self._ids(result, 'ogrenci'), {self.s_12b.id})
@@ -464,6 +486,41 @@ class AudienceQueryScopeAndApiTest(TestCase):
         self.assertIn('sinif_id', keys)
         self.assertIn('coach_id', keys)
         self.assertNotIn('rehber_id', keys)
+
+    def _catalog_sinif_ids(self, **headers):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(
+            '/api/communication/campaigns/audience/catalog/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube.id),
+            **headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        fields = {f['key']: f for f in res.data['fields']}
+        return {opt['value'] for opt in fields['sinif_id']['options']}
+
+    def test_catalog_lists_only_active_year_classes(self):
+        old_year = EgitimYili.objects.create(
+            baslangic_yil=2023, bitis_yil=2024, aktif_mi=False,
+        )
+        old_sinif = Sinif.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=old_year,
+            ad='9-A', kod='9A-OLD', aktif_mi=True,
+        )
+        ids = self._catalog_sinif_ids()
+        self.assertIn(self.sinif.id, ids)
+        self.assertNotIn(old_sinif.id, ids)
+
+    def test_catalog_respects_standard_year_header(self):
+        old_year = EgitimYili.objects.create(
+            baslangic_yil=2023, bitis_yil=2024, aktif_mi=False,
+        )
+        old_sinif = Sinif.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=old_year,
+            ad='9-A', kod='9A-HDR', aktif_mi=True,
+        )
+        ids = self._catalog_sinif_ids(HTTP_X_EGITIMYILI_ID=str(old_year.id))
+        self.assertEqual(ids, {old_sinif.id})
 
     def test_saved_audience_crud(self):
         self.client.force_authenticate(user=self.admin)

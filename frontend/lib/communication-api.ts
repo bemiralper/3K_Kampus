@@ -35,7 +35,10 @@ function getContextHeaders(): Record<string, string> {
   const egitimYiliId = readContextId(STORAGE_KEYS.activeEgitimYili);
   if (kurumId) headers['X-Kurum-ID'] = kurumId;
   if (subeId) headers['X-Sube-ID'] = subeId;
-  if (egitimYiliId) headers['X-Egitim-Yili-ID'] = egitimYiliId;
+  if (egitimYiliId) {
+    headers['X-EgitimYili-ID'] = egitimYiliId;
+    headers['X-Egitim-Yili-ID'] = egitimYiliId;
+  }
   return headers;
 }
 
