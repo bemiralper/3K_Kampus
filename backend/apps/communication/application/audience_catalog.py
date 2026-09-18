@@ -18,6 +18,7 @@ def build_audience_catalog(
     user=None,
     sube_id: int | None = None,
     egitim_yili_id: int | None = None,
+    term_id: int | None = None,
     person_types: list[str] | None = None,
 ) -> dict[str, Any]:
     types = [t for t in (person_types or list(ALL_PERSON_TYPES)) if t in ALL_PERSON_TYPES]
@@ -26,7 +27,7 @@ def build_audience_catalog(
 
     fields = []
     if set(types) & {'ogrenci', 'veli'}:
-        fields.extend(_education_fields(kurum_id, sube_id, egitim_yili_id, allowed))
+        fields.extend(_education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed))
         fields.extend(_coaching_fields(kurum_id, sube_id, allowed))
     if 'personel' in types and not coach_scoped:
         fields.extend(_staff_fields(kurum_id, sube_id, egitim_yili_id))
@@ -88,7 +89,7 @@ def _field(
     }
 
 
-def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
+def _education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed) -> list[dict]:
     from apps.egitim_paketleri.models import EkHizmet
     from apps.egitim_tanimlari.models import SinifSeviyesi
     from apps.egitim_yili.domain.models import EgitimYili
@@ -113,6 +114,8 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, allowed) -> list[dict]:
         sinif_qs = sinif_qs.filter(sube_id=sube_id)
     if egitim_yili_id:
         sinif_qs = sinif_qs.filter(egitim_yili_id=egitim_yili_id)
+    if term_id:
+        sinif_qs = sinif_qs.filter(term_id=term_id)
     if allowed is not None:
         sinif_ids = OgrenciKayit.objects.filter(
             kurum_id=kurum_id,

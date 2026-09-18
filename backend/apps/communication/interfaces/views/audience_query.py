@@ -33,6 +33,32 @@ def _egitim_yili_id(request) -> int | None:
         return None
 
 
+def _int_or_none(raw) -> int | None:
+    if raw in (None, ''):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _term_id(request, kurum_id: int | None, sube_id: int | None) -> int | None:
+    """Üst menü dönemi veya şubenin aktif dönemi — eski dönem sınıfları gizlensin."""
+    explicit = _int_or_none(
+        request.headers.get('X-Term-ID')
+        or request.query_params.get('term_id')
+        or (request.data.get('term_id') if hasattr(request, 'data') else None)
+    )
+    if explicit:
+        return explicit
+    if not kurum_id or not sube_id:
+        return None
+    from apps.academic.services.active_term import get_active_term_or_none
+
+    term = get_active_term_or_none(kurum_id=kurum_id, sube_id=sube_id)
+    return term.id if term else None
+
+
 def _query_from_request(request) -> dict:
     raw = request.data.get('query') or request.data.get('recipient_filter') or request.data
     if not isinstance(raw, dict):
@@ -54,6 +80,7 @@ class AudienceCatalogView(CampaignBulkView):
             user=request.user,
             sube_id=sube_id,
             egitim_yili_id=_egitim_yili_id(request),
+            term_id=_term_id(request, kurum_id, sube_id),
             person_types=person_types or None,
         ))
 

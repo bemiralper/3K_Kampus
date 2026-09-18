@@ -465,6 +465,42 @@ class AudienceQueryScopeAndApiTest(TestCase):
         self.assertIn('coach_id', keys)
         self.assertNotIn('rehber_id', keys)
 
+    def test_catalog_hides_other_term_classes(self):
+        """Aktif dönemde eski dönem sınıfları (aynı ad) listelenmez."""
+        from apps.term.domain.models import Term
+
+        yaz = Term.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.year,
+            name='Yaz Kursu', code='YAZ', start_date=date(2025, 6, 1),
+            end_date=date(2025, 8, 31), is_active=False, order_no=1,
+        )
+        current = Term.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.year,
+            name='2025-2026 Eğitim Yılı', code='EY', start_date=date(2025, 9, 1),
+            end_date=date(2026, 6, 15), is_active=True, order_no=2,
+        )
+        self.sinif.term = yaz
+        self.sinif.save(update_fields=['term'])
+        current_class = Sinif.objects.create(
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.year, term=current,
+            ad='10-A', kod='10A-YENI', aktif_mi=True,
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(
+            '/api/communication/campaigns/audience/catalog/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube.id),
+            HTTP_X_EGITIM_YILI_ID=str(self.year.id),
+        )
+        self.assertEqual(res.status_code, 200)
+        sinif_field = next(f for f in res.data['fields'] if f['key'] == 'sinif_id')
+        ids = {o['value'] for o in sinif_field['options']}
+        self.assertIn(current_class.id, ids)
+        self.assertNotIn(self.sinif.id, ids)
+        labels = [o['label'] for o in sinif_field['options'] if o['label'] == '10-A']
+        self.assertEqual(len(labels), 1)
+
     def test_saved_audience_crud(self):
         self.client.force_authenticate(user=self.admin)
         create = self.client.post(
