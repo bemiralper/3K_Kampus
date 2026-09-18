@@ -253,6 +253,8 @@ def unitize_task(task: AssignmentTask, assignment: ManualAssignment) -> WorkUnit
     content = getattr(task, 'content', None)
     content_type = getattr(content, 'content_type', '') or ''
     questions = int(task.question_count or 0)
+    if not questions and content is not None:
+        questions = int(getattr(content, 'question_count', 0) or 0)
     completed_q = int(task.completed_question_count or 0)
     remaining_q = max(0, questions - completed_q) if questions else 0
     pct = int(task.task_completion_percent or 0)
@@ -282,6 +284,10 @@ def unitize_task(task: AssignmentTask, assignment: ManualAssignment) -> WorkUnit
         elif remaining_q:
             minutes = max(1, int(round(remaining_q * DEFAULT_MINUTES_PER_QUESTION)))
             warnings.append(f'Süre yok — {DEFAULT_MINUTES_PER_QUESTION} dk/soru varsayıldı')
+        elif tests_out:
+            minutes = DEFAULT_TASK_MINUTES
+            questions_out = max(questions_out, 1)
+            warnings.append('Soru/süre yok — 1 soru · 20 dk varsayıldı')
         else:
             minutes = DEFAULT_TASK_MINUTES
             warnings.append('Süre yok — 20 dk varsayıldı')
@@ -332,7 +338,7 @@ def collect_homework_units(
             'lessons__tasks__content',
         )
     )
-    raw_units: list[WorkUnit] = []
+    raw_by_assignment: dict[int, list[WorkUnit]] = {}
     work_weeks_by_assignment: dict[int, list[date]] = {}
     for assignment in assignments:
         if not assignment_belongs_to_week(
@@ -344,6 +350,7 @@ def collect_homework_units(
             overlapping_work_weeks(window[0], window[1]) if window else [week_start]
         )
         due = _as_date(assignment.due_date)
+        bucket = raw_by_assignment.setdefault(assignment.id, [])
 
         lessons = list(assignment.lessons.all())
         tasks: list[AssignmentTask] = []
@@ -351,7 +358,7 @@ def collect_homework_units(
             tasks.extend(list(lesson.tasks.all()))
         if not tasks:
             title = strip_completion_title_suffix(assignment.title) or assignment.title
-            raw_units.append(WorkUnit(
+            bucket.append(WorkUnit(
                 source_assignment_id=assignment.id,
                 source_lesson_id=None,
                 source_task_id=None,
@@ -372,15 +379,40 @@ def collect_homework_units(
         for task in tasks:
             unit = unitize_task(task, assignment)
             if unit:
-                raw_units.append(unit)
+                bucket.append(unit)
 
     units: list[WorkUnit] = []
-    for unit in merge_units_by_assignment(raw_units):
-        weeks = work_weeks_by_assignment.get(unit.source_assignment_id or 0) or [week_start]
-        sliced = slice_unit_for_week(unit, weeks, week_start)
+    for assignment_id, raw_units in raw_by_assignment.items():
+        weeks = work_weeks_by_assignment.get(assignment_id) or [week_start]
+        lessons = merge_units_by_source(raw_units)
+        totals = merge_units_by_assignment(lessons)
+        if not totals:
+            continue
+        sliced = slice_unit_for_week(totals[0], weeks, week_start)
         if sliced:
-            units.append(sliced)
+            units.extend(apportion_week_slice(lessons, totals[0], sliced))
     return units
+
+
+def apportion_week_slice(parts: list[WorkUnit], total: WorkUnit, sliced: WorkUnit) -> list[WorkUnit]:
+    """Haftalık payı ders bloklarına orantılı geri dağıtır."""
+    if not parts:
+        return []
+    if (
+        total.tests == sliced.tests
+        and total.questions == sliced.questions
+        and total.minutes == sliced.minutes
+    ):
+        return parts
+    share_t = distribute_proportional(sliced.tests, [p.tests for p in parts])
+    share_q = distribute_proportional(sliced.questions, [p.questions for p in parts])
+    share_m = distribute_proportional(sliced.minutes, [p.minutes for p in parts])
+    out: list[WorkUnit] = []
+    for part, t, q, m in zip(parts, share_t, share_q, share_m):
+        if t <= 0 and q <= 0 and m <= 0:
+            continue
+        out.append(WorkUnit(**{**asdict(part), 'tests': t, 'questions': q, 'minutes': m}))
+    return out
 
 
 def collect_previous_leftovers(student_id: int, week_start: date) -> list[WorkUnit]:
@@ -523,42 +555,51 @@ def _shares_for(unit: WorkUnit, days: list[DayPlan], strategy: str) -> tuple[lis
 
 
 def _place_share(day: DayPlan, unit: WorkUnit, tests: int, questions: int, minutes: int) -> tuple[int, int, int]:
-    """Sığanı yerleştirir; sığmayanı (tests, questions, minutes) olarak döner."""
+    """Sığanı yerleştirir; test/soru/süre aynı kartta kalır, kopuk birim üretmez."""
     if tests <= 0 and questions <= 0 and minutes <= 0:
         return 0, 0, 0
     if day.remaining_slots <= 0:
         return tests, questions, minutes
 
-    fit_t = min(tests, day.remaining_tests) if tests else 0
-    fit_q = min(questions, day.remaining_questions) if questions else 0
-    fit_m = min(minutes, day.remaining_minutes) if minutes else 0
+    def _ratio(need: int, remaining: int) -> float:
+        if need <= 0:
+            return 1.0
+        if remaining <= 0:
+            return 0.0
+        return min(1.0, remaining / need)
 
-    # Test/soru/süre birlikte kesilir: tavanlardan en kısıtlı oran
-    ratios = []
-    if tests:
-        ratios.append(fit_t / tests if tests else 0)
-    if questions:
-        ratios.append(fit_q / questions if questions else 0)
-    if minutes:
-        ratios.append(fit_m / minutes if minutes else 0)
-    if not ratios:
+    ratio = min(
+        _ratio(tests, day.remaining_tests),
+        _ratio(questions, day.remaining_questions),
+        _ratio(minutes, day.remaining_minutes),
+    )
+    if ratio <= 0:
         return tests, questions, minutes
-    ratio = min(ratios)
+
     placed_t = int(tests * ratio) if tests else 0
     placed_q = int(questions * ratio) if questions else 0
     placed_m = int(minutes * ratio) if minutes else 0
 
-    # Oran 0 ama en az bir birim sığıyorsa, sığanı koy (test/soru ayrı)
-    if placed_t == 0 and placed_q == 0 and placed_m == 0:
+    if placed_t == 0 and placed_q == 0 and placed_m == 0 and ratio > 0:
         if tests and day.remaining_tests > 0:
-            placed_t = min(tests, day.remaining_tests)
+            placed_t = 1
+            if questions:
+                placed_q = min(questions, day.remaining_questions, max(1, questions // max(tests, 1)))
+            if minutes:
+                placed_m = min(minutes, day.remaining_minutes, max(1, minutes // max(tests, 1)))
         elif questions and day.remaining_questions > 0:
             placed_q = min(questions, day.remaining_questions)
+            if minutes:
+                placed_m = min(minutes, day.remaining_minutes, max(1, int(minutes * placed_q / questions)))
         elif minutes and day.remaining_minutes > 0:
             placed_m = min(minutes, day.remaining_minutes)
-        else:
-            return tests, questions, minutes
 
+    if tests and questions and placed_t and not placed_q:
+        return tests, questions, minutes
+    if questions and minutes and placed_q and not placed_m:
+        return tests, questions, minutes
+    if tests and minutes and placed_t and not placed_m:
+        return tests, questions, minutes
     if placed_t == 0 and placed_q == 0 and placed_m == 0:
         return tests, questions, minutes
 
@@ -627,7 +668,7 @@ def merge_units_by_source(units: list[WorkUnit]) -> list[WorkUnit]:
     grouped: dict[tuple, WorkUnit] = {}
     order: list[tuple] = []
     for unit in units:
-        key = (unit.source_assignment_id, unit.source_lesson_id, unit.source_kind)
+        key = (unit.source_assignment_id, unit.lesson_id, unit.source_kind)
         if key not in grouped:
             grouped[key] = WorkUnit(
                 source_assignment_id=unit.source_assignment_id,
@@ -689,7 +730,7 @@ def distribute_units(
                 remaining_minutes=unit.minutes,
                 reason=LeftoverReason.NO_DAY,
             ))
-        return leftovers
+        return merge_leftover_items(leftovers)
 
     for unit in ordered:
         targets = open_days
@@ -717,7 +758,69 @@ def distribute_units(
                 remaining_minutes=rem_m,
                 reason=LeftoverReason.OVER_CAP,
             ))
-    return leftovers
+    return merge_leftover_items(leftovers)
+
+
+def merge_leftover_items(items: list[LeftoverItem]) -> list[LeftoverItem]:
+    """Bekleyen kutuyu ödev + ders satırına indirger; görev parçası üretmez."""
+    grouped: dict[tuple, LeftoverItem] = {}
+    order: list[tuple] = []
+    for item in items:
+        key = (item.source_assignment_id, item.lesson_name or item.source_lesson_id, item.source_kind, item.reason)
+        if key not in grouped:
+            grouped[key] = LeftoverItem(
+                source_assignment_id=item.source_assignment_id,
+                source_lesson_id=item.source_lesson_id,
+                source_task_id=None,
+                source_kind=item.source_kind,
+                title=item.title,
+                lesson_name=item.lesson_name,
+                remaining_tests=0,
+                remaining_questions=0,
+                remaining_minutes=0,
+                reason=item.reason,
+            )
+            order.append(key)
+        acc = grouped[key]
+        acc.remaining_tests += item.remaining_tests
+        acc.remaining_questions += item.remaining_questions
+        acc.remaining_minutes += item.remaining_minutes
+        if item.lesson_name and not acc.lesson_name:
+            acc.lesson_name = item.lesson_name
+    return [grouped[k] for k in order]
+
+
+def template_enforces_caps(template: StudyTemplate) -> bool:
+    """Hazır şablon tavanı kılavuzdur; koçun özel şablonu sert tavandır."""
+    return not bool(getattr(template, 'is_builtin', True))
+
+
+def autofit_day_caps(days: list[DayPlan], units: list[WorkUnit], template: StudyTemplate) -> None:
+    """
+    Hazır şablonda haftalık havuzu günlere sığdır.
+    Leftover yalnızca koç tavanı veya gerçekten dolu gün (öğrenci penceresi / slot) sonrası.
+    """
+    if template_enforces_caps(template):
+        return
+    open_days = [d for d in days if not d.is_locked]
+    n = len(open_days)
+    if n <= 0 or not units:
+        return
+    need_t = sum(u.tests for u in units)
+    need_q = sum(u.questions for u in units)
+    need_m = sum(u.minutes for u in units)
+    need_s = max(len(units), 1)
+    for day in open_days:
+        template_m = max(0, int(template.max_minutes_per_day * day.weight))
+        day.cap_tests = max(day.cap_tests, need_t)
+        day.cap_questions = max(day.cap_questions, need_q)
+        if day.cap_minutes >= template_m:
+            day.cap_minutes = max(day.cap_minutes, need_m)
+        day.cap_slots = max(day.cap_slots, need_s)
+        day.remaining_tests = day.cap_tests
+        day.remaining_questions = day.cap_questions
+        day.remaining_minutes = day.cap_minutes
+        day.remaining_slots = day.cap_slots
 
 
 def build_draft(
@@ -771,8 +874,10 @@ def build_draft(
     for unit in units:
         warnings.extend(unit.warnings)
 
+    merged_units = merge_units_by_source(units)
+    autofit_day_caps(days, merged_units, template)
     leftovers = distribute_units(
-        merge_units_by_source(units),
+        merged_units,
         days,
         template.strategy,
         template.respect_due_date,
@@ -1019,7 +1124,7 @@ def remaining_units_after_lock(units: list[WorkUnit], locked: list[DayPlan]) -> 
         for slot in day.slots:
             key = (
                 slot['source_assignment_id'],
-                slot['source_lesson_id'],
+                slot.get('lesson_id'),
                 slot.get('source_kind') or SlotSourceKind.HOMEWORK,
             )
             acc = used.setdefault(key, [0, 0, 0])
@@ -1028,7 +1133,7 @@ def remaining_units_after_lock(units: list[WorkUnit], locked: list[DayPlan]) -> 
             acc[2] += slot['planned_minutes']
     leftover_units = []
     for unit in merge_units_by_source(units):
-        key = (unit.source_assignment_id, unit.source_lesson_id, unit.source_kind)
+        key = (unit.source_assignment_id, unit.lesson_id, unit.source_kind)
         taken = used.get(key, [0, 0, 0])
         tests = max(0, unit.tests - taken[0])
         questions = max(0, unit.questions - taken[1])

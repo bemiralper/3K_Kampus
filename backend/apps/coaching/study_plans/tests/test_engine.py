@@ -118,6 +118,8 @@ class StudyPlanEngineTest(TestCase):
         self.assertEqual(questions, [20, 20, 20, 20, 20])
 
     def test_over_cap_goes_to_leftover(self):
+        self.template.is_builtin = False
+        self.template.save(update_fields=['is_builtin'])
         self._create_tests(15, questions_each=10, title='15 Test')
         draft = build_draft(
             student_id=self.student.id,
@@ -343,3 +345,67 @@ class StudyPlanEngineTest(TestCase):
             date(2026, 9, 14), date(2026, 9, 15), date(2026, 9, 16),
             date(2026, 9, 17), date(2026, 9, 18),
         ])
+
+    def test_builtin_standart_plans_full_week_without_leftover(self):
+        """Hazır Standart 115 testi leftover'a atmaz; kartlarda soru ve süre vardır."""
+        self._hw('Eylül Ayı 2. Hafta Ödevi', date(2026, 9, 13), date(2026, 9, 20), tests=115)
+        draft = build_draft(
+            student_id=self.student.id,
+            week_start=date(2026, 9, 14),
+            template=self.template,
+            today=date(2026, 9, 14),
+            lock_past=False,
+        )
+        placed_t = sum(s['planned_tests'] for d in draft.days for s in d.slots)
+        placed_q = sum(s['planned_questions'] for d in draft.days for s in d.slots)
+        leftover_t = sum(item.remaining_tests for item in draft.leftovers)
+        self.assertEqual(placed_t, 115)
+        self.assertEqual(placed_q, 1150)
+        self.assertEqual(leftover_t, 0)
+        self.assertEqual(draft.leftovers, [])
+        for day in draft.days:
+            for slot in day.slots:
+                self.assertGreater(slot['planned_tests'], 0)
+                self.assertGreater(slot['planned_questions'], 0)
+                self.assertGreater(slot['planned_minutes'], 0)
+
+    def test_leftover_aggregated_by_lesson(self):
+        self.template.is_builtin = False
+        self.template.max_tests_per_day = 1
+        self.template.max_questions_per_day = 10
+        self.template.max_minutes_per_day = 20
+        self.template.save(update_fields=[
+            'is_builtin', 'max_tests_per_day', 'max_questions_per_day', 'max_minutes_per_day',
+        ])
+        assignment = ManualAssignment.objects.create(
+            student=self.student,
+            title='Eylül Ayı 2. Hafta Ödevi',
+            status='ASSIGNED',
+            assigned_date=timezone.make_aware(datetime(2026, 9, 14, 9, 0)),
+            due_date=timezone.make_aware(datetime(2026, 9, 21, 18, 0)),
+            is_active=True,
+        )
+        for name, n in (('Fizik-2', 8), ('Kimya-2', 6)):
+            lesson = AssignmentLesson.objects.create(
+                assignment=assignment, lesson=self.ders, topic_name=name,
+            )
+            lesson.lesson.ad = name
+            for i in range(n):
+                AssignmentTask.objects.create(
+                    lesson_block=lesson,
+                    task_type=AssignmentTask.TaskType.SOLVE_TEST,
+                    title=f'{name} {i + 1}',
+                    question_count=10,
+                    estimated_duration_minutes=12,
+                    order=i,
+                )
+        draft = build_draft(
+            student_id=self.student.id,
+            week_start=self.week_start,
+            template=self.template,
+            today=self.today,
+            lock_past=False,
+        )
+        self.assertTrue(draft.leftovers)
+        self.assertLessEqual(len(draft.leftovers), 2)
+        self.assertTrue(all(item.source_task_id is None for item in draft.leftovers))

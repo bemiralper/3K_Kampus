@@ -106,6 +106,8 @@ class StudyPlanApiTest(TestCase):
         self.assertEqual(summary['questions']['planned'], 100)
 
     def test_generate_leftover_when_over_cap(self):
+        self.template.is_builtin = False
+        self.template.save(update_fields=['is_builtin'])
         self._seed_homework(self.student, tests=15)
         with self._freeze_today():
             response = self.client.post(GENERATE_URL, {

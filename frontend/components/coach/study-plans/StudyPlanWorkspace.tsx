@@ -294,9 +294,16 @@ export default function StudyPlanWorkspace({
                 <ul>
                   {leftoverBits.map((item) => (
                     <li key={item.id}>
-                      {item.title}
-                      {item.lesson_name ? ` · ${item.lesson_name}` : ''} — {item.remaining_tests} test,{' '}
-                      {item.remaining_questions} soru ({item.reason_display})
+                      {item.lesson_name || item.title}
+                      {item.lesson_name && item.title ? ` · ${item.title}` : ''} —{' '}
+                      {[
+                        item.remaining_tests ? `${item.remaining_tests} test` : '',
+                        item.remaining_questions ? `${item.remaining_questions} soru` : '',
+                        item.remaining_minutes ? `${item.remaining_minutes} dk` : '',
+                      ]
+                        .filter(Boolean)
+                        .join(', ')}{' '}
+                      ({item.reason_display})
                     </li>
                   ))}
                 </ul>

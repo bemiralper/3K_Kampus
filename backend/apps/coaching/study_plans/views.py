@@ -211,6 +211,7 @@ class StudyProgramViewSet(viewsets.ReadOnlyModelViewSet):
                 template=template,
                 include_homework=ser.validated_data['include_homework'],
                 honor_availability=ser.validated_data['honor_availability'],
+                lock_past=False,
             )
         except StudyPlanError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -258,11 +259,12 @@ class StudyProgramViewSet(viewsets.ReadOnlyModelViewSet):
             )
             if locked:
                 draft.units = remaining_units_after_lock(draft.units, locked)
-                # Yeniden dağıt: kilitli günleri koru, kalan birimleri açık günlere koy
-                from .engine import distribute_units
+                from .engine import autofit_day_caps, distribute_units
                 open_days = [d for d in draft.days if not d.is_locked]
                 for day in open_days:
                     day.slots = []
+                autofit_day_caps(open_days, draft.units, template)
+                for day in open_days:
                     day.remaining_tests = day.cap_tests
                     day.remaining_questions = day.cap_questions
                     day.remaining_minutes = day.cap_minutes
