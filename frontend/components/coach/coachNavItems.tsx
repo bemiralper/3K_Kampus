@@ -55,6 +55,22 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
     ),
   },
   {
+    id: "calisma-programi",
+    href: "/coach/calisma-programi",
+    label: "Çalışma Programı",
+    matchPrefix: "/coach/calisma-programi",
+    children: [
+      { id: "calisma-bu-hafta", href: "/coach/calisma-programi", label: "Bu hafta", matchPrefix: "/coach/calisma-programi" },
+      { id: "calisma-sablonlar", href: "/coach/calisma-programi/sablonlar", label: "Şablonları Yönet", matchPrefix: "/coach/calisma-programi/sablonlar" },
+      { id: "calisma-gecmis", href: "/coach/calisma-programi/gecmis", label: "Geçmiş Programlar", matchPrefix: "/coach/calisma-programi/gecmis" },
+    ],
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
     id: "odev-kontrol",
     href: "/coach/odev/kontrol",
     label: "Ödev Kontrol",
@@ -191,8 +207,8 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
 
 export function isCoachNavChildActive(pathname: string, child: CoachNavChildDef): boolean {
   const prefix = child.matchPrefix || child.href;
-  if (prefix === COACH_KUTUPHANE_BASE) {
-    return pathname === COACH_KUTUPHANE_BASE || pathname === `${COACH_KUTUPHANE_BASE}/`;
+  if (prefix === COACH_KUTUPHANE_BASE || prefix === "/coach/calisma-programi") {
+    return pathname === prefix || pathname === `${prefix}/`;
   }
   return pathname.startsWith(prefix);
 }

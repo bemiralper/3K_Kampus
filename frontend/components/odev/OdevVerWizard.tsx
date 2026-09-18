@@ -1210,7 +1210,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       if (end) params.set('week_end', end);
       params.set('homework_id', String(offer.assignmentId));
       if (isCoach) {
-        return `/coach/odev/calisma-programi?${params.toString()}`;
+        return `/coach/calisma-programi?${params.toString()}`;
       }
       return `/admin/coaching/study-program?${params.toString()}`;
     },

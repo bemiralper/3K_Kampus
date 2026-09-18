@@ -67,8 +67,10 @@ urlpatterns = [
     # Manuel Ödev Atama URLs
     path('api/coaching/manual-assignments/', include('apps.coaching.assignment_manual.urls')),
     
-    # Çalışma Programı URLs
+    # Çalışma Programı URLs (eski editör — okuma)
     path('api/coaching/study-program/', include('apps.coaching.study_program.urls')),
+    # Çalışma Planı URLs (yeni üretim katmanı)
+    path('api/coaching/study-plans/', include('apps.coaching.study_plans.urls')),
     
     # Ölçme ve Değerlendirme URLs
     path('api/coaching/olcme-degerlendirme/', include('apps.coaching.olcme_degerlendirme.urls')),

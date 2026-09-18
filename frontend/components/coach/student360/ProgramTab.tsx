@@ -194,6 +194,11 @@ export default function ProgramTab({
 
   return (
     <div className="s360p-shell">
+      <p className="spl-preview" style={{ margin: '0 0 12px' }}>
+        <a href={`/coach/calisma-programi?student_id=${studentId}`}>
+          Yeni çalışma programı katmanı → öğrenci, hafta, şablon
+        </a>
+      </p>
       <div className="s360p-grid">
         <section className="s360p-composer" aria-label="Yeni program">
           <div className="s360p-composer-top">
