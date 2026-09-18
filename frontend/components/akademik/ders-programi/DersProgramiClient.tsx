@@ -825,6 +825,11 @@ export default function DersProgramiClient() {
     }
   };
 
+  const gridRows = useMemo(
+    () => groupScheduleSlots(grid?.slots || []),
+    [grid?.slots],
+  );
+
   if (!initialized) return <div className="dp-empty">Bağlam yükleniyor…</div>;
 
   if (!activeKurum || !activeSube) {
@@ -838,10 +843,6 @@ export default function DersProgramiClient() {
     );
   }
 
-  const gridRows = useMemo(
-    () => groupScheduleSlots(grid?.slots || []),
-    [grid?.slots],
-  );
   const hasGrid = Boolean(grid?.days?.length && gridRows.length);
 
   return (
