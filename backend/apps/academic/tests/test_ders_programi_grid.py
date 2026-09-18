@@ -1035,3 +1035,87 @@ class DersProgramiGridApiTest(TestCase):
         self.assertEqual(names.count('1. Ders'), 1)
         time_keys = {(s.get('start'), s.get('end')) for s in slots}
         self.assertEqual(len(time_keys), len(slots))
+
+    def test_class_schedule_uses_day_template_not_version_morning_slots(self):
+        """Takvim günü öğleden sonra şablonundaysa versiyonun sabah saatleri satır olmasın."""
+        noon = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='12',
+        )
+        TimeSlot.objects.create(
+            schedule_template=noon,
+            name='1. Ders',
+            start_time=time(12, 0),
+            end_time=time(12, 40),
+            order=1,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        TimeSlot.objects.create(
+            schedule_template=noon,
+            name='2. Ders',
+            start_time=time(12, 50),
+            end_time=time(13, 30),
+            order=2,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        self.day.schedule_template = noon
+        self.day.save(update_fields=['schedule_template'])
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': self.version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+
+        res = self.client.get(
+            f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
+            f'&term_id={self.term.id}&weekly_cycle_id={self.cycle.id}',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        starts = [s.get('start') for s in res.json()['slots']]
+        self.assertEqual(starts, ['12:00', '12:50'])
+        self.assertNotIn('08:00', starts)
+
+    def test_class_schedule_keeps_evening_slot_after_morning(self):
+        """Salı akşam 1. Ders, sabah 1. Ders ile aynı satıra çekilmez."""
+        evening = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='Akşam Şablon',
+        )
+        TimeSlot.objects.create(
+            schedule_template=evening,
+            name='1. Ders',
+            start_time=time(18, 0),
+            end_time=time(18, 40),
+            order=1,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        WeeklyDay.objects.create(
+            weekly_cycle=self.cycle,
+            day_of_week=DayOfWeek.TUESDAY,
+            name='Salı',
+            order=2,
+            is_active=True,
+            schedule_template=evening,
+        )
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': self.version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+
+        res = self.client.get(
+            f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
+            f'&term_id={self.term.id}&weekly_cycle_id={self.cycle.id}',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        starts = [s.get('start') for s in res.json()['slots']]
+        self.assertIn('08:00', starts)
+        self.assertIn('18:00', starts)
+        self.assertLess(starts.index('08:00'), starts.index('18:00'))

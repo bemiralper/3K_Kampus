@@ -342,6 +342,12 @@
   font-weight: 400;
 }
 
+.dp-cell-time {
+  margin-top: 2px;
+  font-size: 11px;
+  color: #64748b;
+}
+
 .dp-cell {
   display: block;
   width: 100%;

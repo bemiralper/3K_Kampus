@@ -1091,6 +1091,8 @@ export type ScheduleGridCell = {
   is_double_block_start: boolean;
   notes: string | null;
   calendar_name?: string | null;
+  start?: string | null;
+  end?: string | null;
 };
 
 export type ScheduleRoomOption = {

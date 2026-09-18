@@ -119,11 +119,25 @@ export interface TahsilatDagitimItem {
   tutar: number;
 }
 
+export interface TahsilatVeliItem {
+  id: number;
+  ad_soyad: string;
+  telefon: string;
+  tc_kimlik_no: string;
+  yakinlik?: string;
+  yakinlik_display?: string;
+  varsayilan?: boolean;
+}
+
 export interface TahsilatItem {
   id: number;
   sozlesme_id: number;
   sozlesme_no: string;
   ogrenci_adi: string;
+  ogrenci_tc?: string;
+  veli_adi?: string;
+  veli_tc?: string;
+  veliler?: TahsilatVeliItem[];
   taksit_id: number | null;
   taksit_no: number | null;
   odeme_yontemi: { id: number; ad: string; tip?: string };

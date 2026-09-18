@@ -17,6 +17,9 @@ export const TAHSILAT_EXPORT_COLUMNS: TahsilatExportColumn[] = [
   { key: "tahsilat_tarihi", label: "Tarih", default: true },
   { key: "sozlesme_no", label: "Sözleşme No", default: true },
   { key: "ogrenci_adi", label: "Öğrenci", default: true },
+  { key: "ogrenci_tc", label: "Öğrenci TC" },
+  { key: "veli_adi", label: "Veli" },
+  { key: "veli_tc", label: "Veli TC" },
   { key: "taksit", label: "Taksit", default: true },
   { key: "tutar", label: "Tutar", default: true },
   { key: "odeme_yontemi", label: "Ödeme Yöntemi", default: true },
@@ -26,6 +29,19 @@ export const TAHSILAT_EXPORT_COLUMNS: TahsilatExportColumn[] = [
   { key: "islem_yapan", label: "İşlemi Yapan" },
   { key: "aciklama", label: "Açıklama" },
 ];
+
+export function maxTahsilatVeliCount(rows: TahsilatItem[]): number {
+  return rows.reduce((max, row) => Math.max(max, row.veliler?.length || 0), 0);
+}
+
+export function allVeliExportColumns(maxCount: number): TahsilatExportColumn[] {
+  const cols: TahsilatExportColumn[] = [];
+  for (let i = 1; i <= maxCount; i += 1) {
+    cols.push({ key: `veli_${i}_ad`, label: `Veli ${i}` });
+    cols.push({ key: `veli_${i}_tc`, label: `Veli ${i} TC` });
+  }
+  return cols;
+}
 
 export const DEFAULT_TAHSILAT_EXPORT_KEYS = TAHSILAT_EXPORT_COLUMNS
   .filter((c) => c.default)
@@ -41,6 +57,12 @@ function taksitLabel(row: TahsilatItem): string {
 }
 
 export function tahsilatExportValue(row: TahsilatItem, key: string): string {
+  const veliMatch = key.match(/^veli_(\d+)_(ad|tc)$/);
+  if (veliMatch) {
+    const veli = row.veliler?.[Number(veliMatch[1]) - 1];
+    if (!veli) return "";
+    return veliMatch[2] === "tc" ? (veli.tc_kimlik_no || "") : (veli.ad_soyad || "");
+  }
   switch (key) {
     case "tahsilat_tarihi": {
       const formatted = formatDate(row.tahsilat_tarihi);
@@ -50,6 +72,12 @@ export function tahsilatExportValue(row: TahsilatItem, key: string): string {
       return row.sozlesme_no || "";
     case "ogrenci_adi":
       return row.ogrenci_adi || "";
+    case "ogrenci_tc":
+      return row.ogrenci_tc || "";
+    case "veli_adi":
+      return row.veli_adi || "";
+    case "veli_tc":
+      return row.veli_tc || "";
     case "taksit":
       return taksitLabel(row);
     case "tutar":
@@ -81,8 +109,14 @@ function rowsAsRecords(rows: TahsilatItem[], keys: string[]): Record<string, str
   });
 }
 
+function columnLabel(key: string): string {
+  const numbered = key.match(/^veli_(\d+)_(ad|tc)$/);
+  if (numbered) return numbered[2] === "tc" ? `Veli ${numbered[1]} TC` : `Veli ${numbered[1]}`;
+  return TAHSILAT_EXPORT_COLUMNS.find((c) => c.key === key)?.label || key;
+}
+
 function sheetRows(rows: TahsilatItem[], keys: string[]): string[][] {
-  const labels = keys.map((k) => TAHSILAT_EXPORT_COLUMNS.find((c) => c.key === k)?.label || k);
+  const labels = keys.map((k) => columnLabel(k));
   return [labels, ...rows.map((row) => keys.map((key) => tahsilatExportValue(row, key)))];
 }
 
@@ -133,7 +167,7 @@ export async function exportTahsilatPdf(options: {
   await exportOgrenciListPdf({
     rows: rowsAsRecords(rows, keys),
     columnKeys: keys,
-    columnLabels: keys.map((k) => TAHSILAT_EXPORT_COLUMNS.find((c) => c.key === k)?.label || k),
+    columnLabels: keys.map((k) => columnLabel(k)),
     orientation,
     branding: {
       kurumAd,

@@ -114,22 +114,14 @@ def apply_teacher_display(payload: dict[str, Any], mode: str = 'full') -> dict[s
 
 
 def _slots_for_version(version: ScheduleVersion, day_ids: list[int]) -> list:
-    days_qs = WeeklyDay.objects.filter(id__in=day_ids)
-    template_ids = set(
-        days_qs.filter(schedule_template_id__isnull=False)
-        .values_list('schedule_template_id', flat=True)
-    )
-    if version.schedule_template_id:
-        template_ids.add(version.schedule_template_id)
-    if not template_ids:
-        return []
-    return list(
-        TimeSlot.objects.filter(
-            schedule_template_id__in=template_ids,
-            slot_type='LESSON',
-            is_active=True,
-        ).order_by('order', 'id')
-    )
+    from apps.academic.services.grid_engine import collect_calendar_slots
+
+    slots, valid_keys = collect_calendar_slots(version)
+    allowed_days = set(day_ids)
+    allowed_slot_ids = {
+        slot_id for day_id, slot_id in valid_keys if day_id in allowed_days
+    }
+    return [slot for slot in slots if slot.id in allowed_slot_ids]
 
 
 def build_classroom_schedule_payload(

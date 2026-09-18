@@ -180,16 +180,27 @@ def _serialize_tahsilat(th):
 
     from apps.finans.application.islem_masrafi_service import IslemMasrafiService
     from apps.finans.domain.islem_masrafi import IslemMasrafiKaynakTipi
+    from apps.ogrenci.interfaces.list_helpers import serialize_veli_fields
     masraf = IslemMasrafiService.get_by_kaynak(IslemMasrafiKaynakTipi.TAHSILAT, th.id)
+
+    ogrenci = th.sozlesme.ogrenci if th.sozlesme else None
+    veli_fields = serialize_veli_fields(ogrenci) if ogrenci else {
+        'veli_ad_soyad': '',
+        'veli_tc_kimlik_no': '',
+        'veliler': [],
+    }
 
     return {
         'id': th.id,
         'sozlesme_id': th.sozlesme_id,
         'sozlesme_no': th.sozlesme.sozlesme_no if th.sozlesme else '',
         'ogrenci_adi': (
-            f'{th.sozlesme.ogrenci.ad} {th.sozlesme.ogrenci.soyad}'
-            if th.sozlesme and th.sozlesme.ogrenci else ''
+            f'{ogrenci.ad} {ogrenci.soyad}' if ogrenci else ''
         ),
+        'ogrenci_tc': (ogrenci.tc_kimlik_no or '') if ogrenci else '',
+        'veli_adi': veli_fields.get('veli_ad_soyad') or '',
+        'veli_tc': veli_fields.get('veli_tc_kimlik_no') or '',
+        'veliler': veli_fields.get('veliler') or [],
         'taksit_id': th.taksit_id,
         'taksit_no': th.taksit.taksit_no if th.taksit else None,
         'odeme_yontemi': {

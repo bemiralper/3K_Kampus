@@ -11,7 +11,7 @@ from apps.finans.constants.payment_types import OdemeYontemiTipi
 from apps.finans.domain.payment_method import OdemeYontemi
 from apps.odeme_takip.infrastructure.repositories.tahsilat_repository import TahsilatRepository
 from apps.odeme_takip.interfaces.api_views.sozlesme_views import _serialize_tahsilat
-from apps.ogrenci.domain.models import Ogrenci
+from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 from apps.sube.domain.models import Sube
 
 
@@ -63,7 +63,8 @@ class TahsilatSerializeYontemTest(TestCase):
         self.sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='SER-M')
         self.yil = EgitimYili.objects.create(baslangic_yil=2025, bitis_yil=2026, aktif_mi=True)
         self.ogrenci = Ogrenci.objects.create(
-            kurum=self.kurum, sube=self.sube, ad='Ayşe', soyad='Demir', aktif_mi=True,
+            kurum=self.kurum, sube=self.sube, ad='Ayşe', soyad='Demir',
+            tc_kimlik_no='12345678901', aktif_mi=True,
         )
         today = timezone.localdate()
         self.sozlesme = Sozlesme.objects.create(
@@ -96,3 +97,18 @@ class TahsilatSerializeYontemTest(TestCase):
         self.assertEqual(data['odeme_yontemi']['id'], self.yontem.id)
         self.assertEqual(data['odeme_yontemi']['ad'], 'Şube Kasa')
         self.assertEqual(data['odeme_yontemi']['tip'], OdemeYontemiTipi.NAKIT)
+
+    def test_serialize_includes_student_and_all_parent_tcs(self):
+        OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci, veli_turu='anne', ad='Fatma', soyad='Demir',
+            tc_kimlik_no='11111111111', varsayilan=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=self.ogrenci, veli_turu='baba', ad='Hasan', soyad='Demir',
+            tc_kimlik_no='22222222222', varsayilan=False,
+        )
+        data = _serialize_tahsilat(self.tahsilat)
+        self.assertEqual(data['ogrenci_tc'], '12345678901')
+        self.assertIn('11111111111', data['veli_tc'])
+        self.assertIn('22222222222', data['veli_tc'])
+        self.assertEqual(len(data['veliler']), 2)

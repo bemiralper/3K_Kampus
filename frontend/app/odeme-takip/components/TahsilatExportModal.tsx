@@ -7,9 +7,11 @@ import type { TahsilatItem } from "../types";
 import {
   DEFAULT_TAHSILAT_EXPORT_KEYS,
   TAHSILAT_EXPORT_COLUMNS,
+  allVeliExportColumns,
   exportTahsilatCsv,
   exportTahsilatPdf,
   exportTahsilatXlsx,
+  maxTahsilatVeliCount,
   tahsilatBrandingFromKurum,
   type TahsilatExportFormat,
 } from "../lib/tahsilatExport";
@@ -35,17 +37,42 @@ interface Props {
 export default function TahsilatExportModal({ open, onClose, rows, filterSummary }: Props) {
   const { activeKurum, activeSube } = useKurum();
   const [selectedKeys, setSelectedKeys] = useState<string[]>([...DEFAULT_TAHSILAT_EXPORT_KEYS]);
+  const [allVeliler, setAllVeliler] = useState(false);
   const [format, setFormat] = useState<TahsilatExportFormat>("xlsx");
   const [orientation, setOrientation] = useState<PdfOrientation>("landscape");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const veliExtraCols = useMemo(
+    () => allVeliExportColumns(maxTahsilatVeliCount(rows)),
+    [rows],
+  );
+  const visibleColumns = useMemo(
+    () => (allVeliler ? [...TAHSILAT_EXPORT_COLUMNS, ...veliExtraCols] : TAHSILAT_EXPORT_COLUMNS),
+    [allVeliler, veliExtraCols],
+  );
+
   useEffect(() => {
     if (open) {
       setSelectedKeys([...DEFAULT_TAHSILAT_EXPORT_KEYS]);
+      setAllVeliler(false);
       setError(null);
     }
   }, [open]);
+
+  const toggleAllVeliler = () => {
+    setAllVeliler((prev) => {
+      const next = !prev;
+      setSelectedKeys((keys) => {
+        const extra = veliExtraCols.map((c) => c.key);
+        const without = keys.filter((k) => !extra.includes(k));
+        if (!next) return without;
+        const add = ["veli_adi", "veli_tc", ...extra].filter((k) => !without.includes(k));
+        return [...without, ...add];
+      });
+      return next;
+    });
+  };
 
   const branding = useMemo(
     () => tahsilatBrandingFromKurum(activeKurum, activeSube),
@@ -153,7 +180,7 @@ export default function TahsilatExportModal({ open, onClose, rows, filterSummary
             <div className="ot-export-cols-head">
               <h4>Sütunlar</h4>
               <div>
-                <button type="button" className="ot-export-link" onClick={() => setSelectedKeys(TAHSILAT_EXPORT_COLUMNS.map((c) => c.key))}>
+                <button type="button" className="ot-export-link" onClick={() => setSelectedKeys(visibleColumns.map((c) => c.key))}>
                   Tümü
                 </button>
                 <button type="button" className="ot-export-link" onClick={() => setSelectedKeys([])}>
@@ -162,7 +189,14 @@ export default function TahsilatExportModal({ open, onClose, rows, filterSummary
               </div>
             </div>
             <div className="ot-export-chips">
-              {TAHSILAT_EXPORT_COLUMNS.map((col) => {
+              <button
+                type="button"
+                className={`ot-export-chip${allVeliler ? " selected" : ""}`}
+                onClick={toggleAllVeliler}
+              >
+                <span>Tüm velileri ekle</span>
+              </button>
+              {visibleColumns.map((col) => {
                 const selected = selectedKeys.includes(col.key);
                 const order = selected ? selectedKeys.indexOf(col.key) + 1 : 0;
                 return (

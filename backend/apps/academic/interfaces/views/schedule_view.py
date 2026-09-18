@@ -34,7 +34,7 @@ from apps.academic.interfaces.sube_context import (
     gate_sinif_drf,
     mandatory_academic_context_drf,
 )
-from apps.academic.services.grid_engine import collapse_lesson_slots_by_time
+from apps.academic.services.grid_engine import collect_calendar_slots, collapse_lesson_slots_by_time
 from apps.egitim_yili.domain.models import EgitimYili
 
 
@@ -93,24 +93,10 @@ def _gate_loaded_version(request, version):
     return err
 
 
-def get_version_lesson_slots(version, days):
-    """
-    Program görünümü için LESSON slotları.
-    Versiyon şablonu + aktif günlerin gün bazlı şablonları (birleşik).
-    """
-    template_ids = set(
-        days.filter(schedule_template_id__isnull=False)
-        .values_list('schedule_template_id', flat=True)
-    )
-    if version.schedule_template_id:
-        template_ids.add(version.schedule_template_id)
-    if not template_ids:
-        return TimeSlot.objects.none()
-    return TimeSlot.objects.filter(
-        schedule_template_id__in=template_ids,
-        slot_type='LESSON',
-        is_active=True,
-    ).order_by('order', 'id')
+def get_version_lesson_slots(version, days=None):
+    """Program görünümü için LESSON slotları — takvim günlerinin şablonları."""
+    slots, _ = collect_calendar_slots(version)
+    return slots
 
 
 _CELL_RELATED = (
@@ -178,7 +164,17 @@ def serialize_grid_response(cells, days, slots):
             "classroom": None,
             "room": None,
             "is_double_block_start": c.is_double_block_start,
-            "notes": c.notes
+            "notes": c.notes,
+            "start": (
+                c.timeslot.start_time.strftime("%H:%M")
+                if getattr(c, 'timeslot', None) and c.timeslot.start_time
+                else None
+            ),
+            "end": (
+                c.timeslot.end_time.strftime("%H:%M")
+                if getattr(c, 'timeslot', None) and c.timeslot.end_time
+                else None
+            ),
         }
         
         # Ders bilgisi — görünen ad: plan.gorunen_ad → ders.kisa_ad → ders.ad
@@ -504,16 +500,18 @@ def class_schedule_api(request):
         is_active=True
     ).order_by('order')
     
-    slots = get_version_lesson_slots(version, days)
+    slots, valid_keys = collect_calendar_slots(version)
     
-    # Grid hücreleri
-    cells = ProgramGridCell.objects.filter(
-        schedule_version=version,
-        sinif_id=classroom_id,
-        is_active=True
-    ).select_related(*_CELL_RELATED)
+    # Grid hücreleri — bu takvim gününde olmayan eski şablon hücreleri gizlenir
+    cells = [
+        cell for cell in ProgramGridCell.objects.filter(
+            schedule_version=version,
+            sinif_id=classroom_id,
+            is_active=True
+        ).select_related(*_CELL_RELATED)
+        if (cell.weekly_day_id, cell.timeslot_id) in valid_keys
+    ]
 
-    # Response
     data = serialize_grid_response(cells, days, slots)
     data["version"] = {
         "id": version.id,

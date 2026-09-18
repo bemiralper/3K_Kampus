@@ -14,9 +14,9 @@ class TahsilatRepository:
     def get_by_id(self, id):
         try:
             return Tahsilat.objects.select_related(
-                'sozlesme', 'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan'
+                'sozlesme', 'sozlesme__ogrenci', 'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan'
             ).prefetch_related(
-                'dagitimlar', 'dagitimlar__taksit'
+                'dagitimlar', 'dagitimlar__taksit', 'sozlesme__ogrenci__veliler',
             ).get(id=id)
         except Tahsilat.DoesNotExist:
             return None
@@ -25,9 +25,10 @@ class TahsilatRepository:
         return Tahsilat.objects.filter(
             sozlesme_id=sozlesme_id
         ).select_related(
-            'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan', 'iptal_eden'
+            'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan', 'iptal_eden',
+            'sozlesme__ogrenci',
         ).prefetch_related(
-            'dagitimlar', 'dagitimlar__taksit'
+            'dagitimlar', 'dagitimlar__taksit', 'sozlesme__ogrenci__veliler',
         ).order_by('-tahsilat_tarihi', '-created_at')
 
     def get_by_taksit(self, taksit_id):
@@ -41,7 +42,7 @@ class TahsilatRepository:
         qs = Tahsilat.objects.select_related(
             'sozlesme__ogrenci', 'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan'
         ).prefetch_related(
-            'dagitimlar', 'dagitimlar__taksit'
+            'dagitimlar', 'dagitimlar__taksit', 'sozlesme__ogrenci__veliler'
         )
         if kurum_id:
             qs = qs.filter(sozlesme__kurum_id=kurum_id)

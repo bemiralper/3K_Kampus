@@ -53,6 +53,11 @@ import {
 import ScheduleExportModal from '@/components/akademik/ders-programi/ScheduleExportModal';
 import ScheduleNotifyModal from '@/components/akademik/ders-programi/ScheduleNotifyModal';
 import {
+  cellForRow,
+  groupScheduleSlots,
+  slotTimeLabel,
+} from '@/components/akademik/ders-programi/scheduleGridRows';
+import {
   Badge,
   Field,
   PageHead,
@@ -833,7 +838,11 @@ export default function DersProgramiClient() {
     );
   }
 
-  const hasGrid = Boolean(grid?.days?.length && grid?.slots?.length);
+  const gridRows = useMemo(
+    () => groupScheduleSlots(grid?.slots || []),
+    [grid?.slots],
+  );
+  const hasGrid = Boolean(grid?.days?.length && gridRows.length);
 
   return (
     <PageShell>
@@ -1195,17 +1204,16 @@ export default function DersProgramiClient() {
                   </tr>
                 </thead>
                 <tbody>
-                  {grid!.slots.map((slot) => (
-                    <tr key={slot.id}>
+                  {gridRows.map((row) => {
+                    return (
+                    <tr key={row.key}>
                       <td className="dp-slot-label">
-                        <strong>{slot.name}</strong>
-                        <small>
-                          {[slot.start, slot.end].filter(Boolean).join(' – ')}
-                        </small>
+                        <strong>{slotTimeLabel(row.slot) || row.slot.name}</strong>
+                        <small>{row.slot.name}</small>
                       </td>
                       {grid!.days.map((day) => {
-                        const key = `${day.id}:${slot.id}`;
-                        const cell = cellMap.get(key);
+                        const cell = cellForRow(row, day.id, cellMap);
+                        const key = `${day.id}:${row.key}`;
                         if (!cell) {
                           return (
                             <td key={key}>
@@ -1306,7 +1314,8 @@ export default function DersProgramiClient() {
                         );
                       })}
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             )}

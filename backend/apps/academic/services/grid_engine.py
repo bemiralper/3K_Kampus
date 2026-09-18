@@ -517,6 +517,33 @@ def unbind_classroom_calendar_grid(
     )
 
 
+def collect_calendar_slots(version):
+    """Çalışma takvimindeki günlerin gerçek LESSON saatleri.
+
+    Versiyonun birincil/eski şablonu ayrıca eklenmez.
+    Dönüş: (TimeSlot queryset, {(day_id, timeslot_id)})
+    """
+    from apps.academic.domain.timeslot import TimeSlot
+
+    engine = GridEngine(
+        version.weekly_cycle,
+        template_fallback=version.schedule_template,
+    )
+    slots_by_id = {}
+    valid_keys = set()
+    for day, slot, _tpl in engine.iter_day_slot_pairs():
+        slots_by_id[slot.id] = slot
+        valid_keys.add((day.id, slot.id))
+    if not slots_by_id:
+        return TimeSlot.objects.none(), valid_keys
+    return (
+        TimeSlot.objects.filter(id__in=list(slots_by_id.keys())).order_by(
+            'start_time', 'end_time', 'order', 'id',
+        ),
+        valid_keys,
+    )
+
+
 def collapse_lesson_slots_by_time(slots):
     """
     Aynı giriş-çıkış saatine sahip LESSON slotlarını tek satırda birleştir.
@@ -539,6 +566,6 @@ def collapse_lesson_slots_by_time(slots):
     }
     display = sorted(
         canonical_by_time.values(),
-        key=lambda s: (s.order, s.start_time or dt_time.min, s.id),
+        key=lambda s: (s.start_time or dt_time.min, s.end_time or dt_time.min, s.order, s.id),
     )
     return display, id_map
