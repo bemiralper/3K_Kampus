@@ -691,11 +691,12 @@ export default function MetaSablonlarClient() {
       return;
     }
     if (!confirm(
-      "Ders programı Meta taslakları oluşturulsun mu?\n\n"
-      + "• sinif_programi_veli (DOCUMENT)\n"
-      + "• sinif_programi_ogrenci (DOCUMENT)\n\n"
-      + "LMS şablonları da oluşturulur ve Bildirim Şablonları’nda "
-      + "akademik.sinif_programi olayına bağlanır.",
+      "Sınıf Programı ve Öğretmen Programı taslakları oluşturulsun mu?\n\n"
+      + "• Sınıf Programı — Veli (sinif_programi_veli, DOCUMENT)\n"
+      + "• Sınıf Programı — Öğrenci (sinif_programi_ogrenci, DOCUMENT)\n"
+      + "• Öğretmen Programı (ogretmen_programi_personel, DOCUMENT)\n\n"
+      + "LMS şablonları da oluşturulur ve Bildirim Şablonları’na bağlanır. "
+      + "Metinleri oradan değiştirebilirsiniz.",
     )) return;
     setSaving(true);
     setError(null);
@@ -1127,8 +1128,8 @@ export default function MetaSablonlarClient() {
     },
     {
       key: "schedule",
-      title: "Ders programı taslakları",
-      desc: "sinif_programi_veli / _ogrenci (DOCUMENT) + LMS eşleri.",
+      title: "Sınıf / Öğretmen Programı",
+      desc: "Veli, öğrenci ve öğretmen DOCUMENT şablonları + LMS eşleri.",
       onClick: handleSeedAcademicSchedule,
     },
     {

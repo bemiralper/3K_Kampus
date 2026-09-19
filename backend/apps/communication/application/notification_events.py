@@ -723,11 +723,11 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
     NotificationEvent(
         key='akademik.sinif_programi',
         module=MODULE_AKADEMIK,
-        label='Sınıf ders programı (PDF)',
+        label='Sınıf Programı',
         description=(
-            'Planlama → Ders Programı ekranından “Programı Bildir” ile seçilen '
-            'sınıfların haftalık programı PDF olarak veliye ve öğrenciye gönderilir '
-            '(DOCUMENT header Meta şablonu gerekir).'
+            'Görüntüleme → Sınıf Programı ekranından haftalık program PDF olarak '
+            'veliye ve öğrenciye WhatsApp ile gönderilir. Metin Bildirim Şablonları’ndan '
+            'değiştirilebilir (DOCUMENT header Meta şablonu gerekir).'
         ),
         recipients=(VELI, OGRENCI),
         opt_in_category='duyuru',
@@ -746,6 +746,29 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 '{{sube}} — {{sinif}} sınıfının {{donem}} dönemi haftalık '
                 'ders programın ektedir.\n\n'
                 'Bilgine sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='akademik.ogretmen_programi',
+        module=MODULE_AKADEMIK,
+        label='Öğretmen Programı',
+        description=(
+            'Görüntüleme → Öğretmen Programı ekranından öğretmenin haftalık '
+            'programı PDF olarak kendisine WhatsApp ile gönderilir. Metin '
+            'Bildirim Şablonları’ndan değiştirilebilir '
+            '(DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(PERSONEL,),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogretmen_ad', 'donem', 'pdf_baslik'),
+        meta_name_base='ogretmen_programi',
+        default_bodies=MappingProxyType({
+            PERSONEL: (
+                'Merhaba {{ogretmen_ad}},\n\n'
+                '{{sube}} şubesi {{donem}} dönemi haftalık ders programınız ektedir.\n\n'
+                'İyi çalışmalar dileriz.'
             ),
         }),
     ),

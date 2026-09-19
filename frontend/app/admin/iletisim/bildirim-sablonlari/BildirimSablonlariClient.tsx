@@ -1191,13 +1191,15 @@ export default function BildirimSablonlariClient() {
   const handleSeedAcademicSchedule = () =>
     runSeed(
       "academic",
-      "Sınıf ders programı taslakları oluşturulsun mu?\n\n" +
-        "• sinif_programi_veli (DOCUMENT)\n" +
-        "• sinif_programi_ogrenci (DOCUMENT)\n\n" +
-        "LMS şablonları + Meta DRAFT üretilir ve bu olayın Veli/Öğrenci " +
-        "slotlarına bağlanır. Örnek PDF yükleyip Meta onayına göndermeniz gerekir.",
-      "Akademik program taslakları hazır.",
-      "Akademik program taslakları oluşturulamadı.",
+      "Sınıf Programı ve Öğretmen Programı taslakları oluşturulsun mu?\n\n" +
+        "• Sınıf Programı — Veli (sinif_programi_veli, DOCUMENT)\n" +
+        "• Sınıf Programı — Öğrenci (sinif_programi_ogrenci, DOCUMENT)\n" +
+        "• Öğretmen Programı (ogretmen_programi_personel, DOCUMENT)\n\n" +
+        "LMS şablonları + Meta DRAFT üretilir ve Bildirim Şablonları’na bağlanır. " +
+        "Metinleri daha sonra buradan değiştirebilirsiniz. Örnek PDF yükleyip " +
+        "Meta onayına göndermeniz gerekir.",
+      "Sınıf / Öğretmen Programı taslakları hazır.",
+      "Sınıf / Öğretmen Programı taslakları oluşturulamadı.",
       "akademik.sinif_programi",
       seedAcademicScheduleTemplates,
     );
@@ -1280,8 +1282,8 @@ export default function BildirimSablonlariClient() {
   const seedItems = [
     {
       kind: "academic",
-      title: "Ders programı taslakları",
-      desc: "Planlama → Programı Bildir için veli/öğrenci PDF şablonları",
+      title: "Sınıf / Öğretmen Programı",
+      desc: "Veli, öğrenci ve öğretmen PDF WhatsApp şablonları — sonra buradan düzenlenir",
       run: handleSeedAcademicSchedule,
     },
     {

@@ -1,8 +1,13 @@
 'use client';
 
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import { colorForKey } from '@/lib/schedule-color';
-import type { ClassScheduleGrid, ScheduleGridCell, ScheduleGridDay } from '@/lib/academic-api';
+import type {
+  ClassScheduleGrid,
+  ScheduleGridCell,
+  ScheduleGridDay,
+  ScheduleGridSlot,
+} from '@/lib/academic-api';
 import {
   Badge,
   EmptyState,
@@ -29,10 +34,13 @@ import './goruntuleme.css';
 
 export type ScheduleViewMode = 'week' | 'day';
 
+export type ScheduleViewerLayout = 'grid' | 'day-columns';
+
 type Props = {
   description?: string;
   filters?: ReactNode;
   picker?: ReactNode;
+  actions?: ReactNode;
   grid: ClassScheduleGrid | null;
   loading?: boolean;
   error?: string | null;
@@ -41,6 +49,9 @@ type Props = {
   showClassroom?: boolean;
   showTeacher?: boolean;
   showRoom?: boolean;
+  showTimesOnCards?: boolean;
+  colorBy?: 'lesson' | 'classroom';
+  layout?: ScheduleViewerLayout;
   emptyHint?: string;
   requireSelection?: boolean;
   selectionMissingHint?: string;
@@ -64,8 +75,11 @@ function statusLabel(cell: ScheduleGridCell) {
   return cell.status_display;
 }
 
-function cellColor(cell: ScheduleGridCell) {
+function cellColor(cell: ScheduleGridCell, colorBy: 'lesson' | 'classroom' = 'lesson') {
   if (!cell.lesson) return null;
+  if (colorBy === 'classroom') {
+    return colorForKey(cell.classroom?.id) ?? colorForKey(cell.student?.id) ?? colorForKey(cell.lesson.id);
+  }
   return colorForKey(cell.lesson.id) ?? colorForKey(cell.classroom?.id);
 }
 
@@ -105,6 +119,7 @@ export default function ScheduleViewer({
   description,
   filters,
   picker,
+  actions,
   grid,
   loading,
   error,
@@ -113,6 +128,9 @@ export default function ScheduleViewer({
   showClassroom,
   showTeacher = true,
   showRoom,
+  showTimesOnCards,
+  colorBy = 'lesson',
+  layout = 'grid',
   emptyHint,
   requireSelection,
   selectionMissingHint,
@@ -150,10 +168,6 @@ export default function ScheduleViewer({
     filled.filter((c) => c.kind !== 'private').map((c) => c.classroom?.id).filter(Boolean),
   ).size;
   const uniqueTeachers = new Set(filled.map((c) => c.teacher?.id).filter(Boolean)).size;
-  const uniqueCalendars = new Set(
-    filled.map((c) => c.calendar_name).filter((name): name is string => Boolean(name)),
-  ).size;
-
   const selectedDay = days.find((d) => d.id === dayId) ?? days[0] ?? null;
   const dayLessons = useMemo(() => {
     if (!selectedDay) return [];
@@ -192,10 +206,15 @@ export default function ScheduleViewer({
     <PageShell>
       {description && <Hint>{description}</Hint>}
 
-      {(filters || modeSwitch) && (
+      {(filters || modeSwitch || actions) && (
         <Toolbar>
           {filters}
-          {modeSwitch && <ToolbarActions>{modeSwitch}</ToolbarActions>}
+          {(modeSwitch || actions) && (
+            <ToolbarActions>
+              {actions}
+              {modeSwitch}
+            </ToolbarActions>
+          )}
         </Toolbar>
       )}
 
@@ -242,14 +261,6 @@ export default function ScheduleViewer({
               label="Özel ders"
             />
           )}
-          {uniqueCalendars > 1 && (
-            <StatCard
-              icon={<IconCalendar size={18} />}
-              tone="blue"
-              value={uniqueCalendars}
-              label="Çalışma takvimi"
-            />
-          )}
         </StatGrid>
       )}
 
@@ -281,6 +292,17 @@ export default function ScheduleViewer({
                 showClassroom={showClassroom}
                 showTeacher={showTeacher}
                 showRoom={showRoom}
+                colorBy={colorBy}
+              />
+            ) : layout === 'day-columns' ? (
+              <DayColumnsBoard
+                days={days}
+                cells={cells}
+                slots={slots}
+                showClassroom={showClassroom}
+                showTeacher={showTeacher}
+                showRoom={showRoom}
+                colorBy={colorBy}
               />
             ) : (
               <div className="gv-grid-wrap">
@@ -325,6 +347,8 @@ export default function ScheduleViewer({
                                         showClassroom={showClassroom}
                                         showTeacher={showTeacher}
                                         showRoom={showRoom}
+                                        showTimes={showTimesOnCards}
+                                        colorBy={colorBy}
                                       />
                                     ))}
                                   </div>
@@ -353,16 +377,41 @@ export default function ScheduleViewer({
   );
 }
 
+function cellClock(cell: ScheduleGridCell) {
+  if (cell.start && cell.end) return `${cell.start} – ${cell.end}`;
+  return null;
+}
+
+function cellClockParts(cell: ScheduleGridCell) {
+  if (!cell.start && !cell.end) return null;
+  return { start: cell.start || '—', end: cell.end || '—' };
+}
+
+/** M_SAY/LOCA 5 → M SAY / LOCA 5 */
+function prettyClassLabel(value: string) {
+  return value
+    .replace(/_/g, ' ')
+    .replace(/\s*\/\s*/g, ' / ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function GridCell({
   cell,
   showClassroom,
   showTeacher,
   showRoom,
+  showTimes,
+  colorBy = 'lesson',
+  lessonNumber,
 }: {
   cell?: ScheduleGridCell;
   showClassroom?: boolean;
   showTeacher?: boolean;
   showRoom?: boolean;
+  showTimes?: boolean;
+  colorBy?: 'lesson' | 'classroom';
+  lessonNumber?: number;
 }) {
   if (!cell || (!cell.lesson && cell.status !== 'EXAM' && cell.status !== 'HOLIDAY')) {
     return <span className="gv-cell-empty">—</span>;
@@ -370,20 +419,115 @@ function GridCell({
   if (!cell.lesson) {
     return <span className={`gv-chip gv-chip--${cell.status.toLowerCase()}`}>{statusLabel(cell)}</span>;
   }
-  const color = cellColor(cell);
+  const color = cellColor(cell, colorBy);
   const isPrivate = cell.kind === 'private';
-  const who = cell.student?.name || (showClassroom ? cell.classroom?.name : undefined);
+  const whoRaw = cell.student?.name || (showClassroom ? cell.classroom?.name : undefined);
+  const who = whoRaw ? prettyClassLabel(whoRaw) : undefined;
+  const clockParts = showTimes ? cellClockParts(cell) : null;
   return (
     <div
-      className={`gv-cell${isPrivate ? ' is-private' : ''}`}
+      className={`gv-cell${showTimes ? ' gv-cell--rail' : ''}${isPrivate ? ' is-private' : ''}`}
       style={color ? { background: color.bg, borderColor: color.border, color: color.text } : undefined}
     >
-      {isPrivate && <em className="gv-cell-badge">Özel</em>}
-      <strong>{cell.lesson.name}</strong>
-      {showTeacher && cell.teacher && <span>{cell.teacher.short_name || cell.teacher.name}</span>}
-      {who && <span>{who}</span>}
-      {showRoom && cell.room && <span>{cell.room.name}</span>}
-      {cell.calendar_name && <span className="gv-cell-cal">{cell.calendar_name}</span>}
+      {clockParts && (
+        <div className="gv-cell-rail" aria-label={cellClock(cell) ?? undefined}>
+          <em>{clockParts.start}</em>
+          <i />
+          <em>{clockParts.end}</em>
+        </div>
+      )}
+      <div className="gv-cell-main">
+        {(isPrivate || lessonNumber) && (
+          <em className="gv-cell-badge">
+            {isPrivate ? 'Özel Ders' : `${lessonNumber}. Ders`}
+          </em>
+        )}
+        <strong>{cell.lesson.name}</strong>
+        {showTeacher && cell.teacher && (
+          <span className="gv-cell-who">{cell.teacher.short_name || cell.teacher.name}</span>
+        )}
+        {who && <span className="gv-cell-who">{who}</span>}
+        {showRoom && cell.room && <span>{cell.room.name}</span>}
+      </div>
+    </div>
+  );
+}
+
+function DayColumnsBoard({
+  days,
+  cells,
+  slots,
+  showClassroom,
+  showTeacher,
+  showRoom,
+  colorBy,
+}: {
+  days: ScheduleGridDay[];
+  cells: ScheduleGridCell[];
+  slots: ScheduleGridSlot[];
+  showClassroom?: boolean;
+  showTeacher?: boolean;
+  showRoom?: boolean;
+  colorBy: 'lesson' | 'classroom';
+}) {
+  const slotById = new Map(slots.map((s) => [s.id, s]));
+  return (
+    <div className="gv-dayboard-wrap">
+    <div
+      className="gv-dayboard"
+      style={{ ['--gv-days' as string]: Math.max(1, days.length) } as CSSProperties}
+    >
+      {days.map((day) => {
+        const dayCells = cells
+          .filter((c) => c.day_id === day.id && (c.lesson || c.status === 'EXAM' || c.status === 'HOLIDAY'))
+          .sort((a, b) => {
+            const as = parseHm(a.start || slotById.get(a.timeslot_id)?.start) ?? 99 * 60;
+            const bs = parseHm(b.start || slotById.get(b.timeslot_id)?.start) ?? 99 * 60;
+            if (as !== bs) return as - bs;
+            return a.id - b.id;
+          });
+        return (
+          <section key={day.id} className="gv-dayboard-col">
+            <header>
+              <strong>{day.short_name || day.name}</strong>
+            </header>
+            {dayCells.length ? (
+              <div className="gv-dayboard-stack">
+                {dayCells.flatMap((cell, index) => {
+                  const slot = slotById.get(cell.timeslot_id);
+                  const previous = dayCells[index - 1];
+                  const previousSlot = previous ? slotById.get(previous.timeslot_id) : undefined;
+                  const gap = previous
+                    ? gapLabel(previous.end || previousSlot?.end, cell.start || slot?.start)
+                    : null;
+                  return [
+                    ...(gap ? [
+                      <div key={`gap-${cell.id}`} className="gv-dayboard-gap">{gap}</div>,
+                    ] : []),
+                    <GridCell
+                      key={cell.id}
+                      cell={{
+                        ...cell,
+                        start: cell.start || slot?.start || null,
+                        end: cell.end || slot?.end || null,
+                      }}
+                      showClassroom={showClassroom}
+                      showTeacher={showTeacher}
+                      showRoom={showRoom}
+                      showTimes
+                      colorBy={colorBy}
+                      lessonNumber={index + 1}
+                    />,
+                  ];
+                })}
+              </div>
+            ) : (
+              <span className="gv-cell-empty">—</span>
+            )}
+          </section>
+        );
+      })}
+    </div>
     </div>
   );
 }
@@ -396,6 +540,7 @@ function DayAgenda({
   showClassroom,
   showTeacher,
   showRoom,
+  colorBy = 'lesson',
 }: {
   days: ScheduleGridDay[];
   selected: ScheduleGridDay | null;
@@ -404,6 +549,7 @@ function DayAgenda({
   showClassroom?: boolean;
   showTeacher?: boolean;
   showRoom?: boolean;
+  colorBy?: 'lesson' | 'classroom';
 }) {
   return (
     <div className="gv-agenda">
@@ -430,7 +576,7 @@ function DayAgenda({
         <ul className="gv-agenda-list">
           {rows.map(({ slot, cell }) => {
             if (!cell) return null;
-            const color = cell.lesson ? cellColor(cell) : null;
+            const color = cell.lesson ? cellColor(cell, colorBy) : null;
             return (
               <li key={`${slot.id}-${cell.id}`} className="gv-agenda-item">
                 <div className="gv-agenda-time">
@@ -450,7 +596,6 @@ function DayAgenda({
                           showTeacher ? cell.teacher?.name : null,
                           cell.student?.name || (showClassroom ? cell.classroom?.name : null),
                           showRoom ? cell.room?.name : null,
-                          cell.calendar_name,
                         ]
                           .filter(Boolean)
                           .join(' · ')}

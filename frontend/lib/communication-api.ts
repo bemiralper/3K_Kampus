@@ -1351,7 +1351,7 @@ export async function seedSinifYoklamaTemplates(data: {
   });
 }
 
-/** Akademik sınıf ders programı — veli/öğrenci DOCUMENT Meta + LMS + bildirim bağlama */
+/** Sınıf Programı + Öğretmen Programı — DOCUMENT Meta + LMS + bildirim bağlama */
 export async function seedAcademicScheduleTemplates(data: {
   channel_config_id: string;
   sube_id?: number | null;

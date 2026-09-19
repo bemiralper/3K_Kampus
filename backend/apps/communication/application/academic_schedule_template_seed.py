@@ -1,8 +1,9 @@
 """
-Akademik sınıf ders programı Meta + uygulama şablon taslakları.
+Akademik ders programı Meta + uygulama şablon taslakları.
 
-`akademik.sinif_programi` olayı için veli/öğrenci DOCUMENT şablonları üretir.
-İsteğe bağlı olarak Bildirim Şablonları eşlemesini de kurar.
+`akademik.sinif_programi` (veli/öğrenci) ve `akademik.ogretmen_programi`
+(personel) DOCUMENT şablonlarını üretir. Bildirim Şablonları eşlemesini
+kurar; gövde metinleri sonradan oradan değiştirilebilir.
 """
 from __future__ import annotations
 
@@ -39,10 +40,25 @@ from apps.communication.domain.enums import (
 from apps.communication.domain.models import MessageTemplate, WhatsAppMetaTemplate
 
 ACADEMIC_SCHEDULE_EVENT_KEY = 'akademik.sinif_programi'
+TEACHER_SCHEDULE_EVENT_KEY = 'akademik.ogretmen_programi'
+ACADEMIC_SCHEDULE_EVENT_KEYS: tuple[str, ...] = (
+    ACADEMIC_SCHEDULE_EVENT_KEY,
+    TEACHER_SCHEDULE_EVENT_KEY,
+)
 
-_APP_NAME_BY_RECIPIENT: dict[str, str] = {
-    RecipientType.VELI: 'Sınıf ders programı — Veli',
-    RecipientType.OGRENCI: 'Sınıf ders programı — Öğrenci',
+_APP_NAME: dict[tuple[str, str], str] = {
+    (ACADEMIC_SCHEDULE_EVENT_KEY, RecipientType.VELI): 'Sınıf Programı — Veli',
+    (ACADEMIC_SCHEDULE_EVENT_KEY, RecipientType.OGRENCI): 'Sınıf Programı — Öğrenci',
+    (TEACHER_SCHEDULE_EVENT_KEY, RecipientType.PERSONEL): 'Öğretmen Programı',
+}
+
+_LEGACY_APP_NAMES: dict[tuple[str, str], tuple[str, ...]] = {
+    (ACADEMIC_SCHEDULE_EVENT_KEY, RecipientType.VELI): (
+        'Sınıf ders programı — Veli',
+    ),
+    (ACADEMIC_SCHEDULE_EVENT_KEY, RecipientType.OGRENCI): (
+        'Sınıf ders programı — Öğrenci',
+    ),
 }
 
 
@@ -61,12 +77,13 @@ class AcademicScheduleTemplateDraft:
     usage_scope: str
     meta_category: str
     has_document: bool
+    legacy_app_names: tuple[str, ...] = ()
 
 
 def list_academic_schedule_template_drafts() -> list[AcademicScheduleTemplateDraft]:
     drafts: list[AcademicScheduleTemplateDraft] = []
     for event in NOTIFICATION_EVENTS:
-        if event.key != ACADEMIC_SCHEDULE_EVENT_KEY:
+        if event.key not in ACADEMIC_SCHEDULE_EVENT_KEYS:
             continue
         if event.module != MODULE_AKADEMIK:
             continue
@@ -81,11 +98,12 @@ def list_academic_schedule_template_drafts() -> list[AcademicScheduleTemplateDra
                 raise ValueError(
                     f'{event.key}/{recipient} Meta kurallarına uymuyor: {" ".join(issues)}',
                 )
+            key = (event.key, recipient)
             drafts.append(
                 AcademicScheduleTemplateDraft(
                     event_key=event.key,
                     recipient_type=recipient,
-                    app_name=_APP_NAME_BY_RECIPIENT[recipient],
+                    app_name=_APP_NAME[key],
                     meta_name=event.suggested_meta_name(recipient),
                     body_named=body,
                     category=TemplateCategory.DUYURU,
@@ -96,13 +114,14 @@ def list_academic_schedule_template_drafts() -> list[AcademicScheduleTemplateDra
                     usage_scope=MetaTemplateUsage.SYSTEM,
                     meta_category=MetaTemplateCategory.UTILITY,
                     has_document=True,
+                    legacy_app_names=_LEGACY_APP_NAMES.get(key, ()),
                 ),
             )
     return drafts
 
 
 class AcademicScheduleTemplateSeedService:
-    """Kuruma sınıf programı uygulama (+ isteğe bağlı Meta DRAFT) şablonlarını ekler."""
+    """Kuruma sınıf + öğretmen programı uygulama (+ isteğe bağlı Meta DRAFT) şablonlarını ekler."""
 
     @classmethod
     @transaction.atomic
@@ -131,27 +150,32 @@ class AcademicScheduleTemplateSeedService:
         errors: list[str] = []
 
         for draft in drafts:
-            app_tpl = MessageTemplate.objects.filter(
+            app_qs = MessageTemplate.objects.filter(
                 kurum_id=kurum_id,
                 sube_id=sube_id,
-                name=draft.app_name,
                 audience_scope=TemplateAudienceScope.ADMIN,
-            ).first()
+            )
+            app_tpl = app_qs.filter(name=draft.app_name).first()
+            if not app_tpl and draft.legacy_app_names:
+                app_tpl = app_qs.filter(name__in=draft.legacy_app_names).first()
 
             if app_tpl:
                 stale = (
-                    (app_tpl.body or '') != draft.body_named
+                    app_tpl.name != draft.app_name
+                    or (app_tpl.body or '') != draft.body_named
                     or (app_tpl.header_json or {}) != (draft.header_json or {})
                 )
                 if stale:
                     if dry_run:
                         updated_app.append(draft.app_name)
                     else:
+                        app_tpl.name = draft.app_name
                         app_tpl.body = draft.body_named
                         app_tpl.header_json = dict(draft.header_json or {})
                         app_tpl.footer_text = draft.footer_text or ''
                         app_tpl.variables_json = list(draft.variables)
                         app_tpl.category = draft.category
+                        app_tpl.template_group = template_group_for_event_key(draft.event_key)
                         app_tpl.is_active = True
                         app_tpl.save()
                         updated_app.append(draft.app_name)
@@ -263,11 +287,12 @@ class AcademicScheduleTemplateSeedService:
             'skipped_meta': skipped_meta,
             'bound': bound,
             'errors': errors,
-            'event_keys': [ACADEMIC_SCHEDULE_EVENT_KEY],
+            'event_keys': list(ACADEMIC_SCHEDULE_EVENT_KEYS),
             'next_steps': [
                 'Meta şablonlarına örnek PDF yükleyip onay için gönderin '
-                '(sinif_programi_veli / sinif_programi_ogrenci).',
-                'Onay sonrası Planlama → Ders Programı → Programı Bildir kullanın.',
+                '(sinif_programi_veli / sinif_programi_ogrenci / ogretmen_programi_personel).',
+                'Gövde metinlerini İletişim → Bildirim Şablonları’ndan değiştirebilirsiniz.',
+                'Onay sonrası Görüntüleme → Sınıf / Öğretmen Programı → WhatsApp kullanın.',
                 'process_communication_queue cron’unun çalıştığından emin olun.',
             ],
         }

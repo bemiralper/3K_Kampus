@@ -309,6 +309,14 @@ export const IconFileText = (p: IconProps) => (
   </Svg>
 );
 
+export const IconDownload = (p: IconProps) => (
+  <Svg {...p}>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" />
+    <line x1="12" y1="15" x2="12" y2="3" />
+  </Svg>
+);
+
 export const IconStickyNote = (p: IconProps) => (
   <Svg {...p}>
     <path d="M15.5 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V8.5L15.5 3z" />

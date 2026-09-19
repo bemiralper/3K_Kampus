@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from django.views.decorators.csrf import csrf_exempt
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.authentication import SessionAuthentication
@@ -19,6 +20,7 @@ from apps.academic.services.schedule_export_service import (
     ScheduleExportError,
     apply_teacher_display,
     build_classroom_schedule_payload,
+    build_teacher_schedule_payload,
     export_schedule_csv,
     export_schedule_xlsx,
 )
@@ -32,7 +34,7 @@ from apps.sinif.domain.models import Sinif
 def schedule_export_api(request):
     """
     GET /api/academic/schedule/export/
-    ?term_id=&version_id=&classroom_ids=1,2&all=1
+    ?term_id=&version_id=&classroom_ids=1,2&all=1&teacher_id=
     &export_format=csv|xlsx|json&layout=stacked|per_class_sheet
     &teacher_display=full|initials|hidden
     &color_by=ders|ogretmen|none
@@ -57,29 +59,37 @@ def schedule_export_api(request):
     except (TypeError, ValueError):
         return Response({'error': 'Geçersiz program bilgisi.'}, status=400)
 
+    teacher_id_raw = request.query_params.get('teacher_id')
+    try:
+        teacher_id = int(teacher_id_raw) if teacher_id_raw else None
+    except (TypeError, ValueError):
+        return Response({'error': 'Geçersiz teacher_id.'}, status=400)
+
     all_flag = str(request.query_params.get('all') or '').lower() in ('1', 'true', 'yes')
     ids_raw = request.query_params.get('classroom_ids') or ''
+    classroom_ids: list[int] = []
 
-    if all_flag:
-        classroom_ids = list(
-            Sinif.objects.filter(
-                sube_id=ctx['sube_id'],
-                aktif_mi=True,
-            ).order_by('ad').values_list('id', flat=True)
-        )
-    else:
-        try:
-            classroom_ids = [int(x) for x in ids_raw.split(',') if x.strip()]
-        except ValueError:
-            return Response({'error': 'Geçersiz classroom_ids.'}, status=400)
+    if not teacher_id:
+        if all_flag:
+            classroom_ids = list(
+                Sinif.objects.filter(
+                    sube_id=ctx['sube_id'],
+                    aktif_mi=True,
+                ).order_by('ad').values_list('id', flat=True)
+            )
+        else:
+            try:
+                classroom_ids = [int(x) for x in ids_raw.split(',') if x.strip()]
+            except ValueError:
+                return Response({'error': 'Geçersiz classroom_ids.'}, status=400)
 
-    if not classroom_ids:
-        return Response({'error': 'En az bir sınıf seçin veya all=1 kullanın.'}, status=400)
+        if not classroom_ids:
+            return Response({'error': 'En az bir sınıf seçin veya all=1 kullanın.'}, status=400)
 
-    for cid in classroom_ids:
-        _, _, gate_err = gate_sinif_drf(request, cid)
-        if gate_err:
-            return gate_err
+        for cid in classroom_ids:
+            _, _, gate_err = gate_sinif_drf(request, cid)
+            if gate_err:
+                return gate_err
 
     fmt = (
         request.query_params.get('export_format')
@@ -99,19 +109,35 @@ def schedule_export_api(request):
         color_by = 'ders'
 
     try:
-        payload = build_classroom_schedule_payload(
-            term_id=term_id,
-            version_id=version_id,
-            classroom_ids=classroom_ids,
-            sube_id=ctx['sube_id'],
-        )
+        if teacher_id:
+            payload = build_teacher_schedule_payload(
+                term_id=term_id,
+                teacher_id=teacher_id,
+                sube_id=ctx['sube_id'],
+                version_id=version_id,
+            )
+        else:
+            payload = build_classroom_schedule_payload(
+                term_id=term_id,
+                version_id=version_id,
+                classroom_ids=classroom_ids,
+                sube_id=ctx['sube_id'],
+            )
         payload = apply_teacher_display(payload, teacher_display)
     except ScheduleExportError as e:
         return Response({'error': e.message, 'field': e.field}, status=400)
 
-    # Okunabilir dosya adı: DersProgrami_YazKursu (boşluk/özel karakter temizlenir)
-    term_slug = (payload['term']['name'] or 'Donem').replace(' ', '')
-    filename = f'DersProgrami_{term_slug}'
+    # Content-Disposition başlığı ASCII kalmalı; tarayıcılar UTF-8 MIME
+    # encoded filename değerlerini farklı yorumlayabiliyor.
+    groups = payload.get('groups') or []
+    today = f'{timezone.localdate():%d.%m.%Y}'
+    if teacher_id:
+        teacher_name = (groups[0].get('classroom_name') if groups else '') or 'Ogretmen'
+        filename = f'Ogretmen Programi {teacher_name} {today}'
+    elif len(groups) == 1:
+        filename = f"Sinif Programi {groups[0].get('classroom_name') or 'Sinif'} {today}"
+    else:
+        filename = f'Sinif Programlari ({len(groups)}) {today}'
 
     if fmt == 'json':
         return Response(payload)

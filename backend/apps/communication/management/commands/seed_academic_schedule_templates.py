@@ -17,7 +17,7 @@ from apps.communication.application.academic_schedule_template_seed import (
 
 
 class Command(BaseCommand):
-    help = 'Sınıf ders programı bildirimi için uygulama/Meta şablon taslaklarını oluşturur.'
+    help = 'Sınıf Programı ve Öğretmen Programı için uygulama/Meta şablon taslaklarını oluşturur.'
 
     def add_arguments(self, parser):
         parser.add_argument('--kurum-id', type=int, default=None)

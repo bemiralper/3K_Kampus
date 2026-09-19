@@ -760,7 +760,7 @@ class MetaTemplateSeedOzelDersView(APIView):
 
 
 class MetaTemplateSeedAcademicScheduleView(APIView):
-    """Sınıf ders programı (veli/öğrenci) Meta + LMS taslaklarını oluşturur ve bağlar."""
+    """Sınıf Programı + Öğretmen Programı Meta + LMS taslaklarını oluşturur ve bağlar."""
 
     permission_classes = [CommunicationConfigPermission]
 

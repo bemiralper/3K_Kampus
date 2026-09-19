@@ -23,6 +23,10 @@ from apps.academic.services.schedule_export_service import (
     ScheduleExportError,
     apply_teacher_display,
     build_classroom_schedule_payload,
+    day_card_columns,
+    pretty_class_label,
+    schedule_cell_palette,
+    card_entity_id,
 )
 from apps.communication.application.communication_service import MessageSource, SendResult
 from apps.communication.application.notification_dispatcher import (
@@ -38,6 +42,7 @@ from apps.term.domain.models import Term
 logger = logging.getLogger(__name__)
 
 EVENT_KEY = 'akademik.sinif_programi'
+TEACHER_EVENT_KEY = 'akademik.ogretmen_programi'
 
 
 class ScheduleNotifyError(Exception):
@@ -96,6 +101,27 @@ def _last_notify_log(version_id: int, sinif_id: int) -> ClassScheduleNotifyLog |
     )
 
 
+def _student_row(student: Ogrenci) -> dict[str, Any]:
+    phone = (student.telefon or '').strip()
+    return {
+        'id': student.id,
+        'name': f'{student.ad} {student.soyad}'.strip(),
+        'phone': phone,
+        'has_phone': bool(phone),
+    }
+
+
+def _veli_row(veli: OgrenciVeli, student: Ogrenci, phone: str) -> dict[str, Any]:
+    return {
+        'id': veli.id,
+        'name': f'{veli.ad} {veli.soyad}'.strip(),
+        'phone': phone or '',
+        'has_phone': bool(phone),
+        'ogrenci_id': student.id,
+        'ogrenci_ad': f'{student.ad} {student.soyad}'.strip(),
+    }
+
+
 def _resolve_recipients(term_id: int, sinif_id: int) -> dict[str, Any]:
     placements = (
         StudentClassPlacement.objects.filter(
@@ -114,12 +140,15 @@ def _resolve_recipients(term_id: int, sinif_id: int) -> dict[str, Any]:
     )
     students: list[Ogrenci] = []
     veli_targets: list[tuple[OgrenciVeli, Ogrenci]] = []
+    student_rows: list[dict[str, Any]] = []
+    veli_rows: list[dict[str, Any]] = []
     students_no_phone = 0
     veliler_no_phone = 0
 
     for p in placements:
         student = p.student
         students.append(student)
+        student_rows.append(_student_row(student))
         if not (student.telefon or '').strip():
             students_no_phone += 1
         veliler = list(student.veliler.all())
@@ -127,6 +156,7 @@ def _resolve_recipients(term_id: int, sinif_id: int) -> dict[str, Any]:
             continue
         for veli in veliler:
             phone = effective_veli_phone(veli, student)
+            veli_rows.append(_veli_row(veli, student, phone or ''))
             if phone:
                 veli_targets.append((veli, student))
             else:
@@ -135,6 +165,8 @@ def _resolve_recipients(term_id: int, sinif_id: int) -> dict[str, Any]:
     return {
         'students': students,
         'veli_targets': veli_targets,
+        'student_rows': student_rows,
+        'veli_rows': veli_rows,
         'student_count': len(students),
         'veli_count': len(veli_targets),
         'students_with_phone': sum(1 for s in students if (s.telefon or '').strip()),
@@ -200,6 +232,8 @@ def preview_classes(
             'students_with_phone': recipients['students_with_phone'],
             'students_no_phone': recipients['students_no_phone'],
             'veliler_no_phone': recipients['veliler_no_phone'],
+            'students': recipients['student_rows'],
+            'veliler': recipients['veli_rows'],
             'warning': warning,
             'default_selected': has_changes and filled > 0,
         })
@@ -218,63 +252,158 @@ def _safe_filename_part(value: str) -> str:
     return cleaned.strip('_')[:40] or 'sinif'
 
 
-def build_schedule_pdf_html(payload: dict[str, Any]) -> str:
-    """Tek sınıf (veya gruplar) için landscape HTML tablo."""
-    kurum = html.escape(payload.get('kurum_ad') or '')
-    sube = html.escape(payload.get('sube_ad') or '')
-    term = html.escape((payload.get('term') or {}).get('name') or '')
-    # Üst bilgide versiyon adı değil çalışma takvimi gösterilir.
-    calendar = html.escape(payload.get('calendar_name') or '')
-    days = payload.get('days') or []
-    day_headers = ''.join(
-        f'<th>{html.escape(d.get("short_name") or d.get("name") or "")}</th>'
-        for d in days
+def _schedule_gap_label(prev_end: str, next_start: str) -> str | None:
+    def minutes(value: str) -> int | None:
+        parts = (value or '').split(':')
+        if len(parts) < 2:
+            return None
+        try:
+            return int(parts[0]) * 60 + int(parts[1])
+        except ValueError:
+            return None
+
+    end = minutes(prev_end)
+    start = minutes(next_start)
+    if end is None or start is None or start - end < 40:
+        return None
+    if end <= 13 * 60 and start >= 13 * 60:
+        return 'Öğle arası'
+    return 'Ara'
+
+
+def _html_schedule_card(
+    card: dict[str, Any],
+    order: int,
+    *,
+    who_key: str,
+) -> str:
+    entity = card.get('lesson_id') if who_key == 'teacher' else card_entity_id(card)
+    if who_key == 'teacher' and not entity:
+        entity = card_entity_id(card)
+    pal = schedule_cell_palette(entity)
+    bg = f"#{pal['bg']}" if pal else '#eff6ff'
+    border = f"#{pal['border']}" if pal else '#93c5fd'
+    ink = f"#{pal['text']}" if pal else '#1e3a8a'
+    start = html.escape((card.get('start') or '').strip())
+    end = html.escape((card.get('end') or '').strip())
+    lesson = html.escape((card.get('lesson') or '').strip())
+    who = html.escape(pretty_class_label(card.get(who_key) or ''))
+    return (
+        '<div class="card" style="'
+        f'background:{bg};border-color:{border};color:{ink}">'
+        f'<div class="ord">{order}</div>'
+        f'<div class="rail"><em>{start}</em><i></i><em>{end}</em></div>'
+        '<div class="main">'
+        f'<strong>{lesson}</strong>'
+        f'{f"<span class=who>{who}</span>" if who else ""}'
+        '</div></div>'
     )
+
+
+def build_schedule_pdf_html(payload: dict[str, Any]) -> str:
+    """Öğretmen: gün gün kartlar. Sınıf: haftalık gün sütunları."""
+    title = html.escape(payload.get('report_title') or 'Ders Programı')
+    term = html.escape((payload.get('term') or {}).get('name') or '')
+    year = html.escape(payload.get('egitim_yili') or '')
+    days = payload.get('days') or []
+    teacher_cards = payload.get('layout_kind') == 'day_cards' or payload.get('subject_kind') == 'teacher'
+    page_size = 'A4 portrait' if teacher_cards else 'A4 landscape'
+    meta = ' · '.join(p for p in (year, term) if p)
 
     sections = []
     for group in payload.get('groups') or []:
-        rows_html = []
-        for row in group.get('rows') or []:
-            cells = []
-            for cell in row.get('cells') or []:
-                if not cell:
-                    cells.append('<td class="empty">—</td>')
-                    continue
-                lesson = html.escape(cell.get('lesson') or '')
-                teacher = html.escape(cell.get('teacher') or '')
-                inner = lesson
-                if teacher:
-                    inner += f'<br><span class="t">{teacher}</span>'
-                cells.append(f'<td>{inner}</td>')
-            slot = html.escape(row.get('slot_name') or '')
-            time_s = html.escape(row.get('slot_time') or '')
-            rows_html.append(
-                f'<tr><th class="slot">{slot}<br><span class="t">{time_s}</span></th>'
-                f'{"".join(cells)}</tr>',
-            )
         cname = html.escape(group.get('classroom_name') or '')
+        columns = group.get('day_cards') or day_card_columns(days, group.get('rows') or [])
+        if teacher_cards:
+            cards_per_page = 7
+            for day, cards in zip(days, columns):
+                day_name = html.escape(day.get('name') or day.get('short_name') or '')
+                for offset in range(0, max(len(cards), 1), cards_per_page):
+                    cards_html = []
+                    for order, card in enumerate(cards[offset:offset + cards_per_page], offset + 1):
+                        cards_html.append(_html_schedule_card(card, order, who_key='classroom'))
+                    continuation = ' · devam' if offset else ''
+                    sections.append(
+                        f'<section class="teacher-page">'
+                        f'<h2>{cname} · {day_name}{continuation}</h2>'
+                        f'<div class="day-cards">{"".join(cards_html) or "<div class=empty>—</div>"}</div>'
+                        f'</section>'
+                    )
+            continue
+
+        cols_html = []
+        for day, cards in zip(days, columns):
+            day_name = html.escape(day.get('short_name') or day.get('name') or '')
+            items = []
+            for order, card in enumerate(cards, 1):
+                prev = cards[order - 2] if order > 1 else None
+                gap = _schedule_gap_label(prev.get('end') or '', card.get('start') or '') if prev else None
+                if gap:
+                    items.append(f'<div class="gap">{html.escape(gap)}</div>')
+                items.append(_html_schedule_card(card, order, who_key='teacher'))
+            cols_html.append(
+                f'<section class="day-col">'
+                f'<header>{day_name}</header>'
+                f'<div class="day-stack">{"".join(items) or "<div class=empty>—</div>"}</div>'
+                f'</section>'
+            )
         sections.append(
+            f'<section class="class-page">'
             f'<h2>{cname}</h2>'
-            f'<table><thead><tr><th>Saat</th>{day_headers}</tr></thead>'
-            f'<tbody>{"".join(rows_html)}</tbody></table>',
+            f'<div class="week-board">{"".join(cols_html)}</div>'
+            f'</section>'
         )
 
     return f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8">
 <style>
-  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; margin: 16px; }}
-  h1 {{ font-size: 18px; margin: 0 0 4px; color: #0262a7; }}
-  .meta {{ color: #555; margin-bottom: 12px; }}
-  h2 {{ font-size: 14px; margin: 16px 0 8px; }}
-  table {{ border-collapse: collapse; width: 100%; }}
-  th, td {{ border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; }}
-  thead th {{ background: #0262a7; color: #fff; }}
-  th.slot {{ background: #f1f5f9; width: 90px; text-align: left; }}
-  td.empty {{ color: #94a3b8; text-align: center; }}
-  .t {{ color: #64748b; font-size: 10px; }}
+  body {{ font-family: Arial, Helvetica, sans-serif; font-size: 11px; color: #111; margin: 12px; }}
+  h1 {{ font-size: 16px; margin: 0 0 2px; color: #0262a7; }}
+  .meta {{ color: #64748b; margin-bottom: 10px; }}
+  h2 {{ font-size: 13px; margin: 0 0 8px; color: #0f172a; }}
+  @page {{ size: {page_size}; margin: 8mm; }}
+  .teacher-page, .class-page {{ break-after: page; page-break-after: always; }}
+  .teacher-page:last-child, .class-page:last-child {{ break-after: auto; page-break-after: auto; }}
+  .card {{ break-inside: avoid; page-break-inside: avoid; }}
+  .day-cards {{ display: flex; flex-direction: column; gap: 8px; }}
+  .week-board {{
+    display: grid;
+    grid-template-columns: repeat({max(1, len(days))}, minmax(0, 1fr));
+    gap: 8px;
+  }}
+  .day-col header {{
+    background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 8px;
+    text-align: center; font-weight: 800; padding: 6px 4px; margin-bottom: 6px;
+    color: #334155;
+  }}
+  .day-stack {{ display: flex; flex-direction: column; gap: 6px; }}
+  .card {{
+    display: grid; grid-template-columns: 18px 42px minmax(0, 1fr); gap: 6px;
+    min-height: 58px; padding: 6px 8px 6px 6px;
+    border: 1px solid; border-radius: 10px;
+  }}
+  .ord {{
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 800; line-height: 1;
+  }}
+  .rail {{
+    display: flex; flex-direction: column; align-items: flex-end;
+    justify-content: space-between; padding: 1px 6px 1px 0;
+    border-right: 2px solid currentColor; opacity: .72;
+  }}
+  .rail em {{ font-style: normal; font-size: 9px; font-weight: 800; line-height: 1; }}
+  .rail i {{ flex: 1; width: 2px; margin: 4px 5px 4px 0; background: currentColor; opacity: .22; border-radius: 99px; }}
+  .main {{ display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }}
+  .main strong {{ font-size: 11px; line-height: 1.2; }}
+  .who {{ font-size: 9px; font-weight: 600; }}
+  .gap {{
+    text-align: center; font-size: 8px; font-weight: 700; letter-spacing: .04em;
+    text-transform: uppercase; color: #64748b; padding: 3px 0;
+  }}
+  .empty {{ color: #94a3b8; text-align: center; padding: 12px 0; }}
 </style></head><body>
-  <h1>Ders Programı</h1>
-  <div class="meta">{' · '.join(p for p in (kurum, sube, term, calendar) if p)}</div>
+  <h1>{title}</h1>
+  <div class="meta">{meta}</div>
   {''.join(sections)}
 </body></html>"""
 
@@ -323,6 +452,20 @@ def render_class_schedule_pdf(
     return pdf_bytes, filename, pdf_baslik
 
 
+def _filter_recipient_ids(
+    all_ids: list[int],
+    *,
+    include_ids: list[int] | None,
+    exclude_ids: list[int] | None,
+) -> set[int]:
+    allowed = set(all_ids)
+    if include_ids is not None:
+        allowed &= set(include_ids)
+    if exclude_ids:
+        allowed -= set(exclude_ids)
+    return allowed
+
+
 def send_class_schedules(
     *,
     kurum_id: int,
@@ -332,6 +475,10 @@ def send_class_schedules(
     sinif_ids: list[int],
     force_unchanged_ids: list[int] | None = None,
     send_to: list[str] | None = None,
+    exclude_ogrenci_ids: list[int] | None = None,
+    exclude_veli_ids: list[int] | None = None,
+    include_ogrenci_ids: list[int] | None = None,
+    include_veli_ids: list[int] | None = None,
     user=None,
 ) -> dict[str, Any]:
     force_set = set(force_unchanged_ids or [])
@@ -425,8 +572,21 @@ def send_class_schedules(
         source = MessageSource(module='akademik', ref_id=f'schedule:{version_id}:{sid}')
         sent_by = getattr(user, 'id', None)
 
+        allowed_students = _filter_recipient_ids(
+            [s.id for s in recipients['students']],
+            include_ids=include_ogrenci_ids,
+            exclude_ids=exclude_ogrenci_ids,
+        )
+        allowed_veliler = _filter_recipient_ids(
+            [v.id for v, _ in recipients['veli_targets']],
+            include_ids=include_veli_ids,
+            exclude_ids=exclude_veli_ids,
+        )
+
         if send_veli:
             for veli, student in recipients['veli_targets']:
+                if veli.id not in allowed_veliler:
+                    continue
                 ctx = {
                     **base_ctx,
                     'ogrenci_ad': f'{student.ad} {student.soyad}'.strip(),
@@ -454,6 +614,8 @@ def send_class_schedules(
 
         if send_ogrenci:
             for student in recipients['students']:
+                if student.id not in allowed_students:
+                    continue
                 if not (student.telefon or '').strip():
                     continue
                 ctx = {
@@ -541,6 +703,268 @@ def send_class_schedules(
         'version_id': version_id,
         'total_veli_sent': total_veli,
         'total_ogrenci_sent': total_ogrenci,
+        'total_skipped': total_skipped,
+        'total_errors': total_errors,
+        'results': results,
+        'sent_at': timezone.now().isoformat(),
+    }
+
+
+def _teacher_phone(teacher) -> str:
+    return (getattr(teacher, 'cep_telefon', None) or getattr(teacher, 'telefon', None) or '').strip()
+
+
+def _teacher_filled_count(term_id: int, teacher_id: int) -> int:
+    from django.db.models import Q
+    from apps.ozel_ders.domain.models import BirebirHaftalikSlot, ProgramDurumu
+
+    group_count = ProgramGridCell.objects.filter(
+        schedule_version__term_id=term_id,
+        is_active=True,
+        status=CellStatus.FILLED,
+    ).filter(
+        Q(ogretmen_id=teacher_id) | Q(class_lesson_plan__ogretmen_id=teacher_id)
+    ).count()
+    term = Term.objects.filter(pk=term_id).only('kurum_id', 'sube_id', 'egitim_yili_id').first()
+    if not term or not term.egitim_yili_id:
+        return group_count
+    private_count = BirebirHaftalikSlot.objects.filter(
+        ogretmen_id=teacher_id,
+        aktif=True,
+        program__durum=ProgramDurumu.AKTIF,
+        program__kurum_id=term.kurum_id,
+        program__sube_id=term.sube_id,
+        program__egitim_yili_id=term.egitim_yili_id,
+    ).count()
+    return group_count + private_count
+
+
+def render_teacher_schedule_pdf(
+    *,
+    term_id: int,
+    teacher_id: int,
+    sube_id: int,
+) -> tuple[bytes, str, str]:
+    from apps.academic.services.schedule_export_service import build_teacher_schedule_payload
+
+    payload = build_teacher_schedule_payload(
+        term_id=term_id,
+        teacher_id=teacher_id,
+        sube_id=sube_id,
+    )
+    payload = apply_teacher_display(payload, 'full')
+    group = (payload.get('groups') or [{}])[0]
+    teacher_ad = group.get('classroom_name') or 'ogretmen'
+    term_name = (payload.get('term') or {}).get('name') or ''
+    pdf_baslik = f'{teacher_ad} Ders Programı'
+    filename = (
+        f'ogretmen_programi_{_safe_filename_part(teacher_ad)}_'
+        f'{_safe_filename_part(term_name)}.pdf'
+    )
+    html_doc = build_schedule_pdf_html(payload)
+    try:
+        from apps.communication.application.html_to_pdf import render_html_to_pdf
+        pdf_bytes = render_html_to_pdf(html_doc, landscape=False)
+    except Exception as exc:
+        logger.warning('Playwright PDF başarısız, reportlab fallback: %s', exc)
+        from apps.communication.application.pdf_render_service import PdfRenderService
+
+        lines = [pdf_baslik, term_name, '']
+        for row in group.get('rows') or []:
+            parts = [row.get('slot_name') or '']
+            for cell in row.get('cells') or []:
+                if cell and cell.get('lesson'):
+                    parts.append(cell['lesson'])
+            lines.append(' | '.join(parts))
+        pdf_bytes = PdfRenderService.render_simple_text_pdf(pdf_baslik, '\n'.join(lines))
+    return pdf_bytes, filename, pdf_baslik
+
+
+def preview_teachers(
+    *,
+    kurum_id: int,
+    sube_id: int,
+    term_id: int,
+    teacher_ids: list[int],
+) -> dict[str, Any]:
+    from apps.personel.domain.models import Personel
+
+    term = Term.objects.filter(pk=term_id, sube_id=sube_id, kurum_id=kurum_id).first()
+    if not term:
+        raise ScheduleNotifyError('Dönem bulunamadı.', field='term_id')
+
+    teachers = list(
+        Personel.objects.filter(
+            id__in=teacher_ids,
+            kurum_id=kurum_id,
+            aktif_mi=True,
+        ).order_by('ad', 'soyad')
+    )
+    found = {t.id for t in teachers}
+    missing = [i for i in teacher_ids if i not in found]
+    if missing:
+        raise ScheduleNotifyError(f'Öğretmen bulunamadı: {missing}', field='teacher_ids')
+
+    rows = []
+    for teacher in teachers:
+        phone = _teacher_phone(teacher)
+        filled = _teacher_filled_count(term_id, teacher.id)
+        warning = None
+        if filled == 0:
+            warning = 'Seçili dönemde program yok — mesaj gönderilmez.'
+        elif not phone:
+            warning = 'Öğretmenin telefonu yok — WhatsApp gönderilemez.'
+        rows.append({
+            'teacher_id': teacher.id,
+            'teacher_name': f'{teacher.ad} {teacher.soyad}'.strip(),
+            'phone': phone,
+            'has_phone': bool(phone),
+            'empty_grid': filled == 0,
+            'filled_count': filled,
+            'warning': warning,
+            'default_selected': filled > 0 and bool(phone),
+        })
+
+    return {
+        'term_id': term_id,
+        'term_name': term.name,
+        'teachers': rows,
+    }
+
+
+def send_teacher_schedules(
+    *,
+    kurum_id: int,
+    sube_id: int,
+    term_id: int,
+    teacher_ids: list[int],
+    exclude_teacher_ids: list[int] | None = None,
+    include_teacher_ids: list[int] | None = None,
+    user=None,
+) -> dict[str, Any]:
+    preview = preview_teachers(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        term_id=term_id,
+        teacher_ids=teacher_ids,
+    )
+    allowed = _filter_recipient_ids(
+        [t['teacher_id'] for t in preview['teachers']],
+        include_ids=include_teacher_ids,
+        exclude_ids=exclude_teacher_ids,
+    )
+
+    results = []
+    total_sent = 0
+    total_skipped = 0
+    total_errors = 0
+    sent_by = getattr(user, 'id', None)
+
+    for row in preview['teachers']:
+        tid = row['teacher_id']
+        if tid not in allowed:
+            results.append({
+                'teacher_id': tid,
+                'teacher_name': row['teacher_name'],
+                'status': 'skipped',
+                'reason': 'excluded',
+                'sent': 0,
+                'errors': [],
+            })
+            total_skipped += 1
+            continue
+        if row['empty_grid']:
+            results.append({
+                'teacher_id': tid,
+                'teacher_name': row['teacher_name'],
+                'status': 'skipped',
+                'reason': 'empty_grid',
+                'sent': 0,
+                'errors': [row['warning'] or 'Boş program'],
+            })
+            total_skipped += 1
+            continue
+        if not row['has_phone']:
+            results.append({
+                'teacher_id': tid,
+                'teacher_name': row['teacher_name'],
+                'status': 'failed',
+                'reason': 'no_phone',
+                'sent': 0,
+                'errors': [row['warning'] or 'Telefon yok'],
+            })
+            total_errors += 1
+            continue
+
+        try:
+            pdf_bytes, filename, pdf_baslik = render_teacher_schedule_pdf(
+                term_id=term_id,
+                teacher_id=tid,
+                sube_id=sube_id,
+            )
+        except ScheduleExportError as exc:
+            results.append({
+                'teacher_id': tid,
+                'teacher_name': row['teacher_name'],
+                'status': 'failed',
+                'reason': 'pdf',
+                'sent': 0,
+                'errors': [exc.message],
+            })
+            total_errors += 1
+            continue
+
+        ctx = {
+            'ogretmen_ad': row['teacher_name'],
+            'donem': preview['term_name'],
+            'pdf_baslik': pdf_baslik,
+            'kurum_ad': '',
+            'sube': '',
+        }
+        term = Term.objects.select_related('kurum', 'sube').filter(pk=term_id).first()
+        if term:
+            ctx['kurum_ad'] = term.kurum.ad if term.kurum_id else ''
+            ctx['sube'] = term.sube.ad if term.sube_id else ''
+
+        result = dispatch_event(
+            kurum_id,
+            TEACHER_EVENT_KEY,
+            recipient=NotificationRecipient.personel(tid),
+            context=ctx,
+            attachment=NotificationAttachment(filename=filename, file_bytes=pdf_bytes),
+            source=MessageSource(module='akademik', ref_id=f'teacher-schedule:{term_id}:{tid}'),
+            sube_id=sube_id,
+            sent_by_user_id=sent_by,
+        )
+        if isinstance(result, SendResult) and result.success:
+            results.append({
+                'teacher_id': tid,
+                'teacher_name': row['teacher_name'],
+                'status': 'sent',
+                'reason': None,
+                'sent': 1,
+                'errors': [],
+            })
+            total_sent += 1
+        else:
+            err = (
+                '; '.join(result.errors)
+                if isinstance(result, SendResult) and result.errors
+                else 'Öğretmen gönderimi başarısız'
+            )
+            results.append({
+                'teacher_id': tid,
+                'teacher_name': row['teacher_name'],
+                'status': 'failed',
+                'reason': 'dispatch',
+                'sent': 0,
+                'errors': [err],
+            })
+            total_errors += 1
+
+    return {
+        'term_id': term_id,
+        'total_sent': total_sent,
         'total_skipped': total_skipped,
         'total_errors': total_errors,
         'results': results,
