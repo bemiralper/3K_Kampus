@@ -5,14 +5,19 @@ import {
   ensureClassPeriodAttendance,
   fetchClassPeriodStudentAttendance,
   fetchCoachPeriodAttendanceContext,
+  fetchCoachPeriodDayRoster,
   previewClassAttendanceNotify,
   saveClassPeriodStudentAttendance,
   sendClassAttendanceNotify,
   type AttendanceRosterRow,
   type ClassAttendanceNotifyRecipient,
   type ClassPeriodSession,
+  type CoachAttendanceState,
+  type CoachDayRoster,
   type CoachPeriodAttendanceContext,
+  type CoachPeriodClassroom,
 } from "@/lib/academic-api";
+import CoachYoklamaStatusList from "./CoachYoklamaStatusList";
 import "./coach-class-yoklama.css";
 
 const STATUS_OPTS: { value: AttendanceRosterRow["status"]; label: string }[] = [
@@ -21,6 +26,42 @@ const STATUS_OPTS: { value: AttendanceRosterRow["status"]; label: string }[] = [
   { value: "ABSENT", label: "Yok" },
   { value: "EXCUSED", label: "İzin" },
 ];
+
+const STATE_ORDER: Record<CoachAttendanceState, number> = {
+  pending: 0,
+  partial: 1,
+  done: 2,
+  no_lesson: 3,
+};
+
+const STATE_LABEL: Record<CoachAttendanceState, string> = {
+  pending: "Bekliyor",
+  partial: "Devam",
+  done: "Yapıldı",
+  no_lesson: "Ders yok",
+};
+
+function isCompleteClass(row: CoachPeriodClassroom) {
+  if (row.attendance_state === "done") return true;
+  return row.periods.length > 0 && row.periods.every((p) => p.taken);
+}
+
+function cardState(row: CoachPeriodClassroom): CoachAttendanceState {
+  if (row.attendance_state === "no_lesson") return "no_lesson";
+  if (isCompleteClass(row)) return "done";
+  if (row.periods.some((p) => p.taken) || row.attendance_state === "partial") return "partial";
+  return "pending";
+}
+
+function takenPeriodLabel(row: CoachPeriodClassroom) {
+  if (isCompleteClass(row)) return "Yapıldı";
+  const taken = row.periods.filter((p) => p.taken);
+  if (taken.length === 1) return `${taken[0].period_label} alındı`;
+  if (taken.length > 1) return "Devam";
+  return STATE_LABEL[row.attendance_state];
+}
+
+type ListFilter = "action" | "done" | "all";
 
 function todayISO() {
   const d = new Date();
@@ -69,11 +110,63 @@ function initials(name: string) {
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 }
 
+function sortClassrooms(rows: CoachPeriodClassroom[]) {
+  return [...rows].sort((a, b) => {
+    const byState = STATE_ORDER[a.attendance_state] - STATE_ORDER[b.attendance_state];
+    if (byState !== 0) return byState;
+    return a.ad.localeCompare(b.ad, "tr");
+  });
+}
+
+function levelLabel(seviye: string) {
+  return /sınıf/i.test(seviye) ? seviye : `${seviye}. Sınıf`;
+}
+
+function groupClassrooms(rows: CoachPeriodClassroom[]) {
+  const terms = [...new Set(rows.map((r) => r.term_name).filter(Boolean))];
+  const levels = [...new Set(rows.map((r) => r.seviye).filter(Boolean))];
+  const multiTerm = terms.length > 1;
+  const multiLevel = levels.length > 1;
+
+  if (multiTerm && multiLevel) {
+    const keys = [...new Set(rows.map((r) => `${r.term_name}|||${r.seviye}`))];
+    return keys
+      .sort((a, b) => a.localeCompare(b, "tr", { numeric: true }))
+      .map((key) => {
+        const [term, seviye] = key.split("|||");
+        return {
+          title: `${term} · ${levelLabel(seviye)}`,
+          items: sortClassrooms(rows.filter((r) => r.term_name === term && r.seviye === seviye)),
+        };
+      });
+  }
+  if (multiTerm) {
+    return terms
+      .sort((a, b) => a.localeCompare(b, "tr"))
+      .map((title) => ({ title, items: sortClassrooms(rows.filter((r) => r.term_name === title)) }));
+  }
+  if (multiLevel) {
+    return levels
+      .sort((a, b) => a.localeCompare(b, "tr", { numeric: true }))
+      .map((title) => ({
+        title: levelLabel(title),
+        items: sortClassrooms(rows.filter((r) => r.seviye === title)),
+      }));
+  }
+  return [{ title: "", items: sortClassrooms(rows) }];
+}
+
 export default function CoachClassYoklamaClient() {
   const [ctx, setCtx] = useState<CoachPeriodAttendanceContext | null>(null);
-  const [termId, setTermId] = useState<number | null>(null);
+  const [view, setView] = useState<"list" | "detail">("list");
+  const [pageTab, setPageTab] = useState<"classes" | "status">("classes");
+  const [dayRoster, setDayRoster] = useState<CoachDayRoster | null>(null);
+  const [dayRosterLoading, setDayRosterLoading] = useState(false);
   const [classroomId, setClassroomId] = useState<number | null>(null);
+  const [termId, setTermId] = useState<number | null>(null);
   const [date, setDate] = useState(todayISO);
+  const [filter, setFilter] = useState<ListFilter>("action");
+  const [query, setQuery] = useState("");
   const [sessions, setSessions] = useState<ClassPeriodSession[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [info, setInfo] = useState("");
@@ -87,27 +180,53 @@ export default function CoachClassYoklamaClient() {
   const [noteOpen, setNoteOpen] = useState<number | null>(null);
   const [notifyOpen, setNotifyOpen] = useState(false);
 
-  const boot = useCallback(async () => {
-    setBooting(true);
-    setError("");
+  const loadContext = useCallback(async () => {
+    const data = await fetchCoachPeriodAttendanceContext(date);
+    setCtx(data);
+    return data;
+  }, [date]);
+
+  const loadDayRoster = useCallback(async () => {
+    setDayRosterLoading(true);
     try {
-      const data = await fetchCoachPeriodAttendanceContext();
-      setCtx(data);
-      setTermId((p) => p ?? data.active_term_id ?? data.terms[0]?.id ?? null);
-      setClassroomId((p) => p ?? data.classrooms[0]?.id ?? null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Sınıf listesi yüklenemedi");
+      const data = await fetchCoachPeriodDayRoster(date);
+      setDayRoster(data);
+      return data;
     } finally {
-      setBooting(false);
+      setDayRosterLoading(false);
     }
-  }, []);
+  }, [date]);
 
   useEffect(() => {
-    boot();
-  }, [boot]);
+    let cancelled = false;
+    (async () => {
+      const first = !ctx;
+      if (first) setBooting(true);
+      setError("");
+      try {
+        const data = await loadContext();
+        if (!cancelled) setCtx(data);
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Sınıf listesi yüklenemedi");
+      } finally {
+        if (!cancelled) setBooting(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // İlk yükleme ve tarih değişince yenile — ctx kasıtlı bağımlılık değil.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadContext]);
+
+  useEffect(() => {
+    loadDayRoster().catch(() => {
+      setDayRoster(null);
+    });
+  }, [loadDayRoster]);
 
   const loadSessions = useCallback(async () => {
-    if (!termId || !classroomId) {
+    if (!termId || !classroomId || view !== "detail") {
       setSessions([]);
       setSessionId(null);
       setInfo("");
@@ -123,7 +242,10 @@ export default function CoachClassYoklamaClient() {
       const next = data.sessions || [];
       setSessions(next);
       setInfo(data.info || (next.length === 0 ? "Bu sınıfın seçilen günde dersi yok." : ""));
-      setSessionId((prev) => (prev && next.some((s) => s.id === prev) ? prev : next[0]?.id ?? null));
+      setSessionId((prev) => {
+        if (prev && next.some((s) => s.id === prev)) return prev;
+        return next.find((s) => !s.taken)?.id ?? next[0]?.id ?? null;
+      });
     } catch (e) {
       setSessions([]);
       setSessionId(null);
@@ -131,14 +253,14 @@ export default function CoachClassYoklamaClient() {
     } finally {
       setLoading(false);
     }
-  }, [classroomId, date, termId]);
+  }, [classroomId, date, termId, view]);
 
   useEffect(() => {
     loadSessions();
   }, [loadSessions]);
 
   const loadRoster = useCallback(async () => {
-    if (!sessionId) {
+    if (!sessionId || view !== "detail") {
       setRoster([]);
       return;
     }
@@ -150,7 +272,7 @@ export default function CoachClassYoklamaClient() {
       setError(e instanceof Error ? e.message : "Liste yüklenemedi");
       setRoster([]);
     }
-  }, [sessionId]);
+  }, [sessionId, view]);
 
   useEffect(() => {
     loadRoster();
@@ -199,6 +321,9 @@ export default function CoachClassYoklamaClient() {
       setRoster(result.roster);
       setDirty(false);
       setToast("Yoklama kaydedildi");
+      await loadContext();
+      await loadSessions();
+      await loadDayRoster().catch(() => undefined);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Kayıt başarısız");
     } finally {
@@ -217,9 +342,50 @@ export default function CoachClassYoklamaClient() {
     return c;
   }, [roster]);
 
+  const classrooms = ctx?.classrooms || [];
+  const selectedClass = classrooms.find((c) => c.id === classroomId) || null;
   const selected = sessions.find((s) => s.id === sessionId);
   const notifyEligible = roster.some((r) => r.status === "ABSENT" || r.status === "LATE");
-  const classrooms = ctx?.classrooms || [];
+
+  const summary = useMemo(() => {
+    const pending = classrooms.filter((c) => !isCompleteClass(c) && c.attendance_state !== "no_lesson").length;
+    const done = classrooms.filter((c) => isCompleteClass(c)).length;
+    const idle = classrooms.filter((c) => c.attendance_state === "no_lesson").length;
+    return { pending, done, idle, total: classrooms.length };
+  }, [classrooms]);
+
+  const visibleGroups = useMemo(() => {
+    const q = query.trim().toLocaleLowerCase("tr");
+    const filtered = classrooms.filter((c) => {
+      if (filter === "action" && (isCompleteClass(c) || c.attendance_state === "no_lesson")) return false;
+      if (filter === "done" && !isCompleteClass(c)) return false;
+      if (q && !`${c.ad} ${c.kod} ${c.seviye}`.toLocaleLowerCase("tr").includes(q)) return false;
+      return true;
+    });
+    return groupClassrooms(filtered);
+  }, [classrooms, filter, query]);
+
+  const openClass = (row: CoachPeriodClassroom) => {
+    setClassroomId(row.id);
+    setTermId(row.term_id ?? ctx?.active_term_id ?? null);
+    setSessionId(null);
+    setView("detail");
+    setError("");
+  };
+
+  const backToList = async () => {
+    setView("list");
+    setClassroomId(null);
+    setSessions([]);
+    setSessionId(null);
+    setRoster([]);
+    setDirty(false);
+    try {
+      await Promise.all([loadContext(), loadDayRoster()]);
+    } catch {
+      /* liste zaten yüklü */
+    }
+  };
 
   useEffect(() => {
     if (!toast) return;
@@ -235,7 +401,18 @@ export default function CoachClassYoklamaClient() {
     <div className="cyc-page">
       <section className="cyc-hero">
         <div className="cyc-hero-inner">
-          <p className="cyc-kicker">Günlük sınıf yoklaması</p>
+          <div className="cyc-hero-top">
+            {view === "detail" ? (
+              <button type="button" className="cyc-back" onClick={backToList}>
+                ← Sınıflar
+              </button>
+            ) : (
+              <p className="cyc-kicker">Sınıf yoklaması</p>
+            )}
+            {ctx?.active_year?.yil_str ? (
+              <span className="cyc-year-chip">{ctx.active_year.yil_str}</span>
+            ) : null}
+          </div>
           <div className="cyc-date-row">
             <button type="button" className="cyc-date-nav" aria-label="Önceki gün" onClick={() => setDate((d) => shiftISO(d, -1))}>
               ‹
@@ -246,7 +423,11 @@ export default function CoachClassYoklamaClient() {
                 <span className="cyc-date-short">{formatShortDate(date)}</span>
               </h2>
               <p className="cyc-date-sub">
-                {selected ? `${selected.period_label} yoklaması` : "Sabah / öğleden sonra"}
+                {view === "detail" && selectedClass
+                  ? selectedClass.ad
+                  : pageTab === "status" && dayRoster
+                    ? `${dayRoster.counts.present} var · ${dayRoster.counts.late} geç · ${dayRoster.counts.absent} yok · ${dayRoster.counts.excused} izinli`
+                    : `${summary.pending} bekliyor · ${summary.done} yapıldı`}
               </p>
             </div>
             <button type="button" className="cyc-today-btn" onClick={() => setDate(todayISO())}>
@@ -257,47 +438,37 @@ export default function CoachClassYoklamaClient() {
             </button>
           </div>
 
-          {(ctx?.terms.length || 0) > 1 ? (
-            <div className="cyc-period-row" style={{ marginTop: 12 }}>
-              {ctx?.terms.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className={`cyc-period${termId === t.id ? " is-active" : ""}`}
-                  onClick={() => setTermId(t.id)}
-                >
-                  {t.name}
-                </button>
-              ))}
+          {view === "list" ? (
+            <div className="cyc-page-tabs" role="tablist" aria-label="Sayfa">
+              <button
+                type="button"
+                className={`cyc-page-tab${pageTab === "classes" ? " is-active" : ""}`}
+                onClick={() => setPageTab("classes")}
+              >
+                Sınıflar
+              </button>
+              <button
+                type="button"
+                className={`cyc-page-tab${pageTab === "status" ? " is-active" : ""}`}
+                onClick={() => setPageTab("status")}
+              >
+                Durum listesi
+                {dayRoster?.counts.total ? <b>{dayRoster.counts.total}</b> : null}
+              </button>
             </div>
           ) : null}
 
-          {classrooms.length > 0 ? (
-            <div className="cyc-class-scroll" role="tablist" aria-label="Sınıflar">
-              {classrooms.map((c) => (
-                <button
-                  key={c.id}
-                  type="button"
-                  className={`cyc-chip${classroomId === c.id ? " is-active" : ""}`}
-                  onClick={() => setClassroomId(c.id)}
-                >
-                  {c.ad}
-                  <span className="cyc-chip-meta">{c.ogrenci_sayisi}</span>
-                </button>
-              ))}
-            </div>
-          ) : null}
-
-          {sessions.length > 0 ? (
+          {view === "detail" && sessions.length > 0 ? (
             <div className="cyc-period-row" role="tablist" aria-label="Periyot">
               {sessions.map((s) => (
                 <button
                   key={s.id}
                   type="button"
-                  className={`cyc-period${sessionId === s.id ? " is-active" : ""}`}
+                  className={`cyc-period${sessionId === s.id ? " is-active" : ""}${s.taken ? " is-taken" : ""}`}
                   onClick={() => setSessionId(s.id)}
                 >
                   {s.period_label}
+                  {s.taken ? " · alındı" : ""}
                 </button>
               ))}
             </div>
@@ -306,13 +477,29 @@ export default function CoachClassYoklamaClient() {
       </section>
 
       {error ? <div className="cyc-error">{error}</div> : null}
-      {toast ? <div className="cyc-error" style={{ color: "#047857" }}>{toast}</div> : null}
+      {toast ? <div className="cyc-toast">{toast}</div> : null}
 
-      {!classrooms.length ? (
-        <div className="cyc-empty">
-          <h3>Atanmış sınıf yok</h3>
-          <p>Günlük yoklama için birincil koç atamanızdaki öğrencilerin sınıfları listelenir.</p>
-        </div>
+      {view === "list" && pageTab === "status" ? (
+        <CoachYoklamaStatusList
+          data={dayRoster}
+          loading={dayRosterLoading}
+          dateLabel={formatLongDate(date)}
+          onOpenClass={(id) => {
+            const row = classrooms.find((c) => c.id === id);
+            if (row) openClass(row);
+          }}
+        />
+      ) : view === "list" ? (
+        <ListView
+          classrooms={classrooms}
+          groups={visibleGroups}
+          filter={filter}
+          query={query}
+          summary={summary}
+          onFilter={setFilter}
+          onQuery={setQuery}
+          onOpen={openClass}
+        />
       ) : loading && !sessions.length ? (
         <div className="cyc-loading">Program kontrol ediliyor…</div>
       ) : !sessionId ? (
@@ -349,7 +536,7 @@ export default function CoachClassYoklamaClient() {
                       <div className="cyc-name">
                         {row.student_name}
                         {row.izinli_mi ? (
-                          <span className="cyc-izin-badge" title={row.izin_sebep || 'Kütüphane izni'}>
+                          <span className="cyc-izin-badge" title={row.izin_sebep || "Kütüphane izni"}>
                             İZİNLİ
                           </span>
                         ) : null}
@@ -438,6 +625,109 @@ export default function CoachClassYoklamaClient() {
   );
 }
 
+function ListView({
+  classrooms,
+  groups,
+  filter,
+  query,
+  summary,
+  onFilter,
+  onQuery,
+  onOpen,
+}: {
+  classrooms: CoachPeriodClassroom[];
+  groups: { title: string; items: CoachPeriodClassroom[] }[];
+  filter: ListFilter;
+  query: string;
+  summary: { pending: number; done: number; idle: number; total: number };
+  onFilter: (value: ListFilter) => void;
+  onQuery: (value: string) => void;
+  onOpen: (row: CoachPeriodClassroom) => void;
+}) {
+  if (!classrooms.length) {
+    return (
+      <div className="cyc-empty">
+        <h3>Aktif yılda sınıf yok</h3>
+        <p>Yalnızca aktif eğitim yılındaki, birincil koç atamanızdaki öğrencilerin sınıfları listelenir.</p>
+      </div>
+    );
+  }
+
+  const visibleCount = groups.reduce((n, g) => n + g.items.length, 0);
+
+  return (
+    <div className="cyc-board">
+      <div className="cyc-board-tools">
+        <div className="cyc-filter-row" role="tablist" aria-label="Durum">
+          <button type="button" className={`cyc-filter${filter === "action" ? " is-active" : ""}`} onClick={() => onFilter("action")}>
+            Yapılacak
+            <b>{summary.pending}</b>
+          </button>
+          <button type="button" className={`cyc-filter${filter === "done" ? " is-active" : ""}`} onClick={() => onFilter("done")}>
+            Yapıldı
+            <b>{summary.done}</b>
+          </button>
+          <button type="button" className={`cyc-filter${filter === "all" ? " is-active" : ""}`} onClick={() => onFilter("all")}>
+            Tümü
+            <b>{summary.total}</b>
+          </button>
+        </div>
+        <input
+          className="cyc-search"
+          value={query}
+          onChange={(e) => onQuery(e.target.value)}
+          placeholder="Sınıf ara"
+          aria-label="Sınıf ara"
+        />
+      </div>
+
+      {visibleCount === 0 ? (
+        <div className="cyc-empty">
+          <h3>Bu filtrede sınıf yok</h3>
+          <p>{filter === "done" ? "Sabah ve öğleden sonra yoklaması tamamlanan sınıf yok." : "Bekleyen yoklama kalmadı."}</p>
+        </div>
+      ) : (
+        groups.map((group) => (
+          <section key={group.title || "all"} className="cyc-group">
+            {group.title ? <h3 className="cyc-group-title">{group.title}</h3> : null}
+            <div className="cyc-cards">
+              {group.items.map((row) => (
+                <button
+                  key={row.id}
+                  type="button"
+                  className={`cyc-class-card is-${cardState(row)}`}
+                  onClick={() => onOpen(row)}
+                >
+                  <span className={`cyc-state-dot is-${cardState(row)}`} aria-hidden />
+                  <span className="cyc-class-main">
+                    <strong>{row.ad}</strong>
+                    <em>{row.ogrenci_sayisi} öğrenci</em>
+                    {row.periods.length ? (
+                      <span className="cyc-period-pills">
+                        {row.periods.map((p) => (
+                          <span
+                            key={p.period}
+                            className={`cyc-period-pill${p.taken ? " is-taken" : " is-wait"}`}
+                          >
+                            {p.taken ? `${p.period_label} alındı` : p.period_label}
+                          </span>
+                        ))}
+                      </span>
+                    ) : null}
+                  </span>
+                  <span className={`cyc-state-badge is-${cardState(row)}`}>
+                    {takenPeriodLabel(row)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        ))
+      )}
+    </div>
+  );
+}
+
 function CoachNotifySheet({
   sourceId,
   title,
@@ -497,6 +787,7 @@ function CoachNotifySheet({
   }, [sourceId, types]);
 
   const pending = recipients.filter((r) => !r.skip_reason && r.recipient_id);
+  const listed = [...pending, ...recipients.filter((r) => r.skip_reason || !r.recipient_id)];
 
   const send = async () => {
     if (!types.length || !pending.length) return;
@@ -523,7 +814,7 @@ function CoachNotifySheet({
         <h3>{title}</h3>
         <p className="cyc-sheet-sub">
           {oturumAd ? `${oturumAd} · ` : ""}
-          WhatsApp ile gelmedi / geç kalanlar
+          Şu an gelmedi / geç olanlar. Daha önce gönderilenler tekrar gitmez.
         </p>
         <div className="cyc-checks">
           <label>
@@ -536,7 +827,7 @@ function CoachNotifySheet({
         {error ? <div className="cyc-error">{error}</div> : null}
         {loading ? <p className="cyc-sheet-sub">Önizleme yükleniyor…</p> : null}
         <div className="cyc-recip">
-          {recipients.map((r, i) => (
+          {listed.map((r, i) => (
             <div key={`${r.recipient_type}-${r.recipient_id}-${i}`} className={`cyc-recip-item${r.skip_reason ? " is-skip" : ""}`}>
               <div className="cyc-recip-name">
                 {r.ogrenci_ad} · {r.recipient_type === "VELI" ? "Veli" : "Öğrenci"}

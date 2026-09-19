@@ -44,6 +44,8 @@ from apps.academic.domain.class_period_attendance import (
 )
 from apps.academic.services.class_period_attendance_service import (
     build_coach_period_attendance_context,
+    build_coach_period_day_roster,
+    export_coach_period_day_roster,
     get_or_build_period_roster,
     list_period_sessions_for_date,
     save_period_attendance,
@@ -383,11 +385,89 @@ def class_period_attendance_coach_context_api(request):
     ctx, err = mandatory_academic_context_drf(request)
     if err:
         return err
+    raw_date = request.query_params.get('date')
+    session_date = None
+    if raw_date:
+        try:
+            session_date = date.fromisoformat(str(raw_date))
+        except ValueError:
+            session_date = date.today()
     return Response(build_coach_period_attendance_context(
         user=request.user,
         kurum_id=ctx['kurum_id'],
         sube_id=ctx['sube_id'],
+        session_date=session_date,
     ))
+
+
+@csrf_exempt
+@api_view(['GET'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([ClassPeriodAttendancePermission])
+def class_period_attendance_coach_day_roster_api(request):
+    """GET /api/academic/class-period-attendance/coach-day-roster/"""
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+    raw_date = request.query_params.get('date')
+    session_date = None
+    if raw_date:
+        try:
+            session_date = date.fromisoformat(str(raw_date))
+        except ValueError:
+            session_date = date.today()
+    return Response(build_coach_period_day_roster(
+        user=request.user,
+        kurum_id=ctx['kurum_id'],
+        sube_id=ctx['sube_id'],
+        session_date=session_date,
+    ))
+
+
+@csrf_exempt
+@api_view(['GET'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([ClassPeriodAttendancePermission])
+def class_period_attendance_coach_day_roster_export_api(request):
+    """GET /api/academic/class-period-attendance/coach-day-roster/export/"""
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+    raw_date = request.query_params.get('date')
+    session_date = None
+    if raw_date:
+        try:
+            session_date = date.fromisoformat(str(raw_date))
+        except ValueError:
+            session_date = date.today()
+    fmt = str(request.query_params.get('file_format') or request.query_params.get('fmt') or 'xlsx').lower()
+    if fmt not in ('xlsx', 'csv'):
+        fmt = 'xlsx'
+    statuses = [
+        part.strip().upper()
+        for part in str(request.query_params.get('statuses') or '').split(',')
+        if part.strip()
+    ]
+    classroom_ids = []
+    for part in str(request.query_params.get('classroom_ids') or '').split(','):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            classroom_ids.append(int(part))
+        except ValueError:
+            continue
+    period = str(request.query_params.get('period') or '').upper() or None
+    return export_coach_period_day_roster(
+        user=request.user,
+        kurum_id=ctx['kurum_id'],
+        sube_id=ctx['sube_id'],
+        session_date=session_date,
+        fmt=fmt,
+        statuses=statuses,
+        classroom_ids=classroom_ids,
+        period=period,
+    )
 
 
 @csrf_exempt

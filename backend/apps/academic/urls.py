@@ -153,6 +153,8 @@ from apps.academic.interfaces.views.lesson_operations import (
     lesson_operations_meta_api,
     class_period_attendance_list_api,
     class_period_attendance_coach_context_api,
+    class_period_attendance_coach_day_roster_api,
+    class_period_attendance_coach_day_roster_export_api,
     class_period_student_attendance_api,
     class_attendance_notify_preview_api,
     class_attendance_notify_send_api,
@@ -321,6 +323,16 @@ urlpatterns = [
         'class-period-attendance/coach-context/',
         class_period_attendance_coach_context_api,
         name='class-period-attendance-coach-context',
+    ),
+    path(
+        'class-period-attendance/coach-day-roster/',
+        class_period_attendance_coach_day_roster_api,
+        name='class-period-attendance-coach-day-roster',
+    ),
+    path(
+        'class-period-attendance/coach-day-roster/export/',
+        class_period_attendance_coach_day_roster_export_api,
+        name='class-period-attendance-coach-day-roster-export',
     ),
     path(
         'class-period-attendance/',

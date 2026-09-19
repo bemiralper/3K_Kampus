@@ -588,7 +588,7 @@ class ClassPeriodAttendanceApiTest(TestCase):
             sube=self.sube,
             ad='Koç',
             soyad=username,
-            tc_kimlik_no='33333333333',
+            tc_kimlik_no=f'{90000000000 + user.id}',
             user=user,
             aktif_mi=True,
         )
@@ -649,3 +649,147 @@ class ClassPeriodAttendanceApiTest(TestCase):
             **self.headers,
         )
         self.assertEqual(denied.status_code, 403)
+
+    def test_coach_context_hides_other_year_and_marks_taken(self):
+        old_year = EgitimYili.objects.create(
+            baslangic_yil=2024, bitis_yil=2025, aktif_mi=False,
+        )
+        old_term = Term.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=old_year,
+            name='Eski Güz',
+            code='OLD',
+            start_date=date(2024, 9, 1),
+            end_date=date(2025, 1, 31),
+            is_active=False,
+        )
+        old_sinif = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=old_year,
+            term=old_term,
+            ad='8-K',
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        old_student = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Eski',
+            soyad='Öğrenci',
+            aktif_mi=True,
+        )
+        StudentClassPlacement.objects.create(
+            academic_year=old_year,
+            term=old_term,
+            student=old_student,
+            classroom=old_sinif,
+            is_active=True,
+        )
+        coach_user = self._make_coach(username='cpa_year', student=self.ogrenci)
+        from apps.coaching.models import CoachProfile, CoachStudentAssignment
+        profile = CoachProfile.objects.get(teacher__user=coach_user)
+        CoachStudentAssignment.objects.create(
+            coach=profile,
+            student=old_student,
+            start_date=date(2024, 9, 1),
+            is_primary=True,
+        )
+        client = Client()
+        client.force_login(coach_user)
+
+        ctx = client.get(
+            f'/api/academic/class-period-attendance/coach-context/?date={self.monday.isoformat()}',
+            **self.headers,
+        )
+        self.assertEqual(ctx.status_code, 200, ctx.content)
+        body = ctx.json()
+        rows = {row['id']: row for row in body['classrooms']}
+        self.assertIn(self.sinif.id, rows)
+        self.assertNotIn(old_sinif.id, rows)
+        self.assertEqual(body.get('date'), self.monday.isoformat())
+        current = rows[self.sinif.id]
+        self.assertEqual(current['term_id'], self.term.id)
+        self.assertEqual(current['ogrenci_sayisi'], 1)
+        self.assertEqual(current['attendance_state'], 'pending')
+
+        ensure = client.post(
+            '/api/academic/class-period-attendance/',
+            data={
+                'term_id': self.term.id,
+                'classroom_id': self.sinif.id,
+                'date': self.monday.isoformat(),
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(ensure.status_code, 200, ensure.content)
+        morning = next(s for s in ensure.json()['sessions'] if s['period'] == 'MORNING')
+        self.assertFalse(morning.get('taken'))
+        save = client.post(
+            f'/api/academic/class-period-attendance/{morning["id"]}/student-attendance/',
+            data={
+                'records': [{
+                    'student_id': self.ogrenci.id,
+                    'status': StudentAttendanceStatus.PRESENT,
+                }],
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(save.status_code, 200, save.content)
+
+        after = client.get(
+            f'/api/academic/class-period-attendance/coach-context/?date={self.monday.isoformat()}',
+            **self.headers,
+        )
+        self.assertEqual(after.status_code, 200, after.content)
+        after_row = next(r for r in after.json()['classrooms'] if r['id'] == self.sinif.id)
+        self.assertEqual(after_row['attendance_state'], 'partial')
+        morning_period = next(p for p in after_row['periods'] if p['period'] == 'MORNING')
+        afternoon_period = next(p for p in after_row['periods'] if p['period'] == 'AFTERNOON')
+        self.assertTrue(morning_period['taken'])
+        self.assertFalse(afternoon_period['taken'])
+
+        afternoon = next(s for s in ensure.json()['sessions'] if s['period'] == 'AFTERNOON')
+        save_pm = client.post(
+            f'/api/academic/class-period-attendance/{afternoon["id"]}/student-attendance/',
+            data={
+                'records': [{
+                    'student_id': self.ogrenci.id,
+                    'status': StudentAttendanceStatus.PRESENT,
+                }],
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(save_pm.status_code, 200, save_pm.content)
+        both = client.get(
+            f'/api/academic/class-period-attendance/coach-context/?date={self.monday.isoformat()}',
+            **self.headers,
+        )
+        self.assertEqual(both.status_code, 200, both.content)
+        both_row = next(r for r in both.json()['classrooms'] if r['id'] == self.sinif.id)
+        self.assertEqual(both_row['attendance_state'], 'done')
+        self.assertTrue(all(p['taken'] for p in both_row['periods']))
+
+        roster = client.get(
+            f'/api/academic/class-period-attendance/coach-day-roster/?date={self.monday.isoformat()}',
+            **self.headers,
+        )
+        self.assertEqual(roster.status_code, 200, roster.content)
+        body = roster.json()
+        self.assertEqual(body['counts']['present'], 2)
+        self.assertEqual(body['counts']['total'], 2)
+        names = {row['student_name'] for row in body['rows']}
+        self.assertTrue(any('Ayşe' in name for name in names))
+        self.assertEqual({row['status'] for row in body['rows']}, {'PRESENT'})
+        self.assertEqual({row['period'] for row in body['rows']}, {'MORNING', 'AFTERNOON'})
+
+        exported = client.get(
+            f'/api/academic/class-period-attendance/coach-day-roster/export/?date={self.monday.isoformat()}&file_format=xlsx',
+            **self.headers,
+        )
+        self.assertEqual(exported.status_code, 200, exported.content)
+        self.assertIn('spreadsheetml', exported.get('Content-Type', ''))
