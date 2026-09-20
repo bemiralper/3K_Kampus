@@ -142,9 +142,13 @@ class ScheduleNotifyUnitTest(TestCase):
         self.assertEqual(event.suggested_meta_name('VELI'), 'sinif_programi_veli')
         self.assertEqual(event.suggested_meta_name('OGRENCI'), 'sinif_programi_ogrenci')
         drafts = list_academic_schedule_template_drafts()
-        self.assertEqual(len(drafts), 2)
+        self.assertEqual(len(drafts), 3)
         names = {d.meta_name for d in drafts}
-        self.assertEqual(names, {'sinif_programi_veli', 'sinif_programi_ogrenci'})
+        self.assertEqual(names, {
+            'sinif_programi_veli',
+            'sinif_programi_ogrenci',
+            'ogretmen_programi_personel',
+        })
 
     def test_fingerprint_changes_when_cell_updates(self):
         fp1 = compute_grid_fingerprint(self.version.id, self.sinif.id)
@@ -168,6 +172,10 @@ class ScheduleNotifyUnitTest(TestCase):
         self.assertEqual(row['student_count'], 1)
         self.assertEqual(row['veli_count'], 1)
         self.assertTrue(row['default_selected'])
+        self.assertEqual(len(row.get('students') or []), 1)
+        self.assertEqual(row['students'][0]['name'], 'Ayşe Yılmaz')
+        self.assertEqual(len(row.get('veliler') or []), 1)
+        self.assertEqual(row['veliler'][0]['name'], 'Mehmet Yılmaz')
 
     def test_preview_warns_when_unchanged_after_send(self):
         fp = compute_grid_fingerprint(self.version.id, self.sinif.id)
@@ -255,6 +263,29 @@ class ScheduleNotifyUnitTest(TestCase):
             ).count()
             >= 2,
         )
+
+    @patch('apps.academic.application.schedule_notify_service.dispatch_event')
+    @patch('apps.academic.application.schedule_notify_service.render_class_schedule_pdf')
+    def test_send_excludes_student_keeps_veli(self, mock_pdf, mock_dispatch):
+        mock_pdf.return_value = (b'%PDF-test', 'ders.pdf', 'Program')
+        mock_dispatch.return_value = SendResult(success=True)
+        result = send_class_schedules(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            term_id=self.term.id,
+            version_id=self.version.id,
+            sinif_ids=[self.sinif.id],
+            send_to=['veli', 'ogrenci'],
+            exclude_ogrenci_ids=[self.student.id],
+        )
+        self.assertEqual(result['total_ogrenci_sent'], 0)
+        self.assertGreaterEqual(result['total_veli_sent'], 1)
+        sent_types = [
+            call.kwargs['recipient'].recipient_type
+            for call in mock_dispatch.call_args_list
+        ]
+        self.assertIn('VELI', sent_types)
+        self.assertNotIn('OGRENCI', sent_types)
 
 
 class ScheduleNotifyApiTest(TestCase):

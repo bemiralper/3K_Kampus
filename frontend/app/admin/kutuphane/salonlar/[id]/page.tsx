@@ -10,7 +10,7 @@ import {
   fetchSeatAssignments, endSeatAssignment,
   fetchAuditLogs,
   fetchAttendanceSessions, openAttendanceSession,
-  fetchAttendanceSessionDetail, closeAttendanceSession, reopenAttendanceSession,
+  fetchAttendanceSessionDetail, fetchAttendanceRecords, closeAttendanceSession, reopenAttendanceSession,
   saveAttendanceRecords, openLessonAttendanceSessions,
   fetchAttendanceSheetData, fetchWeeklyAttendanceSummary, downloadAttendanceSheetExport,
   fetchAttendanceNotifyStatus, fetchAttendanceNotifyConfig,
@@ -46,6 +46,7 @@ import {
 import { buildSeatStudentListPrintHtml, openKutuphanePrintWindow } from '@/lib/kutuphane-list-print';
 import { downloadBlob } from '@/lib/download-file';
 import '@/components/kutuphane/yoklama/yoklama-sheet.css';
+import '@/components/kutuphane/yoklama/yoklama-drawer.css';
 
 /* ════════════════════════════════════════════════════════════
    TABS  (Oturumlar kaldırıldı — ders programı kullanılıyor)
@@ -1222,6 +1223,26 @@ function YoklamaTab({
     setDetailLoading(false);
   };
 
+  const refreshLiveLessons = useCallback(async (sessionId: string) => {
+    try {
+      const res = await fetchAttendanceRecords(libraryId, sessionId);
+      if (!res.success || !res.data) return;
+      const fresh = res.data;
+      setDetailRecords((prev) => prev.map((row) => {
+        const next = fresh.find((item) => item.id === row.id);
+        return next ? { ...row, canli_ders: next.canli_ders } : row;
+      }));
+    } catch { /* ignore */ }
+  }, [libraryId]);
+
+  useEffect(() => {
+    if (!detailSession || detailSession.durum !== 'OPEN') return;
+    const timer = window.setInterval(() => {
+      refreshLiveLessons(detailSession.id);
+    }, 45000);
+    return () => window.clearInterval(timer);
+  }, [detailSession, refreshLiveLessons]);
+
   const openNotifyPreview = (event: AttendanceNotifyEventType, ogrenciIds?: number[]) => {
     setPreviewEvent(event);
     setPreviewOgrenciIds(ogrenciIds);
@@ -1661,101 +1682,92 @@ function YoklamaTab({
       {/* ═══ YOKLAMA AÇ MODALı ═══ */}
       {showOpenModal && (
         <PortalModal>
-          <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) setShowOpenModal(false); }}>
-            <div style={modalBoxStyle(480)} onClick={(e) => e.stopPropagation()}>
-              <div style={modalHeaderStyle}>
-                <h3 style={{ fontSize: '17px', fontWeight: 700, margin: 0 }}>📋 Yoklama Aç</h3>
-                <button onClick={() => setShowOpenModal(false)} style={closeBtnStyle}>✕</button>
+          <div className="yc-veil" onClick={(e) => { if (e.target === e.currentTarget) setShowOpenModal(false); }}>
+            <div className="yc-open" onClick={(e) => e.stopPropagation()}>
+              <div className="yc-open-head">
+                <p className="yc-kicker">Salon</p>
+                <h1 className="yc-title" style={{ color: '#1b1712' }}>Yoklamayı aç</h1>
               </div>
-              <div style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '18px' }}>
-                {/* Tip seçimi */}
+              <div className="yc-open-body">
                 <div>
-                  <label style={modalLabel}>Yoklama Tipi</label>
-                  <div style={{ display: 'flex', gap: '8px' }}>
+                  <label className="yc-open-label">Tip</label>
+                  <div className="yc-types">
                     {[
-                      { key: 'PERIOD' as const, label: '📋 Periyot Bazlı', desc: 'Tüm periyot için tek yoklama' },
-                      { key: 'LESSON' as const, label: '📝 Ders Bazlı', desc: 'Her ders için ayrı yoklama' },
+                      { key: 'PERIOD' as const, label: 'Periyot', desc: 'Tüm periyot, tek liste' },
+                      { key: 'LESSON' as const, label: 'Ders', desc: 'Her ders ayrı' },
                     ].map(t => (
-                      <button key={t.key} onClick={() => setOpenType(t.key)} style={{
-                        flex: 1, padding: '12px', borderRadius: '10px', textAlign: 'left' as const,
-                        border: openType === t.key ? '2px solid #3b82f6' : '2px solid #e5e7eb',
-                        backgroundColor: openType === t.key ? '#eff6ff' : '#fff',
-                        cursor: 'pointer',
-                      }}>
-                        <div style={{ fontSize: '13px', fontWeight: 600 }}>{t.label}</div>
-                        <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>{t.desc}</div>
+                      <button
+                        key={t.key}
+                        type="button"
+                        className={`yc-type${openType === t.key ? ' active' : ''}`}
+                        onClick={() => setOpenType(t.key)}
+                      >
+                        <strong>{t.label}</strong>
+                        <span>{t.desc}</span>
                       </button>
                     ))}
                   </div>
                 </div>
 
-                {/* Periyot seçimi */}
                 <div>
-                  <label style={modalLabel}>Periyot</label>
+                  <label className="yc-open-label">Periyot</label>
                   <select
                     value={selectedPeriyot}
                     onChange={(e) => setSelectedPeriyot(e.target.value)}
-                    style={modalSelectStyle}
+                    className="yc-field"
                   >
                     {PERIYOT_OPTIONS.map(p => (
                       <option key={p.key} value={p.key} disabled={(p as any).disabled}>
-                        {(p as any).disabled ? `🚫 ${p.label} (Kapalı)` : p.label}
+                        {(p as any).disabled ? `${p.label} (Kapalı)` : p.label}
                       </option>
                     ))}
                   </select>
                   {PERIYOT_OPTIONS.every((p: any) => p.disabled) && (
-                    <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '4px', background: '#fef2f2', padding: '6px 10px', borderRadius: 6 }}>
-                      ⚠️ Bu gün için ders programında hiçbir periyot aktif değil
-                    </div>
+                    <div className="yc-hint warn">Bu gün için aktif periyot yok.</div>
                   )}
                 </div>
 
-                {/* Şube seçimi (ders bazlı) */}
                 {openType === 'LESSON' && (
                   <div>
-                    <label style={modalLabel}>Şube (Ders Programı)</label>
+                    <label className="yc-open-label">Şube</label>
                     <select
                       value={selectedSube || ''}
                       onChange={(e) => setSelectedSube(e.target.value ? Number(e.target.value) : null)}
-                      style={modalSelectStyle}
+                      className="yc-field"
                     >
                       <option value="">Şube seçin...</option>
                       {subeler.filter(s => s.program_var).map(s => (
                         <option key={s.id} value={s.id}>{s.ad}</option>
                       ))}
                     </select>
-                    <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '4px' }}>
+                    <div className="yc-hint">
                       {librarySubeAdi
-                        ? `Salon şubesi: ${librarySubeAdi} — ders programı bu şubeden yüklenir`
-                        : 'Ders bazlı yoklama için şubenin ders programı tanımlı olmalıdır'}
+                        ? `Salon şubesi: ${librarySubeAdi}`
+                        : 'Ders programı olan şube gerekli'}
                     </div>
                   </div>
                 )}
 
-                {/* Tarih */}
                 <div>
-                  <label style={modalLabel}>Tarih</label>
+                  <label className="yc-open-label">Tarih</label>
                   <input
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    style={modalSelectStyle}
+                    className="yc-field"
                   />
                 </div>
               </div>
-              <div style={modalFooterStyle}>
-                <button onClick={() => setShowOpenModal(false)} style={cancelBtnStyle}>İptal</button>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div className="yc-open-foot">
+                <button type="button" className="yc-ghost" onClick={() => setShowOpenModal(false)}>Vazgeç</button>
+                <div style={{ display: 'flex', gap: 8 }}>
                   {openType === 'PERIOD' && PERIYOT_OPTIONS.some(p => !p.disabled) && (
-                    <button
-                      onClick={handleOpenAllPeriods}
-                      style={{ ...cancelBtnStyle, borderColor: '#93c5fd', color: '#1d4ed8', backgroundColor: '#eff6ff' }}
-                    >
-                      Tüm aktif periyotları aç
+                    <button type="button" className="yc-ghost" onClick={handleOpenAllPeriods}>
+                      Hepsini aç
                     </button>
                   )}
-                  <button onClick={handleOpenSession} style={saveBtnStyle}>
-                    Yoklama Aç
+                  <button type="button" className="yc-btn save" onClick={handleOpenSession}>
+                    Başla
                   </button>
                 </div>
               </div>

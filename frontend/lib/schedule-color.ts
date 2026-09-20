@@ -49,12 +49,14 @@ export function colorForKey(id: number | null | undefined): ScheduleColor | null
 export function colorForKeyHex(id: number | null | undefined): {
   bg: string;
   text: string;
+  border: string;
 } | null {
   const c = colorForKey(id);
   if (!c) return null;
   return {
     bg: hslToHex(c.bg),
     text: hslToHex(c.text),
+    border: hslToHex(c.border),
   };
 }
 

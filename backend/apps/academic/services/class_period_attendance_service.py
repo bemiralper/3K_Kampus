@@ -7,6 +7,7 @@ from datetime import date, time
 from typing import Any, Optional
 
 from django.db import transaction
+from django.db.models import Count
 
 from apps.academic.domain.class_period_attendance import (
     ClassPeriodAttendanceRecord,
@@ -208,6 +209,7 @@ def ensure_period_session(
 
 
 def serialize_period_session(session: ClassPeriodAttendanceSession) -> dict[str, Any]:
+    taken = ClassPeriodAttendanceRecord.objects.filter(session=session).exists()
     return {
         'id': session.id,
         'term_id': session.term_id,
@@ -217,6 +219,7 @@ def serialize_period_session(session: ClassPeriodAttendanceSession) -> dict[str,
         'period': session.period,
         'period_label': session.period_label,
         'schedule_version_id': session.schedule_version_id,
+        'taken': taken,
     }
 
 
@@ -232,11 +235,20 @@ def get_or_build_period_roster(session: ClassPeriodAttendanceSession) -> list[di
 
     from apps.academic.services.kutuphane_izin import virtual_izin_status
 
-    rows: list[dict[str, Any]] = []
+    students = []
     for p in placements:
         st = p.student
         if not st or not st.aktif_mi:
             continue
+        students.append(st)
+    extras = _period_roster_extras(
+        [st.id for st in students],
+        on_date=session.session_date,
+        exclude_sinif_id=session.sinif_id,
+    )
+
+    rows: list[dict[str, Any]] = []
+    for st in students:
         rec = existing.get(st.id)
         izin_fields = virtual_izin_status(
             ogrenci_id=st.id,
@@ -244,6 +256,7 @@ def get_or_build_period_roster(session: ClassPeriodAttendanceSession) -> list[di
             periyot_kodu=session.period,
             rec=rec,
         )
+        extra = extras.get(st.id) or {}
         rows.append({
             'student_id': st.id,
             'student_name': f'{st.ad} {st.soyad}'.strip(),
@@ -254,8 +267,41 @@ def get_or_build_period_roster(session: ClassPeriodAttendanceSession) -> list[di
             'record_id': rec.id if rec else None,
             'izinli_mi': izin_fields['izinli_mi'],
             'izin_sebep': izin_fields['izin_sebep'],
+            'profil_foto': extra.get('profil_foto'),
+            'veli_ad': extra.get('veli_ad') or '',
+            'veli_telefon': extra.get('veli_telefon') or '',
+            'canli_ders': extra.get('canli_ders'),
         })
     return rows
+
+
+def _period_roster_extras(ogrenci_ids: list[int], on_date, exclude_sinif_id=None) -> dict[int, dict[str, Any]]:
+    from apps.kutuphane.application.live_lesson import live_lessons_for_students
+    from apps.ogrenci.application.veli_contact import default_veli_contacts_map
+    from apps.ogrenci.domain.models import Ogrenci
+
+    extras: dict[int, dict[str, Any]] = {}
+    if not ogrenci_ids:
+        return extras
+    fotolar = {}
+    for o in Ogrenci.objects.filter(id__in=ogrenci_ids).values('id', 'profil_foto'):
+        raw = (o.get('profil_foto') or '').strip()
+        fotolar[o['id']] = f'/media/{raw}' if raw else None
+    contacts = default_veli_contacts_map(ogrenci_ids)
+    live = live_lessons_for_students(
+        ogrenci_ids,
+        on_date=on_date,
+        exclude_sinif_ids=[exclude_sinif_id] if exclude_sinif_id else None,
+    )
+    for oid in ogrenci_ids:
+        contact = contacts.get(oid) or {}
+        extras[oid] = {
+            'profil_foto': fotolar.get(oid),
+            'veli_ad': contact.get('ad') or '',
+            'veli_telefon': contact.get('telefon') or '',
+            'canli_ders': live.get(oid),
+        }
+    return extras
 
 
 @transaction.atomic
@@ -301,6 +347,9 @@ def save_period_attendance(
             student_id=sid,
             defaults=defaults,
         )
+    from apps.coaching.services.attendance_followup import schedule_period_followup
+
+    schedule_period_followup(session.id)
     return get_or_build_period_roster(session)
 
 
@@ -353,50 +402,131 @@ def list_period_sessions_for_date(
     }
 
 
+def _classroom_attendance_snapshot(
+    *,
+    classroom_id: int,
+    term_id: int | None,
+    session_date: date,
+    taken_keys: set[tuple[int, str]],
+) -> dict[str, Any]:
+    periods: list[dict[str, Any]] = []
+    if term_id:
+        try:
+            available = periods_available_for_date(
+                term_id=term_id,
+                session_date=session_date,
+                classroom_id=classroom_id,
+            )
+        except LessonSessionError:
+            available = []
+        except Exception:
+            available = []
+        for row in available:
+            periods.append({
+                'period': row['period'],
+                'period_label': row['period_label'],
+                'has_lessons': True,
+                'taken': (classroom_id, row['period']) in taken_keys,
+            })
+    if not periods:
+        state = 'no_lesson'
+    elif all(item['taken'] for item in periods):
+        state = 'done'
+    elif any(item['taken'] for item in periods):
+        state = 'partial'
+    else:
+        state = 'pending'
+    return {'periods': periods, 'attendance_state': state}
+
+
 def build_coach_period_attendance_context(
     *,
     user,
     kurum_id: int,
     sube_id: int,
+    session_date: date | None = None,
 ) -> dict[str, Any]:
-    """Koç portalı için dönem + atanan öğrencilerin sınıfları."""
+    """Koç portalı: yalnızca aktif eğitim yılı sınıfları + günün yoklama durumu."""
     from apps.academic.services.active_academic_year import get_active_academic_year
     from apps.coaching.services.coach_access import scoped_student_ids
     from apps.sinif.domain.models import Sinif
     from apps.term.domain.models import Term
 
     year = get_active_academic_year()
-    terms = Term.objects.filter(
+    terms = list(Term.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
         egitim_yili=year,
-    ).order_by('order_no', 'start_date')
+    ).order_by('order_no', 'start_date'))
+    term_ids = [t.id for t in terms]
+    active_term = next((t for t in terms if t.is_active), terms[0] if terms else None)
 
     student_ids = scoped_student_ids(user)
+    placement_qs = active_student_placements(academic_year=year)
+    if term_ids:
+        placement_qs = placement_qs.filter(term_id__in=term_ids)
+    if student_ids is not None:
+        if not student_ids:
+            placement_qs = placement_qs.none()
+        else:
+            placement_qs = placement_qs.filter(student_id__in=student_ids)
+
+    placed_ids = list(placement_qs.values_list('classroom_id', flat=True).distinct())
+    counts = dict(
+        placement_qs.values('classroom_id').annotate(
+            n=Count('student_id', distinct=True),
+        ).values_list('classroom_id', 'n')
+    )
+    placement_terms: dict[int, int] = {}
+    for classroom_id, term_id in placement_qs.values_list('classroom_id', 'term_id').distinct():
+        current = placement_terms.get(classroom_id)
+        if current is None or (active_term and term_id == active_term.id):
+            placement_terms[classroom_id] = term_id
+    term_names = {t.id: t.name for t in terms}
+
     classroom_qs = Sinif.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
         egitim_yili=year,
         aktif_mi=True,
-    )
+    ).select_related('term', 'sinif_seviyesi')
     if student_ids is not None:
-        if not student_ids:
-            classroom_qs = classroom_qs.none()
-        else:
-            sinif_ids = active_student_placements(
-                student_id__in=student_ids,
-            ).values_list('classroom_id', flat=True).distinct()
-            classroom_qs = classroom_qs.filter(id__in=sinif_ids)
+        classroom_qs = classroom_qs.filter(id__in=placed_ids)
 
-    classroom_rows = [
-        {
+    day = session_date or date.today()
+    classrooms = list(classroom_qs.order_by('sinif_seviyesi__ad', 'ad'))
+    taken_keys: set[tuple[int, str]] = set(
+        ClassPeriodAttendanceRecord.objects.filter(
+            session__is_active=True,
+            session__session_date=day,
+            session__sinif_id__in=[s.id for s in classrooms],
+        ).values_list('session__sinif_id', 'session__period')
+    )
+
+    classroom_rows = []
+    for s in classrooms:
+        term_id = s.term_id or placement_terms.get(s.id) or (active_term.id if active_term else None)
+        snap = _classroom_attendance_snapshot(
+            classroom_id=s.id,
+            term_id=term_id,
+            session_date=day,
+            taken_keys=taken_keys,
+        )
+        classroom_rows.append({
             'id': s.id,
             'ad': s.ad,
             'kod': s.kod or '',
-            'ogrenci_sayisi': s.mevcutluk,
-        }
-        for s in classroom_qs.select_related().order_by('ad')
-    ]
+            'ogrenci_sayisi': counts.get(s.id, 0),
+            'term_id': term_id,
+            'term_name': (
+                s.term.name if s.term_id and s.term
+                else term_names.get(term_id, active_term.name if active_term else '')
+            ),
+            'seviye': s.sinif_seviyesi.ad if s.sinif_seviyesi_id else '',
+            'attendance_state': snap['attendance_state'],
+            'periods': snap['periods'],
+        })
+
     term_rows = [{
         'id': t.id,
         'name': t.name,
@@ -404,13 +534,198 @@ def build_coach_period_attendance_context(
         'is_active': t.is_active,
         'order_no': t.order_no,
     } for t in terms]
-    active_term = next((t for t in term_rows if t['is_active']), term_rows[0] if term_rows else None)
     return {
         'active_year': {
             'id': year.id,
             'yil_str': str(year),
         },
         'terms': term_rows,
-        'active_term_id': active_term['id'] if active_term else None,
+        'active_term_id': active_term.id if active_term else None,
+        'date': day.isoformat(),
         'classrooms': classroom_rows,
     }
+
+
+def build_coach_period_day_roster(
+    *,
+    user,
+    kurum_id: int,
+    sube_id: int,
+    session_date: date | None = None,
+) -> dict[str, Any]:
+    """Seçilen günde koçun sınıflarındaki tüm öğrenci yoklama durumları."""
+    from apps.academic.services.active_academic_year import get_active_academic_year
+    from apps.coaching.services.coach_access import scoped_student_ids
+    from apps.sinif.domain.models import Sinif
+    from apps.term.domain.models import Term
+
+    year = get_active_academic_year()
+    terms = list(Term.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili=year,
+    ).values_list('id', flat=True))
+    student_ids = scoped_student_ids(user)
+    placement_qs = active_student_placements(academic_year=year)
+    if terms:
+        placement_qs = placement_qs.filter(term_id__in=terms)
+    if student_ids is not None:
+        placement_qs = placement_qs.filter(student_id__in=student_ids) if student_ids else placement_qs.none()
+    placed_ids = list(placement_qs.values_list('classroom_id', flat=True).distinct())
+
+    classroom_qs = Sinif.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        egitim_yili=year,
+        aktif_mi=True,
+    )
+    if student_ids is not None:
+        classroom_qs = classroom_qs.filter(id__in=placed_ids)
+    classroom_ids = list(classroom_qs.values_list('id', flat=True))
+
+    day = session_date or date.today()
+    records = ClassPeriodAttendanceRecord.objects.filter(
+        session__is_active=True,
+        session__session_date=day,
+        session__sinif_id__in=classroom_ids,
+    ).select_related('student', 'session', 'session__sinif')
+    if student_ids is not None:
+        records = records.filter(student_id__in=student_ids) if student_ids else records.none()
+
+    status_counts = {
+        StudentAttendanceStatus.PRESENT: 0,
+        StudentAttendanceStatus.LATE: 0,
+        StudentAttendanceStatus.ABSENT: 0,
+        StudentAttendanceStatus.EXCUSED: 0,
+    }
+    rows: list[dict[str, Any]] = []
+    classrooms: dict[int, str] = {}
+    for rec in records.order_by(
+        'session__sinif__ad', 'session__period', 'student__ad', 'student__soyad',
+    ):
+        status = rec.status
+        if status in status_counts:
+            status_counts[status] += 1
+        sinif = rec.session.sinif
+        classrooms[sinif.id] = sinif.ad
+        student = rec.student
+        rows.append({
+            'record_id': rec.id,
+            'student_id': rec.student_id,
+            'student_name': f'{student.ad} {student.soyad}'.strip() if student else '',
+            'classroom_id': rec.session.sinif_id,
+            'classroom_ad': sinif.ad if sinif else '',
+            'period': rec.session.period,
+            'period_label': rec.session.period_label,
+            'status': status,
+            'status_display': rec.get_status_display(),
+            'late_time': format_late_time(rec.late_time),
+            'note': rec.note or '',
+            'izinli_mi': rec.izinli_mi,
+        })
+
+    return {
+        'date': day.isoformat(),
+        'rows': rows,
+        'counts': {
+            'present': status_counts[StudentAttendanceStatus.PRESENT],
+            'late': status_counts[StudentAttendanceStatus.LATE],
+            'absent': status_counts[StudentAttendanceStatus.ABSENT],
+            'excused': status_counts[StudentAttendanceStatus.EXCUSED],
+            'total': len(rows),
+        },
+        'classrooms': [
+            {'id': cid, 'ad': ad}
+            for cid, ad in sorted(classrooms.items(), key=lambda item: item[1])
+        ],
+    }
+
+
+def export_coach_period_day_roster(
+    *,
+    user,
+    kurum_id: int,
+    sube_id: int,
+    session_date: date | None = None,
+    fmt: str = 'xlsx',
+    statuses: list[str] | None = None,
+    classroom_ids: list[int] | None = None,
+    period: str | None = None,
+):
+    """Kurumsal Excel/CSV — durum listesi."""
+    from apps.kurum.domain.models import Kurum
+    from apps.sube.domain.models import Sube
+    from shared.export import CsvExportService, ExcelExportService
+    from shared.export.style_manager import ExportColumn, ExportStat, ReportMeta
+
+    data = build_coach_period_day_roster(
+        user=user,
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        session_date=session_date,
+    )
+    wanted_status = {s.upper() for s in (statuses or []) if s}
+    wanted_classes = {int(i) for i in (classroom_ids or []) if i}
+    wanted_period = (period or '').upper()
+    rows = []
+    for row in data['rows']:
+        if wanted_status and row['status'] not in wanted_status:
+            continue
+        if wanted_classes and row['classroom_id'] not in wanted_classes:
+            continue
+        if wanted_period in {'MORNING', 'AFTERNOON'} and row['period'] != wanted_period:
+            continue
+        rows.append(row)
+
+    day = data['date']
+    status_labels = {
+        StudentAttendanceStatus.PRESENT: 'Var',
+        StudentAttendanceStatus.LATE: 'Geç',
+        StudentAttendanceStatus.ABSENT: 'Yok',
+        StudentAttendanceStatus.EXCUSED: 'İzinli',
+    }
+    counts = {key: 0 for key in status_labels}
+    for row in rows:
+        if row['status'] in counts:
+            counts[row['status']] += 1
+
+    kurum = Kurum.objects.filter(id=kurum_id).first()
+    sube = Sube.objects.filter(id=sube_id).first()
+    from apps.academic.services.active_academic_year import get_active_academic_year
+    active_year = get_active_academic_year()
+    meta = ReportMeta(
+        report_title=f'SINIF YOKLAMASI — {day}',
+        kurum_ad=getattr(kurum, 'ad', '') or '',
+        sube_ad=getattr(sube, 'ad', '') or '',
+        egitim_yili=str(active_year) if active_year else '',
+        generated_by=(
+            getattr(user, 'get_full_name', lambda: '')() or getattr(user, 'username', '') or ''
+        ),
+    )
+    columns = [
+        ExportColumn(key='classroom_ad', label='Sınıf', width=22),
+        ExportColumn(key='period_label', label='Periyot', width=16),
+        ExportColumn(key='student_name', label='Öğrenci', width=28),
+        ExportColumn(key='status_display', label='Durum', width=12),
+        ExportColumn(key='late_time', label='Saat', width=10),
+        ExportColumn(key='note', label='Not', width=32, wrap=True),
+    ]
+    stats = [
+        ExportStat(label='Toplam', value=len(rows), type='integer'),
+        ExportStat(label='Var', value=counts[StudentAttendanceStatus.PRESENT], type='integer'),
+        ExportStat(label='Geç', value=counts[StudentAttendanceStatus.LATE], type='integer'),
+        ExportStat(label='Yok', value=counts[StudentAttendanceStatus.ABSENT], type='integer'),
+        ExportStat(label='İzinli', value=counts[StudentAttendanceStatus.EXCUSED], type='integer'),
+    ]
+    filename = f'sinif_yoklama_{day.replace("-", "")}'
+    if fmt == 'csv':
+        return CsvExportService.export(rows, columns, meta=meta, filename=filename)
+    return ExcelExportService.export(
+        rows,
+        columns,
+        meta=meta,
+        stats=stats,
+        orientation='landscape',
+        sheet_name='Yoklama',
+        filename=filename,
+    )

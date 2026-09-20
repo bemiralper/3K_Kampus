@@ -11,9 +11,9 @@
   --coach-accent: #004d85;
   --coach-primary-soft: rgba(2, 98, 167, 0.1);
   --coach-primary-gradient: linear-gradient(135deg, #0262a7 0%, #004d85 100%);
-  --coach-sidebar-bg: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+  --coach-sidebar-bg: linear-gradient(180deg, #0a2540 0%, #061627 100%);
   --coach-sidebar-text: #e2e8f0;
-  --coach-sidebar-muted: #94a3b8;
+  --coach-sidebar-muted: #a4bad4;
   --coach-surface: #f1f5f9;
   --coach-surface-elevated: #ffffff;
   --coach-card: #ffffff;
@@ -1502,7 +1502,7 @@
     min-height: 100dvh;
     background: var(--coach-sidebar-bg);
     color: var(--coach-sidebar-text);
-    box-shadow: 8px 0 32px rgba(15, 23, 42, 0.35);
+    box-shadow: 8px 0 32px rgba(8, 15, 28, 0.55);
   }
 
   .coach-shell.coach-sidebar-open .coach-sidebar {
@@ -1534,7 +1534,7 @@
     align-items: center;
     justify-content: space-between;
     padding: 14px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(148, 178, 214, 0.15);
     flex-shrink: 0;
   }
 
@@ -1557,7 +1557,7 @@
     height: 36px;
     border: none;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(148, 197, 255, 0.10);
     color: #fff;
     cursor: pointer;
     display: inline-flex;
@@ -1567,6 +1567,7 @@
 
   .coach-nav-sidebar {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 12px 10px;
@@ -1576,7 +1577,7 @@
   .coach-nav-sidebar .coach-nav-list {
     display: flex;
     flex-direction: column;
-    gap: 4px;
+    gap: 2px;
     background: transparent;
     border: none;
     padding: 0;
@@ -1587,24 +1588,26 @@
   .coach-nav-sidebar .coach-nav-link {
     flex-direction: row;
     justify-content: flex-start;
-    gap: 12px;
-    padding: 12px 14px;
-    font-size: 14px;
-    min-height: 48px;
+    gap: 10px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0;
+    min-height: 38px;
     color: var(--coach-sidebar-muted);
-    border-radius: var(--coach-radius-sm);
+    border-radius: 10px;
     width: 100%;
     box-sizing: border-box;
   }
 
   .coach-nav-sidebar .coach-nav-link.is-active {
-    background: rgba(2, 98, 167, 0.2);
+    background: linear-gradient(135deg, #0284c7 0%, #0262a7 100%);
     color: #fff;
-    box-shadow: inset 0 0 0 1px rgba(2, 98, 167, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.3);
   }
 
   .coach-nav-sidebar .coach-nav-link.is-active .coach-nav-icon {
-    background: rgba(2, 98, 167, 0.35);
+    background: rgba(255, 255, 255, 0.22);
   }
 
   .coach-nav-sidebar .coach-nav-label {
@@ -1623,14 +1626,14 @@
     width: 3px;
     height: 24px;
     border-radius: 0 4px 4px 0;
-    background: var(--coach-primary-light);
+    background: #38bdf8;
   }
 
   .coach-nav-sidebar .coach-nav-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.10);
     flex-shrink: 0;
   }
 
@@ -1676,7 +1679,7 @@
   .coach-nav-sublink.is-active,
   .coach-nav-sublink:hover {
     color: #fff;
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(56, 189, 248, 0.14);
   }
 
   .coach-nav-tooltip,
@@ -1687,7 +1690,7 @@
   .coach-sidebar-footer {
     flex-shrink: 0;
     padding: 12px 14px calc(12px + env(safe-area-inset-bottom, 0px));
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(148, 178, 214, 0.15);
   }
 
   .coach-sidebar-hint {
@@ -2296,7 +2299,11 @@
     color: var(--coach-sidebar-text);
     min-height: 100vh;
     min-height: 100dvh;
-    box-shadow: 4px 0 24px rgba(15, 23, 42, 0.12);
+    max-height: 100vh;
+    max-height: 100dvh;
+    height: 100vh;
+    height: 100dvh;
+    box-shadow: 4px 0 24px rgba(8, 15, 28, 0.22);
     transition: width 0.32s cubic-bezier(0.16, 1, 0.3, 1);
   }
 
@@ -2306,7 +2313,7 @@
     justify-content: space-between;
     gap: 8px;
     padding: 16px 12px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(148, 178, 214, 0.15);
     min-height: 65px;
     flex-shrink: 0;
   }
@@ -2337,7 +2344,7 @@
     height: 32px;
     border: none;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(148, 197, 255, 0.08);
     color: var(--coach-sidebar-muted);
     cursor: pointer;
     display: inline-flex;
@@ -2347,7 +2354,7 @@
   }
 
   .coach-sidebar-toggle:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(2, 132, 199, 0.28);
     color: #fff;
   }
 
@@ -2368,7 +2375,7 @@
 
   .coach-sidebar-brand {
     padding: 24px 20px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(148, 178, 214, 0.15);
   }
 
   .coach-brand-mark {
@@ -2403,14 +2410,24 @@
 
   .coach-nav-sidebar {
     flex: 1;
+    min-height: 0;
     padding: 16px 12px;
     overflow-y: auto;
     overflow-x: hidden;
+    overscroll-behavior: contain;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .coach-nav-sidebar::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
   }
 
   .coach-nav-sidebar .coach-nav-list {
     flex-direction: column;
-    gap: 6px;
+    gap: 2px;
     background: transparent;
     border: none;
     padding: 0;
@@ -2419,23 +2436,30 @@
   .coach-nav-sidebar .coach-nav-link {
     flex-direction: row;
     justify-content: flex-start;
-    gap: 12px;
-    padding: 12px 14px;
-    font-size: 14px;
-    min-height: 48px;
+    gap: 10px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0;
+    min-height: 38px;
     color: var(--coach-sidebar-muted);
-    border-radius: var(--coach-radius-sm);
+    border-radius: 10px;
+  }
+
+  .coach-nav-sidebar .coach-nav-label {
+    line-height: 1.15;
+    letter-spacing: 0;
   }
 
   .coach-nav-sidebar .coach-nav-link:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(56, 189, 248, 0.14);
     color: #fff;
   }
 
   .coach-nav-sidebar .coach-nav-link.is-active {
-    background: rgba(2, 98, 167, 0.2);
+    background: linear-gradient(135deg, #0284c7 0%, #0262a7 100%);
     color: #fff;
-    box-shadow: inset 0 0 0 1px rgba(2, 98, 167, 0.35);
+    box-shadow: inset 0 0 0 1px rgba(186, 230, 253, 0.3);
   }
 
   .coach-nav-sidebar .coach-nav-active-bar {
@@ -2447,19 +2471,19 @@
     width: 3px;
     height: 24px;
     border-radius: 0 4px 4px 0;
-    background: var(--coach-primary-light);
+    background: #38bdf8;
     box-shadow: 0 0 12px rgba(2, 132, 199, 0.8);
   }
 
   .coach-nav-sidebar .coach-nav-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: rgba(56, 189, 248, 0.10);
   }
 
   .coach-nav-sidebar .coach-nav-link.is-active .coach-nav-icon {
-    background: rgba(2, 98, 167, 0.35);
+    background: rgba(255, 255, 255, 0.22);
   }
 
   .coach-nav-sidebar .coach-nav-item {
@@ -2477,7 +2501,7 @@
     left: 8px;
     right: 8px;
     height: 2px;
-    background: var(--coach-primary-light);
+    background: #38bdf8;
     border-radius: 999px;
     z-index: 2;
   }
@@ -2531,7 +2555,7 @@
 
   .coach-nav-submenu {
     list-style: none;
-    margin: 0;
+    margin: 2px 0 0;
     padding: 0 0 4px 0;
     overflow: hidden;
     max-height: 0;
@@ -2540,27 +2564,28 @@
   }
 
   .coach-nav-submenu.is-open {
-    max-height: 320px;
+    max-height: 360px;
     opacity: 1;
   }
 
   .coach-nav-sublink {
     display: block;
-    padding: 8px 14px 8px 46px;
+    padding: 6px 10px 6px 42px;
     color: var(--coach-sidebar-muted);
     text-decoration: none;
     font-size: 13px;
+    letter-spacing: 0.01em;
     border-radius: 10px;
     transition: background 0.15s, color 0.15s;
   }
 
   .coach-nav-sublink:hover {
-    background: rgba(255, 255, 255, 0.06);
+    background: rgba(56, 189, 248, 0.14);
     color: #fff;
   }
 
   .coach-nav-sublink.is-active {
-    background: rgba(2, 98, 167, 0.2);
+    background: rgba(2, 132, 199, 0.34);
     color: #fff;
     font-weight: 600;
   }
@@ -2576,7 +2601,7 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     color: var(--coach-sidebar-muted);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    border-bottom: 1px solid rgba(148, 178, 214, 0.15);
     margin-bottom: 4px;
   }
 
@@ -2597,8 +2622,8 @@
     min-width: 180px;
     padding: 8px 0;
     border-radius: 12px;
-    background: #0f172a;
-    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.35);
+    background: #0d1a2b;
+    box-shadow: 0 8px 24px rgba(8, 15, 28, 0.55);
     z-index: 30;
   }
 
@@ -2613,7 +2638,7 @@
     transform: translateY(-50%);
     padding: 6px 10px;
     border-radius: 8px;
-    background: #0f172a;
+    background: #0d1a2b;
     color: #fff;
     font-size: 12px;
     font-weight: 600;
@@ -2647,7 +2672,7 @@
 
   .coach-sidebar-footer {
     padding: 16px;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    border-top: 1px solid rgba(148, 178, 214, 0.15);
     flex-shrink: 0;
   }
 
@@ -2657,7 +2682,7 @@
     min-height: 44px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: var(--coach-radius-sm);
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(148, 197, 255, 0.05);
     color: var(--coach-sidebar-muted);
     font-weight: 600;
     font-size: 13px;
@@ -2770,7 +2795,9 @@
   }
 
   .coach-sidebar {
-    position: static;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
     z-index: auto;
     width: var(--coach-sidebar-width);
     overflow: hidden;

@@ -15,7 +15,9 @@ from apps.ozel_ders.domain.models import (
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.haftalik_program_pdf import (
     EVENT_KEY,
+    _occupied_days,
     collect_weekly_program,
+    haftalik_as_schedule_payload,
     preview_haftalik_program,
     render_haftalik_program_pdf,
     send_haftalik_program,
@@ -79,6 +81,20 @@ class HaftalikProgramPdfTests(TestCase):
         self.assertEqual(payload['ogrenci_ad'], 'Zeynep Kaya')
         self.assertEqual(len(payload['slots']), 1)
         self.assertEqual(payload['mode'], 'template')
+        visible = _occupied_days(payload['slots'])
+        self.assertEqual([gun for gun, _rows in visible], [1])
+        pdf_bytes, filename = render_haftalik_program_pdf(payload)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+        self.assertIn('Zeynep', filename)
+        self.assertGreater(len(pdf_bytes), 400)
+        from apps.academic.application.schedule_notify_service import build_schedule_pdf_html
+        html_doc = build_schedule_pdf_html(haftalik_as_schedule_payload(payload))
+        self.assertIn('class="student-page"', html_doc)
+        self.assertIn('class="week-board"', html_doc)
+        self.assertIn('class="badge"', html_doc)
+        self.assertIn('1. Ders', html_doc)
+        self.assertIn('Fizik', html_doc)
+        self.assertIn('ÖZEL DERS PROGRAMI', html_doc)
 
     def test_collect_week_uses_sessions_not_template(self):
         from apps.ozel_ders.domain.models import BirebirDersOturumu, OturumDurumu, OturumTuru
@@ -164,6 +180,15 @@ class HaftalikProgramPdfTests(TestCase):
         self.assertEqual(result['veli_sent'], 0)
         self.assertEqual(result['ogrenci_sent'], 1)
         self.assertEqual(len(dispatch.call_args_list), 1)
+
+    def test_occupied_days_skips_empty(self):
+        visible = _occupied_days([
+            {'gun': 1, 'ders_ad': 'Fizik'},
+            {'gun': 3, 'ders_ad': 'Kimya'},
+            {'gun': 3, 'ders_ad': 'Matematik'},
+        ])
+        self.assertEqual([gun for gun, rows in visible], [1, 3])
+        self.assertEqual(len(visible[1][1]), 2)
 
     def test_send_empty_slots_raises(self):
         BirebirHaftalikSlot.objects.all().delete()

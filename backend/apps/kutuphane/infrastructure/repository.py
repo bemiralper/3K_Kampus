@@ -524,7 +524,7 @@ class AttendanceRepository:
     def get_records(session_id) -> QuerySet:
         return AttendanceRecord.objects.filter(
             attendance_session_id=session_id
-        ).select_related('seat')
+        ).select_related('seat', 'attendance_session')
 
     @staticmethod
     def create_record(data: dict) -> AttendanceRecord:

@@ -615,6 +615,163 @@ export interface CoachRiskReport {
   event_date?: string | null;
   created_at?: string | null;
   meeting_draft_id?: number | null;
+  attendance?: AttendanceRiskMeta | null;
+}
+
+export interface AttendanceRiskMeta {
+  severity?: 'attention' | 'alarm' | string;
+  reasons?: string[];
+  absent_days?: number;
+  late_days?: number;
+  exit_days?: number;
+  consecutive_absent?: number;
+  last_3_days?: Array<{
+    date: string;
+    attended: boolean;
+    absent: boolean;
+    late: boolean;
+    exit: boolean;
+  }>;
+  last_3_absent?: number;
+  threshold_label?: string;
+  recommended_action?: string;
+}
+
+export interface AttendanceThresholds {
+  absence_attention: number;
+  absence_alarm: number;
+  late_attention: number;
+  late_alarm: number;
+  consecutive_absent_alarm: number;
+  recommended_action_attention: string;
+  recommended_action_alarm: string;
+  updated_at?: string | null;
+}
+
+export interface AttendanceFollowupStudent {
+  student_id: number;
+  student_name: string;
+  sinif_id?: number | null;
+  sinif_name?: string;
+  coach_id?: number | null;
+  coach_name?: string;
+  today_status: string;
+  today_absent: boolean;
+  today_late: boolean;
+  today_exit: boolean;
+  absent_days: number;
+  late_days: number;
+  exit_days: number;
+  consecutive_absent: number;
+  last_3_days: Array<{
+    date: string;
+    attended: boolean;
+    absent: boolean;
+    late: boolean;
+    exit: boolean;
+  }>;
+  last_3_absent: number;
+  severity: 'none' | 'attention' | 'alarm' | string;
+  reasons: string[];
+  threshold_label: string;
+  recommended_action: string;
+}
+
+export interface AttendanceFollowupPayload {
+  date: string;
+  thresholds: AttendanceThresholds;
+  day_counts: {
+    total_students: number;
+    present: number;
+    late: number;
+    absent: number;
+    exit: number;
+    excused: number;
+  };
+  students: AttendanceFollowupStudent[];
+  filters?: {
+    coaches: Array<{ id: number; name: string }>;
+    classes: Array<{ id: number; name: string }>;
+  };
+}
+
+export interface AttendanceDayMark {
+  source: 'class' | 'library' | string;
+  period?: 'morning' | 'afternoon' | 'evening' | '';
+  period_label?: string;
+  status: 'absent' | 'late' | 'exit' | string;
+  exit?: boolean;
+}
+
+export interface AttendanceDayFlag {
+  date: string;
+  attended: boolean;
+  absent: boolean;
+  late: boolean;
+  exit: boolean;
+  excused?: boolean;
+  marks?: AttendanceDayMark[];
+}
+
+export interface AttendanceStudentHistory {
+  date: string;
+  student_id: number;
+  student_name: string;
+  sinif_name?: string;
+  coach_name?: string;
+  absent_days: number;
+  late_days: number;
+  exit_days: number;
+  consecutive_absent: number;
+  severity: string;
+  threshold_label: string;
+  recommended_action: string;
+  last_3_days: AttendanceDayFlag[];
+  last_3_absent: number;
+  days: AttendanceDayFlag[];
+}
+
+export interface AttendanceAnalysisGroup {
+  name: string;
+  students: number;
+  absent_days: number;
+  late_days: number;
+  alarm: number;
+  attention: number;
+  today_absent: number;
+}
+
+export interface AttendanceAnalysisStudent {
+  student_id: number;
+  student_name: string;
+  sinif_name?: string;
+  coach_name?: string;
+  absent_days: number;
+  late_days: number;
+  consecutive_absent: number;
+  severity: string;
+  threshold_label?: string;
+  recent_absent?: number;
+  previous_absent?: number;
+}
+
+export interface AttendanceAnalysisPayload {
+  date: string;
+  thresholds: AttendanceThresholds;
+  kpis: {
+    total_students: number;
+    alarm: number;
+    attention: number;
+    consecutive_alarm: number;
+    today_absent: number;
+    today_late: number;
+    total_absent_days: number;
+  };
+  by_class: AttendanceAnalysisGroup[];
+  by_coach: AttendanceAnalysisGroup[];
+  consecutive: AttendanceAnalysisStudent[];
+  rising: AttendanceAnalysisStudent[];
+  top_absent: AttendanceAnalysisStudent[];
 }
 
 export async function fetchCoachRiskReports(params?: {
@@ -637,6 +794,39 @@ export async function patchCoachRiskReport(
   return apiFetch(`/api/coaching/risk-reports/${eventId}/`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
+  });
+}
+
+export async function fetchAttendanceFollowup(date?: string): Promise<ApiResponse<AttendanceFollowupPayload>> {
+  const qs = date ? `?date=${encodeURIComponent(date)}` : '';
+  return apiGet(`/api/coaching/attendance-followup/${qs}`);
+}
+
+export async function fetchAttendanceFollowupAnalysis(date?: string): Promise<ApiResponse<AttendanceAnalysisPayload>> {
+  const searchParams = new URLSearchParams({ view: 'analysis' });
+  if (date) searchParams.set('date', date);
+  return apiGet(`/api/coaching/attendance-followup/?${searchParams}`);
+}
+
+export async function fetchAttendanceStudentHistory(
+  studentId: number,
+  date?: string,
+): Promise<ApiResponse<AttendanceStudentHistory>> {
+  const searchParams = new URLSearchParams({ student_id: String(studentId) });
+  if (date) searchParams.set('date', date);
+  return apiGet(`/api/coaching/attendance-followup/?${searchParams}`);
+}
+
+export async function fetchAttendanceThresholds(): Promise<ApiResponse<AttendanceThresholds>> {
+  return apiGet('/api/coaching/attendance-thresholds/');
+}
+
+export async function saveAttendanceThresholds(
+  data: Partial<AttendanceThresholds>,
+): Promise<ApiResponse<AttendanceThresholds>> {
+  return apiFetch('/api/coaching/attendance-thresholds/', {
+    method: 'PUT',
+    body: JSON.stringify(data),
   });
 }
 

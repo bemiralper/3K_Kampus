@@ -500,6 +500,18 @@ class DersProgramiGridApiTest(TestCase):
         self.assertEqual(len(body['groups']), 1)
         self.assertEqual(body['groups'][0]['classroom_id'], self.sinif.id)
         self.assertGreaterEqual(body['groups'][0]['filled_count'], 1)
+        self.assertEqual(body.get('report_title'), 'SINIF PROGRAMI')
+        self.assertTrue(body['groups'][0].get('day_cards'))
+        self.assertGreaterEqual(sum(len(col) for col in body['groups'][0]['day_cards']), 1)
+
+        from apps.academic.application.schedule_notify_service import build_schedule_pdf_html
+        html_doc = build_schedule_pdf_html(body)
+        self.assertIn('class="class-page"', html_doc)
+        self.assertIn('class="week-board"', html_doc)
+        self.assertIn('class="badge"', html_doc)
+        self.assertIn('1. Ders', html_doc)
+        self.assertIn('Matematik', html_doc)
+        self.assertNotIn('<table>', html_doc)
 
         xlsx = self.client.get(
             f'/api/academic/schedule/export/?term_id={self.term.id}'
@@ -513,9 +525,35 @@ class DersProgramiGridApiTest(TestCase):
             xlsx.get('Content-Type', ''),
         )
         self.assertIn(
-            'DersProgrami_',
+            'Sinif_Programi_9-A_',
             xlsx.get('Content-Disposition', ''),
         )
+        from io import BytesIO
+        from openpyxl import load_workbook
+        class_wb = load_workbook(BytesIO(xlsx.content), data_only=True)
+        class_values = [
+            str(cell.value)
+            for sheet in class_wb.worksheets
+            for row in sheet.iter_rows()
+            for cell in row
+            if cell.value is not None
+        ]
+        self.assertTrue(any('Matematik' in value for value in class_values))
+        self.assertTrue(any('Ali' in value for value in class_values))
+
+        csv_res = self.client.get(
+            f'/api/academic/schedule/export/?term_id={self.term.id}'
+            f'&version_id={self.version.id}&classroom_ids={self.sinif.id}'
+            f'&export_format=csv',
+            **self.headers,
+        )
+        self.assertEqual(csv_res.status_code, 200, csv_res.content)
+        csv_text = csv_res.content.decode('utf-8-sig')
+        self.assertIn('Sıra', csv_text)
+        self.assertIn('Başlangıç', csv_text)
+        self.assertIn('Öğretmen', csv_text)
+        self.assertIn('Matematik', csv_text)
+        self.assertNotIn('Takvim', csv_text)
 
         full = self.client.get(
             f'/api/academic/schedule/export/?term_id={self.term.id}'
@@ -765,6 +803,162 @@ class DersProgramiGridApiTest(TestCase):
         self.assertIn('Takvim', calendars)
         self.assertIn('Akşam Takvimi', calendars)
         self.assertEqual(len(body.get('versions') or []), 2)
+
+    def test_class_schedule_merges_calendars_without_weekly_cycle(self):
+        self._fill_single_cell()
+        template2 = ScheduleTemplate.objects.create(
+            kurum=self.kurum, sube=self.sube, name='Akşam Şablon 2',
+        )
+        cycle2 = WeeklyCycle.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            schedule_template=template2,
+            name='Akşam Takvimi',
+            is_active=True,
+        )
+        WeeklyDay.objects.create(
+            weekly_cycle=cycle2,
+            day_of_week=DayOfWeek.MONDAY,
+            name='Pazartesi',
+            order=1,
+            is_active=True,
+            schedule_template=template2,
+        )
+        TimeSlot.objects.create(
+            schedule_template=template2,
+            name='1. Ders',
+            start_time=time(14, 0),
+            end_time=time(14, 40),
+            order=1,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        version2 = ScheduleVersion.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            schedule_template=template2,
+            weekly_cycle=cycle2,
+            name='Akşam',
+            is_active=True,
+        )
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': version2.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+        cell2 = ProgramGridCell.objects.get(schedule_version=version2, sinif=self.sinif)
+        fill = self.client.post(
+            f'/api/academic/program-grid/cells/{cell2.id}/fill/',
+            data={'class_lesson_plan_id': self.plan.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
+
+        res = self.client.get(
+            f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
+            f'&term_id={self.term.id}',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        filled = [c for c in body.get('cells', []) if c.get('status') == 'FILLED']
+        self.assertEqual(len(filled), 2)
+        self.assertEqual(len(body.get('versions') or []), 2)
+
+        class_export = self.client.get(
+            f'/api/academic/schedule/export/?term_id={self.term.id}'
+            f'&classroom_ids={self.sinif.id}&export_format=json',
+            **self.headers,
+        )
+        self.assertEqual(class_export.status_code, 200, class_export.content)
+        class_payload = class_export.json()
+        class_cards = class_payload['groups'][0].get('day_cards') or []
+        self.assertEqual(sum(len(col) for col in class_cards), 2)
+        from apps.academic.application.schedule_notify_service import build_schedule_pdf_html
+        class_html = build_schedule_pdf_html(class_payload)
+        self.assertIn('class="week-board"', class_html)
+        self.assertIn('class="badge"', class_html)
+        self.assertIn('1. Ders', class_html)
+        self.assertNotIn('class="ord"', class_html)
+        self.assertNotIn('<table>', class_html)
+
+        export = self.client.get(
+            f'/api/academic/schedule/export/?term_id={self.term.id}'
+            f'&teacher_id={self.teacher.id}&export_format=json',
+            **self.headers,
+        )
+        self.assertEqual(export.status_code, 200, export.content)
+        payload = export.json()
+        self.assertEqual(payload.get('subject_kind'), 'teacher')
+        self.assertEqual(payload.get('layout_kind'), 'day_cards')
+        self.assertEqual(payload.get('report_title'), 'ÖĞRETMEN PROGRAMI')
+        self.assertEqual(payload['groups'][0]['filled_count'], 2)
+        cards = payload['groups'][0].get('day_cards') or []
+        self.assertEqual(sum(len(col) for col in cards), 2)
+        first = next(card for col in cards for card in col)
+        self.assertIn('\n', first.get('label') or '')
+        self.assertTrue(first.get('start'))
+
+        csv_res = self.client.get(
+            f'/api/academic/schedule/export/?term_id={self.term.id}'
+            f'&teacher_id={self.teacher.id}&export_format=csv',
+            **self.headers,
+        )
+        self.assertEqual(csv_res.status_code, 200, csv_res.content)
+        csv_text = csv_res.content.decode('utf-8-sig')
+        self.assertIn('Başlangıç', csv_text)
+        self.assertIn('Bitiş', csv_text)
+        self.assertIn('Sınıf', csv_text)
+        self.assertIn('Matematik', csv_text)
+
+        xlsx = self.client.get(
+            f'/api/academic/schedule/export/?term_id={self.term.id}'
+            f'&teacher_id={self.teacher.id}&export_format=xlsx',
+            **self.headers,
+        )
+        self.assertEqual(xlsx.status_code, 200, xlsx.content)
+        self.assertIn('Ogretmen_Programi_Ali_Veli_', xlsx.get('Content-Disposition', ''))
+        from io import BytesIO
+        from openpyxl import load_workbook
+        workbook = load_workbook(BytesIO(xlsx.content), data_only=True)
+        values = [
+            str(cell.value)
+            for sheet in workbook.worksheets
+            for row in sheet.iter_rows()
+            for cell in row
+            if cell.value is not None
+        ]
+        self.assertTrue(any('Matematik' in value for value in values))
+
+        from apps.academic.application.schedule_notify_service import build_schedule_pdf_html
+        html_doc = build_schedule_pdf_html(payload)
+        self.assertIn('class="teacher-page"', html_doc)
+        self.assertIn('class="week-board"', html_doc)
+        self.assertIn('class="rail"', html_doc)
+        self.assertIn('class="badge"', html_doc)
+        self.assertIn('1. Ders', html_doc)
+        self.assertNotIn('class="ord"', html_doc)
+
+    def test_occupied_day_columns_skips_empty_days(self):
+        from apps.academic.services.schedule_export_service import occupied_day_columns
+
+        days = [
+            {'id': 1, 'name': 'Pazartesi', 'short_name': 'Pzt'},
+            {'id': 2, 'name': 'Salı', 'short_name': 'Sal'},
+            {'id': 3, 'name': 'Çarşamba', 'short_name': 'Çar'},
+        ]
+        group = {
+            'day_cards': [
+                [{'lesson': 'Matematik', 'start': '08:00', 'end': '08:40'}],
+                [],
+                [{'lesson': 'Fizik', 'start': '10:00', 'end': '10:40'}],
+            ],
+        }
+        visible = occupied_day_columns(days, group)
+        self.assertEqual([day['short_name'] for day, _cards in visible], ['Pzt', 'Çar'])
 
     def _second_calendar(self, name='İkinci Takvim'):
         cycle = WeeklyCycle.objects.create(

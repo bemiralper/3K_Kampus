@@ -324,6 +324,8 @@ def _private_lesson_overlay(teacher_id, ctx, egitim_yili, day_objs, slot_objs):
             "room": room,
             "is_double_block_start": False,
             "notes": None,
+            "start": bb.baslangic.strftime("%H:%M"),
+            "end": bb.bitis.strftime("%H:%M"),
         })
     return extra_slots, extra_cells
 
@@ -442,6 +444,73 @@ def _teacher_cells_qs(teacher_id, versions):
     return unique
 
 
+def _versions_for_class_view(term_id, classroom_id, version_id=None, weekly_cycle_id=None):
+    """
+    Sınıf görüntüleme programları.
+
+    version / takvim verilirse tek program.
+    Verilmezse sınıfın dolu hücrelerinin bulunduğu takvimler birleştirilir.
+    """
+    if version_id:
+        version = get_schedule_version(version_id, term_id)
+        return [version] if version else []
+    if weekly_cycle_id:
+        version = (
+            ScheduleVersion.objects.filter(
+                term_id=term_id,
+                weekly_cycle_id=weekly_cycle_id,
+            )
+            .select_related('weekly_cycle', 'schedule_template')
+            .order_by('-is_active', '-id')
+            .first()
+        )
+        return [version] if version else []
+
+    filled_ids = list(
+        ProgramGridCell.objects.filter(
+            schedule_version__term_id=term_id,
+            sinif_id=classroom_id,
+            is_active=True,
+        ).values_list('schedule_version_id', flat=True).distinct()
+    )
+    if filled_ids:
+        rows = list(
+            ScheduleVersion.objects.filter(id__in=filled_ids)
+            .select_related('weekly_cycle', 'schedule_template')
+            .order_by('weekly_cycle_id', '-is_active', '-id')
+        )
+        by_cycle = {}
+        for version in rows:
+            if version.weekly_cycle_id not in by_cycle:
+                by_cycle[version.weekly_cycle_id] = version
+        return list(by_cycle.values())
+    return _term_versions_for_teacher(term_id)
+
+
+def _class_cells_qs(classroom_id, versions):
+    qs = ProgramGridCell.objects.filter(
+        schedule_version_id__in=[v.id for v in versions],
+        sinif_id=classroom_id,
+        is_active=True,
+    ).select_related(*_CELL_RELATED)
+    if len(versions) <= 1:
+        return list(qs)
+
+    seen = set()
+    unique = []
+    for cell in qs:
+        key = (
+            cell.weekly_day.day_of_week if cell.weekly_day_id else None,
+            cell.timeslot_id,
+            cell.class_lesson_plan_id or cell.ders_id,
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(cell)
+    return unique
+
+
 # ==================== SINIF PROGRAMI ====================
 
 @csrf_exempt
@@ -451,18 +520,17 @@ def _teacher_cells_qs(teacher_id, versions):
 def class_schedule_api(request):
     """
     Sınıf programı (Haftalık Grid)
-    
-    GET /api/schedule/class/?classroom_id=&term_id=&version_id=
-    
-    Query params:
-    - classroom_id (required): Sınıf ID
-    - term_id (required): Dönem ID  
-    - version_id (optional): Versiyon ID (default: aktif versiyon)
+
+    GET /api/schedule/class/?classroom_id=&term_id=&weekly_cycle_id=&version_id=
+
+    version / takvim verilmezse sınıfın dönemdeki tüm çalışma takvimleri
+    tek haftalık grid'de birleştirilir.
     """
     classroom_id = request.query_params.get('classroom_id')
     term_id = request.query_params.get('term_id')
     version_id = request.query_params.get('version_id')
-    
+    weekly_cycle_id = request.query_params.get('weekly_cycle_id')
+
     if not classroom_id:
         return Response({"error": "classroom_id zorunludur"}, status=status.HTTP_400_BAD_REQUEST)
     if not term_id:
@@ -475,61 +543,98 @@ def class_schedule_api(request):
     _, _, gate_err = gate_sinif_drf(request, classroom_id)
     if gate_err:
         return gate_err
-    
-    # Aktif eğitim yılı
+
     egitim_yili = get_active_egitim_yili()
     if not egitim_yili:
         return Response({"error": "Aktif eğitim yılı bulunamadı"}, status=status.HTTP_400_BAD_REQUEST)
-    
-    version = resolve_view_version(request, term_id)
-    if not version:
+
+    try:
+        version_id = int(version_id) if version_id else None
+    except (TypeError, ValueError):
+        return Response({"error": "Geçersiz program bilgisi."}, status=400)
+    try:
+        weekly_cycle_id = int(weekly_cycle_id) if weekly_cycle_id else None
+    except (TypeError, ValueError):
+        weekly_cycle_id = None
+
+    versions = _versions_for_class_view(
+        term_id, classroom_id, version_id=version_id, weekly_cycle_id=weekly_cycle_id,
+    )
+    gated = []
+    first_gate = None
+    for version in versions:
+        gate_err = _gate_loaded_version(request, version)
+        if gate_err:
+            first_gate = first_gate or gate_err
+            continue
+        gated.append(version)
+    if not gated:
+        if first_gate:
+            return first_gate
         return Response({
-            "error": "Bu dönem ve çalışma takvimi için program bulunamadı",
+            "error": "Bu dönem için program bulunamadı",
             "days": [],
             "slots": [],
-            "cells": []
+            "cells": [],
         })
 
-    gate_err = _gate_loaded_version(request, version)
-    if gate_err:
-        return gate_err
-    
-    # Günler ve slotlar
-    days = WeeklyDay.objects.filter(
-        weekly_cycle=version.weekly_cycle,
-        is_active=True
-    ).order_by('order')
-    
-    slots, valid_keys = collect_calendar_slots(version)
-    
-    # Grid hücreleri — bu takvim gününde olmayan eski şablon hücreleri gizlenir
-    cells = [
-        cell for cell in ProgramGridCell.objects.filter(
-            schedule_version=version,
-            sinif_id=classroom_id,
-            is_active=True
-        ).select_related(*_CELL_RELATED)
-        if (cell.weekly_day_id, cell.timeslot_id) in valid_keys
-    ]
+    merge_days = len(gated) > 1 or (not version_id and not weekly_cycle_id)
+    if merge_days:
+        days = _canonical_days(gated)
+        slots = _merged_lesson_slots(gated)
+        cells = _class_cells_qs(classroom_id, gated)
+        if slots:
+            valid_slot_ids = {s.id for s in slots}
+            cells = [c for c in cells if c.timeslot_id in valid_slot_ids]
+        data = serialize_grid_response(cells, days, slots)
+        _annotate_teacher_cells(data, cells, merge_days=True)
+    else:
+        version = gated[0]
+        days = WeeklyDay.objects.filter(
+            weekly_cycle=version.weekly_cycle,
+            is_active=True,
+        ).order_by('order')
+        slots, valid_keys = collect_calendar_slots(version)
+        cells = [
+            cell for cell in ProgramGridCell.objects.filter(
+                schedule_version=version,
+                sinif_id=classroom_id,
+                is_active=True,
+            ).select_related(*_CELL_RELATED)
+            if (cell.weekly_day_id, cell.timeslot_id) in valid_keys
+        ]
+        data = serialize_grid_response(cells, days, slots)
 
-    data = serialize_grid_response(cells, days, slots)
+    primary = gated[0]
     data["version"] = {
-        "id": version.id,
-        "name": version.name,
-        "is_active": version.is_active,
-        "is_locked": version.is_locked
+        "id": primary.id,
+        "name": primary.name,
+        "is_active": primary.is_active,
+        "is_locked": primary.is_locked,
     }
+    data["versions"] = [
+        {
+            "id": v.id,
+            "name": v.name,
+            "is_active": v.is_active,
+            "is_locked": v.is_locked,
+            "calendar_name": v.weekly_cycle.name if v.weekly_cycle_id else None,
+        }
+        for v in gated
+    ]
     data["egitim_yili"] = {
         "id": egitim_yili.id,
-        "display": f"{egitim_yili.baslangic_yil}-{egitim_yili.bitis_yil}"
+        "display": f"{egitim_yili.baslangic_yil}-{egitim_yili.bitis_yil}",
     }
-    if not days.exists():
+    day_count = len(days) if isinstance(days, list) else days.count()
+    slot_count = len(slots) if not hasattr(slots, 'count') or isinstance(slots, list) else slots.count()
+    if not day_count:
         data["empty_reason"] = "no_days"
         data["empty_message"] = (
             "Çalışma takviminde aktif gün yok. "
             "Tanımlar → Çalışma Takvimi’nden günleri aktifleştirin."
         )
-    elif not slots.exists():
+    elif not slot_count:
         data["empty_reason"] = "no_slots"
         data["empty_message"] = (
             "Ders saati şablonunda saat yok. "
@@ -538,7 +643,7 @@ def class_schedule_api(request):
     else:
         data["empty_reason"] = None
         data["empty_message"] = None
-    
+
     return Response(data)
 
 

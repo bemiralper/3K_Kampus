@@ -42,6 +42,7 @@ import {
   IconUsers,
 } from './icons';
 import HaftalikProgramGrid from './HaftalikProgramGrid';
+import HaftalikProgramShareButtons from './HaftalikProgramShareButtons';
 import {
   buildPeriods,
   timeToMinutes,
@@ -771,6 +772,11 @@ export default function HaftalikSablonlariClient() {
                   {activeStudentGroup.bitis_tarihi || 'süresiz'}
                 </span>
               </div>
+              <HaftalikProgramShareButtons
+                ogrenciId={activeStudentGroup.ogrenci}
+                ogrenciAd={activeStudentGroup.ogrenci_ad}
+                onToast={(msg, tone) => show(msg, tone === 'error' ? 'error' : 'success')}
+              />
               <div className="od-paket-switch" aria-label="Paket özeti">
                 {activeStudentGroup.programs.map((p) => {
                   const count = activeLessons.filter((l) => l.program === p.id).length;

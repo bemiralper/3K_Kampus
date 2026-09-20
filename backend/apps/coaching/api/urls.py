@@ -10,6 +10,12 @@ from apps.coaching.api.coach_student_views import (
     CoachStudentProfileView,
     CoachStudentRiskReportView,
 )
+from apps.coaching.api.attendance_followup_views import (
+    AttendanceFollowupAnalysisView,
+    AttendanceFollowupStudentView,
+    AttendanceFollowupView,
+    AttendanceThresholdView,
+)
 from apps.coaching.api.risk_report_views import (
     CoachRiskReportDetailView,
     CoachRiskReportListView,
@@ -41,6 +47,14 @@ urlpatterns = [
     path('students/<int:student_id>/risk-report/', CoachStudentRiskReportView.as_view(), name='coach-student-risk-report'),
     path('risk-reports/', CoachRiskReportListView.as_view(), name='coach-risk-report-list'),
     path('risk-reports/<int:event_id>/', CoachRiskReportDetailView.as_view(), name='coach-risk-report-detail'),
+    path('attendance-followup/', AttendanceFollowupView.as_view(), name='coach-attendance-followup'),
+    path('attendance-followup/analysis/', AttendanceFollowupAnalysisView.as_view(), name='coach-attendance-followup-analysis'),
+    path(
+        'attendance-followup/students/<int:student_id>/',
+        AttendanceFollowupStudentView.as_view(),
+        name='coach-attendance-followup-student',
+    ),
+    path('attendance-thresholds/', AttendanceThresholdView.as_view(), name='coach-attendance-thresholds'),
     path('intelligence/', include('apps.coaching.intelligence.api.urls')),
     path('predictive/', include('apps.coaching.predictive.api.urls')),
 

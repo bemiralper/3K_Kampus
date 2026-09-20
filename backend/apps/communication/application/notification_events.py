@@ -52,11 +52,11 @@ YOKLAMA_GROUP_LABELS: Mapping[str, str] = MappingProxyType({
 
 
 def template_group_for_event(event: 'NotificationEvent | None') -> str:
-    """Bildirim olayının yerel şablon grubu anahtarı (`yoklama:kutuphane`, `odeme`)."""
+    """Bildirim olayının yerel şablon grubu anahtarı (`yoklama:kutuphane`, `akademik:sinif_programi`)."""
     if event is None:
         return ''
-    if event.module == MODULE_YOKLAMA and event.group:
-        return f'{MODULE_YOKLAMA}:{event.group}'
+    if event.group:
+        return f'{event.module}:{event.group}'
     return event.module or ''
 
 
@@ -70,11 +70,21 @@ def template_group_label(group_key: str | None) -> str:
     key = (group_key or '').strip()
     if not key:
         return 'Genel'
-    if key.startswith(f'{MODULE_YOKLAMA}:'):
-        suffix = key.split(':', 1)[1]
-        return YOKLAMA_GROUP_LABELS.get(
-            suffix, f'{MODULE_LABELS.get(MODULE_YOKLAMA, MODULE_YOKLAMA)} — {suffix}',
-        )
+    if ':' in key:
+        module, suffix = key.split(':', 1)
+        if module == MODULE_YOKLAMA:
+            return YOKLAMA_GROUP_LABELS.get(
+                suffix, f'{MODULE_LABELS.get(MODULE_YOKLAMA, MODULE_YOKLAMA)} — {suffix}',
+            )
+        for event in NOTIFICATION_EVENTS:
+            if event.hidden_in_ui:
+                continue
+            if event.module == module and event.group == suffix:
+                prefix = MODULE_LABELS.get(module, module)
+                label = event.group_label or suffix
+                return f'{prefix} — {label}'
+        prefix = MODULE_LABELS.get(module, module)
+        return f'{prefix} — {suffix}'
     return MODULE_LABELS.get(key, key)
 
 
@@ -723,11 +733,13 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
     NotificationEvent(
         key='akademik.sinif_programi',
         module=MODULE_AKADEMIK,
-        label='Sınıf ders programı (PDF)',
+        group='sinif_programi',
+        group_label='Sınıf Programı',
+        label='Sınıf Programı',
         description=(
-            'Planlama → Ders Programı ekranından “Programı Bildir” ile seçilen '
-            'sınıfların haftalık programı PDF olarak veliye ve öğrenciye gönderilir '
-            '(DOCUMENT header Meta şablonu gerekir).'
+            'Görüntüleme → Sınıf Programı ekranından haftalık program PDF olarak '
+            'veliye ve öğrenciye WhatsApp ile gönderilir. Metin Bildirim Şablonları’ndan '
+            'değiştirilebilir (DOCUMENT header Meta şablonu gerekir).'
         ),
         recipients=(VELI, OGRENCI),
         opt_in_category='duyuru',
@@ -746,6 +758,31 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
                 '{{sube}} — {{sinif}} sınıfının {{donem}} dönemi haftalık '
                 'ders programın ektedir.\n\n'
                 'Bilgine sunarız.'
+            ),
+        }),
+    ),
+    NotificationEvent(
+        key='akademik.ogretmen_programi',
+        module=MODULE_AKADEMIK,
+        group='ogretmen_programi',
+        group_label='Öğretmen Programı',
+        label='Öğretmen Programı',
+        description=(
+            'Görüntüleme → Öğretmen Programı ekranından öğretmenin haftalık '
+            'programı PDF olarak kendisine WhatsApp ile gönderilir. Metin '
+            'Bildirim Şablonları’ndan değiştirilebilir '
+            '(DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(PERSONEL,),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=('ogretmen_ad', 'donem', 'pdf_baslik'),
+        meta_name_base='ogretmen_programi',
+        default_bodies=MappingProxyType({
+            PERSONEL: (
+                'Merhaba {{ogretmen_ad}},\n\n'
+                '{{sube}} şubesi {{donem}} dönemi haftalık ders programınız ektedir.\n\n'
+                'İyi çalışmalar dileriz.'
             ),
         }),
     ),

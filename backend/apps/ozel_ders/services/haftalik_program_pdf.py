@@ -9,13 +9,13 @@ from typing import Any
 
 from django.http import HttpResponse
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
+from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from apps.academic.services.schedule_export_service import schedule_cell_palette
 from apps.ozel_ders.services.pdf_brand import (
-    CONTENT_W,
     SIDE,
     brand_header,
     draw_page_chrome,
@@ -44,6 +44,16 @@ from apps.ozel_ders.domain.models import (
 )
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.ogrenci_ozel_ders_dashboard import GUN_LABELS
+
+GUN_SHORT = {
+    1: 'Pzt',
+    2: 'Sal',
+    3: 'Çar',
+    4: 'Per',
+    5: 'Cum',
+    6: 'Cmt',
+    7: 'Paz',
+}
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +163,7 @@ def collect_weekly_program(
                 ).strip(),
                 'baslangic': o.start_time.strftime('%H:%M'),
                 'bitis': o.end_time.strftime('%H:%M'),
+                'ders_id': o.ders_id,
                 'ders_ad': getattr(o.ders, 'ad', None) or str(o.ders_id),
                 'ogretmen_ad': _person_ad(o.ogretmen),
                 'oda_ad': o.oda.ad if o.oda_id else '',
@@ -165,6 +176,7 @@ def collect_weekly_program(
                 'gun_label': GUN_LABELS.get(s.gun, str(s.gun)),
                 'baslangic': s.baslangic.strftime('%H:%M'),
                 'bitis': s.bitis.strftime('%H:%M'),
+                'ders_id': s.ders_id,
                 'ders_ad': getattr(s.ders, 'ad', None) or str(s.ders_id),
                 'ogretmen_ad': _person_ad(s.ogretmen),
                 'oda_ad': s.oda.ad if s.oda_id else '',
@@ -204,32 +216,173 @@ def _parse_iso_date(value: date | str | None) -> date | None:
     return None
 
 
+def _occupied_days(slots: list[dict[str, Any]]) -> list[tuple[int, list[dict[str, Any]]]]:
+    by_day: dict[int, list[dict[str, Any]]] = {}
+    for row in slots:
+        by_day.setdefault(int(row['gun']), []).append(row)
+    return [(gun, by_day[gun]) for gun in range(1, 8) if by_day.get(gun)]
+
+
+def haftalik_as_schedule_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Birebir satırlarını sınıf/öğretmen PDF şablonuyla aynı yapıya çevirir."""
+    visible = _occupied_days(payload.get('slots') or [])
+    days = []
+    columns = []
+    for gun, rows in visible:
+        days.append({
+            'id': gun,
+            'name': rows[0].get('gun_label') or GUN_LABELS.get(gun, str(gun)),
+            'short_name': GUN_SHORT.get(gun) or GUN_LABELS.get(gun, str(gun)),
+            'order': gun,
+        })
+        columns.append([
+            {
+                'start': row.get('baslangic') or '',
+                'end': row.get('bitis') or '',
+                'lesson': row.get('ders_ad') or '',
+                'lesson_id': row.get('ders_id'),
+                'teacher': row.get('ogretmen_ad') or '',
+                'teacher_id': None,
+                'classroom': row.get('oda_ad') or '',
+                'classroom_id': None,
+                'status': row.get('durum') or '',
+                'label': row.get('ders_ad') or '',
+            }
+            for row in rows
+        ])
+    return {
+        'report_title': 'ÖZEL DERS PROGRAMI',
+        'subject_kind': 'student',
+        'layout_kind': 'grid',
+        'egitim_yili': payload.get('week_label') or payload.get('kurum_ad') or '',
+        'term': {'name': ', '.join(payload.get('paketler') or [])},
+        'days': days,
+        'groups': [{
+            'classroom_name': payload.get('ogrenci_ad') or 'Öğrenci',
+            'day_cards': columns,
+            'rows': [],
+        }],
+    }
+
+
+def _day_column(day_title: str, day_rows: list[dict[str, Any]], col_w: float, styles) -> Table:
+    rail_w = min(14 * mm, max(11 * mm, col_w * 0.22))
+    body_w = col_w - rail_w
+    head = Table(
+        [[Paragraph(_escape(day_title), styles['day'])]],
+        colWidths=[col_w],
+    )
+    head.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#f1f5f9')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor('#cbd5e1')),
+        ('LINEABOVE', (0, 0), (-1, 0), 2.2, colors.HexColor(BRAND)),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    blocks = [head, Spacer(1, 2.2 * mm)]
+    for order, row in enumerate(day_rows, 1):
+        pal = schedule_cell_palette(row.get('ders_id')) or {}
+        bg = f"#{pal['bg']}" if pal else '#eff6ff'
+        border = f"#{pal['border']}" if pal else '#93c5fd'
+        ink = f"#{pal['text']}" if pal else INK
+        who = ' · '.join(part for part in (
+            (row.get('ogretmen_ad') or '').strip(),
+            (row.get('oda_ad') or '').strip(),
+            (row.get('durum') or '').strip(),
+        ) if part)
+        card_rows = [
+            [
+                Paragraph(_escape(row.get('baslangic') or ''), styles['time'](ink)),
+                Paragraph(f'{order}. Ders', styles['badge'](ink)),
+            ],
+            [
+                Paragraph(_escape(row.get('bitis') or ''), styles['time'](ink)),
+                Paragraph(_escape(row.get('ders_ad') or ''), styles['lesson'](ink)),
+            ],
+        ]
+        if who:
+            card_rows.append(['', Paragraph(_escape(who), styles['who'](ink))])
+        card = Table(card_rows, colWidths=[rail_w, body_w])
+        card.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(bg)),
+            ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor(border)),
+            ('LINEAFTER', (0, 0), (0, -1), 1.4, colors.HexColor(ink)),
+            ('VALIGN', (0, 0), (0, -1), 'MIDDLE'),
+            ('VALIGN', (1, 0), (1, -1), 'TOP'),
+            ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+            ('LEFTPADDING', (0, 0), (0, -1), 3),
+            ('RIGHTPADDING', (0, 0), (0, -1), 4),
+            ('LEFTPADDING', (1, 0), (1, -1), 5),
+            ('RIGHTPADDING', (1, 0), (1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, 0), 5),
+            ('BOTTOMPADDING', (0, -1), (-1, -1), 5),
+            ('TOPPADDING', (0, 1), (-1, -2), 1),
+            ('BOTTOMPADDING', (0, 0), (-1, -2), 1),
+        ]))
+        blocks.append(card)
+        blocks.append(Spacer(1, 2 * mm))
+    return Table([[blocks]], colWidths=[col_w])
+
+
 def render_haftalik_program_pdf(payload: dict[str, Any]) -> tuple[bytes, str]:
+    filename = f"{_safe_filename(payload.get('ogrenci_ad') or '')}_ozel_ders_haftalik.pdf"
+    try:
+        from apps.academic.application.schedule_notify_service import build_schedule_pdf_html
+        from apps.communication.application.html_to_pdf import render_html_to_pdf
+
+        html_doc = build_schedule_pdf_html(haftalik_as_schedule_payload(payload))
+        return render_html_to_pdf(html_doc, landscape=True), filename
+    except Exception as exc:
+        logger.warning('Birebir HTML PDF başarısız, reportlab fallback: %s', exc)
+    return _render_haftalik_program_reportlab(payload, filename)
+
+
+def _render_haftalik_program_reportlab(
+    payload: dict[str, Any],
+    filename: str | None = None,
+) -> tuple[bytes, str]:
     font, font_bold = _register_fonts()
     ogrenci_ad = payload['ogrenci_ad']
     title = payload['pdf_baslik']
+    page_w, page_h = landscape(A4)
+    content_w = page_w - 2 * SIDE
 
     def mk(name, *, size, bold=False, color=INK, align=0, leading=None):
         return ParagraphStyle(
             name, fontName=font_bold if bold else font, fontSize=size,
-            leading=leading or size * 1.32,
+            leading=leading or size * 1.28,
             textColor=colors.HexColor(color), alignment=align,
         )
 
+    def tinted(base, size, *, bold=False):
+        def make(color: str):
+            return ParagraphStyle(
+                f'{base}_{color}',
+                fontName=font_bold if bold else font,
+                fontSize=size,
+                leading=size * 1.25,
+                textColor=colors.HexColor(color),
+            )
+        return make
+
     styles = {
-        'day': mk('hp_day', size=10, bold=True, color='#FFFFFF'),
-        'time': mk('hp_time', size=9, bold=True),
-        'cell': mk('hp_cell', size=9),
-        'sub': mk('hp_sub', size=8, color=MUTED),
+        'day': mk('hp_day', size=8.5, bold=True, color='#334155', align=1),
         'empty': mk('hp_empty', size=10, color=MUTED, align=1),
-        'th': mk('hp_th', size=8, bold=True, color=MUTED),
+        'time': tinted('hp_time', 7.2, bold=True),
+        'badge': tinted('hp_badge', 6.4, bold=True),
+        'lesson': tinted('hp_lesson', 8.4, bold=True),
+        'who': tinted('hp_who', 7),
     }
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
-        buf, pagesize=A4,
+        buf, pagesize=(page_w, page_h),
         leftMargin=SIDE, rightMargin=SIDE,
-        topMargin=14 * mm, bottomMargin=16 * mm,
+        topMargin=12 * mm, bottomMargin=14 * mm,
         title=title,
     )
     story = []
@@ -248,14 +401,16 @@ def render_haftalik_program_pdf(payload: dict[str, Any]) -> tuple[bytes, str]:
         title=ogrenci_ad or 'Öğrenci',
         meta='  ·  '.join(meta_bits),
         strip='  ·  '.join(strip_bits),
+        content_w=content_w,
     ))
-    story.append(Spacer(1, 8 * mm))
+    story.append(Spacer(1, 5 * mm))
 
     slots = payload.get('slots') or []
-    if not slots:
+    visible = _occupied_days(slots)
+    if not visible:
         empty = Table(
             [[Paragraph('Bu öğrencinin aktif haftalık program şablonu yok.', styles['empty'])]],
-            colWidths=[CONTENT_W],
+            colWidths=[content_w],
         )
         empty.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(BRAND_SOFT)),
@@ -264,79 +419,36 @@ def render_haftalik_program_pdf(payload: dict[str, Any]) -> tuple[bytes, str]:
         ]))
         story.append(empty)
     else:
-        by_day: dict[int, list[dict]] = {}
-        for row in slots:
-            by_day.setdefault(int(row['gun']), []).append(row)
-        week_mode = payload.get('mode') == 'week'
-        time_w, ders_w, ogretmen_w = 28 * mm, 52 * mm, 46 * mm
-        durum_w = 28 * mm if week_mode else 0
-        oda_w = CONTENT_W - time_w - ders_w - ogretmen_w - durum_w
-        for gun in range(1, 8):
-            day_rows = by_day.get(gun)
-            if not day_rows:
-                continue
+        gap = 2.4 * mm
+        col_w = (content_w - gap * (len(visible) - 1)) / max(1, len(visible))
+        columns = []
+        for gun, day_rows in visible:
             day_title = day_rows[0].get('gun_label') or GUN_LABELS.get(gun, str(gun))
-            header = Table(
-                [[Paragraph(_escape(day_title), styles['day'])]],
-                colWidths=[CONTENT_W],
-            )
-            header.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(BRAND)),
-                ('LEFTPADDING', (0, 0), (-1, -1), 8),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
-                ('TOPPADDING', (0, 0), (-1, -1), 6),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-            ]))
-            story.append(header)
-
-            headings = [
-                Paragraph('Saat', styles['th']),
-                Paragraph('Ders', styles['th']),
-                Paragraph('Öğretmen', styles['th']),
-                Paragraph('Oda', styles['th']),
-            ]
-            if week_mode:
-                headings.append(Paragraph('Durum', styles['th']))
-            table_data = [headings]
-            for row in day_rows:
-                cells = [
-                    Paragraph(_escape(f"{row['baslangic']}–{row['bitis']}"), styles['time']),
-                    Paragraph(_escape(row['ders_ad']), styles['cell']),
-                    Paragraph(_escape(row['ogretmen_ad'] or '—'), styles['cell']),
-                    Paragraph(_escape(row['oda_ad'] or '—'), styles['sub']),
-                ]
-                if week_mode:
-                    cells.append(Paragraph(_escape(row.get('durum') or '—'), styles['sub']))
-                table_data.append(cells)
-            col_widths = [time_w, ders_w, ogretmen_w, oda_w]
-            if week_mode:
-                col_widths.append(durum_w)
-            table = Table(table_data, colWidths=col_widths)
-            table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(SURFACE)),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('LEFTPADDING', (0, 0), (-1, -1), 6),
-                ('RIGHTPADDING', (0, 0), (-1, -1), 6),
-                ('TOPPADDING', (0, 0), (-1, -1), 5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
-                ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
-                ('INNERGRID', (0, 0), (-1, -1), 0.3, colors.HexColor(LINE)),
-            ]))
-            story.append(table)
-            story.append(Spacer(1, 5 * mm))
+            columns.append(_day_column(day_title, day_rows, col_w, styles))
+        board = Table([columns], colWidths=[col_w] * len(visible))
+        board.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 1.2),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 1.2),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        story.append(board)
 
     caption = '3K Kampüs · Özel ders haftalık program'
     running = (ogrenci_ad or 'Haftalık program')[:72]
-    doc.build(
-        story,
-        onFirstPage=lambda c, d: draw_page_chrome(c, d, font, caption),
-        onLaterPages=lambda c, d: draw_page_chrome(
+
+    def first_page(c, d):
+        draw_page_chrome(c, d, font, caption, page_w=page_w, page_h=page_h)
+
+    def later_page(c, d):
+        draw_page_chrome(
             c, d, font, caption, running_title=running, font_bold=font_bold,
-        ),
-    )
-    filename = f"{_safe_filename(ogrenci_ad)}_ozel_ders_haftalik.pdf"
-    return buf.getvalue(), filename
+            page_w=page_w, page_h=page_h,
+        )
+
+    doc.build(story, onFirstPage=first_page, onLaterPages=later_page)
+    return buf.getvalue(), filename or f"{_safe_filename(ogrenci_ad)}_ozel_ders_haftalik.pdf"
 
 
 def pdf_http_response(payload: dict[str, Any]) -> HttpResponse:

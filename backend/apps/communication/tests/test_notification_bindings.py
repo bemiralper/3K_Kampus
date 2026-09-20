@@ -413,6 +413,9 @@ class BindingServiceTest(TestCase):
         self.assertIn('yoklama:kutuphane', module_keys)
         self.assertIn('yoklama:sinif', module_keys)
         self.assertNotIn('yoklama', module_keys)
+        self.assertIn('akademik:sinif_programi', module_keys)
+        self.assertIn('akademik:ogretmen_programi', module_keys)
+        self.assertNotIn('akademik', module_keys)
         for event in catalog['events']:
             self.assertTrue(event['slots'])
             self.assertTrue(event['template_group'])
@@ -424,6 +427,9 @@ class BindingServiceTest(TestCase):
         group_keys = [g['key'] for g in catalog['template_groups']]
         self.assertIn('yoklama:kutuphane', group_keys)
         self.assertIn('ozel_ders', group_keys)
+        self.assertIn('akademik:sinif_programi', group_keys)
+        self.assertIn('akademik:ogretmen_programi', group_keys)
+        self.assertNotIn('akademik', group_keys)
         self.assertNotIn('devamsizlik', group_keys)
 
     def test_preview_fills_sample_variables(self):

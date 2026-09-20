@@ -90,8 +90,9 @@ def header_styles(font: str, font_bold: str) -> dict[str, ParagraphStyle]:
     }
 
 
-def brand_header(styles, *, kicker: str, title: str, meta: str, strip: str = ''):
+def brand_header(styles, *, kicker: str, title: str, meta: str, strip: str = '', content_w=None):
     """Mavi marka şeridi + logo; altında isteğe bağlı bilgi satırı."""
+    width = content_w or CONTENT_W
     logo = _logo_path()
     if logo:
         mark = Image(str(logo), width=30 * mm, height=22 * mm)
@@ -107,7 +108,7 @@ def brand_header(styles, *, kicker: str, title: str, meta: str, strip: str = '')
 
     inner = Table(
         [[mark, text]],
-        colWidths=[36 * mm, CONTENT_W - 36 * mm],
+        colWidths=[36 * mm, width - 36 * mm],
     )
     inner.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(BRAND)),
@@ -119,7 +120,7 @@ def brand_header(styles, *, kicker: str, title: str, meta: str, strip: str = '')
         ('TOPPADDING', (0, 0), (-1, -1), 10),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
     ]))
-    accent = Table([['']], colWidths=[CONTENT_W])
+    accent = Table([['']], colWidths=[width])
     accent.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(BRAND_DARK)),
         ('TOPPADDING', (0, 0), (-1, -1), 0),
@@ -130,7 +131,7 @@ def brand_header(styles, *, kicker: str, title: str, meta: str, strip: str = '')
     ]))
     flow = [inner, accent]
     if strip:
-        info = Table([[Paragraph(_escape(strip), styles['strip'])]], colWidths=[CONTENT_W])
+        info = Table([[Paragraph(_escape(strip), styles['strip'])]], colWidths=[width])
         info.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#EAF2FA')),
             ('LEFTPADDING', (0, 0), (-1, -1), 10),
@@ -146,29 +147,32 @@ def brand_header(styles, *, kicker: str, title: str, meta: str, strip: str = '')
 def draw_page_chrome(
     canvas, doc, font: str, caption: str = '3K Kampüs',
     *, running_title: str = '', font_bold: str | None = None,
+    page_w=None, page_h=None,
 ):
+    width = page_w or PAGE_W
+    height = page_h or PAGE_H
     canvas.saveState()
     if running_title:
         canvas.setFillColor(colors.HexColor(BRAND))
-        canvas.rect(0, PAGE_H - 16 * mm, PAGE_W, 16 * mm, fill=1, stroke=0)
+        canvas.rect(0, height - 16 * mm, width, 16 * mm, fill=1, stroke=0)
         canvas.setFillColor(colors.HexColor(BRAND_DARK))
-        canvas.rect(0, PAGE_H - 16 * mm, PAGE_W, 2.2, fill=1, stroke=0)
+        canvas.rect(0, height - 16 * mm, width, 2.2, fill=1, stroke=0)
         canvas.setFillColor(colors.white)
         canvas.setFont(font_bold or font, 9)
-        canvas.drawString(SIDE, PAGE_H - 10.5 * mm, running_title[:72])
+        canvas.drawString(SIDE, height - 10.5 * mm, running_title[:72])
         canvas.setFont(font, 8)
-        canvas.drawRightString(PAGE_W - SIDE, PAGE_H - 10.5 * mm, str(canvas.getPageNumber()))
+        canvas.drawRightString(width - SIDE, height - 10.5 * mm, str(canvas.getPageNumber()))
     else:
         canvas.setFillColor(colors.HexColor(BRAND))
-        canvas.rect(0, PAGE_H - 3, PAGE_W, 3, fill=1, stroke=0)
+        canvas.rect(0, height - 3, width, 3, fill=1, stroke=0)
     canvas.setStrokeColor(colors.HexColor(LINE))
     canvas.setLineWidth(0.4)
-    canvas.line(SIDE, 12 * mm, PAGE_W - SIDE, 12 * mm)
+    canvas.line(SIDE, 12 * mm, width - SIDE, 12 * mm)
     canvas.setFillColor(colors.HexColor(MUTED))
     canvas.setFont(font, 7.5)
     canvas.drawString(SIDE, 8 * mm, caption)
     if not running_title:
-        canvas.drawRightString(PAGE_W - SIDE, 8 * mm, str(canvas.getPageNumber()))
+        canvas.drawRightString(width - SIDE, 8 * mm, str(canvas.getPageNumber()))
     canvas.restoreState()
 
 

@@ -93,6 +93,7 @@ const allMenuItems = [
   { label: "Koç-Öğrenci Atama", href: "/admin/coaching/assignments", section: "Koçluk" },
   { label: "Görüşmeler", href: "/admin/coaching/meetings", section: "Koçluk" },
   { label: "Hedefler", href: "/admin/coaching/goals", section: "Koçluk" },
+  { label: "Yoklama Takibi", href: "/admin/coaching/attendance", section: "Koçluk" },
   { label: "Risk Merkezi", href: "/admin/coaching/risk", section: "Koçluk" },
   { label: "Tahminsel Skor", href: "/admin/coaching/predictive", section: "Koçluk" },
   { label: "Bildirim Kuralları", href: "/admin/coaching/notifications", section: "Koçluk" },

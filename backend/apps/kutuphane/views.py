@@ -351,48 +351,70 @@ def _attendance_student_info_map(ogrenci_ids):
 
     ids = [int(x) for x in ogrenci_ids if x]
     names = {}
+    fotolar = {}
     if ids:
-        for o in Ogrenci.objects.filter(id__in=ids).values('id', 'ad', 'soyad'):
+        for o in Ogrenci.objects.filter(id__in=ids).values('id', 'ad', 'soyad', 'profil_foto'):
             names[o['id']] = f"{(o['ad'] or '').strip()} {(o['soyad'] or '').strip()}".strip()
+            raw = (o.get('profil_foto') or '').strip()
+            fotolar[o['id']] = f'/media/{raw}' if raw else None
     contacts = default_veli_contacts_map(ids)
     info = {}
     for oid in ids:
         contact = contacts.get(oid) or {}
         info[oid] = {
             'ogrenci_adi': names.get(oid) or f'Öğrenci #{oid}',
+            'profil_foto': fotolar.get(oid),
             'veli_ad': contact.get('ad') or '',
             'veli_telefon': contact.get('telefon') or '',
         }
     return info
 
 
-def _serialize_attendance_records(records):
-    info = _attendance_student_info_map([r.ogrenci_id for r in records])
+def _serialize_attendance_records(records, now=None):
+    rows = list(records)
+    info = _attendance_student_info_map([r.ogrenci_id for r in rows])
     sebepler = {}
-    izinli_ids = [r.ogrenci_id for r in records if getattr(r, 'izinli_mi', False)]
-    if izinli_ids:
-        session = getattr(records[0], 'attendance_session', None)
-        if session is not None:
-            from apps.kutuphane.application.service import OgrenciIzinService
-            svc = OgrenciIzinService()
-            for oid in set(izinli_ids):
-                det = svc.get_exemption_detail(
-                    oid, session.tarih, session.periyot_kodu, library_id=session.library_id,
-                )
-                if det:
-                    sebepler[oid] = det.sebep_label()
+    session = getattr(rows[0], 'attendance_session', None) if rows else None
+    izinli_ids = [r.ogrenci_id for r in rows if getattr(r, 'izinli_mi', False)]
+    if izinli_ids and session is not None:
+        from apps.kutuphane.application.service import OgrenciIzinService
+        svc = OgrenciIzinService()
+        for oid in set(izinli_ids):
+            det = svc.get_exemption_detail(
+                oid, session.tarih, session.periyot_kodu, library_id=session.library_id,
+            )
+            if det:
+                sebepler[oid] = det.sebep_label()
+    live_map = {}
+    if session is not None and rows and getattr(session, 'durum', None) == AttendanceSessionStatus.OPEN:
+        from apps.kutuphane.application.live_lesson import live_lessons_for_students
+        moment = now or timezone.localtime()
+        live_day = timezone.localdate(moment) if isinstance(moment, datetime) and timezone.is_aware(moment) else (
+            moment.date() if isinstance(moment, datetime) else timezone.localdate()
+        )
+        live_map = live_lessons_for_students(
+            [r.ogrenci_id for r in rows],
+            on_date=live_day,
+            now=now,
+        )
     return [
-        _serialize_attendance_record(r, info.get(r.ogrenci_id), sebepler.get(r.ogrenci_id, ''))
-        for r in records
+        _serialize_attendance_record(
+            r,
+            info.get(r.ogrenci_id),
+            sebepler.get(r.ogrenci_id, ''),
+            live_map.get(r.ogrenci_id),
+        )
+        for r in rows
     ]
 
 
-def _serialize_attendance_record(r, student_info=None, izin_sebep=''):
+def _serialize_attendance_record(r, student_info=None, izin_sebep='', canli_ders=None):
     info = student_info or _attendance_student_info_map([r.ogrenci_id]).get(r.ogrenci_id) or {}
     return {
         'id': str(r.id),
         'ogrenci_id': r.ogrenci_id,
         'ogrenci_adi': info.get('ogrenci_adi') or f'Öğrenci #{r.ogrenci_id}',
+        'profil_foto': info.get('profil_foto'),
         'veli_ad': info.get('veli_ad') or '',
         'veli_telefon': info.get('veli_telefon') or '',
         'seat_id': str(r.seat_id) if r.seat_id else None,
@@ -403,6 +425,7 @@ def _serialize_attendance_record(r, student_info=None, izin_sebep=''):
         'izinli_mi': getattr(r, 'izinli_mi', False),
         'izin_sebep': izin_sebep,
         'notlar': r.notlar,
+        'canli_ders': canli_ders,
     }
 
 

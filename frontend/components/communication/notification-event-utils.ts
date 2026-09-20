@@ -13,7 +13,7 @@ export const RECIPIENT_LABELS: Record<string, string> = {
 export function eventTemplateGroup(event: NotificationEventItem | null | undefined): string {
   if (!event) return "";
   if (event.template_group) return event.template_group;
-  if (event.module === "yoklama" && event.group) return `yoklama:${event.group}`;
+  if (event.group) return `${event.module}:${event.group}`;
   return event.module || "";
 }
 

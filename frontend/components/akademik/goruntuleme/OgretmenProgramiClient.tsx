@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Select } from 'antd';
+import { Button, Select } from 'antd';
 import {
   fetchTeacherScheduleGrid,
   fetchTeachersForAvailability,
@@ -9,8 +9,11 @@ import {
   type TeacherListItem,
 } from '@/lib/academic-api';
 import ScheduleViewer from './ScheduleViewer';
+import GoruntulemeExportModal from './GoruntulemeExportModal';
+import GoruntulemeNotifyModal from './GoruntulemeNotifyModal';
 import { useGoruntulemeContext } from './useGoruntulemeContext';
 import { ContextRequired, Field } from '../ui';
+import { IconDownload, IconSend } from '../ui/icons';
 
 export default function OgretmenProgramiClient() {
   const { termId, setTermId, termOptions, ready, error: contextError } = useGoruntulemeContext();
@@ -20,6 +23,8 @@ export default function OgretmenProgramiClient() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
 
   const loadTeachers = useCallback(async () => {
     if (!ready) return;
@@ -44,8 +49,6 @@ export default function OgretmenProgramiClient() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    // Çalışma takvimi filtresi yok: öğretmen tüm takvimlerde ders veriyor olabilir,
-    // hepsi tek haftalık görünümde birleştirilir.
     fetchTeacherScheduleGrid({ teacher_id: teacherId, term_id: termId })
       .then((data) => {
         if (cancelled) return;
@@ -68,43 +71,90 @@ export default function OgretmenProgramiClient() {
 
   if (!ready) return <ContextRequired />;
 
+  const teacherName =
+    teachers.find((t) => t.id === teacherId)?.tam_ad ||
+    teachers.find((t) => t.id === teacherId)?.ad ||
+    '';
+
   return (
-    <ScheduleViewer
-      description="Tüm çalışma takvimlerindeki sınıf dersleri ve birebir özel dersler tek haftalık görünümde."
-      grid={grid}
-      loading={loading}
-      error={error || contextError}
-      onRetry={() => setReloadKey((k) => k + 1)}
-      showClassroom
-      showTeacher={false}
-      emptyHint="Bu öğretmen için yerleştirilmiş ders yok."
-      requireSelection={!teacherId}
-      selectionMissingHint="Görüntülemek için bir öğretmen seçin."
-      filters={
-        <>
-          <Field label="Dönem" width={190}>
-            <Select
-              value={termId ?? undefined}
-              onChange={setTermId}
-              options={termOptions}
-              placeholder="Dönem"
-            />
-          </Field>
-          <Field label={`Öğretmen (${teachers.length})`} grow>
-            <Select
-              value={teacherId ?? undefined}
-              onChange={setTeacherId}
-              showSearch
-              optionFilterProp="label"
-              options={teachers.map((t) => ({
-                value: t.id,
-                label: t.tam_ad || `${t.ad} ${t.soyad}`,
-              }))}
-              placeholder="Öğretmen seçin"
-            />
-          </Field>
-        </>
-      }
-    />
+    <>
+      <ScheduleViewer
+        description="Gün sütunlarında ders kartları saat sırasındadır. Sınıf grupları farklı renklerdedir."
+        grid={grid}
+        loading={loading}
+        error={error || contextError}
+        onRetry={() => setReloadKey((k) => k + 1)}
+        showClassroom
+        showTeacher={false}
+        showTimesOnCards
+        colorBy="classroom"
+        layout="day-columns"
+        showGenericGaps={false}
+        emptyHint="Bu öğretmen için yerleştirilmiş ders yok."
+        requireSelection={!teacherId}
+        selectionMissingHint="Görüntülemek için bir öğretmen seçin."
+        actions={
+          <>
+            <Button
+              icon={<IconDownload size={14} />}
+              disabled={!termId || !teacherId}
+              onClick={() => setExportOpen(true)}
+            >
+              İndir
+            </Button>
+            <Button
+              type="primary"
+              icon={<IconSend size={14} />}
+              disabled={!termId || !teacherId}
+              onClick={() => setNotifyOpen(true)}
+            >
+              WhatsApp
+            </Button>
+          </>
+        }
+        filters={
+          <>
+            <Field label="Dönem" width={190}>
+              <Select
+                value={termId ?? undefined}
+                onChange={setTermId}
+                options={termOptions}
+                placeholder="Dönem"
+              />
+            </Field>
+            <Field label={`Öğretmen (${teachers.length})`} grow>
+              <Select
+                value={teacherId ?? undefined}
+                onChange={setTeacherId}
+                showSearch
+                optionFilterProp="label"
+                options={teachers.map((t) => ({
+                  value: t.id,
+                  label: t.tam_ad || `${t.ad} ${t.soyad}`,
+                }))}
+                placeholder="Öğretmen seçin"
+              />
+            </Field>
+          </>
+        }
+      />
+      <GoruntulemeExportModal
+        open={exportOpen}
+        onClose={() => setExportOpen(false)}
+        mode="teacher"
+        termId={termId}
+        teacherId={teacherId}
+        teacherName={teacherName}
+      />
+      <GoruntulemeNotifyModal
+        open={notifyOpen}
+        onClose={() => setNotifyOpen(false)}
+        mode="teacher"
+        termId={termId}
+        teacherId={teacherId}
+        teacherIds={teachers.map((t) => t.id)}
+        teacherName={teacherName}
+      />
+    </>
   );
 }

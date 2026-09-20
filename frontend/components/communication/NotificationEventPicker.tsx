@@ -59,10 +59,11 @@ export default function NotificationEventPicker({
       .map((mod) => ({
         ...mod,
         events: events.filter((event) => {
-          if (mod.key.startsWith("yoklama:")) {
-            return event.module === "yoklama" && event.group === mod.key.slice("yoklama:".length);
+          const sep = mod.key.indexOf(":");
+          if (sep > 0) {
+            return event.module === mod.key.slice(0, sep) && event.group === mod.key.slice(sep + 1);
           }
-          return event.module === mod.key;
+          return event.module === mod.key && !event.group;
         }),
       }))
       .filter((group) => group.events.length > 0);

@@ -48,6 +48,28 @@ class TemplateGroupHelperTest(TestCase):
         self.assertEqual(template_group_for_event_key('ozel_ders.islendi'), 'ozel_ders')
         self.assertEqual(template_group_label('ozel_ders'), 'Özel Ders')
 
+    def test_academic_schedule_uses_module_and_subgroup(self):
+        self.assertEqual(
+            template_group_for_event_key('akademik.sinif_programi'),
+            'akademik:sinif_programi',
+        )
+        self.assertEqual(
+            template_group_for_event_key('akademik.ogretmen_programi'),
+            'akademik:ogretmen_programi',
+        )
+        self.assertEqual(
+            template_group_label('akademik:sinif_programi'),
+            'Akademik — Sınıf Programı',
+        )
+        self.assertEqual(
+            template_group_label('akademik:ogretmen_programi'),
+            'Akademik — Öğretmen Programı',
+        )
+        keys = [item['key'] for item in list_template_groups()]
+        self.assertIn('akademik:sinif_programi', keys)
+        self.assertIn('akademik:ogretmen_programi', keys)
+        self.assertNotIn('akademik', keys)
+
     def test_empty_is_genel(self):
         self.assertEqual(template_group_for_event(None), '')
         self.assertEqual(template_group_label(''), 'Genel')

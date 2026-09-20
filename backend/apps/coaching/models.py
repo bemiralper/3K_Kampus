@@ -693,5 +693,97 @@ class GorusmeHatirlatma(models.Model):
         return f"{self.hatirlatma_tarihi} — {self.mesaj[:40]}"
 
 
+class AttendanceThresholdSetting(models.Model):
+    """Kurum bazlı yoklama eşikleri — günlük bilgi vs risk/alarm."""
+
+    kurum = models.OneToOneField(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='attendance_threshold_setting',
+        verbose_name='Kurum',
+    )
+    absence_attention = models.PositiveSmallIntegerField(
+        'Devamsızlık dikkat eşiği',
+        default=3,
+    )
+    absence_alarm = models.PositiveSmallIntegerField(
+        'Devamsızlık alarm eşiği',
+        default=5,
+    )
+    late_attention = models.PositiveSmallIntegerField(
+        'Geç kalma dikkat eşiği',
+        default=3,
+    )
+    late_alarm = models.PositiveSmallIntegerField(
+        'Geç kalma alarm eşiği',
+        default=5,
+    )
+    consecutive_absent_alarm = models.PositiveSmallIntegerField(
+        'Ardışık devamsızlık alarmı',
+        default=2,
+        help_text='Ardışık yoklama günü gelmeme sayısı (sabah/öğle/akşam aynı gün sayılır).',
+    )
+    recommended_action_attention = models.CharField(
+        'Dikkat önerilen aksiyon',
+        max_length=160,
+        default='Öğrenciyle görüş',
+    )
+    recommended_action_alarm = models.CharField(
+        'Alarm önerilen aksiyon',
+        max_length=160,
+        default='Öğrenciyle görüş',
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='updated_attendance_thresholds',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'coaching_attendance_threshold'
+        verbose_name = 'Yoklama Eşik Ayarı'
+        verbose_name_plural = 'Yoklama Eşik Ayarları'
+
+    def __str__(self):
+        return f'Yoklama eşikleri · kurum {self.kurum_id}'
+
+
+class AttendanceCoachDigest(models.Model):
+    """Koça günlük yoklama bildiriminin oturum bazlı dedupe kaydı."""
+
+    coach = models.ForeignKey(
+        CoachProfile,
+        on_delete=models.CASCADE,
+        related_name='attendance_digests',
+    )
+    source_key = models.CharField(max_length=80)
+    session_date = models.DateField()
+    student_ids = models.JSONField(default=list, blank=True)
+    notification_id = models.CharField(max_length=40, blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'coaching_attendance_coach_digest'
+        verbose_name = 'Koç Yoklama Bildirim Özeti'
+        verbose_name_plural = 'Koç Yoklama Bildirim Özetleri'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['coach', 'source_key'],
+                name='unique_attendance_coach_digest',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['coach', 'session_date'], name='coach_att_digest_day_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.coach_id} · {self.source_key}'
+
+
 # Predictive modelleri
 from apps.coaching.predictive.models import StudentFeatureSnapshot, PredictiveCache  # noqa

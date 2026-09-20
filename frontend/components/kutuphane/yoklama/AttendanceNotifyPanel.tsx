@@ -52,6 +52,14 @@ interface AttendanceNotifyPanelProps {
   onOpenSettings?: () => void;
 }
 
+function WhatsAppIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.75.46 3.45 1.32 4.95L2 22l5.25-1.38a9.9 9.9 0 0 0 4.79 1.22h.01c5.46 0 9.9-4.45 9.9-9.91C21.95 6.45 17.5 2 12.04 2zm5.8 14.06c-.24.68-1.4 1.3-1.94 1.38-.5.07-1.12.1-1.81-.11-.42-.13-.95-.31-1.64-.6-2.88-1.24-4.76-4.15-4.9-4.34-.14-.19-1.17-1.56-1.17-2.97 0-1.41.74-2.1 1-2.39.26-.29.57-.36.76-.36l.55.01c.18.01.41-.07.64.49.24.57.81 1.98.88 2.12.07.14.12.31.02.5-.09.19-.14.31-.28.48-.14.17-.29.37-.42.5-.14.14-.28.29-.12.57.16.29.71 1.17 1.53 1.9 1.05.94 1.94 1.23 2.22 1.37.28.14.44.12.6-.07.16-.19.69-.8.88-1.08.19-.28.37-.23.63-.14.26.1 1.65.78 1.93.92.28.14.47.21.54.33.07.11.07.66-.17 1.34z" />
+    </svg>
+  );
+}
+
 export default function AttendanceNotifyPanel({
   status,
   config,
@@ -63,125 +71,104 @@ export default function AttendanceNotifyPanel({
   const recentSends = status?.recent_sends ?? [];
   const totalSent = events.reduce((acc, e) => acc + (status?.summary?.[e]?.sent ?? 0), 0);
   const totalPending = events.reduce((acc, e) => acc + (status?.summary?.[e]?.pending ?? 0), 0);
+  const active = Boolean(config?.is_active);
 
   return (
-    <div className="yok-notify-panel">
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+    <div className="ycn">
+      <header className="ycn-head">
         <div>
-          <h4 style={{ margin: 0, fontSize: 15, fontWeight: 700, color: "#0f172a" }}>Veli bildirimleri</h4>
-          <p style={{ margin: "4px 0 0", fontSize: 12, color: "#64748b" }}>
-            Yoklama kaydetmek tek başına mesaj göndermez. Aşağıdaki butonlarla veliye WhatsApp iletin.
-          </p>
+          <h3>Veli bildirimleri</h3>
+          <p>WhatsApp mesajları yalnızca <b>Gönder</b> ile iletilir. Yoklamayı kaydetmek mesaj göndermez.</p>
         </div>
         {onOpenSettings && (
-          <button type="button" className="yok-notify-btn ghost" onClick={onOpenSettings}>
-            ⚙️ Şablon ayarları
+          <button type="button" className="ycn-settings" onClick={onOpenSettings}>
+            Şablon ayarları
           </button>
         )}
+      </header>
+
+      <div className="ycn-summary">
+        <div className={`ycn-sum${totalPending > 0 ? " is-warn" : ""}`}>
+          <b>{totalPending}</b>
+          <span>Bekleyen</span>
+        </div>
+        <div className={`ycn-sum${totalSent > 0 ? " is-good" : ""}`}>
+          <b>{totalSent}</b>
+          <span>İletildi</span>
+        </div>
       </div>
 
-      <div className="yok-notify-info-box">
-        <strong>Önemli:</strong> Kaydet = yoklama durumu kaydı. Mesaj gitmesi için{" "}
-        <em>Gelmedi bildir</em> veya kayıt sonrası <em>Önizle ve gönder</em> adımını tamamlamanız gerekir.
-      </div>
-
-      {totalPending > 0 && totalSent === 0 && (
-        <div className="yok-notify-warn-box">
-          {totalPending} veli bildirimi <strong>henüz gönderilmedi</strong> (bekliyor).
+      {!active && (
+        <div className="ycn-banner is-off">
+          Yoklama bildirimleri bu kurumda kapalı. Şablon ayarlarından etkinleştirin.
         </div>
       )}
 
-      {totalSent > 0 && totalPending === 0 && (
-        <div className="yok-notify-success-box">
-          Bu oturumdaki tüm bekleyen bildirimler gönderildi ({totalSent} öğrenci).
-        </div>
-      )}
-
-      {totalSent > 0 && totalPending > 0 && (
-        <div className="yok-notify-warn-box">
-          {totalSent} öğrenci için iletildi, {totalPending} öğrenci için hâlâ bekliyor.
-        </div>
-      )}
-
-      {!config?.is_active && (
-        <div style={{ padding: 12, borderRadius: 8, background: "#fef2f2", color: "#b91c1c", fontSize: 12 }}>
-          Yoklama bildirimleri bu kurumda kapalı. Ayarlardan etkinleştirebilirsiniz.
-        </div>
-      )}
-
-      <div className="yok-notify-stats">
+      <div className="ycn-cards">
         {events.map((event) => {
           const meta = EVENT_META[event];
+          const tpl = config?.[meta.templateKey] as { name?: string; body?: string } | null | undefined;
           const s = status?.summary?.[event];
+          const pending = s?.pending ?? 0;
+          const sent = s?.sent ?? 0;
+          const eligible = s?.eligible ?? 0;
+          const canSend = active && pending > 0;
+
           return (
-            <div key={event} className={`yok-notify-stat-card ${meta.className}`}>
-              <h4>{meta.title}</h4>
-              <div className="count">{s?.pending ?? 0}</div>
-              <div className="meta">
-                bekleyen · {s?.sent ?? 0} iletildi · {s?.eligible ?? 0} uygun
+            <article key={event} className={`ycn-card is-${meta.className}`}>
+              <div className="ycn-card-top">
+                <span className="ycn-tag">{meta.title}</span>
+                <Link
+                  href={`${templatesBasePath}?event=${encodeURIComponent(meta.eventKey)}`}
+                  className="ycn-edit"
+                >
+                  Şablonu düzenle
+                </Link>
               </div>
-            </div>
+
+              <div className="ycn-nums">
+                <span className="ycn-num is-pending"><b>{pending}</b> bekliyor</span>
+                <span className="ycn-num is-sent"><b>{sent}</b> iletildi</span>
+                <span className="ycn-num"><b>{eligible}</b> uygun</span>
+              </div>
+
+              <p className="ycn-tpl">
+                {tpl?.body || "Varsayılan şablon kullanılacak (ilk gönderimde otomatik oluşturulur)."}
+              </p>
+
+              <button
+                type="button"
+                className="ycn-send"
+                disabled={!canSend}
+                onClick={() => onNotify(event)}
+              >
+                <WhatsAppIcon />
+                {pending > 0
+                  ? `Gönder · ${pending} veli`
+                  : sent > 0
+                    ? "Tümü iletildi"
+                    : "Gönderilecek yok"}
+              </button>
+            </article>
           );
         })}
       </div>
 
-      {events.map((event) => {
-        const meta = EVENT_META[event];
-        const tpl = config?.[meta.templateKey] as { name?: string; body?: string } | null | undefined;
-        const pending = status?.summary?.[event]?.pending ?? 0;
-        const sent = status?.summary?.[event]?.sent ?? 0;
-
-        return (
-          <div key={`tpl-${event}`} className="yok-notify-template-card">
-            <div className="yok-notify-template-head">
-              <strong>{meta.title} şablonu</strong>
-              <Link
-                href={`${templatesBasePath}?event=${encodeURIComponent(meta.eventKey)}`}
-                className="yok-notify-btn secondary"
-                style={{ textDecoration: "none", padding: "6px 10px", fontSize: 12 }}
-              >
-                Şablonu düzenle
-              </Link>
-            </div>
-            <div className="yok-notify-template-body">
-              {tpl?.body || "Varsayılan şablon kullanılacak (ilk gönderimde otomatik oluşturulur)."}
-            </div>
-            <div className="yok-notify-actions">
-              <button
-                type="button"
-                className="yok-notify-btn primary"
-                disabled={!config?.is_active || pending === 0}
-                onClick={() => onNotify(event)}
-              >
-                {pending > 0
-                  ? `${meta.title} bildir — ${pending} bekliyor`
-                  : sent > 0
-                    ? `${meta.title} — tümü iletildi`
-                    : `${meta.title} — gönderilecek yok`}
-              </button>
-            </div>
-          </div>
-        );
-      })}
-
       {recentSends.length > 0 && (
-        <div className="yok-notify-template-card">
-          <div className="yok-notify-template-head">
-            <strong>Son gönderimler</strong>
-            <span style={{ fontSize: 11, color: "#64748b" }}>Bu oturum</span>
-          </div>
-          <div className="yok-notify-recent-list">
+        <section className="ycn-recent">
+          <h4>Son gönderimler</h4>
+          <ul>
             {recentSends.map((item, idx) => (
-              <div key={`${item.ogrenci_id}-${item.event_type}-${idx}`} className="yok-notify-recent-row">
-                <span className="yok-notify-recent-time">{formatSentAt(item.sent_at)}</span>
-                <span className="yok-notify-recent-student">{item.ogrenci_ad}</span>
-                <span className="yok-notify-recent-event">{item.event_label}</span>
-                <span className="yok-notify-recent-veli">{item.veli_ad || "Veli"}</span>
-                <span className="yok-notify-chip sent">iletildi ✓</span>
-              </div>
+              <li key={`${item.ogrenci_id}-${item.event_type}-${idx}`}>
+                <span className="ycn-recent-time">{formatSentAt(item.sent_at)}</span>
+                <span className="ycn-recent-name">{item.ogrenci_ad}</span>
+                <span className="ycn-recent-event">{item.event_label}</span>
+                <span className="ycn-recent-veli">{item.veli_ad || "Veli"}</span>
+                <span className="ycn-recent-ok">iletildi</span>
+              </li>
             ))}
-          </div>
-        </div>
+          </ul>
+        </section>
       )}
     </div>
   );

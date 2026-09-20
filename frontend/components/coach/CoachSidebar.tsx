@@ -3,7 +3,7 @@
 import Link from "next/link";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { usePathname } from "next/navigation";
-import { useEffect, useState, type DragEvent } from "react";
+import { useEffect, useRef, useState, type DragEvent } from "react";
 import {
   COACH_NAV_ITEMS,
   isCoachNavActive,
@@ -46,6 +46,7 @@ export default function CoachSidebar({
 }: CoachSidebarProps) {
   const pathname = usePathname();
   const { reorder, getOrderedItems } = useCoachMenuOrder();
+  const asideRef = useRef<HTMLElement | null>(null);
   const [kontrolBadge, setKontrolBadge] = useState(0);
   const [mesajlarBadge, setMesajlarBadge] = useState(0);
   const [dragId, setDragId] = useState<string | null>(null);
@@ -78,6 +79,27 @@ export default function CoachSidebar({
       window.removeEventListener('lms:notifications-refresh', onRefresh);
       window.removeEventListener('lms:communication-inbox', onRefresh);
     };
+  }, []);
+
+  useEffect(() => {
+    const el = asideRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const nav = el.querySelector(".coach-nav-sidebar");
+      if (!(nav instanceof HTMLElement)) return;
+      const max = Math.max(0, nav.scrollHeight - nav.clientHeight);
+      if (max <= 0) {
+        e.preventDefault();
+        return;
+      }
+      const next = Math.min(max, Math.max(0, nav.scrollTop + e.deltaY));
+      if (next !== nav.scrollTop) {
+        e.preventDefault();
+        nav.scrollTop = next;
+      }
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
   }, []);
 
   useEffect(() => {
@@ -240,6 +262,7 @@ export default function CoachSidebar({
 
   return (
     <aside
+      ref={asideRef}
       className={`coach-sidebar${isOpen ? " is-open" : " is-collapsed"}`}
       id="coach-sidebar"
       aria-hidden={isPhone && !mobileDrawerOpen}

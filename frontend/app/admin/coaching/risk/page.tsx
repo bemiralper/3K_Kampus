@@ -1,6 +1,7 @@
 'use client';
 
 import { Suspense, useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import {
   fetchCoachRiskReports,
@@ -261,11 +262,42 @@ function RiskCenterInner() {
                       <p style={{ margin: '8px 0 0', color: '#334155', fontSize: 14 }}>
                         <strong>Neden:</strong> {row.reason || row.title}
                       </p>
-                      {row.notes ? (
+                      {row.attendance ? (
+                        <div style={{ marginTop: 10, display: 'grid', gap: 4, fontSize: 13, color: '#475569' }}>
+                          <div>
+                            {row.attendance.absent_days ?? 0} devamsızlık · {row.attendance.late_days ?? 0} geç kalma
+                            {(row.attendance.exit_days ?? 0) > 0 ? ` · ${row.attendance.exit_days} çıkış` : ''}
+                          </div>
+                          {typeof row.attendance.last_3_absent === 'number' && row.attendance.last_3_days?.length ? (
+                            <div>
+                              Son {row.attendance.last_3_days.length} günlük yoklamadan {row.attendance.last_3_absent}
+                              &apos;sine katılmadı
+                            </div>
+                          ) : null}
+                          {row.attendance.threshold_label ? (
+                            <div>Eşik: {row.attendance.threshold_label}</div>
+                          ) : null}
+                          {row.attendance.recommended_action ? (
+                            <div>Önerilen aksiyon: {row.attendance.recommended_action}</div>
+                          ) : null}
+                        </div>
+                      ) : row.notes ? (
                         <p style={{ margin: '4px 0 0', color: '#64748b', fontSize: 13 }}>{row.notes}</p>
+                      ) : row.description ? (
+                        <p style={{ margin: '8px 0 0', color: '#475569', fontSize: 13, whiteSpace: 'pre-line' }}>
+                          {row.description}
+                        </p>
                       ) : null}
                       <p style={{ margin: '10px 0 0', color: '#94a3b8', fontSize: 12 }}>
                         Koç: {row.coach_name || '—'} · {formatDate(row.event_date)}
+                      </p>
+                      <p style={{ margin: '8px 0 0' }}>
+                        <Link
+                          href={`/admin/coaching/attendance?student=${row.student_id}${row.event_date ? `&date=${String(row.event_date).slice(0, 10)}` : ''}`}
+                          style={{ color: '#2563eb', fontSize: 13, fontWeight: 650 }}
+                        >
+                          Yoklama takibini aç
+                        </Link>
                       </p>
                     </div>
 
