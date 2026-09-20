@@ -9,8 +9,9 @@ import {
 } from '@/lib/gorev-api';
 import GorevDetailDrawer from './GorevDetailDrawer';
 import GorevAdminDetailDrawer from './GorevAdminDetailDrawer';
+import YoklamaFollowupPanel from './YoklamaFollowupPanel';
 
-type Tab = 'bugun' | 'geciken' | 'tumu';
+type Tab = 'bugun' | 'geciken' | 'tumu' | 'yoklama';
 
 type Props = {
   basePath?: string;
@@ -53,7 +54,14 @@ export default function GorevListClient({
   createHref = '/admin/gorevler/yeni',
   adminView = false,
 }: Props) {
-  const [tab, setTab] = useState<Tab>('bugun');
+  const [tab, setTab] = useState<Tab>(() => {
+    if (typeof window === 'undefined') return 'bugun';
+    return new URLSearchParams(window.location.search).get('tab') === 'yoklama' ? 'yoklama' : 'bugun';
+  });
+  const [yoklamaDate, setYoklamaDate] = useState(() => {
+    if (typeof window === 'undefined') return '';
+    return new URLSearchParams(window.location.search).get('date') || '';
+  });
   const [atamalar, setAtamalar] = useState<GorevAtama[]>([]);
   const [ozet, setOzet] = useState<{ bugun: number; geciken: number; bekleyen: number; tamamlanan?: number } | null>(null);
   const [loading, setLoading] = useState(true);
@@ -77,6 +85,24 @@ export default function GorevListClient({
     d.setDate(d.getDate() + 1);
     return d;
   }, [todayStart]);
+
+  const selectTab = (next: Tab) => {
+    setTab(next);
+    if (adminView || typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (next === 'yoklama') url.searchParams.set('tab', 'yoklama');
+    else url.searchParams.delete('tab');
+    window.history.replaceState({}, '', url);
+  };
+
+  const handleYoklamaDate = (next: string) => {
+    setYoklamaDate(next);
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('tab', 'yoklama');
+    if (next) url.searchParams.set('date', next);
+    window.history.replaceState({}, '', url);
+  };
 
   useEffect(() => {
     const t = setTimeout(() => setSearchDebounced(search.trim()), 300);
@@ -169,14 +195,14 @@ export default function GorevListClient({
 
       <div className="gorev-toolbar">
         <div className="gorev-tabs">
-          {(['bugun', 'geciken', 'tumu'] as Tab[]).map(t => (
+          {(adminView ? (['bugun', 'geciken', 'tumu'] as Tab[]) : (['bugun', 'geciken', 'yoklama', 'tumu'] as Tab[])).map(t => (
             <button
               key={t}
               type="button"
               className={`gorev-tab${tab === t ? ' active' : ''}`}
-              onClick={() => setTab(t)}
+              onClick={() => selectTab(t)}
             >
-              {t === 'bugun' ? 'Bugün' : t === 'geciken' ? 'Geciken' : 'Tümü'}
+              {t === 'bugun' ? 'Bugün' : t === 'geciken' ? 'Geciken' : t === 'yoklama' ? 'Yoklama' : 'Tümü'}
             </button>
           ))}
         </div>
@@ -246,7 +272,12 @@ export default function GorevListClient({
         </div>
       )}
 
-      {loading ? (
+      {!adminView && tab === 'yoklama' ? (
+        <YoklamaFollowupPanel
+          initialDate={yoklamaDate}
+          onDateChange={handleYoklamaDate}
+        />
+      ) : loading ? (
         <div className="gorev-skeleton-list">
           {[1, 2, 3, 4].map(i => (
             <div key={i} className="gorev-skeleton-row" />

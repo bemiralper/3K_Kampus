@@ -44,6 +44,7 @@ def _serialize_event(event: CoachingEvent) -> dict:
         coach_name = str(coach) if coach else ''
 
     meta = event.metadata or {}
+    attendance = meta.get('attendance') if isinstance(meta, dict) else None
     return {
         'id': event.id,
         'student_id': student.id,
@@ -60,6 +61,7 @@ def _serialize_event(event: CoachingEvent) -> dict:
         'event_date': event.event_date.isoformat() if event.event_date else None,
         'created_at': event.created_at.isoformat() if getattr(event, 'created_at', None) else None,
         'meeting_draft_id': meta.get('meeting_draft_id') or event.reference_id,
+        'attendance': attendance if isinstance(attendance, dict) else None,
     }
 
 

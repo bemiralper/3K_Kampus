@@ -194,14 +194,23 @@ def list_event_catalog(
         })
 
     modules = []
+    seen_groups: set[str] = set()
     for key, label in MODULE_LABELS.items():
-        if key == MODULE_YOKLAMA:
-            if any(e['module'] == key and e.get('group') == 'kutuphane' for e in events):
-                modules.append({'key': 'yoklama:kutuphane', 'label': 'Yoklama — Kütüphane'})
-            if any(e['module'] == key and e.get('group') == 'sinif' for e in events):
-                modules.append({'key': 'yoklama:sinif', 'label': 'Yoklama — Sınıf'})
-            continue
-        if any(e['module'] == key for e in events):
+        has_ungrouped = False
+        for event in events:
+            if event['module'] != key:
+                continue
+            group = (event.get('group') or '').strip()
+            if group:
+                group_key = f'{key}:{group}'
+                if group_key in seen_groups:
+                    continue
+                seen_groups.add(group_key)
+                group_label = (event.get('group_label') or group).strip()
+                modules.append({'key': group_key, 'label': f'{label} — {group_label}'})
+            else:
+                has_ungrouped = True
+        if has_ungrouped:
             modules.append({'key': key, 'label': label})
     return {
         'modules': modules,

@@ -10,7 +10,9 @@ from rest_framework.response import Response
 from apps.academic.application.schedule_notify_service import (
     ScheduleNotifyError,
     preview_classes,
+    preview_teachers,
     send_class_schedules,
+    send_teacher_schedules,
 )
 from apps.academic.interfaces.sube_context import (
     gate_sinif_drf,
@@ -186,6 +188,105 @@ def schedule_notify_send_api(request):
             sinif_ids=sinif_ids,
             force_unchanged_ids=force_ids,
             send_to=list(send_to),
+            exclude_ogrenci_ids=_parse_int_list(data.get('exclude_ogrenci_ids')),
+            exclude_veli_ids=_parse_int_list(data.get('exclude_veli_ids')),
+            include_ogrenci_ids=(
+                _parse_int_list(data.get('include_ogrenci_ids'))
+                if data.get('include_ogrenci_ids') is not None
+                else None
+            ),
+            include_veli_ids=(
+                _parse_int_list(data.get('include_veli_ids'))
+                if data.get('include_veli_ids') is not None
+                else None
+            ),
+            user=request.user,
+        )
+    except ScheduleNotifyError as exc:
+        return Response({'error': exc.message, 'field': exc.field}, status=400)
+
+    return Response(payload)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def teacher_schedule_notify_preview_api(request):
+    """POST /api/academic/schedule/notify/teacher/preview/"""
+    if not _can_notify(request.user):
+        return Response({'error': 'Bu işlem için iletişim yetkisi gerekli.'}, status=403)
+
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+
+    data = request.data if hasattr(request, 'data') else {}
+    try:
+        term_id = int(data.get('term_id'))
+    except (TypeError, ValueError):
+        return Response({'error': 'term_id zorunludur.'}, status=400)
+
+    _, _, gate_err = gate_term_drf(request, term_id)
+    if gate_err:
+        return gate_err
+
+    teacher_ids = _parse_int_list(data.get('teacher_ids'))
+    if not teacher_ids:
+        return Response({'error': 'En az bir öğretmen seçin.'}, status=400)
+
+    try:
+        payload = preview_teachers(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            term_id=term_id,
+            teacher_ids=teacher_ids,
+        )
+    except ScheduleNotifyError as exc:
+        return Response({'error': exc.message, 'field': exc.field}, status=400)
+
+    return Response(payload)
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def teacher_schedule_notify_send_api(request):
+    """POST /api/academic/schedule/notify/teacher/send/"""
+    if not _can_notify(request.user):
+        return Response({'error': 'Bu işlem için iletişim yetkisi gerekli.'}, status=403)
+
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+
+    data = request.data if hasattr(request, 'data') else {}
+    try:
+        term_id = int(data.get('term_id'))
+    except (TypeError, ValueError):
+        return Response({'error': 'term_id zorunludur.'}, status=400)
+
+    _, _, gate_err = gate_term_drf(request, term_id)
+    if gate_err:
+        return gate_err
+
+    teacher_ids = _parse_int_list(data.get('teacher_ids'))
+    if not teacher_ids:
+        return Response({'error': 'En az bir öğretmen seçin.'}, status=400)
+
+    try:
+        payload = send_teacher_schedules(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            term_id=term_id,
+            teacher_ids=teacher_ids,
+            exclude_teacher_ids=_parse_int_list(data.get('exclude_teacher_ids')),
+            include_teacher_ids=(
+                _parse_int_list(data.get('include_teacher_ids'))
+                if data.get('include_teacher_ids') is not None
+                else None
+            ),
             user=request.user,
         )
     except ScheduleNotifyError as exc:

@@ -232,6 +232,7 @@ const navItems: MenuItem[] = [
       { label: "Çalışma Programı", href: "/admin/coaching/study-program", group: "Takip" },
       { label: "Görüşmeler", href: "/admin/coaching/meetings", group: "Takip" },
       { label: "Hedefler", href: "/admin/coaching/goals", group: "Takip" },
+      { label: "Yoklama Takibi", href: "/admin/coaching/attendance", group: "Takip" },
       { label: "Risk Merkezi", href: "/admin/coaching/risk", group: "Takip" },
       // Analiz grubu
       { label: "Tahminsel Skor", href: "/admin/coaching/predictive", group: "Analiz" },

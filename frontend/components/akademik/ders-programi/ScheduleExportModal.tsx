@@ -101,17 +101,29 @@ export default function ScheduleExportModal({
     setExporting(true);
     try {
       if (format === 'pdf') {
-        const payload = await fetchScheduleExportJson({
-          term_id: termId,
-          version_id: versionId,
-          classroom_ids,
-          all,
-          teacher_display: teacherDisplay,
-        });
-        await exportSchedulePdf(payload, {
-          layout,
-          colorBy: getScheduleColorBy(),
-        });
+        try {
+          await downloadScheduleExportFile({
+            term_id: termId,
+            version_id: versionId,
+            classroom_ids,
+            all,
+            format: 'pdf',
+            teacher_display: teacherDisplay,
+            color_by: getScheduleColorBy(),
+          });
+        } catch {
+          const payload = await fetchScheduleExportJson({
+            term_id: termId,
+            version_id: versionId,
+            classroom_ids,
+            all,
+            teacher_display: teacherDisplay,
+          });
+          await exportSchedulePdf(payload, {
+            layout,
+            colorBy: getScheduleColorBy(),
+          });
+        }
       } else {
         await downloadScheduleExportFile({
           term_id: termId,

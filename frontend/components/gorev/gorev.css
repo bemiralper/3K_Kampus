@@ -1040,3 +1040,125 @@
   min-width: 100px;
   text-transform: capitalize;
 }
+
+.yf-panel {
+  margin-top: 8px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px 18px 8px;
+}
+
+.yf-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.yf-title {
+  margin: 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.yf-sub {
+  margin: 4px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.yf-date {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.yf-date input {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 14px;
+}
+
+.yf-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(92px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.yf-kpi {
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.yf-kpi strong {
+  font-size: 22px;
+  color: #0f172a;
+}
+
+.yf-kpi span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.yf-kpi--late strong { color: #c2410c; }
+.yf-kpi--absent strong { color: #dc2626; }
+
+.yf-table-wrap { overflow-x: auto; }
+
+.yf-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.yf-table th,
+.yf-table td {
+  text-align: left;
+  padding: 12px 10px;
+  border-bottom: 1px solid #eef2f7;
+  font-size: 13px;
+  color: #334155;
+}
+
+.yf-table th {
+  color: #64748b;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.yf-name { font-weight: 650; color: #0f172a; }
+.yf-class { font-size: 12px; color: #94a3b8; margin-top: 2px; }
+.yf-note { font-size: 11px; color: #64748b; margin-top: 4px; }
+
+.yf-sev {
+  display: inline-flex;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.yf-sev--none { background: #f1f5f9; color: #475569; }
+.yf-sev--attention { background: #fff7ed; color: #c2410c; }
+.yf-sev--alarm { background: #fef2f2; color: #b91c1c; }
+
+.yf-row { cursor: pointer; }
+.yf-row:hover { background: #f8fafc; }
+.yf-row--alarm { background: #fff7f7; }
+.yf-row--attention { background: #fffaf3; }
+
+.yf-empty {
+  padding: 28px 8px;
+  text-align: center;
+  color: #64748b;
+}

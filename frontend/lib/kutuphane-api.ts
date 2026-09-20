@@ -171,11 +171,22 @@ export interface AttendanceSession {
   katilim_orani?: number;
 }
 
+export interface LiveLessonInfo {
+  derste: boolean;
+  ders_turu: "BIREBIR" | "GRUP";
+  ders_turu_label: string;
+  ders_adi: string;
+  ogretmen_adi: string;
+  saat: string;
+  yer?: string;
+}
+
 export interface AttendanceRecord {
   id: string;
   yoklama_oturumu_id: string;
   ogrenci_id: number;
   ogrenci_adi?: string;
+  profil_foto?: string | null;
   veli_ad?: string;
   veli_telefon?: string;
   seat_id?: string;
@@ -188,6 +199,7 @@ export interface AttendanceRecord {
   izinli_mi: boolean;
   izin_sebep?: string;
   notlar: string;
+  canli_ders?: LiveLessonInfo | null;
   notification_status?: Record<'ABSENT' | 'LATE' | 'EXIT', 'none' | 'pending' | 'sent'>;
 }
 
@@ -493,6 +505,10 @@ export async function openAttendanceSession(libraryId: string, data: { periyot_k
 
 export async function fetchAttendanceSessionDetail(libraryId: string, sessionId: string): Promise<ApiResponse<{ session: AttendanceSession; records: AttendanceRecord[] }>> {
   return apiGet(`${BASE}/salon/${libraryId}/yoklama/${sessionId}/`);
+}
+
+export async function fetchAttendanceRecords(libraryId: string, sessionId: string): Promise<ApiResponse<AttendanceRecord[]>> {
+  return apiGet(`${BASE}/salon/${libraryId}/yoklama/${sessionId}/kayit/`);
 }
 
 export async function closeAttendanceSession(libraryId: string, sessionId: string): Promise<ApiResponse<AttendanceSession>> {

@@ -1456,6 +1456,16 @@ export type LessonSession = {
   updated_at?: string | null;
 };
 
+export type LiveLessonInfo = {
+  derste: boolean;
+  ders_turu: "BIREBIR" | "GRUP";
+  ders_turu_label: string;
+  ders_adi: string;
+  ogretmen_adi: string;
+  saat: string;
+  yer?: string;
+};
+
 export type AttendanceRosterRow = {
   student_id: number;
   student_name: string;
@@ -1466,6 +1476,10 @@ export type AttendanceRosterRow = {
   record_id: number | null;
   izinli_mi?: boolean;
   izin_sebep?: string;
+  profil_foto?: string | null;
+  veli_ad?: string;
+  veli_telefon?: string;
+  canli_ders?: LiveLessonInfo | null;
 };
 
 export type LessonOpsMeta = {
@@ -1642,6 +1656,7 @@ export type ClassPeriodSession = {
   period: ClassPeriodCode;
   period_label: string;
   schedule_version_id?: number | null;
+  taken?: boolean;
 };
 
 export type ClassPeriodAvailable = {
@@ -1691,16 +1706,77 @@ export async function fetchClassPeriodStudentAttendance(id: number): Promise<{
   return unwrap(res);
 }
 
+export type CoachAttendanceState = 'pending' | 'partial' | 'done' | 'no_lesson';
+
+export type CoachPeriodClassroom = {
+  id: number;
+  ad: string;
+  kod: string;
+  ogrenci_sayisi: number;
+  term_id: number | null;
+  term_name: string;
+  seviye: string;
+  attendance_state: CoachAttendanceState;
+  periods: {
+    period: ClassPeriodCode;
+    period_label: string;
+    has_lessons: boolean;
+    taken: boolean;
+  }[];
+};
+
 export type CoachPeriodAttendanceContext = {
   active_year: { id: number; yil_str: string };
   terms: { id: number; name: string; code: string; is_active: boolean; order_no: number }[];
   active_term_id: number | null;
-  classrooms: { id: number; ad: string; kod: string; ogrenci_sayisi: number }[];
+  date?: string;
+  classrooms: CoachPeriodClassroom[];
 };
 
-export async function fetchCoachPeriodAttendanceContext(): Promise<CoachPeriodAttendanceContext> {
+export async function fetchCoachPeriodAttendanceContext(
+  date?: string,
+): Promise<CoachPeriodAttendanceContext> {
+  const q = date ? `?date=${encodeURIComponent(date)}` : '';
   const res = await apiFetch<CoachPeriodAttendanceContext>(
-    '/api/academic/class-period-attendance/coach-context/',
+    `/api/academic/class-period-attendance/coach-context/${q}`,
+  );
+  return unwrap(res);
+}
+
+export type CoachDayRosterStatus = 'PRESENT' | 'LATE' | 'ABSENT' | 'EXCUSED';
+
+export type CoachDayRosterRow = {
+  record_id: number;
+  student_id: number;
+  student_name: string;
+  classroom_id: number;
+  classroom_ad: string;
+  period: ClassPeriodCode;
+  period_label: string;
+  status: CoachDayRosterStatus;
+  status_display: string;
+  late_time: string | null;
+  note: string;
+  izinli_mi: boolean;
+};
+
+export type CoachDayRoster = {
+  date: string;
+  rows: CoachDayRosterRow[];
+  counts: {
+    present: number;
+    late: number;
+    absent: number;
+    excused: number;
+    total: number;
+  };
+  classrooms: { id: number; ad: string }[];
+};
+
+export async function fetchCoachPeriodDayRoster(date?: string): Promise<CoachDayRoster> {
+  const q = date ? `?date=${encodeURIComponent(date)}` : '';
+  const res = await apiFetch<CoachDayRoster>(
+    `/api/academic/class-period-attendance/coach-day-roster/${q}`,
   );
   return unwrap(res);
 }

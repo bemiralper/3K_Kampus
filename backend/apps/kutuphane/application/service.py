@@ -939,6 +939,9 @@ class AttendanceService:
                 'Yoklama bildirim tespiti başarısız session=%s', session_id,
             )
 
+        from apps.coaching.services.attendance_followup import schedule_library_followup
+
+        schedule_library_followup(session_id)
         return {
             'records': AttendanceRepository.get_records(session_id),
             'saved': saved_count,
