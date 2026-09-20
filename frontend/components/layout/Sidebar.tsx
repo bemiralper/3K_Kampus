@@ -229,7 +229,7 @@ const navItems: MenuItem[] = [
       { label: "Koç Yönetimi", href: "/admin/coaching/coaches", group: "Yönetim" },
       { label: "Koç-Öğrenci Atama", href: "/admin/coaching/assignments", group: "Yönetim" },
       // Takip grubu
-      { label: "Çalışma Programı", href: "/admin/coaching/study-plans", group: "Takip" },
+      { label: "Çalışma Programı", href: "/admin/coaching/study-program", group: "Takip" },
       { label: "Görüşmeler", href: "/admin/coaching/meetings", group: "Takip" },
       { label: "Hedefler", href: "/admin/coaching/goals", group: "Takip" },
       { label: "Risk Merkezi", href: "/admin/coaching/risk", group: "Takip" },

@@ -55,22 +55,6 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
     ),
   },
   {
-    id: "calisma-programi",
-    href: "/coach/calisma-programi",
-    label: "Çalışma Programı",
-    matchPrefix: "/coach/calisma-programi",
-    children: [
-      { id: "calisma-bu-hafta", href: "/coach/calisma-programi", label: "Bu hafta", matchPrefix: "/coach/calisma-programi" },
-      { id: "calisma-sablonlar", href: "/coach/calisma-programi/sablonlar", label: "Şablonları Yönet", matchPrefix: "/coach/calisma-programi/sablonlar" },
-      { id: "calisma-gecmis", href: "/coach/calisma-programi/gecmis", label: "Geçmiş Programlar", matchPrefix: "/coach/calisma-programi/gecmis" },
-    ],
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-      </svg>
-    ),
-  },
-  {
     id: "odev-kontrol",
     href: "/coach/odev/kontrol",
     label: "Ödev Kontrol",
@@ -78,6 +62,17 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
         <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4" />
+      </svg>
+    ),
+  },
+  {
+    id: "calisma-programi",
+    href: "/coach/odev/calisma-programi",
+    label: "Çalışma Programı",
+    matchPrefix: "/coach/odev/calisma-programi",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
     ),
   },
@@ -207,8 +202,8 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
 
 export function isCoachNavChildActive(pathname: string, child: CoachNavChildDef): boolean {
   const prefix = child.matchPrefix || child.href;
-  if (prefix === COACH_KUTUPHANE_BASE || prefix === "/coach/calisma-programi") {
-    return pathname === prefix || pathname === `${prefix}/`;
+  if (prefix === COACH_KUTUPHANE_BASE) {
+    return pathname === COACH_KUTUPHANE_BASE || pathname === `${COACH_KUTUPHANE_BASE}/`;
   }
   return pathname.startsWith(prefix);
 }

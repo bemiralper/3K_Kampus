@@ -46,8 +46,7 @@ INSTALLED_APPS = [
     'apps.ozel_ders',  # Özel Ders / Premium birebir operasyon
     'apps.coaching',  # Koçluk Yönetimi - Öğrenci koçluk ve mentörlük sistemi
     'apps.coaching.assignment_manual',  # Manuel Ödev Atama - Koç tarafından manuel ödev atama
-    'apps.coaching.study_program',  # Çalışma Programı - Haftalık çalışma planlaması (eski editör)
-    'apps.coaching.study_plans',  # Çalışma Planı - yeni kural/üretim katmanı
+    'apps.coaching.study_program',  # Çalışma Programı - Haftalık çalışma planlaması
     'apps.coaching.olcme_degerlendirme',  # Ölçme ve Değerlendirme - Sınav yönetimi ve analiz
     'apps.resources',  # Kaynak Kütüphanesi - Kitap bazlı içerik yönetimi
     'apps.student_resources',  # Öğrenci Kaynak Havuzu - Kaynak atama yönetimi
