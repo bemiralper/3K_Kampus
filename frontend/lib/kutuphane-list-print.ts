@@ -377,13 +377,23 @@ export function buildSeatStudentListPrintHtml(options: {
   meta: KutuphanePrintMeta;
   rows: SeatStudentRow[];
   salonAdi: string;
+  scope?: 'occupied' | 'empty';
 }): string {
-  const { meta, rows, salonAdi } = options;
+  const { meta, rows, salonAdi, scope = 'occupied' } = options;
+  const vacant = scope === 'empty';
   const sorted = [...rows].sort((a, b) => a.no.localeCompare(b.no, 'tr', { numeric: true }));
+  const colSpan = vacant ? 4 : 6;
 
   const tableBody = sorted.length === 0
-    ? '<tr><td colspan="6" class="left empty-row">Atanmış öğrenci bulunmuyor</td></tr>'
-    : sorted.map((row, idx) => `<tr>
+    ? `<tr><td colspan="${colSpan}" class="left empty-row">${vacant ? 'Boş masa bulunmuyor' : 'Dolu masa bulunmuyor'}</td></tr>`
+    : sorted.map((row, idx) => vacant
+      ? `<tr>
+        <td>${idx + 1}</td>
+        <td class="left"><strong>${escapeHtml(row.no)}</strong></td>
+        <td>${escapeHtml(row.tip || '—')}</td>
+        <td>${escapeHtml(row.durum || 'Müsait')}</td>
+      </tr>`
+      : `<tr>
         <td>${idx + 1}</td>
         <td class="left"><strong>${escapeHtml(row.no)}</strong></td>
         <td class="left name-col">${escapeHtml(row.ogrenci)}</td>
@@ -392,26 +402,31 @@ export function buildSeatStudentListPrintHtml(options: {
         <td>${escapeHtml(row.durum || 'Aktif')}</td>
       </tr>`).join('');
 
+  const head = vacant
+    ? `<th style="width:36px">#</th>
+        <th style="width:80px">Masa</th>
+        <th style="width:120px">Tip</th>
+        <th style="width:100px">Durum</th>`
+    : `<th style="width:36px">#</th>
+        <th style="width:80px">Masa</th>
+        <th class="left">Öğrenci</th>
+        <th style="width:90px">Tip</th>
+        <th style="width:100px">Başlangıç</th>
+        <th style="width:80px">Durum</th>`;
+
   const bodyContent = `
   <div class="salon-banner">
     <div class="salon-label">Salon</div>
     <div class="salon-name">${escapeHtml(salonAdi)}</div>
   </div>
   <div class="meta-grid">
-    <div class="meta-card"><div class="label">Atanan Öğrenci</div><div class="value">${sorted.length}</div></div>
-    <div class="meta-card"><div class="label">Liste Türü</div><div class="value">Oturma Planı</div></div>
+    <div class="meta-card"><div class="label">${vacant ? 'Boş Masa' : 'Dolu Masa'}</div><div class="value">${sorted.length}</div></div>
+    <div class="meta-card"><div class="label">Liste Türü</div><div class="value">${vacant ? 'Boş Masalar' : 'Dolu Masalar'}</div></div>
     <div class="meta-card"><div class="label">Tarih</div><div class="value">${new Date().toLocaleDateString('tr-TR')}</div></div>
   </div>
   <div class="section">
     <table>
-      <thead><tr>
-        <th style="width:36px">#</th>
-        <th style="width:80px">Masa</th>
-        <th class="left">Öğrenci</th>
-        <th style="width:90px">Tip</th>
-        <th style="width:100px">Başlangıç</th>
-        <th style="width:80px">Durum</th>
-      </tr></thead>
+      <thead><tr>${head}</tr></thead>
       <tbody>${tableBody}</tbody>
     </table>
   </div>`;
@@ -432,13 +447,22 @@ export function buildSeatStudentListPrintHtml(options: {
 export function buildLockerStudentListPrintHtml(options: {
   meta: KutuphanePrintMeta;
   rows: LockerStudentRow[];
+  scope?: 'occupied' | 'empty';
 }): string {
-  const { meta, rows } = options;
+  const { meta, rows, scope = 'occupied' } = options;
+  const vacant = scope === 'empty';
   const sorted = [...rows].sort((a, b) => a.no.localeCompare(b.no, 'tr', { numeric: true }));
+  const colSpan = vacant ? 3 : 7;
 
   const tableBody = sorted.length === 0
-    ? '<tr><td colspan="7" class="left empty-row">Atanmış öğrenci bulunmuyor</td></tr>'
-    : sorted.map((row, idx) => `<tr>
+    ? `<tr><td colspan="${colSpan}" class="left empty-row">${vacant ? 'Boş dolap bulunmuyor' : 'Dolu dolap bulunmuyor'}</td></tr>`
+    : sorted.map((row, idx) => vacant
+      ? `<tr>
+        <td>${idx + 1}</td>
+        <td class="left"><strong>${escapeHtml(row.no)}</strong></td>
+        <td>${escapeHtml(row.durum || 'Müsait')}</td>
+      </tr>`
+      : `<tr>
         <td>${idx + 1}</td>
         <td class="left"><strong>${escapeHtml(row.no)}</strong></td>
         <td class="left name-col">${escapeHtml(row.ogrenci)}</td>
@@ -448,23 +472,27 @@ export function buildLockerStudentListPrintHtml(options: {
         <td>${escapeHtml(row.durum || 'Aktif')}</td>
       </tr>`).join('');
 
-  const bodyContent = `
-  <div class="meta-grid">
-    <div class="meta-card"><div class="label">Atanan Öğrenci</div><div class="value">${sorted.length}</div></div>
-    <div class="meta-card"><div class="label">Liste Türü</div><div class="value">Dolap Öğrenci Listesi</div></div>
-    <div class="meta-card"><div class="label">Şube</div><div class="value">${escapeHtml(meta.subeAdi || '—')}</div></div>
-  </div>
-  <div class="section">
-    <table>
-      <thead><tr>
-        <th style="width:36px">#</th>
+  const head = vacant
+    ? `<th style="width:36px">#</th>
+        <th style="width:80px">Dolap</th>
+        <th style="width:120px">Durum</th>`
+    : `<th style="width:36px">#</th>
         <th style="width:80px">Dolap</th>
         <th class="left">Öğrenci</th>
         <th style="width:90px">Atama Tipi</th>
         <th style="width:90px">Anahtar</th>
         <th style="width:100px">Başlangıç</th>
-        <th style="width:80px">Durum</th>
-      </tr></thead>
+        <th style="width:80px">Durum</th>`;
+
+  const bodyContent = `
+  <div class="meta-grid">
+    <div class="meta-card"><div class="label">${vacant ? 'Boş Dolap' : 'Dolu Dolap'}</div><div class="value">${sorted.length}</div></div>
+    <div class="meta-card"><div class="label">Liste Türü</div><div class="value">${escapeHtml(meta.title)}</div></div>
+    <div class="meta-card"><div class="label">Şube</div><div class="value">${escapeHtml(meta.subeAdi || '—')}</div></div>
+  </div>
+  <div class="section">
+    <table>
+      <thead><tr>${head}</tr></thead>
       <tbody>${tableBody}</tbody>
     </table>
   </div>`;

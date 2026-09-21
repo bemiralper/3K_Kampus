@@ -5,18 +5,25 @@ import { puanAyarlariApi } from '../../../../components/olcme/api';
 import type { KatsayiKind, PuanAyarlari, PuanYilSeti } from '../../../../components/olcme/types';
 import s from '../olcme.module.css';
 
-const KIND_ORDER: KatsayiKind[] = ['TYT', 'AYT_SAY', 'AYT_EA', 'AYT_SOZ'];
+const KIND_ORDER: KatsayiKind[] = ['TYT', 'AYT_SAY', 'AYT_EA', 'AYT_SOZ', 'LGS', 'LGS_7'];
 
 function coeffEntries(coefficients: Record<string, number>) {
-  const keys = Object.keys(coefficients).filter(k => k !== '_base');
+  const subjects = Object.keys(coefficients).filter(k => !k.startsWith('_'));
+  const extras: Array<readonly [string, number]> = [];
+  if ('_max_weighted' in coefficients) {
+    extras.push(['_max_weighted', coefficients._max_weighted ?? 0]);
+  }
   return [
-    ...keys.map(k => [k, coefficients[k]] as const),
+    ...subjects.map(k => [k, coefficients[k]] as const),
+    ...extras,
     ['_base', coefficients._base ?? 0] as const,
   ];
 }
 
 function labelForKey(key: string) {
-  return key === '_base' ? 'Başlangıç puanı' : key;
+  if (key === '_base') return 'Başlangıç puanı';
+  if (key === '_max_weighted') return 'Azami ağırlıklı net';
+  return key;
 }
 
 export default function PuanKatsayilariPage() {
@@ -112,7 +119,7 @@ export default function PuanKatsayilariPage() {
   };
 
   const handleReset = async () => {
-    if (!confirm(`${activeYear} katsayıları ÖSYM varsayılanına sıfırlansın mı?`)) return;
+    if (!confirm(`${activeYear} katsayıları varsayılana sıfırlansın mı?`)) return;
     setResetting(true);
     try {
       const updated = await puanAyarlariApi.resetYear(activeYear);
@@ -121,7 +128,7 @@ export default function PuanKatsayilariPage() {
         ...prev,
         years: prev.years.map(y => y.year === activeYear ? updated : y),
       } : prev);
-      showToast(`${activeYear} ÖSYM varsayılanına sıfırlandı`);
+      showToast(`${activeYear} varsayılana sıfırlandı`);
     } catch (e: unknown) {
       showToast(e instanceof Error ? e.message : 'Sıfırlanamadı', 'error');
     } finally {
@@ -152,7 +159,7 @@ export default function PuanKatsayilariPage() {
           </div>
           <h1 className="hero-title">Puan Katsayıları</h1>
           <p className="hero-subtitle">
-            Kurumunuzun TYT / AYT puan tablolarını düzenleyin. Yeni denemeler varsayılan yılı alır; tek sınavda değiştirilebilir.
+            Kurumunuzun TYT / AYT / LGS puan tablolarını düzenleyin. LGS puanı başlangıç + her dersin net × katsayısıdır. Yeni denemeler varsayılan yılı alır; tek sınavda değiştirilebilir.
           </p>
         </div>
       </div>
@@ -184,7 +191,7 @@ export default function PuanKatsayilariPage() {
                   <label>Varsayılan yıl</label>
                   <select value={defaultYear} onChange={e => setDefaultYear(Number(e.target.value))}>
                     {data.managed_years.map(y => (
-                      <option key={y} value={y}>{y} YKS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
+                      <option key={y} value={y}>{y} YKS / LGS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
                     ))}
                   </select>
                 </div>
@@ -243,7 +250,7 @@ export default function PuanKatsayilariPage() {
                   onClick={handleReset}
                   disabled={resetting}
                 >
-                  {resetting ? 'Sıfırlanıyor…' : 'ÖSYM varsayılanına sıfırla'}
+                  {resetting ? 'Sıfırlanıyor…' : 'Varsayılana sıfırla'}
                 </button>
                 <button
                   type="button"

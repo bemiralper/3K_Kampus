@@ -60,6 +60,33 @@ AYT_SOZ_KATSAYILAR = {
     2025: {'Türkçe': 1.13, 'Sosyal Bilimler': 1.19, 'Temel Matematik': 1.31, 'Fen Bilimleri': 1.01, 'Edebiyat': 2.79, 'Tarih-1': 2.39, 'Coğrafya-1': 2.70, 'Tarih-2': 3.80, 'Coğrafya-2': 2.47, 'Felsefe Grubu': 3.76, 'DKAB': 2.36, '_base': 129.61},
 }
 
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#  LGS KATSAYILARI  (8. sınıf deneme karnesi — net × katsayı + başlangıç)
+#  8.SINIF ALAN TG 1 kitapçığıyla birebir: tam net ≈ 500, sıfır net ≈ 196,60
+#  7. sınıf: İnkılap katsayısı Sosyal Bilgiler'e uygulanır
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+_LGS_YEARS = (2019, 2020, 2021, 2022, 2023, 2024, 2025, 2026)
+LGS_TARGET_MAX = 500.0
+
+
+def _lgs_weight_table(social_key: str) -> dict:
+    return {
+        'Türkçe': 4.110,
+        social_key: 1.731,
+        'Din Kültürü': 1.816,
+        'Yabancı Dil': 1.532,
+        'Matematik': 4.630,
+        'Fen Bilimleri': 3.890,
+        '_base': 196.604,
+    }
+
+
+LGS_KATSAYILAR = {year: _lgs_weight_table('İnkılap Tarihi') for year in _LGS_YEARS}
+LGS_7_KATSAYILAR = {year: _lgs_weight_table('Sosyal Bilgiler') for year in _LGS_YEARS}
+
+LGS_EXAM_TYPES = frozenset({'LGS', 'LGS_7'})
+
 # Diploma notu ağırlığı
 DIPLOMA_KATSAYI = 0.6   # OBP = diploma_notu × 0.6
 
@@ -169,6 +196,8 @@ FACTORY_TABLES = {
     'AYT_SAY': AYT_SAY_KATSAYILAR,
     'AYT_EA': AYT_EA_KATSAYILAR,
     'AYT_SOZ': AYT_SOZ_KATSAYILAR,
+    'LGS': LGS_KATSAYILAR,
+    'LGS_7': LGS_7_KATSAYILAR,
 }
 
 
@@ -337,6 +366,73 @@ def calculate_all_ayt_scores(section_nets: dict, tyt_nets: dict = None,
     return results
 
 
+def _normalize_lgs_section_name(name: str) -> str:
+    """LGS bölüm adını katsayı anahtarına çevir. TYT alias'ları kullanılmaz."""
+    raw = (name or '').strip()
+    aliases = {
+        'Tarih': 'İnkılap Tarihi',
+        'İnkılap': 'İnkılap Tarihi',
+        'T.C. İnkılap Tarihi': 'İnkılap Tarihi',
+        'T.C. İnkılap Tarihi ve Atatürkçülük': 'İnkılap Tarihi',
+        'İnkılap Tarihi ve Atatürkçülük': 'İnkılap Tarihi',
+        'İngilizce': 'Yabancı Dil',
+        'Din': 'Din Kültürü',
+        'DKAB': 'Din Kültürü',
+        'Din Kültürü ve Ahlak Bilgisi': 'Din Kültürü',
+        'Sosyal': 'Sosyal Bilgiler',
+        'Fen': 'Fen Bilimleri',
+    }
+    return aliases.get(raw, raw)
+
+
+def _lgs_section_weight(name: str, coef: dict) -> float:
+    if not name or str(name).startswith('_'):
+        return 0.0
+    normalized = _normalize_lgs_section_name(name)
+    try:
+        return float(coef.get(normalized) or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def calculate_lgs_score(section_nets: dict, year: int = 2025, coefficients: dict = None,
+                        exam=None, kind: str = 'LGS') -> dict:
+    """
+    LGS puanı — deneme karnesindeki net katsayıları.
+
+    Puan = başlangıç + Σ(net × ders katsayısı)
+    Negatif net puanı düşürür. Üst sınır 500.
+    YKS / TYT katsayılarına dokunmaz.
+    """
+    del exam  # bölüm aralığı puanı ölçeklemez; katsayı tablosu yeter
+    table_kind = 'LGS_7' if kind == 'LGS_7' else 'LGS'
+    coef = dict(coefficients) if coefficients else get_factory_coefficients(table_kind, year)
+    base = float(coef.get('_base') or 196.604)
+
+    weighted = 0.0
+    toplam_net = 0.0
+    for section_name, net in (section_nets or {}).items():
+        net_val = float(net or 0)
+        weight = _lgs_section_weight(section_name, coef)
+        if weight <= 0:
+            continue
+        toplam_net += net_val
+        weighted += net_val * weight
+
+    ham_puan = base + weighted
+    puan = min(ham_puan, LGS_TARGET_MAX)
+
+    return {
+        'ham_puan': round(ham_puan, 2),
+        'toplam_net': round(toplam_net, 2),
+        'agirlikli_net': round(weighted, 2),
+        'puan': round(puan, 2),
+        'diploma_ek': 0.0,
+        'max_puan': LGS_TARGET_MAX,
+        'referans_yil': year,
+    }
+
+
 def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
                               student_id: int = None, raw_student_name: str = None,
                               raw_student_id: str = None, puan_turu: str = 'SAY') -> dict:
@@ -360,8 +456,14 @@ def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
         kind = {'EA': 'AYT_EA', 'SOZ': 'AYT_SOZ'}.get(puan_turu, 'AYT_SAY')
         coef = _lookup_db_coefficients(kurum_id, year, kind)
         return calculate_ayt_score(section_nets, tyt_nets, puan_turu=puan_turu, year=year, coefficients=coef)
+    elif exam_type in LGS_EXAM_TYPES:
+        kind = 'LGS_7' if exam_type == 'LGS_7' else 'LGS'
+        coef = _lookup_db_coefficients(kurum_id, year, kind)
+        return calculate_lgs_score(
+            section_nets, year=year, coefficients=coef, exam=exam, kind=kind,
+        )
     else:
-        # Genel sınav: TYT formülüyle hesapla
+        # Genel sınav: TYT formülüyle hesapla (DENEME / kurum içi vb.)
         coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
         return calculate_tyt_score(section_nets, year=year, coefficients=coef)
 
@@ -705,8 +807,58 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
         ],
     }
 
-    if exam_type in ('YKS_TYT', 'LGS', 'DENEME'):
+    # ── LGS Sıralama Tabloları (tahmini, ~1 milyon aday) ─────────────────
+    lgs_tables = {
+        2024: [
+            (500, 1),
+            (480, 180),
+            (460, 1_400),
+            (440, 4_800),
+            (420, 11_000),
+            (400, 23_000),
+            (380, 42_000),
+            (360, 70_000),
+            (340, 110_000),
+            (320, 165_000),
+            (300, 240_000),
+            (280, 335_000),
+            (260, 450_000),
+            (240, 580_000),
+            (220, 710_000),
+            (200, 830_000),
+            (180, 920_000),
+            (160, 980_000),
+            (140, 1_015_000),
+            (120, 1_037_000),
+        ],
+        2025: [
+            (500, 1),
+            (480, 200),
+            (460, 1_500),
+            (440, 5_000),
+            (420, 12_000),
+            (400, 25_000),
+            (380, 45_000),
+            (360, 75_000),
+            (340, 120_000),
+            (320, 180_000),
+            (300, 260_000),
+            (280, 360_000),
+            (260, 480_000),
+            (240, 610_000),
+            (220, 740_000),
+            (200, 850_000),
+            (180, 930_000),
+            (160, 980_000),
+            (140, 1_010_000),
+            (120, 1_027_000),
+        ],
+    }
+
+    if exam_type in ('YKS_TYT', 'DENEME'):
         tables = tyt_tables
+    elif exam_type in LGS_EXAM_TYPES:
+        tables = lgs_tables
     elif exam_type == 'YKS_AYT_EA':
         tables = ayt_ea_tables
     elif exam_type == 'YKS_AYT_SOZ':

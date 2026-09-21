@@ -33,6 +33,14 @@ export const viewport: Viewport = {
 export const metadata: Metadata = {
   title: "3K Kampüs",
   description: "3K Kampüs Eğitim Yönetim Sistemi",
+  // iOS/Safari telefon numarası otomatik linklemesi hidrasyonu bozar
+  // (footer MERSİS / vergi no <p> içinde metin düğümü uyuşmaz).
+  formatDetection: {
+    telephone: false,
+    date: false,
+    address: false,
+    email: false,
+  },
   // Varsayılan icon'u kapat — ActiveKurumBranding şube/kurum favicon'unu uygular.
   // (public/favicon.svg yine fallback dosya olarak kalır; <link> client tarafında yönetilir.)
   icons: {},
@@ -73,6 +81,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
         {facebookAppId ? (
           <meta property="fb:app_id" content={facebookAppId} />
         ) : null}
+        <meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
       </head>
       <body>
         <PublicMarketingIntegrations />

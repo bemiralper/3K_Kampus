@@ -24,6 +24,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import {
   CLASS_LESSON_PLAN_CHANGED_EVENT,
   clearScheduleCell,
+  clearSchedulePlacements,
   ensureClassroomScheduleGrid,
   unbindClassroomScheduleGrid,
   fetchAcademicScheduleVersions,
@@ -825,6 +826,42 @@ export default function DersProgramiClient() {
     }
   };
 
+  const confirmClearPlacements = (scope: 'class' | 'all') => {
+    if (readOnly || !termId || !calendarId) return;
+    if (scope === 'class' && !classroomId) return;
+    const classroom = classrooms.find((c) => c.id === classroomId);
+    const classLabel = classroom?.ad || 'seçili sınıf';
+    Modal.confirm({
+      title: scope === 'class' ? 'Sınıf yerleşimlerini temizle' : 'Tüm yerleşimleri temizle',
+      content: scope === 'class'
+        ? `${classLabel} sınıfının bu takvimdeki ders yerleşimleri boşaltılacak. Kilitli hücreler durur.`
+        : 'Bu çalışma takvimindeki tüm sınıfların ders yerleşimleri boşaltılacak. Kilitli hücreler durur.',
+      okText: 'Temizle',
+      okButtonProps: { danger: true },
+      cancelText: 'Vazgeç',
+      onOk: async () => {
+        setSaving(true);
+        try {
+          const result = await clearSchedulePlacements({
+            term_id: termId,
+            weekly_cycle_id: calendarId,
+            classroom_id: scope === 'class' ? classroomId ?? undefined : undefined,
+          });
+          const lockedNote = result.skipped_locked
+            ? ` ${result.skipped_locked} kilitli hücre durdu.`
+            : '';
+          message.success(`${result.cleared} yerleşim temizlendi.${lockedNote}`);
+          await loadGrid({ silent: true });
+          await loadPlans();
+        } catch (err) {
+          message.error(err instanceof Error ? err.message : 'Temizleme başarısız');
+        } finally {
+          setSaving(false);
+        }
+      },
+    });
+  };
+
   const gridRows = useMemo(
     () => groupScheduleSlots(grid?.slots || []),
     [grid?.slots],
@@ -932,6 +969,20 @@ export default function DersProgramiClient() {
           />
         </Field>
         <ToolbarActions>
+          <Button
+            danger
+            disabled={readOnly || !termId || !calendarId || !classroomId || saving}
+            onClick={() => confirmClearPlacements('class')}
+          >
+            Bu sınıfı temizle
+          </Button>
+          <Button
+            danger
+            disabled={readOnly || !termId || !calendarId || saving}
+            onClick={() => confirmClearPlacements('all')}
+          >
+            Tüm yerleşimleri temizle
+          </Button>
           <Button
             icon={readOnly ? <UnlockOutlined /> : <LockOutlined />}
             disabled={!versionId || selectedTerm?.schedule_locked}

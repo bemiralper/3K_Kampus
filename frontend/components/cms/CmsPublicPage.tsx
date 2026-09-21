@@ -100,7 +100,7 @@ export default function CmsPublicPage({ payload }: Props) {
           <p>
             <strong>{company.ticari_unvan}</strong>
           </p>
-          <p>
+          <p suppressHydrationWarning>
             MERSİS {company.mersis_no} · Vergi No {company.vergi_no} · Ticaret Sicil{' '}
             {company.ticaret_sicil_no}
           </p>

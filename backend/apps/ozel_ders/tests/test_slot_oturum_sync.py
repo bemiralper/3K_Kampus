@@ -175,6 +175,66 @@ class SlotOturumSyncTests(TestCase):
             ).exists()
         )
 
+    def test_islenmis_haftada_gun_degisince_ikinci_oturum_acilmaz(self):
+        past_day = self.today - timedelta(days=7)
+        while past_day.isoweekday() != self.gun:
+            past_day -= timedelta(days=1)
+        taught = self._oturum(past_day, durum=OturumDurumu.ISLENDI)
+        new_gun = (self.gun % 7) + 1
+
+        update_slot(
+            self.slot.id,
+            {'gun': new_gun},
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+
+        taught.refresh_from_db()
+        week_start = past_day - timedelta(days=past_day.weekday())
+        week_end = week_start + timedelta(days=6)
+        self.assertTrue(taught.is_active)
+        self.assertEqual(taught.session_date, past_day)
+        self.assertEqual(taught.durum, OturumDurumu.ISLENDI)
+        self.assertEqual(
+            BirebirDersOturumu.objects.filter(
+                source_slot=self.slot,
+                is_active=True,
+                session_date__gte=week_start,
+                session_date__lte=week_end,
+            ).count(),
+            1,
+        )
+
+    def test_islenmemis_gecmis_hafta_yeni_gune_tasinir(self):
+        past_day = self.today - timedelta(days=7)
+        while past_day.isoweekday() != self.gun:
+            past_day -= timedelta(days=1)
+        planned = self._oturum(past_day, durum=OturumDurumu.PLANLANDI)
+        new_gun = (self.gun % 7) + 1
+
+        update_slot(
+            self.slot.id,
+            {'gun': new_gun},
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+
+        planned.refresh_from_db()
+        self.assertFalse(planned.is_active)
+        week_start = past_day - timedelta(days=past_day.weekday())
+        week_end = week_start + timedelta(days=6)
+        active = list(
+            BirebirDersOturumu.objects.filter(
+                source_slot=self.slot,
+                is_active=True,
+                session_date__gte=week_start,
+                session_date__lte=week_end,
+            )
+        )
+        self.assertEqual(len(active), 1)
+        self.assertEqual(active[0].session_date.isoweekday(), new_gun)
+        self.assertEqual(active[0].durum, OturumDurumu.PLANLANDI)
+
     def test_slot_pasif_gelecek_planliyi_kapatir_gecmisi_birakir(self):
         past = self._oturum(self.today - timedelta(days=7), durum=OturumDurumu.ISLENDI)
         future = self._oturum(self._next_weekday(self.gun))

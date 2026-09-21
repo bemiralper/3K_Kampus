@@ -18,7 +18,8 @@ class Exam(models.Model):
     class ExamType(models.TextChoices):
         YKS_TYT      = 'YKS_TYT',      'YKS – TYT (Temel Yeterlilik)'
         YKS_AYT      = 'YKS_AYT',      'YKS – AYT (Alan Yeterlilik)'
-        LGS          = 'LGS',           'LGS (Liselere Geçiş)'
+        LGS          = 'LGS',           'LGS (8. Sınıf)'
+        LGS_7        = 'LGS_7',         'LGS (7. Sınıf)'
         DENEME       = 'DENEME',        'Deneme Sınavı'
         KURUM_ICI    = 'KURUM_ICI',     'Kurum İçi Sınav'
         KONU_TARAMA  = 'KONU_TARAMA',   'Konu Tarama'
@@ -48,7 +49,7 @@ class Exam(models.Model):
         choices=CurriculumBand.choices,
         blank=True,
         default='',
-        help_text='YKS 9–12 veya LGS 5–8. TYT/AYT/LGS türünde otomatik kilitlenir.',
+        help_text='YKS 9–12 veya LGS 5–8. TYT/AYT/LGS/LGS_7 türünde otomatik kilitlenir.',
     )
     exam_type = models.CharField(
         'Sınav Türü', max_length=20, choices=ExamType.choices,

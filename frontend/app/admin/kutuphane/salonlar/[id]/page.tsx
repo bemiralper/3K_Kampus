@@ -368,7 +368,19 @@ export default function SalonDetayPage() {
 
   return (
     <div className="kutuphane-salon-detail" style={{ padding: 0, animation: 'none', opacity: 1, transform: 'none' }}>
-      <style>{`.kutuphane-salon-detail { animation: none !important; opacity: 1 !important; transform: none !important; }`}</style>
+      <style>{`
+        .kutuphane-salon-detail { animation: none !important; opacity: 1 !important; transform: none !important; padding-bottom: calc(var(--coach-bottom-nav-h, 0px) + 24px + env(safe-area-inset-bottom, 0px)); }
+        .kutuphane-salon-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
+        .kutuphane-salon-tabs { display: flex; gap: 4px; margin-bottom: 24px; overflow-x: auto; -webkit-overflow-scrolling: touch; border-bottom: 2px solid #f3f4f6; }
+        @media (max-width: 900px) {
+          .kutuphane-salon-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+        }
+        @media (max-width: 640px) {
+          .kutuphane-salon-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
+          .kutuphane-salon-kpis > div { padding: 10px 8px !important; }
+          .kutuphane-salon-tabs { margin-bottom: 16px; }
+        }
+      `}</style>
       {/* Toast */}
       {toast && (
         <div style={{
@@ -432,9 +444,7 @@ export default function SalonDetayPage() {
       </div>
 
       {/* KPI Bar */}
-      <div style={{
-        display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '14px', marginBottom: '24px',
-      }}>
+      <div className="kutuphane-salon-kpis">
         {[
           { label: 'Toplam Masa', value: library.toplam_masa ?? 0, icon: '🪑', bg: '#f0f9ff', border: '#bae6fd' },
           { label: 'Aktif Masa',  value: library.aktif_masa ?? 0,  icon: '✅', bg: '#f0fdf4', border: '#bbf7d0' },
@@ -454,10 +464,7 @@ export default function SalonDetayPage() {
       </div>
 
       {/* ════ TABS BAR ════ */}
-      <div style={{
-        display: 'flex', gap: '4px', marginBottom: '24px', overflowX: 'auto',
-        borderBottom: '2px solid #f3f4f6', paddingBottom: '0',
-      }}>
+      <div className="kutuphane-salon-tabs">
         {TABS.map(tab => (
           <button
             key={tab.key}
@@ -711,6 +718,14 @@ function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBu
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
   const [filterStatus, setFilterStatus] = useState<string>('ALL');
   const [exporting, setExporting] = useState<'csv' | 'xlsx' | 'pdf' | null>(null);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!pdfMenuOpen) return;
+    const close = () => setPdfMenuOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [pdfMenuOpen]);
 
   const filtered = filterStatus === 'ALL' ? seats : seats.filter(s => s.durum === filterStatus);
 
@@ -751,28 +766,32 @@ function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBu
     }
   };
 
-  const handlePrintList = () => {
-    const assignedRows = buildSeatExportRows(filtered)
-      .filter((row) => row.ogrenci)
-      .map((row) => ({
-        no: row.masaNo,
-        ogrenci: row.ogrenci,
-        tip: row.tip,
-        baslangic: row.baslangic,
-        durum: row.durum,
-      }));
+  const handlePrintList = (scope: 'occupied' | 'empty') => {
+    const status = scope === 'occupied' ? 'OCCUPIED' : 'AVAILABLE';
+    const source = seats.filter((seat) => seat.durum === status);
+    const rows = buildSeatExportRows(source).map((row) => ({
+      no: String(row.masaNo),
+      ogrenci: row.ogrenci || '—',
+      tip: row.tip,
+      baslangic: row.baslangic,
+      durum: row.durum,
+    }));
 
-    if (assignedRows.length === 0) {
-      alert('PDF listesi için atanmış öğrenci bulunamadı.');
+    if (rows.length === 0) {
+      alert(scope === 'occupied' ? 'Dolu masa bulunamadı.' : 'Boş masa bulunamadı.');
       return;
     }
 
     setExporting('pdf');
     try {
       const html = buildSeatStudentListPrintHtml({
-        meta: exportMeta,
-        rows: assignedRows,
+        meta: {
+          ...exportMeta,
+          title: scope === 'occupied' ? 'Dolu Masalar' : 'Boş Masalar',
+        },
+        rows,
         salonAdi,
+        scope,
       });
       const opened = openKutuphanePrintWindow(html);
       if (!opened) {
@@ -821,12 +840,38 @@ function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBu
             }}>
               {exporting === 'csv' ? '⏳ Hazırlanıyor…' : '📥 CSV'}
             </button>
-            <button onClick={handlePrintList} disabled={exporting !== null} style={{
-              padding: '6px 14px', backgroundColor: '#f0f9ff', color: '#0369a1',
-              borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
-            }}>
-              {exporting === 'pdf' ? '⏳ Hazırlanıyor…' : '📄 PDF / Yazdır'}
-            </button>
+            <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+              <button
+                onClick={() => setPdfMenuOpen(open => !open)}
+                disabled={exporting !== null}
+                style={{
+                  padding: '6px 14px', backgroundColor: '#f0f9ff', color: '#0369a1',
+                  borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
+                }}
+              >
+                {exporting === 'pdf' ? '⏳ Hazırlanıyor…' : '📄 PDF / Yazdır'}
+              </button>
+              {pdfMenuOpen && (
+                <div style={{
+                  position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 30, minWidth: 160,
+                  background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
+                  boxShadow: '0 8px 20px rgba(15,23,42,0.12)', padding: 4,
+                }}>
+                  <button
+                    onClick={() => { setPdfMenuOpen(false); handlePrintList('occupied'); }}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#b91c1c', cursor: 'pointer' }}
+                  >
+                    Dolu masalar
+                  </button>
+                  <button
+                    onClick={() => { setPdfMenuOpen(false); handlePrintList('empty'); }}
+                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#15803d', cursor: 'pointer' }}
+                  >
+                    Boş masalar
+                  </button>
+                </div>
+              )}
+            </div>
             <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
               {(['grid', 'table'] as const).map(m => (
                 <button key={m} onClick={() => setViewMode(m)} style={{
@@ -1586,8 +1631,8 @@ function YoklamaTab({
 
       {/* Toolbar */}
       <Card style={{ padding: '16px 20px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '10px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <div className="yk-toolbar">
+          <div className="yk-toolbar-meta">
             <input
               type="date"
               value={selectedDate}
@@ -1601,7 +1646,7 @@ function YoklamaTab({
               )}
             </span>
           </div>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+          <div className="yk-toolbar-actions">
             <button onClick={() => loadWeekly()} style={toolbarBtn('#0c4a6e', '#f0f9ff', '#bae6fd')}>📊 Haftalık Özet</button>
             <div style={{ position: 'relative', display: 'inline-flex' }}>
               <button onClick={() => { setSheetOrientation('portrait'); loadSheet('daily'); }} style={toolbarBtn('#854d0e', '#fefce8', '#fde68a')}>📋 Günlük Liste</button>
@@ -1634,8 +1679,8 @@ function YoklamaTab({
         <div style={{ display: 'grid', gap: '10px' }}>
           {sessions.map(s => (
             <Card key={s.id} hover style={{ padding: '16px 20px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '8px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <div className="yk-session-row">
+                <div className="yk-session-main">
                   <div style={{
                     width: 40, height: 40, borderRadius: 10,
                     background: s.durum === 'OPEN'
@@ -1659,7 +1704,7 @@ function YoklamaTab({
                     </div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <div className="yk-session-actions">
                   <Badge
                     label={s.durum === 'OPEN' ? '● Açık' : '● Kapalı'}
                     color={s.durum === 'OPEN' ? '#059669' : '#6b7280'}

@@ -201,12 +201,12 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
 
         <div className="footer-imprint">
           <p className="footer-imprint-unvan">{company.ticari_unvan}</p>
-          <p className="footer-imprint-meta">
-            MERSİS {company.mersis_no}
+          <p className="footer-imprint-meta" suppressHydrationWarning>
+            MERSİS <span className="footer-imprint-num">{company.mersis_no}</span>
             <span aria-hidden> · </span>
-            Vergi No {company.vergi_no}
+            Vergi No <span className="footer-imprint-num">{company.vergi_no}</span>
             <span aria-hidden> · </span>
-            Ticaret Sicil {company.ticaret_sicil_no}
+            Ticaret Sicil <span className="footer-imprint-num">{company.ticaret_sicil_no}</span>
           </p>
         </div>
 
@@ -371,6 +371,10 @@ export default function LandingFooter({ settings, footerLinks, socialLinks, bran
           font-size: 11.5px;
           line-height: 1.5;
           color: #94a3b8;
+        }
+        .footer-imprint-num {
+          font-variant-numeric: tabular-nums;
+          white-space: nowrap;
         }
         .footer-bottom {
           position: relative;

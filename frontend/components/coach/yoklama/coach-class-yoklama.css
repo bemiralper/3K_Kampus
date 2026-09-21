@@ -6,7 +6,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px));
+  padding-bottom: calc(var(--coach-bottom-nav-h, 72px) + env(safe-area-inset-bottom, 0px) + 24px);
 }
 
 .cyc-hero {
@@ -66,6 +66,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  min-width: 0;
 }
 
 .cyc-date-nav {
@@ -625,6 +626,7 @@
   font-weight: 800;
   color: var(--coach-text);
   letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
 }
 
 .cyc-class-main em {
@@ -679,6 +681,7 @@
   font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.01em;
+  white-space: nowrap;
 }
 
 .cyc-class-card.is-pending {
@@ -825,6 +828,29 @@
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 6px;
+}
+
+@media (max-width: 639px) {
+  .cys-stats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cys-stat {
+    min-height: 58px;
+    padding: 7px 8px 6px;
+  }
+
+  .cys-stat b {
+    font-size: 16px;
+  }
+
+  .cys-formats {
+    grid-template-columns: 1fr;
+  }
+
+  .cys-scope {
+    grid-template-columns: 1fr;
+  }
 }
 
 .cys-stat {
@@ -1131,8 +1157,8 @@
   }
 }
 
-/* Çok dar telefon: haplar ismin altına, yine küçük */
-@media (max-width: 339px) {
+/* Dar telefon: haplar ismin altına */
+@media (max-width: 520px) {
   .cyc-row-main {
     flex-wrap: wrap;
   }
@@ -1146,6 +1172,29 @@
   .cyc-avatar {
     width: 26px;
     height: 26px;
+  }
+
+  .cyc-date-row {
+    flex-wrap: wrap;
+  }
+
+  .cyc-today-btn {
+    margin-left: auto;
+  }
+
+  .cyc-filter-row {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .cyc-filter {
+    padding: 0 4px;
+    font-size: 11px;
+  }
+
+  .cyc-page-tab {
+    font-size: 12px;
+    min-height: 36px;
   }
 }
 

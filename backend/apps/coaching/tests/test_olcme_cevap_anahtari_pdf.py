@@ -78,7 +78,10 @@ class CevapAnahtariPdfTest(TestCase):
             answer_key=key, section=self.section, question_number=13, correct_answer='B',
         )
         self.assertEqual(cell_text(item), '13.B')
-        self.assertEqual(booklet_header_text(self.exam, key), 'A Kitapçığı')
+        self.assertEqual(
+            booklet_header_text(self.exam, key),
+            'TYT Deneme\n14 Ağustos 2026 · A Kitapçığı',
+        )
         self.assertNotEqual(subject_fill('A'), subject_fill('B'))
 
     def test_section_rows_pad_to_twelve(self):

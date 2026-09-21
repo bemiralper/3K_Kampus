@@ -13,6 +13,7 @@ from collections import defaultdict
 from pathlib import Path
 
 from django.db import transaction
+from django.db.models import Max
 
 from apps.coaching.olcme_degerlendirme.models.curriculum import (
     Outcome,
@@ -109,6 +110,7 @@ SUBJECT_ALIASES: dict[str, str] = {
     'DKAB_AYT': 'DKAB',
     'DINKUL_LGS': 'DKAB',
     'INKILAP_LGS': 'INKILAP',
+    'SOSYAL_LGS': 'SOSYAL',
     'YABDIL_LGS': 'INGILIZCE',
 }
 
@@ -149,6 +151,14 @@ SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
         'Yabancı Dil':    ('INGILIZCE', 'İngilizce', 'ALL'),
         'Matematik':      ('MATEMATIK', 'Matematik', 'ALL'),
         'Fen Bilimleri':  ('FEN', 'Fen Bilimleri', 'ALL'),
+    },
+    'LGS_7': {
+        'Türkçe':          ('TURKCE', 'Türkçe', 'ALL'),
+        'Sosyal Bilgiler': ('SOSYAL', 'Sosyal Bilgiler', 'ALL'),
+        'Din Kültürü':     ('DKAB', 'Din Kültürü ve Ahlak Bilgisi', 'ALL'),
+        'Yabancı Dil':     ('INGILIZCE', 'İngilizce', 'ALL'),
+        'Matematik':       ('MATEMATIK', 'Matematik', 'ALL'),
+        'Fen Bilimleri':   ('FEN', 'Fen Bilimleri', 'ALL'),
     },
     'DENEME': {
         'Türkçe':      ('TURKCE', 'Türkçe', 'ALL'),
@@ -298,6 +308,81 @@ def rows_to_topics(ders_rows: list[dict]) -> list[dict]:
         })
 
     return topics
+
+
+ORTAOKUL_RESTORE_CODES = frozenset({
+    'TURKCE', 'MATEMATIK', 'FEN', 'SOSYAL', 'DKAB', 'INGILIZCE', 'INKILAP',
+})
+ORTAOKUL_SINIFLAR = frozenset({'5', '6', '7', '8'})
+
+
+def restore_ortaokul_catalog(rows: list[dict]) -> dict:
+    """5–8. sınıf Okulizyon konularını silmeden ekler. Maarif ve lise durur."""
+    by_ders: dict[str, list[dict]] = defaultdict(list)
+    for row in rows:
+        spec = DERS_SUBJECTS.get(row['ders'])
+        if not spec or spec['code'] not in ORTAOKUL_RESTORE_CODES:
+            continue
+        if str(row.get('sinif') or '').strip() not in ORTAOKUL_SINIFLAR:
+            continue
+        by_ders[row['ders']].append(row)
+
+    stats = {
+        'topics': 0,
+        'outcomes': 0,
+        'sub_outcomes': 0,
+        'skipped_topics': 0,
+        'per_subject': {},
+    }
+    with transaction.atomic():
+        for ders, ders_rows in by_ders.items():
+            spec = DERS_SUBJECTS[ders]
+            subject, _created = Subject.objects.get_or_create(
+                code=spec['code'],
+                defaults={
+                    'name': spec['name'],
+                    'display_name': spec['display_name'],
+                    'exam_type_filter': Subject.ExamTypeFilter.ALL,
+                    'order': spec['order'],
+                },
+            )
+            existing = set(subject.topics.values_list('code', 'name'))
+            order = subject.topics.aggregate(m=Max('order'))['m'] or 0
+            added = {'topics': 0, 'outcomes': 0, 'sub_outcomes': 0, 'skipped_topics': 0}
+            for t_data in rows_to_topics(ders_rows):
+                name = (t_data['name'] or '')[:200]
+                if (t_data['code'], name) in existing:
+                    added['skipped_topics'] += 1
+                    continue
+                order += 1
+                topic = Topic.objects.create(
+                    subject=subject,
+                    code=t_data['code'],
+                    name=name,
+                    order=order,
+                )
+                existing.add((t_data['code'], name))
+                added['topics'] += 1
+                for o_idx, o_data in enumerate(t_data['outcomes']):
+                    outcome = Outcome.objects.create(
+                        topic=topic,
+                        code=o_data['code'],
+                        text=o_data['text'],
+                        order=o_idx,
+                    )
+                    added['outcomes'] += 1
+                    for s_idx, s_data in enumerate(o_data['sub_outcomes']):
+                        SubOutcome.objects.create(
+                            outcome=outcome,
+                            code=s_data['code'],
+                            text=s_data['text'],
+                            order=s_idx,
+                        )
+                        added['sub_outcomes'] += 1
+            for key in ('topics', 'outcomes', 'sub_outcomes', 'skipped_topics'):
+                stats[key] += added[key]
+            stats['per_subject'][spec['code']] = added
+    return stats
 
 
 def persist_catalog(rows: list[dict], *, replace: bool = True) -> dict:

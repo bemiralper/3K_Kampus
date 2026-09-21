@@ -38,6 +38,28 @@ def _parse_date(value) -> date:
 
 
 _LOCKED_HAKEDIS = (HakedisDurumu.ONAYLANDI, HakedisDurumu.BORDOYA_ISLENDI)
+_TAUGHT_STATUSES = (OturumDurumu.ISLENDI, OturumDurumu.ONLINE)
+
+
+def _week_start(day: date) -> date:
+    return day - timedelta(days=day.weekday())
+
+
+def _taught_week_keys(slot_ids, start: date, end: date) -> set[tuple[int, date]]:
+    """İşlenmiş oturumu olan (slot, ISO hafta pazartesi) çiftleri."""
+    if not slot_ids:
+        return set()
+    window_start = _week_start(start)
+    window_end = _week_start(end) + timedelta(days=6)
+    rows = BirebirDersOturumu.objects.filter(
+        source_slot_id__in=slot_ids,
+        is_active=True,
+        oturum_turu=OturumTuru.OZEL,
+        durum__in=_TAUGHT_STATUSES,
+        session_date__gte=window_start,
+        session_date__lte=window_end,
+    ).values_list('source_slot_id', 'session_date')
+    return {(slot_id, _week_start(session_date)) for slot_id, session_date in rows}
 _FUTURE_SYNC_DAYS = 62
 
 
@@ -147,6 +169,14 @@ def sync_future_sessions_for_slot(
             deactivated += 1
             continue
 
+        if (oturum.source_slot_id, _week_start(oturum.session_date)) in _taught_week_keys(
+            [slot.id], oturum.session_date, oturum.session_date,
+        ):
+            oturum.is_active = False
+            oturum.save(update_fields=['is_active', 'updated_at'])
+            deactivated += 1
+            continue
+
         if _apply_slot_fields(oturum, slot):
             updated += 1
 
@@ -243,6 +273,7 @@ def materialize_program(
         for day in iter_dates_for_weekday(range_start, range_end, slot.gun):
             candidates.append((day, slot))
     candidates.sort(key=lambda item: (item[0], item[1].id))
+    taught_weeks = _taught_week_keys([slot.id for slot in slots], start, end)
 
     used_by_ders: dict[int, int] = {}
     hedef_by_ders: dict[int, Optional[int]] = {}
@@ -267,6 +298,9 @@ def materialize_program(
         if is_holiday(kurum_id, sube_id, day):
             skipped_holiday += 1
             holiday_dates.add(day.isoformat())
+            continue
+        if (slot.id, _week_start(day)) in taught_weeks:
+            skipped_existing += 1
             continue
 
         existing = (

@@ -298,6 +298,40 @@ class DersProgramiGridApiTest(TestCase):
         self.assertEqual(cell.status, CellStatus.EMPTY)
         self.assertIsNone(cell.ders_id)
 
+    def test_clear_placements_for_classroom(self):
+        ensure = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': self.version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure.status_code, (200, 201), ensure.content)
+        cell = ProgramGridCell.objects.get(schedule_version=self.version, sinif=self.sinif)
+        fill = self.client.post(
+            f'/api/academic/program-grid/cells/{cell.id}/fill/',
+            data={'class_lesson_plan_id': self.plan.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
+
+        cleared = self.client.post(
+            '/api/academic/program-grid/clear-placements/',
+            data={
+                'term_id': self.term.id,
+                'weekly_cycle_id': self.version.weekly_cycle_id,
+                'classroom_id': self.sinif.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.content)
+        self.assertEqual(cleared.json()['cleared'], 1)
+        cell.refresh_from_db()
+        self.assertEqual(cell.status, CellStatus.EMPTY)
+        self.assertIsNone(cell.class_lesson_plan_id)
+        self.assertTrue(cell.is_active)
+
     def test_fill_rejects_over_weekly_hours(self):
         self.plan.weekly_hours = 1
         self.plan.save(update_fields=['weekly_hours'])

@@ -345,3 +345,59 @@
   border: 1px solid #cbd5e1;
   font-size: 13px;
 }
+
+@media (max-width: 720px) {
+  .yok-notify-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .yok-notify-recent-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+
+  .yok-preview-overlay {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .yok-preview-modal {
+    width: 100%;
+    max-height: 92dvh;
+    border-radius: 18px 18px 0 0;
+  }
+
+  .yok-preview-header,
+  .yok-preview-footer {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+
+  .yok-preview-row {
+    grid-template-columns: 28px 1fr;
+    padding: 12px 14px;
+  }
+
+  .yok-preview-message {
+    grid-column: 1 / -1;
+  }
+
+  .yok-preview-footer {
+    flex-wrap: wrap;
+  }
+
+  .yok-preview-footer .yok-notify-btn {
+    flex: 1 1 calc(50% - 8px);
+    justify-content: center;
+    min-height: 42px;
+  }
+
+  .yok-pending-banner {
+    margin: 0 12px 12px;
+  }
+
+  .yok-drawer-tabs {
+    padding: 0 12px;
+    overflow-x: auto;
+  }
+}

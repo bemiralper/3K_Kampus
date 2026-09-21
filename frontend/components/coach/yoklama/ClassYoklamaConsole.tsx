@@ -171,7 +171,10 @@ export default function ClassYoklamaConsole({
         <div>
           <p className="yc-kicker">{session?.period_label || "Periyot"} · {session?.taken ? "Alındı" : "Canlı"}</p>
           <h1 className="yc-title" id="yc-title">{className}</h1>
-          <div className="yc-sub">{dateLabel} · {roster.length} öğrenci · oklarla gez, 1–4 ile işaretle</div>
+          <div className="yc-sub">
+            {dateLabel} · {roster.length} öğrenci
+            <span className="yc-sub-hint"> · oklarla gez, 1–4 ile işaretle</span>
+          </div>
           {sessions.length > 1 ? (
             <div className="yc-periods" role="tablist" aria-label="Periyot">
               {sessions.map((s) => (
@@ -356,7 +359,8 @@ export default function ClassYoklamaConsole({
             disabled={!notifyEligible || dirty}
             onClick={onNotify}
           >
-            Veli bildirimi
+            <span className="yc-label-full">Veli bildirimi</span>
+            <span className="yc-label-short">Bildirim</span>
           </button>
           <button type="button" className="yc-btn good" onClick={onMarkAllPresent}>
             Hepsi var

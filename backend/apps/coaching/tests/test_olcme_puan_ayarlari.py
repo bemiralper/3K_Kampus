@@ -93,7 +93,7 @@ class OlcmePuanAyarlariTest(TestCase):
         self.assertEqual(body['default_puan_yili'], 2025)
         self.assertEqual(body['managed_years'], [2024, 2025, 2026])
         self.assertEqual(len(body['years']), 3)
-        self.assertEqual(OlcmeKatsayiSeti.objects.filter(kurum=self.kurum).count(), 12)
+        self.assertEqual(OlcmeKatsayiSeti.objects.filter(kurum=self.kurum).count(), 18)
 
         by_year = {y['year']: y for y in body['years']}
         self.assertTrue(by_year[2024]['is_published'])
@@ -107,6 +107,11 @@ class OlcmePuanAyarlariTest(TestCase):
             by_year[2025]['sets']['TYT']['coefficients']['Türkçe'],
             TYT_KATSAYILAR[2025]['Türkçe'],
         )
+        self.assertEqual(by_year[2025]['sets']['LGS']['coefficients']['Türkçe'], 4.110)
+        self.assertEqual(by_year[2025]['sets']['LGS']['coefficients']['İnkılap Tarihi'], 1.731)
+        self.assertEqual(by_year[2025]['sets']['LGS']['coefficients']['_base'], 196.604)
+        self.assertEqual(by_year[2025]['sets']['LGS_7']['coefficients']['Sosyal Bilgiler'], 1.731)
+        self.assertNotIn('İnkılap Tarihi', by_year[2025]['sets']['LGS_7']['coefficients'])
 
     def test_default_year_used_when_no_ranking_year(self):
         self.client.get(AYAR_URL, **self.headers)

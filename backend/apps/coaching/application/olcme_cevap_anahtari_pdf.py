@@ -8,10 +8,10 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from apps.coaching.application.olcme_pdf_brand import (
-    BRAND, BRAND_DARK, BRAND_SOFT, INK, LINE, MUTED,
+    BRAND, BRAND_DARK, BRAND_SOFT, INK,
     _escape, _logo_path, _register_fonts, _safe_filename,
 )
 
@@ -19,9 +19,6 @@ GRID_COLS = 12
 ALLOWED_COPIES = (1, 2, 4, 6, 8)
 BOOKLET_ORDER = {'': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4}
 
-NAVY = BRAND
-HEADER_H = 24 * mm
-FOOTER_H = 12 * mm
 _MONTHS = (
     'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
     'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık',
@@ -100,10 +97,53 @@ def exam_date_label(exam) -> str:
 
 
 def booklet_header_text(exam, key) -> str:
+    """Kart başlığı: deneme adı, tarih, kitapçık. Kesilen kopyada sayfa üstbilgisi kalmaz."""
+    name = (getattr(exam, 'name', None) or '').strip() or 'Sınav'
+    date = exam_date_label(exam)
     letter = (getattr(key, 'booklet', None) or '').strip().upper()
-    if letter:
-        return f'{letter} Kitapçığı'
-    return 'Cevap Anahtarı'
+    booklet = f'{letter} Kitapçığı' if letter else 'Cevap Anahtarı'
+    meta = ' · '.join(part for part in (date, booklet) if part)
+    return f'{name}\n{meta}' if meta else name
+
+
+def _header_paragraph(text: str, style) -> Paragraph:
+    lines = [line.strip() for line in (text or '').split('\n') if line.strip()]
+    html = '<br/>'.join(_escape(line) for line in lines) or _escape('Cevap Anahtarı')
+    return Paragraph(html, style)
+
+
+def _header_cell(text: str, style, *, width: float, row_h: float, hpad: float, vpad: float):
+    """Mavi kart başlığı: solda beyaz 3K logosu, yanında deneme adı ve tarih."""
+    paragraph = _header_paragraph(text, style)
+    inner_w = max(width - 2 * hpad, 24)
+    inner_h = max(row_h - 2 * vpad, 8)
+    logo = _logo_path()
+    if not logo:
+        return paragraph
+    logo_h = min(inner_h * 0.92, 26)
+    logo_w = logo_h * (546 / 407)
+    max_logo_w = inner_w * 0.22
+    if logo_w > max_logo_w:
+        logo_w = max_logo_w
+        logo_h = logo_w * (407 / 546)
+    gap = 4
+    mark = Image(str(logo), width=logo_w, height=logo_h, mask='auto', hAlign='LEFT')
+    inner = Table(
+        [[mark, paragraph]],
+        colWidths=[logo_w + gap, max(inner_w - logo_w - gap, 12)],
+        rowHeights=[inner_h],
+    )
+    inner.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+        ('ALIGN', (1, 0), (1, 0), 'CENTER'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(BRAND)),
+    ]))
+    return inner
 
 
 def subject_fill(booklet: str) -> str:
@@ -373,7 +413,7 @@ def _row_kinds(items) -> list[str]:
 
 def _natural_row_heights(kinds: list[str], scale: dict) -> list[float]:
     sizes = {
-        'header': scale['header'] + scale['vpad'] * 2 + 6,
+        'header': (scale['header'] + 1.5) * 2 + scale['vpad'] * 2 + 3,
         'subject': scale['subject'] + scale['vpad'] * 2 + 4,
         'data': scale['cell'] + scale['vpad'] * 2 + 3.2,
     }
@@ -394,18 +434,23 @@ def _booklet_table(exam, key, items, width, styles, scale, *, height=None, font:
     letter = (getattr(key, 'booklet', None) or '').strip().upper()
     fill = subject_fill(letter)
     groups = _group_items(items, include_empty=True)
-    data = [[Paragraph(_escape(booklet_header_text(exam, key)), styles['hdr'])] + [''] * (GRID_COLS - 1)]
+    body = []
     kinds = ['header']
     for section_name, group in groups.items():
         title = (section_name or 'Soru').strip().upper()
-        data.append([Paragraph(_escape(title), styles['sec'])] + [''] * (GRID_COLS - 1))
+        body.append([Paragraph(_escape(title), styles['sec'])] + [''] * (GRID_COLS - 1))
         kinds.append('subject')
         for row in _group_rows(group):
-            data.append([Paragraph(_escape(cell), styles['cell']) if cell else '' for cell in row])
+            body.append([Paragraph(_escape(cell), styles['cell']) if cell else '' for cell in row])
             kinds.append('data')
 
     col_w = width / GRID_COLS
     row_h = _fit_row_heights(kinds, scale, height)
+    header = _header_cell(
+        booklet_header_text(exam, key), styles['hdr'],
+        width=width, row_h=row_h[0], hpad=scale['hpad'], vpad=scale['vpad'],
+    )
+    data = [[header] + [''] * (GRID_COLS - 1)] + body
     content_h = sum(row_h)
     tbl = Table(data, colWidths=[col_w] * GRID_COLS, rowHeights=row_h)
     cmds = [
@@ -501,71 +546,72 @@ def _key_payloads(exam, keys):
     return payloads
 
 
-def _draw_page_chrome(
-    canvas, doc, *, exam_name: str, exam_date: str, font: str, font_bold: str, copies: int,
-):
-    page_w, page_h = A4
+def _stroke_scissors(canvas, x, y, size=9, vertical=False):
+    """Kesik çizginin başında küçük makas. Bıçaklar +x yönüne bakar."""
     canvas.saveState()
-    canvas.setFillColor(colors.HexColor(BRAND))
-    canvas.rect(0, page_h - HEADER_H, page_w, HEADER_H, fill=1, stroke=0)
-    canvas.setFillColor(colors.HexColor(BRAND_DARK))
-    canvas.rect(0, page_h - HEADER_H, page_w, 2.4, fill=1, stroke=0)
-
-    logo = _logo_path()
-    if logo:
-        logo_h = HEADER_H - 12
-        logo_w = logo_h * (546 / 407)
-        if logo_w > 52:
-            logo_w = 52
-            logo_h = logo_w * (407 / 546)
-        try:
-            canvas.drawImage(
-                str(logo), 10, page_h - HEADER_H + (HEADER_H - logo_h) / 2,
-                width=logo_w, height=logo_h, mask='auto',
-                preserveAspectRatio=True, anchor='sw',
-            )
-        except Exception:
-            pass
-
-    name = (exam_name or 'Sınav').strip()
-    name_size = 16
-    cap_size = 9.5
-    max_name_w = page_w - 170
-    canvas.setFont(font_bold, name_size)
-    while name_size > 10 and canvas.stringWidth(name, font_bold, name_size) > max_name_w:
-        name_size -= 0.4
-        canvas.setFont(font_bold, name_size)
-    while name and canvas.stringWidth(name, font_bold, name_size) > max_name_w:
-        name = name[:-1]
-    block_h = name_size + 4 + cap_size
-    name_y = page_h - HEADER_H / 2 + block_h / 2 - name_size
-    canvas.setFillColor(colors.white)
-    canvas.setFont(font_bold, name_size)
-    canvas.drawCentredString(page_w / 2, name_y, name)
-    canvas.setFillColor(colors.HexColor('#E7F0F8'))
-    canvas.setFont(font, cap_size)
-    canvas.drawCentredString(page_w / 2, name_y - cap_size - 3, 'Cevap anahtarı')
-
-    if exam_date:
-        canvas.setFillColor(colors.HexColor('#E7F0F8'))
-        canvas.setFont(font, 7)
-        canvas.drawRightString(page_w - 12, page_h - HEADER_H / 2 - 2.5, exam_date)
-
-    canvas.setStrokeColor(colors.HexColor(LINE))
-    canvas.setLineWidth(0.4)
-    canvas.line(10, FOOTER_H - 2, page_w - 10, FOOTER_H - 2)
-    canvas.setFillColor(colors.HexColor(MUTED))
-    canvas.setFont(font, 7)
-    canvas.drawString(12, 8, '3K Kampüs  ·  Ölçme ve Değerlendirme')
-    if copies > 1:
-        canvas.drawRightString(page_w - 12, 8, 'Kesim payı')
-    else:
-        canvas.drawRightString(page_w - 12, 8, f'Sayfa {canvas.getPageNumber()}')
+    canvas.setStrokeColor(colors.HexColor('#475569'))
+    canvas.setFillColor(colors.HexColor('#475569'))
+    canvas.setLineWidth(0.7)
+    canvas.setLineCap(1)
+    canvas.setDash()
+    if vertical:
+        canvas.translate(x, y)
+        canvas.rotate(-90)
+        x, y = 0, 0
+    canvas.circle(x - size * 0.42, y - size * 0.22, size * 0.16, stroke=1, fill=0)
+    canvas.circle(x - size * 0.42, y + size * 0.22, size * 0.16, stroke=1, fill=0)
+    canvas.line(x - size * 0.28, y - size * 0.1, x, y)
+    canvas.line(x - size * 0.28, y + size * 0.1, x, y)
+    for sign in (1, -1):
+        path = canvas.beginPath()
+        path.moveTo(x, y)
+        path.lineTo(x + size * 0.55, y + sign * size * 0.16)
+        path.lineTo(x + size * 0.55, y + sign * size * 0.04)
+        path.close()
+        canvas.drawPath(path, stroke=0, fill=1)
+    canvas.circle(x, y, 0.65, stroke=0, fill=1)
     canvas.restoreState()
 
 
+class _CutGuide(Flowable):
+    """Kartlar arasındaki makaslı kesim çizgisi."""
+
+    def __init__(self, width, height, axis):
+        super().__init__()
+        self._w = width
+        self._h = height
+        self.axis = axis
+
+    def wrap(self, aw, ah):
+        return self._w, self._h
+
+    def draw(self):
+        canvas = self.canv
+        canvas.saveState()
+        canvas.setStrokeColor(colors.HexColor('#64748B'))
+        canvas.setLineWidth(0.6)
+        canvas.setLineCap(1)
+        canvas.setDash(1.4, 2.2)
+        if self.axis == 'both':
+            canvas.line(0, self._h / 2, self._w, self._h / 2)
+            canvas.line(self._w / 2, 0, self._w / 2, self._h)
+        elif self.axis == 'h':
+            y = self._h / 2
+            size = min(11, self._h * 0.85)
+            pivot = size * 0.62
+            canvas.line(pivot + size * 0.62, y, self._w, y)
+            _stroke_scissors(canvas, pivot, y, size=size)
+        else:
+            x = self._w / 2
+            size = min(11, self._w * 0.85)
+            pivot = size * 0.62
+            canvas.line(x, 0, x, self._h - pivot - size * 0.62)
+            _stroke_scissors(canvas, x, self._h - pivot, size=size, vertical=True)
+        canvas.restoreState()
+
+
 def _gapped_grid(cells: list, cols: int, rows: int, tile_w: float, tile_h: float, gap: float):
-    """Kartlar arasına boşluk kolon/satır koyar."""
+    """Kartlar arasına makaslı kesim çizgisi koyar."""
     grid = []
     idx = 0
     for r in range(rows):
@@ -574,10 +620,15 @@ def _gapped_grid(cells: list, cols: int, rows: int, tile_w: float, tile_h: float
             row.append(cells[idx] if idx < len(cells) else '')
             idx += 1
             if c < cols - 1:
-                row.append('')
+                row.append(_CutGuide(gap, tile_h, 'v'))
         grid.append(row)
         if r < rows - 1:
-            grid.append([''] * (cols * 2 - 1))
+            gap_row = []
+            for c in range(cols):
+                gap_row.append(_CutGuide(tile_w, gap, 'h'))
+                if c < cols - 1:
+                    gap_row.append(_CutGuide(gap, gap, 'both'))
+            grid.append(gap_row)
     col_ws = []
     for c in range(cols):
         col_ws.append(tile_w)
@@ -615,39 +666,40 @@ def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) 
 
     font, font_bold = _register_fonts()
     page_w, page_h = A4
-    side = 8 * mm
-    top_m = HEADER_H + 2
-    bot_m = FOOTER_H
+    margin = 6 * mm
     gap = 8 * mm
-    usable_w = page_w - 2 * side - 14
-    usable_h = page_h - top_m - bot_m - 14
+    # SimpleDocTemplate çerçevesinin varsayılan iç boşluğu 6 pt.
+    frame_pad = 6
+    usable_w = page_w - 2 * margin - 2 * frame_pad
+    usable_h = page_h - 2 * margin - 2 * frame_pad
 
     side_by_side = copies == 1 and len(payloads) > 1
     if side_by_side:
         grid_cols, grid_rows = 2, 1
         sequence = payloads[:2]
         extra = payloads[2:]
-        tile_h = None
     elif copies == 1:
         grid_cols, grid_rows = 1, 1
         sequence = payloads
         extra = []
-        tile_h = None
     else:
         layout = _LAYOUT[copies]
         grid_cols, grid_rows = layout['cols'], layout['rows']
         sequence = [payloads[i % len(payloads)] for i in range(copies)]
         extra = []
-        tile_h = (usable_h - gap * (grid_rows - 1)) / grid_rows
 
     tile_w = (usable_w - gap * (grid_cols - 1)) / grid_cols
     scale = _tile_scale(copies, side_by_side=side_by_side)
     styles = _styles(font, font_bold, scale)
-    if side_by_side:
-        tile_h = max(
-            sum(_natural_row_heights(_row_kinds(items), scale))
-            for _, items in sequence
-        )
+    natural_h = max(
+        sum(_natural_row_heights(_row_kinds(items), scale))
+        for _, items in sequence
+    )
+    if grid_rows == 1 and copies == 1 and not side_by_side:
+        tile_h = usable_h
+    else:
+        room = usable_h - gap * (grid_rows - 1)
+        tile_h = natural_h if natural_h * grid_rows <= room else room / grid_rows
 
     def tile(payload, width, height):
         key, items = payload
@@ -658,16 +710,15 @@ def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(
         buf, pagesize=A4,
-        leftMargin=side, rightMargin=side,
-        topMargin=top_m, bottomMargin=bot_m,
+        leftMargin=margin, rightMargin=margin,
+        topMargin=margin, bottomMargin=margin,
         title=f'{exam.name} Cevap Anahtarı',
     )
     story = []
 
     if copies == 1 and not side_by_side:
         for payload in sequence:
-            story.append(tile(payload, usable_w, None))
-            story.append(Spacer(1, 8))
+            story.append(tile(payload, usable_w, tile_h))
     else:
         cells = []
         for payload in sequence:
@@ -676,16 +727,8 @@ def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) 
             cells.append('')
         story.append(_gapped_grid(cells, grid_cols, grid_rows, tile_w, tile_h, gap))
         for payload in extra:
-            story.append(Spacer(1, 8))
+            story.append(Spacer(1, gap))
             story.append(tile(payload, usable_w, None))
 
-    def on_page(canvas, _doc):
-        _draw_page_chrome(
-            canvas, _doc,
-            exam_name=getattr(exam, 'name', '') or 'Sınav',
-            exam_date=exam_date_label(exam),
-            font=font, font_bold=font_bold, copies=copies,
-        )
-
-    doc.build(story, onFirstPage=on_page, onLaterPages=on_page)
+    doc.build(story)
     return buf.getvalue()

@@ -40,6 +40,8 @@ class OlcmeKatsayiSeti(models.Model):
         AYT_SAY = 'AYT_SAY', 'AYT Sayısal'
         AYT_EA = 'AYT_EA', 'AYT Eşit Ağırlık'
         AYT_SOZ = 'AYT_SOZ', 'AYT Sözel'
+        LGS = 'LGS', 'LGS 8. Sınıf'
+        LGS_7 = 'LGS_7', 'LGS 7. Sınıf'
 
     kurum = models.ForeignKey(
         'kurum.Kurum',

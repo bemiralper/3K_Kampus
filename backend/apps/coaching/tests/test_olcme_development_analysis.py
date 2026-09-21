@@ -192,6 +192,12 @@ class DevelopmentAnalysisScenariosTest(TestCase):
         self.assertEqual([e['exam_type'] for e in lgs['exams']], ['LGS'])
         self.assertEqual([e['exam_type'] for e in manuel['exams']], ['DENEME'])
 
+    def test_lgs_group_includes_grade_7(self):
+        self._exam('LGS 8', date(2026, 3, 1), exam_type='LGS', net='18.00')
+        self._exam('LGS 7', date(2026, 3, 8), exam_type='LGS_7', net='16.00')
+        lgs = build_development_analysis(self.ogrenci, exam_type='LGS', window='all')
+        self.assertEqual([e['exam_type'] for e in lgs['exams']], ['LGS', 'LGS_7'])
+
     def test_outcome_data_threshold_and_new_measurement(self):
         items_base = [(i, self.outcome_main, 'correct' if i <= 8 else 'wrong') for i in range(1, 16)]
         items_base.append((16, self.outcome_single, 'wrong'))

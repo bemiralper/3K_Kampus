@@ -37,10 +37,19 @@ _TEMPLATES: dict[str, list[tuple]] = {
     'LGS': [
         ('Türkçe',           1,  20, 0),
         ('İnkılap Tarihi',  21,  30, 1),
-        ('Din Kültürü',     31,  38, 2),
-        ('Yabancı Dil',     39,  46, 3),
-        ('Matematik',       47,  66, 4),
-        ('Fen Bilimleri',   67,  86, 5),
+        ('Din Kültürü',     31,  40, 2),
+        ('Yabancı Dil',     41,  50, 3),
+        ('Matematik',       51,  70, 4),
+        ('Fen Bilimleri',   71,  90, 5),
+    ],
+
+    'LGS_7': [
+        ('Türkçe',           1,  20, 0),
+        ('Sosyal Bilgiler', 21,  30, 1),
+        ('Din Kültürü',     31,  40, 2),
+        ('Yabancı Dil',     41,  50, 3),
+        ('Matematik',       51,  70, 4),
+        ('Fen Bilimleri',   71,  90, 5),
     ],
 
     'DENEME': [
@@ -222,7 +231,8 @@ def _with_optional_philosophy(
 _DEFAULT_DURATIONS: dict[str, int] = {
     'YKS_TYT':     135,
     'YKS_AYT':     180,
-    'LGS':         115,
+    'LGS':         155,
+    'LGS_7':       155,
     'DENEME':      135,
     'KURUM_ICI':    90,
     'KONU_TARAMA':  45,
@@ -304,6 +314,14 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
     'LGS': {
         'Türkçe':          ('TURKCE',    'Türkçe',          'LGS'),
         'İnkılap Tarihi':  ('INKILAP',   'İnkılap Tarihi',  'LGS'),
+        'Din Kültürü':     ('DKAB',      'Din Kültürü',     'LGS'),
+        'Yabancı Dil':     ('INGILIZCE', 'Yabancı Dil',     'LGS'),
+        'Matematik':       ('MATEMATIK', 'Matematik',       'LGS'),
+        'Fen Bilimleri':   ('FEN',       'Fen Bilimleri',   'LGS'),
+    },
+    'LGS_7': {
+        'Türkçe':          ('TURKCE',    'Türkçe',          'LGS'),
+        'Sosyal Bilgiler': ('SOSYAL',    'Sosyal Bilgiler', 'LGS'),
         'Din Kültürü':     ('DKAB',      'Din Kültürü',     'LGS'),
         'Yabancı Dil':     ('INGILIZCE', 'Yabancı Dil',     'LGS'),
         'Matematik':       ('MATEMATIK', 'Matematik',       'LGS'),
@@ -452,7 +470,7 @@ def _auto_link_subjects(exam, sections: list) -> None:
     band = resolved_band(exam)
     subject_map = dict(_SECTION_SUBJECT_MAP.get(exam.exam_type, {}))
     if not subject_map:
-        wanted = {'LGS'} if band == BAND_LGS else {'YKS_TYT', 'YKS_AYT', 'DENEME'}
+        wanted = {'LGS', 'LGS_7'} if band == BAND_LGS else {'YKS_TYT', 'YKS_AYT', 'DENEME'}
         for exam_type, type_map in _SECTION_SUBJECT_MAP.items():
             if exam_type in wanted:
                 subject_map.update(type_map)

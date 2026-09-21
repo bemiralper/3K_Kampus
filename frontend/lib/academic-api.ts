@@ -1369,6 +1369,19 @@ export async function fillScheduleCell(
   return unwrap(res);
 }
 
+export async function clearSchedulePlacements(params: {
+  term_id?: number;
+  weekly_cycle_id?: number;
+  version_id?: number;
+  classroom_id?: number;
+}): Promise<{ cleared: number; skipped_locked: number }> {
+  const res = await apiFetch<{ cleared: number; skipped_locked: number }>(
+    '/api/academic/program-grid/clear-placements/',
+    { method: 'POST', body: JSON.stringify(params) },
+  );
+  return unwrap(res);
+}
+
 export async function clearScheduleCell(cellId: number): Promise<ScheduleGridCell> {
   const res = await apiFetch<ScheduleGridCell>(`/api/academic/program-grid/cells/${cellId}/clear/`, {
     method: 'POST',

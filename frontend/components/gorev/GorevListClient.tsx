@@ -55,8 +55,11 @@ export default function GorevListClient({
   adminView = false,
 }: Props) {
   const [tab, setTab] = useState<Tab>(() => {
-    if (typeof window === 'undefined') return 'bugun';
-    return new URLSearchParams(window.location.search).get('tab') === 'yoklama' ? 'yoklama' : 'bugun';
+    if (typeof window === 'undefined') return adminView ? 'tumu' : 'bugun';
+    const requested = new URLSearchParams(window.location.search).get('tab');
+    if (requested === 'yoklama') return 'yoklama';
+    if (requested === 'tumu' || requested === 'geciken' || requested === 'bugun') return requested;
+    return adminView ? 'tumu' : 'bugun';
   });
   const [yoklamaDate, setYoklamaDate] = useState(() => {
     if (typeof window === 'undefined') return '';
@@ -123,6 +126,7 @@ export default function GorevListClient({
     if (tab === 'bugun') {
       params.baslangic = todayStart.toISOString();
       params.bitis = todayEnd.toISOString();
+      params.bugun = 'true';
     }
     if (adminView) {
       params.tum = 'true';
@@ -144,8 +148,11 @@ export default function GorevListClient({
 
   const filtered = atamalar.filter(a => {
     if (!adminView && tab === 'bugun' && a.gorev) {
-      const d = new Date(a.gorev.son_tarih);
-      return d >= todayStart && d < todayEnd;
+      const due = new Date(a.gorev.son_tarih);
+      const created = a.gorev.created_at ? new Date(a.gorev.created_at) : null;
+      const dueToday = due >= todayStart && due < todayEnd;
+      const createdToday = Boolean(created && created >= todayStart && created < todayEnd);
+      return dueToday || createdToday;
     }
     return true;
   });
