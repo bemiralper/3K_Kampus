@@ -5,6 +5,8 @@ from .scoring import (
     AYT_EA_KATSAYILAR,
     AYT_SAY_KATSAYILAR,
     AYT_SOZ_KATSAYILAR,
+    LGS_7_KATSAYILAR,
+    LGS_KATSAYILAR,
     TYT_KATSAYILAR,
     get_factory_coefficients,
 )
@@ -20,6 +22,8 @@ KIND_FACTORY = {
     OlcmeKatsayiSeti.Kind.AYT_SAY: AYT_SAY_KATSAYILAR,
     OlcmeKatsayiSeti.Kind.AYT_EA: AYT_EA_KATSAYILAR,
     OlcmeKatsayiSeti.Kind.AYT_SOZ: AYT_SOZ_KATSAYILAR,
+    OlcmeKatsayiSeti.Kind.LGS: LGS_KATSAYILAR,
+    OlcmeKatsayiSeti.Kind.LGS_7: LGS_7_KATSAYILAR,
 }
 
 AYT_KIND_BY_PUAN_TURU = {
@@ -55,7 +59,7 @@ def ensure_kurum_defaults(kurum_id: int) -> OlcmePuanAyar:
 
 
 def reset_year_coefficients(kurum_id: int, year: int) -> list:
-    """Yılın 4 setini factory tabloya (2026 → 2025 kopyası) sıfırlar."""
+    """Yılın katsayı setlerini factory tabloya (2026 → 2025 kopyası) sıfırlar."""
     ensure_kurum_defaults(kurum_id)
     published = year != 2026
     updated = []

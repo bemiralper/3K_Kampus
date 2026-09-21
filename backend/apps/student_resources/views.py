@@ -567,6 +567,12 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
             sort_by = f'-{sort_by}'
         
         queryset = queryset.order_by(sort_by, 'ad')
+
+        try:
+            limit = int(request.query_params.get('limit') or 200)
+        except (TypeError, ValueError):
+            limit = 200
+        limit = min(max(limit, 1), 1000)
         
         acquisition_map = {}
         if acquisition_info and len(student_ids) == 1:
@@ -583,7 +589,7 @@ class StudentResourceAssignmentViewSet(viewsets.ModelViewSet):
             'toplam_sayfa',
             'kapak', 'kapak_url',
             'icerik_tamamlandi_mi',
-        )[:200]
+        )[:limit]
         
         # Format response
         data = []

@@ -87,9 +87,10 @@ function writeCachedUser(user: User | null) {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(() =>
-    typeof window !== "undefined" ? readCachedUser() : null,
-  );
+  // Always start as null so SSR HTML and the first client paint match.
+  // Reading sessionStorage here made phones (iOS) hydrate the landing footer
+  // as a spinner and throw "text node for <vergi no> in <p>".
+  const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const isCheckingRef = useRef(false);
   const hasCheckedRef = useRef(false);

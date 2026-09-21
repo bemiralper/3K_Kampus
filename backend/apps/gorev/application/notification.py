@@ -141,10 +141,8 @@ class GorevNotificationService:
             return f'Kullanıcı #{user_id}'
 
     def _portal_url_for_user(self, user_id: int, gorev: Gorev) -> str:
-        try:
-            role_code = UserRole.objects.select_related('role').get(user_id=user_id).role.code
-        except UserRole.DoesNotExist:
-            role_code = None
+        ur = UserRole.objects.select_related('role').filter(user_id=user_id).first()
+        role_code = ur.role.code if ur else None
 
         if role_code == 'koc':
             return '/coach/gorevler'

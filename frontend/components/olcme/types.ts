@@ -8,7 +8,8 @@
 export const EXAM_TYPES = [
   { value: 'YKS_TYT',     label: 'YKS – TYT (Temel Yeterlilik)' },
   { value: 'YKS_AYT',     label: 'YKS – AYT (Alan Yeterlilik)' },
-  { value: 'LGS',         label: 'LGS (Liselere Geçiş)' },
+  { value: 'LGS',         label: 'LGS (8. Sınıf)' },
+  { value: 'LGS_7',       label: 'LGS (7. Sınıf)' },
   { value: 'DENEME',      label: 'Deneme Sınavı' },
   { value: 'KURUM_ICI',   label: 'Kurum İçi Sınav' },
   { value: 'KONU_TARAMA', label: 'Konu Tarama' },
@@ -1128,7 +1129,7 @@ export interface DevelopmentResponse {
   priorities: DevelopmentPriority[];
 }
 
-export type KatsayiKind = 'TYT' | 'AYT_SAY' | 'AYT_EA' | 'AYT_SOZ';
+export type KatsayiKind = 'TYT' | 'AYT_SAY' | 'AYT_EA' | 'AYT_SOZ' | 'LGS' | 'LGS_7';
 
 export interface KatsayiSeti {
   kind: KatsayiKind;

@@ -666,7 +666,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   registerFonts(doc, fonts);
 
-  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType;
+  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType === 'LGS_7' ? 'LGS 7' : examType === 'LGS' ? 'LGS' : examType;
   const startY = addPdfHeader(doc, logo, examName, `${tl} Sıralama (${sortHeaderLabel(effectiveSort)} sıralı)`, parts.join('  ·  '), { kurs: filtered.length });
 
   // Lookup setleri
@@ -1057,7 +1057,7 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
   });
   registerFonts(doc, fonts);
 
-  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType;
+  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType === 'LGS_7' ? 'LGS 7' : examType === 'LGS' ? 'LGS' : examType;
   const startY = addPdfHeader(doc, logo, examName, `${tl} Öğrenci Listesi`, parts.join('  ·  '));
 
   autoTable(doc, {

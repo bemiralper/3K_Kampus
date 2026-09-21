@@ -178,6 +178,10 @@ export default function YoklamaSessionDrawer({
           setPhotoOpen(false);
           return;
         }
+        if (isNarrow && sheetOpen) {
+          setSheetOpen(false);
+          return;
+        }
         onClose();
         return;
       }
@@ -208,7 +212,7 @@ export default function YoklamaSessionDrawer({
       document.body.style.overflow = prev;
       window.removeEventListener("keydown", onKey);
     };
-  }, [active, editable, navList, onClose, onSave, onUpdateRecord, photoOpen]);
+  }, [active, editable, isNarrow, navList, onClose, onSave, onUpdateRecord, photoOpen, sheetOpen]);
 
   const stats = useMemo(() => ({
     present: records.filter((r) => r.durum === "PRESENT").length,
@@ -238,7 +242,10 @@ export default function YoklamaSessionDrawer({
             {session.ders_no != null ? ` ${session.ders_no}` : ""} · {editable ? "Canlı" : "Kapalı"}
           </p>
           <h1 className="yc-title" id="yc-title">{session.oturum_adi || "Yoklama"}</h1>
-          <div className="yc-sub">{dateLabel} · {records.length} öğrenci · oklarla gez, 1–5 ile işaretle</div>
+          <div className="yc-sub">
+            {dateLabel} · {records.length} öğrenci
+            <span className="yc-sub-hint"> · oklarla gez, 1–5 ile işaretle</span>
+          </div>
         </div>
         <div className="yc-meters">
           <div className="yc-meter is-present"><b>{stats.present}</b><span>Var</span></div>
@@ -463,7 +470,14 @@ export default function YoklamaSessionDrawer({
             className="yc-btn plain"
             onClick={() => setView((v) => (v === "salon" ? "bildirim" : "salon"))}
           >
-            {view === "salon" ? `Veli bildirimi${pendingCount ? ` · ${pendingCount}` : ""}` : "← Salona dön"}
+            {view === "salon" ? (
+              <>
+                <span className="yc-label-full">Veli bildirimi{pendingCount ? ` · ${pendingCount}` : ""}</span>
+                <span className="yc-label-short">Bildirim{pendingCount ? ` · ${pendingCount}` : ""}</span>
+              </>
+            ) : (
+              "← Salon"
+            )}
           </button>
           {editable && (
             <button type="button" className="yc-btn good" onClick={() => onSetAllStatus("PRESENT")}>
@@ -477,7 +491,10 @@ export default function YoklamaSessionDrawer({
           )}
           {editable && (
             <>
-              <button type="button" className="yc-btn warn" onClick={onCloseSession}>Oturumu kapat</button>
+              <button type="button" className="yc-btn warn" onClick={onCloseSession}>
+                <span className="yc-label-full">Oturumu kapat</span>
+                <span className="yc-label-short">Kapat</span>
+              </button>
               <button type="button" className="yc-btn save" onClick={onSave} disabled={saving}>
                 {saving ? "Kaydediliyor" : "Kaydet"}
               </button>

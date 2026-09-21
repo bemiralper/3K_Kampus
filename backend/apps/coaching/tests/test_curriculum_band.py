@@ -29,6 +29,7 @@ class CurriculumBandHelperTest(SimpleTestCase):
     def test_normalize_locks_exam_type(self):
         self.assertEqual(normalize_band('LGS', 'YKS_TYT'), BAND_YKS)
         self.assertEqual(normalize_band('YKS', 'LGS'), BAND_LGS)
+        self.assertEqual(normalize_band('YKS', 'LGS_7'), BAND_LGS)
         self.assertEqual(normalize_band('LGS', 'KONU_TARAMA'), BAND_LGS)
         self.assertEqual(normalize_band('', 'KONU_TARAMA'), BAND_YKS)
 

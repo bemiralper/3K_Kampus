@@ -1,25 +1,21 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useKaynakPath } from "@/components/kaynak/KaynakPathProvider";
 import {
   fetchStudentResourceDetail,
-  fetchDersler,
   patchStudentResourceAssignment,
   deleteStudentResourceAssignment,
-  fetchAvailableResources,
-  bulkAssignResources,
   updatePurchaseListItemStatus,
   finishRoutineQuotaBook,
   type StudentResourceAssignment,
   type StudentResourceLesson,
   type StudentResourceDetail,
-  type AvailableResource,
-  type Ders,
   type ActivePurchaseList,
 } from "@/lib/resources-api";
+import AddStudentResourceModal from "../AddStudentResourceModal";
 import PurchaseListModal, { formatDifficulty, difficultyStyle } from "../PurchaseListModal";
 import { BookCover } from "@/components/resources/BookCover";
 import { BookContentCompleteBadge } from "@/components/resources/BookContentCompleteBadge";
@@ -46,7 +42,6 @@ export default function StudentResourceDetailPage() {
   const [data, setData] = useState<StudentDetail | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [allDersler, setAllDersler] = useState<Ders[]>([]);
 
   // Expanded lessons
   const [expandedLessons, setExpandedLessons] = useState<number[]>([]);
@@ -59,18 +54,8 @@ export default function StudentResourceDetailPage() {
   const [editDueDate, setEditDueDate] = useState("");
   const [editProgress, setEditProgress] = useState(0);
 
-  // Add resource modal
-  const [addResourceModalOpen, setAddResourceModalOpen] = useState(false);
-  const [addResourceLessonId, setAddResourceLessonId] = useState<number | null>(null);
-  const [addResourceLessonName, setAddResourceLessonName] = useState("");
-  const [addResourceList, setAddResourceList] = useState<AvailableResource[]>([]);
-  const [addResourceSelected, setAddResourceSelected] = useState<number[]>([]);
-  const [addResourceLoading, setAddResourceLoading] = useState(false);
-  const [addResourceDueDate, setAddResourceDueDate] = useState("");
-  const [addResourceOwnershipType, setAddResourceOwnershipType] = useState("TO_PURCHASE");
-
-  // Select lesson modal
-  const [selectLessonModalOpen, setSelectLessonModalOpen] = useState(false);
+  const [addResourceOpen, setAddResourceOpen] = useState(false);
+  const [addLessonId, setAddLessonId] = useState<number | null>(null);
 
   // Purchase / institution list modals
   const [listModalType, setListModalType] = useState<"PURCHASE" | "INSTITUTION" | null>(null);
@@ -106,20 +91,8 @@ export default function StudentResourceDetailPage() {
     setLoading(false);
   }, [studentId]);
 
-  const fetchDerslerList = async () => {
-    try {
-      const result = await fetchDersler();
-      if (result.success && result.data) {
-        setAllDersler(result.data);
-      }
-    } catch (error) {
-      console.error("Error fetching dersler:", error);
-    }
-  };
-
   useEffect(() => {
     fetchData();
-    fetchDerslerList();
   }, [fetchData]);
 
   // Toggle lesson accordion
@@ -220,67 +193,28 @@ export default function StudentResourceDetailPage() {
     }
   };
 
-  // Open add resource modal
-  const openAddResourceModal = async (lessonId: number, lessonName: string) => {
-    setAddResourceLessonId(lessonId);
-    setAddResourceLessonName(lessonName);
-    setAddResourceSelected([]);
-    setAddResourceDueDate("");
-    setAddResourceModalOpen(true);
-    setAddResourceLoading(true);
-    
-    try {
-      const result = await fetchAvailableResources({
-        lesson_ids: lessonId,
-        student_ids: parseInt(studentId),
-        exclude_assigned: true,
-      });
-      if (result.success && result.data) {
-        setAddResourceList(result.data);
-      }
-    } catch (error) {
-      console.error("Error fetching resources:", error);
-    }
-    setAddResourceLoading(false);
-  };
-
-  // Save added resources
-  const handleAddResources = async () => {
-    if (addResourceSelected.length === 0) return;
-    
-    setAddResourceLoading(true);
-    try {
-      const result = await bulkAssignResources({
-        student_ids: [parseInt(studentId)],
-        resource_book_ids: addResourceSelected,
-        ownership_type: addResourceOwnershipType,
-        due_date: addResourceDueDate || null,
-        notes: "",
-      });
-      if (result.success) {
-        setAddResourceModalOpen(false);
-        setAddResourceSelected([]);
-        setAddResourceOwnershipType("TO_PURCHASE");
-        const created = result.data?.created ?? 0;
-        const skipped = result.data?.skipped ?? 0;
-        const errorCount = result.data?.errors?.length ?? 0;
-        let msg = `✅ ${created} kaynak eklendi`;
-        if (skipped) msg += ` · ${skipped} zaten atanmıştı, atlandı`;
-        if (errorCount) msg += ` · ${errorCount} hata oluştu`;
-        showToast(msg, errorCount ? "error" : "success");
-        fetchData();
-      } else {
-        const errorMsg = typeof result.error === 'string' 
-          ? result.error 
-          : JSON.stringify(result.error);
-        showToast(`❌ Kaynak ekleme hatası: ${errorMsg}`, "error");
-      }
-    } catch (error) {
-      console.error("Kaynak ekleme hatası:", error);
-      showToast("❌ Kaynak ekleme hatası: Sunucu bağlantı hatası", "error");
-    }
-    setAddResourceLoading(false);
-  };
+  const ownedResources = useMemo(() => (
+    (data?.lessons || []).flatMap((lesson) =>
+      lesson.resources
+        .filter((resource) => resource.status !== "CANCELLED")
+        .map((resource) => ({
+          id: resource.resource_book,
+          ad: resource.resource_name,
+          kod: "",
+          ders_id: lesson.lesson_id,
+          ders_ad: lesson.lesson_name,
+          book_type: resource.resource_type,
+          book_type_renk: resource.resource_type_renk,
+          yayinevi: resource.resource_yayinevi,
+          yayin_yili: resource.resource_yayin_yili,
+          zorluk_min: null,
+          zorluk_max: null,
+          zorluk_display: resource.difficulty_level_snapshot || null,
+          toplam_sayfa: null,
+          kapak_url: resource.kapak_url,
+        }))
+    )
+  ), [data]);
 
   const openListPdf = (listId: number) => {
     window.open(`/api/student-resources/purchase-lists/${listId}/pdf/`, "_blank");
@@ -496,7 +430,7 @@ export default function StudentResourceDetailPage() {
           </button>
         </div>
         <button
-          onClick={() => setSelectLessonModalOpen(true)}
+          onClick={() => { setAddLessonId(null); setAddResourceOpen(true); }}
           style={{
             padding: "12px 24px",
             background: "#10b981",
@@ -636,7 +570,7 @@ export default function StudentResourceDetailPage() {
         }}>
           <p style={{ marginBottom: "16px", fontSize: "16px" }}>Bu öğrenciye henüz kaynak atanmamış.</p>
           <button
-            onClick={() => setSelectLessonModalOpen(true)}
+            onClick={() => { setAddLessonId(null); setAddResourceOpen(true); }}
             style={{
               padding: "12px 24px",
               background: "#10b981",
@@ -686,7 +620,7 @@ export default function StudentResourceDetailPage() {
                   </div>
                   <span style={{ fontSize: "13px", color: "#64748b", minWidth: "40px" }}>{lesson.completion_percent}%</span>
                   <button
-                    onClick={(e) => { e.stopPropagation(); openAddResourceModal(lesson.lesson_id, lesson.lesson_name); }}
+                    onClick={(e) => { e.stopPropagation(); setAddLessonId(lesson.lesson_id); setAddResourceOpen(true); }}
                     style={{
                       padding: "6px 12px",
                       background: "#10b981",
@@ -928,173 +862,17 @@ export default function StudentResourceDetailPage() {
         </div>
       )}
 
-      {/* Select Lesson Modal */}
-      {selectLessonModalOpen && (
-        <div className="kh-modal-shell" style={{ zIndex: 1000 }}>
-          <div className="kh-modal is-sm">
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>📖 Ders Seçin</h3>
-              <button onClick={() => setSelectLessonModalOpen(false)} style={{ background: "none", border: "none", fontSize: "24px", cursor: "pointer", color: "#64748b" }}>×</button>
-            </div>
-            <div style={{ padding: "16px 24px", overflowY: "auto", flex: 1 }}>
-              <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-                {allDersler.map(ders => (
-                  <button
-                    key={ders.id}
-                    onClick={() => { setSelectLessonModalOpen(false); openAddResourceModal(ders.id, ders.ad); }}
-                    style={{
-                      padding: "12px 16px",
-                      background: "#f8fafc",
-                      border: "1px solid #e2e8f0",
-                      borderRadius: "8px",
-                      cursor: "pointer",
-                      textAlign: "left",
-                      fontSize: "14px",
-                      fontWeight: 500
-                    }}
-                  >
-                    📖 {ders.ad}
-                  </button>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Add Resource Modal */}
-      {addResourceModalOpen && (
-        <div className="kh-modal-shell" style={{ zIndex: 1001 }}>
-          <div className="kh-modal is-md">
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: "18px", fontWeight: 600 }}>📚 {addResourceLessonName} - Kaynak Ekle</h3>
-                <p style={{ margin: "4px 0 0", fontSize: "13px", color: "#64748b" }}>Öğrenciye atanabilecek kaynaklar</p>
-              </div>
-              <button onClick={() => setAddResourceModalOpen(false)} style={{ background: "none", border: "none", fontSize: "24px", cursor: "pointer", color: "#64748b" }}>×</button>
-            </div>
-            
-            <div style={{ padding: "20px 24px", overflowY: "auto", flex: 1 }}>
-              {addResourceLoading ? (
-                <div style={{ textAlign: "center", padding: "40px", color: "#64748b" }}>Kaynaklar yükleniyor...</div>
-              ) : addResourceList.length === 0 ? (
-                <div style={{ textAlign: "center", padding: "40px", color: "#64748b" }}>Bu ders için atanabilecek kaynak bulunamadı.</div>
-              ) : (
-                <>
-                  <p style={{ margin: "0 0 16px", fontSize: "13px", color: "#64748b" }}>
-                    {addResourceList.length} kaynak mevcut. Seçili: {addResourceSelected.length}
-                  </p>
-                  
-                  <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "16px" }}>
-                    {addResourceList.sort((a, b) => (a.book_type || '').localeCompare(b.book_type || '')).map(resource => {
-                      const diff = formatDifficulty(resource);
-                      const diffStyle = difficultyStyle(diff);
-                      return (
-                      <label
-                        key={resource.id}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          padding: "12px",
-                          border: addResourceSelected.includes(resource.id) ? "2px solid #10b981" : "1px solid #e2e8f0",
-                          borderRadius: "8px",
-                          cursor: "pointer",
-                          background: addResourceSelected.includes(resource.id) ? "#f0fdf4" : "white"
-                        }}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={addResourceSelected.includes(resource.id)}
-                          onChange={() => {
-                            setAddResourceSelected(prev =>
-                              prev.includes(resource.id) ? prev.filter(id => id !== resource.id) : [...prev, resource.id]
-                            );
-                          }}
-                          style={{ marginRight: "12px" }}
-                        />
-                        <BookCover src={resource.kapak_url} alt={resource.ad} size="sm" />
-                        <div style={{ flex: 1, marginLeft: 10 }}>
-                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: "8px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                              <span style={{ fontWeight: 500 }}>{resource.ad}</span>
-                              {resource.book_type && (
-                                <span style={{ background: resource.book_type_renk || "#dbeafe", color: "#1d4ed8", padding: "2px 8px", borderRadius: "4px", fontSize: "11px", fontWeight: 500 }}>
-                                  {resource.book_type}
-                                </span>
-                              )}
-                              {resource.icerik_tamamlandi_mi && <BookContentCompleteBadge />}
-                            </div>
-                            <span style={{
-                              background: diffStyle.bg,
-                              color: diffStyle.color,
-                              padding: "4px 10px",
-                              borderRadius: 999,
-                              fontSize: 12,
-                              fontWeight: 700,
-                              whiteSpace: "nowrap",
-                            }}>
-                              {diff ? `Zorluk ${diff}` : "Zorluk —"}
-                            </span>
-                          </div>
-                          <div style={{ fontSize: "12px", color: "#64748b", marginTop: "4px", display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                            {resource.yayin_yili && <span>📆 {resource.yayin_yili}</span>}
-                            {resource.yayinevi && <span>🏢 {resource.yayinevi}</span>}
-                            {resource.toplam_sayfa ? <span>📄 {resource.toplam_sayfa} sf.</span> : null}
-                          </div>
-                        </div>
-                      </label>
-                    );})}
-                  </div>
-                  
-                  <div style={{ marginBottom: "16px" }}>
-                    <label style={{ display: "block", marginBottom: "6px", fontWeight: 500, fontSize: "14px" }}>Sahiplik Durumu</label>
-                    <select
-                      value={addResourceOwnershipType}
-                      onChange={(e) => setAddResourceOwnershipType(e.target.value)}
-                      style={{ width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: "8px" }}
-                    >
-                      <option value="STUDENT_OWNED">✅ Öğrencide Var</option>
-                      <option value="TO_PURCHASE">🛒 Satın Alınacak</option>
-                      <option value="INSTITUTION_PROVIDED">🏫 Kurum Verecek</option>
-                    </select>
-                  </div>
-                  
-                  <div style={{ marginBottom: "16px" }}>
-                    <label style={{ display: "block", marginBottom: "6px", fontWeight: 500, fontSize: "14px" }}>Son Tarih (Opsiyonel)</label>
-                    <input
-                      type="date"
-                      value={addResourceDueDate}
-                      onChange={(e) => setAddResourceDueDate(e.target.value)}
-                      style={{ width: "100%", padding: "10px 12px", border: "1px solid #e2e8f0", borderRadius: "8px" }}
-                    />
-                  </div>
-                </>
-              )}
-            </div>
-            
-            <div style={{ padding: "16px 24px", borderTop: "1px solid #e2e8f0", display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-              <button onClick={() => setAddResourceModalOpen(false)} style={{ padding: "10px 20px", background: "#f1f5f9", border: "none", borderRadius: "8px", cursor: "pointer" }}>
-                İptal
-              </button>
-              <button
-                onClick={handleAddResources}
-                disabled={addResourceSelected.length === 0 || addResourceLoading}
-                style={{
-                  padding: "10px 20px",
-                  background: addResourceSelected.length === 0 ? "#94a3b8" : "#10b981",
-                  color: "white",
-                  border: "none",
-                  borderRadius: "8px",
-                  cursor: addResourceSelected.length === 0 ? "not-allowed" : "pointer",
-                  fontWeight: 600
-                }}
-              >
-                {addResourceLoading ? "Ekleniyor..." : `${addResourceSelected.length} Kaynak Ekle`}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <AddStudentResourceModal
+        open={addResourceOpen}
+        studentId={studentId}
+        ownedResources={ownedResources}
+        initialLessonId={addLessonId}
+        onClose={() => setAddResourceOpen(false)}
+        onAdded={(message, tone) => {
+          showToast(tone === "success" ? `✅ ${message}` : `❌ ${message}`, tone);
+          fetchData();
+        }}
+      />
 
       <PurchaseListModal
         open={listModalType !== null}

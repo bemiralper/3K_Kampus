@@ -29,7 +29,7 @@ export default function GorevEkranMesajiOverlay() {
     let attempt = 0;
 
     const load = async () => {
-      const res = await fetchScreenNotifications();
+      const res = await fetchScreenNotifications(10);
       if (cancelled) return;
 
       if (res.success && res.data?.length) {

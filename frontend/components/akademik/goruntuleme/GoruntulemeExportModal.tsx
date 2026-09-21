@@ -11,7 +11,6 @@ import {
   type ScheduleExportScope,
   type ScheduleTeacherDisplay,
 } from '@/lib/schedule-export';
-import { getScheduleColorBy } from '@/lib/schedule-color';
 import type { ClassLessonPlanClassroom } from '@/lib/academic-api';
 
 type Mode = 'class' | 'teacher';
@@ -111,13 +110,13 @@ export default function GoruntulemeExportModal({
           await downloadScheduleExportFile({
             ...common,
             format: 'pdf',
-            color_by: getScheduleColorBy(),
+            color_by: 'ders',
           });
         } catch {
           const payload = await fetchScheduleExportJson(common);
           await exportSchedulePdf(payload, {
             layout,
-            colorBy: getScheduleColorBy(),
+            colorBy: 'ders',
           });
         }
       } else {
@@ -125,7 +124,7 @@ export default function GoruntulemeExportModal({
           ...common,
           format,
           layout: format === 'xlsx' ? layout : undefined,
-          color_by: format === 'xlsx' ? getScheduleColorBy() : undefined,
+          color_by: format === 'xlsx' ? 'ders' : undefined,
         });
       }
       message.success('İndirme hazır');

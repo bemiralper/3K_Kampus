@@ -4,7 +4,7 @@ export const BAND_LGS = 'LGS';
 export type CurriculumBand = typeof BAND_YKS | typeof BAND_LGS;
 
 const YKS_TYPES = new Set(['YKS_TYT', 'YKS_AYT', 'DENEME']);
-const LGS_TYPES = new Set(['LGS']);
+const LGS_TYPES = new Set(['LGS', 'LGS_7']);
 
 export function bandForExamType(examType: string | ''): CurriculumBand {
   return LGS_TYPES.has(examType) ? BAND_LGS : BAND_YKS;

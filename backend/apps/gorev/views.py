@@ -64,9 +64,8 @@ def api_gorev_list_create(request):
     if request.method == 'GET':
         filters = {}
         p = request.GET
-        sube_id = _get_sube_id(request)
-        if sube_id:
-            filters['sube_id'] = sube_id
+        if p.get('sube_id'):
+            filters['sube_id'] = int(p['sube_id'])
         if p.get('oncelik'):
             filters['oncelik'] = p['oncelik']
         if p.get('gorev_tipi_id'):
@@ -188,6 +187,8 @@ def api_atama_list(request):
         filters['baslangic'] = _parse_datetime(p['baslangic'])
     if p.get('bitis'):
         filters['bitis'] = _parse_datetime(p['bitis'])
+    if p.get('bugun') == 'true':
+        filters['bugun'] = True
     if p.get('geciken') == 'true':
         filters['geciken'] = True
 

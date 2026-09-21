@@ -1331,6 +1331,7 @@ export async function fetchAvailableResources(params: {
   student_ids: number | number[];
   exclude_assigned?: boolean;
   acquisition_info?: boolean;
+  limit?: number;
 }): Promise<ApiResponse<AvailableResource[]>> {
   const searchParams = new URLSearchParams();
   if (params.lesson_ids !== undefined) {
@@ -1346,6 +1347,9 @@ export async function fetchAvailableResources(params: {
   }
   if (params.acquisition_info) {
     searchParams.set('acquisition_info', 'true');
+  }
+  if (params.limit != null) {
+    searchParams.set('limit', String(params.limit));
   }
   return apiGet<AvailableResource[]>(`/api/student-resources/assignments/available_resources/?${searchParams}`);
 }

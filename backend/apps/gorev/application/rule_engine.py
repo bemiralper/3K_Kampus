@@ -93,22 +93,26 @@ class GorevRuleEngine:
             logger.warning('Gorev tipi bulunamadı: %s', tip_kod)
             return None
 
-        return self.service.create_gorev(kurum_id, {
-            'gorev_tipi_id': str(tip.id),
-            'baslik': baslik,
-            'aciklama': aciklama,
-            'oncelik': oncelik,
-            'son_tarih': son_tarih,
-            'tum_gun': tum_gun,
-            'hedef_tipi': hedef_tipi,
-            'hedef_rol_kodu': hedef_rol_kodu,
-            'hedef_user_ids': hedef_user_ids or [],
-            'kaynak_modul': kaynak_modul,
-            'kaynak_id': kaynak_id,
-            'aksiyon_url': aksiyon_url,
-            'sube_id': sube_id,
-            'egitim_yili_id': egitim_yili_id,
-        }, olusturan_id=None)
+        try:
+            return self.service.create_gorev(kurum_id, {
+                'gorev_tipi_id': str(tip.id),
+                'baslik': baslik,
+                'aciklama': aciklama,
+                'oncelik': oncelik,
+                'son_tarih': son_tarih,
+                'tum_gun': tum_gun,
+                'hedef_tipi': hedef_tipi,
+                'hedef_rol_kodu': hedef_rol_kodu,
+                'hedef_user_ids': hedef_user_ids or [],
+                'kaynak_modul': kaynak_modul,
+                'kaynak_id': kaynak_id,
+                'aksiyon_url': aksiyon_url,
+                'sube_id': sube_id,
+                'egitim_yili_id': egitim_yili_id,
+            }, olusturan_id=None)
+        except ValueError as exc:
+            logger.warning('Otomatik görev atanamadı (%s): %s', tip_kod, exc)
+            return None
 
     def complete_by_kaynak_prefix(self, kurum_id: int, kaynak_modul: str, prefix: str):
         """Tahsilat sonrası taksit kaynaklı açık görevleri tamamla."""
@@ -390,85 +394,12 @@ class GorevRuleEngine:
     # ─── Anlık hook'lar ───
 
     def on_exam_created(self, exam) -> Optional[Gorev]:
-        if not exam.kurum_id or not exam.exam_date or exam.is_template:
-            return None
-
-        kaynak_id = f'exam-{exam.id}:announce'
-        if self.gorev_exists(exam.kurum_id, KAYNAK_OLCME, kaynak_id):
-            return None
-
-        coach_user_ids = set()
-        from apps.ogrenci.domain.models import OgrenciKayit
-
-        sinif_ids = list(exam.siniflar.values_list('id', flat=True))
-        if sinif_ids:
-            ogrenci_ids = OgrenciKayit.objects.filter(
-                sinif_id__in=sinif_ids,
-                aktif_mi=True,
-            ).values_list('ogrenci_id', flat=True)
-            for oid in ogrenci_ids:
-                uid = get_primary_coach_user_id(oid)
-                if uid:
-                    coach_user_ids.add(uid)
-
-        if not coach_user_ids:
-            return self._create(
-                kurum_id=exam.kurum_id,
-                tip_kod='DENEME_ANALIZ',
-                baslik=f'Deneme analizi hazırla: {exam.name}',
-                aciklama=f'Sınav tarihi: {exam.exam_date:%d.%m.%Y}',
-                son_tarih=timezone.make_aware(
-                    datetime.combine(exam.exam_date, datetime.min.time().replace(hour=9))
-                ),
-                kaynak_modul=KAYNAK_OLCME,
-                kaynak_id=kaynak_id,
-                hedef_tipi=HedefTipi.ROL,
-                hedef_rol_kodu='koc',
-                sube_id=exam.sube_id,
-                egitim_yili_id=exam.egitim_yili_id,
-                tum_gun=True,
-            )
-
-        created = None
-        for uid in coach_user_ids:
-            kid = f'exam-{exam.id}:coach-{uid}'
-            g = self._create(
-                kurum_id=exam.kurum_id,
-                tip_kod='DENEME_ANALIZ',
-                baslik=f'Deneme analizi: {exam.name}',
-                aciklama=f'Sınav: {exam.exam_date:%d.%m.%Y} — analiz görevini tamamlayın',
-                son_tarih=timezone.make_aware(
-                    datetime.combine(exam.exam_date + timedelta(days=1), datetime.min.time().replace(hour=17))
-                ),
-                kaynak_modul=KAYNAK_OLCME,
-                kaynak_id=kid,
-                hedef_tipi=HedefTipi.KULLANICI,
-                hedef_user_ids=[uid],
-                sube_id=exam.sube_id,
-                egitim_yili_id=exam.egitim_yili_id,
-            )
-            if g:
-                created = g
-        return created
+        """Deneme analizi artık otomatik görev üretmez."""
+        return None
 
     def on_exam_results_published(self, exam) -> Optional[Gorev]:
-        if not exam.kurum_id:
-            return None
-        kaynak_id = f'exam-{exam.id}:results'
-        return self._create(
-            kurum_id=exam.kurum_id,
-            tip_kod='DENEME_ANALIZ',
-            baslik=f'Sonuç analizi: {exam.name}',
-            aciklama='Sınav sonuçları yayınlandı — öğrenci analizlerini tamamlayın',
-            son_tarih=timezone.now() + timedelta(days=3),
-            kaynak_modul=KAYNAK_OLCME,
-            kaynak_id=kaynak_id,
-            hedef_tipi=HedefTipi.ROL,
-            hedef_rol_kodu='koc',
-            sube_id=exam.sube_id,
-            egitim_yili_id=exam.egitim_yili_id,
-            oncelik=GorevOncelik.YUKSEK,
-        )
+        """Deneme sonuç analizi artık otomatik görev üretmez."""
+        return None
 
     def on_attendance_absent(self, record, kurum_id: int) -> Optional[Gorev]:
         # Devamsızlık bildirimi WhatsApp ile yapılıyor; otomatik VELI_GORUSME görevi kapalı.

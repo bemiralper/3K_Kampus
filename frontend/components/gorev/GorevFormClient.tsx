@@ -14,6 +14,8 @@ const ROLLER = [
   { code: 'muhasebe', label: 'Muhasebe' },
   { code: 'ogretmen', label: 'Öğretmenler' },
   { code: 'kurum_yoneticisi', label: 'Yöneticiler' },
+  { code: 'sube_yoneticisi', label: 'Müdürler' },
+  { code: 'egitim_yoneticisi', label: 'Eğitim yöneticileri' },
 ];
 
 function toLocalInput(iso: string, tumGun: boolean): string {
@@ -109,12 +111,19 @@ export default function GorevFormClient({ gorevId }: Props) {
     setLoading(true);
     setError('');
 
+    const due = new Date(sonTarih);
+    if (Number.isNaN(due.getTime())) {
+      setError('Geçerli bir son tarih girin.');
+      setLoading(false);
+      return;
+    }
+
     const data: Record<string, unknown> = {
       baslik,
       aciklama,
       gorev_tipi_id: gorevTipiId,
       oncelik,
-      son_tarih: new Date(sonTarih).toISOString(),
+      son_tarih: due.toISOString(),
       tum_gun: tumGun,
       ekran_mesaji: ekranMesaji,
     };
@@ -138,7 +147,7 @@ export default function GorevFormClient({ gorevId }: Props) {
 
     setLoading(false);
     if (res.success) {
-      router.push('/admin/gorevler');
+      router.push('/admin/gorevler?tab=tumu');
     } else {
       setError(res.error || (isEdit ? 'Görev güncellenemedi' : 'Görev oluşturulamadı'));
     }
@@ -237,6 +246,9 @@ export default function GorevFormClient({ gorevId }: Props) {
               placeholder="Ad veya soyad yazın…"
             />
           )}
+          <p className="gorev-form-hint">
+            Seçilen rol veya kişiler hem Görevler listesinde görür hem de ekran mesajı işaretliyse girişte uyarı alır.
+          </p>
         </fieldset>
       )}
 

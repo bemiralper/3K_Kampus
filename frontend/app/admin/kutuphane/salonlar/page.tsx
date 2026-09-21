@@ -180,7 +180,7 @@ export default function SalonlarListPage() {
       )}
 
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: 20 }}>
           {[1,2,3].map(i => (
             <div key={i} style={{ height: 280, background: 'linear-gradient(90deg, #f3f4f6 25%, #e5e7eb 50%, #f3f4f6 75%)', backgroundSize: '200% 100%', borderRadius: 16 }} />
           ))}
@@ -197,7 +197,7 @@ export default function SalonlarListPage() {
           }}>+ İlk Salonu Oluştur</Link>
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '20px' }}>
           {sortedLibraries.map((lib) => {
             const doluluk = lib.doluluk_orani || 0;
             const st = STATUS_COLORS[lib.durum] || STATUS_COLORS.INACTIVE;

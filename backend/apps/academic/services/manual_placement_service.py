@@ -220,6 +220,59 @@ def clear_cell(*, cell_id: int) -> ProgramGridCell:
     ).get(pk=cell.id)
 
 
+def clear_placements(*, schedule_version_id: int, classroom_id: Optional[int] = None) -> dict:
+    """Seçili programdaki dolu yerleşimleri boşaltır. Kilitli hücreler durur."""
+    from apps.academic.domain.schedule_version import ScheduleVersion
+    schedule_version = ScheduleVersion.objects.select_related('term').filter(
+        pk=schedule_version_id,
+    ).first()
+    if schedule_version is None:
+        raise ManualPlacementError('Program bulunamadı.', 'schedule_version')
+    if schedule_version.is_locked:
+        raise ManualPlacementError('Program kilitli; yerleşimler temizlenemez.', 'version')
+    if schedule_version.term_id and getattr(schedule_version.term, 'schedule_locked', False):
+        raise ManualPlacementError('Dönem programı kilitli; yerleşimler temizlenemez.', 'term')
+
+    qs = ProgramGridCell.objects.filter(
+        schedule_version_id=schedule_version_id,
+        is_active=True,
+        status=CellStatus.FILLED,
+    )
+    if classroom_id:
+        qs = qs.filter(sinif_id=classroom_id)
+    locked = ProgramGridCell.objects.filter(
+        schedule_version_id=schedule_version_id,
+        is_active=True,
+        status=CellStatus.LOCKED,
+    )
+    if classroom_id:
+        locked = locked.filter(sinif_id=classroom_id)
+
+    cleared = 0
+    with transaction.atomic():
+        for cell in qs:
+            if cell.clear():
+                cleared += 1
+        if cleared:
+            try:
+                from apps.academic.domain.schedule_change_log import ScheduleChangeAction
+                from apps.academic.services.lesson_session_service import log_schedule_change
+                log_schedule_change(
+                    action=ScheduleChangeAction.CELL_CLEAR,
+                    summary='Yerleşimler temizlendi',
+                    detail={
+                        'schedule_version_id': schedule_version_id,
+                        'sinif_id': classroom_id,
+                        'cleared': cleared,
+                    },
+                    term=schedule_version.term,
+                    schedule_version=schedule_version,
+                )
+            except Exception:
+                pass
+    return {'cleared': cleared, 'skipped_locked': locked.count()}
+
+
 def _reload_cell(cell_id: int) -> ProgramGridCell:
     return ProgramGridCell.objects.select_related(
         'ders', 'ogretmen', 'sinif', 'weekly_day', 'timeslot', 'class_lesson_plan',

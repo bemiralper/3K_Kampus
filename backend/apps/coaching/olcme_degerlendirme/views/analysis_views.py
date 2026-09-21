@@ -575,6 +575,7 @@ def _exam_type_short(exam_type: str) -> str:
         'YKS_TYT': 'TYT',
         'YKS_AYT': 'AYT',
         'LGS': 'LGS',
+        'LGS_7': 'LGS 7',
         'DENEME': 'Deneme',
     }.get(exam_type or '', exam_type or '')
 
@@ -682,7 +683,7 @@ def _build_scoring_nets(answer, exam) -> dict:
     AYT: Ana bölüm neti öncelikli. Alt bölüm neti sadece ana bölümle
          isim çakışması yoksa eklenir (ör: Fizik, Kimya, Biyoloji ayrı katsayılı).
     """
-    is_tyt = exam.exam_type in ('YKS_TYT', 'DENEME', 'LGS')
+    is_tyt = exam.exam_type in ('YKS_TYT', 'DENEME', 'LGS', 'LGS_7')
 
     result = {}
     for ss in answer.section_scores.all():

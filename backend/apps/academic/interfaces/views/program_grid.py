@@ -30,6 +30,7 @@ from apps.academic.services.grid_engine import (
 from apps.academic.services.manual_placement_service import (
     ManualPlacementError,
     clear_cell,
+    clear_placements,
     fill_cell,
     swap_cells,
 )
@@ -545,6 +546,86 @@ def program_grid_cell_clear_api(request, pk):
         )
 
     return Response(_serialize_placement_cell(updated))
+
+
+def _resolve_schedule_version(request):
+    version_id = request.data.get('version_id')
+    term_id = request.data.get('term_id')
+    weekly_cycle_id = request.data.get('weekly_cycle_id')
+    if version_id:
+        try:
+            return ScheduleVersion.objects.select_related('schedule_template', 'term').get(
+                pk=int(version_id),
+            ), None
+        except (ScheduleVersion.DoesNotExist, TypeError, ValueError):
+            return None, Response({'error': 'Program bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+    if not (term_id and weekly_cycle_id):
+        return None, Response(
+            {'error': 'version_id veya (term_id + weekly_cycle_id) zorunludur.'},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    from apps.academic.domain.weekly_cycle import WeeklyCycle
+    from apps.term.domain.models import Term
+
+    try:
+        term = Term.objects.select_related('egitim_yili').get(pk=int(term_id))
+        weekly_cycle = WeeklyCycle.objects.get(pk=int(weekly_cycle_id))
+    except (Term.DoesNotExist, WeeklyCycle.DoesNotExist, TypeError, ValueError):
+        return None, Response(
+            {'error': 'Dönem veya çalışma takvimi bulunamadı.'},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    version = ScheduleVersion.resolve_default(term=term, weekly_cycle=weekly_cycle, create=False)
+    if version is None:
+        return None, Response({'error': 'Program bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+    return version, None
+
+
+@csrf_exempt
+@api_view(['POST'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([AcademicModulePermission])
+def program_grid_clear_placements_api(request):
+    """
+    POST /api/academic/program-grid/clear-placements/
+    Body: { term_id, weekly_cycle_id, classroom_id? }
+    """
+    version, err = _resolve_schedule_version(request)
+    if err:
+        return err
+
+    _, _, gate_err = gate_schedule_template_drf(request, version.schedule_template_id)
+    if gate_err:
+        return gate_err
+
+    classroom_id = request.data.get('classroom_id')
+    if classroom_id not in (None, ''):
+        try:
+            classroom_id = int(classroom_id)
+        except (TypeError, ValueError):
+            return Response({'error': 'Geçersiz sınıf.'}, status=status.HTTP_400_BAD_REQUEST)
+        _, _, gate_err = gate_sinif_drf(request, classroom_id)
+        if gate_err:
+            return gate_err
+    else:
+        classroom_id = None
+
+    try:
+        result = clear_placements(
+            schedule_version_id=version.id,
+            classroom_id=classroom_id,
+        )
+    except ManualPlacementError as e:
+        return Response(
+            {'error': e.message, 'field': e.field},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    return Response({
+        'schedule_version_id': version.id,
+        'classroom_id': classroom_id,
+        **result,
+    })
 
 
 @csrf_exempt

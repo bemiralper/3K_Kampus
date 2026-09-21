@@ -15,6 +15,7 @@ from .exam_templates import (
 from .scoring import (
     calculate_tyt_score,
     calculate_ayt_score,
+    calculate_lgs_score,
     calculate_score_for_exam,
     estimate_ranking,
     calculate_percentile,
@@ -27,6 +28,7 @@ __all__ = [
     'create_sections_from_template',
     'calculate_tyt_score',
     'calculate_ayt_score',
+    'calculate_lgs_score',
     'calculate_score_for_exam',
     'estimate_ranking',
     'calculate_percentile',

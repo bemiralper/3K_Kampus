@@ -370,24 +370,32 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
         week_cols = max(week_cols, len(occupied_day_columns(days, group)))
 
     sections = []
+    stack_gap = 1.0
+    gap_row = 3.2
     for group in payload.get('groups') or []:
         cname = html.escape(pretty_class_label(group.get('classroom_name') or ''))
         visible = occupied_day_columns(days, group)
         cols_html = []
+        page_cards = 1
+        page_gaps = 0
         for day, cards in visible:
             day_name = html.escape(day.get('short_name') or day.get('name') or '')
             items = []
+            gap_rows = 0
             for order, card in enumerate(cards, 1):
                 prev = cards[order - 2] if order > 1 else None
                 if prev and show_gaps:
                     gap = _schedule_gap_label(prev.get('end') or '', card.get('start') or '')
                     if gap:
+                        gap_rows += 1
                         items.append(f'<div class="gap">{html.escape(gap)}</div>')
                 items.append(
                     _html_schedule_card(
                         card, order, subject_kind=subject_kind, color_by=color_by,
                     ),
                 )
+            page_cards = max(page_cards, len(cards) or 1)
+            page_gaps = max(page_gaps, gap_rows)
             cols_html.append(
                 f'<section class="day-col">'
                 f'<header><i></i><strong>{day_name}</strong></header>'
@@ -403,8 +411,15 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
             if cols_html
             else '<div class="empty">Bu programda ders yok</div>'
         )
+        printable = 210 - 26
+        chrome = 14 + 7 + 3 + 4
+        between = max(0, page_cards - 1) * stack_gap + page_gaps * (gap_row + stack_gap)
+        card_mm = (printable - chrome - between) / max(page_cards, 1)
+        card_mm = max(7.2, min(16, card_mm))
+        title_px = 11 if card_mm >= 11 else 9
+        who_px = 10 if card_mm >= 11 else 8
         sections.append(
-            f'<section class="{page_class}">'
+            f'<section class="{page_class}" style="--card-h:{card_mm:.2f}mm;--title-px:{title_px}px;--who-px:{who_px}px">'
             f'<header class="brand">'
             f'{logo_html}'
             f'<div class="brand-text">'
@@ -428,8 +443,7 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
     background: #f8fafc;
   }}
   .teacher-page, .class-page, .student-page {{
-    min-height: 210mm;
-    padding: 0 12mm 14mm;
+    padding: 0 8mm 4mm;
     break-after: page;
     page-break-after: always;
   }}
@@ -437,11 +451,11 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
     break-after: auto; page-break-after: auto;
   }}
   .brand {{
-    display: flex; align-items: center; gap: 14px;
-    margin: 0 -12mm 8mm; padding: 10px 12mm;
+    display: flex; align-items: center; gap: 10px;
+    margin: 0 -8mm 3mm; padding: 6px 8mm;
     background: #0262a7; color: #fff;
   }}
-  .logo {{ height: 36px; width: auto; display: block; }}
+  .logo {{ height: 28px; width: auto; display: block; }}
   .logo-fallback {{
     width: 36px; height: 36px; border: 1px solid rgba(255,255,255,.4);
     display: flex; align-items: center; justify-content: center;
@@ -453,7 +467,7 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
     letter-spacing: .08em; opacity: .82;
   }}
   .brand-text h1 {{
-    margin: 2px 0 0; font-size: 16px; line-height: 1.2; color: #fff;
+    margin: 1px 0 0; font-size: 14px; line-height: 1.15; color: #fff;
   }}
   .brand-text span {{ display: block; margin-top: 2px; font-size: 10px; opacity: .88; }}
   .week-board {{
@@ -463,7 +477,7 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
     background: #fff;
     border: 1px solid #e2e8f0;
     border-radius: 10px;
-    padding: 8px;
+    padding: 4px;
   }}
   .day-col header {{
     position: relative;
@@ -471,8 +485,8 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
     border: 1px solid #cbd5e1;
     border-radius: 8px;
     text-align: center;
-    padding: 8px 4px 6px;
-    margin-bottom: 8px;
+    padding: 4px 4px 3px;
+    margin-bottom: 4px;
     color: #334155;
   }}
   .day-col header i {{
@@ -480,13 +494,13 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
     background: #0262a7; border-radius: 8px 8px 0 0;
   }}
   .day-col header strong {{ font-size: 11px; font-weight: 800; }}
-  .day-stack {{ display: flex; flex-direction: column; gap: 8px; }}
+  .day-stack {{ display: flex; flex-direction: column; gap: {stack_gap}mm; }}
   .card {{
-    display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px;
+    display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 6px;
     align-items: stretch;
-    min-height: 72px; padding: 8px 9px 8px 7px;
-    border: 1px solid #dbeafe; border-radius: 10px;
-    break-inside: avoid; page-break-inside: avoid;
+    height: var(--card-h, 14mm); min-height: 0; padding: 3px 6px 3px 4px;
+    border: 1px solid #dbeafe; border-radius: 8px;
+    overflow: hidden;
   }}
   .badge {{
     font-size: 9px; font-weight: 800; letter-spacing: .06em;
@@ -506,11 +520,12 @@ def build_schedule_pdf_html(payload: dict[str, Any], *, color_by: str = 'ders') 
     background: currentColor; opacity: .22; border-radius: 99px;
   }}
   .main {{ display: flex; flex-direction: column; justify-content: center; gap: 2px; min-width: 0; }}
-  .main strong {{ font-size: 13px; line-height: 1.2; }}
-  .who {{ font-size: 11px; font-weight: 600; }}
+  .main strong {{ font-size: var(--title-px, 11px); line-height: 1.15; }}
+  .who {{ font-size: var(--who-px, 10px); font-weight: 600; }}
   .gap {{
     display: flex; align-items: center; gap: 6px;
-    text-align: center; font-size: 10px; font-weight: 800;
+    height: {gap_row}mm;
+    text-align: center; font-size: 8px; font-weight: 800;
     letter-spacing: .04em; text-transform: uppercase; color: #94a3b8;
   }}
   .gap::before, .gap::after {{

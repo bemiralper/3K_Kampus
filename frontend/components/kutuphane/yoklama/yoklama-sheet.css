@@ -152,3 +152,72 @@
   font-weight: 800;
   vertical-align: middle;
 }
+
+.yk-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.yk-toolbar-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.yk-toolbar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.yk-session-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.yk-session-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.yk-session-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 720px) {
+  .yk-toolbar-actions {
+    width: 100%;
+  }
+
+  .yk-toolbar-actions > button,
+  .yk-toolbar-actions > div {
+    flex: 1 1 calc(50% - 6px);
+    min-width: 0;
+  }
+
+  .yk-toolbar-actions > button {
+    text-align: center;
+    justify-content: center;
+  }
+
+  .yk-session-actions {
+    width: 100%;
+  }
+
+  .yk-session-actions > button {
+    flex: 1 1 calc(50% - 6px);
+    min-height: 38px;
+  }
+}

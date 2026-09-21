@@ -64,13 +64,14 @@ function typeShort(t: string, display?: string) {
   if (t === 'YKS_AYT') return 'AYT';
   if (t === 'DENEME') return 'Deneme';
   if (t === 'LGS') return 'LGS';
+  if (t === 'LGS_7') return 'LGS 7';
   return display || t;
 }
 
 function examGroup(type: string): DevelopmentTypeGroup {
   if (type === 'YKS_TYT') return 'TYT';
   if (type === 'YKS_AYT') return 'AYT';
-  if (type === 'LGS') return 'LGS';
+  if (type === 'LGS' || type === 'LGS_7') return 'LGS';
   return 'manuel';
 }
 
@@ -392,12 +393,12 @@ export default function SinavlarTab({ studentId }: SinavlarTabProps) {
   const lise = isLiseStudent(data?.alan, allExams);
 
   useEffect(() => {
-    if (lise && typePick === 'LGS') setTypePick('all');
+    if (lise && (typePick === 'LGS' || typePick === 'LGS_7')) setTypePick('all');
   }, [lise, typePick]);
 
   const typeOptions = useMemo(() => {
     const present = Array.from(new Set(allExams.map((e) => e.exam_type)))
-      .filter((value) => !(lise && value === 'LGS'));
+      .filter((value) => !(lise && (value === 'LGS' || value === 'LGS_7')));
     return present.map((value) => {
       const known = EXAM_TYPES.find((t) => t.value === value);
       return { value, label: known ? typeShort(value, known.label) : typeShort(value) };

@@ -62,6 +62,7 @@ from apps.academic.interfaces.views import (
     program_grid_cell_bulk_update_api,
     program_grid_cell_fill_api,
     program_grid_cell_clear_api,
+    program_grid_clear_placements_api,
     program_grid_cells_swap_api,
 )
 from apps.academic.interfaces.views.class_lesson_plan import (
@@ -215,6 +216,7 @@ urlpatterns = [
     path('program-grid/generate-create/', grid_generate_create_api, name='grid-generate-create'),
     path('program-grid/ensure-version/', grid_ensure_version_api, name='grid-ensure-version'),
     path('program-grid/unbind-classroom/', grid_unbind_classroom_api, name='grid-unbind-classroom'),
+    path('program-grid/clear-placements/', program_grid_clear_placements_api, name='grid-clear-placements'),
     path('program-grid/cycles/<int:cycle_pk>/matrix/', grid_matrix_api, name='grid-matrix'),
     path('program-grid/cycles/<int:cycle_pk>/clear/', grid_clear_api, name='grid-clear'),
     path('program-grid/cells/', program_grid_cell_list_api, name='program-grid-cell-list'),

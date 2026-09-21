@@ -144,6 +144,14 @@ export default function DolaplarPage() {
   });
   const [keyConfirmed, setKeyConfirmed] = useState(false);
   const [printingPdf, setPrintingPdf] = useState(false);
+  const [pdfMenuOpen, setPdfMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!pdfMenuOpen) return;
+    const close = () => setPdfMenuOpen(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [pdfMenuOpen]);
 
   /* ─── DATA ─── */
   const loadData = useCallback(async () => {
@@ -385,7 +393,7 @@ export default function DolaplarPage() {
     return true;
   });
 
-  const handlePrintPdf = async () => {
+  const handlePrintPdf = async (scope: 'occupied' | 'empty' = 'occupied') => {
     if (activeTab === 'gecmis') {
       alert('PDF listesi Dolaplar veya Atamalar sekmesinde kullanılabilir.');
       return;
@@ -400,8 +408,10 @@ export default function DolaplarPage() {
         baslangic?: string;
         durum?: string;
       }[] = [];
+      let title = scope === 'empty' ? 'Boş Dolaplar' : 'Dolu Dolaplar';
 
       if (activeTab === 'atamalar') {
+        title = 'Dolap Atama Listesi';
         rows = assignments.map((a) => ({
           no: a.dolap_no || '-',
           ogrenci: a.ogrenci_adi || `#${a.ogrenci_id}`,
@@ -410,42 +420,37 @@ export default function DolaplarPage() {
           baslangic: new Date(a.baslangic_tarihi).toLocaleDateString('tr-TR'),
           durum: STATUS_LABELS[a.durum] || a.durum,
         }));
-      } else {
-        const assignedLockers = lockers.filter(
-          (l) => l.durum === 'ASSIGNED' || (l.atanan_ogrenci && l.atanan_ogrenci.trim()),
-        );
-        if (assignedLockers.length > 0) {
-          rows = assignedLockers.map((l) => ({
+      } else if (scope === 'empty') {
+        rows = lockers
+          .filter((l) => l.durum === 'AVAILABLE')
+          .map((l) => ({
             no: l.dolap_no,
-            ogrenci: l.atanan_ogrenci || '',
+            ogrenci: '',
             durum: STATUS_LABELS[l.durum] || l.durum,
           }));
-        } else {
-          const res = await fetchLockerAssignments({ durum: 'ACTIVE' });
-          const list = res.success && res.data && Array.isArray(res.data) ? res.data : [];
-          rows = list.map((a) => ({
-            no: a.dolap_no || '-',
-            ogrenci: a.ogrenci_adi || `#${a.ogrenci_id}`,
-            atamaTipi: ATAMA_TIPI_LABELS[a.atama_tipi] || a.atama_tipi,
-            anahtar: a.anahtar_verildi ? 'Verildi' : 'Verilmedi',
-            baslangic: new Date(a.baslangic_tarihi).toLocaleDateString('tr-TR'),
-            durum: STATUS_LABELS[a.durum] || a.durum,
+      } else {
+        rows = lockers
+          .filter((l) => l.durum === 'ASSIGNED' || Boolean(l.atanan_ogrenci && l.atanan_ogrenci.trim()))
+          .map((l) => ({
+            no: l.dolap_no,
+            ogrenci: l.atanan_ogrenci || '—',
+            durum: STATUS_LABELS[l.durum] || l.durum,
           }));
-        }
       }
 
       if (rows.length === 0) {
-        alert('PDF listesi için atanmış öğrenci bulunamadı.');
+        alert(scope === 'empty' ? 'Boş dolap bulunamadı.' : 'Dolu dolap bulunamadı.');
         return;
       }
 
       const html = buildLockerStudentListPrintHtml({
         meta: {
-          title: activeTab === 'dolaplar' ? 'Dolap Öğrenci Listesi' : 'Dolap Atama Listesi',
+          title,
           subeAdi: activeSube?.ad,
           kurumBranding: activeKurum,
         },
         rows,
+        scope: activeTab === 'atamalar' ? 'occupied' : scope,
       });
       const opened = openKutuphanePrintWindow(html);
       if (!opened) {
@@ -693,9 +698,44 @@ export default function DolaplarPage() {
         )}
 
         <button className="filter-refresh" onClick={() => loadData()} disabled={loading}>🔄 Yenile</button>
-        {activeTab !== 'gecmis' && (
+        {activeTab === 'dolaplar' && (
+          <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+            <button
+              onClick={() => setPdfMenuOpen(open => !open)}
+              disabled={loading || printingPdf}
+              style={{
+                padding: '8px 14px', borderRadius: 10, border: '1px solid #bae6fd', background: '#f0f9ff',
+                color: '#0369a1', fontSize: 13, fontWeight: 600, cursor: printingPdf ? 'wait' : 'pointer',
+                opacity: loading || printingPdf ? 0.6 : 1,
+              }}
+            >
+              {printingPdf ? '⏳ Hazırlanıyor...' : '📄 PDF / Yazdır'}
+            </button>
+            {pdfMenuOpen && (
+              <div style={{
+                position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 30, minWidth: 160,
+                background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
+                boxShadow: '0 8px 20px rgba(15,23,42,0.12)', padding: 4,
+              }}>
+                <button
+                  onClick={() => { setPdfMenuOpen(false); void handlePrintPdf('occupied'); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, fontSize: 13, fontWeight: 600, color: '#b91c1c', cursor: 'pointer' }}
+                >
+                  Dolu dolaplar
+                </button>
+                <button
+                  onClick={() => { setPdfMenuOpen(false); void handlePrintPdf('empty'); }}
+                  style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, fontSize: 13, fontWeight: 600, color: '#15803d', cursor: 'pointer' }}
+                >
+                  Boş dolaplar
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+        {activeTab === 'atamalar' && (
           <button
-            onClick={() => void handlePrintPdf()}
+            onClick={() => void handlePrintPdf('occupied')}
             disabled={loading || printingPdf}
             style={{
               padding: '8px 14px', borderRadius: 10, border: '1px solid #bbf7d0', background: '#f0fdf4',

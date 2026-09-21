@@ -64,6 +64,7 @@ from .program_grid import (
     program_grid_cell_bulk_update_api,
     program_grid_cell_fill_api,
     program_grid_cell_clear_api,
+    program_grid_clear_placements_api,
     program_grid_cells_swap_api,
 )
 from .class_lesson_plan import (
@@ -163,6 +164,7 @@ __all__ = [
     'program_grid_cell_bulk_update_api',
     'program_grid_cell_fill_api',
     'program_grid_cell_clear_api',
+    'program_grid_clear_placements_api',
     'program_grid_cells_swap_api',
     # Class Lesson Plan
     'active_academic_year_api',

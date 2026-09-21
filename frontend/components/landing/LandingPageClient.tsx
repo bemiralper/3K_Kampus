@@ -27,7 +27,7 @@ import LandingJsonLd from '@/components/landing/LandingJsonLd';
 
 function LandingPageInner({ initialData }: { initialData: LandingData | null }) {
   const searchParams = useSearchParams();
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
   const [data, setData] = useState<LandingData | null>(initialData);
   const [branding, setBranding] = useState<KurumBranding>(() =>
     initialData?.kurum ? mergeBranding(initialData.kurum) : DEFAULT_BRANDING,
@@ -84,7 +84,9 @@ function LandingPageInner({ initialData }: { initialData: LandingData | null }) 
   const b = mergeBranding(data?.kurum ? { ...branding, ...data.kurum } : branding);
   const pageTitle = data?.settings?.seo_baslik || b.gorunen_ad || SITE_TAB_TITLE;
 
-  if (isAuthenticated) {
+  // isLoading bitmeden ağacı değiştirme — aksi halde SSR landing (vergi no <p>)
+  // ile istemci spinner'ı çakışır (hidrasyon, özellikle telefonda).
+  if (!isLoading && isAuthenticated) {
     return (
       <div className="flex min-h-screen items-center justify-center" style={{ background: `linear-gradient(135deg, ${b.login_arkaplan_rengi}, ${b.login_arkaplan_rengi_2})` }}>
         <div className="h-12 w-12 animate-spin rounded-full border-4 border-white/30 border-t-white" />

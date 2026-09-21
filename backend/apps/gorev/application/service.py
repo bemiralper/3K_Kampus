@@ -14,7 +14,7 @@ from apps.gorev.application.bridge import GorevCalendarBridge
 from apps.gorev.application.notification import GorevNotificationService
 from apps.gorev.seed import seed_gorev_tipleri
 from apps.roller.models import Role, UserRole
-from apps.personel.domain.models import Personel
+from apps.personel.domain.models import Personel, PersonelGorevlendirme
 
 logger = logging.getLogger('gorev.service')
 
@@ -39,11 +39,22 @@ class GorevTipiService:
         return seed_gorev_tipleri(kurum_id)
 
 
+YONETICI_ROL_KODLARI = (
+    'super_admin', 'kurum_yoneticisi', 'sube_yoneticisi', 'egitim_yoneticisi',
+)
+YONETICI_ALIAS_KODLARI = frozenset({'kurum_yoneticisi', 'yonetici', 'yoneticiler'})
+
+
 class GorevService:
     def __init__(self):
         self.bridge = GorevCalendarBridge()
         self.notifier = GorevNotificationService()
         self.tip_service = GorevTipiService()
+
+    def _role_codes_for_hedef(self, hedef_rol_kodu: str) -> list[str]:
+        if hedef_rol_kodu in YONETICI_ALIAS_KODLARI:
+            return list(YONETICI_ROL_KODLARI)
+        return [hedef_rol_kodu] if hedef_rol_kodu else []
 
     def resolve_assignee_user_ids(
         self,
@@ -53,25 +64,72 @@ class GorevService:
         hedef_user_ids: list = None,
         sube_id: int = None,
     ) -> list[int]:
+        """Atanacak kullanıcıları çöz.
+
+        Rol eşlemesi hem giriş rolü (UserRole) hem yıllık görevlendirme
+        (PersonelGorevlendirme) üzerinden yapılır. Aktif şube, ev şubesi
+        farklı olan personeli elemez; şubede görevlisi yoksa kurum geneline düşer.
+        """
         hedef_user_ids = hedef_user_ids or []
 
         if hedef_tipi == HedefTipi.KULLANICI:
-            return list(set(int(uid) for uid in hedef_user_ids if uid))
+            return list(dict.fromkeys(int(uid) for uid in hedef_user_ids if uid))
 
-        personel_qs = Personel.objects.filter(kurum_id=kurum_id, user__isnull=False)
-        if sube_id:
-            personel_qs = personel_qs.filter(sube_id=sube_id)
+        personel_base = Personel.objects.filter(
+            kurum_id=kurum_id, user__isnull=False, aktif_mi=True,
+        )
 
         if hedef_tipi == HedefTipi.TUM_PERSONEL:
-            return list(personel_qs.values_list('user_id', flat=True))
+            if sube_id:
+                gv_ids = PersonelGorevlendirme.objects.filter(
+                    kurum_id=kurum_id,
+                    aktif_mi=True,
+                    gorev_sube_id=sube_id,
+                    personel__user__isnull=False,
+                    personel__aktif_mi=True,
+                ).values_list('personel__user_id', flat=True)
+                home_ids = personel_base.filter(sube_id=sube_id).values_list('user_id', flat=True)
+                scoped = {uid for uid in (*gv_ids, *home_ids) if uid}
+                if scoped:
+                    return list(scoped)
+            return [uid for uid in personel_base.values_list('user_id', flat=True) if uid]
 
         if hedef_tipi == HedefTipi.ROL and hedef_rol_kodu:
-            try:
-                role = Role.objects.get(code=hedef_rol_kodu, silindi_mi=False)
-            except Role.DoesNotExist:
+            codes = self._role_codes_for_hedef(hedef_rol_kodu)
+            roles = Role.objects.filter(code__in=codes, silindi_mi=False)
+            if not roles.exists():
                 return []
-            role_user_ids = UserRole.objects.filter(role=role).values_list('user_id', flat=True)
-            return list(personel_qs.filter(user_id__in=role_user_ids).values_list('user_id', flat=True))
+
+            login_user_ids = set(
+                UserRole.objects.filter(role__in=roles).values_list('user_id', flat=True),
+            )
+            via_login = set(
+                personel_base.filter(user_id__in=login_user_ids).values_list('user_id', flat=True),
+            )
+
+            gv_qs = PersonelGorevlendirme.objects.filter(
+                kurum_id=kurum_id,
+                aktif_mi=True,
+                rol__in=roles,
+                personel__user__isnull=False,
+                personel__aktif_mi=True,
+            )
+            via_gv_all = set(gv_qs.values_list('personel__user_id', flat=True))
+
+            if sube_id:
+                via_gv_sube = set(
+                    gv_qs.filter(gorev_sube_id=sube_id).values_list('personel__user_id', flat=True),
+                )
+                via_home = set(
+                    personel_base.filter(
+                        sube_id=sube_id, user_id__in=login_user_ids,
+                    ).values_list('user_id', flat=True),
+                )
+                scoped = {uid for uid in (via_gv_sube | via_home) if uid}
+                if scoped:
+                    return list(scoped)
+
+            return [uid for uid in (via_login | via_gv_all) if uid]
 
         return []
 
@@ -82,9 +140,27 @@ class GorevService:
             default_tip = self.tip_service.get_or_seed(kurum_id, 'YAPILACAK')
             gorev_tipi_id = default_tip.id if default_tip else None
 
+        hedef_tipi = data.get('hedef_tipi', HedefTipi.KULLANICI)
+        hedef_rol_kodu = data.get('hedef_rol_kodu', '')
+        hedef_user_ids = data.get('hedef_user_ids', [])
+        sube_id = data.get('sube_id')
+
+        user_ids = self.resolve_assignee_user_ids(
+            kurum_id=kurum_id,
+            hedef_tipi=hedef_tipi,
+            hedef_rol_kodu=hedef_rol_kodu,
+            hedef_user_ids=hedef_user_ids,
+            sube_id=sube_id,
+        )
+        if not user_ids:
+            raise ValueError(
+                'Seçilen rol veya kişide atanacak kullanıcı bulunamadı. '
+                'Kişinin sistem hesabı ve aktif görevlendirmesi olduğundan emin olun.',
+            )
+
         gorev = Gorev.objects.create(
             kurum_id=kurum_id,
-            sube_id=data.get('sube_id'),
+            sube_id=sube_id,
             egitim_yili_id=data.get('egitim_yili_id'),
             donem_id=data.get('donem_id'),
             gorev_tipi_id=gorev_tipi_id,
@@ -94,9 +170,9 @@ class GorevService:
             son_tarih=data['son_tarih'],
             tahmini_sure_dk=data.get('tahmini_sure_dk', 30),
             tum_gun=data.get('tum_gun', False),
-            hedef_tipi=data.get('hedef_tipi', HedefTipi.KULLANICI),
-            hedef_rol_kodu=data.get('hedef_rol_kodu', ''),
-            hedef_user_ids=data.get('hedef_user_ids', []),
+            hedef_tipi=hedef_tipi,
+            hedef_rol_kodu=hedef_rol_kodu,
+            hedef_user_ids=hedef_user_ids,
             hedef_grup_id=data.get('hedef_grup_id'),
             kaynak_modul=data.get('kaynak_modul', ''),
             kaynak_id=data.get('kaynak_id', ''),
@@ -105,21 +181,21 @@ class GorevService:
             olusturan_id=olusturan_id,
         )
 
-        user_ids = self.resolve_assignee_user_ids(
-            kurum_id=kurum_id,
-            hedef_tipi=gorev.hedef_tipi,
-            hedef_rol_kodu=gorev.hedef_rol_kodu,
-            hedef_user_ids=gorev.hedef_user_ids,
-            sube_id=gorev.sube_id,
-        )
-
         for uid in user_ids:
             GorevAtama.objects.create(gorev=gorev, atanan_user_id=uid)
 
-        from apps.takvim.application.service import EventTypeService
-        EventTypeService.seed_defaults(kurum_id)
-        self.bridge.sync_gorev(gorev, olusturan_id)
-        self.notifier.notify_assignments(gorev)
+        try:
+            from apps.takvim.application.service import EventTypeService
+            EventTypeService.seed_defaults(kurum_id)
+            self.bridge.sync_gorev(gorev, olusturan_id)
+        except Exception:
+            logger.exception('Görev takvim senkronu başarısız: %s', gorev.id)
+
+        try:
+            self.notifier.notify_assignments(gorev)
+        except Exception:
+            logger.exception('Görev bildirimi gönderilemedi: %s', gorev.id)
+
         return gorev
 
     def list_gorevler(self, kurum_id: int, filters: dict = None):
@@ -173,10 +249,20 @@ class GorevService:
                 qs = qs.filter(
                     Q(gorev__baslik__icontains=term) | Q(gorev__aciklama__icontains=term),
                 )
-        if filters.get('baslangic'):
-            qs = qs.filter(gorev__son_tarih__gte=filters['baslangic'])
-        if filters.get('bitis'):
-            qs = qs.filter(gorev__son_tarih__lte=filters['bitis'])
+        if filters.get('baslangic') or filters.get('bitis'):
+            start = filters.get('baslangic')
+            end = filters.get('bitis')
+            tarih_q = Q()
+            if start and end:
+                tarih_q = Q(gorev__son_tarih__gte=start, gorev__son_tarih__lte=end)
+            elif start:
+                tarih_q = Q(gorev__son_tarih__gte=start)
+            elif end:
+                tarih_q = Q(gorev__son_tarih__lte=end)
+
+            if filters.get('bugun') and start and end:
+                tarih_q |= Q(gorev__created_at__gte=start, gorev__created_at__lte=end)
+            qs = qs.filter(tarih_q)
         if filters.get('geciken'):
             qs = qs.filter(
                 gorev__son_tarih__lt=timezone.now(),
