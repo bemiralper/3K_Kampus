@@ -28,6 +28,7 @@ import RiskBildirDrawer from "@/components/coach/RiskBildirDrawer";
 import CoachFilterSheet from "@/components/coach/CoachFilterSheet";
 import CoachStudentAvatar from "@/components/coach/students/CoachStudentAvatar";
 import CoachStudentQuickActions from "@/components/coach/students/CoachStudentQuickActions";
+import "./students-redesign.css";
 
 type FilterId = "all" | "risk" | "overdue" | "needs_meeting" | "today_meeting" | "pinned";
 type SortId = "name" | "risk" | "meeting" | "overdue";
@@ -456,11 +457,13 @@ export default function CoachOgrencilerClient() {
 
   return (
     <div className="coach-students-page">
-      <header className="coach-page-header">
+      <header className="coach-page-header coach-students-hero">
         <div className="coach-page-header-text">
+          <p className="coach-students-kicker">Öğrenci çalışma alanı</p>
           <h2>Öğrencilerim</h2>
           <p>Atanmış öğrencilerinizi risk, ödev ve görüşme durumuna göre takip edin.</p>
         </div>
+        {!loading && <div className="coach-students-hero-count"><strong>{stats.total}</strong><span>aktif öğrenci</span></div>}
       </header>
 
       {userId > 0 && (

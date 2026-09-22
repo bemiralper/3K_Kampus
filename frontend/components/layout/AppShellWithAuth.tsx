@@ -4,9 +4,17 @@ import type { ReactNode } from "react";
 import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { getDefaultHomePath, isCoachOnlyUser, isMuhasebeOnlyUser, toPortalInboxPath } from "@/lib/auth-routes";
+import {
+  getDefaultHomePath,
+  isCoachOnlyUser,
+  isMuhasebeOnlyUser,
+  assignedPortalCodes,
+  needsPortalPicker,
+  resolveActivePortal,
+  toPortalInboxPath,
+} from "@/lib/auth-routes";
 import { toMuhasebeAkademikPath } from "@/lib/akademik-routes";
-import { getContextGate, STORAGE_POST_LOGIN_ROUTING } from "@/lib/post-login-routing";
+import { clearContextGate, getContextGate, STORAGE_POST_LOGIN_ROUTING } from "@/lib/post-login-routing";
 import AppShell from "@/components/layout/AppShell";
 
 /** router.replace yerine — Next.js 14 parallelRoutes.get önbellek hatasını önler */
@@ -29,7 +37,7 @@ const PUBLIC_ROUTE_PREFIXES = [
   "/iletisim",
   "/veri-silme",
 ];
-const CONTEXT_PICKER_ROUTES = ["/kurum-sec", "/sube-sec"];
+const CONTEXT_PICKER_ROUTES = ["/kurum-sec", "/sube-sec", "/portal-sec"];
 const PRINT_ROUTES = ["/print"];
 
 function isPublicPath(pathname: string): boolean {
@@ -125,6 +133,11 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
         hardReplace("/sube-sec");
         return;
       }
+      if (gate === "portal" || needsPortalPicker(user)) {
+        hasRedirectedRef.current = true;
+        hardReplace("/portal-sec");
+        return;
+      }
       const home = getDefaultHomePath(user);
       hasRedirectedRef.current = true;
       hardReplace(home);
@@ -138,45 +151,66 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       return;
     }
 
-    // Portal-only user on admin route
+    // Seçili panelin dışında kalan rotaları o panelin evine taşı
     if (
       isAuthenticated &&
-      !isPortalRoute &&
-      !isPublicRoute &&
-      !isContextPickerRoute &&
-      (isCoachOnlyUser(user) || isMuhasebeOnlyUser(user))
-    ) {
-      // Akademik linkleri bazen /akademik-planlama altına düşer — dashboard'a atma,
-      // muhasebe portalındaki eşdeğer rotaya taşı.
-      const search =
-        typeof window !== "undefined" ? window.location.search : "";
-      if (
-        isMuhasebeOnlyUser(user) &&
-        (pathname === "/akademik-planlama" || pathname.startsWith("/akademik-planlama/"))
-      ) {
-        hasRedirectedRef.current = true;
-        hardReplace(toMuhasebeAkademikPath(pathname, search));
-        return;
-      }
-      const inboxPath = toPortalInboxPath(user, pathname, search);
-      if (inboxPath) {
-        hasRedirectedRef.current = true;
-        hardReplace(inboxPath);
-        return;
-      }
-      const home = getDefaultHomePath(user);
-      hasRedirectedRef.current = true;
-      hardReplace(home);
-    }
-
-    // Kurum/şube seçimi tamamlanmadan uygulamaya geçilmesin
-    if (
-      isAuthenticated &&
-      !isPortalRoute &&
       !isPublicRoute &&
       !isContextPickerRoute &&
       !isPrintRoute
     ) {
+      if (needsPortalPicker(user)) {
+        hasRedirectedRef.current = true;
+        hardReplace("/portal-sec");
+        return;
+      }
+
+      const active = resolveActivePortal(user);
+      const search = typeof window !== "undefined" ? window.location.search : "";
+      const lockMuhasebe = active === "muhasebe" || isMuhasebeOnlyUser(user);
+      const lockCoach = active === "coach" || isCoachOnlyUser(user);
+
+      if (lockMuhasebe && !isMuhasebeRoute) {
+        if (
+          pathname === "/akademik-planlama" ||
+          pathname.startsWith("/akademik-planlama/")
+        ) {
+          hasRedirectedRef.current = true;
+          hardReplace(toMuhasebeAkademikPath(pathname, search));
+          return;
+        }
+        const inboxPath = toPortalInboxPath(user, pathname, search);
+        if (inboxPath) {
+          hasRedirectedRef.current = true;
+          hardReplace(inboxPath);
+          return;
+        }
+        hasRedirectedRef.current = true;
+        hardReplace("/muhasebe/dashboard");
+        return;
+      }
+
+      if (lockCoach && !isCoachRoute) {
+        const inboxPath = toPortalInboxPath(user, pathname, search);
+        if (inboxPath) {
+          hasRedirectedRef.current = true;
+          hardReplace(inboxPath);
+          return;
+        }
+        hasRedirectedRef.current = true;
+        hardReplace("/coach/dashboard");
+        return;
+      }
+
+      if (
+        assignedPortalCodes(user).length > 1 &&
+        active === "admin" &&
+        isPortalRoute
+      ) {
+        hasRedirectedRef.current = true;
+        hardReplace("/dashboard");
+        return;
+      }
+
       const gate = getContextGate();
       if (gate === "kurum") {
         hasRedirectedRef.current = true;
@@ -187,6 +221,9 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
         hasRedirectedRef.current = true;
         hardReplace("/sube-sec");
         return;
+      }
+      if (gate === "portal") {
+        clearContextGate();
       }
     }
   }, [isAuthenticated, isLoading, isPortalRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, user]);

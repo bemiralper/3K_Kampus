@@ -39,6 +39,7 @@ import {
   BelgelerTab,
 } from '@/components/coach/student360';
 import '@/app/coach/coach.css';
+import './student360-polish.css';
 
 const VALID_ACTIONS = new Set<string>(['gorusme-ekle', 'risk']);
 

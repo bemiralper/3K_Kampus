@@ -88,6 +88,105 @@ def _birthday_students(kurum_id: int, today: date, *, sube_id: int | None = None
     return [k for k in qs if not is_deneme_kulubu_kayit(k.ogrenci)]
 
 
+def _next_birthday(dogum: date, ref: date) -> date:
+    try:
+        candidate = dogum.replace(year=ref.year)
+    except ValueError:
+        candidate = date(ref.year, 2, 28)
+    if candidate < ref:
+        try:
+            return dogum.replace(year=ref.year + 1)
+        except ValueError:
+            return date(ref.year + 1, 2, 28)
+    return candidate
+
+
+def _birthday_label(days_left: int) -> str:
+    if days_left == 0:
+        return 'Bugün'
+    if days_left == 1:
+        return 'Yarın'
+    if days_left == -1:
+        return 'Dün'
+    if days_left < 0:
+        return f'{abs(days_left)} gün önce'
+    return f'{days_left} gün sonra'
+
+
+def _year_birthday(dogum: date, year: int) -> date:
+    try:
+        return dogum.replace(year=year)
+    except ValueError:
+        return date(year, 2, 28)
+
+
+def list_staff_birthdays(
+    kurum_id: int,
+    *,
+    on_date: date | None = None,
+    days: int = 30,
+    past_days: int = 7,
+    focus_date: date | None = None,
+) -> list[dict]:
+    """Kurumdaki doğum günleri: bugün, son günler ve yaklaşanlar.
+
+    focus_date, bildirimin işaret ettiği günü pencerenin dışındaysa da ekler.
+    """
+    from apps.ogrenci.domain.models import OgrenciKayit
+    from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit
+
+    today = on_date or timezone.localdate()
+    kayitlar = (
+        OgrenciKayit.objects.filter(
+            kurum_id=kurum_id,
+            aktif_mi=True,
+            ogrenci__aktif_mi=True,
+            ogrenci__dogum_tarihi__isnull=False,
+        )
+        .select_related('ogrenci', 'sinif')
+        .order_by('ogrenci__ad', 'ogrenci__soyad')
+    )
+    by_student: dict[int, dict] = {}
+    for kayit in kayitlar:
+        ogrenci = kayit.ogrenci
+        if is_deneme_kulubu_kayit(ogrenci) or not ogrenci.dogum_tarihi:
+            continue
+        sonraki = _next_birthday(ogrenci.dogum_tarihi, today)
+        kalan = (sonraki - today).days
+        tarih = sonraki
+        offset = kalan
+        if kalan > days:
+            onceki = _year_birthday(ogrenci.dogum_tarihi, sonraki.year - 1)
+            gecen = (today - onceki).days
+            focus_hit = (
+                focus_date is not None
+                and ogrenci.dogum_tarihi.month == focus_date.month
+                and ogrenci.dogum_tarihi.day == focus_date.day
+            )
+            if 0 < gecen <= past_days:
+                tarih = onceki
+                offset = -gecen
+            elif focus_hit:
+                tarih = _year_birthday(ogrenci.dogum_tarihi, focus_date.year)
+                offset = (tarih - today).days
+            else:
+                continue
+        sinif = kayit.sinif.ad if kayit.sinif_id and getattr(kayit.sinif, 'ad', None) else ''
+        current = by_student.get(ogrenci.id)
+        if current and current['sinif'] and not sinif:
+            continue
+        by_student[ogrenci.id] = {
+            'ogrenci_id': ogrenci.id,
+            'ad_soyad': f'{ogrenci.ad} {ogrenci.soyad}'.strip(),
+            'sinif': sinif or (current or {}).get('sinif') or '',
+            'yas': tarih.year - ogrenci.dogum_tarihi.year,
+            'kalan_gun': offset,
+            'etiket': _birthday_label(offset),
+            'tarih': tarih.isoformat(),
+        }
+    return sorted(by_student.values(), key=lambda row: (row['kalan_gun'], row['ad_soyad']))
+
+
 def _context_for(kayit, today: date) -> dict:
     ogrenci = kayit.ogrenci
     dogum = ogrenci.dogum_tarihi

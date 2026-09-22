@@ -5,6 +5,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from apps.coaching.api.views import CoachViewSet, AssignmentViewSet
 from apps.coaching.api.coach_student_views import (
+    CoachBirthdayListView,
     CoachStudentExportView,
     CoachStudentListView,
     CoachStudentProfileView,
@@ -41,6 +42,7 @@ router.register(r'assignments', AssignmentViewSet, basename='assignment')
 
 urlpatterns = [
     path('', include(router.urls)),
+    path('birthdays/', CoachBirthdayListView.as_view(), name='coach-birthdays'),
     path('students/', CoachStudentListView.as_view(), name='coach-student-list'),
     path('students/export/', CoachStudentExportView.as_view(), name='coach-student-export'),
     path('students/<int:student_id>/profile/', CoachStudentProfileView.as_view(), name='coach-student-profile'),

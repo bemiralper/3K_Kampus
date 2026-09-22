@@ -16,6 +16,7 @@ import {
   resolveInboxPortal,
   rewriteConversationInboxUrl,
 } from '@/lib/communication-api';
+import { coachBirthdayHref, isBirthdayNotificationUrl } from '@/lib/coach-birthdays';
 import {
   playNotificationSound,
   unlockNotificationAudio,
@@ -237,7 +238,10 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     }
     await Promise.allSettled(tasks);
 
-    const target = rewriteConversationInboxUrl(n.url, inboxPortal) || n.url;
+    const rewritten = rewriteConversationInboxUrl(n.url, inboxPortal) || n.url;
+    const target = inboxPortal === 'coach' && isBirthdayNotificationUrl(rewritten)
+      ? coachBirthdayHref(rewritten)
+      : rewritten;
     if (target) {
       window.location.href = target;
     }

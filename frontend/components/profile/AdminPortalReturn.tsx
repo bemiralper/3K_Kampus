@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import {
+  activatePortal,
   getAdminPortalView,
   portalHomePath,
   setAdminPortalView,
@@ -17,20 +16,22 @@ type AdminPortalReturnProps = {
 };
 
 export function useAdminPortalSwitch() {
-  const router = useRouter();
   const { user } = useAuth();
 
   const canSwitch =
     !!user && (user.is_staff || user.is_superuser) && getAdminPortalView() !== "admin";
 
   const returnToAdmin = () => {
-    setAdminPortalView("admin");
-    router.push(portalHomePath("admin"));
+    void activatePortal("admin").then(() => {
+      window.location.assign(portalHomePath("admin"));
+    });
   };
 
   const switchPortal = (view: PortalView) => {
     setAdminPortalView(view);
-    router.push(portalHomePath(view));
+    void activatePortal(view).then(() => {
+      window.location.assign(portalHomePath(view));
+    });
   };
 
   return { canSwitch, returnToAdmin, switchPortal, currentView: getAdminPortalView() };

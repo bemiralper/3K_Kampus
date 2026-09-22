@@ -3,7 +3,7 @@
 import { Suspense, useState, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
-import { getDefaultHomePath } from '@/lib/auth-routes';
+import { resolvePortalRedirect, resolvePostLoginRedirect, STORAGE_POST_LOGIN_ROUTING } from '@/lib/post-login-routing';
 import { fetchKurumBrandingByKod } from '@/lib/kurum-branding-api';
 import KurumBrandingHead from '@/components/branding/KurumBrandingHead';
 import {
@@ -77,10 +77,15 @@ function LoginPageInner() {
   }, [kurumKod]);
 
   useEffect(() => {
-    if (!isLoading && isAuthenticated) {
-      router.push(getDefaultHomePath(user));
-    }
-  }, [isAuthenticated, isLoading, router, user]);
+    if (isLoading || !isAuthenticated || isSubmitting) return;
+    let cancelled = false;
+    resolvePortalRedirect(user).then((next) => {
+      if (!cancelled) router.replace(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isAuthenticated, isLoading, isSubmitting, router, user]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +94,15 @@ function LoginPageInner() {
     const result = await login(username, password);
     if (result.success) {
       if (kurumKod) sessionStorage.setItem(LOGIN_KURUM_KOD_KEY, kurumKod);
-      router.push(getDefaultHomePath(result.user ?? user));
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.setItem(STORAGE_POST_LOGIN_ROUTING, '1');
+      }
+      try {
+        const nextPath = await resolvePostLoginRedirect(result.user ?? user);
+        window.location.replace(nextPath);
+      } finally {
+        sessionStorage.removeItem(STORAGE_POST_LOGIN_ROUTING);
+      }
     } else {
       setError(result.error || 'Giriş başarısız');
       setIsSubmitting(false);

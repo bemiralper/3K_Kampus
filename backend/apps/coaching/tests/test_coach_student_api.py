@@ -213,6 +213,7 @@ class CoachStudentApiTest(TestCase):
         self.assertIn('risk_score', row)
         self.assertIn('risk_label', row)
         self.assertEqual(row['veli_telefon'], '05551234567')
+        self.assertEqual(row['dogum_tarihi'], '2010-05-15')
         self.assertEqual(row['meeting_today_count'], 0)
         self.assertTrue(row['needs_meeting'])
         self.assertIn('profil_foto', row)

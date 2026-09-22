@@ -2,15 +2,14 @@
 
 import { useState, useEffect, useRef, type ChangeEvent, type FormEvent } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import CoachAvatar from "@/components/coach/CoachAvatar";
 import {
   changePassword,
   fetchMyProfile,
   updateMyProfile,
+  activatePortal,
   getAdminPortalView,
-  setAdminPortalView,
   portalHomePath,
   type PortalView,
 } from "@/lib/profile-api";
@@ -37,7 +36,6 @@ export default function UserProfilPanel({
   showAuditNote = false,
 }: UserProfilPanelProps) {
   const { user, checkAuth } = useAuth();
-  const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
@@ -154,9 +152,14 @@ export default function UserProfilPanel({
   };
 
   const handlePortalSwitch = (view: PortalView) => {
-    setAdminPortalView(view);
-    setPortalView(view);
-    router.push(portalHomePath(view));
+    void activatePortal(view).then((res) => {
+      if (!res.success) {
+        setError(res.error || "Panel açılamadı");
+        return;
+      }
+      setPortalView(view);
+      window.location.assign(portalHomePath(view));
+    });
   };
 
   if (loading) {

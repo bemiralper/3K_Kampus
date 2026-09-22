@@ -8,6 +8,7 @@ from django.test import TestCase
 
 from apps.communication.application.birthday_media_service import BirthdayMediaService
 from apps.communication.application.birthday_wish_service import (
+    list_staff_birthdays,
     select_birthday_media,
     send_birthday_wishes_for_kurum,
 )
@@ -98,6 +99,32 @@ class BirthdayWishServiceTest(TestCase):
         run = send_birthday_wishes_for_kurum(self.kurum.id, on_date=self.today)
         self.assertEqual(run.scanned, 0)
         self.assertEqual(run.sent, 0)
+
+    def test_staff_birthday_list_includes_today(self):
+        rows = list_staff_birthdays(self.kurum.id, on_date=self.today, days=30)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['ad_soyad'], 'Ali Yılmaz')
+        self.assertEqual(rows[0]['kalan_gun'], 0)
+        self.assertEqual(rows[0]['etiket'], 'Bugün')
+        self.assertEqual(rows[0]['tarih'], '2026-08-05')
+
+    def test_staff_birthday_list_keeps_yesterday_and_focus_day(self):
+        yesterday = list_staff_birthdays(self.kurum.id, on_date=date(2026, 8, 6), days=30)
+        self.assertEqual(len(yesterday), 1)
+        self.assertEqual(yesterday[0]['kalan_gun'], -1)
+        self.assertEqual(yesterday[0]['etiket'], 'Dün')
+        self.assertEqual(yesterday[0]['tarih'], '2026-08-05')
+
+        outside = list_staff_birthdays(self.kurum.id, on_date=date(2026, 9, 1), days=30)
+        self.assertEqual(outside, [])
+        focused = list_staff_birthdays(
+            self.kurum.id,
+            on_date=date(2026, 9, 1),
+            focus_date=date(2026, 8, 5),
+        )
+        self.assertEqual(len(focused), 1)
+        self.assertEqual(focused[0]['ad_soyad'], 'Ali Yılmaz')
+        self.assertEqual(focused[0]['tarih'], '2026-08-05')
 
     def test_staff_reminder_for_admins(self):
         from apps.communication.application.birthday_wish_service import notify_staff_birthdays

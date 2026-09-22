@@ -10,6 +10,9 @@ from shared.api_helpers import require_api_login
 
 
 def _user_role(user):
+    portal_role = getattr(user, '_portal_role', None)
+    if portal_role is not None:
+        return portal_role
     try:
         user_role = user.user_role
         if user_role and user_role.role:

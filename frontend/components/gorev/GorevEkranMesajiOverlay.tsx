@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { resolveInboxPortal, rewriteConversationInboxUrl } from '@/lib/communication-api';
+import { coachBirthdayHref, isBirthdayNotificationUrl } from '@/lib/coach-birthdays';
 import {
   fetchScreenNotifications,
   markScreenNotificationShown,
@@ -13,6 +14,23 @@ import { useKurum } from '@/lib/contexts/KurumContext';
 import '@/components/gorev/gorev.css';
 
 const SESSION_SOUND_KEY = 'gorev-ekran-sound-played';
+
+function notificationTarget(url: string, pathname: string): string {
+  const portal = resolveInboxPortal(pathname);
+  const rewritten = rewriteConversationInboxUrl(url, portal) || url;
+  if (portal === 'coach' && isBirthdayNotificationUrl(rewritten)) {
+    return coachBirthdayHref(rewritten);
+  }
+  return rewritten;
+}
+
+function actionLabel(url: string): string {
+  if (isBirthdayNotificationUrl(url)) return 'Doğum Günleri';
+  if (url.includes('/gorev')) return 'Göreve Git';
+  if (url.includes('/coach/ogrenciler/')) return 'Öğrenciye Git';
+  if (url.includes('/coach/ogrenciler')) return 'Öğrencilerim';
+  return 'Detaya Git';
+}
 
 export default function GorevEkranMesajiOverlay() {
   const router = useRouter();
@@ -79,15 +97,12 @@ export default function GorevEkranMesajiOverlay() {
     await markScreenNotificationShown(current.id);
     const remaining = queue.filter(n => n.id !== current.id);
     setQueue(remaining);
-    if (remaining.length > 0) {
-      setCurrent(remaining[0]);
-    } else {
-      setCurrent(null);
-      if (goToTask && url) {
-        const portal = resolveInboxPortal(pathname);
-        router.push(rewriteConversationInboxUrl(url, portal) || url);
-      }
+    if (goToTask && url) {
+      setCurrent(remaining[0] ?? null);
+      router.push(notificationTarget(url, pathname));
+      return;
     }
+    setCurrent(remaining[0] ?? null);
   };
 
   if (!current) return null;
@@ -121,13 +136,7 @@ export default function GorevEkranMesajiOverlay() {
           </button>
           {current.url && (
             <button type="button" className="gorev-btn gorev-btn-primary" onClick={() => dismiss(true)}>
-              {current.url.includes('/gorev')
-                ? 'Göreve Git'
-                : current.url.includes('/coach/ogrenciler/')
-                  ? 'Öğrenciye Git'
-                  : current.url.includes('/coach/ogrenciler')
-                    ? 'Öğrencilerim'
-                    : 'Detaya Git'}
+              {actionLabel(current.url)}
             </button>
           )}
         </div>

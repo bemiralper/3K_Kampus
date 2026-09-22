@@ -1,4 +1,4 @@
-import { apiPatch, resolveApiUrl, type ApiResponse } from "@/lib/api";
+import { apiPatch, apiPost, resolveApiUrl, type ApiResponse } from "@/lib/api";
 import type { User } from "@/lib/contexts/AuthContext";
 import { changePassword, type ChangePasswordPayload } from "@/lib/coach-profile-api";
 
@@ -37,11 +37,15 @@ export type PortalView = "admin" | "coach" | "muhasebe";
 
 const PORTAL_STORAGE_KEY = "3k_admin_portal_view";
 
-export function getAdminPortalView(): PortalView {
-  if (typeof window === "undefined") return "admin";
+export function readStoredPortal(): PortalView | null {
+  if (typeof window === "undefined") return null;
   const v = localStorage.getItem(PORTAL_STORAGE_KEY);
   if (v === "coach" || v === "muhasebe" || v === "admin") return v;
-  return "admin";
+  return null;
+}
+
+export function getAdminPortalView(): PortalView {
+  return readStoredPortal() ?? "admin";
 }
 
 export function setAdminPortalView(view: PortalView) {
@@ -53,4 +57,17 @@ export function portalHomePath(view: PortalView): string {
   if (view === "coach") return "/coach/dashboard";
   if (view === "muhasebe") return "/muhasebe/dashboard";
   return "/dashboard";
+}
+
+/** Seçilen paneli hatırlar ve oturum yetkisini o panele bağlar. */
+export async function activatePortal(
+  view: PortalView,
+): Promise<{ success: boolean; user?: User; error?: string }> {
+  const res = await apiPost<User>("/auth/api/portal/", { portal: view });
+  const user = (res as { user?: User }).user;
+  if (!res.success) {
+    return { success: false, error: res.error || "Panel seçilemedi" };
+  }
+  setAdminPortalView(view);
+  return { success: true, user };
 }

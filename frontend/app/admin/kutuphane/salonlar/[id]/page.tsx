@@ -47,6 +47,7 @@ import { buildSeatStudentListPrintHtml, openKutuphanePrintWindow } from '@/lib/k
 import { downloadBlob } from '@/lib/download-file';
 import '@/components/kutuphane/yoklama/yoklama-sheet.css';
 import '@/components/kutuphane/yoklama/yoklama-drawer.css';
+import './salon-detail-polish.css';
 
 /* ════════════════════════════════════════════════════════════
    TABS  (Oturumlar kaldırıldı — ders programı kullanılıyor)
@@ -464,11 +465,13 @@ export default function SalonDetayPage() {
       </div>
 
       {/* ════ TABS BAR ════ */}
-      <div className="kutuphane-salon-tabs">
+      <div className="kutuphane-salon-tabs" role="tablist" aria-label="Salon yönetim bölümleri">
         {TABS.map(tab => (
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
+            role="tab"
+            aria-selected={activeTab === tab.key}
             style={{
               padding: '10px 18px', fontSize: '13px', fontWeight: 600,
               color: activeTab === tab.key ? '#1d4ed8' : '#6b7280',

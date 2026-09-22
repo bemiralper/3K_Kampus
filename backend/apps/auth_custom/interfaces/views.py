@@ -10,6 +10,12 @@ from django.views.decorators.csrf import csrf_exempt, ensure_csrf_cookie
 from django.middleware.csrf import get_token
 import json
 
+from apps.auth_custom.application.portals import (
+    portal_is_selectable,
+    portals_payload,
+    session_portal,
+    set_session_portal,
+)
 from apps.personel.application.activity_log import log_personel_activity
 from apps.personel.domain.user_account import personel_user_login_allowed
 from shared.permissions import user_permission_codes
@@ -121,7 +127,7 @@ def login_api(request):
                 )
                 return JsonResponse({
                     'success': True,
-                    'user': _build_user_data(user),
+                    'user': _build_user_data(user, request),
                 })
             else:
                 log_personel_activity(
@@ -185,10 +191,11 @@ def logout_api(request):
         }, status=500)
 
 
-def _build_user_data(user):
+def _build_user_data(user, request=None):
     """
     Kullanıcı verisini oluştur — rol, personel, koç bilgisi dahil.
     me_api ve login_api'den ortak kullanılır.
+    Seçili panel varsa role_code ve permissions o panelin rolünden gelir.
     """
     data = {
         'id': user.id,
@@ -209,7 +216,7 @@ def _build_user_data(user):
         'permissions': [],
     }
 
-    # Rol bilgisi (roller.UserRole → OneToOne)
+    # Rol bilgisi (roller.UserRole → OneToOne). Panel seçildiyse etkili rol öne geçer.
     try:
         user_role = user.user_role  # related_name='user_role'
         if user_role and user_role.role:
@@ -217,6 +224,10 @@ def _build_user_data(user):
             data['must_change_password'] = user_role.must_change_password
     except Exception:
         pass
+
+    portal_role = getattr(user, '_portal_role', None)
+    if portal_role is not None:
+        data['role_code'] = portal_role.code
 
     # Personel bilgisi (personel.Personel.user → OneToOne, related_name='personel')
     try:
@@ -238,8 +249,33 @@ def _build_user_data(user):
         pass
 
     data['permissions'] = sorted(user_permission_codes(user))
+    data['portals'] = portals_payload(user)
+    data['active_portal'] = session_portal(request)
 
     return data
+
+
+@csrf_exempt
+@require_http_methods(["POST"])
+def select_portal_api(request):
+    """Oturumda çalışılacak paneli seçer. Yetkiler bu panelin rolüne daralır."""
+    if not request.user.is_authenticated:
+        return JsonResponse({'success': False, 'error': 'Oturum açılmamış'}, status=401)
+
+    try:
+        body = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON formatı'}, status=400)
+
+    portal = (body.get('portal') or '').strip().lower()
+    if not portal_is_selectable(request.user, portal):
+        return JsonResponse({'success': False, 'error': 'Bu panele erişiminiz yok'}, status=403)
+
+    set_session_portal(request, portal)
+    return JsonResponse({
+        'success': True,
+        'user': _build_user_data(request.user, request),
+    })
 
 
 @ensure_csrf_cookie
@@ -270,7 +306,7 @@ def me_api(request):
     return JsonResponse({
         'success': True,
         'authenticated': True,
-        'user': _build_user_data(request.user),
+        'user': _build_user_data(request.user, request),
     })
 
 
@@ -331,7 +367,7 @@ def _update_profile(request):
     return JsonResponse({
         'success': True,
         'message': 'Profil güncellendi.',
-        'user': _build_user_data(user),
+        'user': _build_user_data(user, request),
     })
 
 
@@ -410,5 +446,5 @@ def change_password_api(request):
     return JsonResponse({
         'success': True,
         'message': 'Şifreniz güncellendi.',
-        'user': _build_user_data(user),
+        'user': _build_user_data(user, request),
     })
