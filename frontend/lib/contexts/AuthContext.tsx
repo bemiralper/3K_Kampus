@@ -50,6 +50,8 @@ export interface User {
   personel_email?: string | null;
   must_change_password?: boolean;
   permissions?: string[];
+  portals?: { code: "admin" | "coach" | "muhasebe"; label: string; role_code?: string | null }[];
+  active_portal?: "admin" | "coach" | "muhasebe" | null;
 }
 
 interface AuthContextData {

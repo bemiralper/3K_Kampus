@@ -1,0 +1,116 @@
+.coach-students-page { container-type: inline-size; }
+
+.coach-students-hero {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  min-height: 142px;
+  padding: 22px;
+  border: 0;
+  border-radius: 22px;
+  color: #fff;
+  background:
+    radial-gradient(circle at 88% 8%, rgba(94,234,212,.3), transparent 30%),
+    linear-gradient(135deg,#09233e 0%,#075985 54%,#0f766e 100%);
+  box-shadow: 0 17px 36px rgba(15,23,42,.16);
+}
+.coach-students-hero::after { content:""; position:absolute; right:-48px; bottom:-74px; width:190px; height:190px; border:1px solid rgba(255,255,255,.17); border-radius:50%; box-shadow:0 0 0 25px rgba(255,255,255,.04); }
+.coach-students-hero .coach-page-header-text,.coach-students-hero-count { position:relative; z-index:1; }
+.coach-students-kicker { margin:0 0 7px!important; color:rgba(255,255,255,.68)!important; font-size:11px!important; font-weight:800; letter-spacing:.13em; text-transform:uppercase; }
+.coach-students-hero h2 { color:#fff!important; font-size:clamp(28px,4vw,38px)!important; }
+.coach-students-hero .coach-page-header-text > p:last-child { max-width:46ch; color:rgba(255,255,255,.78)!important; }
+.coach-students-hero-count { display:flex; flex-direction:column; min-width:90px; padding:12px; border:1px solid rgba(255,255,255,.2); border-radius:16px; background:rgba(255,255,255,.12); backdrop-filter:blur(10px); }
+.coach-students-hero-count strong { font-size:29px; line-height:1; letter-spacing:-.04em; }
+.coach-students-hero-count span { margin-top:4px; color:rgba(255,255,255,.76); font-size:11px; font-weight:700; }
+
+.coach-students-stats { gap:10px!important; padding:0!important; background:transparent!important; border:0!important; box-shadow:none!important; }
+.coach-stat-pill { min-height:88px; border-radius:18px!important; background:#fff!important; box-shadow:var(--coach-shadow); transition:transform .16s,box-shadow .16s!important; }
+.coach-stat-pill:hover { transform:translateY(-2px); box-shadow:var(--coach-shadow-lg); }
+.coach-stat-pill.is-active { background:var(--coach-primary-gradient)!important; color:#fff!important; }
+.coach-stat-pill.is-active .coach-stat-label { color:rgba(255,255,255,.78)!important; }
+
+.coach-students-toolbar { padding:12px!important; border:1px solid var(--coach-border-soft)!important; border-radius:19px!important; background:rgba(255,255,255,.94)!important; box-shadow:var(--coach-shadow)!important; }
+.coach-students-search-wrap { min-height:48px; border-radius:14px!important; background:#f8fafc!important; }
+.coach-students-search-input { font-size:14px!important; }
+.coach-students-toolbar-actions > .coach-link-btn { min-height:42px; border-radius:12px!important; }
+.coach-students-filters { padding-bottom:4px; }
+.coach-filter-chip { min-height:38px; border-radius:999px!important; }
+.coach-filter-chip.is-active { box-shadow:0 5px 14px rgba(2,98,167,.22); }
+
+.coach-students-grid { gap:12px!important; }
+.coach-student-card {
+  position:relative;
+  display:grid!important;
+  grid-template-columns:52px minmax(0,1fr) 28px!important;
+  align-items:start!important;
+  gap:12px!important;
+  min-height:0!important;
+  padding:14px!important;
+  border-radius:18px!important;
+  border-color:var(--coach-border-soft)!important;
+  box-shadow:var(--coach-shadow)!important;
+  background:linear-gradient(135deg,#fff 0%,#fbfdff 100%)!important;
+}
+.coach-student-card:hover { transform:translateY(-3px)!important; border-color:rgba(2,98,167,.25)!important; box-shadow:var(--coach-shadow-lg)!important; }
+.coach-student-card .coach-student-avatar { width:52px!important; height:52px!important; border-radius:16px!important; }
+.coach-student-card-body { display:grid!important; gap:8px; min-width:0; }
+.coach-student-card-top { min-width:0; }
+.coach-student-card-top > div { min-width:0; }
+.coach-student-name { font-size:15px!important; line-height:1.25!important; }
+.coach-student-meta { margin-top:3px!important; font-size:12px!important; }
+.coach-student-card-top .coach-risk-badge { align-self:flex-start; font-size:10px!important; }
+.coach-student-signals { display:flex!important; flex-wrap:wrap; gap:5px!important; }
+.coach-signal { min-height:23px; padding:4px 7px!important; border-radius:999px!important; font-size:10px!important; }
+.coach-student-actions.is-compact {
+  display:flex!important;
+  flex-wrap:wrap;
+  gap:5px!important;
+  padding-top:1px;
+}
+.coach-student-actions.is-compact .coach-student-action-btn {
+  width:29px!important;
+  height:29px!important;
+  min-width:29px!important;
+  border-radius:9px!important;
+}
+.coach-pin-btn {
+  position:absolute!important;
+  top:10px!important;
+  right:37px!important;
+  width:27px!important;
+  height:27px!important;
+  opacity:.6;
+}
+.coach-student-chevron {
+  align-self:center;
+  width:28px;
+  height:28px;
+  display:grid!important;
+  place-items:center;
+  border-radius:50%;
+  background:#eff6ff;
+  color:var(--coach-primary-dark);
+  font-size:22px!important;
+}
+
+@container (max-width: 540px) {
+  .coach-students-hero { min-height:156px; padding:20px; }
+  .coach-students-hero-count { min-width:74px; padding:10px; }
+  .coach-students-hero-count strong { font-size:24px; }
+  .coach-students-hero h2 { font-size:29px!important; }
+  .coach-students-hero .coach-page-header-text > p:last-child { font-size:13px!important; }
+  .coach-students-toolbar-actions { gap:6px!important; }
+  .coach-student-card { grid-template-columns:48px minmax(0,1fr) 26px!important; gap:10px!important; padding:13px!important; }
+  .coach-student-card .coach-student-avatar { width:48px!important; height:48px!important; border-radius:15px!important; }
+  .coach-student-card-top { gap:6px!important; }
+  .coach-student-name { max-width:135px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .coach-student-actions.is-compact .coach-student-action-btn:nth-child(n+5) { display:none; }
+  .coach-student-card .coach-pin-btn { display:none!important; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .coach-stat-pill,.coach-student-card { transition:none!important; }
+  .coach-stat-pill:hover,.coach-student-card:hover { transform:none!important; }
+}

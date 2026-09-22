@@ -16,6 +16,7 @@ from apps.coaching.services.coach_access import (
     get_coach_profile,
     user_can_access_student,
 )
+from apps.communication.application.birthday_wish_service import list_staff_birthdays
 from apps.coaching.services.coach_student_service import (
     build_coach_student_list,
     build_coach_student_profile,
@@ -52,6 +53,35 @@ class CoachStudentListView(APIView):
             'success': True,
             'data': data,
             'count': len(data),
+        })
+
+
+class CoachBirthdayListView(APIView):
+    """GET /api/coaching/birthdays/ — kurumdaki bugünkü ve yaklaşan doğum günleri."""
+
+    authentication_classes = [CsrfExemptSessionAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+
+        focus = None
+        raw = (request.query_params.get('dogum-gunu') or '').strip()
+        if raw:
+            from datetime import datetime
+            try:
+                focus = datetime.strptime(raw, '%Y-%m-%d').date()
+            except ValueError:
+                focus = None
+        rows = list_staff_birthdays(ctx['kurum_id'], focus_date=focus)
+        for row in rows:
+            row['can_open'] = user_can_access_student(request.user, row['ogrenci_id'])
+        return Response({
+            'success': True,
+            'data': rows,
+            'count': len(rows),
         })
 
 

@@ -1,0 +1,44 @@
+/* Öğrenci 360: küçük ekranlarda bilgiyi ve birincil aksiyonları öne çıkarır. */
+.s360w-page { container-type:inline-size; }
+
+@container (max-width: 620px) {
+  .s360w-nav {
+    top: calc(var(--coach-header-h) + 4px);
+    margin: 0 -2px 12px;
+  }
+  .s360w-nav::after {
+    content:"";
+    position:absolute;
+    top:7px;
+    right:0;
+    width:34px;
+    height:calc(100% - 14px);
+    pointer-events:none;
+    background:linear-gradient(90deg,transparent,rgba(255,255,255,.96));
+    border-radius:0 14px 14px 0;
+  }
+  .s360w-nav-scroller {
+    gap:4px;
+    padding:5px;
+    scroll-snap-type:x proximity;
+  }
+  .s360w-nav-cell { scroll-snap-align:start; }
+  .s360w-nav-item { min-height:42px; padding:8px 12px; font-size:13px; }
+  .s360w-content { padding:0 1px 8px; }
+
+  .s360w-header {
+    border-radius:20px;
+    box-shadow:0 10px 25px rgba(15,23,42,.07);
+  }
+  .s360w-action { min-height:43px; }
+  .s360w-kpi-grid { gap:9px; }
+}
+
+@container (min-width: 621px) {
+  .s360w-nav-scroller { padding:7px; }
+  .s360w-content { max-width:1120px; }
+}
+
+@media (prefers-reduced-motion:reduce) {
+  .s360w-content,.student360-panel { animation:none!important; }
+}

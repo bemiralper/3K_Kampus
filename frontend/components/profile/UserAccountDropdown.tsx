@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import type { User } from "@/lib/contexts/AuthContext";
+import { useAuth, type User } from "@/lib/contexts/AuthContext";
+import { resolveActivePortal } from "@/lib/auth-routes";
 import CoachAvatar from "@/components/coach/CoachAvatar";
 import AdminPortalReturn from "@/components/profile/AdminPortalReturn";
+import { activatePortal, portalHomePath, type PortalView } from "@/lib/profile-api";
 import "./user-account-dropdown.css";
 
 export type AccountMenuLink = {
@@ -40,6 +42,11 @@ function getDisplayName(user: User | null): string {
 
 function defaultRoleLabel(user: User | null): string {
   if (!user) return "Kullanıcı";
+  if ((user.portals?.length ?? 0) > 1) {
+    const active = resolveActivePortal(user);
+    const portal = user.portals?.find((item) => item.code === active);
+    if (portal?.label) return portal.label.replace(/ Paneli$/, "");
+  }
   if (user.is_superuser) return "Süper Admin";
   if (user.is_staff) return "Yönetici";
   if (user.role_code === "muhasebe") return "Muhasebe";
@@ -53,6 +60,45 @@ const ProfileIcon = () => (
     <circle cx="12" cy="7" r="4" />
   </svg>
 );
+
+function PortalSwitchItems({ user, onNavigate }: { user: User | null; onNavigate: () => void }) {
+  const { checkAuth } = useAuth();
+  const portals = user?.portals ?? [];
+  if (portals.length < 2) return null;
+  const current = resolveActivePortal(user);
+  const others = portals.filter((portal) => portal.code !== current);
+
+  const openPortal = async (code: PortalView) => {
+    onNavigate();
+    const res = await activatePortal(code);
+    if (!res.success) return;
+    await checkAuth();
+    window.location.assign(portalHomePath(code));
+  };
+
+  return (
+    <>
+      {others.map((portal) => (
+        <button
+          key={portal.code}
+          type="button"
+          className="uad-menu-item uad-menu-item-portal"
+          onClick={() => void openPortal(portal.code)}
+        >
+          <span className="uad-menu-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            </svg>
+          </span>
+          <span className="uad-menu-copy">
+            <span className="uad-menu-label">{portal.label}</span>
+            <span className="uad-menu-desc">Bu panele geç, çıkış gerekmez</span>
+          </span>
+        </button>
+      ))}
+    </>
+  );
+}
 
 const LogoutIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
@@ -146,11 +192,14 @@ export default function UserAccountDropdown({
               </Link>
             ))}
 
-            <AdminPortalReturn
-              variant="dropdown-item"
-              dropdownItemClassName="uad-menu-item uad-menu-item-portal"
-              onNavigate={close}
-            />
+            <PortalSwitchItems user={user} onNavigate={close} />
+            {(user?.portals?.length ?? 0) < 2 && (
+              <AdminPortalReturn
+                variant="dropdown-item"
+                dropdownItemClassName="uad-menu-item uad-menu-item-portal"
+                onNavigate={close}
+              />
+            )}
           </div>
 
           <div className="uad-panel-foot">

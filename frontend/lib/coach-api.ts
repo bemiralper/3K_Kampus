@@ -36,6 +36,7 @@ export interface CoachPortalStudent {
   meeting_today_count?: number;
   /** 7g+ yeni ödev yok ve kontrol günü 2g+ geçmiş (takip hatırlatması) */
   needs_meeting?: boolean;
+  dogum_tarihi?: string | null;
 }
 
 interface CoachStudentListRaw {
@@ -54,6 +55,7 @@ interface CoachStudentListRaw {
   profil_foto?: string | null;
   meeting_today_count?: number;
   needs_meeting?: boolean;
+  dogum_tarihi?: string | null;
 }
 
 function mapPortalStudent(raw: CoachStudentListRaw): CoachPortalStudent {
@@ -76,6 +78,7 @@ function mapPortalStudent(raw: CoachStudentListRaw): CoachPortalStudent {
     profil_foto: raw.profil_foto ?? null,
     meeting_today_count: raw.meeting_today_count ?? 0,
     needs_meeting: raw.needs_meeting ?? false,
+    dogum_tarihi: raw.dogum_tarihi ?? null,
   };
 }
 
@@ -88,6 +91,32 @@ export {
 export interface FetchCoachStudentsParams {
   search?: string;
   active_only?: boolean;
+}
+
+export interface CoachBirthdayItem {
+  ogrenci_id: number;
+  ad_soyad: string;
+  sinif: string;
+  yas: number | null;
+  kalan_gun: number;
+  etiket: string;
+  tarih: string;
+  can_open: boolean;
+}
+
+export async function fetchCoachBirthdays(onDate?: string | null): Promise<ApiResponse<CoachBirthdayItem[]>> {
+  const query = onDate && /^\d{4}-\d{2}-\d{2}$/.test(onDate)
+    ? `?dogum-gunu=${encodeURIComponent(onDate)}`
+    : "";
+  const response = await apiGet<
+    { success?: boolean; data?: CoachBirthdayItem[]; count?: number } | CoachBirthdayItem[]
+  >(`/api/coaching/birthdays/${query}`);
+  if (!response.success || !response.data) {
+    return { success: false, error: response.error || "Doğum günleri alınamadı" };
+  }
+  const raw = response.data;
+  const list = Array.isArray(raw) ? raw : Array.isArray(raw.data) ? raw.data : [];
+  return { success: true, data: list };
 }
 
 /**

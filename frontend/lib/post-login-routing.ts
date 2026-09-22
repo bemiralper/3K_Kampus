@@ -5,11 +5,14 @@
  * 1. Birden fazla kurum → /kurum-sec
  * 2. Tek kurum → otomatik kurum bağlamı
  * 3. kurum_yoneticisi / süper kullanıcı veya çok şubeli personel → /sube-sec
- * 4. Tek şube → otomatik seç + getDefaultHomePath (dashboard / muhasebe / coach)
+ * 4. Tek şube → otomatik seç
+ * 5. Birden fazla panel (koç / yönetici / muhasebe) ve kayıtlı seçim yok → /portal-sec
+ *    Kayıtlı seçim varsa o panelin ana sayfası
  */
 
 import type { User } from "@/lib/contexts/AuthContext";
-import { getDefaultHomePath } from "@/lib/auth-routes";
+import { assignedPortalCodes, getDefaultHomePath, type PortalCode } from "@/lib/auth-routes";
+import { activatePortal, readStoredPortal } from "@/lib/profile-api";
 import { setActiveContext } from "@/lib/api";
 import { personelAccessService } from "@/lib/personel-access-api";
 
@@ -21,7 +24,7 @@ export const STORAGE_POST_LOGIN_ROUTING = "3k_post_login_routing";
 
 const LOGIN_FETCH = { omitContextHeaders: true } as const;
 
-export type ContextGate = "kurum" | "sube";
+export type ContextGate = "kurum" | "sube" | "portal";
 
 export function setContextGate(gate: ContextGate | null): void {
   if (typeof window === "undefined") return;
@@ -35,11 +38,47 @@ export function setContextGate(gate: ContextGate | null): void {
 export function getContextGate(): ContextGate | null {
   if (typeof window === "undefined") return null;
   const raw = sessionStorage.getItem(STORAGE_CONTEXT_GATE);
-  return raw === "kurum" || raw === "sube" ? raw : null;
+  return raw === "kurum" || raw === "sube" || raw === "portal" ? raw : null;
 }
 
 export function clearContextGate(): void {
   setContextGate(null);
+}
+
+/** Kurum/şube belli olduktan sonra gidilecek panel. */
+export async function resolvePortalRedirect(user: User | null): Promise<string> {
+  if (!user) return "/?giris=1";
+
+  const assigned = assignedPortalCodes(user);
+  if (assigned.length === 0) {
+    clearContextGate();
+    return getDefaultHomePath(user);
+  }
+
+  const remembered = readStoredPortal();
+  const sessionPortal = user.active_portal;
+  const explicit: PortalCode | null =
+    sessionPortal && assigned.includes(sessionPortal)
+      ? sessionPortal
+      : remembered && assigned.includes(remembered)
+        ? remembered
+        : null;
+
+  if (assigned.length === 1 && (user.is_staff || user.is_superuser) && !explicit) {
+    await activatePortal("admin").catch(() => undefined);
+    clearContextGate();
+    return "/dashboard";
+  }
+
+  const portal: PortalCode | null = explicit ?? (assigned.length === 1 ? assigned[0] : null);
+  if (!portal) {
+    setContextGate("portal");
+    return "/portal-sec";
+  }
+
+  await activatePortal(portal).catch(() => undefined);
+  clearContextGate();
+  return getDefaultHomePath({ ...user, active_portal: portal });
 }
 
 async function persistSingleSube(
@@ -104,8 +143,7 @@ export async function resolvePostLoginRedirect(user: User | null): Promise<strin
       await persistSingleSube(subeRes.subeler[0]);
     }
 
-    clearContextGate();
-    return getDefaultHomePath(user);
+    return resolvePortalRedirect(user);
   } catch {
     return getDefaultHomePath(user);
   }
@@ -137,8 +175,7 @@ export async function resolvePostKurumRedirect(
       await persistSingleSube(subeRes.subeler[0]);
     }
 
-    clearContextGate();
-    return getDefaultHomePath(user);
+    return resolvePortalRedirect(user);
   } catch {
     return getDefaultHomePath(user);
   }

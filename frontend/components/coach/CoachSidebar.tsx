@@ -53,6 +53,7 @@ export default function CoachSidebar({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<"before" | "after">("after");
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
+  const [menuQuery, setMenuQuery] = useState("");
 
   useEffect(() => {
     const refreshMesajlar = () => {
@@ -125,6 +126,10 @@ export default function CoachSidebar({
       return { ...item, badge: mesajlarBadge };
     }
     return item;
+  }).filter((item) => {
+    const query = menuQuery.trim().toLocaleLowerCase("tr");
+    return !query || item.label.toLocaleLowerCase("tr").includes(query)
+      || item.children?.some((child) => child.label.toLocaleLowerCase("tr").includes(query));
   });
 
   const handleDragStart = (e: DragEvent, id: string) => {
@@ -265,7 +270,7 @@ export default function CoachSidebar({
       ref={asideRef}
       className={`coach-sidebar${isOpen ? " is-open" : " is-collapsed"}`}
       id="coach-sidebar"
-      aria-hidden={isPhone && !mobileDrawerOpen}
+      aria-hidden={!isDesktop && !mobileDrawerOpen}
     >
       <div className="coach-sidebar-header">
         <div className="coach-logo-container">
@@ -288,6 +293,12 @@ export default function CoachSidebar({
       </div>
 
       <nav className="coach-nav-sidebar" aria-label="Koç menüsü">
+        {!isDesktop && isOpen && (
+          <div className="coach-menu-search">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden><circle cx="11" cy="11" r="6" /><path d="m20 20-4.2-4.2" /></svg>
+            <input value={menuQuery} onChange={(event) => setMenuQuery(event.target.value)} placeholder="Menüde ara" aria-label="Menüde ara" />
+          </div>
+        )}
         <ul className="coach-nav-list">{items.map(renderNavItem)}</ul>
       </nav>
 
@@ -303,7 +314,7 @@ export default function CoachSidebar({
   );
 }
 
-const MOBILE_BOTTOM_IDS = ["dashboard", "ogrenciler", "odev-kontrol"] as const;
+const MOBILE_BOTTOM_IDS = ["dashboard", "ogrenciler", "odev-kontrol", "mesajlar"] as const;
 
 type CoachBottomNavProps = {
   onMenuClick: () => void;
@@ -312,6 +323,25 @@ type CoachBottomNavProps = {
 
 export function CoachBottomNav({ onMenuClick, menuOpen }: CoachBottomNavProps) {
   const pathname = usePathname();
+  const [badges, setBadges] = useState({ homework: 0, messages: 0 });
+  useEffect(() => {
+    const refresh = async () => {
+      const [homework, messages] = await Promise.all([fetchKontrolBadge(), fetchNotificationSummary()]);
+      setBadges({
+        homework: homework.success && homework.data ? homework.data.count ?? 0 : 0,
+        messages: messages.unread_count ?? 0,
+      });
+    };
+    refresh();
+    const id = window.setInterval(refresh, 30_000);
+    window.addEventListener("lms:notifications-refresh", refresh);
+    window.addEventListener("lms:communication-inbox", refresh);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener("lms:notifications-refresh", refresh);
+      window.removeEventListener("lms:communication-inbox", refresh);
+    };
+  }, []);
   const mobileItems = COACH_NAV_ITEMS.filter((item) =>
     MOBILE_BOTTOM_IDS.includes(item.id as (typeof MOBILE_BOTTOM_IDS)[number]),
   );
@@ -329,8 +359,16 @@ export function CoachBottomNav({ onMenuClick, menuOpen }: CoachBottomNavProps) {
                 aria-current={active ? "page" : undefined}
               >
                 <span className="coach-nav-icon">{item.icon}</span>
+                {((item.id === "odev-kontrol" && badges.homework > 0) ||
+                  (item.id === "mesajlar" && badges.messages > 0)) && (
+                  <span className="coach-nav-bottom-badge">
+                    {(item.id === "odev-kontrol" ? badges.homework : badges.messages) > 99
+                      ? "99+"
+                      : item.id === "odev-kontrol" ? badges.homework : badges.messages}
+                  </span>
+                )}
                 <span className="coach-nav-label">
-                  {item.id === "ogrenciler" ? "Öğrenciler" : item.label.split(" ")[0]}
+                  {item.id === "dashboard" ? "Bugün" : item.id === "ogrenciler" ? "Öğrenciler" : item.id === "odev-kontrol" ? "Ödev" : "Sohbet"}
                 </span>
               </Link>
             </li>

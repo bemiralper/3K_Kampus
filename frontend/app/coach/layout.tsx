@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { canAccessCoachPortal, isCoachOnlyUser } from "@/lib/auth-routes";
+import { canStayOnCoachPortal, getDefaultHomePath } from "@/lib/auth-routes";
 import { KurumProvider } from "@/lib/contexts/KurumContext";
 import CoachSidebar, { CoachBottomNav } from "@/components/coach/CoachSidebar";
 import CoachTopbar from "@/components/coach/CoachTopbar";
@@ -18,6 +18,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/dashboard": "Bugün",
   "/coach/bildirimler": "Bildirimler",
   "/coach/ogrenciler": "Öğrencilerim",
+  "/coach/dogum-gunleri": "Doğum Günleri",
   "/coach/profil": "Profilim",
   "/coach/profil/istatistikler": "İstatistiklerim",
   "/coach/odev/kontrol": "Ödev Kontrol",
@@ -65,6 +66,7 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
     isSidebarWide,
     isDesktop,
     isPhone,
+    layoutMode,
     mobileDrawerOpen,
     toggle: toggleSidebar,
     closeMobileDrawer,
@@ -89,21 +91,16 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!canAccessCoachPortal(user)) {
-      router.replace("/dashboard");
-      return;
+    if (!canStayOnCoachPortal(user)) {
+      router.replace(getDefaultHomePath(user));
     }
-
-    if (isCoachOnlyUser(user) && pathname.startsWith("/admin")) {
-      router.replace("/coach/dashboard");
-    }
-  }, [isLoading, isAuthenticated, user, pathname, router]);
+  }, [isLoading, isAuthenticated, user, router]);
 
   const handleLogout = () => {
     logout().then(() => router.push("/login"));
   };
 
-  if (isLoading || !isAuthenticated || !canAccessCoachPortal(user) || !user) {
+  if (isLoading || !isAuthenticated || !canStayOnCoachPortal(user) || !user) {
     return (
       <div className="coach-auth-loading">
         <div className="coach-auth-spinner" />
@@ -116,7 +113,7 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
   return (
     <KurumProvider>
       <CommunicationChatProvider>
-      <div className={`coach-shell${shellClass}`}>
+      <div className={`coach-shell coach-shell--${layoutMode}${shellClass}`}>
         {!isDesktop && mobileDrawerOpen && (
           <button
             type="button"

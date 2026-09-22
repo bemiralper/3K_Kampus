@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Suspense, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { canAccessMuhasebePortal, isMuhasebeOnlyUser } from "@/lib/auth-routes";
+import { canStayOnMuhasebePortal, getDefaultHomePath } from "@/lib/auth-routes";
 import { KurumProvider } from "@/lib/contexts/KurumContext";
 import MuhasebeSidebar, { MuhasebeBottomNav } from "@/components/muhasebe/MuhasebeSidebar";
 import MuhasebeTopbar from "@/components/muhasebe/MuhasebeTopbar";
@@ -132,21 +132,16 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
       return;
     }
 
-    if (!canAccessMuhasebePortal(user)) {
-      router.replace("/dashboard");
-      return;
+    if (!canStayOnMuhasebePortal(user)) {
+      router.replace(getDefaultHomePath(user));
     }
-
-    if (isMuhasebeOnlyUser(user) && pathname.startsWith("/admin")) {
-      router.replace("/muhasebe/dashboard");
-    }
-  }, [isLoading, isAuthenticated, user, pathname, router]);
+  }, [isLoading, isAuthenticated, user, router]);
 
   const handleLogout = () => {
     logout().then(() => router.push("/?giris=1"));
   };
 
-  if (isLoading || !isAuthenticated || !canAccessMuhasebePortal(user) || !user) {
+  if (isLoading || !isAuthenticated || !canStayOnMuhasebePortal(user) || !user) {
     return (
       <div className="muhasebe-auth-loading">
         <div className="muhasebe-auth-spinner" />

@@ -44,30 +44,33 @@ export default function CoachTopbar({
             <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
           </svg>
         </button>
-        <h1 className="coach-topbar-title">{title}</h1>
+        <div className="coach-topbar-title-wrap">
+          <span className="coach-topbar-portal">Koç paneli</span>
+          <h1 className="coach-topbar-title">{title}</h1>
+        </div>
       </div>
 
       <div className="coach-topbar-trailing">
         <span className="coach-topbar-admin-return">
           <AdminPortalReturn variant="compact" />
         </span>
-        <ContextSelector />
-        <NotificationBell />
-        <UserAccountDropdown
-          user={user}
-          profileHref="/coach/profil"
-          onLogout={onLogout}
-          roleLabel={user.role_code === "koc" ? "Koç" : user.role_code || "Personel"}
-          avatarSrc={user.personel_fotograf}
-          extraLinks={[
-            {
-              href: "/coach/profil/istatistikler",
-              label: "İstatistiklerim",
-              description: "Performans ve görüşme özeti",
-              icon: <StatsIcon />,
-            },
-          ]}
-        />
+        <span className="coach-topbar-context"><ContextSelector /></span>
+        <span className="coach-topbar-notifications"><NotificationBell /></span>
+        <span className="coach-topbar-account"><UserAccountDropdown
+            user={user}
+            profileHref="/coach/profil"
+            onLogout={onLogout}
+            roleLabel={user.role_code === "koc" ? "Koç" : user.role_code || "Personel"}
+            avatarSrc={user.personel_fotograf}
+            extraLinks={[
+              {
+                href: "/coach/profil/istatistikler",
+                label: "İstatistiklerim",
+                description: "Performans ve görüşme özeti",
+                icon: <StatsIcon />,
+              },
+            ]}
+          /></span>
       </div>
     </header>
   );

@@ -3,13 +3,13 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { getDefaultHomePath } from "@/lib/auth-routes";
 import { personelAccessService, type MySubeItem } from "@/lib/personel-access-api";
 import { setActiveContext } from "@/lib/api";
 import {
   STORAGE_KURUM,
   STORAGE_SUBE,
   clearContextGate,
+  resolvePortalRedirect,
   setContextGate,
 } from "@/lib/post-login-routing";
 
@@ -41,14 +41,15 @@ export default function SubeSecPage() {
 
     personelAccessService
       .mySubeler(kurumId ? { kurum_id: kurumId } : undefined, { omitContextHeaders: true })
-      .then((res) => {
+      .then(async (res) => {
         const mustSelectSube =
           res.requires_login_sube_selection || res.needs_sube_picker;
 
         setIsAdminPicker(res.requires_login_sube_selection);
 
         if (!mustSelectSube && res.subeler.length > 0) {
-          router.replace(getDefaultHomePath(user));
+          const next = await resolvePortalRedirect(user);
+          window.location.replace(next);
           return;
         }
 
@@ -56,10 +57,11 @@ export default function SubeSecPage() {
           const s = res.subeler[0];
           localStorage.setItem(STORAGE_SUBE, String(s.id));
           localStorage.setItem(STORAGE_KURUM, String(s.kurum_id));
-          setActiveContext(s.kurum_id, s.id, null).finally(() => {
+          setActiveContext(s.kurum_id, s.id, null).finally(async () => {
             clearContextGate();
             window.dispatchEvent(new Event("3k:context-updated"));
-            router.replace(getDefaultHomePath(user));
+            const next = await resolvePortalRedirect(user);
+            window.location.replace(next);
           });
           return;
         }
@@ -89,7 +91,8 @@ export default function SubeSecPage() {
       await setActiveContext(sube.kurum_id, sube.id, null);
       clearContextGate();
       window.dispatchEvent(new Event("3k:context-updated"));
-      router.replace(getDefaultHomePath(user));
+      const next = await resolvePortalRedirect(user);
+      window.location.replace(next);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Şube seçilemedi");
       setSubmitting(null);

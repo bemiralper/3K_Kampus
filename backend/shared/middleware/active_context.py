@@ -42,7 +42,10 @@ class ActiveContextMiddleware:
             request, 'egitim_yili', yil_id
         )
         request.clear_active_context = lambda: self._clear_context(request)
-        
+
+        from apps.auth_custom.application.portals import apply_active_portal
+        apply_active_portal(request)
+
         response = self.get_response(request)
         return response
 

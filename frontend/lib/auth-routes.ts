@@ -1,4 +1,7 @@
 import type { User } from "@/lib/contexts/AuthContext";
+import { portalHomePath, readStoredPortal, type PortalView } from "@/lib/profile-api";
+
+export type PortalCode = PortalView;
 
 function normalizeRoleCode(roleCode?: string | null): string | null {
   if (!roleCode) return null;
@@ -15,6 +18,46 @@ function hasActiveCoachProfile(user: User | null): boolean {
 
 function isAdminUser(user: User | null): boolean {
   return !!user && (user.is_staff || user.is_superuser);
+}
+
+export function assignedPortalCodes(user: User | null): PortalCode[] {
+  const codes: PortalCode[] = [];
+  for (const portal of user?.portals ?? []) {
+    if (portal.code !== "admin" && portal.code !== "coach" && portal.code !== "muhasebe") continue;
+    if (!codes.includes(portal.code)) codes.push(portal.code);
+  }
+  return codes;
+}
+
+/** Hatırlanan veya oturumdaki panel. Birden fazla panelde seçim yoksa null. */
+export function resolveActivePortal(user: User | null): PortalCode | null {
+  if (!user) return null;
+  const assigned = assignedPortalCodes(user);
+  const session = user.active_portal;
+  const stored = readStoredPortal();
+  const explicit =
+    session === "admin" || session === "coach" || session === "muhasebe"
+      ? session
+      : stored;
+
+  if (assigned.length > 1) {
+    if (explicit && assigned.includes(explicit)) return explicit;
+    if (isAdminUser(user) && explicit) return explicit;
+    return null;
+  }
+
+  if (isAdminUser(user)) {
+    if (explicit) return explicit;
+    return "admin";
+  }
+
+  if (assigned.length === 1) return assigned[0];
+  return null;
+}
+
+export function needsPortalPicker(user: User | null): boolean {
+  if (!user) return false;
+  return assignedPortalCodes(user).length > 1 && resolveActivePortal(user) === null;
 }
 
 function isMuhasebeRole(user: User | null): boolean {
@@ -40,6 +83,9 @@ export function canAccessCoachPortal(user: User | null): boolean {
 /** Yalnızca koç portalını kullanan kullanıcı (admin paneli ana girişi değil). */
 export function isCoachOnlyUser(user: User | null): boolean {
   if (!user || isAdminUser(user)) return false;
+  const assigned = assignedPortalCodes(user);
+  if (assigned.length > 1) return false;
+  if (assigned.length === 1) return assigned[0] === "coach";
   if (normalizeRoleCode(user.role_code) === "koc" || hasActiveCoachProfile(user)) return true;
   return false;
 }
@@ -54,8 +100,25 @@ export function canAccessMuhasebePortal(user: User | null): boolean {
 /** Yalnızca muhasebe portalını kullanan kullanıcı (admin paneli ana girişi değil). */
 export function isMuhasebeOnlyUser(user: User | null): boolean {
   if (!user || isAdminUser(user)) return false;
+  const assigned = assignedPortalCodes(user);
+  if (assigned.length > 1) return false;
+  if (assigned.length === 1) return assigned[0] === "muhasebe";
   if (isCoachOnlyUser(user)) return false;
   return isMuhasebeRole(user) || hasMuhasebePortalPermissions(user);
+}
+
+/** Koç kabuğunda kalınabilir mi? Birden fazla paneli olan kişide yalnızca seçili panel koç ise. */
+export function canStayOnCoachPortal(user: User | null): boolean {
+  if (!user || needsPortalPicker(user)) return false;
+  if (assignedPortalCodes(user).length > 1) return resolveActivePortal(user) === "coach";
+  return canAccessCoachPortal(user);
+}
+
+/** Muhasebe kabuğunda kalınabilir mi? */
+export function canStayOnMuhasebePortal(user: User | null): boolean {
+  if (!user || needsPortalPicker(user)) return false;
+  if (assignedPortalCodes(user).length > 1) return resolveActivePortal(user) === "muhasebe";
+  return canAccessMuhasebePortal(user);
 }
 
 /** Öğrenci detayında koç atama/değiştirme (muhasebe, yönetici, admin). */
@@ -68,6 +131,9 @@ export function canManageCoachAssignment(user: User | null): boolean {
 
 /** Giriş sonrası varsayılan ana sayfa yolu. */
 export function getDefaultHomePath(user: User | null): string {
+  if (needsPortalPicker(user)) return "/portal-sec";
+  const active = resolveActivePortal(user);
+  if (active) return portalHomePath(active);
   if (isCoachOnlyUser(user)) return "/coach/dashboard";
   if (isMuhasebeOnlyUser(user)) return "/muhasebe/dashboard";
   return "/dashboard";
@@ -86,7 +152,8 @@ export function toPortalInboxPath(
   const conv = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search)
     .get("conversation");
   const suffix = conv ? `?conversation=${encodeURIComponent(conv)}` : "";
-  if (isMuhasebeOnlyUser(user)) return `/muhasebe/iletisim/sohbetler${suffix}`;
-  if (isCoachOnlyUser(user)) return `/coach/sohbetler${suffix}`;
+  const active = resolveActivePortal(user);
+  if (active === "muhasebe" || isMuhasebeOnlyUser(user)) return `/muhasebe/iletisim/sohbetler${suffix}`;
+  if (active === "coach" || isCoachOnlyUser(user)) return `/coach/sohbetler${suffix}`;
   return null;
 }
