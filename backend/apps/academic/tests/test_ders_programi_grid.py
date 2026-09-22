@@ -156,6 +156,75 @@ class DersProgramiGridApiTest(TestCase):
         self.assertNotIn('name', row)
         self.assertNotIn('is_active_version', row)
 
+    def test_classroom_keeps_a_single_calendar(self):
+        first = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': self.version.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(first.status_code, (200, 201), first.content)
+
+        cycle2 = self._second_calendar('İkinci Takvim')
+        version2 = ScheduleVersion.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            schedule_template=self.template,
+            weekly_cycle=cycle2,
+            name='İkinci',
+            is_active=True,
+        )
+        second = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': version2.id, 'classroom_id': self.sinif.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(second.status_code, (200, 201), second.content)
+        self.assertFalse(
+            ProgramGridCell.objects.filter(
+                schedule_version=self.version, sinif=self.sinif, is_active=True,
+            ).exists()
+        )
+
+        cell = ProgramGridCell.objects.get(
+            schedule_version=version2, sinif=self.sinif, is_active=True,
+        )
+        fill = self.client.post(
+            f'/api/academic/program-grid/cells/{cell.id}/fill/',
+            data={'class_lesson_plan_id': self.plan.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
+
+        ProgramGridCell.objects.create(
+            schedule_template=self.template,
+            weekly_cycle=self.cycle,
+            schedule_version=self.version,
+            weekly_day=self.day,
+            timeslot=self.slot,
+            sinif=self.sinif,
+            status=CellStatus.EMPTY,
+        )
+        from apps.academic.services.grid_engine import dedupe_classroom_calendars
+
+        result = dedupe_classroom_calendars(term_id=self.term.id)
+        self.assertGreaterEqual(result['released_cells'], 1)
+        self.assertFalse(
+            ProgramGridCell.objects.filter(
+                schedule_version=self.version, sinif=self.sinif, is_active=True,
+            ).exists()
+        )
+        self.assertTrue(
+            ProgramGridCell.objects.filter(
+                schedule_version=version2,
+                sinif=self.sinif,
+                is_active=True,
+                status=CellStatus.FILLED,
+            ).exists()
+        )
+
     def test_ensure_version_creates_cells(self):
         res = self.client.post(
             '/api/academic/program-grid/ensure-version/',
@@ -802,17 +871,33 @@ class DersProgramiGridApiTest(TestCase):
             name='Akşam',
             is_active=True,
         )
+        sinif2 = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            ad='9-C',
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        plan2 = ClassLessonPlan.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            sinif=sinif2,
+            ders=self.ders,
+            weekly_hours=2,
+            ogretmen=self.teacher,
+        )
         ensure = self.client.post(
             '/api/academic/program-grid/ensure-version/',
-            data={'version_id': version2.id, 'classroom_id': self.sinif.id},
+            data={'version_id': version2.id, 'classroom_id': sinif2.id},
             content_type='application/json',
             **self.headers,
         )
         self.assertIn(ensure.status_code, (200, 201), ensure.content)
-        cell2 = ProgramGridCell.objects.get(schedule_version=version2, sinif=self.sinif)
+        cell2 = ProgramGridCell.objects.get(schedule_version=version2, sinif=sinif2)
         fill = self.client.post(
             f'/api/academic/program-grid/cells/{cell2.id}/fill/',
-            data={'class_lesson_plan_id': self.plan.id},
+            data={'class_lesson_plan_id': plan2.id},
             content_type='application/json',
             **self.headers,
         )
@@ -838,7 +923,7 @@ class DersProgramiGridApiTest(TestCase):
         self.assertIn('Akşam Takvimi', calendars)
         self.assertEqual(len(body.get('versions') or []), 2)
 
-    def test_class_schedule_merges_calendars_without_weekly_cycle(self):
+    def test_class_schedule_uses_single_calendar(self):
         self._fill_single_cell()
         template2 = ScheduleTemplate.objects.create(
             kurum=self.kurum, sube=self.sube, name='Akşam Şablon 2',
@@ -881,15 +966,13 @@ class DersProgramiGridApiTest(TestCase):
             content_type='application/json',
             **self.headers,
         )
-        self.assertIn(ensure.status_code, (200, 201), ensure.content)
-        cell2 = ProgramGridCell.objects.get(schedule_version=version2, sinif=self.sinif)
-        fill = self.client.post(
-            f'/api/academic/program-grid/cells/{cell2.id}/fill/',
-            data={'class_lesson_plan_id': self.plan.id},
-            content_type='application/json',
-            **self.headers,
+        self.assertEqual(ensure.status_code, 400, ensure.content)
+        self.assertIn('yalnızca bir takvime', ensure.json().get('error') or '')
+        self.assertFalse(
+            ProgramGridCell.objects.filter(
+                schedule_version=version2, sinif=self.sinif, is_active=True,
+            ).exists()
         )
-        self.assertEqual(fill.status_code, 200, fill.content)
 
         res = self.client.get(
             f'/api/academic/schedule/class/?classroom_id={self.sinif.id}'
@@ -899,8 +982,55 @@ class DersProgramiGridApiTest(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         body = res.json()
         filled = [c for c in body.get('cells', []) if c.get('status') == 'FILLED']
-        self.assertEqual(len(filled), 2)
-        self.assertEqual(len(body.get('versions') or []), 2)
+        self.assertEqual(len(filled), 1)
+        self.assertEqual(len(body.get('versions') or []), 1)
+        self.assertEqual(body['versions'][0]['id'], self.version.id)
+
+        from apps.academic.application.schedule_notify_service import preview_classes
+
+        preview = preview_classes(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            term_id=self.term.id,
+            version_id=version2.id,
+            sinif_ids=[self.sinif.id],
+        )
+        row = preview['classes'][0]
+        self.assertFalse(row['empty_grid'])
+        self.assertEqual(row['filled_count'], 1)
+        self.assertEqual(row['version_id'], self.version.id)
+
+        sinif2 = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.year,
+            ad='9-B',
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        plan2 = ClassLessonPlan.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            sinif=sinif2,
+            ders=self.ders,
+            weekly_hours=2,
+            ogretmen=self.teacher,
+        )
+        ensure2 = self.client.post(
+            '/api/academic/program-grid/ensure-version/',
+            data={'version_id': version2.id, 'classroom_id': sinif2.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(ensure2.status_code, (200, 201), ensure2.content)
+        cell2 = ProgramGridCell.objects.get(schedule_version=version2, sinif=sinif2)
+        fill = self.client.post(
+            f'/api/academic/program-grid/cells/{cell2.id}/fill/',
+            data={'class_lesson_plan_id': plan2.id},
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(fill.status_code, 200, fill.content)
 
         class_export = self.client.get(
             f'/api/academic/schedule/export/?term_id={self.term.id}'
@@ -910,7 +1040,7 @@ class DersProgramiGridApiTest(TestCase):
         self.assertEqual(class_export.status_code, 200, class_export.content)
         class_payload = class_export.json()
         class_cards = class_payload['groups'][0].get('day_cards') or []
-        self.assertEqual(sum(len(col) for col in class_cards), 2)
+        self.assertEqual(sum(len(col) for col in class_cards), 1)
         from apps.academic.application.schedule_notify_service import build_schedule_pdf_html
         class_html = build_schedule_pdf_html(class_payload)
         self.assertIn('class="week-board"', class_html)
