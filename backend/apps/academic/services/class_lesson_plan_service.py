@@ -462,41 +462,37 @@ class ClassLessonPlanService:
         *,
         active_term_id: Optional[int] = None,
     ) -> Dict[int, List[int]]:
-        """Sınıfın kendi dönemindeki program grid'inde göründüğü çalışma takvimleri.
+        """Sınıfın kendi dönemindeki tek çalışma takvimi.
 
-        Önceki dönemin hücreleri bağ olarak sayılmaz; dönem değişince yeni
-        dönem programı boş başlar.
+        Dolu dersi olan takvim geçerlidir. Boş iskeletler ikinci takvim sayılmaz.
         """
-        from collections import defaultdict
-
-        from apps.academic.domain.program_grid_cell import ProgramGridCell
+        from apps.academic.domain.schedule_version import ScheduleVersion
+        from apps.academic.services.grid_engine import class_schedule_version_id
         from apps.sinif.domain.models import Sinif
 
-        by_sinif: Dict[int, set] = defaultdict(set)
         if not classroom_ids:
             return {}
 
         term_by_sinif = dict(
             Sinif.objects.filter(id__in=classroom_ids).values_list('id', 'term_id')
         )
-        qs = ProgramGridCell.objects.filter(
-            is_active=True,
-            sinif_id__in=classroom_ids,
-        )
-        for sinif_id, cycle_id, version_cycle_id, version_term_id in qs.values_list(
-            'sinif_id',
-            'weekly_cycle_id',
-            'schedule_version__weekly_cycle_id',
-            'schedule_version__term_id',
-        ):
-            sinif_term = term_by_sinif.get(sinif_id) or active_term_id
-            if sinif_term and version_term_id and version_term_id != sinif_term:
+        version_by_sinif = {}
+        for sid in classroom_ids:
+            term_id = term_by_sinif.get(sid) or active_term_id
+            if not term_id:
                 continue
-            if cycle_id:
-                by_sinif[sinif_id].add(cycle_id)
-            if version_cycle_id:
-                by_sinif[sinif_id].add(version_cycle_id)
-        return {sid: sorted(ids) for sid, ids in by_sinif.items()}
+            version_id = class_schedule_version_id(term_id, sid)
+            if version_id:
+                version_by_sinif[sid] = version_id
+        cycle_by_version = dict(
+            ScheduleVersion.objects.filter(id__in=set(version_by_sinif.values()))
+            .values_list('id', 'weekly_cycle_id')
+        )
+        return {
+            sid: [cycle_by_version[vid]]
+            for sid, vid in version_by_sinif.items()
+            if cycle_by_version.get(vid)
+        }
 
     def build_planning_context(self, *, kurum_id: int, sube_id: int, context_egitim_yili_id: Optional[int] = None) -> Dict[str, Any]:
         """

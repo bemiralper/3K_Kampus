@@ -409,6 +409,8 @@ def ensure_version_classroom_grid(
     if version.term.egitim_yili_id != sinif.egitim_yili_id:
         raise ValueError('Sınıf ve dönem aynı eğitim yılında olmalıdır.')
 
+    _release_other_term_calendars(sinif_id=sinif.id, version=version)
+
     engine = GridEngine(
         version.weekly_cycle,
         template_fallback=version.schedule_template,
@@ -474,6 +476,162 @@ class CalendarUnbindNeedsConfirm(Exception):
         super().__init__(
             f'Bu sınıfta {filled_count} yerleştirilmiş ders var. '
             'Ayırmak bu takvimdeki dersleri kaldırır.'
+        )
+
+
+def class_schedule_version_id(term_id: int, sinif_id: int) -> int | None:
+    """Sınıfın bu dönemdeki tek takvimi.
+
+    Dolu dersi olan program kazanır. Dolu ders yoksa en son bağlanan iskelet.
+    """
+    from django.db.models import Count
+
+    filled = (
+        ProgramGridCell.objects.filter(
+            schedule_version__term_id=term_id,
+            sinif_id=sinif_id,
+            is_active=True,
+            status=CellStatus.FILLED,
+        )
+        .values('schedule_version_id')
+        .annotate(n=Count('id'))
+        .order_by('-n', '-schedule_version_id')
+        .first()
+    )
+    if filled:
+        return filled['schedule_version_id']
+    return (
+        ProgramGridCell.objects.filter(
+            schedule_version__term_id=term_id,
+            sinif_id=sinif_id,
+            is_active=True,
+        )
+        .order_by('-schedule_version_id')
+        .values_list('schedule_version_id', flat=True)
+        .first()
+    )
+
+
+def dedupe_classroom_calendars(*, term_id: int | None = None, dry_run: bool = False) -> dict:
+    """Dolu dersi olan sınıfın aynı dönemdeki boş takvim iskeletlerini düşürür.
+
+    İki takvimde de dolu ders varsa ikisine de dokunulmaz.
+    """
+    filled_qs = ProgramGridCell.objects.filter(
+        is_active=True,
+        status=CellStatus.FILLED,
+        sinif_id__isnull=False,
+    )
+    if term_id:
+        filled_qs = filled_qs.filter(schedule_version__term_id=term_id)
+    pairs = filled_qs.values_list('schedule_version__term_id', 'sinif_id').distinct()
+
+    released_cells = 0
+    classrooms = 0
+    kept_filled = 0
+    for tid, sid in pairs:
+        if not tid or not sid:
+            continue
+        winner = class_schedule_version_id(tid, sid)
+        if not winner:
+            continue
+        other_ids = list(
+            ProgramGridCell.objects.filter(
+                sinif_id=sid,
+                is_active=True,
+                schedule_version__term_id=tid,
+            )
+            .exclude(schedule_version_id=winner)
+            .values_list('schedule_version_id', flat=True)
+            .distinct()
+        )
+        touched = False
+        for other_id in other_ids:
+            has_filled = ProgramGridCell.objects.filter(
+                schedule_version_id=other_id,
+                sinif_id=sid,
+                is_active=True,
+                status=CellStatus.FILLED,
+            ).exists()
+            if has_filled:
+                kept_filled += 1
+                continue
+            touched = True
+            if dry_run:
+                released_cells += ProgramGridCell.objects.filter(
+                    schedule_version_id=other_id,
+                    sinif_id=sid,
+                    is_active=True,
+                ).count()
+                continue
+            result = unbind_classroom_calendar_grid(
+                schedule_version_id=other_id,
+                classroom_id=sid,
+                force=False,
+            )
+            released_cells += result.deactivated_count
+        if touched:
+            classrooms += 1
+    return {
+        'classrooms': classrooms,
+        'released_cells': released_cells,
+        'kept_filled_calendars': kept_filled,
+        'dry_run': dry_run,
+    }
+
+
+def _release_other_term_calendars(*, sinif_id: int, version) -> None:
+    """Sınıfı aynı dönemdeki diğer takvimlerden düşürür.
+
+    Dolu dersi olan başka takvim varsa bağlama durur. Boş iskelet sessizce ayrılır.
+    """
+    other_ids = list(
+        ProgramGridCell.objects.filter(
+            sinif_id=sinif_id,
+            is_active=True,
+            schedule_version__term_id=version.term_id,
+        )
+        .exclude(schedule_version_id=version.id)
+        .values_list('schedule_version_id', flat=True)
+        .distinct()
+    )
+    if not other_ids:
+        return
+
+    filled_other_id = (
+        ProgramGridCell.objects.filter(
+            sinif_id=sinif_id,
+            is_active=True,
+            schedule_version_id__in=other_ids,
+            status=CellStatus.FILLED,
+        )
+        .values_list('schedule_version_id', flat=True)
+        .first()
+    )
+    if filled_other_id:
+        from apps.academic.domain.schedule_version import ScheduleVersion
+
+        other = (
+            ScheduleVersion.objects.select_related('weekly_cycle')
+            .filter(pk=filled_other_id)
+            .first()
+        )
+        name = ''
+        if other and other.weekly_cycle_id:
+            name = other.weekly_cycle.name
+        elif other:
+            name = other.name
+        label = f'«{name}»' if name else 'başka bir takvim'
+        raise ValueError(
+            f'Bu sınıf zaten {label} takviminde. '
+            'Bir sınıf yalnızca bir takvime bağlanır. Önce o takvimden ayırın.'
+        )
+
+    for other_id in other_ids:
+        unbind_classroom_calendar_grid(
+            schedule_version_id=other_id,
+            classroom_id=sinif_id,
+            force=False,
         )
 
 

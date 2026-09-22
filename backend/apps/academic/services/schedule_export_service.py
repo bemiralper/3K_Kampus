@@ -587,7 +587,29 @@ def build_classroom_schedule_payload(
     if not classrooms:
         raise ScheduleExportError('Dışa aktarılacak sınıf yok.', 'classroom_ids')
 
+    explicit_version_id = version_id
+    bound_by_class: dict[int, int] = {}
+    if not explicit_version_id:
+        from apps.academic.services.grid_engine import class_schedule_version_id
+
+        for sinif in classrooms:
+            bound = class_schedule_version_id(term_id, sinif.id)
+            if bound:
+                bound_by_class[sinif.id] = bound
+        bound_version_ids = list(dict.fromkeys(bound_by_class.values()))
+        if len(bound_version_ids) == 1:
+            version_id = bound_version_ids[0]
+
     versions = _term_versions(term_id, version_id)
+    if not explicit_version_id and len(bound_by_class) > 1 and not version_id:
+        versions = list(
+            ScheduleVersion.objects.filter(
+                id__in=set(bound_by_class.values()),
+                term_id=term_id,
+            )
+            .select_related('weekly_cycle', 'schedule_template')
+            .order_by('weekly_cycle_id', '-is_active', '-id')
+        )
     if not versions:
         raise ScheduleExportError(
             'Bu dönem için program bulunamadı. Önce Ders Programı ekranından program oluşturun.',
@@ -646,8 +668,14 @@ def build_classroom_schedule_payload(
 
     groups = []
     for sinif in classrooms:
+        if explicit_version_id:
+            cell_version_ids = version_ids
+        elif sinif.id in bound_by_class:
+            cell_version_ids = [bound_by_class[sinif.id]]
+        else:
+            cell_version_ids = []
         cells = list(ProgramGridCell.objects.filter(
-            schedule_version_id__in=version_ids,
+            schedule_version_id__in=cell_version_ids,
             sinif_id=sinif.id,
             is_active=True,
             status=CellStatus.FILLED,

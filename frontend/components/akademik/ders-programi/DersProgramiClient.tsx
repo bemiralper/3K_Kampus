@@ -419,8 +419,7 @@ export default function DersProgramiClient() {
             if (c.id !== id) return c;
             const ids = c.weekly_cycle_ids || [];
             if (bound) {
-              if (ids.includes(calendarId)) return c;
-              return { ...c, weekly_cycle_ids: [...ids, calendarId] };
+              return { ...c, weekly_cycle_ids: [calendarId] };
             }
             return { ...c, weekly_cycle_ids: ids.filter((cid) => cid !== calendarId) };
           }),
@@ -1063,7 +1062,7 @@ export default function DersProgramiClient() {
               onChange={(e) => setClassSearch(e.target.value)}
             />
             <p className="dp-class-hint">
-              Sınıf seçmek bu takvime bağlar. Ayır ile bağı koparın.
+              Sınıf seçmek bu takvime bağlar. Bir sınıfın tek takvimi olur. Ayır ile bağı koparın.
               {assignedCount > 0 && assignedCount < classrooms.length
                 ? ` ${assignedCount} sınıf bağlı.`
                 : ''}

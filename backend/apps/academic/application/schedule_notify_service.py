@@ -206,12 +206,15 @@ def preview_classes(
     if missing:
         raise ScheduleNotifyError(f'Sınıf bulunamadı: {missing}', field='sinif_ids')
 
+    from apps.academic.services.grid_engine import class_schedule_version_id
+
     classes = []
     for sinif in siniflar:
-        fp = compute_grid_fingerprint(version_id, sinif.id)
-        last = _last_notify_log(version_id, sinif.id)
+        class_version_id = class_schedule_version_id(term_id, sinif.id) or version_id
+        fp = compute_grid_fingerprint(class_version_id, sinif.id)
+        last = _last_notify_log(class_version_id, sinif.id)
         has_changes = True if last is None else (last.grid_fingerprint != fp)
-        filled = _filled_cell_count(version_id, sinif.id)
+        filled = _filled_cell_count(class_version_id, sinif.id)
         recipients = _resolve_recipients(term_id, sinif.id)
         warning = None
         if filled == 0:
@@ -222,6 +225,7 @@ def preview_classes(
         classes.append({
             'sinif_id': sinif.id,
             'sinif_ad': sinif.ad,
+            'version_id': class_version_id,
             'has_changes': has_changes,
             'empty_grid': filled == 0,
             'filled_count': filled,
@@ -764,10 +768,11 @@ def send_class_schedules(
             total_skipped += 1
             continue
 
+        class_version_id = cls_row.get('version_id') or version_id
         try:
             pdf_bytes, filename, pdf_baslik = render_class_schedule_pdf(
                 term_id=term_id,
-                version_id=version_id,
+                version_id=class_version_id,
                 sinif_id=sid,
                 sube_id=sube_id,
             )
@@ -786,7 +791,7 @@ def send_class_schedules(
             continue
 
         recipients = _resolve_recipients(term_id, sid)
-        fp = compute_grid_fingerprint(version_id, sid)
+        fp = compute_grid_fingerprint(class_version_id, sid)
         errors: list[str] = []
         delivered: list[dict[str, Any]] = []
         veli_ok = 0
@@ -805,7 +810,7 @@ def send_class_schedules(
             base_ctx['sube'] = term.sube.ad if term.sube_id else ''
 
         attachment = NotificationAttachment(filename=filename, file_bytes=pdf_bytes)
-        source = MessageSource(module='akademik', ref_id=f'schedule:{version_id}:{sid}')
+        source = MessageSource(module='akademik', ref_id=f'schedule:{class_version_id}:{sid}')
         sent_by = getattr(user, 'id', None)
 
         allowed_students = _filter_recipient_ids(
@@ -924,7 +929,7 @@ def send_class_schedules(
             _write_notify_log(
                 kurum_id=kurum_id,
                 term_id=term_id,
-                class_version_id=version_id,
+                class_version_id=class_version_id,
                 sinif_id=sid,
                 fingerprint=fp,
                 veli_ok=veli_ok,
@@ -956,7 +961,7 @@ def send_class_schedules(
             _write_notify_log(
                 kurum_id=kurum_id,
                 term_id=term_id,
-                class_version_id=version_id,
+                class_version_id=class_version_id,
                 sinif_id=sid,
                 fingerprint=fp,
                 veli_ok=0,

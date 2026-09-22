@@ -449,7 +449,7 @@ def _versions_for_class_view(term_id, classroom_id, version_id=None, weekly_cycl
     Sınıf görüntüleme programları.
 
     version / takvim verilirse tek program.
-    Verilmezse sınıfın dolu hücrelerinin bulunduğu takvimler birleştirilir.
+    Verilmezse sınıfın bağlı olduğu tek takvim gelir.
     """
     if version_id:
         version = get_schedule_version(version_id, term_id)
@@ -466,25 +466,17 @@ def _versions_for_class_view(term_id, classroom_id, version_id=None, weekly_cycl
         )
         return [version] if version else []
 
-    filled_ids = list(
-        ProgramGridCell.objects.filter(
-            schedule_version__term_id=term_id,
-            sinif_id=classroom_id,
-            is_active=True,
-        ).values_list('schedule_version_id', flat=True).distinct()
+    from apps.academic.services.grid_engine import class_schedule_version_id
+
+    bound_id = class_schedule_version_id(int(term_id), int(classroom_id))
+    if not bound_id:
+        return []
+    version = (
+        ScheduleVersion.objects.filter(pk=bound_id)
+        .select_related('weekly_cycle', 'schedule_template')
+        .first()
     )
-    if filled_ids:
-        rows = list(
-            ScheduleVersion.objects.filter(id__in=filled_ids)
-            .select_related('weekly_cycle', 'schedule_template')
-            .order_by('weekly_cycle_id', '-is_active', '-id')
-        )
-        by_cycle = {}
-        for version in rows:
-            if version.weekly_cycle_id not in by_cycle:
-                by_cycle[version.weekly_cycle_id] = version
-        return list(by_cycle.values())
-    return _term_versions_for_teacher(term_id)
+    return [version] if version else []
 
 
 def _class_cells_qs(classroom_id, versions):
@@ -523,8 +515,7 @@ def class_schedule_api(request):
 
     GET /api/schedule/class/?classroom_id=&term_id=&weekly_cycle_id=&version_id=
 
-    version / takvim verilmezse sınıfın dönemdeki tüm çalışma takvimleri
-    tek haftalık grid'de birleştirilir.
+    version / takvim verilmezse sınıfın bağlı olduğu tek takvim gelir.
     """
     classroom_id = request.query_params.get('classroom_id')
     term_id = request.query_params.get('term_id')
