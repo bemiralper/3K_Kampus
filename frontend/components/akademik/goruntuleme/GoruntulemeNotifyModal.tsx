@@ -46,7 +46,6 @@ export default function GoruntulemeNotifyModal({
   const [sending, setSending] = useState(false);
   const [preview, setPreview] = useState<ScheduleNotifyClassPreview[] | null>(null);
   const [teacherPreview, setTeacherPreview] = useState<TeacherScheduleNotifyPreview[] | null>(null);
-  const [includeUnchanged, setIncludeUnchanged] = useState<number[]>([]);
   const [excludedStudents, setExcludedStudents] = useState<Set<number>>(new Set());
   const [excludedVeliler, setExcludedVeliler] = useState<Set<number>>(new Set());
   const [excludedTeachers, setExcludedTeachers] = useState<Set<number>>(new Set());
@@ -70,7 +69,6 @@ export default function GoruntulemeNotifyModal({
     setSendOgrenci(true);
     setPreview(null);
     setTeacherPreview(null);
-    setIncludeUnchanged([]);
     setExcludedStudents(new Set());
     setExcludedVeliler(new Set());
     setExcludedTeachers(new Set());
@@ -106,7 +104,6 @@ export default function GoruntulemeNotifyModal({
           });
           if (cancelled) return;
           setPreview(res.classes);
-          setIncludeUnchanged([]);
           setExcludedStudents(new Set());
           setExcludedVeliler(new Set());
         }
@@ -173,13 +170,14 @@ export default function GoruntulemeNotifyModal({
         message.warning('Gönderilecek sınıf yok.');
         return;
       }
-      const toSend = preview.filter((c) => {
-        if (c.empty_grid) return false;
-        if (c.has_changes) return true;
-        return includeUnchanged.includes(c.sinif_id);
-      });
+      const selected = new Set(selectedClassIds);
+      const toSend = preview.filter((c) => selected.has(c.sinif_id) && !c.empty_grid);
       if (!toSend.length) {
-        message.warning('Gönderilecek sınıf yok. Değişmemiş sınıfları işaretleyin.');
+        message.warning(
+          preview.some((c) => selected.has(c.sinif_id) && c.empty_grid)
+            ? 'Seçili sınıfın ders programı boş.'
+            : 'Gönderilecek sınıf yok.',
+        );
         return;
       }
       const sendTo: Array<'veli' | 'ogrenci'> = [];
@@ -209,7 +207,7 @@ export default function GoruntulemeNotifyModal({
       const res = await sendScheduleNotify({
         term_id: termId,
         sinif_ids: toSend.map((c) => c.sinif_id),
-        force_unchanged_ids: includeUnchanged,
+        force_unchanged_ids: toSend.filter((c) => !c.has_changes).map((c) => c.sinif_id),
         send_to: sendTo,
         include_ogrenci_ids: hasRecipientLists && sendOgrenci ? includeStudents : undefined,
         include_veli_ids: hasRecipientLists && sendVeli ? includeVeliler : undefined,
@@ -413,24 +411,12 @@ export default function GoruntulemeNotifyModal({
                 <div key={c.sinif_id}>
                   <div className="gv-wa-section">
                     {c.sinif_ad}
-                    {c.warning ? ` · ${c.warning}` : ''}
+                    {c.empty_grid
+                      ? ` · ${c.warning || 'Ders programı boş'}`
+                      : !c.has_changes
+                        ? ' · Son gönderimden beri değişiklik yok, yine de gönderilir'
+                        : ''}
                   </div>
-                  {!c.has_changes && !c.empty_grid ? (
-                    <label className="gv-wa-row">
-                      <Checkbox
-                        checked={includeUnchanged.includes(c.sinif_id)}
-                        onChange={(e) =>
-                          setIncludeUnchanged((prev) =>
-                            e.target.checked ? [...prev, c.sinif_id] : prev.filter((id) => id !== c.sinif_id),
-                          )
-                        }
-                      />
-                      <span>
-                        <strong>Yine de gönder</strong>
-                        <small>Program değişmemiş</small>
-                      </span>
-                    </label>
-                  ) : null}
                   {sendOgrenci &&
                     students.map((s) => (
                       <label key={s.id} className={`gv-wa-row${!s.has_phone || excludedStudents.has(s.id) ? ' is-off' : ''}`}>

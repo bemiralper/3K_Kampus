@@ -123,6 +123,15 @@ class SozlesmeService:
             'toplam_indirim_tutari', 'net_tutar', 'updated_at',
         ])
 
+    def _sync_erisim(self, sozlesme, user=None):
+        try:
+            from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
+                sync_sozlesme_erisim,
+            )
+            sync_sozlesme_erisim(sozlesme, user=user)
+        except Exception:
+            logger.exception('Sözleşme erişim senkronu başarısız (sozlesme=%s)', sozlesme.id)
+
     def _sync_ozel_ders_kalem(self, sozlesme, kalem, *, removed=False, user=None):
         try:
             from apps.ozel_ders.services.sync_service import (
@@ -649,6 +658,7 @@ class SozlesmeService:
                 ensure_program_from_sozlesme(sozlesme, user=user)
             except Exception:
                 logger.exception('Özel ders program senkronu başarısız (sozlesme=%s)', sozlesme.id)
+            self._sync_erisim(sozlesme, user=user)
 
         return sozlesme, None
 
@@ -691,6 +701,9 @@ class SozlesmeService:
             'aciklama': aciklama or f'Durum değişikliği: {eski_durum} → {new_status}',
             'islem_yapan': user,
         })
+
+        if new_status in (SozlesmeDurum.AKTIF, SozlesmeDurum.TAMAMLANDI, SozlesmeDurum.DONDURULMUS):
+            self._sync_erisim(sozlesme, user=user)
 
         if eski_durum != SozlesmeDurum.AKTIF and new_status == SozlesmeDurum.AKTIF:
             sozlesme_id = sozlesme.pk
@@ -968,6 +981,7 @@ class SozlesmeService:
             )
 
         self._sync_ozel_ders_kalem(sozlesme, kalem, user=user)
+        self._sync_erisim(sozlesme, user=user)
 
         self.gecmis_repo.create(
             {
