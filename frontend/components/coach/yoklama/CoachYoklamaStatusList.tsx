@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { CoachDayRoster, CoachDayRosterRow, CoachDayRosterStatus } from "@/lib/academic-api";
+import type { ClassPeriodCode, CoachDayRoster, CoachDayRosterRow, CoachDayRosterStatus } from "@/lib/academic-api";
 import { exportYoklamaStatusList, type YoklamaExportFormat } from "@/lib/yoklama-status-export";
 
 const STATUS_OPTS: { value: CoachDayRosterStatus; label: string; hint: string; countKey: keyof CoachDayRoster["counts"] }[] = [
@@ -28,6 +28,18 @@ function toggleValue<T>(list: T[], value: T) {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
+const PERIOD_OPTS: { value: "all" | ClassPeriodCode; label: string }[] = [
+  { value: "all", label: "Tüm periyotlar" },
+  { value: "MORNING", label: "Sabah" },
+  { value: "AFTERNOON", label: "Öğle" },
+  { value: "EVENING", label: "Akşam" },
+];
+
+function periodLabel(period: "all" | ClassPeriodCode) {
+  if (period === "all") return null;
+  return PERIOD_OPTS.find((opt) => opt.value === period)?.label ?? null;
+}
+
 function groupRows(rows: CoachDayRosterRow[]) {
   const map = new Map<string, CoachDayRosterRow[]>();
   rows.forEach((row) => {
@@ -43,7 +55,7 @@ function filterRows(
   rows: CoachDayRosterRow[],
   statuses: CoachDayRosterStatus[],
   classroomIds: number[],
-  period: "all" | "MORNING" | "AFTERNOON",
+  period: "all" | ClassPeriodCode,
   query: string,
 ) {
   const q = query.trim().toLocaleLowerCase("tr");
@@ -68,14 +80,14 @@ export default function CoachYoklamaStatusList({
   onOpenClass: (classroomId: number) => void;
 }) {
   const [statuses, setStatuses] = useState<CoachDayRosterStatus[]>([]);
-  const [period, setPeriod] = useState<"all" | "MORNING" | "AFTERNOON">("all");
+  const [period, setPeriod] = useState<"all" | ClassPeriodCode>("all");
   const [classroomIds, setClassroomIds] = useState<number[]>([]);
   const [query, setQuery] = useState("");
   const [exportOpen, setExportOpen] = useState(false);
   const [format, setFormat] = useState<YoklamaExportFormat>("pdf");
   const [exportStatuses, setExportStatuses] = useState<CoachDayRosterStatus[]>([]);
   const [exportClassroomIds, setExportClassroomIds] = useState<number[]>([]);
-  const [exportPeriod, setExportPeriod] = useState<"all" | "MORNING" | "AFTERNOON">("all");
+  const [exportPeriod, setExportPeriod] = useState<"all" | ClassPeriodCode>("all");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
 
@@ -117,7 +129,7 @@ export default function CoachYoklamaStatusList({
         dateLabel,
         filterSummary: [
           exportStatusLabel,
-          exportPeriod === "all" ? null : exportPeriod === "MORNING" ? "Sabah" : "Öğleden sonra",
+          periodLabel(exportPeriod),
           exportClassLabel,
         ]
           .filter(Boolean)
@@ -182,9 +194,9 @@ export default function CoachYoklamaStatusList({
           onChange={(e) => setPeriod(e.target.value as typeof period)}
           aria-label="Periyot"
         >
-          <option value="all">Tüm periyotlar</option>
-          <option value="MORNING">Sabah</option>
-          <option value="AFTERNOON">Öğleden sonra</option>
+          {PERIOD_OPTS.map((opt) => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
         </select>
         <input
           className="cyc-search"
@@ -319,7 +331,8 @@ export default function CoachYoklamaStatusList({
                 {[
                   { value: "all" as const, label: "Tümü" },
                   { value: "MORNING" as const, label: "Sabah" },
-                  { value: "AFTERNOON" as const, label: "Öğleden sonra" },
+                  { value: "AFTERNOON" as const, label: "Öğle" },
+                  { value: "EVENING" as const, label: "Akşam" },
                 ].map((opt) => (
                   <button
                     key={opt.value}

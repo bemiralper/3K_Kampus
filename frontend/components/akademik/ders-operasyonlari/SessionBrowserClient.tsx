@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Button,
   DatePicker,
   Drawer,
@@ -79,6 +80,25 @@ const STATUS_COLOR: Record<string, string> = {
   NO_SHOW: 'red',
 };
 
+export function classroomChoices(
+  classrooms: ClassLessonPlanContext['classrooms'] | undefined,
+  terms: ClassLessonPlanContext['terms'] | undefined,
+  termId: number | null,
+) {
+  const rows = (classrooms || []).filter(
+    (c) => !termId || c.term_id == null || c.term_id === termId,
+  );
+  const nameCount = new Map<string, number>();
+  rows.forEach((c) => nameCount.set(c.ad, (nameCount.get(c.ad) || 0) + 1));
+  const termName = new Map((terms || []).map((t) => [t.id, t.name]));
+  return rows.map((c) => {
+    const suffix = (nameCount.get(c.ad) || 0) > 1
+      ? (c.term_id ? termName.get(c.term_id) : '') || c.kod
+      : '';
+    return { value: c.id, label: suffix ? `${c.ad} · ${suffix}` : c.ad };
+  });
+}
+
 type Props = {
   description: string;
   /** Sabit oturum türü — yoksa tümü */
@@ -132,6 +152,8 @@ export default function SessionBrowserClient({
   const [form] = Form.useForm();
   const [lastMaterializedKey, setLastMaterializedKey] = useState('');
   const [attendanceQuickFilter, setAttendanceQuickFilter] = useState<'PENDING' | 'ALL'>('PENDING');
+  const bootSeq = useRef(0);
+  const loadSeq = useRef(0);
 
   const boot = useCallback(async () => {
     if (!initialized) return;
@@ -139,6 +161,7 @@ export default function SessionBrowserClient({
       setBooting(false);
       return;
     }
+    const seq = ++bootSeq.current;
     setBooting(true);
     setError(null);
     try {
@@ -146,27 +169,63 @@ export default function SessionBrowserClient({
         fetchClassLessonPlanContext(),
         fetchLessonOpsMeta(),
       ]);
+      if (seq !== bootSeq.current) return;
       setContext(ctx);
       setMeta(opsMeta);
-      setTermId((prev) => prev ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
+      const termIds = new Set(ctx.terms.map((t) => t.id));
+      setTermId((prev) => (
+        prev && termIds.has(prev) ? prev : ctx.active_term_id ?? ctx.terms[0]?.id ?? null
+      ));
+      setClassroomId((prev) => (
+        prev && ctx.classrooms.some((c) => c.id === prev) ? prev : null
+      ));
+      setTeacherId((prev) => (
+        prev && (opsMeta.teachers || []).some((t) => t.id === prev) ? prev : null
+      ));
       setDersOptions(opsMeta.dersler || []);
 
       const templates = await fetchScheduleTemplates();
+      if (seq !== bootSeq.current) return;
       const activeTpl = templates.find((t) => t.is_active) || templates[0];
       if (activeTpl) {
         const detail = await fetchScheduleTemplate(activeTpl.id);
+        if (seq !== bootSeq.current) return;
         setSlots((detail.time_slots || []).filter((s) => s.slot_type === 'LESSON' && s.is_active));
       }
     } catch (e) {
+      if (seq !== bootSeq.current) return;
       setError(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
     } finally {
-      setBooting(false);
+      if (seq === bootSeq.current) setBooting(false);
     }
   }, [activeKurum, activeSube, initialized]);
+
+  const subeId = activeSube?.id ?? null;
+  const seenSube = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (seenSube.current === undefined) {
+      seenSube.current = subeId;
+      return;
+    }
+    if (seenSube.current === subeId) return;
+    seenSube.current = subeId;
+    setTermId(null);
+    setClassroomId(null);
+    setTeacherId(null);
+    setSessions([]);
+  }, [subeId]);
 
   useEffect(() => {
     boot();
   }, [boot]);
+
+  useEffect(() => {
+    if (!context || classroomId == null) return;
+    const row = context.classrooms.find((c) => c.id === classroomId);
+    if (!row || (termId && row.term_id && row.term_id !== termId)) {
+      setClassroomId(null);
+    }
+  }, [classroomId, context, termId]);
 
   const loadClassroomDers = useCallback(async (sinifId: number | null) => {
     if (!sinifId) {
@@ -186,6 +245,7 @@ export default function SessionBrowserClient({
       setSessions([]);
       return;
     }
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const rows = await fetchLessonSessions({
@@ -198,13 +258,15 @@ export default function SessionBrowserClient({
         session_kind: fixedKind,
         status: status ?? undefined,
       });
+      if (seq !== loadSeq.current) return;
       setSessions(rows);
       setError(null);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : 'Oturumlar yüklenemedi');
       setSessions([]);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [classroomId, dailyMode, date, fixedKind, range, status, teacherId, termId]);
 
@@ -227,7 +289,9 @@ export default function SessionBrowserClient({
       classroom_id: cid ? Number(cid) : undefined,
     })
       .then(() => load())
-      .catch(() => null);
+      .catch((e) => {
+        message.error(e instanceof Error ? e.message : 'Programdan oturum üretilemedi. Tekrar deneyin.');
+      });
   }, [
     autoMaterialize,
     dailyMode,
@@ -606,6 +670,14 @@ export default function SessionBrowserClient({
         }
       />
 
+      {context?.context_year_mismatch ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="Üst menüdeki eğitim yılı, ders operasyonlarının kullandığı aktif yıldan farklı. Liste aktif yılın verisini gösterir."
+        />
+      ) : null}
+
       <StatGrid>
         <StatCard
           icon={<IconCalendar />}
@@ -680,7 +752,7 @@ export default function SessionBrowserClient({
             style={{ width: '100%' }}
             value={classroomId ?? undefined}
             onChange={(v) => setClassroomId(v ?? null)}
-            options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
+            options={classroomChoices(context?.classrooms, context?.terms, termId)}
           />
         </Field>
         <Field label="Öğretmen" width={180}>
@@ -736,7 +808,7 @@ export default function SessionBrowserClient({
           pagination={{ pageSize: 30, showSizeChanger: true, hideOnSinglePage: true }}
           size="middle"
           locale={{ emptyText }}
-          scroll={{ x: 1100 }}
+          scroll={{ x: 'max-content' }}
         />
       </Panel>
 
@@ -744,7 +816,7 @@ export default function SessionBrowserClient({
         title="Yeni oturum"
         open={createOpen}
         onClose={() => setCreateOpen(false)}
-        width={460}
+        width="min(460px, 100vw)"
         destroyOnClose
         extra={
           <Space>
@@ -784,7 +856,7 @@ export default function SessionBrowserClient({
               <Select
                 showSearch
                 optionFilterProp="label"
-                options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
+                options={classroomChoices(context?.classrooms, context?.terms, termId)}
                 onChange={(v) => {
                   form.setFieldValue('ders_id', undefined);
                   loadClassroomDers(v ?? null);

@@ -115,6 +115,54 @@ class SozlesmeErisimSyncTests(TestCase):
             ).exists()
         )
 
+    def test_grup_degisince_eski_paket_erisimi_kapanir(self):
+        eski = GrupDersi.objects.create(
+            ad='Eski Grup', kod='ESK', kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+        )
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.ogrenci, paket_turu='grup_dersi', paket_id=eski.id,
+            paket_adi='Eski Grup', aktif_mi=True,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.ogrenci, ek_hizmet=self.kocluk, aktif_mi=True,
+            egitim_yili=self.ey, fiyat=0,
+        )
+        yeni = GrupDersi.objects.create(
+            ad='Yeni Grup', kod='YNI', kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+        )
+        yeni.dahil_ek_hizmetler.add(self.kutuphane)
+        self.sozlesme.kalemler.all().delete()
+        self.sozlesme.paket_turu = 'grup_dersi'
+        self.sozlesme.paket_id = yeni.id
+        self.sozlesme.paket_adi = 'Yeni Grup'
+        self.sozlesme.save(update_fields=['paket_turu', 'paket_id', 'paket_adi'])
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme, kalem_turu=KalemTuru.GRUP_DERSI,
+            kalem_id=yeni.id, kalem_adi='Yeni Grup',
+            brut_tutar=100000, net_tutar=100000, kdv_dahil_tutar=100000,
+        )
+        sync_sozlesme_erisim(self.sozlesme)
+        self.assertFalse(
+            OgrenciEgitimPaketi.objects.filter(
+                ogrenci=self.ogrenci, paket_id=eski.id, aktif_mi=True,
+            ).exists()
+        )
+        self.assertTrue(
+            OgrenciEgitimPaketi.objects.filter(
+                ogrenci=self.ogrenci, paket_id=yeni.id, aktif_mi=True,
+            ).exists()
+        )
+        self.assertFalse(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet=self.kocluk, aktif_mi=True,
+            ).exists()
+        )
+        self.assertTrue(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet=self.kutuphane, aktif_mi=True,
+            ).exists()
+        )
+
     def test_sonradan_eklenen_deneme_paketi(self):
         deneme = Deneme.objects.create(
             ad='TYT Deneme', kod='TYT', kurum=self.kurum, sube=self.sube,

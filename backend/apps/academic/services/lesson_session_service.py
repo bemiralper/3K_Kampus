@@ -437,6 +437,20 @@ def list_sessions(
     return [serialize_session(s) for s in qs.order_by('session_date', 'start_time', 'id')]
 
 
+def _require_same_branch(term, obj, label: str, field: str, *, allow_null_sube: bool = False) -> None:
+    """Kayıt, oturumun dönemiyle aynı kurum ve şubede olmalı."""
+    if obj is None:
+        raise LessonSessionError(f'{label} bulunamadı.', field)
+    kurum_id = getattr(obj, 'kurum_id', None)
+    if kurum_id and kurum_id != term.kurum_id:
+        raise LessonSessionError(f'{label} bu kuruma ait değil.', field)
+    sube_id = getattr(obj, 'sube_id', None)
+    if sube_id is None and allow_null_sube:
+        return
+    if sube_id != term.sube_id:
+        raise LessonSessionError(f'{label} bu şubeye ait değil.', field)
+
+
 @transaction.atomic
 def create_session(*, data: dict[str, Any], user=None) -> LessonSession:
     year = _active_year()
@@ -456,7 +470,9 @@ def create_session(*, data: dict[str, Any], user=None) -> LessonSession:
 
     try:
         from apps.academic.domain.timeslot import TimeSlot
-        timeslot = TimeSlot.objects.get(pk=data['timeslot_id'], is_active=True)
+        timeslot = TimeSlot.objects.select_related('schedule_template').get(
+            pk=data['timeslot_id'], is_active=True,
+        )
     except Exception:
         raise LessonSessionError('Ders saati bulunamadı.', 'timeslot_id')
 
@@ -483,14 +499,42 @@ def create_session(*, data: dict[str, Any], user=None) -> LessonSession:
     if kind != SessionKind.PRIVATE and not sinif:
         raise LessonSessionError('Sınıf seçimi zorunlu.', 'sinif_id')
 
+    if sinif:
+        _require_same_branch(term, sinif, 'Sınıf', 'sinif_id')
+    if sinif and sinif.egitim_yili_id and term.egitim_yili_id and sinif.egitim_yili_id != term.egitim_yili_id:
+        raise LessonSessionError('Sınıf bu eğitim yılına ait değil.', 'sinif_id')
+    if sinif and sinif.term_id and sinif.term_id != term.id:
+        raise LessonSessionError('Sınıf seçili döneme ait değil.', 'sinif_id')
+    _require_same_branch(term, ders, 'Ders', 'ders_id', allow_null_sube=True)
+    _require_same_branch(term, ogretmen, 'Öğretmen', 'ogretmen_id')
+    _require_same_branch(
+        term, getattr(timeslot, 'schedule_template', None), 'Ders saati', 'timeslot_id',
+    )
+
+    private_student = None
+    if data.get('private_student_id'):
+        from apps.ogrenci.domain.models import Ogrenci
+        try:
+            private_student = Ogrenci.objects.get(pk=data['private_student_id'], aktif_mi=True)
+        except Ogrenci.DoesNotExist:
+            raise LessonSessionError('Öğrenci bulunamadı.', 'private_student_id')
+        _require_same_branch(term, private_student, 'Öğrenci', 'private_student_id')
+
     replaces = None
     if kind == SessionKind.MAKEUP:
         if not data.get('replaces_session_id'):
             raise LessonSessionError('Telafi için kaynak oturum seçin.', 'replaces_session_id')
         try:
-            replaces = LessonSession.objects.get(pk=data['replaces_session_id'], is_active=True)
+            replaces = LessonSession.objects.select_related('sinif', 'term').get(
+                pk=data['replaces_session_id'], is_active=True,
+            )
         except LessonSession.DoesNotExist:
             raise LessonSessionError('Telafi edilecek oturum bulunamadı.', 'replaces_session_id')
+        if replaces.term_id != term.id or replaces.term.kurum_id != term.kurum_id or replaces.term.sube_id != term.sube_id:
+            raise LessonSessionError(
+                'Telafi kaynağı bu dönem ve şubeye ait değil.',
+                'replaces_session_id',
+            )
 
     start_time = timeslot.start_time
     end_time = timeslot.end_time
@@ -509,6 +553,8 @@ def create_session(*, data: dict[str, Any], user=None) -> LessonSession:
     version = None
     if data.get('schedule_version_id'):
         version = ScheduleVersion.objects.filter(pk=data['schedule_version_id']).first()
+        if not version or version.term_id != term.id:
+            raise LessonSessionError('Program seçili döneme ait değil.', 'schedule_version_id')
 
     session = LessonSession.objects.create(
         egitim_yili=year,
@@ -523,7 +569,7 @@ def create_session(*, data: dict[str, Any], user=None) -> LessonSession:
         ogretmen=ogretmen,
         session_kind=kind,
         status=SessionStatus.SCHEDULED,
-        private_student_id=data.get('private_student_id'),
+        private_student=private_student,
         replaces_session=replaces,
         notes=data.get('notes') or '',
         payable=bool(data.get('payable', True)),
@@ -620,7 +666,7 @@ def set_teacher_attendance(
 ) -> LessonSession:
     try:
         session = LessonSession.objects.select_related(
-            'ders', 'ogretmen', 'sinif', 'timeslot', 'substitute_ogretmen',
+            'ders', 'ogretmen', 'sinif', 'timeslot', 'substitute_ogretmen', 'term',
         ).get(pk=session_id, is_active=True)
     except LessonSession.DoesNotExist:
         raise LessonSessionError('Oturum bulunamadı.')
@@ -635,6 +681,10 @@ def set_teacher_attendance(
             sub = Personel.objects.get(pk=substitute_ogretmen_id, aktif_mi=True)
         except Personel.DoesNotExist:
             raise LessonSessionError('Yedek öğretmen bulunamadı.', 'substitute_ogretmen_id')
+        if not session.term_id:
+            raise LessonSessionError('Oturumun dönemi yok.', 'substitute_ogretmen_id')
+        if sub.kurum_id != session.term.kurum_id or sub.sube_id != session.term.sube_id:
+            raise LessonSessionError('Yedek öğretmen bu şubeye ait değil.', 'substitute_ogretmen_id')
         _check_teacher_slot_conflict(
             ogretmen_id=sub.id,
             session_date=session.session_date,
@@ -705,6 +755,19 @@ def get_or_build_student_roster(session: LessonSession) -> list[dict[str, Any]]:
     return rows
 
 
+def _session_roster_student_ids(session: LessonSession) -> set[int]:
+    if session.session_kind == SessionKind.PRIVATE and session.private_student_id:
+        return {session.private_student_id}
+    if session.sinif_id:
+        return set(
+            active_student_placements(
+                classroom_id=session.sinif_id,
+                term_id=session.term_id,
+            ).values_list('student_id', flat=True)
+        )
+    return set()
+
+
 @transaction.atomic
 def save_student_attendance(
     *,
@@ -727,6 +790,8 @@ def save_student_attendance(
             raise LessonSessionError(f'Geçersiz yoklama durumu: {status}', 'status')
         if not sid:
             continue
+        if int(sid) not in _session_roster_student_ids(session):
+            raise LessonSessionError('Öğrenci bu oturumun sınıfında değil.', 'student_id')
         late_time = None
         if status == StudentAttendanceStatus.LATE:
             late_time = late_time_or_now(item.get('late_time'))
@@ -860,12 +925,20 @@ def list_change_logs(
     *,
     term_id: Optional[int] = None,
     version_id: Optional[int] = None,
+    kurum_id: Optional[int] = None,
+    sube_id: Optional[int] = None,
     limit: int = 100,
 ) -> list[dict[str, Any]]:
     qs = ScheduleChangeLog.objects.select_related(
         'schedule_version', 'schedule_version__weekly_cycle',
         'term', 'created_by', 'lesson_session',
-    ).all()
+    )
+    if kurum_id is not None:
+        qs = qs.filter(term__kurum_id=kurum_id)
+    if sube_id is not None:
+        qs = qs.filter(term__sube_id=sube_id)
+    if not term_id and kurum_id is None and sube_id is None:
+        return []
     if term_id:
         qs = qs.filter(term_id=term_id)
     if version_id:

@@ -124,13 +124,12 @@ export function impactSummary(opts: {
   gun?: number | null;
 }): string {
   const periods = opts.fullDay ? PERIODS.map((p) => p.code) : opts.periods;
-  const academic = periods.filter((p) => p !== 'EVENING');
   if (opts.suresiz || !opts.end) {
     if (opts.tekrar === 'WEEKLY' && opts.gun != null) {
       const day = DAYS.find((d) => d.key === opts.gun)?.label || '';
       return `Her ${day} · ${opts.fullDay ? 'tam gün' : periods.map((p) => PERIODS.find((x) => x.code === p)?.label).join(', ')} · süresiz`;
     }
-    return `Süresiz aralık · kütüphane ${opts.fullDay ? 3 : periods.length} oturum/gün · sınıf ${opts.fullDay ? 2 : academic.length} periyot/gün`;
+    return `Süresiz aralık · kütüphane ${opts.fullDay ? 3 : periods.length} oturum/gün · sınıf ${opts.fullDay ? 3 : periods.length} periyot/gün`;
   }
   const days = countDaysInRange(
     opts.start,
@@ -138,7 +137,7 @@ export function impactSummary(opts: {
     opts.tekrar === 'WEEKLY' ? opts.gun ?? null : null,
   );
   const lib = days * (opts.fullDay ? 3 : periods.length);
-  const cls = days * (opts.fullDay ? 2 : academic.length);
+  const cls = days * (opts.fullDay ? 3 : periods.length);
   return `${days} gün · ${lib} kütüphane oturumu + ${cls} sınıf periyodu`;
 }
 

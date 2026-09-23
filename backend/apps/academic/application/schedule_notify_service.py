@@ -580,6 +580,108 @@ def _filter_recipient_ids(
     return allowed
 
 
+def _recipient_row(
+    *,
+    kind: str,
+    person_id: int,
+    name: str,
+    phone: str,
+    status: str,
+    error: str = '',
+    sinif_ad: str = '',
+) -> dict[str, Any]:
+    return {
+        'kind': kind,
+        'id': person_id,
+        'name': name,
+        'phone': phone,
+        'status': status,
+        'error': error,
+        'sinif_ad': sinif_ad,
+    }
+
+
+def _write_notify_log(
+    *,
+    kurum_id: int,
+    term_id: int,
+    class_version_id: int | None,
+    sinif_id: int | None,
+    fingerprint: str,
+    veli_ok: int,
+    ogrenci_ok: int,
+    status: str,
+    recipients: list[dict[str, Any]],
+    errors: list[str],
+    batch_id: str,
+    target_kind: str,
+    title: str,
+    user,
+) -> None:
+    ClassScheduleNotifyLog.objects.create(
+        kurum_id=kurum_id,
+        term_id=term_id,
+        schedule_version_id=class_version_id,
+        sinif_id=sinif_id,
+        target_kind=target_kind,
+        batch_id=(batch_id or '')[:64],
+        grid_fingerprint=fingerprint,
+        veli_count=veli_ok,
+        ogrenci_count=ogrenci_ok,
+        status=status,
+        detail={
+            'errors': errors[:50],
+            'recipients': recipients[:400],
+            'title': title,
+            'batch_id': batch_id or '',
+        },
+        sent_by=user if user and getattr(user, 'is_authenticated', False) else None,
+    )
+
+
+def list_notify_history(
+    *,
+    kurum_id: int,
+    term_id: int,
+    target_kind: str | None = None,
+    limit: int = 80,
+) -> dict[str, Any]:
+    qs = ClassScheduleNotifyLog.objects.filter(
+        kurum_id=kurum_id,
+        term_id=term_id,
+    ).select_related('sinif', 'sent_by')
+    if target_kind in ('class', 'teacher'):
+        qs = qs.filter(target_kind=target_kind)
+    items = []
+    for log in qs.order_by('-sent_at', '-id')[:limit]:
+        detail = log.detail if isinstance(log.detail, dict) else {}
+        title = ''
+        if log.sinif_id and log.sinif:
+            title = log.sinif.ad
+        title = title or detail.get('title') or ''
+        sent_by = ''
+        if log.sent_by_id and log.sent_by:
+            sent_by = (
+                log.sent_by.get_full_name()
+                or getattr(log.sent_by, 'username', '')
+                or ''
+            ).strip()
+        items.append({
+            'id': log.id,
+            'batch_id': log.batch_id or detail.get('batch_id') or '',
+            'target_kind': log.target_kind,
+            'title': title,
+            'status': log.status,
+            'veli_count': log.veli_count,
+            'ogrenci_count': log.ogrenci_count,
+            'sent_at': log.sent_at.isoformat() if log.sent_at else None,
+            'sent_by': sent_by,
+            'recipients': detail.get('recipients') or [],
+            'errors': detail.get('errors') or [],
+        })
+    return {'term_id': term_id, 'items': items}
+
+
 def send_class_schedules(
     *,
     kurum_id: int,
@@ -593,6 +695,7 @@ def send_class_schedules(
     exclude_veli_ids: list[int] | None = None,
     include_ogrenci_ids: list[int] | None = None,
     include_veli_ids: list[int] | None = None,
+    batch_id: str | None = None,
     user=None,
 ) -> dict[str, Any]:
     force_set = set(force_unchanged_ids or [])
@@ -627,6 +730,7 @@ def send_class_schedules(
                 'veli_sent': 0,
                 'ogrenci_sent': 0,
                 'errors': [cls_row['warning'] or 'Boş program'],
+                'recipients': [],
             })
             total_skipped += 1
             continue
@@ -640,6 +744,7 @@ def send_class_schedules(
                 'veli_sent': 0,
                 'ogrenci_sent': 0,
                 'errors': [cls_row['warning'] or 'Değişiklik yok'],
+                'recipients': [],
             })
             total_skipped += 1
             continue
@@ -660,6 +765,7 @@ def send_class_schedules(
                 'veli_sent': 0,
                 'ogrenci_sent': 0,
                 'errors': [exc.message],
+                'recipients': [],
             })
             total_errors += 1
             continue
@@ -667,6 +773,7 @@ def send_class_schedules(
         recipients = _resolve_recipients(term_id, sid)
         fp = compute_grid_fingerprint(version_id, sid)
         errors: list[str] = []
+        delivered: list[dict[str, Any]] = []
         veli_ok = 0
         ogrenci_ok = 0
 
@@ -716,8 +823,17 @@ def send_class_schedules(
                     sube_id=sube_id,
                     sent_by_user_id=sent_by,
                 )
+                veli_name = f'{veli.ad} {veli.soyad}'.strip()
                 if isinstance(result, SendResult) and result.success:
                     veli_ok += 1
+                    delivered.append(_recipient_row(
+                        kind='veli',
+                        person_id=veli.id,
+                        name=veli_name,
+                        phone=effective_veli_phone(veli, student) or '',
+                        status='sent',
+                        sinif_ad=cls_row['sinif_ad'],
+                    ))
                 else:
                     err = (
                         '; '.join(result.errors)
@@ -725,6 +841,15 @@ def send_class_schedules(
                         else 'Veli gönderimi başarısız'
                     )
                     errors.append(f'veli:{veli.id}: {err}')
+                    delivered.append(_recipient_row(
+                        kind='veli',
+                        person_id=veli.id,
+                        name=veli_name,
+                        phone=effective_veli_phone(veli, student) or '',
+                        status='failed',
+                        error=err,
+                        sinif_ad=cls_row['sinif_ad'],
+                    ))
 
         if send_ogrenci:
             for student in recipients['students']:
@@ -747,8 +872,17 @@ def send_class_schedules(
                     sube_id=sube_id,
                     sent_by_user_id=sent_by,
                 )
+                student_name = f'{student.ad} {student.soyad}'.strip()
                 if isinstance(result, SendResult) and result.success:
                     ogrenci_ok += 1
+                    delivered.append(_recipient_row(
+                        kind='ogrenci',
+                        person_id=student.id,
+                        name=student_name,
+                        phone=(student.telefon or ''),
+                        status='sent',
+                        sinif_ad=cls_row['sinif_ad'],
+                    ))
                 else:
                     err = (
                         '; '.join(result.errors)
@@ -756,6 +890,15 @@ def send_class_schedules(
                         else 'Öğrenci gönderimi başarısız'
                     )
                     errors.append(f'ogrenci:{student.id}: {err}')
+                    delivered.append(_recipient_row(
+                        kind='ogrenci',
+                        person_id=student.id,
+                        name=student_name,
+                        phone=(student.telefon or ''),
+                        status='failed',
+                        error=err,
+                        sinif_ad=cls_row['sinif_ad'],
+                    ))
 
         if veli_ok or ogrenci_ok:
             status = (
@@ -763,17 +906,21 @@ def send_class_schedules(
                 if errors
                 else ClassScheduleNotifyStatus.SENT
             )
-            ClassScheduleNotifyLog.objects.create(
+            _write_notify_log(
                 kurum_id=kurum_id,
                 term_id=term_id,
-                schedule_version_id=version_id,
+                class_version_id=version_id,
                 sinif_id=sid,
-                grid_fingerprint=fp,
-                veli_count=veli_ok,
-                ogrenci_count=ogrenci_ok,
+                fingerprint=fp,
+                veli_ok=veli_ok,
+                ogrenci_ok=ogrenci_ok,
                 status=status,
-                detail={'errors': errors[:50]},
-                sent_by=user if user and getattr(user, 'is_authenticated', False) else None,
+                recipients=delivered,
+                errors=errors,
+                batch_id=batch_id or '',
+                target_kind='class',
+                title=cls_row['sinif_ad'],
+                user=user,
             )
             results.append({
                 'sinif_id': sid,
@@ -783,23 +930,29 @@ def send_class_schedules(
                 'veli_sent': veli_ok,
                 'ogrenci_sent': ogrenci_ok,
                 'errors': errors[:20],
+                'recipients': delivered,
             })
             total_veli += veli_ok
             total_ogrenci += ogrenci_ok
             if errors:
                 total_errors += len(errors)
         else:
-            ClassScheduleNotifyLog.objects.create(
+            fail_errors = errors or ['Alıcı yok veya gönderim başarısız']
+            _write_notify_log(
                 kurum_id=kurum_id,
                 term_id=term_id,
-                schedule_version_id=version_id,
+                class_version_id=version_id,
                 sinif_id=sid,
-                grid_fingerprint=fp,
-                veli_count=0,
-                ogrenci_count=0,
+                fingerprint=fp,
+                veli_ok=0,
+                ogrenci_ok=0,
                 status=ClassScheduleNotifyStatus.FAILED,
-                detail={'errors': errors[:50] or ['Alıcı yok veya gönderim başarısız']},
-                sent_by=user if user and getattr(user, 'is_authenticated', False) else None,
+                recipients=delivered,
+                errors=fail_errors,
+                batch_id=batch_id or '',
+                target_kind='class',
+                title=cls_row['sinif_ad'],
+                user=user,
             )
             results.append({
                 'sinif_id': sid,
@@ -808,7 +961,8 @@ def send_class_schedules(
                 'reason': 'no_recipients' if not errors else 'dispatch',
                 'veli_sent': 0,
                 'ogrenci_sent': 0,
-                'errors': errors[:20] or ['Gönderilecek alıcı bulunamadı'],
+                'errors': fail_errors[:20],
+                'recipients': delivered,
             })
             total_errors += 1
 
@@ -954,6 +1108,7 @@ def send_teacher_schedules(
     teacher_ids: list[int],
     exclude_teacher_ids: list[int] | None = None,
     include_teacher_ids: list[int] | None = None,
+    batch_id: str | None = None,
     user=None,
 ) -> dict[str, Any]:
     preview = preview_teachers(
@@ -1051,6 +1206,29 @@ def send_teacher_schedules(
             sent_by_user_id=sent_by,
         )
         if isinstance(result, SendResult) and result.success:
+            person = _recipient_row(
+                kind='ogretmen',
+                person_id=tid,
+                name=row['teacher_name'],
+                phone=row.get('phone') or '',
+                status='sent',
+            )
+            _write_notify_log(
+                kurum_id=kurum_id,
+                term_id=term_id,
+                class_version_id=None,
+                sinif_id=None,
+                fingerprint='',
+                veli_ok=0,
+                ogrenci_ok=0,
+                status=ClassScheduleNotifyStatus.SENT,
+                recipients=[person],
+                errors=[],
+                batch_id=batch_id or '',
+                target_kind='teacher',
+                title=row['teacher_name'],
+                user=user,
+            )
             results.append({
                 'teacher_id': tid,
                 'teacher_name': row['teacher_name'],
@@ -1058,6 +1236,7 @@ def send_teacher_schedules(
                 'reason': None,
                 'sent': 1,
                 'errors': [],
+                'recipients': [person],
             })
             total_sent += 1
         else:
@@ -1066,6 +1245,30 @@ def send_teacher_schedules(
                 if isinstance(result, SendResult) and result.errors
                 else 'Öğretmen gönderimi başarısız'
             )
+            person = _recipient_row(
+                kind='ogretmen',
+                person_id=tid,
+                name=row['teacher_name'],
+                phone=row.get('phone') or '',
+                status='failed',
+                error=err,
+            )
+            _write_notify_log(
+                kurum_id=kurum_id,
+                term_id=term_id,
+                class_version_id=None,
+                sinif_id=None,
+                fingerprint='',
+                veli_ok=0,
+                ogrenci_ok=0,
+                status=ClassScheduleNotifyStatus.FAILED,
+                recipients=[person],
+                errors=[err],
+                batch_id=batch_id or '',
+                target_kind='teacher',
+                title=row['teacher_name'],
+                user=user,
+            )
             results.append({
                 'teacher_id': tid,
                 'teacher_name': row['teacher_name'],
@@ -1073,6 +1276,7 @@ def send_teacher_schedules(
                 'reason': 'dispatch',
                 'sent': 0,
                 'errors': [err],
+                'recipients': [person],
             })
             total_errors += 1
 

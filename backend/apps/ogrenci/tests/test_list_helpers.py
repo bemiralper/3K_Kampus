@@ -175,6 +175,43 @@ class BuildOgrenciKalemlerMapTest(TestCase):
         self.assertIn(('ozel_ders', 'Matematik Özel'), turler)
         self.assertIn(('deneme', 'TYT Deneme Paketi'), turler)
 
+    def test_sozlesme_degisince_eski_paket_listede_kalmaz(self):
+        yeni = GrupDersi.objects.create(
+            ad='Yeni Sayısal', kod='GYS',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme,
+            kalem_turu=KalemTuru.PAKET,
+            kalem_id=yeni.id,
+            kalem_adi='Eski Grup Adı',
+        )
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.ogrenci,
+            paket_turu='grup_dersi',
+            paket_id=self.grup.id,
+            paket_adi=self.grup.ad,
+            aktif_mi=True,
+        )
+        turler = self._turler()
+        self.assertIn(('grup_dersi', 'Yeni Sayısal'), turler)
+        self.assertNotIn(('grup_dersi', '12 TYT Grup'), turler)
+        self.assertNotIn(('grup_dersi', 'Eski Grup Adı'), turler)
+
+    def test_enrollment_adi_katalogdan_okunur(self):
+        self.sozlesme.delete()
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.ogrenci,
+            paket_turu='grup_dersi',
+            paket_id=self.grup.id,
+            paket_adi='Kayıt anındaki ad',
+            aktif_mi=True,
+        )
+        self.grup.ad = 'Güncel Grup Adı'
+        self.grup.save(update_fields=['ad'])
+        self.assertIn(('grup_dersi', 'Güncel Grup Adı'), self._turler())
+        self.assertNotIn(('grup_dersi', 'Kayıt anındaki ad'), self._turler())
+
     def test_enrollment_grup_dersi_appears_without_sozlesme(self):
         self.sozlesme.delete()
         OgrenciEgitimPaketi.objects.create(

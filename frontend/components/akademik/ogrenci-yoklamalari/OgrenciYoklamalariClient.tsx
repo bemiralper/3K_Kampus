@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, DatePicker, Input, Select, Space, Table, Tag, TimePicker, message } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Button, DatePicker, Input, Select, Space, Table, Tag, TimePicker, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined, SaveOutlined, SendOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -45,6 +45,7 @@ import {
   IconClock,
   IconUsers,
 } from '@/components/akademik/ui/icons';
+import { classroomChoices } from '@/components/akademik/ders-operasyonlari/SessionBrowserClient';
 import '@/components/akademik/ders-operasyonlari/ops-common.css';
 
 dayjs.locale('tr');
@@ -73,6 +74,9 @@ export default function OgrenciYoklamalariClient() {
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const bootSeq = useRef(0);
+  const lessonSeq = useRef(0);
+  const periodSeq = useRef(0);
 
   const boot = useCallback(async () => {
     if (!initialized) return;
@@ -80,48 +84,87 @@ export default function OgrenciYoklamalariClient() {
       setBooting(false);
       return;
     }
+    const seq = ++bootSeq.current;
     setBooting(true);
     setError(null);
     try {
       const ctx = await fetchClassLessonPlanContext();
+      if (seq !== bootSeq.current) return;
       setContext(ctx);
-      setTermId((p) => p ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
-      setClassroomId((p) => p ?? ctx.classrooms[0]?.id ?? null);
+      const termIds = new Set(ctx.terms.map((t) => t.id));
+      setTermId((p) => (p && termIds.has(p) ? p : ctx.active_term_id ?? ctx.terms[0]?.id ?? null));
+      setClassroomId((p) => {
+        if (p && ctx.classrooms.some((c) => c.id === p)) return p;
+        const term = ctx.active_term_id ?? ctx.terms[0]?.id ?? null;
+        const first = ctx.classrooms.find((c) => !term || c.term_id == null || c.term_id === term);
+        return first?.id ?? null;
+      });
     } catch (e) {
+      if (seq !== bootSeq.current) return;
       setError(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
     } finally {
-      setBooting(false);
+      if (seq === bootSeq.current) setBooting(false);
     }
   }, [activeKurum, activeSube, initialized]);
+
+  const subeId = activeSube?.id ?? null;
+  const seenSube = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (seenSube.current === undefined) {
+      seenSube.current = subeId;
+      return;
+    }
+    if (seenSube.current === subeId) return;
+    seenSube.current = subeId;
+    setTermId(null);
+    setClassroomId(null);
+    setSessions([]);
+    setPeriodSessions([]);
+  }, [subeId]);
 
   useEffect(() => {
     boot();
   }, [boot]);
 
+  useEffect(() => {
+    if (!context || classroomId == null) return;
+    const row = context.classrooms.find((c) => c.id === classroomId);
+    if (!row || (termId && row.term_id && row.term_id !== termId)) {
+      const next = context.classrooms.find((c) => !termId || c.term_id == null || c.term_id === termId);
+      setClassroomId(next?.id ?? null);
+    }
+  }, [classroomId, context, termId]);
+
   const loadLessonSessions = useCallback(async () => {
     if (!termId) return;
+    const seq = ++lessonSeq.current;
     setLoading(true);
     try {
       await materializeLessonSessions({
         term_id: termId,
         date: date.format('YYYY-MM-DD'),
         classroom_id: classroomId ?? undefined,
-      }).catch(() => null);
+      }).catch((e) => {
+        message.error(e instanceof Error ? e.message : 'Programdan oturum üretilemedi. Tekrar deneyin.');
+      });
+      if (seq !== lessonSeq.current) return;
       const rows = await fetchLessonSessions({
         term_id: termId,
         date: date.format('YYYY-MM-DD'),
         classroom_id: classroomId ?? undefined,
         session_kind: 'REGULAR',
       });
+      if (seq !== lessonSeq.current) return;
       setSessions(rows);
       setSessionId((prev) => (prev && rows.some((r) => r.id === prev) ? prev : rows[0]?.id ?? null));
       setError(null);
     } catch (e) {
+      if (seq !== lessonSeq.current) return;
       setError(e instanceof Error ? e.message : 'Oturumlar yüklenemedi');
       setSessions([]);
       setSessionId(null);
     } finally {
-      setLoading(false);
+      if (seq === lessonSeq.current) setLoading(false);
     }
   }, [classroomId, date, termId]);
 
@@ -132,13 +175,16 @@ export default function OgrenciYoklamalariClient() {
       setPeriodInfo('');
       return;
     }
+    const seq = ++periodSeq.current;
     setLoading(true);
+    setError(null);
     try {
       const data = await ensureClassPeriodAttendance({
         term_id: termId,
         classroom_id: classroomId,
         date: date.format('YYYY-MM-DD'),
       });
+      if (seq !== periodSeq.current) return;
       const sessions = data.sessions || [];
       setPeriodSessions(sessions);
       setPeriodInfo(
@@ -151,14 +197,14 @@ export default function OgrenciYoklamalariClient() {
         if (prev && sessions.some((s) => s.id === prev)) return prev;
         return sessions[0]?.id ?? null;
       });
-    } catch {
+    } catch (e) {
+      if (seq !== periodSeq.current) return;
       setPeriodSessions([]);
       setPeriodSessionId(null);
-      setPeriodInfo(
-        'Bu sınıfın seçilen günde programda dersi yok. Günlük yoklama yalnızca dersi olan günlerde açılır.',
-      );
+      setPeriodInfo('');
+      setError(e instanceof Error ? e.message : 'Günlük yoklama yüklenirken hata oluştu. Tekrar deneyin.');
     } finally {
-      setLoading(false);
+      if (seq === periodSeq.current) setLoading(false);
     }
   }, [classroomId, date, termId]);
 
@@ -349,7 +395,7 @@ export default function OgrenciYoklamalariClient() {
   return (
     <PageShell>
       <PageHead
-        description="Ders bazlı veya günlük (sabah / öğleden sonra) yoklama. Kaydettikten sonra devamsız ve geç kalan öğrencilerin velisine bildirim gönderebilirsiniz."
+        description="Ders bazlı veya günlük (sabah / öğle / akşam) yoklama. Kaydettikten sonra devamsız ve geç kalan öğrencilerin velisine bildirim gönderebilirsiniz."
         actions={
           <Space wrap>
             <Button
@@ -381,6 +427,14 @@ export default function OgrenciYoklamalariClient() {
           </Space>
         }
       />
+
+      {context?.context_year_mismatch ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="Üst menüdeki eğitim yılı, ders operasyonlarının kullandığı aktif yıldan farklı. Liste aktif yılın verisini gösterir."
+        />
+      ) : null}
 
       {rosterVisible ? (
         <StatGrid>
@@ -433,7 +487,7 @@ export default function OgrenciYoklamalariClient() {
             style={{ width: '100%' }}
             value={classroomId ?? undefined}
             onChange={setClassroomId}
-            options={(context?.classrooms || []).map((c) => ({ value: c.id, label: c.ad }))}
+            options={classroomChoices(context?.classrooms, context?.terms, termId)}
           />
         </Field>
         {mode === 'lesson' ? (
@@ -457,7 +511,7 @@ export default function OgrenciYoklamalariClient() {
               style={{ width: '100%' }}
               value={periodSessionId ?? undefined}
               onChange={setPeriodSessionId}
-              placeholder="Sabah / Öğleden sonra"
+              placeholder="Sabah / Öğle / Akşam"
               options={periodSessions.map((s) => ({
                 value: s.id,
                 label: s.period_label,
@@ -478,7 +532,15 @@ export default function OgrenciYoklamalariClient() {
         </Hint>
       ) : null}
 
-      {error ? <ErrorState description={error} onRetry={loadRoster} /> : null}
+      {error ? (
+        <ErrorState
+          description={error}
+          onRetry={() => {
+            if (mode === 'lesson') loadLessonSessions();
+            else loadPeriodSessions();
+          }}
+        />
+      ) : null}
 
       {mode === 'lesson' && !loading && !sessions.length ? (
         <EmptyState
@@ -494,7 +556,7 @@ export default function OgrenciYoklamalariClient() {
           title="Günlük yoklama kapalı"
           description={
             periodInfo ||
-            'Bu sınıfın seçilen günde programda dersi yok. Günlük yoklama, sabah veya öğleden sonra dersi olan günlerde açılır.'
+            'Bu sınıfın seçilen günde programda dersi yok. Günlük yoklama, sabah, öğle veya akşam dersi olan günlerde açılır.'
           }
         />
       ) : null}

@@ -54,6 +54,8 @@ class GiderOdemeTakibiQueryService:
     ):
         today = timezone.localdate()
         f = filters or {}
+        from apps.finans.application.gider_service import GiderService
+        GiderService().repair_inconsistent_taksit_rows(kurum_id, sube_id=sube_id)
         qs = self._base_qs(kurum_id)
         qs = self._apply_sube(qs, sube_id, f, allowed_sube_ids)
         qs = self._apply_filters(qs, f, today)

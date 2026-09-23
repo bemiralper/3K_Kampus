@@ -79,6 +79,56 @@ class KutuphaneIzinAcademicRosterTest(TestCase):
         self.assertTrue(row['izinli_mi'])
         self.assertIn('Ateş', row['izin_sebep'])
 
+    def test_afternoon_izin_does_not_excuse_evening_class(self):
+        self.session.period = ClassPeriodCode.EVENING
+        self.session.save(update_fields=['period'])
+        self.svc.create_izin({
+            'ogrenci_id': self.ogrenci.id,
+            'kurum_id': self.kurum.id,
+            'izin_tipi': ExemptionType.PERIOD,
+            'tekrar_modu': IzinTekrarModu.RANGE,
+            'periyot_kodu': SessionCode.AFTERNOON,
+            'baslangic_tarihi': self.tarih,
+            'bitis_tarihi': self.tarih,
+        }, user_id=1)
+        roster = get_or_build_period_roster(self.session)
+        row = next(r for r in roster if r['student_id'] == self.ogrenci.id)
+        self.assertEqual(row['status'], StudentAttendanceStatus.PRESENT)
+        self.assertFalse(row['izinli_mi'])
+
+    def test_evening_izin_excuses_evening_class(self):
+        self.session.period = ClassPeriodCode.EVENING
+        self.session.save(update_fields=['period'])
+        self.svc.create_izin({
+            'ogrenci_id': self.ogrenci.id,
+            'kurum_id': self.kurum.id,
+            'izin_tipi': ExemptionType.PERIOD,
+            'tekrar_modu': IzinTekrarModu.RANGE,
+            'periyot_kodu': SessionCode.EVENING,
+            'baslangic_tarihi': self.tarih,
+            'bitis_tarihi': self.tarih,
+            'sebep_kodu': 'SPOR',
+        }, user_id=1)
+        roster = get_or_build_period_roster(self.session)
+        row = next(r for r in roster if r['student_id'] == self.ogrenci.id)
+        self.assertEqual(row['status'], StudentAttendanceStatus.EXCUSED)
+        self.assertTrue(row['izinli_mi'])
+
+    def test_stale_afternoon_excuse_clears_on_evening_roster(self):
+        self.session.period = ClassPeriodCode.EVENING
+        self.session.save(update_fields=['period'])
+        ClassPeriodAttendanceRecord.objects.create(
+            session=self.session,
+            student=self.ogrenci,
+            status=StudentAttendanceStatus.EXCUSED,
+            izinli_mi=True,
+            note='Öğle',
+        )
+        roster = get_or_build_period_roster(self.session)
+        row = next(r for r in roster if r['student_id'] == self.ogrenci.id)
+        self.assertEqual(row['status'], StudentAttendanceStatus.PRESENT)
+        self.assertFalse(row['izinli_mi'])
+
     def test_evening_izin_does_not_excuse_morning_class(self):
         self.svc.create_izin({
             'ogrenci_id': self.ogrenci.id,

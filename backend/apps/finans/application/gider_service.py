@@ -406,43 +406,103 @@ class GiderService:
 
     def taksitleri_odeme_ile_hizala(self, gider):
         """
-        Gider ödeme toplamı ile taksit satırlarını senkronize eder.
-        Taksitsiz tam ödeme sonrası açık kalan taksit satırlarını kapatır.
+        Gider ödemelerini taksit satırlarına yayar.
+
+        Taksit seçilerek yapılan ödeme o satırda kalır. Taksit seçilmeden
+        (giderler listesinden) alınan ödeme, vade sırasıyla açık taksitlere
+        yazılır. Böylece ödeme takibi giderin ödenen tutarını görür.
         """
-        taksitler = list(self.taksit_repo.get_by_gider(gider.pk))
+        from apps.finans.constants.gider_types import OdemeDurum
+        from apps.finans.domain.gider_odeme import GiderOdeme
+
+        taksitler = [
+            t for t in self.taksit_repo.get_by_gider(gider.pk)
+            if t.durum != GiderTaksitDurum.IPTAL
+        ]
         if not taksitler:
             return
 
         gider.refresh_from_db()
+        odemeler = list(
+            GiderOdeme.objects.filter(
+                gider_kaydi=gider,
+                durum=OdemeDurum.TAMAMLANDI,
+            ).order_by('odeme_tarihi', 'id')
+        )
+        linked = {}
+        unlinked_total = Decimal('0')
+        for odeme in odemeler:
+            if odeme.gider_taksit_id:
+                linked[odeme.gider_taksit_id] = (
+                    linked.get(odeme.gider_taksit_id, Decimal('0')) + odeme.tutar
+                )
+            else:
+                unlinked_total += odeme.tutar
 
-        if gider.odenen_toplam >= gider.net_tutar:
+        son = odemeler[-1] if odemeler else None
+        if gider.net_tutar > 0 and gider.odenen_toplam >= gider.net_tutar:
             for t in taksitler:
-                if t.durum == GiderTaksitDurum.IPTAL:
-                    continue
-                t.odenen_tutar = t.tutar
-                t.durum = GiderTaksitDurum.ODENDI
-                t.save(update_fields=['odenen_tutar', 'durum', 'updated_at'])
+                self._yaz_taksit_odeme(t, t.tutar, son)
             return
 
-        for t in taksitler:
-            if t.durum != GiderTaksitDurum.IPTAL:
-                self.taksit_repo.odenen_tutar_guncelle(t)
+        pool = unlinked_total
+        for t in sorted(taksitler, key=lambda row: (row.taksit_no, row.id)):
+            base = linked.get(t.pk, Decimal('0'))
+            extra = Decimal('0')
+            room = t.tutar - base
+            if room > 0 and pool > 0:
+                extra = min(room, pool)
+                pool -= extra
+            self._yaz_taksit_odeme(t, base + extra, son if extra or base else None)
+
+    @staticmethod
+    def _yaz_taksit_odeme(taksit, odenen, son_odeme):
+        from apps.finans.application.gider_odeme_durumu import resolve_taksit_durum_values
+
+        durum = resolve_taksit_durum_values(
+            taksit.vade_tarihi, taksit.tutar, odenen, iptal=False,
+        )
+        taksit.odenen_tutar = odenen
+        taksit.durum = durum
+        fields = ['odenen_tutar', 'durum', 'updated_at']
+        if son_odeme and odenen > 0:
+            taksit.odeme_tarihi = son_odeme.odeme_tarihi
+            fields.append('odeme_tarihi')
+            if son_odeme.mali_hesap_id:
+                taksit.mali_hesap_id = son_odeme.mali_hesap_id
+                fields.append('mali_hesap_id')
+            if son_odeme.odeme_yontemi_id:
+                taksit.odeme_yontemi_id = son_odeme.odeme_yontemi_id
+                fields.append('odeme_yontemi_id')
+        elif odenen <= 0:
+            taksit.odeme_tarihi = None
+            fields.append('odeme_tarihi')
+        taksit.save(update_fields=fields)
 
     def repair_inconsistent_taksit_rows(self, kurum_id, sube_id=None):
         """
-        Tam ödenmiş giderlerde açık kalmış taksit satırlarını onarır (eski kayıtlar).
+        Ödeme takibi satırı giderin ödenen tutarından sapmış kayıtları hizalar.
+        Eski ödemeler taksit seçilmeden alındığında satır açık kalıyordu.
         """
+        from django.db.models import F, Sum
+        from django.db.models.functions import Coalesce
+
         from apps.finans.domain.gider_kaydi import GiderKaydi
 
-        qs = GiderKaydi.objects.filter(kurum_id=kurum_id, durum=GiderDurum.ODENDI)
+        qs = GiderKaydi.objects.filter(kurum_id=kurum_id).exclude(durum=GiderDurum.IPTAL)
         if sube_id:
             qs = qs.filter(Q(sube_id=sube_id) | Q(sube_id__isnull=True))
+        qs = qs.annotate(
+            taksit_odenen=Coalesce(
+                Sum(
+                    'taksitler__odenen_tutar',
+                    filter=~Q(taksitler__durum=GiderTaksitDurum.IPTAL),
+                ),
+                Decimal('0'),
+            ),
+        ).exclude(taksit_odenen=F('odenen_toplam'))
         for gider in qs.iterator():
-            stale = gider.taksitler.filter(
-                durum__in=list(GiderTaksitDurum.ACIK),
-            ).exists()
-            if stale:
-                self.taksitleri_odeme_ile_hizala(gider)
+            self.taksitleri_odeme_ile_hizala(gider)
 
     # ─── Validasyon ──────────────────────────────
 

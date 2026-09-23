@@ -786,8 +786,40 @@ def _serialize_kalem_entry(kalem, sozlesme, catalog_index=None, ek_deneme_map=No
     return _kalem_entry(resolved_tur, kalem.kalem_id, kalem_adi)
 
 
+def _kaynak_paket_key(tur, paket_id):
+    """Dahil kayıtlarındaki kaynak türünü sözleşme kalem türüne çevirir."""
+    norm = {
+        'grup_dersi': 'grup_dersi',
+        'grup_dersleri': 'grup_dersi',
+        'ozel_ders': 'ozel_ders',
+        'ozel_dersler': 'ozel_ders',
+        'premium': 'premium',
+        'premium_paketler': 'premium',
+        'yayin': 'yayin',
+        'yayin_paketleri': 'yayin',
+        'deneme': 'deneme',
+        'denemeler': 'deneme',
+    }.get(tur or '')
+    if not norm or not paket_id:
+        return None
+    return (norm, int(paket_id))
+
+
+def _live_paket_adi(tur, paket_id, snapshot, catalog_index):
+    return (
+        (catalog_index.get(tur) or {}).get(paket_id)
+        or snapshot
+        or ''
+    )
+
+
 def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
-    """Sözleşmede satır olmayan kayıt paketlerini (özel ders / deneme) ekle."""
+    """Sözleşmesi olmayan kaydın paketlerini ekle; adı katalogdan okunur.
+
+    Sözleşmede satır varsa liste sözleşmeyi esas alır. Kayıt anında yazılmış
+    eski paket/hizmet, sözleşme değiştikten sonra aramada görünmez. Güncel
+    pakete dahil satırlar (kaynak paketi sözleşmedeyse) eklenmeye devam eder.
+    """
     from apps.ogrenci.domain.models import OgrenciEkHizmet
 
     kayitlar_by_ogrenci = {}
@@ -796,30 +828,41 @@ def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
 
     ogrenci_ids = set(kayitlar_by_ogrenci)
     yil_ids = {k.egitim_yili_id for k in kayit_list if k.egitim_yili_id}
+    contract_keys = {
+        key: set(entries)
+        for key, entries in pair_kalemler.items()
+        if entries
+    }
 
-    def _put_for_ogrenci(ogrenci_id, entry, yil_id=None):
+    def _put_for_ogrenci(ogrenci_id, entry, yil_id=None, *, only_if_open=False, kaynak=None):
         for kayit in kayitlar_by_ogrenci.get(ogrenci_id, []):
             if yil_id is not None and kayit.egitim_yili_id != yil_id:
                 continue
-            entries = pair_kalemler.setdefault(
-                (kayit.ogrenci_id, kayit.egitim_yili_id), {},
-            )
+            key = (kayit.ogrenci_id, kayit.egitim_yili_id)
+            entries = pair_kalemler.setdefault(key, {})
+            locked = contract_keys.get(key)
+            if locked is not None and only_if_open:
+                if not kaynak or kaynak not in locked:
+                    continue
             dedupe = (entry['kalem_turu'], entry['kalem_id'])
             if dedupe not in entries:
                 entries[dedupe] = entry
 
-    # Sözleşme henüz aktif değilse kalemler kayıt paketinden gelsin.
+    # Sözleşme satırı yoksa kayıt paketinden gelsin. Varsa yalnız güncel
+    # pakete dahil olanlar eklenir; değiştirilmiş eski paket eklenmez.
     for ep in OgrenciEgitimPaketi.objects.filter(
         ogrenci_id__in=ogrenci_ids,
         aktif_mi=True,
         paket_turu__in=PAKET_CATALOG_TURLERI,
     ):
-        adi = (
-            ep.paket_adi
-            or (catalog_index.get(ep.paket_turu) or {}).get(ep.paket_id)
-            or ''
+        adi = _live_paket_adi(ep.paket_turu, ep.paket_id, ep.paket_adi, catalog_index)
+        kaynak = _kaynak_paket_key(ep.kaynak_paket_turu, ep.kaynak_paket_id) if ep.dahil_mi else None
+        _put_for_ogrenci(
+            ep.ogrenci_id,
+            _kalem_entry(ep.paket_turu, ep.paket_id, adi),
+            only_if_open=True,
+            kaynak=kaynak,
         )
-        _put_for_ogrenci(ep.ogrenci_id, _kalem_entry(ep.paket_turu, ep.paket_id, adi))
 
     eh_qs = OgrenciEkHizmet.objects.filter(
         ogrenci_id__in=ogrenci_ids,
@@ -840,6 +883,8 @@ def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
             oeh.ogrenci_id,
             _kalem_entry('deneme', eh.deneme_paketi_id, adi),
             yil_id=oeh.egitim_yili_id,
+            only_if_open=True,
+            kaynak=_kaynak_paket_key(oeh.kaynak_paket_turu, oeh.kaynak_paket_id),
         )
 
 

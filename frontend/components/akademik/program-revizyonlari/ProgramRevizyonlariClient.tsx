@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, Modal, Select, Table, Tag, message } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Button, Modal, Select, Table, Tag, message } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { LockOutlined, ReloadOutlined, UnlockOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -61,6 +61,8 @@ export default function ProgramRevizyonlariClient() {
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const bootSeq = useRef(0);
+  const logSeq = useRef(0);
 
   const boot = useCallback(async () => {
     if (!initialized) return;
@@ -68,18 +70,36 @@ export default function ProgramRevizyonlariClient() {
       setBooting(false);
       return;
     }
+    const seq = ++bootSeq.current;
     setBooting(true);
     setError(null);
     try {
       const ctx = await fetchClassLessonPlanContext();
+      if (seq !== bootSeq.current) return;
       setContext(ctx);
-      setTermId((p) => p ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
+      const termIds = new Set(ctx.terms.map((t) => t.id));
+      setTermId((p) => (p && termIds.has(p) ? p : ctx.active_term_id ?? ctx.terms[0]?.id ?? null));
     } catch (e) {
+      if (seq !== bootSeq.current) return;
       setError(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
     } finally {
-      setBooting(false);
+      if (seq === bootSeq.current) setBooting(false);
     }
   }, [activeKurum, activeSube, initialized]);
+
+  const subeId = activeSube?.id ?? null;
+  const seenSube = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (seenSube.current === undefined) {
+      seenSube.current = subeId;
+      return;
+    }
+    if (seenSube.current === subeId) return;
+    seenSube.current = subeId;
+    setTermId(null);
+    setVersionId(null);
+    setLogs([]);
+  }, [subeId]);
 
   useEffect(() => {
     boot();
@@ -97,20 +117,27 @@ export default function ProgramRevizyonlariClient() {
   }, [loadVersions]);
 
   const loadLogs = useCallback(async () => {
+    if (!termId) {
+      setLogs([]);
+      return;
+    }
+    const seq = ++logSeq.current;
     setLoading(true);
     try {
       const rows = await fetchScheduleRevisions({
-        term_id: termId ?? undefined,
+        term_id: termId,
         version_id: versionId ?? undefined,
         limit: 200,
       });
+      if (seq !== logSeq.current) return;
       setLogs(rows);
       setError(null);
     } catch (e) {
+      if (seq !== logSeq.current) return;
       setError(e instanceof Error ? e.message : 'Revizyonlar yüklenemedi');
       setLogs([]);
     } finally {
-      setLoading(false);
+      if (seq === logSeq.current) setLoading(false);
     }
   }, [termId, versionId]);
 
@@ -226,6 +253,14 @@ export default function ProgramRevizyonlariClient() {
         }
       />
 
+      {context?.context_year_mismatch ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="Üst menüdeki eğitim yılı, ders operasyonlarının kullandığı aktif yıldan farklı. Kayıtlar aktif yılın verisini gösterir."
+        />
+      ) : null}
+
       <StatGrid>
         <StatCard icon={<IconFileText />} tone="blue" value={logs.length} label="Kayıt" />
         <StatCard icon={<IconClock />} tone="purple" value={stats.todayCount} label="Bugün" />
@@ -292,7 +327,7 @@ export default function ProgramRevizyonlariClient() {
           columns={columns}
           dataSource={logs}
           pagination={{ pageSize: 40, hideOnSinglePage: true }}
-          scroll={{ x: 800 }}
+          scroll={{ x: 'max-content' }}
           locale={{
             emptyText: (
               <EmptyState

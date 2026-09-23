@@ -108,6 +108,61 @@ class GiderOdemeTakibiTest(TestCase):
         rows = self._rows()
         self.assertFalse(any(r['gider_id'] == gider.id for r in rows))
 
+    def test_taksit_secilmeden_kismi_odeme_takibe_yansir(self):
+        gider = self._create(
+            brut='20000',
+            taksit_plani=[
+                {'taksit_no': 1, 'vade_tarihi': self.today.isoformat(), 'tutar': '10000'},
+                {'taksit_no': 2, 'vade_tarihi': (self.today + timedelta(days=30)).isoformat(), 'tutar': '10000'},
+            ],
+        )
+        self._ode(gider, '4000')
+        rows = [r for r in self._rows() if r['gider_id'] == gider.id]
+        self.assertEqual(len(rows), 2)
+        ilk = next(r for r in rows if r['taksit_no'] == 1)
+        self.assertEqual(ilk['durum'], GiderOdemeTakibiDurum.KISMI_ODENDI)
+        self.assertEqual(Decimal(ilk['odenen_tutar']), Decimal('4000'))
+        self.assertEqual(Decimal(ilk['kalan_tutar']), Decimal('6000'))
+
+    def test_eski_tam_odeme_liste_acilisinda_kapanir(self):
+        from apps.finans.constants.gider_types import GiderDurum, GiderTaksitDurum, OdemeDurum
+        from apps.finans.domain.gider_kaydi import GiderKaydi
+        from apps.finans.domain.gider_odeme import GiderOdeme
+        from apps.finans.domain.gider_taksit import GiderTaksit
+
+        gider = GiderKaydi.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            cari_hesap=self.tedarikci,
+            gider_kategorisi=self.kat,
+            fatura_tarihi=self.today,
+            vade_tarihi=self.today,
+            brut_tutar=5000,
+            kdv_orani=0,
+            kdv_tutar=0,
+            net_tutar=5000,
+            durum=GiderDurum.ODENDI,
+            odenen_toplam=5000,
+        )
+        GiderTaksit.objects.create(
+            gider_kaydi=gider,
+            taksit_no=1,
+            vade_tarihi=self.today,
+            tutar=5000,
+            odenen_tutar=0,
+            durum=GiderTaksitDurum.BEKLEMEDE,
+        )
+        GiderOdeme.objects.create(
+            gider_kaydi=gider,
+            tutar=5000,
+            odeme_tarihi=self.today,
+            odeme_yontemi=self.yontem,
+            mali_hesap=self.mali,
+            durum=OdemeDurum.TAMAMLANDI,
+        )
+        rows = self._rows()
+        self.assertFalse(any(r['gider_id'] == gider.id for r in rows))
+
     def test_ileri_tarihli_tek_satir_taksit_yok(self):
         vade = self.today + timedelta(days=20)
         gider = self._create(brut='2500', vade=vade, aciklama='Eylül internet ödemesi')
