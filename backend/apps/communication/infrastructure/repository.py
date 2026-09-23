@@ -1140,6 +1140,32 @@ class MessageStatusEventRepository:
         'failed': MessageStatus.FAILED,
     }
 
+    #: Teslimat durumunun sırası — geç gelen/sırası bozulan webhook geriye saramaz (H-01).
+    STATUS_RANK = {
+        MessageStatus.PENDING: 0,
+        MessageStatus.SENDING: 1,
+        MessageStatus.SENT: 2,
+        MessageStatus.DELIVERED: 3,
+        MessageStatus.READ: 4,
+    }
+
+    @classmethod
+    def _should_apply(cls, current: str, incoming: str) -> bool:
+        """READ'den sonra DELIVERED gelirse zaman damgası yazılır, statü değişmez.
+
+        FAILED: teslim edilmiş/okunmuş mesaj "başarısız" olamaz; SENT ve
+        öncesinden FAILED'a geçiş serbest. CANCELLED: kullanıcı iptali,
+        webhook onu ezmez (mesaj gitmişse worker zaten SENT yazmıştır).
+        """
+        if current == MessageStatus.CANCELLED:
+            return False
+        if incoming == MessageStatus.FAILED:
+            return current not in (MessageStatus.DELIVERED, MessageStatus.READ)
+        if current == MessageStatus.FAILED:
+            # Meta 'failed' sonra 'sent' göndermez; gönderirse gerçek durum SENT'tir
+            return True
+        return cls.STATUS_RANK.get(incoming, 0) > cls.STATUS_RANK.get(current, 0)
+
     @staticmethod
     def apply_status_update(
         message: Message,
@@ -1166,27 +1192,42 @@ class MessageStatusEventRepository:
         if not created:
             return event, False
 
-        message.status = status
-        update_fields = ['status', 'updated_at']
-        if status == MessageStatus.SENT:
-            message.sent_at = occurred_at
-            update_fields.append('sent_at')
-        elif status == MessageStatus.DELIVERED:
-            message.delivered_at = occurred_at
-            update_fields.append('delivered_at')
-        elif status == MessageStatus.READ:
-            message.read_at = occurred_at
-            update_fields.append('read_at')
-        elif status == MessageStatus.FAILED:
-            errors = (raw_payload or {}).get('errors', [])
-            if errors:
-                from apps.communication.application.delivery_error import (
-                    explain_from_webhook_errors,
-                )
-                message.failed_reason = explain_from_webhook_errors(errors)
-                update_fields.append('failed_reason')
-        message.save(update_fields=update_fields)
-        return event, True
+        # Eşzamanlı webhook'lara karşı satırı kilitle ve güncel durumu oku
+        with transaction.atomic():
+            locked = Message.objects.select_for_update().get(pk=message.pk)
+            update_fields = ['updated_at']
+            # Zaman damgaları sıradan bağımsız yazılır (yalnız boşsa)
+            if status == MessageStatus.SENT and not locked.sent_at:
+                locked.sent_at = occurred_at
+                update_fields.append('sent_at')
+            elif status == MessageStatus.DELIVERED and not locked.delivered_at:
+                locked.delivered_at = occurred_at
+                update_fields.append('delivered_at')
+            elif status == MessageStatus.READ and not locked.read_at:
+                locked.read_at = occurred_at
+                update_fields.append('read_at')
+
+            applied = MessageStatusEventRepository._should_apply(locked.status, status)
+            if applied:
+                locked.status = status
+                update_fields.append('status')
+                if status == MessageStatus.FAILED:
+                    errors = (raw_payload or {}).get('errors', [])
+                    if errors:
+                        from apps.communication.application.delivery_error import (
+                            explain_from_webhook_errors,
+                        )
+                        locked.failed_reason = explain_from_webhook_errors(errors)
+                        update_fields.append('failed_reason')
+            locked.save(update_fields=update_fields)
+
+        # Çağıranın elindeki örneği de güncel tut
+        message.status = locked.status
+        message.sent_at = locked.sent_at
+        message.delivered_at = locked.delivered_at
+        message.read_at = locked.read_at
+        message.failed_reason = locked.failed_reason
+        return event, applied
 
 
 class OutboundQueueRepository:
@@ -1258,24 +1299,48 @@ class OutboundQueueRepository:
         Kilit (`locked_at`/`locked_by`) seçimle birlikte yazılır; ikinci bir
         işleyici (cron, Celery, arka plan thread) aynı kayıtları alamaz (B-04).
         """
-        ids = list(
+        rows = list(
             OutboundQueueItem.objects.filter(OutboundQueueRepository._eligible_filter())
             .select_for_update(skip_locked=True)
             .order_by('priority', 'next_attempt_at')
-            .values_list('id', flat=True)[:limit]
+            .values_list('id', 'locked_by', 'locked_at')[:limit]
         )
-        if not ids:
+        if not rows:
             return []
+        ids = [r[0] for r in rows]
+        previous = {r[0]: (r[1] or '', r[2]) for r in rows}
         OutboundQueueItem.objects.filter(id__in=ids).update(
             locked_at=timezone.now(),
             locked_by=OutboundQueueRepository.worker_token(),
             updated_at=timezone.now(),
         )
-        return list(
+        items = list(
             OutboundQueueItem.objects.filter(id__in=ids).select_related(
                 'message', 'message__conversation', 'campaign',
             )
         )
+        token = OutboundQueueRepository.worker_token()
+        for item in items:
+            prev_by, prev_at = previous.get(item.id, ('', None))
+            # Başka bir sürecin bayat kilidi devralındı mı? (belirsiz gönderim kontrolü için)
+            item.reclaimed_from_other_worker = bool(prev_at is not None and prev_by != token)
+        return items
+
+    @staticmethod
+    def sweep_cancelled_items(*, stale_seconds: int | None = None) -> int:
+        """İptal edilmiş mesajların artık kilitsiz / bayat kilitli kuyruk kayıtlarını siler.
+
+        İptal, worker'ın elindeki kaydı silmez (worker gönderim öncesi kontrol
+        eder ve kendisi temizler). Worker düşmüşse kayıt burada temizlenir.
+        """
+        timeout = stale_seconds or int(
+            getattr(settings, 'COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS', 600) or 600,
+        )
+        stale_before = timezone.now() - timedelta(seconds=timeout)
+        deleted, _ = OutboundQueueItem.objects.filter(
+            message__status=MessageStatus.CANCELLED,
+        ).filter(Q(locked_at__isnull=True) | Q(locked_at__lt=stale_before)).delete()
+        return deleted
 
     @staticmethod
     def count_pending() -> int:
@@ -1321,7 +1386,8 @@ class OutboundQueueRepository:
             # mesaj yine gönderilmiş sayılır, kimlik boş kalır (comm_msg_provider_id_uniq).
             msg.provider_message_id = ''
             msg.save(update_fields=fields)
-        item.delete()
+        # Kayıt bu arada (iptal vb.) silinmiş olabilir — hata üretmesin
+        OutboundQueueItem.objects.filter(pk=item.pk).delete()
 
     @staticmethod
     def defer_item(item: OutboundQueueItem, error: str, *, seconds: int = 60) -> None:
@@ -1329,8 +1395,16 @@ class OutboundQueueRepository:
         item.last_error = error
         item.locked_at = None
         item.locked_by = ''
+        item.provider_call_started_at = None
         item.next_attempt_at = timezone.now() + timedelta(seconds=seconds)
-        item.save(update_fields=['last_error', 'locked_at', 'locked_by', 'next_attempt_at', 'updated_at'])
+        OutboundQueueItem.objects.filter(pk=item.pk).update(
+            last_error=item.last_error,
+            locked_at=None,
+            locked_by='',
+            provider_call_started_at=None,
+            next_attempt_at=item.next_attempt_at,
+            updated_at=timezone.now(),
+        )
         msg = item.message
         if msg.status != MessageStatus.PENDING:
             msg.status = MessageStatus.PENDING
@@ -1343,13 +1417,23 @@ class OutboundQueueRepository:
         item.last_error = error
         item.locked_at = None
         item.locked_by = ''
+        item.provider_call_started_at = None
         backoff_minutes = [1, 5, 15, 60, 60]
         idx = min(item.attempt_count - 1, len(backoff_minutes) - 1)
         item.next_attempt_at = timezone.now() + timedelta(minutes=backoff_minutes[idx])
-        item.save(update_fields=[
-            'attempt_count', 'last_error', 'locked_at', 'locked_by', 'next_attempt_at', 'updated_at',
-        ])
+        # Kayıt bu arada silinmişse (iptal) UPDATE 0 satır etkiler; hata üretmez (C-02)
+        OutboundQueueItem.objects.filter(pk=item.pk).update(
+            attempt_count=item.attempt_count,
+            last_error=item.last_error,
+            locked_at=None,
+            locked_by='',
+            provider_call_started_at=None,
+            next_attempt_at=item.next_attempt_at,
+            updated_at=timezone.now(),
+        )
         msg = item.message
+        if msg.status == MessageStatus.CANCELLED:
+            return
         if item.attempt_count >= item.max_attempts:
             msg.status = MessageStatus.FAILED
             msg.failed_reason = error
@@ -1416,11 +1500,60 @@ class OutboundCampaignRepository:
         return qs.select_related('created_by', 'sube', 'channel_config').first()
 
     @staticmethod
+    def get_by_client_token(kurum_id: int, client_token: str) -> OutboundCampaign | None:
+        if not client_token:
+            return None
+        return OutboundCampaign.objects.filter(
+            kurum_id=kurum_id, client_token=client_token,
+        ).select_related('created_by', 'sube', 'channel_config').first()
+
+    @staticmethod
     def list_by_kurum_and_sube(kurum_id: int, sube_id: int):
         return OutboundCampaign.objects.filter(
             kurum_id=kurum_id,
             sube_id=sube_id,
         ).select_related('created_by', 'sube', 'channel_config')
+
+    @staticmethod
+    def apply_list_filters(
+        qs,
+        *,
+        status: str = '',
+        date_from: str = '',
+        date_to: str = '',
+        channel_config_id: str = '',
+        created_by: str = '',
+        q: str = '',
+    ):
+        """Gönderim geçmişi filtreleri (H-09). Geçersiz değerler yok sayılır."""
+        from datetime import date, datetime, time
+
+        if status:
+            statuses = [x.strip().upper() for x in status.split(',') if x.strip()]
+            if statuses:
+                qs = qs.filter(status__in=statuses)
+        if date_from:
+            try:
+                d = date.fromisoformat(date_from[:10])
+                qs = qs.filter(created_at__gte=timezone.make_aware(datetime.combine(d, time.min)))
+            except ValueError:
+                pass
+        if date_to:
+            try:
+                d = date.fromisoformat(date_to[:10])
+                qs = qs.filter(created_at__lte=timezone.make_aware(datetime.combine(d, time.max)))
+            except ValueError:
+                pass
+        if channel_config_id:
+            qs = qs.filter(channel_config_id=channel_config_id)
+        if created_by:
+            try:
+                qs = qs.filter(created_by_id=int(created_by))
+            except (TypeError, ValueError):
+                pass
+        if q:
+            qs = qs.filter(title__icontains=q)
+        return qs
 
 
 class OutboundQueueRepositoryExtensions:
@@ -1429,42 +1562,81 @@ class OutboundQueueRepositoryExtensions:
     @staticmethod
     @transaction.atomic
     def cancel_pending_for_campaign(campaign: OutboundCampaign) -> int:
-        pending_items = OutboundQueueItem.objects.filter(
+        """Bekleyen mesajları iptal eder.
+
+        Kilitsiz kayıtlar hemen silinir. Worker'ın elindeki (kilitli) kayıtlar
+        SİLİNMEZ: mesaj CANCELLED yapılır, kampanyaya `cancel_requested_at`
+        damgalanır; worker gönderimden hemen önce bunu görür, göndermez ve
+        kaydı kendisi temizler (C-02). Gönderim çoktan başladıysa mesaj
+        gerçek durumunu (SENT) alır.
+        """
+        now = timezone.now()
+        OutboundCampaign.objects.filter(pk=campaign.pk).update(cancel_requested_at=now, updated_at=now)
+        campaign.cancel_requested_at = now
+        items = OutboundQueueItem.objects.filter(
             campaign=campaign,
             message__status__in=[MessageStatus.PENDING, MessageStatus.SENDING],
-        ).select_related('message')
-        count = 0
-        for item in pending_items:
-            msg = item.message
-            msg.status = MessageStatus.CANCELLED
-            msg.save(update_fields=['status', 'updated_at'])
-            item.delete()
-            count += 1
-        return count
+        )
+        message_ids = list(items.values_list('message_id', flat=True))
+        if not message_ids:
+            return 0
+        # Önce kilitsiz kayıtları sil (mesaj durumu değişince filtre eşleşmez), sonra mesajları iptal et
+        OutboundQueueItem.objects.filter(
+            message_id__in=message_ids, locked_at__isnull=True,
+        ).delete()
+        Message.objects.filter(id__in=message_ids).update(
+            status=MessageStatus.CANCELLED, updated_at=now,
+        )
+        return len(message_ids)
 
     @staticmethod
     @transaction.atomic
     def retry_failed_for_campaign(campaign: OutboundCampaign) -> int:
+        """Başarısız mesajları yeniden kuyruğa alır.
+
+        Deneme hakkı bitmiş kayıtların kuyruk satırı silinmez; bu yüzden eski
+        uygulama ("kuyruk kaydı varsa atla") hiçbir şeyi yeniden denemiyordu
+        (H-03). Var olan satır sıfırlanır, yoksa yeni satır açılır.
+        """
+        now = timezone.now()
         failed_messages = Message.objects.filter(
             campaign=campaign,
             direction=MessageDirection.OUTBOUND,
             status=MessageStatus.FAILED,
         )
-        count = 0
-        for msg in failed_messages:
-            if hasattr(msg, 'queue_item'):
-                continue
-            msg.status = MessageStatus.PENDING
-            msg.failed_reason = ''
-            msg.save(update_fields=['status', 'failed_reason', 'updated_at'])
+        failed_ids = list(failed_messages.values_list('id', flat=True))
+        if not failed_ids:
+            return 0
+        existing = OutboundQueueItem.objects.filter(message_id__in=failed_ids)
+        # Worker'ın o an tuttuğu (kilitli, bayat olmayan) kayıtlara dokunma
+        stale_before = now - timedelta(
+            seconds=int(getattr(settings, 'COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS', 600) or 600),
+        )
+        resettable = existing.filter(Q(locked_at__isnull=True) | Q(locked_at__lt=stale_before))
+        reset_message_ids = list(resettable.values_list('message_id', flat=True))
+        resettable.update(
+            attempt_count=0,
+            last_error='',
+            locked_at=None,
+            locked_by='',
+            provider_call_started_at=None,
+            next_attempt_at=now,
+            updated_at=now,
+        )
+        with_item = set(existing.values_list('message_id', flat=True))
+        missing_ids = [mid for mid in failed_ids if mid not in with_item]
+        for msg in Message.objects.filter(id__in=missing_ids):
             OutboundQueueRepository.enqueue(
                 kurum_id=campaign.kurum_id,
                 message=msg,
                 campaign=campaign,
-                next_attempt_at=timezone.now(),
+                next_attempt_at=now,
             )
-            count += 1
-        return count
+        touched = set(reset_message_ids) | set(missing_ids)
+        Message.objects.filter(id__in=touched).update(
+            status=MessageStatus.PENDING, failed_reason='', updated_at=now,
+        )
+        return len(touched)
 
 
 # Bind extensions onto repository class

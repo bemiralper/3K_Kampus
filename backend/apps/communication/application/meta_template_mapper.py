@@ -457,6 +457,47 @@ def build_send_body_parameters(
     return params
 
 
+def render_body_with_parameters(
+    body_named: str,
+    variable_map: dict[str, str],
+    context: dict[str, Any],
+) -> str:
+    """Meta'ya giden parametrelerle gövdeyi metne çevirir — önizleme/geçmiş metni
+    ile gerçek gönderim birebir aynı olur (M-01).
+
+    `build_send_body_parameters` ile aynı dallanma: named format, numaralı
+    format veya named gövde + pozisyonel harita. Boş değer Meta'ya `'-'` gider;
+    metinde de `'-'` görünür.
+    """
+    body = body_named or ''
+    if not body:
+        return ''
+    params = build_send_body_parameters(variable_map, context, body_named=body)
+    named_in_body = extract_named_variables_in_order(body)
+    numbered_in_body = sorted({
+        int(m.group(1)) for m in VARIABLE_PATTERN.finditer(body) if m.group(1).isdigit()
+    })
+    values: dict[str, str] = {}
+    if params and all('parameter_name' in p for p in params):
+        values = {p['parameter_name']: p['text'] for p in params}
+    elif numbered_in_body:
+        values = {str(i): p['text'] for i, p in zip(numbered_in_body, params)}
+    elif named_in_body and variable_map:
+        reverse = {v: int(k) for k, v in variable_map.items() if str(k).isdigit()}
+        indices = sorted({reverse[k] for k in named_in_body if k in reverse})
+        by_index = {str(i): p['text'] for i, p in zip(indices, params)}
+        values = {k: by_index.get(str(reverse[k]), '-') for k in named_in_body if k in reverse}
+
+    def replacer(match: re.Match) -> str:
+        key = match.group(1)
+        if key in values:
+            return values[key]
+        # Haritada olmayan değişken: bağlamdan doğrudan, yoksa Meta'daki gibi '-'
+        return sanitize_template_param_text(context.get(key))
+
+    return VARIABLE_PATTERN.sub(replacer, body)
+
+
 def infer_named_body_from_meta_components(components: list[dict[str, Any]]) -> tuple[str, dict, str, list, dict]:
     """
     Meta sync'ten gelen components → body_named ({{1}} kalır; map yoksa),

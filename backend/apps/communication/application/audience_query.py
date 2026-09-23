@@ -359,7 +359,10 @@ class AudienceQueryService:
     def to_audience_preview(cls, result: AudienceQueryResult):
         from apps.communication.application.campaign_service import AudiencePreview, AudienceRecipient
 
+        from apps.communication.application.campaign_service import dedupe_key
+
         recipients: list[AudienceRecipient] = []
+        seen_keys: set[tuple] = set()
         for person in result.people:
             if not person.deliverable:
                 continue
@@ -368,6 +371,11 @@ class AudienceQueryService:
                 PERSON_VELI: RecipientType.VELI,
                 PERSON_PERSONEL: RecipientType.PERSONEL,
             }[person.person_type]
+            # Aynı telefon + aynı öğrenci → tek mesaj (C-01, ürün kararı 1)
+            key = dedupe_key(person.e164, rtype, person.ogrenci_id)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
             recipients.append(AudienceRecipient(
                 e164=person.e164,
                 recipient_type=rtype,
@@ -792,7 +800,11 @@ class AudienceQueryService:
         if include_v:
             from apps.ogrenci.domain.models import OgrenciVeli
             extra_v_students = set(
-                OgrenciVeli.objects.filter(id__in=include_v).values_list('ogrenci_id', flat=True)
+                OgrenciVeli.objects.filter(
+                    id__in=include_v,
+                    ogrenci__kurum_id=kurum_id,
+                    ogrenci__aktif_mi=True,  # pasif öğrencinin velisi elle de eklenemez (ürün kararı 3)
+                ).values_list('ogrenci_id', flat=True)
             )
             if allowed is not None:
                 extra_v_students = {oid for oid in extra_v_students if oid in allowed}

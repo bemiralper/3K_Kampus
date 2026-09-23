@@ -257,6 +257,14 @@ class CampaignAudienceTest(TestCase):
         )
         campaign.status = CampaignStatus.CONFIRMED
         campaign.save(update_fields=['status', 'updated_at'])
+        # Cron, 2 dk'dan yeni CONFIRMED kampanyayı arka plan thread'ine bırakır;
+        # takılı senaryo için kaydı eskit.
+        from datetime import timedelta
+
+        from django.utils import timezone as dj_tz
+        type(campaign).objects.filter(pk=campaign.pk).update(
+            updated_at=dj_tz.now() - timedelta(minutes=5),
+        )
         with patch(
             'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
             return_value=True,

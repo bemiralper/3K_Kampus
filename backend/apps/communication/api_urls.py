@@ -18,6 +18,7 @@ from apps.communication.interfaces.views.campaigns import (
     CampaignListCreateView,
     CampaignPreviewView,
     CampaignProcessQueueView,
+    CampaignDeliveriesView,
     CampaignRetryFailedView,
 )
 from apps.communication.interfaces.views.accounts import (
@@ -416,6 +417,11 @@ urlpatterns = [
     path('campaigns/<uuid:campaign_id>/confirm/', CampaignConfirmView.as_view(), name='campaign-confirm'),
     path('campaigns/<uuid:campaign_id>/retry-failed/', CampaignRetryFailedView.as_view(), name='campaign-retry'),
     path('campaigns/<uuid:campaign_id>/cancel/', CampaignCancelView.as_view(), name='campaign-cancel'),
+    path(
+        'campaigns/<uuid:campaign_id>/deliveries/',
+        CampaignDeliveriesView.as_view(),
+        name='campaign-deliveries',
+    ),
     path(
         'campaigns/<uuid:campaign_id>/process-queue/',
         CampaignProcessQueueView.as_view(),

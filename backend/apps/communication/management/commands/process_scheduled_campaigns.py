@@ -30,8 +30,16 @@ class Command(BaseCommand):
         dry_run = options['dry_run']
         now = timezone.now()
 
+        from datetime import timedelta
+
         due_scheduled = Q(scheduled_at__isnull=False, scheduled_at__lte=now)
-        stuck_immediate = Q(scheduled_at__isnull=True, status=CampaignStatus.CONFIRMED)
+        # Anlık kampanya CONFIRMED'de takılmış: 2 dk'dan eskiyse devral (yeni olanı
+        # arka plan thread'i üretiyor olabilir; advisory lock ikinci savunma)
+        stuck_immediate = Q(
+            scheduled_at__isnull=True,
+            status=CampaignStatus.CONFIRMED,
+            updated_at__lt=now - timedelta(minutes=2),
+        )
         qs = OutboundCampaign.objects.filter(
             status__in=[CampaignStatus.DRAFT, CampaignStatus.CONFIRMED],
         ).filter(due_scheduled | stuck_immediate).order_by('scheduled_at', 'created_at')

@@ -33,25 +33,63 @@ class CampaignCreateSerializer(serializers.Serializer):
     save_as_template = serializers.BooleanField(required=False, default=False)
     template_category = serializers.CharField(required=False, allow_blank=True, default='')
     draft_only = serializers.BooleanField(required=False, default=False)
+    # İdempotency: istemci her gönderim denemesi için tek UUID üretir; aynı
+    # anahtarla ikinci POST yeni kampanya açmaz (çift tık / ağ kopması, H-05).
+    client_token = serializers.CharField(required=False, allow_blank=True, default='', max_length=64)
 
 
 class CampaignListSerializer(serializers.ModelSerializer):
+    """Liste satırı. `recipient_filter_json` listede DÖNMEZ (dondurulmuş kapsam id
+    dizileri yüzlerce kilobayt olabiliyordu, H-09); yerine kısa `audience_summary`."""
+
     created_by_name = serializers.SerializerMethodField()
     channel_config_id = serializers.UUIDField(read_only=True, allow_null=True)
     channel_config_name = serializers.SerializerMethodField()
     delivery_rate = serializers.SerializerMethodField()
     read_rate = serializers.SerializerMethodField()
+    audience_summary = serializers.SerializerMethodField()
+    template_name = serializers.SerializerMethodField()
+    materialize_error = serializers.SerializerMethodField()
 
     class Meta:
         model = OutboundCampaign
         fields = [
             'id', 'title', 'channel', 'channel_config_id', 'channel_config_name',
-            'status', 'total_recipients',
+            'status', 'total_recipients', 'materialized_count',
             'sent_count', 'delivered_count', 'read_count', 'failed_count',
             'replied_count', 'delivery_rate', 'read_rate',
             'created_by', 'created_by_name', 'created_at', 'updated_at',
-            'recipient_filter_json',
+            'scheduled_at', 'audience_summary', 'template_name', 'materialize_error',
+            'cancel_requested_at', 'deliveries_archived_at',
         ]
+
+    def _filter_json(self, obj) -> dict:
+        raw = obj.recipient_filter_json
+        return raw if isinstance(raw, dict) else {}
+
+    def get_template_name(self, obj) -> str:
+        return self._filter_json(obj).get('template_name', '') or ''
+
+    def get_materialize_error(self, obj) -> str:
+        opts = obj.send_options_json if isinstance(obj.send_options_json, dict) else {}
+        return opts.get('materialize_error') or ''
+
+    def get_audience_summary(self, obj) -> dict:
+        f = self._filter_json(obj)
+        return {
+            'audience_type': f.get('audience_type', ''),
+            'person_types': list(f.get('person_types') or []),
+            'included_count': sum(
+                len(f.get(k) or [])
+                for k in ('included_ogrenci_ids', 'included_veli_ids', 'included_personel_ids')
+            ),
+            'excluded_count': sum(
+                len(f.get(k) or [])
+                for k in ('excluded_ogrenci_ids', 'excluded_veli_ids', 'excluded_personel_ids')
+            ),
+            'has_filters': bool((f.get('tree') or {}).get('groups')),
+            'sube_id': f.get('sube_id'),
+        }
 
     def get_created_by_name(self, obj) -> str:
         if obj.created_by:
@@ -87,6 +125,7 @@ class CampaignDetailSerializer(CampaignListSerializer):
 
     class Meta(CampaignListSerializer.Meta):
         fields = CampaignListSerializer.Meta.fields + [
+            'recipient_filter_json',
             'body_template', 'preview_stats_json',
             'scheduled_at', 'estimated_cost_usd', 'send_options_json', 'analytics',
             'template_name', 'template_language', 'template_context',

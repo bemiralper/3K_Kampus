@@ -77,7 +77,14 @@ class CommunicationManagePermission(BasePermission):
 
 
 class CommunicationBulkPermission(BasePermission):
-    """Toplu gönderim — communication.bulk, manage, muhasebe veya koç write kapsamı."""
+    """Toplu gönderim / kuyruk / geçmiş.
+
+    - Okuma (GET): `communication.read|bulk|manage`, muhasebe (`finans.manage`)
+      veya öğrenci kapsamı olan koç (`read` yeterli).
+    - Yazma (POST/…): `communication.bulk|manage`, muhasebe veya öğrenci
+      kapsamı olan koç — ama koçta yalnız `communication.write` ile; salt
+      `read` yetkisi kampanya açamaz, kuyruk kaydı iptal/yeniden deneyemez.
+    """
 
     def has_permission(self, request, view):
         if not request.user.is_authenticated:
@@ -87,20 +94,43 @@ class CommunicationBulkPermission(BasePermission):
         from apps.coaching.services.coach_access import scoped_student_ids
 
         allowed = scoped_student_ids(request.user)
-        if allowed is not None and user_has_any_permission(
-            request.user,
-            'communication.write',
-            'communication.read',
-        ):
-            return True
         if request.method in SAFE_METHODS:
+            if allowed is not None and user_has_any_permission(
+                request.user, 'communication.read', 'communication.write',
+            ):
+                return True
             return user_has_any_permission(
                 request.user,
                 'communication.read',
                 'communication.bulk',
                 'communication.manage',
             )
+        return allowed is not None and user_has_permission(request.user, 'communication.write')
+
+
+class CommunicationQueueAdminPermission(BasePermission):
+    """Kuyruk arşivleme gibi kurum genelinde kalıcı silme yapan işler — yalnız yönetim."""
+
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        return user_has_any_permission(request.user, 'communication.manage', 'sistem.admin')
+
+
+def user_can_manage_campaign(user, campaign) -> bool:
+    """Kampanyayı onaylama / iptal / yeniden deneme hakkı: oluşturan + yönetici.
+
+    Ürün kararı: aynı şubedeki her bulk kullanıcı değil, yalnız kampanyayı
+    açan kişi ile iletişim yönetimi yetkisi (`communication.manage`, sistem
+    yöneticisi, tam inbox rolleri) olanlar.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
         return False
+    if getattr(campaign, 'created_by_id', None) and campaign.created_by_id == user.id:
+        return True
+    from apps.communication.application.coach_scope import _has_full_inbox_access
+
+    return _has_full_inbox_access(user)
 
 
 class TemplateWritePermission(BasePermission):

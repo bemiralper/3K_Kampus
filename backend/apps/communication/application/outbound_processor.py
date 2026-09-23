@@ -12,6 +12,7 @@ from apps.communication.application.campaign_service import CampaignStatsService
 from apps.communication.application.meta_template_mapper import build_send_body_parameters
 from apps.communication.application.meta_template_service import MetaTemplateService
 from apps.communication.application.session_window import (
+    is_account_error,
     is_permanent_send_error,
     is_rate_limit_error,
     is_session_error,
@@ -36,14 +37,84 @@ from apps.communication.infrastructure.repository import OutboundQueueRepository
 logger = logging.getLogger(__name__)
 
 
-def _safe_refresh_campaign_stats(campaign_id) -> None:
-    """İstatistik güncellemesi gönderimi bozmamalı."""
+def _safe_refresh_campaign_stats(campaign_id, *, force: bool = False) -> None:
+    """İstatistik güncellemesi gönderimi bozmamalı.
+
+    Mesaj başına tam sayım O(n²) idi (H-07); artık kısa süreli tekrar-önleme
+    ile planlanır, batch sonunda dokunulan kampanyalar için kesin yenilenir.
+    """
     if not campaign_id:
         return
     try:
-        CampaignStatsService.refresh_campaign_stats(campaign_id)
+        if force:
+            CampaignStatsService.refresh_campaign_stats(campaign_id)
+        else:
+            CampaignStatsService.schedule_refresh(campaign_id)
     except Exception:
         logger.exception('Campaign stats refresh failed campaign=%s', campaign_id)
+
+
+def _start_provider_call(item) -> None:
+    """Meta çağrısı başlıyor: süreç buradan sonra düşerse gönderim belirsizdir (C-03)."""
+    from django.utils import timezone
+
+    from apps.communication.domain.models import OutboundQueueItem
+
+    now = timezone.now()
+    item.provider_call_started_at = now
+    OutboundQueueItem.objects.filter(pk=item.pk).update(provider_call_started_at=now, updated_at=now)
+
+
+UNCERTAIN_SEND_ERROR = (
+    'Gönderim durumu belirsiz: sağlayıcı çağrısı başladıktan sonra işlem yarıda kesildi. '
+    'Çift teslim riski nedeniyle otomatik yeniden denenmedi; gerekirse kuyruktan elle yeniden deneyin.'
+)
+
+
+def account_error_cache_key(channel_config_id) -> str:
+    return f'comm:account:send_error:{channel_config_id}'
+
+
+def _flag_account_error(item, error: str) -> None:
+    from django.core.cache import cache
+    from django.utils import timezone
+
+    cfg = _resolve_channel_config(item)
+    cfg_id = getattr(cfg, 'id', None)
+    logger.error(
+        'WhatsApp hesap hatası (token/hat) kurum=%s hesap=%s: %s',
+        item.kurum_id, cfg_id, error[:200],
+    )
+    if cfg_id:
+        cache.set(
+            account_error_cache_key(cfg_id),
+            {'error': error[:300], 'at': timezone.now().isoformat()},
+            timeout=6 * 3600,
+        )
+
+
+def _skip_if_cancelled(item, message) -> bool:
+    """Gönderimden hemen önce iptal kontrolü (C-02).
+
+    Kampanya iptali / kuyruk iptali kilitli kaydı silmez; worker burada görür,
+    kuyruk kaydını temizler ve göndermez. Mesaj CANCELLED olarak kalır.
+    """
+    from apps.communication.domain.models import Message, OutboundCampaign, OutboundQueueItem
+
+    current = Message.objects.filter(pk=message.pk).values_list('status', flat=True).first()
+    cancelled = current == MessageStatus.CANCELLED
+    if not cancelled and item.campaign_id:
+        camp = OutboundCampaign.objects.filter(pk=item.campaign_id).values_list(
+            'status', 'cancel_requested_at',
+        ).first()
+        if camp and (camp[0] == CampaignStatus.CANCELLED or camp[1] is not None):
+            cancelled = True
+            Message.objects.filter(pk=message.pk).update(status=MessageStatus.CANCELLED)
+            message.status = MessageStatus.CANCELLED
+    if cancelled:
+        OutboundQueueItem.objects.filter(pk=item.pk).delete()
+        return True
+    return False
 
 
 def _throttle_ms() -> int:
@@ -295,7 +366,25 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             channel,
             channel_config=_resolve_channel_config(item),
         )
+    message = item.message
+
+    # Bayat kilit devralımı: önceki süreç Meta çağrısını başlatmış ama sonucu
+    # yazamamışsa mesaj gitmiş olabilir → yeniden GÖNDERME, belirsiz olarak
+    # işaretle (C-03, ürün kararı 8).
+    if (
+        item.provider_call_started_at is not None
+        and message.status == MessageStatus.SENDING
+        and getattr(item, 'reclaimed_from_other_worker', False)
+    ):
+        OutboundQueueRepository.mark_failed(item, UNCERTAIN_SEND_ERROR, permanent=True)
+        _safe_refresh_campaign_stats(item.campaign_id)
+        return False
+
     OutboundQueueRepository.lock_item(item)
+
+    if _skip_if_cancelled(item, message):
+        _safe_refresh_campaign_stats(item.campaign_id)
+        return False
 
     if item.campaign_id and item.campaign:
         campaign = item.campaign
@@ -303,7 +392,6 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             campaign.status = CampaignStatus.PROCESSING
             campaign.save(update_fields=['status', 'updated_at'])
 
-    message = item.message
     message.status = MessageStatus.SENDING
     message.save(update_fields=['status', 'updated_at'])
 
@@ -344,12 +432,14 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
         if message.message_type == MessageType.IMAGE:
             attachment = message.attachments.first()
             if attachment and attachment.file:
+                _start_provider_call(item)
                 result = _send_attachment_message(client, item.kurum_id, phone, message, attachment)
             else:
                 result = {'success': False, 'error': 'Görsel eki bulunamadı.'}
         elif message.message_type == MessageType.DOCUMENT:
             attachment = message.attachments.first()
             if attachment and attachment.file:
+                _start_provider_call(item)
                 result = _send_attachment_message(client, item.kurum_id, phone, message, attachment)
             else:
                 result = {'success': False, 'error': 'Belge eki bulunamadı.'}
@@ -465,6 +555,7 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             lang = template_language or 'tr'
             if meta_tpl is not None and meta_tpl.language:
                 lang = meta_tpl.language
+            _start_provider_call(item)
             result = client.send_template(
                 item.kurum_id,
                 phone,
@@ -473,6 +564,7 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 components=components or None,
             )
         else:
+            _start_provider_call(item)
             result = client.send_text(
                 item.kurum_id,
                 phone,
@@ -512,6 +604,11 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             OutboundQueueRepository.defer_item(item, str(result.get('error', 'Rate limit')))
             return False
 
+        if is_account_error(result):
+            # Token süresi dolmuş / hat kayıtsız: bu hattın tüm gönderimleri düşer;
+            # hesap ekranında uyarı göstermek için bayrak bırak (senaryo 17).
+            _flag_account_error(item, str(result.get('error', '')))
+
         # Şablon yok / 24 saat vb. tekrar denemekle çözülmez; kuyruğu boşuna meşgul etme.
         OutboundQueueRepository.mark_failed(
             item,
@@ -534,21 +631,37 @@ def process_pending_batch(limit: int | None = None) -> dict[str, int]:
     batch_size = limit or int(getattr(settings, 'COMMUNICATION_QUEUE_BATCH_SIZE', 20))
     throttle = _throttle_ms()
     dispatcher = ChannelDispatcher()
+    OutboundQueueRepository.sweep_cancelled_items()
     pending = list(OutboundQueueRepository.get_pending_batch(limit=batch_size))
     sent = 0
     failed = 0
+    touched_campaigns: set = set()
     for idx, item in enumerate(pending):
         if idx > 0 and throttle > 0:
             time.sleep(throttle / 1000.0)
-        channel = getattr(item.message.conversation, 'channel', None)
-        client = dispatcher.get_client(
-            channel,
-            channel_config=_resolve_channel_config(item),
-        )
-        if process_queue_item(item, client):
+        if item.campaign_id:
+            touched_campaigns.add(item.campaign_id)
+        try:
+            channel = getattr(item.message.conversation, 'channel', None)
+            client = dispatcher.get_client(
+                channel,
+                channel_config=_resolve_channel_config(item),
+            )
+            ok = process_queue_item(item, client)
+        except Exception:
+            # Tek kaydın beklenmedik hatası batch'in kalanını kilitli bırakmasın (C-02)
+            logger.exception('Queue item crashed item=%s', item.id)
+            try:
+                OutboundQueueRepository.mark_failed(item, 'İşleme hatası (bkz. sunucu logu)')
+            except Exception:
+                logger.exception('mark_failed after crash failed item=%s', item.id)
+            ok = False
+        if ok:
             sent += 1
         else:
             failed += 1
+    for campaign_id in touched_campaigns:
+        _safe_refresh_campaign_stats(campaign_id, force=True)
     return {'processed': len(pending), 'sent': sent, 'failed': failed}
 
 

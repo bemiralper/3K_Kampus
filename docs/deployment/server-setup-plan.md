@@ -419,6 +419,13 @@ sudo crontab -e -u lms
 # Zamanlanmış kampanyalar
 */5 * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py process_scheduled_campaigns >> /var/log/lms/campaigns.log 2>&1
 
+# Sohbet SLA (cevapsız koçluk sohbetleri → Destek Gerekiyor)
+* * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py check_conversation_sla >> /var/log/lms/comm_sla.log 2>&1
+
+# İletişim log/arşiv saklama
+30 3 * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_communication_logs --days 90 >> /var/log/lms/comm_purge.log 2>&1
+45 3 * * 0 cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py archive_campaign_deliveries --days 180 --purge-archive-days 730 >> /var/log/lms/comm_archive.log 2>&1
+
 # Ödeme hatırlatmaları (günlük 09:00)
 0 9 * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py send_payment_reminders --days-ahead=3 >> /var/log/lms/payment_reminders.log 2>&1
 

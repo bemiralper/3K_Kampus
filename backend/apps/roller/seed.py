@@ -113,6 +113,19 @@ ROLES_DATA = [
             'gorev.manage', 'gorev.analytics',
             'website.read',
             'olcme.manage',
+            # Şube müdürü kendi şubesine toplu WhatsApp gönderimi yapabilir
+            'communication.read', 'communication.write', 'communication.bulk',
+        ],
+    },
+    {
+        'code': 'sekreter',
+        'name': 'Sekreter',
+        'description': 'Ön büro; öğrenci/veli iletişimi ve toplu duyuru gönderimi',
+        'level': 90,
+        'is_system_role': True,
+        'permissions': [
+            'ogrenci.read', 'personel.read', 'sinif.read',
+            'communication.read', 'communication.write', 'communication.bulk',
         ],
     },
     {

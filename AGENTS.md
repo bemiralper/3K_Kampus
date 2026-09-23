@@ -106,6 +106,8 @@ Background workers are management commands by default; optional Celery + Redis w
 | `python manage.py send_payment_reminders` | Enqueues overdue/upcoming taksit reminders (`--days-ahead=3`, `--dry-run`) | Daily 09:00 |
 | `python manage.py send_gun_sonu_reports` | Saat gelen gün sonu raporlarını (özet / detay / ikisi) yetkililere gönderir (`--dry-run`, `--date`) | Every 5 min |
 | `python manage.py send_birthday_wishes` | Doğum günü olan öğrencilere IMAGE Meta/şablon + havuz görseli gönderir (`--dry-run`, `--date`, `--kurum-id`) | Daily 00:01 |
+| `python manage.py archive_campaign_deliveries --days 180 --purge-archive-days 730` | Bitmiş kampanyaların teslimat satırlarını arşivler (MessageStatusEvent silinir, Message korunur), eski arşivi siler (`--dry-run`, `--delete-messages`) | Weekly 03:45 |
+| `python manage.py purge_communication_logs --days 90` | CommunicationLog + RawWebhookEvent temizliği (`--keep-failed`, `--dry-run`) | Daily 03:30 |
 | `python manage.py backfill_conversation_names` | Sohbetlerde görünen kişi adını `contact_name` alanına yazar (istek başına canlı eşleme yapılmasın diye) — `--kurum-id`, `--dry-run` | Tek seferlik / gerektikçe |
 
 Run from `backend/` with appropriate `DJANGO_ENV`. Module hooks (görüşme, ödev, sınav, devamsızlık) enqueue only; delivery requires `process_communication_queue` (cron) or Celery worker.

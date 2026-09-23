@@ -45,28 +45,49 @@ class ContactResolver:
     LEGACY_DEFAULT_OPT_IN = frozenset({'duyuru', 'devamsizlik'})
     TRANSACTIONAL_CATEGORIES = frozenset({'odeme'})
 
+    #: Uluslararası E.164: ülke kodu 1-3 hane, toplam 8-15 hane (ITU-T E.164)
+    INTL_E164_PATTERN = re.compile(r'^\+[1-9]\d{7,14}$')
+
     @classmethod
     def normalize(cls, phone: str) -> str:
-        """Türkiye mobil numarasını E.164 (+90...) formatına çevirir."""
+        """Telefonu E.164 formatına çevirir.
+
+        Türkiye biçimleri (`05xx`, `5xx`, `90 5xx`, `+90 5xx`) TR mobil kuralıyla
+        doğrulanır. `+` ile başlayan yabancı numaralar E.164 uzunluk kuralına
+        uyuyorsa kabul edilir (ürün kararı 4); yalnız TR mobil olması şartı
+        kaldırıldı. `+90` ile başlayan numara yine 5 ile başlayan 10 haneli
+        mobil olmalıdır (sabit hat WhatsApp'ta yok).
+        """
         if not phone:
             raise ValidationError('Telefon numarası boş olamaz.')
 
-        digits = re.sub(r'\D', '', phone.strip())
+        raw = phone.strip()
+        digits = re.sub(r'\D', '', raw)
+        if raw.startswith('+') and not digits.startswith('90'):
+            # Yabancı numara: yalnız uzunluk / biçim denetimi
+            e164 = f'+{digits}'
+            if not cls.INTL_E164_PATTERN.match(e164):
+                raise ValidationError(f'Geçersiz uluslararası numara: {phone}')
+            return e164
+        if raw.startswith('00') and len(digits) >= 10 and not digits[2:].startswith('90'):
+            e164 = f'+{digits[2:]}'
+            if not cls.INTL_E164_PATTERN.match(e164):
+                raise ValidationError(f'Geçersiz uluslararası numara: {phone}')
+            return e164
+
         if digits.startswith('90') and len(digits) == 12:
             e164 = f'+{digits}'
         elif digits.startswith('0') and len(digits) == 11:
             e164 = f'+9{digits}'
         elif len(digits) == 10 and digits.startswith('5'):
             e164 = f'+90{digits}'
-        elif phone.strip().startswith('+') and len(digits) >= 10:
+        elif raw.startswith('+') and len(digits) >= 10:
             e164 = f'+{digits}'
         else:
             raise ValidationError(f'Geçersiz telefon formatı: {phone}')
 
-        national = e164[3:] if e164.startswith('+90') else e164
-        if not cls.TR_MOBILE_PATTERN.match(f'+90{national}' if not national.startswith('+') else national):
-            if not (e164.startswith('+90') and len(e164) == 13 and e164[3] == '5'):
-                raise ValidationError(f'Geçersiz TR mobil numarası: {phone}')
+        if not (e164.startswith('+90') and len(e164) == 13 and e164[3] == '5'):
+            raise ValidationError(f'Geçersiz TR mobil numarası: {phone}')
 
         return e164
 

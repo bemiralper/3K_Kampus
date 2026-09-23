@@ -66,13 +66,14 @@ class WhatsAppAccountSerializer(serializers.ModelSerializer):
     sube_names = serializers.SerializerMethodField()
     has_verify_token = serializers.SerializerMethodField()
     has_app_secret = serializers.SerializerMethodField()
+    send_error = serializers.SerializerMethodField()
 
     class Meta:
         model = CommunicationChannelConfig
         fields = [
             'id', 'channel', 'name', 'phone_number_id', 'waba_id', 'app_id',
             'has_verify_token', 'has_app_secret', 'display_phone', 'is_active', 'is_default',
-            'scope_type', 'department', 'quota_json', 'last_synced_at',
+            'scope_type', 'department', 'quota_json', 'last_synced_at', 'send_error',
             'role_ids', 'sube_ids', 'role_names', 'sube_names',
             'created_at', 'updated_at',
         ]
@@ -80,6 +81,14 @@ class WhatsAppAccountSerializer(serializers.ModelSerializer):
 
     def get_has_verify_token(self, obj) -> bool:
         return bool(obj.webhook_verify_token)
+
+    def get_send_error(self, obj):
+        """Son 6 saatte token/hat kaynaklı gönderim hatası (worker bayrağı) — {error, at} | None."""
+        from django.core.cache import cache
+
+        from apps.communication.application.outbound_processor import account_error_cache_key
+
+        return cache.get(account_error_cache_key(obj.id))
 
     def get_has_app_secret(self, obj) -> bool:
         return bool(obj.app_secret_encrypted)

@@ -11,7 +11,10 @@ from apps.communication.application.queue_monitor_service import (
 )
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
-from apps.communication.permissions import CommunicationBulkPermission
+from apps.communication.permissions import (
+    CommunicationBulkPermission,
+    CommunicationQueueAdminPermission,
+)
 
 
 def _int_param(raw, default, lo, hi):
@@ -53,7 +56,9 @@ class OutboundQueueListView(CommunicationAPIView):
 
 
 class OutboundQueueArchiveView(CommunicationAPIView):
-    permission_classes = [CommunicationBulkPermission]
+    """Eski başarısız kuyruk kayıtlarını kalıcı siler — kurum geneli, yalnız yönetim."""
+
+    permission_classes = [CommunicationQueueAdminPermission]
 
     def post(self, request):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)
@@ -72,7 +77,9 @@ class OutboundQueueRetryView(CommunicationAPIView):
         if err:
             return err
         try:
-            item = retry_queue_item(kurum_id, item_id, sube_id)
+            item = retry_queue_item(kurum_id, item_id, sube_id, user=request.user)
+        except PermissionError as exc:
+            return Response({'success': False, 'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({'success': False, 'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -94,7 +101,9 @@ class OutboundQueueCancelView(CommunicationAPIView):
         if err:
             return err
         try:
-            cancel_queue_item(kurum_id, item_id, sube_id)
+            cancel_queue_item(kurum_id, item_id, sube_id, user=request.user)
+        except PermissionError as exc:
+            return Response({'success': False, 'error': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except ValueError as exc:
             return Response({'success': False, 'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({'success': True})

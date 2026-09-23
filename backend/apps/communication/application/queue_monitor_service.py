@@ -127,12 +127,12 @@ def list_outbound_queue(
             | Q(send_options__channel_config_id=account_id)
         )
     if query:
+        # Mesaj gövdesinde arama (indexsiz, geniş metin) kaldırıldı (M-05); kişi/telefon/hata yeterli
         scoped = scoped.filter(
             Q(message__conversation__contact_phone__icontains=query)
             | Q(message__conversation__contact_name__icontains=query)
             | Q(last_error__icontains=query)
             | Q(message__failed_reason__icontains=query)
-            | Q(message__body__icontains=query)
         )
     if error_key:
         scoped = scoped.filter(
@@ -144,19 +144,15 @@ def list_outbound_queue(
     items = [serialize_queue_item(item) for item in scoped.order_by('-created_at')[start:start + page_size]]
 
     counts_qs = _base_qs(kurum_id, sube_id)
-    status_counts = {
-        'pending': counts_qs.filter(message__status=MessageStatus.PENDING).count(),
-        'sending': counts_qs.filter(message__status=MessageStatus.SENDING).count(),
-        'failed_live': counts_qs.filter(
-            message__status=MessageStatus.FAILED, created_at__gte=cutoff,
-        ).count(),
-        'failed_archive': counts_qs.filter(
-            message__status=MessageStatus.FAILED, created_at__lt=cutoff,
-        ).count(),
-        'retrying': counts_qs.filter(
-            message__status=MessageStatus.PENDING, attempt_count__gt=0,
-        ).count(),
-    }
+    # 5 ayrı COUNT yerine tek aggregate (M-05); 15 sn'lik yoklamada DB yükü 1/5
+    agg = counts_qs.aggregate(
+        pending=Count('id', filter=Q(message__status=MessageStatus.PENDING)),
+        sending=Count('id', filter=Q(message__status=MessageStatus.SENDING)),
+        failed_live=Count('id', filter=Q(message__status=MessageStatus.FAILED, created_at__gte=cutoff)),
+        failed_archive=Count('id', filter=Q(message__status=MessageStatus.FAILED, created_at__lt=cutoff)),
+        retrying=Count('id', filter=Q(message__status=MessageStatus.PENDING, attempt_count__gt=0)),
+    )
+    status_counts = {k: int(v or 0) for k, v in agg.items()}
     status_counts['failed'] = status_counts['failed_live'] + status_counts['failed_archive']
 
     error_rows = (
@@ -207,25 +203,54 @@ def _locked_item(kurum_id: int, item_id, sube_id: int | None = None) -> Outbound
         return None
     return (
         OutboundQueueItem.objects
-        .select_for_update()
-        .select_related('message')
+        .select_for_update(of=('self',))
+        .select_related('message', 'campaign')
         .get(pk=found.pk)
     )
 
 
+def _assert_can_touch(item: OutboundQueueItem, user) -> None:
+    """Kuyruk kaydına müdahale: kampanyayı açan / mesajı gönderen kişi veya yönetici."""
+    if user is None:
+        return
+    from apps.communication.permissions import user_can_manage_campaign
+
+    if item.campaign_id and item.campaign is not None:
+        if user_can_manage_campaign(user, item.campaign):
+            return
+        raise PermissionError('Bu kampanyanın kuyruk kaydına yalnız oluşturan veya yönetici müdahale edebilir.')
+    sender_id = getattr(item.message, 'sender_user_id', None)
+    if sender_id and sender_id == getattr(user, 'id', None):
+        return
+    from apps.communication.application.coach_scope import _has_full_inbox_access
+
+    if _has_full_inbox_access(user):
+        return
+    raise PermissionError('Bu kuyruk kaydına müdahale yetkiniz yok.')
+
+
 @transaction.atomic
-def retry_queue_item(kurum_id: int, item_id, sube_id: int | None = None) -> OutboundQueueItem:
+def retry_queue_item(kurum_id: int, item_id, sube_id: int | None = None, *, user=None) -> OutboundQueueItem:
     item = _locked_item(kurum_id, item_id, sube_id)
     if not item:
         raise ValueError('Kuyruk kaydı bulunamadı.')
+    _assert_can_touch(item, user)
     msg = item.message
     if msg.status not in (MessageStatus.FAILED, MessageStatus.PENDING):
         raise ValueError('Yalnızca bekleyen veya başarısız kayıt yeniden denenir.')
+    if item.locked_at is not None and msg.status == MessageStatus.PENDING:
+        # Worker şu an bu kaydı tutuyor; kilidi sıfırlamak çift gönderime yol açar.
+        raise ValueError('Kayıt şu an işleniyor; birkaç saniye sonra tekrar deneyin.')
     item.attempt_count = 0
     item.last_error = ''
     item.locked_at = None
+    item.locked_by = ''
+    item.provider_call_started_at = None
     item.next_attempt_at = timezone.now()
-    item.save(update_fields=['attempt_count', 'last_error', 'locked_at', 'next_attempt_at', 'updated_at'])
+    item.save(update_fields=[
+        'attempt_count', 'last_error', 'locked_at', 'locked_by',
+        'provider_call_started_at', 'next_attempt_at', 'updated_at',
+    ])
     msg.status = MessageStatus.PENDING
     msg.failed_reason = ''
     msg.save(update_fields=['status', 'failed_reason', 'updated_at'])
@@ -233,16 +258,24 @@ def retry_queue_item(kurum_id: int, item_id, sube_id: int | None = None) -> Outb
 
 
 @transaction.atomic
-def cancel_queue_item(kurum_id: int, item_id, sube_id: int | None = None) -> None:
+def cancel_queue_item(kurum_id: int, item_id, sube_id: int | None = None, *, user=None) -> None:
+    """Bekleyen kaydı iptal eder.
+
+    Kilitli (worker'ın elindeki) kayıt silinmez: mesaj CANCELLED yapılır,
+    worker göndermeden önce durumu kontrol edip atlar ve kaydı kendisi
+    temizler. Kilitsiz kayıt hemen silinir.
+    """
     item = _locked_item(kurum_id, item_id, sube_id)
     if not item:
         raise ValueError('Kuyruk kaydı bulunamadı.')
+    _assert_can_touch(item, user)
     if item.message.status not in (MessageStatus.PENDING, MessageStatus.SENDING):
         raise ValueError('Yalnızca bekleyen gönderim iptal edilir.')
     msg = item.message
     msg.status = MessageStatus.CANCELLED
     msg.save(update_fields=['status', 'updated_at'])
-    item.delete()
+    if item.locked_at is None:
+        item.delete()
 
 
 def archive_old_failures(

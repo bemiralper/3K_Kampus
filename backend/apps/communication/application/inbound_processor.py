@@ -180,7 +180,7 @@ class InboundProcessor:
         channel_config=None,
     ) -> None:
         for status in value.get('statuses', []):
-            self._process_status(status)
+            self._process_status(status, kurum_id=kurum_id, channel_config=channel_config)
 
         for msg in value.get('messages', []):
             if kurum_id:
@@ -188,7 +188,38 @@ class InboundProcessor:
                     kurum_id, msg, value, channel_config=channel_config,
                 )
 
-    def _process_status(self, status: dict[str, Any]) -> None:
+    @staticmethod
+    def _status_belongs_to_account(message, kurum_id, channel_config) -> bool:
+        """Durum olayı, mesajın gönderildiği hatta/WABA'ya ait mi? (H-02)
+
+        Meta mesaj kimliği global benzersizdir; yine de kurum A hattının
+        webhook'u kurum B'nin mesajını güncelleyemesin. Hat bilinmiyorsa
+        (eski kayıt, config yok) kurum eşleşmesi yeterli sayılır.
+        """
+        if kurum_id and message.conversation_id:
+            conv_kurum = getattr(message.conversation, 'kurum_id', None)
+            if conv_kurum and int(conv_kurum) != int(kurum_id):
+                return False
+        if channel_config is None:
+            return True
+        msg_cfg_id = getattr(message.conversation, 'channel_config_id', None)
+        if not msg_cfg_id or msg_cfg_id == channel_config.id:
+            return True
+        try:
+            from apps.communication.application.account_resolver import AccountResolver
+
+            shared = AccountResolver.shared_waba_account_ids(kurum_id, channel_config.id) or []
+            return msg_cfg_id in set(shared)
+        except Exception:
+            return False
+
+    def _process_status(
+        self,
+        status: dict[str, Any],
+        *,
+        kurum_id: int | None = None,
+        channel_config=None,
+    ) -> None:
         provider_message_id = status.get('id', '')
         if not provider_message_id:
             return
@@ -196,35 +227,39 @@ class InboundProcessor:
         message = MessageRepository.get_by_provider_id(provider_message_id)
         if not message:
             return
+        if not self._status_belongs_to_account(message, kurum_id, channel_config):
+            logger.warning(
+                'webhook status: hat/kurum uyuşmazlığı message=%s kurum=%s config=%s — atlandı',
+                message.id, kurum_id, getattr(channel_config, 'id', None),
+            )
+            return
 
         meta_status = status.get('status', '')
         timestamp = status.get('timestamp')
         occurred_at = self._parse_timestamp(timestamp)
         provider_event_id = f"{provider_message_id}:{meta_status}:{timestamp}"
 
-        MessageStatusEventRepository.apply_status_update(
+        event, applied = MessageStatusEventRepository.apply_status_update(
             message,
             meta_status=meta_status,
             provider_event_id=provider_event_id,
             occurred_at=occurred_at,
             raw_payload=status,
         )
+        if event is None:
+            return
 
-        if message.campaign_id:
+        if message.campaign_id and applied:
             from apps.communication.application.campaign_service import CampaignStatsService
             from apps.communication.application.template_service import TemplateService
             from apps.communication.domain.enums import MessageStatus
 
-            CampaignStatsService.refresh_campaign_stats(message.campaign_id)
-            if meta_status == MessageStatus.READ:
+            CampaignStatsService.schedule_refresh(message.campaign_id)
+            # Meta durumu ('read') ile enum ('READ') farklı; eşlenmiş değeri kullan (M-03)
+            mapped = MessageStatusEventRepository.STATUS_MAP.get(meta_status)
+            if mapped in (MessageStatus.READ, MessageStatus.FAILED, MessageStatus.SENT):
                 message.refresh_from_db()
-                TemplateService.update_stats_on_message_status(message, MessageStatus.READ)
-            elif meta_status == MessageStatus.FAILED:
-                message.refresh_from_db()
-                TemplateService.update_stats_on_message_status(message, MessageStatus.FAILED)
-            elif meta_status == MessageStatus.SENT:
-                message.refresh_from_db()
-                TemplateService.update_stats_on_message_status(message, MessageStatus.SENT)
+                TemplateService.update_stats_on_message_status(message, mapped)
 
     def _process_inbound_message(
         self,
@@ -362,8 +397,7 @@ class InboundProcessor:
 
     def _bump_campaign_reply_count(self, conversation) -> None:
         """Kampanya sonrası aynı konuşmadaki inbound yanıtları say."""
-        from apps.communication.domain.models import Message, OutboundCampaign
-        from django.db.models import F
+        from apps.communication.domain.models import Message
 
         last_campaign_msg = (
             Message.objects.filter(
@@ -376,10 +410,11 @@ class InboundProcessor:
         )
         if not last_campaign_msg or not last_campaign_msg.campaign_id:
             return
-        OutboundCampaign.objects.filter(id=last_campaign_msg.campaign_id).update(
-            replied_count=F('replied_count') + 1,
-            updated_at=timezone.now(),
-        )
+        # Tek sayaç yolu (L-03): F()+1 her inbound'da şişiyordu; recount
+        # "kampanya sonrası yanıt veren sohbet sayısı"nı tekil hesaplar.
+        from apps.communication.application.campaign_service import CampaignStatsService
+
+        CampaignStatsService.schedule_refresh(last_campaign_msg.campaign_id)
 
     def _save_inbound_media(
         self,

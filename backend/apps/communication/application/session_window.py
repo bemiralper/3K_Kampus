@@ -43,7 +43,21 @@ PERMANENT_SEND_ERROR_CODES = frozenset({
     132001,  # Şablon adı bu dilde Meta'da yok
     132012,  # Şablon bileşen formatı uyuşmuyor
     133010,  # Phone Number ID Cloud API'de kayıtlı değil
+    190,     # Access token geçersiz / süresi dolmuş — hesap düzeltilmeden hiçbir deneme geçmez
 })
+
+#: Hesap düzeyinde müdahale gerektiren hatalar (token, kayıtsız hat)
+ACCOUNT_LEVEL_ERROR_CODES = frozenset({190, 133010})
+
+
+def is_account_error(result: dict | None) -> bool:
+    """Hesap ayarı bozuk (token/hat): kullanıcıya hesap ekranı uyarısı için."""
+    if not result:
+        return False
+    if _error_code(result) in ACCOUNT_LEVEL_ERROR_CODES:
+        return True
+    text = str(result.get('error') or '').lower()
+    return 'access token' in text and ('expired' in text or 'invalid' in text or 'session has expired' in text)
 
 
 def window_hours() -> int:
@@ -100,6 +114,8 @@ def is_permanent_send_error(result: dict | None) -> bool:
     if _error_code(result) in PERMANENT_SEND_ERROR_CODES:
         return True
     if is_session_error(result):
+        return True
+    if is_account_error(result):
         return True
     text = str(result.get('error') or '').lower()
     return (

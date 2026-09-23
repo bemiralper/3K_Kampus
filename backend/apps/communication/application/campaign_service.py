@@ -99,12 +99,27 @@ class AudiencePreview:
         return data
 
 
+# Sunucuda gerçekten uygulanan gelişmiş filtre anahtarları. Eskiden listede olan
+# `whatsapp_default_only`, `rehber_ids`, `ogretmen_ids` hiçbir koleksiyoncuda
+# kullanılmıyordu (M-04); yanıltıcı olduğu için kaldırıldı — ürün kararı 2:
+# tüm veliler kitleye girer, `telefon` alanı kullanılır.
 ADVANCED_FILTER_KEYS = frozenset({
     'sinif_seviyesi_ids', 'sinif_ids', 'alan_ids', 'coach_ids', 'school_ids',
     'kalemler', 'kalem_turu', 'kalem_id', 'giris_turu', 'kayit_turu', 'cinsiyet',
-    'durum', 'mali_durum', 'has_phone', 'whatsapp_default_only',
-    'contact_kinds', 'rehber_ids', 'ogretmen_ids',
+    'durum', 'mali_durum', 'has_phone', 'contact_kinds',
 })
+
+
+def dedupe_key(e164: str, recipient_type: str, ogrenci_id) -> tuple:
+    """Kampanya içinde tekilleştirme anahtarı (ürün kararı 1).
+
+    Öğrenci/veli alıcılarında `(telefon, öğrenci)`: iki çocuğu olan veli her
+    çocuk için ayrı mesaj alır, aynı çocuğun aynı numaralı iki velisi tek
+    mesaj alır. Personelde yalnız telefon.
+    """
+    if recipient_type == RecipientType.PERSONEL:
+        return (e164, 'P', None)
+    return (e164, 'S', int(ogrenci_id) if ogrenci_id else None)
 
 
 class AudienceResolver:
@@ -523,14 +538,32 @@ class AudienceResolver:
             ))
         return entries
 
+    #: Koç (bulk yetkili olsa da) yalnız bu kitle tiplerini kullanabilir (ürün kararı 6).
+    COACH_AUDIENCE_TYPES = frozenset({
+        'query', 'coach_students', 'coach_parents', 'custom_ids', 'filtered',
+    })
+
     @classmethod
     def _scope_student_ids(cls, user, kurum_id: int, filter_json: dict):
+        """Kullanıcının kitle kapsamı: None = kısıt yok; set = yalnız bu öğrenciler.
+
+        Koç profili olan, yönetici olmayan kullanıcı `communication.bulk`
+        taşısa bile HER kitle tipinde kendi öğrencileriyle sınırlıdır — önizleme,
+        alıcı listesi ve gönderim aynı kuralı uygular (H-08). Eskiden bulk
+        yetkisi legacy tiplerde (`all_veliler` vb.) kapsamı kaldırıyordu.
+        """
         if not user or not user.is_authenticated:
             return None
+        from apps.communication.application.coach_scope import is_coach_bulk_user
         from apps.communication.permissions import user_can_bulk_communicate
 
+        audience_type = filter_json.get('audience_type', '')
+        if is_coach_bulk_user(user):
+            if audience_type and audience_type not in cls.COACH_AUDIENCE_TYPES:
+                raise PermissionDenied('Koç yalnızca kendi öğrenci/veli kitlesine gönderebilir.')
+            allowed = scoped_student_ids(user)
+            return set(allowed) if allowed is not None else set()
         if is_resource_admin(user) or user_can_bulk_communicate(user):
-            audience_type = filter_json.get('audience_type', '')
             if audience_type in ('coach_students', 'coach_parents'):
                 coach_id = filter_json.get('coach_id') or cls._coach_id_from_user(user)
                 if coach_id and not is_resource_admin(user):
@@ -722,6 +755,7 @@ class AudienceResolver:
             veli_qs = OgrenciVeli.objects.filter(
                 id__in=veli_ids,
                 ogrenci__kurum_id=kurum_id,
+                ogrenci__aktif_mi=True,  # pasif öğrencinin velisi elle de eklenemez (ürün kararı 3)
             ).exclude(telefon='').select_related('ogrenci')
             if allowed_student_ids is not None:
                 veli_qs = veli_qs.filter(ogrenci_id__in=allowed_student_ids)
@@ -765,7 +799,7 @@ class AudienceResolver:
         *,
         include_invalid: bool = False,
     ) -> AudiencePreview:
-        seen_e164: set[str] = set()
+        seen_keys: set[tuple] = set()
         recipients: list[AudienceRecipient] = []
         invalid = 0
         ogrenci_count = 0
@@ -783,9 +817,12 @@ class AudienceResolver:
             except (ValidationError, Exception):
                 invalid += 1
                 continue
-            if e164 in seen_e164:
+            # Ürün kararı 1: aynı telefon, farklı öğrenci → ayrı mesaj; aynı telefon
+            # aynı öğrenci (anne+baba aynı numara, veli+öğrenci aynı numara) → tek mesaj.
+            key = dedupe_key(e164, rtype, ogrenci_id)
+            if key in seen_keys:
                 continue
-            seen_e164.add(e164)
+            seen_keys.add(key)
             recipients.append(AudienceRecipient(
                 e164=e164,
                 recipient_type=rtype,
@@ -891,6 +928,7 @@ class CampaignService:
         save_as_template: bool = False,
         template_category: str = '',
         channel_config_id=None,
+        client_token: str = '',
     ) -> OutboundCampaign:
         from apps.communication.application.account_resolver import AccountResolveError, AccountResolver
         from apps.communication.application.cost_estimator import estimate_campaign_cost
@@ -909,6 +947,12 @@ class CampaignService:
         if not body and not template_name and not template_id:
             raise ValidationError('Mesaj metni veya şablon adı zorunludur.')
 
+        # İstemciden gelen kapsam anahtarları sunucu politikası değildir — sil;
+        # kapsamı aşağıda yalnız sunucu yazar (L-01).
+        audience_filter = {
+            k: v for k, v in audience_filter.items()
+            if k not in ('scope_student_ids', 'scope_user_id')
+        }
         self._validate_audience_scope(kurum_id, audience_filter, user)
         # Koç kapsamını taslağa dondur: confirm/materialize ve zamanlanmış komut
         # `user` bilmeden aynı kapsamı uygular (K-04).
@@ -1054,6 +1098,7 @@ class CampaignService:
                 'template': message_template,
                 'scheduled_at': scheduled_at,
                 'send_options_json': send_options,
+                'client_token': (client_token or '')[:64],
                 'estimated_cost_usd': cost,
             },
         )
@@ -1145,74 +1190,173 @@ class CampaignService:
 
         return self.materialize_queue(locked, sender_user_id=sender_user_id)
 
-    @transaction.atomic
+    #: Parçalı materialize: her dilim kendi transaction'ında (H-06)
+    MATERIALIZE_CHUNK_SIZE = 300
+
     def materialize_queue(
         self,
         campaign: OutboundCampaign,
         *,
         sender_user_id: int | None = None,
+        chunk_size: int | None = None,
     ) -> OutboundCampaign:
-        """Alıcı listesini mesaj + outbound kuyruk kayıtlarına çevir."""
+        """Alıcı listesini mesaj + outbound kuyruk kayıtlarına çevir.
+
+        Eskiden tek dev transaction'dı (10k alıcıda dakikalarca kilit, thread
+        düşünce hiç kayıt yok). Şimdi:
+        - Kısa bir kilitli adımda durum kontrolü ve `materialized_count` okunur,
+        - alıcılar `MATERIALIZE_CHUNK_SIZE`'lık dilimlerde ayrı transaction'larda
+          yazılır, her dilim sonunda ilerleme damgalanır,
+        - yarıda kalan iş (deploy/timeout) `materialized_count`'tan devam eder,
+        - dilimler arasında iptal isteği görülürse durur,
+        - şablon onayı gönderim anında değil burada da doğrulanır (M-02),
+        - `Message.body` Meta'ya giden parametrelerle aynı yoldan üretilir (M-01).
+        """
+        chunk = int(chunk_size or self.MATERIALIZE_CHUNK_SIZE)
+
+        # Aynı kampanyayı iki süreç (arka plan thread + cron / Celery) aynı anda
+        # üretmesin: oturum düzeyi advisory lock; alınamazsa diğeri çalışıyordur.
+        if not self._try_materialize_lock(campaign.pk):
+            return OutboundCampaign.objects.get(pk=campaign.pk)
+        try:
+            return self._materialize_locked(
+                campaign, sender_user_id=sender_user_id, chunk=chunk,
+            )
+        finally:
+            self._release_materialize_lock(campaign.pk)
+
+    @staticmethod
+    def _materialize_lock_key(campaign_pk) -> str:
+        return f'comm:campaign:materialize:{campaign_pk}'
+
+    @classmethod
+    def _try_materialize_lock(cls, campaign_pk) -> bool:
+        from django.db import connection
+
+        if connection.vendor != 'postgresql':
+            return True
+        with connection.cursor() as cur:
+            cur.execute('SELECT pg_try_advisory_lock(hashtext(%s))', [cls._materialize_lock_key(campaign_pk)])
+            return bool(cur.fetchone()[0])
+
+    @classmethod
+    def _release_materialize_lock(cls, campaign_pk) -> None:
+        from django.db import connection
+
+        if connection.vendor != 'postgresql':
+            return
+        try:
+            with connection.cursor() as cur:
+                cur.execute('SELECT pg_advisory_unlock(hashtext(%s))', [cls._materialize_lock_key(campaign_pk)])
+        except Exception:  # bağlantı kapanmış olabilir; kilit zaten düşer
+            pass
+
+    def _materialize_locked(
+        self,
+        campaign: OutboundCampaign,
+        *,
+        sender_user_id: int | None,
+        chunk: int,
+    ) -> OutboundCampaign:
+        from apps.communication.application.meta_template_mapper import render_body_with_parameters
+        from apps.communication.application.meta_template_service import MetaTemplateService
         from apps.communication.application.variable_resolver import (
             aktif_sinif_ad,
             build_recipient_context,
             resolve_variables,
         )
-        from apps.communication.domain.models import Message, MessageAttachment
+        from apps.communication.domain.models import (
+            Message,
+            MessageAttachment,
+            WhatsAppMetaTemplate,
+        )
         from apps.kurum.domain.models import Kurum
         from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
         from apps.personel.domain.models import Personel
 
-        locked = OutboundCampaign.objects.select_for_update().get(pk=campaign.pk)
-        if locked.status in (
-            CampaignStatus.QUEUED,
-            CampaignStatus.PROCESSING,
-            CampaignStatus.COMPLETED,
-            CampaignStatus.PARTIAL,
-            CampaignStatus.CANCELLED,
-        ):
-            return locked
-        if locked.status not in (CampaignStatus.DRAFT, CampaignStatus.CONFIRMED):
-            return locked
-        if Message.objects.filter(campaign=locked).exists():
-            locked.status = CampaignStatus.QUEUED
-            locked.save(update_fields=['status', 'updated_at'])
-            return locked
+        # --- Adım 1: kısa kilitli kontrol
+        with transaction.atomic():
+            locked = OutboundCampaign.objects.select_for_update().get(pk=campaign.pk)
+            if locked.status in (
+                CampaignStatus.QUEUED,
+                CampaignStatus.PROCESSING,
+                CampaignStatus.COMPLETED,
+                CampaignStatus.PARTIAL,
+                CampaignStatus.CANCELLED,
+                CampaignStatus.FAILED,
+            ):
+                return locked
+            if locked.status not in (CampaignStatus.DRAFT, CampaignStatus.CONFIRMED):
+                return locked
+            existing_messages = Message.objects.filter(campaign=locked).count()
+            if existing_messages and not locked.materialized_count:
+                # Eski (tek transaction) yolla üretilmiş kampanya: tamam sayılır
+                locked.status = CampaignStatus.QUEUED
+                locked.materialized_count = existing_messages
+                locked.save(update_fields=['status', 'materialized_count', 'updated_at'])
+                return locked
+            already = int(locked.materialized_count or 0)
 
+        # --- Adım 2: alıcı listesi (salt okuma; kilit dışında)
         preview = AudienceResolver.resolve(
             locked.kurum_id,
             locked.recipient_filter_json,
         )
         if preview.total_recipients == 0:
+            self._fail_materialize(locked, 'Alıcı listesi boş.')
             raise ValidationError('Alıcı listesi boş.')
 
         filter_json = locked.recipient_filter_json or {}
         template_name = filter_json.get('template_name', '')
+        template_language = filter_json.get('template_language') or 'tr'
         message_type = MessageType.TEMPLATE if template_name else MessageType.TEXT
         body_template = locked.body_template or template_name
+
+        # --- Adım 3: şablon onayı (M-02) ve tek render yolu (M-01)
+        meta_tpl = None
+        vmap: dict = {}
+        if template_name:
+            meta_tpl = MetaTemplateService.get_approved(
+                locked.kurum_id,
+                name=template_name,
+                language=template_language,
+                channel_config_id=locked.channel_config_id,
+            )
+            if meta_tpl is None:
+                blocked = WhatsAppMetaTemplate.objects.filter(
+                    kurum_id=locked.kurum_id, name=template_name,
+                ).exclude(status=MetaTemplateStatus.APPROVED).first()
+                if blocked:
+                    reason = (
+                        f'Meta şablonu "{template_name}" artık onaylı değil (durum: {blocked.status}). '
+                        'Kampanya kuyruğa alınmadı.'
+                    )
+                    self._fail_materialize(locked, reason)
+                    raise ValidationError(reason)
+            else:
+                vmap = MetaTemplateService.ensure_variable_map(meta_tpl) or {}
+
         kurum = Kurum.objects.filter(id=locked.kurum_id).first()
         campaign_attachments = list(locked.attachments.all())
 
-        ogrenci_ids = {
-            r.ogrenci_id
-            for r in preview.recipients
-            if r.ogrenci_id and r.recipient_type != RecipientType.PERSONEL
-        }
-        veli_ids = {
-            r.veli_id
-            for r in preview.recipients
-            if r.veli_id and r.recipient_type != RecipientType.PERSONEL
-        }
-        personel_ids = {r.personel_id for r in preview.recipients if r.personel_id}
-        ogrenciler = {
-            o.id: o
-            for o in Ogrenci.objects.select_related('sube').filter(id__in=ogrenci_ids)
-        }
+        # Tekilleştirme (ikinci savunma, C-01) ve devam noktası
+        seen_keys: set[tuple] = set()
+        recipients = []
+        for recipient in preview.recipients:
+            key = dedupe_key(recipient.e164, recipient.recipient_type, recipient.ogrenci_id)
+            if key in seen_keys:
+                continue
+            seen_keys.add(key)
+            recipients.append(recipient)
+        total = len(recipients)
+        remaining = recipients[already:]
+
+        ogrenci_ids = {r.ogrenci_id for r in remaining if r.ogrenci_id and r.recipient_type != RecipientType.PERSONEL}
+        veli_ids = {r.veli_id for r in remaining if r.veli_id and r.recipient_type != RecipientType.PERSONEL}
+        personel_ids = {r.personel_id for r in remaining if r.personel_id}
+        ogrenciler = {o.id: o for o in Ogrenci.objects.select_related('sube').filter(id__in=ogrenci_ids)}
         veliler = {v.id: v for v in OgrenciVeli.objects.filter(id__in=veli_ids)}
-        personeller = {
-            p.id: p
-            for p in Personel.objects.select_related('sube').filter(id__in=personel_ids)
-        }
+        personeller = {p.id: p for p in Personel.objects.select_related('sube').filter(id__in=personel_ids)}
 
         extra_ctx = {}
         send_opts = locked.send_options_json or {}
@@ -1221,23 +1365,19 @@ class CampaignService:
         if isinstance(filter_json.get('template_context'), dict):
             extra_ctx.update(filter_json['template_context'])
 
-        locked.total_recipients = preview.total_recipients
-        locked.preview_stats_json = preview.to_dict()
-        locked.save(update_fields=['total_recipients', 'preview_stats_json', 'updated_at'])
+        OutboundCampaign.objects.filter(pk=locked.pk).update(
+            total_recipients=total,
+            preview_stats_json=preview.to_dict(),
+            updated_at=timezone.now(),
+        )
 
-        for recipient in preview.recipients:
-            is_personel = recipient.recipient_type == RecipientType.PERSONEL
-            ogrenci = None if is_personel else ogrenciler.get(recipient.ogrenci_id)
-            veli = None if is_personel else veliler.get(recipient.veli_id)
-            personel = personeller.get(recipient.personel_id) if recipient.personel_id else None
-
+        def _body_for(recipient, ogrenci, veli, personel) -> str:
             sube_ad = ''
             if ogrenci and getattr(ogrenci, 'sube', None):
                 sube_ad = getattr(ogrenci.sube, 'ad', '') or ''
             elif personel and getattr(personel, 'sube', None):
                 sube_ad = getattr(personel.sube, 'ad', '') or ''
-
-            recipient_ctx = build_recipient_context(
+            ctx = build_recipient_context(
                 display_name=recipient.display_name,
                 recipient_type=recipient.recipient_type,
                 ogrenci=ogrenci,
@@ -1250,116 +1390,156 @@ class CampaignService:
             for key, value in extra_ctx.items():
                 if value is None or str(value).strip() == '':
                     continue
-                recipient_ctx[str(key)] = str(value)
+                ctx[str(key)] = str(value)
+            if meta_tpl is not None and (meta_tpl.body_named or ''):
+                return render_body_with_parameters(meta_tpl.body_named, vmap, ctx)
+            return resolve_variables(body_template, ctx)
 
-            body = resolve_variables(body_template, recipient_ctx)
-            resolved = ContactResolver.resolve_contact(locked.kurum_id, recipient.e164)
-            conversation, _ = ConversationRepository.get_or_create_for_contact(
-                kurum_id=locked.kurum_id,
-                channel=locked.channel or Channel.WHATSAPP,
-                contact_phone=recipient.e164,
-                contact_type=recipient.recipient_type,
-                contact_identity=resolved.identity,
-                ogrenci_id=None if is_personel else (recipient.ogrenci_id or resolved.ogrenci_id),
-                veli_id=None if is_personel else (recipient.veli_id or resolved.veli_id),
-                channel_config=locked.channel_config,
-            )
-            if is_personel and personel:
-                update_fields = []
-                if conversation.contact_type != RecipientType.PERSONEL:
-                    conversation.contact_type = RecipientType.PERSONEL
-                    update_fields.append('contact_type')
-                if conversation.subject != (personel.tam_ad or ''):
-                    conversation.subject = personel.tam_ad or ''
-                    update_fields.append('subject')
-                if conversation.ogrenci_id is not None:
-                    conversation.ogrenci_id = None
-                    update_fields.append('ogrenci_id')
-                if conversation.veli_id is not None:
-                    conversation.veli_id = None
-                    update_fields.append('veli_id')
-                if update_fields:
-                    update_fields.append('updated_at')
-                    conversation.save(update_fields=update_fields)
-            msg_type = message_type
-            if campaign_attachments and not template_name:
-                first = campaign_attachments[0]
-                if (first.mime_type or '').startswith('image/'):
-                    msg_type = MessageType.IMAGE
-                else:
-                    msg_type = MessageType.DOCUMENT
-
-            message = MessageRepository.create(
-                conversation=conversation,
-                campaign=locked,
-                direction=MessageDirection.OUTBOUND,
-                message_type=msg_type,
-                body=body,
-                status=MessageStatus.PENDING,
-                sender_user_id=sender_user_id,
-                source_module='campaign',
-                source_ref_id=str(locked.id),
-            )
-
-            if campaign_attachments:
-                for att in campaign_attachments:
-                    MessageAttachment.objects.create(
-                        message=message,
-                        file=att.file,
-                        original_name=att.original_name,
-                        mime_type=att.mime_type,
-                        file_size=att.file_size,
-                        provider_media_id=att.provider_media_id or '',
+        # --- Adım 4: dilimler
+        done = already
+        for offset in range(0, len(remaining), chunk):
+            batch = remaining[offset:offset + chunk]
+            with transaction.atomic():
+                state = OutboundCampaign.objects.filter(pk=locked.pk).values_list(
+                    'status', 'cancel_requested_at',
+                ).first()
+                if not state or state[0] == CampaignStatus.CANCELLED or state[1] is not None:
+                    return OutboundCampaign.objects.get(pk=locked.pk)
+                for recipient in batch:
+                    is_personel = recipient.recipient_type == RecipientType.PERSONEL
+                    ogrenci = None if is_personel else ogrenciler.get(recipient.ogrenci_id)
+                    veli = None if is_personel else veliler.get(recipient.veli_id)
+                    personel = personeller.get(recipient.personel_id) if recipient.personel_id else None
+                    body = _body_for(recipient, ogrenci, veli, personel)
+                    resolved = ContactResolver.resolve_contact(locked.kurum_id, recipient.e164)
+                    conversation, _ = ConversationRepository.get_or_create_for_contact(
+                        kurum_id=locked.kurum_id,
+                        channel=locked.channel or Channel.WHATSAPP,
+                        contact_phone=recipient.e164,
+                        contact_type=recipient.recipient_type,
+                        contact_identity=resolved.identity,
+                        ogrenci_id=None if is_personel else (recipient.ogrenci_id or resolved.ogrenci_id),
+                        veli_id=None if is_personel else (recipient.veli_id or resolved.veli_id),
+                        channel_config=locked.channel_config,
                     )
+                    if is_personel and personel:
+                        update_fields = []
+                        if conversation.contact_type != RecipientType.PERSONEL:
+                            conversation.contact_type = RecipientType.PERSONEL
+                            update_fields.append('contact_type')
+                        if conversation.subject != (personel.tam_ad or ''):
+                            conversation.subject = personel.tam_ad or ''
+                            update_fields.append('subject')
+                        if conversation.ogrenci_id is not None:
+                            conversation.ogrenci_id = None
+                            update_fields.append('ogrenci_id')
+                        if conversation.veli_id is not None:
+                            conversation.veli_id = None
+                            update_fields.append('veli_id')
+                        if update_fields:
+                            update_fields.append('updated_at')
+                            conversation.save(update_fields=update_fields)
+                    msg_type = message_type
+                    if campaign_attachments and not template_name:
+                        first = campaign_attachments[0]
+                        msg_type = (
+                            MessageType.IMAGE if (first.mime_type or '').startswith('image/')
+                            else MessageType.DOCUMENT
+                        )
+                    message = MessageRepository.create(
+                        conversation=conversation,
+                        campaign=locked,
+                        direction=MessageDirection.OUTBOUND,
+                        message_type=msg_type,
+                        body=body,
+                        status=MessageStatus.PENDING,
+                        sender_user_id=sender_user_id,
+                        source_module='campaign',
+                        source_ref_id=str(locked.id),
+                    )
+                    if campaign_attachments:
+                        MessageAttachment.objects.bulk_create([
+                            MessageAttachment(
+                                message=message,
+                                file=att.file,
+                                original_name=att.original_name,
+                                mime_type=att.mime_type,
+                                file_size=att.file_size,
+                                provider_media_id=att.provider_media_id or '',
+                            )
+                            for att in campaign_attachments
+                        ])
+                    ConversationRepository.update_on_message(
+                        conversation,
+                        preview=body[:255],
+                        direction=MessageDirection.OUTBOUND,
+                        source_module='campaign',
+                    )
+                    OutboundQueueRepository.enqueue(
+                        kurum_id=locked.kurum_id,
+                        message=message,
+                        campaign=locked,
+                        next_attempt_at=timezone.now(),
+                        send_options=dict(locked.send_options_json or {}),
+                    )
+                done += len(batch)
+                OutboundCampaign.objects.filter(pk=locked.pk).update(
+                    materialized_count=done, updated_at=timezone.now(),
+                )
 
-            ConversationRepository.update_on_message(
-                conversation,
-                preview=body[:255],
-                direction=MessageDirection.OUTBOUND,
-                source_module='campaign',
-            )
-            OutboundQueueRepository.enqueue(
-                kurum_id=locked.kurum_id,
-                message=message,
-                campaign=locked,
-                next_attempt_at=timezone.now(),
-                send_options=dict(locked.send_options_json or {}),
-            )
-
-        locked.status = CampaignStatus.QUEUED
-        locked.save(update_fields=['status', 'updated_at'])
+        # --- Adım 5: bitir
+        with transaction.atomic():
+            final = OutboundCampaign.objects.select_for_update().get(pk=locked.pk)
+            if final.status in (CampaignStatus.DRAFT, CampaignStatus.CONFIRMED):
+                final.status = CampaignStatus.QUEUED
+                final.save(update_fields=['status', 'updated_at'])
 
         from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
 
         # Tek batch (20) yerine kuyruğu boşalt: kampanyanın kalanı cron'a kalmasın.
-        transaction.on_commit(
-            lambda: dispatch_process_outbound_queue(drain=True, background=True),
+        dispatch_process_outbound_queue(drain=True, background=True)
+        return final
+
+    @staticmethod
+    def _fail_materialize(campaign: OutboundCampaign, reason: str) -> None:
+        """Kuyruğa alınamayan kampanya: FAILED + gerekçe (tekrar denenmez, UI gösterir)."""
+        opts = dict(campaign.send_options_json or {})
+        opts['materialize_error'] = reason
+        OutboundCampaign.objects.filter(pk=campaign.pk).update(
+            status=CampaignStatus.FAILED,
+            send_options_json=opts,
+            updated_at=timezone.now(),
         )
-        return locked
+        campaign.status = CampaignStatus.FAILED
+        campaign.send_options_json = opts
 
     @transaction.atomic
     def cancel(self, campaign: OutboundCampaign) -> OutboundCampaign:
-        if campaign.status in (CampaignStatus.COMPLETED, CampaignStatus.CANCELLED):
+        locked = OutboundCampaign.objects.select_for_update().get(pk=campaign.pk)
+        if locked.status in (CampaignStatus.COMPLETED, CampaignStatus.CANCELLED):
             raise ValidationError('Bu kampanya iptal edilemez.')
 
-        cancelled = OutboundQueueRepository.cancel_pending_for_campaign(campaign)
-        campaign.status = CampaignStatus.CANCELLED
-        campaign.save(update_fields=['status', 'updated_at'])
-        campaign.refresh_from_db()
-        return campaign
+        OutboundQueueRepository.cancel_pending_for_campaign(locked)
+        locked.status = CampaignStatus.CANCELLED
+        locked.save(update_fields=['status', 'updated_at'])
+        transaction.on_commit(lambda: CampaignStatsService.refresh_campaign_stats(locked.id))
+        locked.refresh_from_db()
+        return locked
 
     @transaction.atomic
     def retry_failed(self, campaign: OutboundCampaign) -> dict:
-        if campaign.status == CampaignStatus.CANCELLED:
+        locked = OutboundCampaign.objects.select_for_update().get(pk=campaign.pk)
+        if locked.status == CampaignStatus.CANCELLED:
             raise ValidationError('İptal edilmiş kampanya yeniden denenemez.')
 
-        retried = OutboundQueueRepository.retry_failed_for_campaign(campaign)
+        retried = OutboundQueueRepository.retry_failed_for_campaign(locked)
         if retried:
-            campaign.status = CampaignStatus.QUEUED
-            campaign.save(update_fields=['status', 'updated_at'])
+            locked.status = CampaignStatus.QUEUED
+            locked.save(update_fields=['status', 'updated_at'])
             from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
 
-            dispatch_process_outbound_queue(drain=True, background=True)
+            transaction.on_commit(lambda: dispatch_process_outbound_queue(drain=True, background=True))
+        campaign.status = locked.status
         return {'retried_count': retried}
 
     @staticmethod
@@ -1425,17 +1605,53 @@ class CampaignService:
 
 
 class CampaignStatsService:
-    """Webhook durum güncellemelerinde kampanya sayaçları."""
+    """Kampanya sayaçları — tek aggregate sorgu + kısa süreli tekrar-önleme.
 
-    STATUS_COUNT_FIELD = {
-        MessageStatus.SENT: 'sent_count',
-        MessageStatus.DELIVERED: 'delivered_count',
-        MessageStatus.READ: 'read_count',
-        MessageStatus.FAILED: 'failed_count',
-    }
+    Eskiden her gönderim ve her webhook olayında 7 ayrı COUNT çalışıyordu
+    (10k alıcıda ~320k sayım). Şimdi:
+    - `refresh_campaign_stats`: tek `aggregate(Count(filter=...))` + yanıt sayımı,
+      `(campaign, status)` indeksiyle.
+    - `schedule_refresh`: aynı kampanya için `REFRESH_THROTTLE_SECONDS` içinde
+      ikinci bir yenilemeyi ertelemek yerine "kirli" işareti bırakır; detay
+      görüntülenirken (`refresh_if_dirty`) veya kuyruk boşalırken kesin
+      yenileme yapılır. Böylece sayaçlar en geç bir sonraki bakışta doğrudur.
+    """
+
+    REFRESH_THROTTLE_SECONDS = 2
+
+    @staticmethod
+    def _throttle_key(campaign_id) -> str:
+        return f'comm:campaign:stats:throttle:{campaign_id}'
+
+    @staticmethod
+    def _dirty_key(campaign_id) -> str:
+        return f'comm:campaign:stats:dirty:{campaign_id}'
+
+    @classmethod
+    def schedule_refresh(cls, campaign_id) -> None:
+        """Sık olaylarda (gönderim, webhook) çağrılır."""
+        from django.core.cache import cache
+
+        if not campaign_id:
+            return
+        if cache.add(cls._throttle_key(campaign_id), 1, timeout=cls.REFRESH_THROTTLE_SECONDS):
+            cls.refresh_campaign_stats(campaign_id)
+        else:
+            cache.set(cls._dirty_key(campaign_id), 1, timeout=3600)
+
+    @classmethod
+    def refresh_if_dirty(cls, campaign_id) -> None:
+        """Detay/liste görüntülenirken ertelenmiş yenilemeyi tamamla."""
+        from django.core.cache import cache
+
+        if campaign_id and cache.get(cls._dirty_key(campaign_id)):
+            cls.refresh_campaign_stats(campaign_id)
 
     @classmethod
     def refresh_campaign_stats(cls, campaign_id) -> None:
+        from django.core.cache import cache
+        from django.db.models import Count, Q
+
         from apps.communication.domain.models import Message
 
         campaign = OutboundCampaign.objects.filter(id=campaign_id).first()
@@ -1443,16 +1659,16 @@ class CampaignStatsService:
             return
 
         msgs = Message.objects.filter(campaign_id=campaign_id, direction=MessageDirection.OUTBOUND)
-        sent = msgs.filter(status__in=[
-            MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ,
-        ]).count()
-        delivered = msgs.filter(status__in=[MessageStatus.DELIVERED, MessageStatus.READ]).count()
-        read = msgs.filter(status=MessageStatus.READ).count()
-        failed = msgs.filter(status=MessageStatus.FAILED).count()
-        pending = msgs.filter(status__in=[
-            MessageStatus.PENDING, MessageStatus.SENDING,
-        ]).count()
-        cancelled = msgs.filter(status=MessageStatus.CANCELLED).count()
+        agg = msgs.aggregate(
+            sent=Count('id', filter=Q(status__in=[
+                MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ,
+            ])),
+            delivered=Count('id', filter=Q(status__in=[MessageStatus.DELIVERED, MessageStatus.READ])),
+            read=Count('id', filter=Q(status=MessageStatus.READ)),
+            failed=Count('id', filter=Q(status=MessageStatus.FAILED)),
+            pending=Count('id', filter=Q(status__in=[MessageStatus.PENDING, MessageStatus.SENDING])),
+            cancelled=Count('id', filter=Q(status=MessageStatus.CANCELLED)),
+        )
 
         replied = Message.objects.filter(
             conversation_id__in=msgs.values_list('conversation_id', flat=True),
@@ -1460,17 +1676,18 @@ class CampaignStatsService:
             created_at__gte=campaign.created_at,
         ).values('conversation_id').distinct().count()
 
-        campaign.sent_count = sent
-        campaign.delivered_count = delivered
-        campaign.read_count = read
-        campaign.failed_count = failed
+        campaign.sent_count = agg['sent']
+        campaign.delivered_count = agg['delivered']
+        campaign.read_count = agg['read']
+        campaign.failed_count = agg['failed']
         campaign.replied_count = replied
         campaign.save(update_fields=[
             'sent_count', 'delivered_count', 'read_count', 'failed_count',
             'replied_count', 'updated_at',
         ])
+        cache.delete(cls._dirty_key(campaign_id))
 
-        cls._update_campaign_status(campaign, pending, failed, cancelled)
+        cls._update_campaign_status(campaign, agg['pending'], agg['failed'], agg['cancelled'])
         cls._update_template_stats(campaign_id)
 
     @classmethod
