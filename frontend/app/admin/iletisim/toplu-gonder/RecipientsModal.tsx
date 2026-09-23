@@ -33,6 +33,11 @@ export default function RecipientsModal({
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
+  // Kitle değişince sayfa 1'e dön; eski sayfa numarası yeni toplamı aşabilir.
+  useEffect(() => {
+    setPage(1);
+  }, [query]);
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
@@ -119,54 +124,56 @@ export default function RecipientsModal({
         {loading ? (
           <p className="tg-empty">Liste yükleniyor…</p>
         ) : (
-          <table className="tg-table">
-            <thead>
-              <tr>
-                <th style={{ width: 36 }}>
-                  <input
-                    type="checkbox"
-                    checked={rows.length > 0 && pageSelected.length === rows.length}
-                    onChange={(e) => togglePage(e.target.checked)}
-                    aria-label="Sayfadakilerin tümünü seç"
-                  />
-                </th>
-                <th>Ad soyad</th>
-                <th>Kişi türü</th>
-                <th>Sınıf / Rol</th>
-                <th>Şube</th>
-                <th>Koç</th>
-                <th>Telefon</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => {
-                const selected = !excluded.has(rowKey(row));
-                return (
-                  <tr key={row.key} className={selected ? "" : "is-off"}>
-                    <td>
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        onChange={(e) => toggleRow(row, e.target.checked)}
-                        aria-label={`${row.display_name} seç`}
-                      />
-                    </td>
-                    <td>
-                      {row.display_name}
-                      {!row.deliverable && (
-                        <div><span className="tg-badge no">{row.skip_reason || "Uygun değil"}</span></div>
-                      )}
-                    </td>
-                    <td><span className="tg-badge">{personTypeLabel(row.person_type)}</span></td>
-                    <td>{row.class_or_role || "—"}</td>
-                    <td>{row.sube_name || "—"}</td>
-                    <td>{row.coach_name || "—"}</td>
-                    <td>{row.phone || "—"}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+          <div className="tg-table-scroll">
+            <table className="tg-table tg-table--recipients">
+              <thead>
+                <tr>
+                  <th style={{ width: 36 }}>
+                    <input
+                      type="checkbox"
+                      checked={rows.length > 0 && pageSelected.length === rows.length}
+                      onChange={(e) => togglePage(e.target.checked)}
+                      aria-label="Sayfadakilerin tümünü seç"
+                    />
+                  </th>
+                  <th>Ad soyad</th>
+                  <th className="tg-col-secondary">Kişi türü</th>
+                  <th className="tg-col-secondary">Sınıf / Rol</th>
+                  <th className="tg-col-secondary">Şube</th>
+                  <th className="tg-col-secondary">Koç</th>
+                  <th>Telefon</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => {
+                  const selected = !excluded.has(rowKey(row));
+                  return (
+                    <tr key={row.key} className={selected ? "" : "is-off"}>
+                      <td>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          onChange={(e) => toggleRow(row, e.target.checked)}
+                          aria-label={`${row.display_name} seç`}
+                        />
+                      </td>
+                      <td>
+                        {row.display_name}
+                        {!row.deliverable && (
+                          <div><span className="tg-badge no">{row.skip_reason || "Uygun değil"}</span></div>
+                        )}
+                      </td>
+                      <td className="tg-col-secondary"><span className="tg-badge">{personTypeLabel(row.person_type)}</span></td>
+                      <td className="tg-col-secondary">{row.class_or_role || "—"}</td>
+                      <td className="tg-col-secondary">{row.sube_name || "—"}</td>
+                      <td className="tg-col-secondary">{row.coach_name || "—"}</td>
+                      <td>{row.phone || "—"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
 
         {pageCount > 1 && (

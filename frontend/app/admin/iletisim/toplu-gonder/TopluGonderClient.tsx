@@ -1,8 +1,16 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { CommunicationPageShell, WhatsAppPhonePreview } from "@/components/communication";
+import {
+  CommConfirmDialog,
+  CommDialog,
+  CommToast,
+  CommunicationPageShell,
+  WhatsAppPhonePreview,
+  useCommToast,
+  type CommConfirmState,
+} from "@/components/communication";
 import "@/components/communication/communication.css";
 import "../panel/iletisim-panel.css";
 import "./toplu-gonder.css";
@@ -11,6 +19,7 @@ import {
   AudienceFilter,
   AudiencePersonType,
   AudienceQueryPreview,
+  AudienceRecipientRow,
   BulkRecipientHit,
   CAMPAIGN_STATUS_LABELS,
   CampaignAttachmentItem,
@@ -18,15 +27,21 @@ import {
   SavedAudienceItem,
   WhatsAppAccount,
   WhatsAppMetaTemplateItem,
+  accountLabel,
+  campaignStatusBadgeClass,
   cancelCampaign,
   communicationPortalPaths,
   createCampaign,
   createSavedAudience,
   deleteSavedAudience,
+  describeAudienceSummary,
   fetchAccessibleWhatsAppAccounts,
   fetchAudienceCatalog,
+  fetchAudienceRecipients,
   fetchCampaigns,
   fetchSavedAudiences,
+  isCampaignActive,
+  newCampaignClientToken,
   previewAudienceQuery,
 } from "@/lib/communication-api";
 import CampaignDuyuruPicker, {
@@ -54,6 +69,66 @@ const STEPS = [
   { title: "Kontrol & Gönder", hint: "Son kontrol" },
 ];
 
+const HISTORY_PAGE_SIZE = 20;
+const DRAFT_SAVE_DELAY_MS = 500;
+
+/** sessionStorage'a yazılan taslak — ekler (dosya) kasıtlı olarak dışarıda. */
+interface TopluGonderDraft {
+  v: 1;
+  query: AudienceFilter;
+  title: string;
+  templateName: string;
+  templateLanguage: string;
+  variableValues: Record<string, string>;
+  accountId: string;
+  step: number;
+  savedAt: string;
+}
+
+function draftStorageKey(mode: string): string {
+  return `tg-draft:${mode}`;
+}
+
+/** Boş formu taslak sayma — banner ve kayıt yalnız gerçek içerik varsa. */
+function draftHasContent(
+  draft: Pick<TopluGonderDraft, "query" | "title" | "templateName" | "variableValues" | "step">,
+  isCoach: boolean,
+): boolean {
+  const types = draft.query.person_types || [];
+  return (
+    !!draft.title.trim()
+    || !!draft.templateName
+    || Object.values(draft.variableValues).some((v) => (v || "").trim())
+    || hasIncluded(draft.query)
+    || (isCoach ? types.join("|") !== "ogrenci" : types.length > 0)
+    || draft.step > 0
+  );
+}
+
+function readDraft(mode: string): TopluGonderDraft | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(draftStorageKey(mode));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<TopluGonderDraft>;
+    if (!parsed || parsed.v !== 1 || !parsed.query || typeof parsed.query !== "object") return null;
+    return {
+      v: 1,
+      query: parsed.query,
+      title: typeof parsed.title === "string" ? parsed.title : "",
+      templateName: typeof parsed.templateName === "string" ? parsed.templateName : "",
+      templateLanguage: typeof parsed.templateLanguage === "string" ? parsed.templateLanguage : "tr",
+      variableValues:
+        parsed.variableValues && typeof parsed.variableValues === "object" ? parsed.variableValues : {},
+      accountId: typeof parsed.accountId === "string" ? parsed.accountId : "",
+      step: typeof parsed.step === "number" ? Math.min(2, Math.max(0, parsed.step)) : 0,
+      savedAt: typeof parsed.savedAt === "string" ? parsed.savedAt : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
 export interface TopluGonderClientProps {
   mode?: "admin" | "coach" | "muhasebe";
   breadcrumbs?: Array<{ label: string; href?: string }>;
@@ -66,9 +141,8 @@ export default function TopluGonderClient({
   campaignDetailPath,
 }: TopluGonderClientProps) {
   const isCoach = mode === "coach";
-  // Koçta kampanya detay sayfası yok; admin adresine bağlanmak yerine bağlantı gizlenir.
-  const detailPath: ((id: string) => string) | null =
-    campaignDetailPath ?? (isCoach ? null : communicationPortalPaths(mode).campaign);
+  const detailPath: (id: string) => string =
+    campaignDetailPath ?? communicationPortalPaths(mode).campaign;
   const [tab, setTab] = useState<"compose" | "history" | "saved">("compose");
   const [step, setStep] = useState(0);
   const [query, setQuery] = useState<AudienceFilter>(() => emptyAudienceQuery(isCoach ? ["ogrenci"] : []));
@@ -90,10 +164,29 @@ export default function TopluGonderClient({
   const [accountId, setAccountId] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [sentCampaign, setSentCampaign] = useState<CampaignItem | null>(null);
+  const [idempotentReplay, setIdempotentReplay] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Gönderim onayı
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmSample, setConfirmSample] = useState<AudienceRecipientRow[]>([]);
+  // Aynı gönderim için tek anahtar: başarılı yanıta kadar korunur, ağ hatasında
+  // tekrar aynı anahtarla gider; yeni gönderimde sıfırdan üretilir.
+  const clientTokenRef = useRef<string | null>(null);
+
+  // Taslak
+  const draftHydrated = useRef(false);
+  const [draftRestored, setDraftRestored] = useState(false);
+
   const [history, setHistory] = useState<CampaignItem[]>([]);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [historyHasMore, setHistoryHasMore] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoadingMore, setHistoryLoadingMore] = useState(false);
+  const [historyConfirm, setHistoryConfirm] = useState<CommConfirmState | null>(null);
   const [saved, setSaved] = useState<SavedAudienceItem[]>([]);
+  const { toast, show: showToast } = useCommToast();
 
   const personTypes = (query.person_types || []) as AudiencePersonType[];
   const includedPeople = listedIncludes(query);
@@ -101,6 +194,83 @@ export default function TopluGonderClient({
     if (personTypes.length) return personTypes;
     return Array.from(new Set(includedPeople.map((item) => item.kind)));
   }, [personTypes.join("|"), includedPeople.map((item) => item.kind).join("|")]);
+
+  // ── Taslak: sayfa açılınca geri yükle ──
+  useEffect(() => {
+    const draft = readDraft(mode);
+    if (draft && draftHasContent(draft, isCoach)) {
+      setQuery(draft.query);
+      setTitle(draft.title);
+      setTemplateName(draft.templateName);
+      setTemplateLanguage(draft.templateLanguage || "tr");
+      setVariableValues(draft.variableValues);
+      if (draft.accountId) setAccountId(draft.accountId);
+      setStep(draft.step);
+      setDraftRestored(true);
+    }
+    draftHydrated.current = true;
+  }, [mode, isCoach]);
+
+  // ── Taslak: değişiklikte gecikmeli kaydet (boş form → kayıt silinir) ──
+  useEffect(() => {
+    if (!draftHydrated.current || typeof window === "undefined") return;
+    const id = window.setTimeout(() => {
+      const payload: TopluGonderDraft = {
+        v: 1,
+        query,
+        title,
+        templateName,
+        templateLanguage,
+        variableValues,
+        accountId,
+        step,
+        savedAt: new Date().toISOString(),
+      };
+      try {
+        if (draftHasContent(payload, isCoach)) {
+          window.sessionStorage.setItem(draftStorageKey(mode), JSON.stringify(payload));
+        } else {
+          window.sessionStorage.removeItem(draftStorageKey(mode));
+        }
+      } catch {
+        /* kota dolu / gizli mod — taslak kaydı isteğe bağlı */
+      }
+    }, DRAFT_SAVE_DELAY_MS);
+    return () => window.clearTimeout(id);
+  }, [mode, isCoach, query, title, templateName, templateLanguage, variableValues, accountId, step]);
+
+  const clearDraftStorage = useCallback(() => {
+    try {
+      window.sessionStorage.removeItem(draftStorageKey(mode));
+    } catch {
+      /* yok say */
+    }
+  }, [mode]);
+
+  const resetCompose = useCallback(() => {
+    setQuery(emptyAudienceQuery(isCoach ? ["ogrenci"] : []));
+    setTitle("");
+    setTemplateName("");
+    setTemplateLanguage("tr");
+    setSelectedTemplate(null);
+    setVariableValues({});
+    setAttachments([]);
+    setPickedLabels({});
+    setStep(0);
+    setPreview(null);
+    setDraftRestored(false);
+  }, [isCoach]);
+
+  const clearDraft = () => {
+    clearDraftStorage();
+    resetCompose();
+    showToast("Taslak temizlendi.", "info");
+  };
+
+  const hasDraftContent = draftHasContent(
+    { query, title, templateName, variableValues, step },
+    isCoach,
+  );
 
   useEffect(() => {
     fetchAudienceCatalog(personTypes.length ? personTypes : undefined)
@@ -111,8 +281,14 @@ export default function TopluGonderClient({
   useEffect(() => {
     fetchAccessibleWhatsAppAccounts()
       .then((res) => {
-        setAccounts(res.accounts || []);
-        setAccountId(res.default_account_id || res.accounts?.[0]?.id || "");
+        const list = res.accounts || [];
+        setAccounts(list);
+        // Taslaktan gelen hesap hâlâ erişilebilirse koru; yoksa varsayılana dön.
+        setAccountId((prev) =>
+          prev && list.some((acc) => acc.id === prev)
+            ? prev
+            : res.default_account_id || list[0]?.id || "",
+        );
       })
       .catch(() => setAccounts([]));
   }, []);
@@ -137,12 +313,49 @@ export default function TopluGonderClient({
     return () => window.clearTimeout(id);
   }, [loadPreview]);
 
-  const loadHistory = useCallback(async () => {
+  /**
+   * Geçmiş listesi.
+   * - reset: ilk sayfayı baştan yükle
+   * - poll: ilk sayfayı çek, yüklü satırları kimliğe göre güncelle (ek sayfalar korunur)
+   * - more: sıradaki sayfayı ekle
+   */
+  const historyLengthRef = useRef(0);
+  useEffect(() => {
+    historyLengthRef.current = history.length;
+  }, [history.length]);
+
+  const loadHistory = useCallback(async (kind: "reset" | "poll" | "more" = "reset") => {
+    if (kind === "reset") setHistoryLoading(true);
+    if (kind === "more") setHistoryLoadingMore(true);
     try {
-      const res = await fetchCampaigns();
-      setHistory(res.campaigns || []);
+      const loaded = historyLengthRef.current;
+      const offset = kind === "more" ? loaded : 0;
+      const res = await fetchCampaigns({ limit: HISTORY_PAGE_SIZE, offset });
+      setHistoryTotal(res.total);
+      if (kind === "more") {
+        setHistory((prev) => {
+          const seen = new Set(prev.map((item) => item.id));
+          return [...prev, ...res.campaigns.filter((item) => !seen.has(item.id))];
+        });
+        setHistoryHasMore(res.has_more);
+      } else if (kind === "poll" && loaded > res.campaigns.length) {
+        // Ek sayfalar yüklüyse: ilk sayfayı kimliğe göre yerinde güncelle, yenileri başa ekle.
+        setHistory((prev) => {
+          const fresh = new Map(res.campaigns.map((item) => [item.id, item]));
+          const merged = prev.map((item) => fresh.get(item.id) || item);
+          const known = new Set(prev.map((item) => item.id));
+          const added = res.campaigns.filter((item) => !known.has(item.id));
+          return added.length ? [...added, ...merged] : merged;
+        });
+      } else {
+        setHistory(res.campaigns);
+        setHistoryHasMore(res.has_more);
+      }
     } catch {
-      setHistory([]);
+      if (kind === "reset") setHistory([]);
+    } finally {
+      setHistoryLoading(false);
+      setHistoryLoadingMore(false);
     }
   }, []);
 
@@ -156,17 +369,15 @@ export default function TopluGonderClient({
   }, []);
 
   useEffect(() => {
-    if (tab === "history") void loadHistory();
+    if (tab === "history") void loadHistory("reset");
     if (tab === "saved") void loadSaved();
   }, [tab, loadHistory, loadSaved]);
 
-  // Kuyruk arka planda işlenir; devam eden gönderim varken sayaçları tazele.
-  const historyInflight = history.some((item) =>
-    ["CONFIRMED", "QUEUED", "PROCESSING"].includes(item.status),
-  );
+  // Kuyruk arka planda işlenir; devam eden gönderim varken yalnız ilk sayfayı tazele.
+  const historyInflight = history.some((item) => isCampaignActive(item.status));
   useEffect(() => {
     if (tab !== "history" || !historyInflight) return;
-    const id = window.setInterval(() => void loadHistory(), 5000);
+    const id = window.setInterval(() => void loadHistory("poll"), 5000);
     return () => window.clearInterval(id);
   }, [tab, historyInflight, loadHistory]);
 
@@ -193,10 +404,24 @@ export default function TopluGonderClient({
     attachments,
   );
   const canSend = templateReady && (preview?.deliverable_count || 0) > 0;
+  const selectedAccount = accounts.find((acc) => acc.id === accountId) || null;
+
+  const openConfirm = () => {
+    if (!canSend) return;
+    if (!clientTokenRef.current) clientTokenRef.current = newCampaignClientToken();
+    setConfirmError(null);
+    setConfirmSample([]);
+    setConfirmOpen(true);
+    fetchAudienceRecipients(query, { page: 1, pageSize: 3 })
+      .then((res) => setConfirmSample((res.recipients || []).filter((row) => row.deliverable).slice(0, 3)))
+      .catch(() => setConfirmSample([]));
+  };
 
   const startSend = async () => {
-    if (!canSend) return;
+    if (!canSend || submitting) return;
+    if (!clientTokenRef.current) clientTokenRef.current = newCampaignClientToken();
     setSubmitting(true);
+    setConfirmError(null);
     setError(null);
     try {
       const templateContext = Object.fromEntries(
@@ -211,12 +436,23 @@ export default function TopluGonderClient({
         attachment_ids: attachments.map((a) => a.id),
         send_options: { template_context: templateContext },
         channel_config_id: accountId || undefined,
+        client_token: clientTokenRef.current,
       });
+      // Başarılı: anahtar tüketildi, taslak silinir, form sıfırlanır.
+      clientTokenRef.current = null;
+      clearDraftStorage();
+      setIdempotentReplay(!!campaign.idempotent_replay);
       setSentCampaign(campaign);
+      setConfirmOpen(false);
+      resetCompose();
       setTab("history");
-      void loadHistory();
+      showToast(
+        campaign.idempotent_replay ? "Mevcut gönderim gösteriliyor." : "Gönderim kuyruğa alındı.",
+        campaign.idempotent_replay ? "info" : "success",
+      );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Gönderim başlatılamadı");
+      // Anahtar korunur: kullanıcı "Gönder"e tekrar basarsa sunucu çift kayıt açmaz.
+      setConfirmError(err instanceof Error ? err.message : "Gönderim başlatılamadı");
     } finally {
       setSubmitting(false);
     }
@@ -236,6 +472,33 @@ export default function TopluGonderClient({
       setSaveBusy(false);
     }
   };
+
+  const askCancelCampaign = (item: CampaignItem) => {
+    setHistoryConfirm({
+      title: "Gönderimi iptal et",
+      description: `"${item.title || "Genel mesaj"}" için bekleyen mesajlar iptal edilecek. Gönderilmiş mesajlar geri alınmaz.`,
+      confirmLabel: "İptal et",
+      danger: true,
+      onConfirm: async () => {
+        try {
+          await cancelCampaign(item.id);
+          showToast("Gönderim iptal edildi.");
+          void loadHistory("poll");
+        } catch (err) {
+          showToast(err instanceof Error ? err.message : "İptal başarısız", "error");
+        }
+      },
+    });
+  };
+
+  const pendingCount = sentCampaign
+    ? Math.max(
+      0,
+      (sentCampaign.total_recipients || 0)
+        - (sentCampaign.sent_count || 0)
+        - (sentCampaign.failed_count || 0),
+    )
+    : 0;
 
   return (
     <CommunicationPageShell
@@ -266,6 +529,12 @@ export default function TopluGonderClient({
 
         {error && <div className="comm-alert comm-alert-danger">{error}</div>}
 
+        {sentCampaign && idempotentReplay && (
+          <div className="comm-alert comm-alert-info">
+            Bu gönderim zaten kuyruğa alınmış; yeni kampanya açılmadı.
+          </div>
+        )}
+
         {sentCampaign && (
           <div className="tg-card">
             <strong>Gönderim kuyruğa alındı</strong>
@@ -277,14 +546,21 @@ export default function TopluGonderClient({
               <span>Toplam <b>{sentCampaign.total_recipients}</b></span>
               <span>Başarılı <b>{sentCampaign.sent_count}</b></span>
               <span>Başarısız <b>{sentCampaign.failed_count}</b></span>
-              <span>Bekleyen <b>{Math.max(0, (sentCampaign.total_recipients || 0) - (sentCampaign.sent_count || 0) - (sentCampaign.failed_count || 0))}</b></span>
+              <span>Bekleyen <b>{pendingCount}</b></span>
             </div>
-            {detailPath && <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>}
+            <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>
           </div>
         )}
 
         {tab === "compose" && (
           <>
+            {draftRestored && (
+              <div className="tg-info tg-draft-bar">
+                <span>Kaydedilmiş taslak geri yüklendi. Dosya ekleri yeniden eklenmelidir.</span>
+                <button type="button" className="tg-btn-ghost" onClick={clearDraft}>Taslağı temizle</button>
+              </div>
+            )}
+
             <div className="tg-stepper">
               {STEPS.map((item, i) => (
                 <div key={item.title} className="tg-step-wrap" style={{ display: "contents" }}>
@@ -472,7 +748,16 @@ export default function TopluGonderClient({
                 <p className="lead" style={{ marginTop: 16 }}>
                   Şablon: {selectedTemplate?.name || "seçilmedi"}
                   {selectedTemplate?.status_label ? ` · ${selectedTemplate.status_label}` : ""}
+                  {selectedAccount ? ` · Hesap: ${accountLabel(selectedAccount)}` : ""}
                 </p>
+                {selectedAccount?.send_error && (
+                  <p className="lead" style={{ marginTop: -8 }}>
+                    <span className="comm-account-error-badge" title={selectedAccount.send_error.error}>
+                      ⚠ Hesap hatası
+                    </span>{" "}
+                    <span style={{ color: "#b45309" }}>{selectedAccount.send_error.error}</span>
+                  </p>
+                )}
                 <div style={{ marginTop: 12, maxWidth: 360 }}>
                   <WhatsAppPhonePreview
                     text={previewBody || "Mesaj seçilmedi"}
@@ -483,14 +768,21 @@ export default function TopluGonderClient({
             )}
 
             <div className="tg-footer">
-              <button
-                type="button"
-                className="tg-btn"
-                disabled={step === 0}
-                onClick={() => setStep((s) => Math.max(0, s - 1))}
-              >
-                Geri
-              </button>
+              <div className="tg-actions-row" style={{ marginTop: 0 }}>
+                <button
+                  type="button"
+                  className="tg-btn"
+                  disabled={step === 0}
+                  onClick={() => setStep((s) => Math.max(0, s - 1))}
+                >
+                  Geri
+                </button>
+                {hasDraftContent && !draftRestored && (
+                  <button type="button" className="tg-btn-ghost" onClick={clearDraft}>
+                    Taslağı temizle
+                  </button>
+                )}
+              </div>
               {step < 2 ? (
                 <button
                   type="button"
@@ -501,10 +793,10 @@ export default function TopluGonderClient({
                   {step === 0 ? "Mesaj oluştur" : "Kontrole geç"}
                 </button>
               ) : (
-                <div className="tg-actions-row">
+                <div className="tg-actions-row" style={{ marginTop: 0 }}>
                   <button type="button" className="tg-btn" onClick={() => setStep(1)}>Mesajı düzenle</button>
-                  <button type="button" className="tg-btn-primary" disabled={!canSend || submitting} onClick={() => void startSend()}>
-                    {submitting ? "Gönderiliyor…" : "Gönderimi başlat"}
+                  <button type="button" className="tg-btn-primary" disabled={!canSend || submitting} onClick={openConfirm}>
+                    Gönderimi başlat
                   </button>
                 </div>
               )}
@@ -513,10 +805,16 @@ export default function TopluGonderClient({
         )}
 
         {tab === "history" && (
-          <HistoryTab items={history} detailPath={detailPath} onCancel={async (id) => {
-            await cancelCampaign(id);
-            void loadHistory();
-          }} />
+          <HistoryTab
+            items={history}
+            total={historyTotal}
+            hasMore={historyHasMore}
+            loading={historyLoading}
+            loadingMore={historyLoadingMore}
+            detailPath={detailPath}
+            onCancel={askCancelCampaign}
+            onLoadMore={() => void loadHistory("more")}
+          />
         )}
 
         {tab === "saved" && (
@@ -543,19 +841,111 @@ export default function TopluGonderClient({
           onChangeQuery={setQuery}
         />
       )}
+
+      <CommDialog
+        open={confirmOpen}
+        title="Gönderimi onayla"
+        description="Aşağıdaki kitleye WhatsApp şablon mesajı gönderilecek. Bu işlem geri alınamaz."
+        width={480}
+        onClose={() => {
+          if (!submitting) setConfirmOpen(false);
+        }}
+        footer={
+          <>
+            <button type="button" className="comm-btn-secondary" onClick={() => setConfirmOpen(false)} disabled={submitting}>
+              Vazgeç
+            </button>
+            <button type="button" className="comm-btn-primary" onClick={() => void startSend()} disabled={!canSend || submitting}>
+              {submitting ? "Gönderiliyor…" : "Gönder"}
+            </button>
+          </>
+        }
+      >
+        {confirmError && <div className="comm-alert comm-alert-danger">{confirmError}</div>}
+        <div className="comm-confirm-summary">
+          <div>
+            <span className="lbl">Gönderilebilir</span>
+            <strong className="is-ok">{(preview?.deliverable_count ?? 0).toLocaleString("tr-TR")}</strong>
+          </div>
+          <div>
+            <span className="lbl">Eşleşen</span>
+            <strong>{(preview?.matched_count ?? 0).toLocaleString("tr-TR")}</strong>
+          </div>
+          <div>
+            <span className="lbl">Uygun değil</span>
+            <strong className={preview?.unsuitable_count ? "is-warn" : undefined}>
+              {(preview?.unsuitable_count ?? 0).toLocaleString("tr-TR")}
+            </strong>
+          </div>
+        </div>
+        <ul className="comm-confirm-list">
+          <li>
+            <span>Kitle</span>
+            <span>{querySummary(query)}</span>
+          </li>
+          <li>
+            <span>Şablon</span>
+            <span>
+              {selectedTemplate?.name || templateName || "—"}
+              {templateLanguage ? ` · ${templateLanguage}` : ""}
+            </span>
+          </li>
+          <li>
+            <span>Hesap</span>
+            <span>
+              {selectedAccount ? accountLabel(selectedAccount) : "Varsayılan hesap"}
+              {selectedAccount?.send_error && (
+                <>
+                  {" "}
+                  <span className="comm-account-error-badge" title={selectedAccount.send_error.error}>
+                    ⚠ Hesap hatası
+                  </span>
+                </>
+              )}
+            </span>
+          </li>
+          <li>
+            <span>Ek</span>
+            <span>{attachments.length ? `${attachments.length} dosya` : "Yok"}</span>
+          </li>
+          {confirmSample.length > 0 && (
+            <li>
+              <span>İlk alıcılar</span>
+              <span>
+                {confirmSample.map((row) => row.display_name).join(", ")}
+                {(preview?.deliverable_count ?? 0) > confirmSample.length ? " …" : ""}
+              </span>
+            </li>
+          )}
+        </ul>
+      </CommDialog>
+
+      <CommConfirmDialog state={historyConfirm} onClose={() => setHistoryConfirm(null)} />
+      <CommToast toast={toast} />
     </CommunicationPageShell>
   );
 }
 
 function HistoryTab({
   items,
+  total,
+  hasMore,
+  loading,
+  loadingMore,
   detailPath,
   onCancel,
+  onLoadMore,
 }: {
   items: CampaignItem[];
-  detailPath: ((id: string) => string) | null;
-  onCancel: (id: string) => Promise<void>;
+  total: number;
+  hasMore: boolean;
+  loading: boolean;
+  loadingMore: boolean;
+  detailPath: (id: string) => string;
+  onCancel: (item: CampaignItem) => void;
+  onLoadMore: () => void;
 }) {
+  if (loading && !items.length) return <div className="tg-empty">Gönderimler yükleniyor…</div>;
   if (!items.length) return <div className="tg-empty">Henüz gönderim yok.</div>;
   return (
     <div className="tg-history">
@@ -563,26 +953,53 @@ function HistoryTab({
         <span>Tarih</span><span>Kitle</span><span>Mesaj</span><span>Alıcı</span>
         <span>Başarılı</span><span>Başarısız</span><span>Durum</span><span>Gönderen</span>
       </div>
-      {items.map((item) => (
-        <div key={item.id} className="tg-row">
-          <span>{formatDate(item.created_at)}</span>
-          <span>{querySummary(item.recipient_filter_json || {})}</span>
-          <span>{item.title || "Genel mesaj"}</span>
-          <span>{item.total_recipients}</span>
-          <span>{item.sent_count}</span>
-          <span>{item.failed_count}</span>
-          <span>
-            <span className="tg-badge">{CAMPAIGN_STATUS_LABELS[item.status] || item.status}</span>
-            {["QUEUED", "PROCESSING", "DRAFT"].includes(item.status) && (
-              <button type="button" className="tg-btn-ghost" onClick={() => void onCancel(item.id)}>İptal</button>
-            )}
-          </span>
-          <span>
-            {item.created_by_name || "—"}
-            {detailPath && <div><Link href={detailPath(item.id)}>Detay</Link></div>}
-          </span>
+      {items.map((item) => {
+        const materializeError = (item.materialize_error || "").trim();
+        const cancellable =
+          !!item.can_manage && ["QUEUED", "PROCESSING", "DRAFT", "CONFIRMED"].includes(item.status);
+        return (
+          <div key={item.id} className="tg-row">
+            <span data-label="Tarih">{formatDate(item.created_at)}</span>
+            <span data-label="Kitle">{describeAudienceSummary(item.audience_summary)}</span>
+            <span data-label="Mesaj" className="tg-row-primary">
+              {item.title || item.template_name || "Genel mesaj"}
+              {item.template_name && item.title && item.title !== item.template_name && (
+                <small>{item.template_name}</small>
+              )}
+            </span>
+            <span data-label="Alıcı">{item.total_recipients}</span>
+            <span data-label="Başarılı">{item.sent_count}</span>
+            <span data-label="Başarısız">{item.failed_count}</span>
+            <span data-label="Durum" className="tg-row-status">
+              <span className={`comm-status-badge ${campaignStatusBadgeClass(item.status)}`}>
+                {CAMPAIGN_STATUS_LABELS[item.status] || item.status}
+              </span>
+              {item.status === "CONFIRMED" && (
+                <small className="tg-row-progress">
+                  Kuyruğa alınıyor {item.materialized_count ?? 0}/{item.total_recipients}
+                </small>
+              )}
+              {materializeError && (
+                <small className="tg-row-error" title={materializeError}>{materializeError}</small>
+              )}
+              {cancellable && (
+                <button type="button" className="tg-btn-ghost" onClick={() => onCancel(item)}>İptal</button>
+              )}
+            </span>
+            <span data-label="Gönderen">
+              {item.created_by_name || "—"}
+              <div><Link href={detailPath(item.id)}>Detay</Link></div>
+            </span>
+          </div>
+        );
+      })}
+      {hasMore && (
+        <div className="tg-actions-row" style={{ justifyContent: "center", marginTop: 4 }}>
+          <button type="button" className="tg-btn" disabled={loadingMore} onClick={onLoadMore}>
+            {loadingMore ? "Yükleniyor…" : `Daha fazla (${items.length}/${total})`}
+          </button>
         </div>
-      ))}
+      )}
     </div>
   );
 }

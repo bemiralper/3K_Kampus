@@ -99,12 +99,6 @@ export function removeGroup(query: AudienceFilter, groupIndex: number): Audience
   return next;
 }
 
-export function setTreeJoin(query: AudienceFilter, join: "and" | "or"): AudienceFilter {
-  const next = cloneQuery(query);
-  next.tree = { join, groups: next.tree?.groups || [] };
-  return next;
-}
-
 export function applyQuickStart(
   personTypes: AudiencePersonType[],
   addField?: string,

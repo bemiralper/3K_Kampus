@@ -133,7 +133,100 @@
 .qpage-actions .retry { color: #0f766e; border-color: #99f6e4; background: #ecfdf5; }
 .qpage-actions .cancel { color: #9f1239; }
 
+/* Yatay kaydırma sarmalayıcıda (.comm-table-wrap); tablo yalnız gerektiğinde taşar */
+.qpage-table-wrap { border: 0; border-radius: 0; background: transparent; }
+.qpage-table { min-width: 860px; }
+
+/* ── Tablet 768–1200 ── */
+@media (max-width: 1200px) {
+  .qpage-table { min-width: 760px; }
+}
+
 @media (max-width: 900px) {
-  .qpage-table { display: block; overflow-x: auto; }
+  /* Kaynak / Hat gizlenince 768 dikey tablo kaydırmasız sığar */
+  .qpage-table { min-width: 0; }
+  .qpage-col-source,
+  .qpage-col-account { display: none; }
   .qpage-filters input { min-width: 160px; }
+  .qpage-err { max-width: 200px; }
+}
+
+/* ── ≤640px: her satır bir kart ── */
+@media (max-width: 640px) {
+  .qpage-table,
+  .qpage-table thead,
+  .qpage-table tbody,
+  .qpage-table tr,
+  .qpage-table td,
+  .qpage-table th { display: block; }
+
+  .qpage-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  .qpage-table tr {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: #fff;
+  }
+
+  .qpage-table tr:hover td { background: transparent; }
+
+  .qpage-table td {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 5px 0;
+    border-bottom: 0;
+    font-size: 13px;
+    text-align: right;
+    max-width: none !important;
+  }
+
+  .qpage-table td::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #64748b;
+    text-align: left;
+    padding-top: 2px;
+  }
+
+  /* Birincil satır: kişi + durum rozeti yan yana */
+  .qpage-table td.qpage-cell-primary {
+    order: -2;
+    text-align: left;
+    padding-bottom: 0;
+  }
+  .qpage-table td.qpage-cell-primary::before { display: none; }
+
+  .qpage-table td.qpage-cell-status {
+    order: -1;
+    flex-direction: row;
+    align-items: center;
+    justify-content: flex-start;
+    gap: 8px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 4px;
+  }
+  .qpage-table td.qpage-cell-status::before { display: none; }
+  .qpage-table td.qpage-cell-status > div { margin-top: 0 !important; margin-left: auto; }
+
+  .qpage-table td.qpage-cell-body { text-align: left; flex-direction: column; gap: 2px; }
+
+  .qpage-table td.qpage-cell-actions { padding-top: 10px; }
+  .qpage-table td.qpage-cell-actions::before { display: none; }
+  .qpage-table td.qpage-cell-actions .qpage-actions { width: 100%; }
+  .qpage-table td.qpage-cell-actions .qpage-actions button { flex: 1 1 45%; padding: 9px 8px; }
+  .qpage-table td.qpage-cell-actions .qpage-actions .ipanel-link { flex: 1 1 100%; text-align: center; padding: 6px; }
+
+  .qpage-err { max-width: 100%; text-align: right; }
+
+  .qpage-filters input,
+  .qpage-filters select { flex: 1 1 100%; min-width: 0; }
 }

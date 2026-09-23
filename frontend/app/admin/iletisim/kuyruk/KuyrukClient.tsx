@@ -2,10 +2,17 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { CommunicationPageShell } from "@/components/communication";
+import {
+  CommConfirmDialog,
+  CommToast,
+  CommunicationPageShell,
+  useCommToast,
+  type CommConfirmState,
+} from "@/components/communication";
 import "@/components/communication/communication.css";
 import "../panel/iletisim-panel.css";
 import "./kuyruk.css";
+import { useAuth } from "@/lib/contexts/AuthContext";
 import {
   archiveOldQueueFailures,
   cancelQueueItem,
@@ -13,6 +20,7 @@ import {
   fetchAccessibleWhatsAppAccounts,
   fetchOutboundQueue,
   formatMessageStatus,
+  messageStatusBadgeClass,
   OutboundQueueItem,
   OutboundQueueScope,
   retryQueueItem,
@@ -28,19 +36,6 @@ const STATUS_OPTIONS = [
   { value: "SENDING", label: "Gönderiliyor" },
   { value: "FAILED", label: "Başarısız" },
 ];
-
-function statusClass(status: string | null): string {
-  const map: Record<string, string> = {
-    PENDING: "draft",
-    SENDING: "processing",
-    SENT: "confirmed",
-    DELIVERED: "completed",
-    READ: "completed",
-    FAILED: "cancelled",
-    CANCELLED: "cancelled",
-  };
-  return map[status || ""] || "draft";
-}
 
 function formatWhen(iso: string | null): string {
   if (!iso) return "—";
@@ -78,6 +73,14 @@ function nextAttemptLabel(iso: string | null, status: string | null): string {
 
 export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPortal }) {
   const paths = communicationPortalPaths(portal);
+  const { user } = useAuth();
+  // `queue/archive/` yalnız communication.manage (veya sistem yöneticisi) için açık.
+  const permissions = user?.permissions;
+  const canArchive =
+    !!user?.is_superuser
+    || !permissions // izin listesi gelmiyorsa düğmeyi göster, 403'ü mesajla karşıla
+    || permissions.includes("communication.manage")
+    || permissions.includes("sistem.admin");
   const [items, setItems] = useState<OutboundQueueItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -100,6 +103,8 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [archiving, setArchiving] = useState(false);
+  const [confirm, setConfirm] = useState<CommConfirmState | null>(null);
+  const { toast, show: showToast } = useCommToast();
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -179,33 +184,72 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
     }
   };
 
-  const runAction = async (id: string, fn: (id: string) => Promise<unknown>) => {
+  const runAction = async (
+    id: string,
+    fn: (id: string) => Promise<{ success?: boolean; error?: string }>,
+    successText: string,
+  ) => {
     setBusyId(id);
     try {
-      await fn(id);
+      const res = await fn(id);
+      if (res && res.success === false && res.error) throw new Error(res.error);
+      setError(null);
+      showToast(successText);
       await load(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "İşlem başarısız");
+      // 403 → sunucunun `{error}` metni (oluşturan/yönetici değilsiniz vb.)
+      const message = err instanceof Error ? err.message : "İşlem başarısız";
+      setError(message);
+      showToast(message, "error");
     } finally {
       setBusyId(null);
     }
   };
 
+  const askRetry = (item: OutboundQueueItem) => {
+    setConfirm({
+      title: "Mesajı tekrar dene",
+      description: `${item.contact_name || item.contact_phone || "Bu alıcı"} için mesaj yeniden kuyruğa alınacak.`,
+      confirmLabel: "Tekrar dene",
+      onConfirm: () => runAction(item.id, retryQueueItem, "Mesaj yeniden kuyruğa alındı."),
+    });
+  };
+
+  const askCancel = (item: OutboundQueueItem) => {
+    setConfirm({
+      title: "Mesajı iptal et",
+      description: `${item.contact_name || item.contact_phone || "Bu alıcı"} için bekleyen mesaj gönderilmeyecek. Bu işlem geri alınamaz.`,
+      confirmLabel: "İptal et",
+      danger: true,
+      onConfirm: () => runAction(item.id, cancelQueueItem, "Mesaj iptal edildi."),
+    });
+  };
+
   const archiveOld = async () => {
-    if (!window.confirm(`${liveDays} günden eski başarısız kuyruk kayıtları listeden silinsin mi? Mesaj geçmişi durur.`)) {
-      return;
-    }
     setArchiving(true);
     try {
       const res = await archiveOldQueueFailures(liveDays);
       setError(null);
       await load();
-      if (res.deleted === 0) setError("Arşivlenecek eski hata yok.");
+      if (res.deleted === 0) showToast("Arşivlenecek eski hata yok.", "info");
+      else showToast(`${res.deleted} eski hata kaydı temizlendi.`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Arşivlenemedi");
+      const message = err instanceof Error ? err.message : "Arşivlenemedi";
+      setError(message);
+      showToast(message, "error");
     } finally {
       setArchiving(false);
     }
+  };
+
+  const askArchiveOld = () => {
+    setConfirm({
+      title: "Eski hataları temizle",
+      description: `${liveDays} günden eski başarısız kuyruk kayıtları listeden silinecek. Mesaj geçmişi sohbette kalır.`,
+      confirmLabel: `Temizle (${statusCounts.failed_archive})`,
+      danger: true,
+      onConfirm: () => archiveOld(),
+    });
   };
 
   return (
@@ -273,10 +317,12 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
         {scope === "archive" && (
           <div className="comm-alert">
             {liveDays} günden eski başarısız kayıtlar operasyonu şişirmesin diye burada durur.
-            Mesaj geçmişi sohbette kalır; isterseniz kuyruk satırlarını temizleyebilirsiniz.
-            <button type="button" className="comm-btn-secondary" style={{ marginLeft: 12 }} onClick={() => void archiveOld()} disabled={archiving || !statusCounts.failed_archive}>
-              {archiving ? "Temizleniyor…" : `Eski hataları temizle (${statusCounts.failed_archive})`}
-            </button>
+            Mesaj geçmişi sohbette kalır{canArchive ? "; isterseniz kuyruk satırlarını temizleyebilirsiniz." : "."}
+            {canArchive && (
+              <button type="button" className="comm-btn-secondary" style={{ marginLeft: 12 }} onClick={askArchiveOld} disabled={archiving || !statusCounts.failed_archive}>
+                {archiving ? "Temizleniyor…" : `Eski hataları temizle (${statusCounts.failed_archive})`}
+              </button>
+            )}
           </div>
         )}
 
@@ -331,14 +377,14 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
           </div>
         ) : (
           <div className="ipanel-card" style={{ minHeight: 0, padding: 8 }}>
-            <div className="comm-table-wrap">
+            <div className="comm-table-wrap qpage-table-wrap">
               <table className="qpage-table">
                 <thead>
                   <tr>
                     <th>Durum</th>
                     <th>Kişi</th>
-                    <th>Kaynak</th>
-                    <th>Hat</th>
+                    <th className="qpage-col-source">Kaynak</th>
+                    <th className="qpage-col-account">Hat</th>
                     <th>Mesaj</th>
                     <th>Deneme</th>
                     <th>Hata / sıradaki</th>
@@ -348,19 +394,19 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
                 <tbody>
                   {items.map((item) => (
                     <tr key={item.id}>
-                      <td>
-                        <span className={`comm-status-badge ${statusClass(item.status)}`}>
+                      <td data-label="Durum" className="qpage-cell-status">
+                        <span className={`comm-status-badge ${messageStatusBadgeClass(item.status)}`}>
                           {formatMessageStatus(item.status)}
                         </span>
                         <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 4 }}>{formatWhen(item.created_at)}</div>
                       </td>
-                      <td>
+                      <td data-label="Kişi" className="qpage-cell-primary">
                         <div className="qpage-who">
                           <strong>{item.contact_name || item.contact_phone || "—"}</strong>
                           <span>{item.contact_name ? item.contact_phone : ""}</span>
                         </div>
                       </td>
-                      <td>
+                      <td data-label="Kaynak" className="qpage-col-source">
                         <div>{item.source_label || "Manuel"}</div>
                         {item.campaign_id && (
                           <Link href={paths.campaign(item.campaign_id)} className="ipanel-link">
@@ -368,25 +414,25 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
                           </Link>
                         )}
                       </td>
-                      <td>{item.channel_config_name || "—"}</td>
-                      <td style={{ maxWidth: 240 }}>{item.body_preview || "—"}</td>
-                      <td>{item.attempt_count}/{item.max_attempts || 5}</td>
-                      <td>
+                      <td data-label="Hat" className="qpage-col-account">{item.channel_config_name || "—"}</td>
+                      <td data-label="Mesaj" className="qpage-cell-body" style={{ maxWidth: 240 }}>{item.body_preview || "—"}</td>
+                      <td data-label="Deneme">{item.attempt_count}/{item.max_attempts || 5}</td>
+                      <td data-label="Hata / sıradaki">
                         {item.last_error ? (
                           <div className="qpage-err">{item.last_error}</div>
                         ) : (
                           <span style={{ color: "#64748b" }}>{nextAttemptLabel(item.next_attempt_at, item.status)}</span>
                         )}
                       </td>
-                      <td>
+                      <td data-label="" className="qpage-cell-actions">
                         <div className="qpage-actions">
                           {item.can_retry && (
-                            <button type="button" className="retry" disabled={busyId === item.id} onClick={() => void runAction(item.id, retryQueueItem)}>
+                            <button type="button" className="retry" disabled={busyId === item.id} onClick={() => askRetry(item)}>
                               {busyId === item.id ? "…" : "Tekrar dene"}
                             </button>
                           )}
                           {item.can_cancel && (
-                            <button type="button" className="cancel" disabled={busyId === item.id} onClick={() => void runAction(item.id, cancelQueueItem)}>
+                            <button type="button" className="cancel" disabled={busyId === item.id} onClick={() => askCancel(item)}>
                               İptal
                             </button>
                           )}
@@ -419,6 +465,9 @@ export default function KuyrukClient({ portal = "admin" }: { portal?: InboxPorta
           </div>
         )}
       </div>
+
+      <CommConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+      <CommToast toast={toast} />
     </CommunicationPageShell>
   );
 }

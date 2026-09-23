@@ -251,14 +251,14 @@ export interface ConversationListItem {
 /** Sohbet listesi kişi grubu — filtre sekmeleriyle birebir eşleşir. */
 export type ChatContactKind = 'ogrenci' | 'veli' | 'koc' | 'ogretmen' | 'diger';
 
-const MESSAGE_STATUS_LABELS: Record<string, string> = {
+export const MESSAGE_STATUS_LABELS: Record<string, string> = {
   PENDING: "bekliyor",
   SENDING: "gönderiliyor",
-  SENT: "iletildi",
+  SENT: "gönderildi",
   DELIVERED: "iletildi",
   READ: "okundu",
   FAILED: "başarısız",
-  CANCELLED: "iptal",
+  CANCELLED: "İptal",
 };
 
 /** Giden mesaj durumunu Türkçe etikete çevir. */
@@ -775,8 +775,15 @@ export interface WhatsAppAccount {
   configured?: boolean;
   has_token?: boolean;
   kurum_id?: number;
+  /** Son gönderim hatası (Meta/HTTP); `null` ise hesap sorunsuz. */
+  send_error?: WhatsAppAccountSendError | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface WhatsAppAccountSendError {
+  error: string;
+  at: string;
 }
 
 export interface WhatsAppAccountWritePayload {
@@ -1650,7 +1657,7 @@ export function communicationPortalPaths(portal: InboxPortal): CommunicationPort
     };
   }
   if (portal === 'coach') {
-    // Koçta şablon/meta şablon yönetimi ve kampanya detayı sayfası yok.
+    // Koçta şablon/meta şablon yönetimi yok; kampanya detayı toplu gönder altında.
     return {
       home: '/coach/dashboard',
       chats: '/coach/sohbetler',
@@ -1659,7 +1666,7 @@ export function communicationPortalPaths(portal: InboxPortal): CommunicationPort
       notificationTemplates: '/coach/iletisim/bildirim-sablonlari',
       bulk: '/coach/toplu-gonder',
       history: '/coach/toplu-gonder',
-      campaign: () => '/coach/toplu-gonder',
+      campaign: (id: string) => `/coach/toplu-gonder/${id}`,
       queue: null,
     };
   }
@@ -1769,7 +1776,6 @@ export interface AudienceFilter {
   durum?: string;
   mali_durum?: MaliDurumFilter | '';
   has_phone?: boolean | null;
-  whatsapp_default_only?: boolean;
   contact_kinds?: ContactKind[];
   included_ogrenci_ids?: number[];
   excluded_ogrenci_ids?: number[];
@@ -1937,16 +1943,6 @@ export async function createSavedAudience(data: {
   });
 }
 
-export async function updateSavedAudience(
-  id: string,
-  data: { name?: string; query?: AudienceFilter; description?: string },
-): Promise<SavedAudienceItem> {
-  return request(`/campaigns/saved-audiences/${id}/`, {
-    method: 'PATCH',
-    body: JSON.stringify(data),
-  });
-}
-
 export async function deleteSavedAudience(id: string): Promise<void> {
   await request(`/campaigns/saved-audiences/${id}/`, { method: 'DELETE' });
 }
@@ -2100,12 +2096,52 @@ export interface CampaignQueueStatus {
   last_error: string;
 }
 
+/** Liste satırlarında `recipient_filter_json` yerine gelen kısa kitle özeti. */
+export interface CampaignAudienceSummary {
+  audience_type?: string;
+  person_types?: AudiencePersonType[] | string[];
+  included_count?: number;
+  excluded_count?: number;
+  has_filters?: boolean;
+  sube_id?: number | null;
+}
+
+export type CampaignStatus =
+  | 'DRAFT'
+  | 'CONFIRMED'
+  | 'QUEUED'
+  | 'PROCESSING'
+  | 'COMPLETED'
+  | 'PARTIAL'
+  | 'CANCELLED'
+  | 'FAILED';
+
+export const CAMPAIGN_STATUSES: CampaignStatus[] = [
+  'DRAFT',
+  'CONFIRMED',
+  'QUEUED',
+  'PROCESSING',
+  'COMPLETED',
+  'PARTIAL',
+  'CANCELLED',
+  'FAILED',
+];
+
+/** Kuyruğa alma / gönderme hâlâ sürüyor mu? (yoklama bu durumlarda yapılır) */
+export const CAMPAIGN_ACTIVE_STATUSES: string[] = ['CONFIRMED', 'QUEUED', 'PROCESSING'];
+
+export function isCampaignActive(status: string | null | undefined): boolean {
+  return !!status && CAMPAIGN_ACTIVE_STATUSES.includes(status);
+}
+
 export interface CampaignItem {
   id: string;
   title: string;
   channel: string;
   status: string;
   total_recipients: number;
+  /** Kuyruğa yazılmış alıcı sayısı (CONFIRMED sırasında ilerleme). */
+  materialized_count?: number;
   sent_count: number;
   delivered_count: number;
   read_count: number;
@@ -2120,12 +2156,23 @@ export interface CampaignItem {
   created_at: string;
   updated_at: string;
   body_template?: string;
+  /** Yalnız detayda döner; liste satırlarında `audience_summary` kullanılır. */
   recipient_filter_json?: AudienceFilter;
+  audience_summary?: CampaignAudienceSummary;
   preview_stats_json?: CampaignPreviewStats;
   retried_count?: number;
   analytics?: CampaignAnalytics;
   scheduled_at?: string | null;
   estimated_cost_usd?: string;
+  /** Kuyruğa alma başarısız olduysa (status FAILED) hata metni. */
+  materialize_error?: string | null;
+  cancel_requested_at?: string | null;
+  deliveries_archived_at?: string | null;
+  /** Detayda: teslimat satırları arşivden mi geliyor? */
+  deliveries_archived?: boolean;
+  /** Kullanıcı oluşturan ya da yönetici → iptal/yeniden dene/kuyruk işle yapabilir. */
+  can_manage?: boolean;
+  /** Detayda yalnız ilk sayfa (varsayılan 50); devamı `fetchCampaignDeliveries`. */
   deliveries?: CampaignDelivery[];
   deliveries_total?: number;
   deliveries_limit?: number;
@@ -2153,25 +2200,137 @@ export async function createCampaign(data: {
   template_category?: string;
   draft_only?: boolean;
   channel_config_id?: string;
-}): Promise<CampaignItem> {
+  /**
+   * İstemci üretimi tekillik anahtarı (≤64). Aynı anahtarla tekrar istek
+   * gelirse sunucu yeni kampanya açmaz, mevcut kaydı `idempotent_replay: true`
+   * ile döner (ağ hatası sonrası tekrar denemede çift gönderim olmasın).
+   */
+  client_token?: string;
+}): Promise<CampaignCreateResult> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  return request<CampaignItem>('/campaigns/', {
+  return request<CampaignCreateResult>('/campaigns/', {
     method: 'POST',
     body: JSON.stringify({ ...data, kurum_id: kurumId }),
     timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
   });
 }
 
-export async function fetchCampaigns(): Promise<{ campaigns: CampaignItem[]; total: number }> {
+export interface CampaignCreateResult extends CampaignItem {
+  idempotent_replay?: boolean;
+}
+
+/** `crypto.randomUUID` yoksa (eski WebView) rastgele 32 hex üret. */
+export function newCampaignClientToken(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  const bytes = new Uint8Array(16);
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) crypto.getRandomValues(bytes);
+  else for (let i = 0; i < 16; i += 1) bytes[i] = Math.floor(Math.random() * 256);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+export interface CampaignListParams {
+  /** ≤100; verilmezse sunucu 100 döner. */
+  limit?: number;
+  offset?: number;
+  /** Tek durum ya da liste — virgülle birleştirilir. */
+  status?: string | string[];
+  /** YYYY-MM-DD */
+  date_from?: string;
+  date_to?: string;
+  channel_config_id?: string;
+  created_by?: number | string;
+  /** Başlıkta arama */
+  q?: string;
+}
+
+export interface CampaignListResponse {
+  campaigns: CampaignItem[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
+export async function fetchCampaigns(params?: CampaignListParams): Promise<CampaignListResponse> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  const qs = kurumId ? `?kurum_id=${kurumId}` : '';
-  return request(`/campaigns/${qs}`);
+  const search = new URLSearchParams();
+  if (kurumId) search.set('kurum_id', kurumId);
+  if (params?.limit != null) search.set('limit', String(Math.min(100, Math.max(1, params.limit))));
+  if (params?.offset) search.set('offset', String(params.offset));
+  const status = Array.isArray(params?.status) ? params?.status.join(',') : params?.status;
+  if (status) search.set('status', status);
+  if (params?.date_from) search.set('date_from', params.date_from);
+  if (params?.date_to) search.set('date_to', params.date_to);
+  if (params?.channel_config_id) search.set('channel_config_id', params.channel_config_id);
+  if (params?.created_by != null && params.created_by !== '') {
+    search.set('created_by', String(params.created_by));
+  }
+  if (params?.q?.trim()) search.set('q', params.q.trim());
+  const qs = search.toString();
+  const res = await request<Partial<CampaignListResponse>>(`/campaigns/${qs ? `?${qs}` : ''}`);
+  const campaigns = res.campaigns || [];
+  return {
+    campaigns,
+    total: res.total ?? campaigns.length,
+    limit: res.limit ?? params?.limit ?? campaigns.length,
+    offset: res.offset ?? params?.offset ?? 0,
+    has_more: res.has_more ?? false,
+  };
 }
 
 export async function fetchCampaign(campaignId: string): Promise<CampaignItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const qs = kurumId ? `?kurum_id=${kurumId}` : '';
   return request(`/campaigns/${campaignId}/${qs}`);
+}
+
+export interface CampaignDeliveriesParams {
+  limit?: number;
+  offset?: number;
+  /** PENDING, SENT, DELIVERED, READ, FAILED, CANCELLED (virgüllü liste olabilir) */
+  status?: string | string[];
+  /** Ad / telefon araması */
+  q?: string;
+}
+
+export interface CampaignDeliveriesResponse {
+  deliveries: CampaignDelivery[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+  /** Satırlar arşiv tablosundan geliyor (kampanya eski). */
+  archived: boolean;
+}
+
+/** Kampanya teslimat satırları — sayfalı, durum ve arama filtreli. */
+export async function fetchCampaignDeliveries(
+  campaignId: string,
+  params?: CampaignDeliveriesParams,
+): Promise<CampaignDeliveriesResponse> {
+  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
+  const search = new URLSearchParams();
+  if (kurumId) search.set('kurum_id', kurumId);
+  if (params?.limit != null) search.set('limit', String(params.limit));
+  if (params?.offset) search.set('offset', String(params.offset));
+  const status = Array.isArray(params?.status) ? params?.status.join(',') : params?.status;
+  if (status) search.set('status', status);
+  if (params?.q?.trim()) search.set('q', params.q.trim());
+  const qs = search.toString();
+  const res = await request<Partial<CampaignDeliveriesResponse>>(
+    `/campaigns/${campaignId}/deliveries/${qs ? `?${qs}` : ''}`,
+  );
+  const deliveries = res.deliveries || [];
+  return {
+    deliveries,
+    total: res.total ?? deliveries.length,
+    limit: res.limit ?? params?.limit ?? deliveries.length,
+    offset: res.offset ?? params?.offset ?? 0,
+    has_more: res.has_more ?? false,
+    archived: !!res.archived,
+  };
 }
 
 export async function retryFailedCampaign(campaignId: string): Promise<CampaignItem> {
@@ -2200,16 +2359,6 @@ export async function cancelCampaign(campaignId: string): Promise<CampaignItem> 
   });
 }
 
-export async function resolveRecipients(
-  audienceFilter: AudienceFilter,
-): Promise<CampaignPreviewStats> {
-  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  return request<CampaignPreviewStats>('/recipients/resolve/', {
-    method: 'POST',
-    body: JSON.stringify({ kurum_id: kurumId, recipient_filter: audienceFilter }),
-  });
-}
-
 export const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
   DRAFT: 'Taslak',
   CONFIRMED: 'Kuyruğa alınıyor',
@@ -2218,7 +2367,52 @@ export const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
   COMPLETED: 'Tamamlandı',
   PARTIAL: 'Kısmi',
   CANCELLED: 'İptal',
+  FAILED: 'Başarısız',
 };
+
+/** `comm-status-badge` renk sınıfı — kampanya durumları için ortak eşleme. */
+export function campaignStatusBadgeClass(status: string | null | undefined): string {
+  const map: Record<string, string> = {
+    DRAFT: 'draft',
+    CONFIRMED: 'confirmed',
+    QUEUED: 'queued',
+    PROCESSING: 'processing',
+    COMPLETED: 'completed',
+    PARTIAL: 'partial',
+    CANCELLED: 'cancelled',
+    FAILED: 'failed',
+  };
+  return map[status || ''] || 'draft';
+}
+
+/** `comm-status-badge` renk sınıfı — teslimat / kuyruk mesaj durumları. */
+export function messageStatusBadgeClass(status: string | null | undefined): string {
+  if (status === 'READ' || status === 'DELIVERED') return 'completed';
+  if (status === 'SENT') return 'confirmed';
+  if (status === 'FAILED') return 'failed';
+  if (status === 'CANCELLED') return 'cancelled';
+  if (status === 'SENDING') return 'processing';
+  return 'draft';
+}
+
+/** Liste satırındaki `audience_summary` için kısa Türkçe açıklama. */
+export function describeAudienceSummary(summary?: CampaignAudienceSummary | null): string {
+  if (!summary) return 'Kitle';
+  const types = (summary.person_types || []).map((t) => {
+    if (t === 'ogrenci') return 'öğrenciler';
+    if (t === 'veli') return 'veliler';
+    if (t === 'personel') return 'personeller';
+    return String(t);
+  });
+  const included = summary.included_count || 0;
+  const excluded = summary.excluded_count || 0;
+  if (!types.length && included) return `${included} seçilen kişi`;
+  const who = types.join(' + ') || 'kişiler';
+  let text = summary.has_filters ? `Seçilen ${who}` : `Tüm ${who}`;
+  if (included) text += ` + ${included} kişi`;
+  if (excluded) text += ` (${excluded} hariç)`;
+  return text;
+}
 
 export const CONTACT_KIND_LABELS: Record<ContactKind, string> = {
   ogrenci: 'Öğrenci',

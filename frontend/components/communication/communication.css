@@ -6236,3 +6236,333 @@
     transform: none;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════════════
+   Faz 7–8 — kampanya/kuyruk UX: diyalog, toast, rozetler, filtre çubuğu,
+   ≤640px kart görünümü. Sayfalar yeniden tasarlanmaz; yalnız eklemeler.
+   ═══════════════════════════════════════════════════════════════════ */
+
+/* ── Onay / bilgi penceresi (ChatDialog deseni, comm-* renkleri) ── */
+.comm-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(16, 32, 52, 0.44);
+}
+
+.comm-dialog {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 440px;
+  max-height: min(84vh, 720px);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 60px rgba(11, 26, 44, 0.28);
+  color: #16283f;
+  font-size: 14px;
+}
+
+.comm-dialog-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 12px 12px 20px;
+  border-bottom: 1px solid #eef2f6;
+}
+
+.comm-dialog-head h3 {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 700;
+}
+
+.comm-dialog-head p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #64778d;
+}
+
+.comm-dialog-close {
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #64778d;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.comm-dialog-close:hover { background: #f1f5f9; color: #16283f; }
+
+.comm-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px;
+}
+
+.comm-dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid #eef2f6;
+}
+
+.comm-dialog-foot .comm-btn-primary { background: #0061a6; }
+.comm-dialog-foot .comm-btn-primary:hover:not(:disabled) { background: #004f88; }
+
+/* Gönderim onayı — özet satırları */
+.comm-confirm-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin: 0 0 12px;
+}
+
+.comm-confirm-summary > div {
+  border: 1px solid #e9edef;
+  border-radius: 10px;
+  padding: 10px 12px;
+  background: #f8fafc;
+}
+
+.comm-confirm-summary .lbl {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #667781;
+  margin-bottom: 2px;
+}
+
+.comm-confirm-summary strong {
+  font-size: 18px;
+  letter-spacing: -0.02em;
+  color: #111b21;
+}
+
+.comm-confirm-summary strong.is-ok { color: #0f766e; }
+.comm-confirm-summary strong.is-warn { color: #b45309; }
+
+.comm-confirm-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+  color: #334155;
+}
+
+.comm-confirm-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px dashed #e9edef;
+}
+
+.comm-confirm-list li:last-child { border-bottom: 0; }
+.comm-confirm-list li span:first-child { color: #667781; flex: none; }
+.comm-confirm-list li span:last-child { text-align: right; min-width: 0; overflow-wrap: anywhere; }
+
+/* ── Toast tonları (.comm-toast temel tanımı yukarıda) ── */
+.comm-toast--success { background: #0f766e; }
+.comm-toast--error { background: #b91c1c; }
+.comm-toast--info { background: #0061a6; }
+
+/* ── Yeni kampanya durumu: FAILED ── */
+.comm-status-badge.failed { background: #fee2e2; color: #991b1b; }
+
+/* Hesap gönderim hatası rozeti (hesap seçici + WhatsApp Hesapları) */
+.comm-account-error-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  color: #b45309;
+  background: #fef3c7;
+  border: 1px solid #fde68a;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: help;
+  white-space: nowrap;
+}
+
+/* Kuyruğa alma hatası — liste satırında kısa ipucu */
+.comm-materialize-hint {
+  display: block;
+  max-width: 16rem;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #b91c1c;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.comm-materialize-progress {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: #1d4ed8;
+  white-space: nowrap;
+}
+
+/* ── Geçmiş filtre çubuğu ── */
+.comm-history-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.85rem;
+}
+
+.comm-history-filters input,
+.comm-history-filters select {
+  height: 38px;
+  border: 1px solid var(--comm-border);
+  border-radius: 10px;
+  padding: 0 10px;
+  font-size: 13px;
+  background: #fff;
+  min-width: 140px;
+}
+
+.comm-history-filters input[type="search"] { min-width: 220px; flex: 1 1 220px; }
+.comm-history-filters input[type="date"] { min-width: 140px; }
+
+.comm-history-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 0.85rem;
+}
+
+.comm-history-filters .comm-btn-secondary { padding: 0.45rem 0.85rem; font-size: 0.8125rem; }
+
+.comm-pagination .comm-btn-secondary { padding: 0.4rem 0.85rem; font-size: 0.8125rem; }
+
+/* Teslimat filtre çipleri + arama (kampanya detayı) */
+.comm-delivery-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 0.75rem;
+}
+
+.comm-delivery-filters input[type="search"] {
+  height: 36px;
+  border: 1px solid var(--comm-border);
+  border-radius: 10px;
+  padding: 0 10px;
+  font-size: 13px;
+  min-width: 200px;
+  flex: 1 1 200px;
+}
+
+/* ── Tablet 768–1200: geçmiş tablosu yatay kaydırmasız sığsın ── */
+@media (max-width: 1200px) {
+  .comm-history-table { min-width: 640px; }
+}
+
+@media (max-width: 900px) {
+  .comm-history-table { min-width: 0; }
+  .comm-history-table .comm-col-account,
+  .comm-history-table .comm-col-reply { display: none; }
+}
+
+/* ── ≤640px: geçmiş ve teslimat tabloları kart görünümüne geçer ──
+   Hücre başlıkları `data-label` ile satır içine alınır; `thead` gizlenir. */
+@media (max-width: 640px) {
+  .comm-table-cards,
+  .comm-table-cards thead,
+  .comm-table-cards tbody,
+  .comm-table-cards tr,
+  .comm-table-cards td,
+  .comm-table-cards th {
+    display: block;
+  }
+
+  .comm-table-cards { min-width: 0 !important; }
+  .comm-table-cards thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+  .comm-table-cards tr {
+    border: 1px solid var(--comm-border);
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  .comm-table-cards tr:hover td { background: transparent; }
+
+  .comm-table-cards td {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 5px 0 !important;
+    border-bottom: 0 !important;
+    font-size: 0.8125rem;
+    text-align: right;
+  }
+
+  .comm-table-cards td::before {
+    content: attr(data-label);
+    flex: none;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--comm-text-muted);
+    text-align: left;
+    padding-top: 2px;
+  }
+
+  .comm-table-cards td[data-label=""]::before,
+  .comm-table-cards td.comm-cell-primary::before { display: none; }
+
+  .comm-table-cards td.comm-cell-primary {
+    justify-content: space-between;
+    align-items: center;
+    text-align: left;
+    font-size: 0.9375rem;
+    padding-bottom: 8px !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    margin-bottom: 4px;
+  }
+
+  .comm-table-cards td.comm-cell-hide-mobile { display: none; }
+
+  .comm-table-cards td.comm-cell-actions {
+    justify-content: stretch;
+    padding-top: 10px !important;
+  }
+
+  .comm-table-cards td.comm-cell-actions > * { flex: 1; justify-content: center; }
+  .comm-table-cards td.comm-cell-actions .comm-btn-secondary,
+  .comm-table-cards td.comm-cell-actions .comm-btn-primary { width: 100%; }
+
+  .comm-table-wrap.comm-table-wrap--cards { border: 0; background: transparent; overflow: visible; }
+
+  .comm-delivery-note { max-width: 100%; white-space: normal; }
+  .comm-materialize-hint { max-width: 100%; white-space: normal; }
+
+  .comm-history-filters input,
+  .comm-history-filters select { flex: 1 1 100%; min-width: 0; }
+}

@@ -242,6 +242,14 @@ export default function WhatsAppHesaplariClient() {
                   <h3 className="comm-account-card-title">
                     {account.name || account.display_phone || "WhatsApp Hesabı"}
                     {account.is_default && <span className="comm-account-default-badge">Varsayılan</span>}
+                    {account.send_error && (
+                      <span
+                        className="comm-account-error-badge"
+                        title={`${account.send_error.error}${account.send_error.at ? ` · ${new Date(account.send_error.at).toLocaleString("tr-TR")}` : ""}`}
+                      >
+                        ⚠ Hesap hatası
+                      </span>
+                    )}
                   </h3>
                   <p className="comm-account-card-phone">{account.display_phone || "—"}</p>
                 </div>

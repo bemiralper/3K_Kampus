@@ -162,9 +162,23 @@ export default function CampaignDuyuruPicker({
           <select className="tg-select" value={accountId} onChange={(e) => onAccountChange(e.target.value)}>
             {accounts.length === 0 && <option value="">Hesap yok</option>}
             {accounts.map((acc) => (
-              <option key={acc.id} value={acc.id}>{accountLabel(acc)}</option>
+              <option key={acc.id} value={acc.id}>
+                {accountLabel(acc)}{acc.send_error ? " ⚠ Hesap hatası" : ""}
+              </option>
             ))}
           </select>
+          {(() => {
+            const current = accounts.find((acc) => acc.id === accountId);
+            if (!current?.send_error) return null;
+            return (
+              <small className="tg-account-error">
+                <span className="comm-account-error-badge" title={current.send_error.error}>
+                  ⚠ Hesap hatası
+                </span>{" "}
+                {current.send_error.error}
+              </small>
+            );
+          })()}
         </label>
 
         {neededAudience && neededAudience !== "genel" && (

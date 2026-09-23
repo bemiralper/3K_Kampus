@@ -1,23 +1,45 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import {
+  CommConfirmDialog,
+  CommToast,
   CommunicationPageShell,
   WhatsAppPreviewBubble,
+  useCommToast,
+  type CommConfirmState,
 } from "@/components/communication";
 import "@/components/communication/communication.css";
 import {
   CAMPAIGN_STATUS_LABELS,
+  CampaignDelivery,
   CampaignItem,
+  campaignStatusBadgeClass,
   cancelCampaign,
   communicationPortalPaths,
   fetchCampaign,
+  fetchCampaignDeliveries,
   formatMessageStatus,
+  isCampaignActive,
+  messageStatusBadgeClass,
   processCampaignQueue,
   retryFailedCampaign,
   type InboxPortal,
 } from "@/lib/communication-api";
+
+const DELIVERY_PAGE_SIZE = 50;
+const ACTIVE_POLL_MS = 4000;
+
+/** Teslimat durum çipleri — değer sunucuya virgüllü liste olarak gider. */
+const DELIVERY_STATUS_CHIPS: Array<{ key: string; label: string; statuses: string[] }> = [
+  { key: "PENDING", label: "Bekliyor", statuses: ["PENDING", "SENDING"] },
+  { key: "SENT", label: "Gönderildi", statuses: ["SENT"] },
+  { key: "DELIVERED", label: "İletildi", statuses: ["DELIVERED"] },
+  { key: "READ", label: "Okundu", statuses: ["READ"] },
+  { key: "FAILED", label: "Başarısız", statuses: ["FAILED"] },
+  { key: "CANCELLED", label: "İptal", statuses: ["CANCELLED"] },
+];
 
 function StatBar({
   label,
@@ -60,27 +82,6 @@ function StatBar({
   );
 }
 
-function statusBadgeClass(status: string): string {
-  const map: Record<string, string> = {
-    DRAFT: "draft",
-    CONFIRMED: "confirmed",
-    QUEUED: "queued",
-    PROCESSING: "processing",
-    COMPLETED: "completed",
-    PARTIAL: "partial",
-    CANCELLED: "cancelled",
-  };
-  return map[status] || "draft";
-}
-
-function deliveryStatusClass(status: string): string {
-  if (status === "READ" || status === "DELIVERED") return "completed";
-  if (status === "SENT") return "confirmed";
-  if (status === "FAILED" || status === "CANCELLED") return "cancelled";
-  if (status === "SENDING" || status === "PENDING") return "processing";
-  return "draft";
-}
-
 function contactTypeLabel(type: string): string {
   if (type === "VELI") return "Veli";
   if (type === "OGRENCI") return "Öğrenci";
@@ -111,20 +112,34 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
   const params = useParams();
   const campaignId = params.id as string;
   const paths = communicationPortalPaths(portal);
-  const historyCrumb = {
-    label: "Gönderim Geçmişi",
-    href: paths.history,
-  };
+  const rootCrumb = { label: portal === "muhasebe" ? "WhatsApp" : "İletişim", href: paths.home };
+  const historyCrumb = { label: "Gönderim Geçmişi", href: paths.history };
+
   const [campaign, setCampaign] = useState<CampaignItem | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [confirm, setConfirm] = useState<CommConfirmState | null>(null);
+  const { toast, show: showToast } = useCommToast();
+
+  // Teslimat listesi — sayfalı uç nokta
+  const [deliveries, setDeliveries] = useState<CampaignDelivery[]>([]);
+  const [deliveriesTotal, setDeliveriesTotal] = useState(0);
+  const [deliveriesOffset, setDeliveriesOffset] = useState(0);
+  const [deliveriesHasMore, setDeliveriesHasMore] = useState(false);
+  const [deliveriesArchived, setDeliveriesArchived] = useState(false);
+  const [deliveriesLoading, setDeliveriesLoading] = useState(false);
+  const [deliveryStatus, setDeliveryStatus] = useState<string>("");
+  const [deliverySearch, setDeliverySearch] = useState("");
+  const [debouncedDeliverySearch, setDebouncedDeliverySearch] = useState("");
+  const [deliveriesTick, setDeliveriesTick] = useState(0);
 
   const load = useCallback(async () => {
     try {
       setError(null);
       const data = await fetchCampaign(campaignId);
       setCampaign(data);
+      if (data.deliveries_archived != null) setDeliveriesArchived(!!data.deliveries_archived);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gönderim yüklenemedi");
     } finally {
@@ -133,49 +148,125 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
   }, [campaignId]);
 
   useEffect(() => {
-    load();
-    const inflight =
-      campaign?.status === "CONFIRMED"
-      || campaign?.status === "PROCESSING"
-      || campaign?.status === "QUEUED";
-    const interval = setInterval(load, inflight ? 4000 : 15000);
-    return () => clearInterval(interval);
-  }, [load, campaign?.status]);
+    void load();
+  }, [load]);
 
-  const handleRetry = async () => {
-    setActionLoading("retry");
+  // Yalnız kuyruğa alma / gönderim sürerken yokla; tamamlanan kampanya boşta kalır.
+  const active = isCampaignActive(campaign?.status);
+  useEffect(() => {
+    if (!active) return;
+    const interval = window.setInterval(() => {
+      void load();
+      setDeliveriesTick((t) => t + 1);
+    }, ACTIVE_POLL_MS);
+    return () => window.clearInterval(interval);
+  }, [active, load]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setDebouncedDeliverySearch(deliverySearch.trim()), 300);
+    return () => window.clearTimeout(id);
+  }, [deliverySearch]);
+
+  const chipStatuses = useMemo(
+    () => DELIVERY_STATUS_CHIPS.find((c) => c.key === deliveryStatus)?.statuses,
+    [deliveryStatus],
+  );
+
+  const campaignLoaded = !!campaign;
+  useEffect(() => {
+    if (!campaignId || loading || !campaignLoaded) return;
+    let cancelled = false;
+    // Yoklama tazelemesinde (tick) yükleniyor göstermeyelim; liste titremesin.
+    const silent = deliveriesTick > 0;
+    if (!silent) setDeliveriesLoading(true);
+    fetchCampaignDeliveries(campaignId, {
+      limit: DELIVERY_PAGE_SIZE,
+      offset: deliveriesOffset,
+      status: chipStatuses,
+      q: debouncedDeliverySearch || undefined,
+    })
+      .then((res) => {
+        if (cancelled) return;
+        setDeliveries(res.deliveries);
+        setDeliveriesTotal(res.total);
+        setDeliveriesHasMore(res.has_more);
+        setDeliveriesArchived(res.archived);
+      })
+      .catch((err) => {
+        if (cancelled) return;
+        setError(err instanceof Error ? err.message : "Alıcı listesi yüklenemedi");
+      })
+      .finally(() => {
+        if (!cancelled) setDeliveriesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, loading, campaignLoaded, deliveriesOffset, chipStatuses, debouncedDeliverySearch, deliveriesTick]);
+
+  const refreshAll = useCallback(async () => {
+    await load();
+    setDeliveriesTick((t) => t + 1);
+  }, [load]);
+
+  const runAction = async (
+    key: string,
+    fn: () => Promise<CampaignItem>,
+    successText: string,
+    failText: string,
+  ) => {
+    setActionLoading(key);
     try {
-      await retryFailedCampaign(campaignId);
-      await load();
+      const result = await fn();
+      if (result && result.id) setCampaign(result);
+      showToast(successText);
+      await refreshAll();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Yeniden deneme başarısız");
+      const message = err instanceof Error ? err.message : failText;
+      setError(message);
+      showToast(message, "error");
     } finally {
       setActionLoading(null);
     }
   };
 
-  const handleProcessQueue = async () => {
-    setActionLoading("queue");
-    try {
-      setCampaign(await processCampaignQueue(campaignId));
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Kuyruk işlenemedi");
-    } finally {
-      setActionLoading(null);
-    }
+  const askRetry = () => {
+    setConfirm({
+      title: "Başarısızları yeniden dene",
+      description: `${campaign?.failed_count ?? 0} başarısız alıcı yeniden kuyruğa alınacak. Devam edilsin mi?`,
+      confirmLabel: "Yeniden dene",
+      onConfirm: () =>
+        runAction(
+          "retry",
+          () => retryFailedCampaign(campaignId),
+          "Başarısız alıcılar yeniden kuyruğa alındı.",
+          "Yeniden deneme başarısız",
+        ),
+    });
   };
 
-  const handleCancel = async () => {
-    if (!confirm("Bekleyen mesajları iptal etmek istediğinize emin misiniz?")) return;
-    setActionLoading("cancel");
-    try {
-      await cancelCampaign(campaignId);
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "İptal başarısız");
-    } finally {
-      setActionLoading(null);
-    }
+  const handleProcessQueue = () =>
+    runAction(
+      "queue",
+      () => processCampaignQueue(campaignId),
+      "Kuyruk işlendi.",
+      "Kuyruk işlenemedi",
+    );
+
+  const askCancel = () => {
+    setConfirm({
+      title: "Gönderimi iptal et",
+      description: "Bekleyen mesajlar iptal edilecek; gönderilmiş mesajlar geri alınmaz.",
+      confirmLabel: "İptal et",
+      danger: true,
+      onConfirm: () =>
+        runAction(
+          "cancel",
+          () => cancelCampaign(campaignId),
+          "Gönderim iptal edildi.",
+          "İptal başarısız",
+        ),
+    });
   };
 
   if (loading) {
@@ -184,11 +275,8 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
         title="Gönderim"
         subtitle="Yükleniyor…"
         icon="📊"
-        breadcrumbs={[
-          { label: "İletişim" },
-          historyCrumb,
-          { label: "Detay" },
-        ]}
+        maxWidth="full"
+        breadcrumbs={[rootCrumb, historyCrumb, { label: "Detay" }]}
       >
         <p style={{ color: "#667781" }}>Gönderim yükleniyor…</p>
       </CommunicationPageShell>
@@ -200,46 +288,100 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
       <CommunicationPageShell
         title="Gönderim bulunamadı"
         icon="📊"
-        breadcrumbs={[
-          historyCrumb,
-          { label: "Detay" },
-        ]}
+        maxWidth="full"
+        breadcrumbs={[rootCrumb, historyCrumb, { label: "Detay" }]}
       >
+        {error && <div className="comm-alert comm-alert-danger">{error}</div>}
         <p>Bu gönderim mevcut değil.</p>
       </CommunicationPageShell>
     );
   }
 
   const total = campaign.total_recipients || 0;
-  const canCancel = ["DRAFT", "QUEUED", "PROCESSING", "CONFIRMED"].includes(campaign.status);
-  const canRetry = campaign.failed_count > 0 && campaign.status !== "CANCELLED";
+  const canManage = !!campaign.can_manage;
+  const canCancel = canManage && ["DRAFT", "QUEUED", "PROCESSING", "CONFIRMED"].includes(campaign.status);
+  const canRetry = canManage && campaign.failed_count > 0 && !["CANCELLED", "FAILED"].includes(campaign.status);
   const queue = campaign.queue_status;
   const waiting = queue
     ? queue.waiting
     : Math.max(0, total - campaign.sent_count - campaign.failed_count);
-  const canProcessQueue = waiting > 0 && campaign.status !== "CANCELLED";
+  const canProcessQueue = canManage && waiting > 0 && !["CANCELLED", "FAILED"].includes(campaign.status);
   const messageText = campaignMessageText(campaign);
   const templateVars = Object.entries(campaign.template_context || {}).filter(
     ([key, value]) => !/^\d+$/.test(key) && String(value || "").trim(),
   );
+  const materializeError = (campaign.materialize_error || "").trim();
+  const hasActions = canProcessQueue || canRetry || canCancel;
+
+  const actionButtons = hasActions ? (
+    <div className="comm-delivery-actions">
+      {canProcessQueue && (
+        <button
+          type="button"
+          className="comm-btn-primary"
+          disabled={actionLoading === "queue"}
+          onClick={() => void handleProcessQueue()}
+        >
+          {actionLoading === "queue" ? "İşleniyor…" : "Kuyruğu şimdi işle"}
+        </button>
+      )}
+      {canRetry && (
+        <button
+          type="button"
+          className="comm-btn-primary comm-delivery-retry"
+          disabled={actionLoading === "retry"}
+          onClick={askRetry}
+        >
+          {actionLoading === "retry" ? "Yeniden deneniyor…" : "Başarısızları yeniden dene"}
+        </button>
+      )}
+      {canCancel && (
+        <button
+          type="button"
+          className="comm-btn-secondary comm-btn-danger"
+          disabled={actionLoading === "cancel"}
+          onClick={askCancel}
+        >
+          {actionLoading === "cancel" ? "İptal ediliyor…" : "Gönderimi iptal et"}
+        </button>
+      )}
+    </div>
+  ) : null;
+
+  const deliveryRangeText = deliveriesTotal
+    ? `${deliveriesOffset + 1}–${Math.min(deliveriesOffset + deliveries.length, deliveriesTotal)} / ${deliveriesTotal.toLocaleString("tr-TR")}`
+    : "0 kayıt";
 
   return (
     <CommunicationPageShell
       title={campaign.title || "Gönderim Raporu"}
       subtitle={`Oluşturulma: ${new Date(campaign.created_at).toLocaleString("tr-TR")}`}
       icon="📊"
-      breadcrumbs={[
-        { label: "İletişim" },
-        historyCrumb,
-        { label: campaign.title || "Detay" },
-      ]}
+      maxWidth="full"
+      breadcrumbs={[rootCrumb, historyCrumb, { label: campaign.title || "Detay" }]}
       actions={
-        <span className={`comm-status-badge ${statusBadgeClass(campaign.status)}`}>
+        <span className={`comm-status-badge ${campaignStatusBadgeClass(campaign.status)}`}>
           {CAMPAIGN_STATUS_LABELS[campaign.status] || campaign.status}
         </span>
       }
     >
       {error && <div className="comm-alert comm-alert-danger">{error}</div>}
+
+      {materializeError && (
+        <div className="comm-alert comm-alert-danger">
+          <strong>Kuyruğa alma başarısız oldu.</strong> {materializeError}
+        </div>
+      )}
+
+      {campaign.status === "CONFIRMED" && (
+        <div className="comm-alert comm-alert-info">
+          <strong>
+            Kuyruğa alınıyor {(campaign.materialized_count ?? 0).toLocaleString("tr-TR")}/
+            {total.toLocaleString("tr-TR")}
+          </strong>{" "}
+          — alıcılar arka planda kuyruğa yazılıyor; sayfa kendiliğinden yenilenir.
+        </div>
+      )}
 
       <div className="comm-breakdown-grid" style={{ marginBottom: "1rem" }}>
         <div className="comm-breakdown-item">
@@ -272,14 +414,16 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
         )}
       </div>
 
-      {waiting > 0 && campaign.status !== "CANCELLED" && (
+      {waiting > 0 && !["CANCELLED", "FAILED"].includes(campaign.status) && (
         <div className="comm-alert comm-alert-warning">
           <strong>{waiting.toLocaleString("tr-TR")} mesaj hâlâ kuyrukta bekliyor.</strong>{" "}
           Gönderim kuyruğu arka planda işlenir; sıradaki deneme{" "}
           {formatDateTime(queue?.next_attempt_at)}.{" "}
           {queue?.last_error
             ? `Son hata: ${queue.last_error}`
-            : "Uzun süredir ilerlemiyorsa “Kuyruğu şimdi işle” ile elle tetikleyin."}
+            : canManage
+              ? "Uzun süredir ilerlemiyorsa “Kuyruğu şimdi işle” ile elle tetikleyin."
+              : ""}
         </div>
       )}
 
@@ -350,50 +494,63 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
         <WhatsAppPreviewBubble text={messageText} />
       </div>
 
-      {!!campaign.deliveries?.length && (
-        <div className="comm-card" style={{ marginBottom: "1rem" }}>
-          <div className="comm-delivery-toolbar">
-            <h2>
-              Alıcılar
-              {campaign.deliveries_total && campaign.deliveries_total > campaign.deliveries.length
-                ? ` (ilk ${campaign.deliveries.length} / ${campaign.deliveries_total})`
-                : ""}
-            </h2>
-            <div className="comm-delivery-actions">
-              {canProcessQueue && (
-                <button
-                  type="button"
-                  className="comm-btn-primary"
-                  disabled={actionLoading === "queue"}
-                  onClick={handleProcessQueue}
-                >
-                  {actionLoading === "queue" ? "İşleniyor…" : "Kuyruğu şimdi işle"}
-                </button>
-              )}
-              {canRetry && (
-                <button
-                  type="button"
-                  className="comm-btn-primary comm-delivery-retry"
-                  disabled={actionLoading === "retry"}
-                  onClick={handleRetry}
-                >
-                  {actionLoading === "retry" ? "Yeniden deneniyor…" : "Başarısızları yeniden dene"}
-                </button>
-              )}
-              {canCancel && (
-                <button
-                  type="button"
-                  className="comm-btn-secondary comm-btn-danger"
-                  disabled={actionLoading === "cancel"}
-                  onClick={handleCancel}
-                >
-                  {actionLoading === "cancel" ? "İptal ediliyor…" : "Gönderimi iptal et"}
-                </button>
-              )}
-            </div>
+      <div className="comm-card" style={{ marginBottom: "1rem" }}>
+        <div className="comm-delivery-toolbar">
+          <h2>
+            Alıcılar
+            {deliveriesTotal ? ` (${deliveriesTotal.toLocaleString("tr-TR")})` : ""}
+          </h2>
+          {actionButtons}
+        </div>
+
+        {deliveriesArchived && (
+          <div className="comm-alert comm-alert-info" style={{ marginBottom: "0.75rem" }}>
+            Teslimat satırları arşivden gösteriliyor.
           </div>
-          <div style={{ overflowX: "auto" }}>
-            <table className="comm-table" style={{ width: "100%", fontSize: 13 }}>
+        )}
+
+        <div className="comm-delivery-filters">
+          <div className="comm-history-chips" style={{ marginBottom: 0 }} role="group" aria-label="Teslimat durumu">
+            {DELIVERY_STATUS_CHIPS.map((chip) => (
+              <button
+                key={chip.key}
+                type="button"
+                className={`comm-filter-chip-toggle${deliveryStatus === chip.key ? " active" : ""}`}
+                aria-pressed={deliveryStatus === chip.key}
+                onClick={() => {
+                  setDeliveriesOffset(0);
+                  setDeliveryStatus((prev) => (prev === chip.key ? "" : chip.key));
+                }}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+          <input
+            type="search"
+            value={deliverySearch}
+            onChange={(e) => {
+              setDeliveriesOffset(0);
+              setDeliverySearch(e.target.value);
+            }}
+            placeholder="Ad veya telefon ara"
+            aria-label="Alıcı ara"
+          />
+        </div>
+
+        {deliveriesLoading && deliveries.length === 0 ? (
+          <p style={{ color: "#667781", fontSize: 13, margin: 0 }}>Alıcılar yükleniyor…</p>
+        ) : deliveries.length === 0 ? (
+          <p style={{ color: "#667781", fontSize: 13, margin: 0 }}>
+            {deliveryStatus || debouncedDeliverySearch
+              ? "Filtreye uyan alıcı yok."
+              : campaign.status === "CONFIRMED"
+                ? "Alıcılar henüz kuyruğa yazılıyor."
+                : "Bu gönderim için alıcı satırı yok."}
+          </p>
+        ) : (
+          <div className="comm-table-wrap comm-table-wrap--cards" style={{ border: 0 }}>
+            <table className="comm-table comm-table-cards" style={{ width: "100%", fontSize: 13, minWidth: 0 }}>
               <thead>
                 <tr>
                   <th style={{ textAlign: "left", padding: "6px 8px" }}>Kişi</th>
@@ -403,7 +560,7 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
                 </tr>
               </thead>
               <tbody>
-                {campaign.deliveries.map(row => {
+                {deliveries.map((row) => {
                   const isFailed = row.status === "FAILED";
                   const fullNote = isFailed
                     ? (row.failed_reason || "")
@@ -413,69 +570,61 @@ export default function KampanyaDetayClient({ portal = "admin" }: { portal?: Inb
                     : fullNote;
                   const kind = contactTypeLabel(row.contact_type);
                   return (
-                  <tr key={row.id}>
-                    <td style={{ padding: "6px 8px" }}>
-                      <div className="comm-delivery-who">
-                        <strong>{row.contact_name || "—"}</strong>
-                        {kind ? <span className="comm-delivery-kind">{kind}</span> : null}
-                      </div>
-                    </td>
-                    <td style={{ padding: "6px 8px" }}>{row.phone || "—"}</td>
-                    <td style={{ padding: "6px 8px" }}>
-                      <span className={`comm-status-badge ${deliveryStatusClass(row.status)}`}>
-                        {formatMessageStatus(row.status)}
-                      </span>
-                    </td>
-                    <td style={{ padding: "6px 8px", color: isFailed ? "#b91c1c" : "#667781" }}>
-                      {fullNote ? (
-                        <span className="comm-delivery-note" title={fullNote}>
-                          {shortNote}
+                    <tr key={row.id}>
+                      <td className="comm-cell-primary" data-label="Kişi" style={{ padding: "6px 8px" }}>
+                        <div className="comm-delivery-who">
+                          <strong>{row.contact_name || "—"}</strong>
+                          {kind ? <span className="comm-delivery-kind">{kind}</span> : null}
+                        </div>
+                      </td>
+                      <td data-label="Telefon" style={{ padding: "6px 8px" }}>{row.phone || "—"}</td>
+                      <td data-label="Durum" style={{ padding: "6px 8px" }}>
+                        <span className={`comm-status-badge ${messageStatusBadgeClass(row.status)}`}>
+                          {formatMessageStatus(row.status)}
                         </span>
-                      ) : "—"}
-                    </td>
-                  </tr>
+                      </td>
+                      <td data-label="Açıklama" style={{ padding: "6px 8px", color: isFailed ? "#b91c1c" : "#667781" }}>
+                        {fullNote ? (
+                          <span className="comm-delivery-note" title={fullNote}>
+                            {shortNote}
+                          </span>
+                        ) : "—"}
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        )}
 
-      {!campaign.deliveries?.length && (canProcessQueue || canRetry || canCancel) && (
-        <div className="comm-delivery-actions" style={{ marginTop: "1rem" }}>
-          {canProcessQueue && (
-            <button
-              type="button"
-              className="comm-btn-primary"
-              disabled={actionLoading === "queue"}
-              onClick={handleProcessQueue}
-            >
-              {actionLoading === "queue" ? "İşleniyor…" : "Kuyruğu şimdi işle"}
-            </button>
-          )}
-          {canRetry && (
-            <button
-              type="button"
-              className="comm-btn-primary comm-delivery-retry"
-              disabled={actionLoading === "retry"}
-              onClick={handleRetry}
-            >
-              {actionLoading === "retry" ? "Yeniden deneniyor…" : "Başarısızları yeniden dene"}
-            </button>
-          )}
-          {canCancel && (
-            <button
-              type="button"
-              className="comm-btn-secondary comm-btn-danger"
-              disabled={actionLoading === "cancel"}
-              onClick={handleCancel}
-            >
-              {actionLoading === "cancel" ? "İptal ediliyor…" : "Gönderimi iptal et"}
-            </button>
-          )}
-        </div>
-      )}
+        {(deliveriesOffset > 0 || deliveriesHasMore) && (
+          <div className="comm-pagination">
+            <span>{deliveryRangeText}</span>
+            <div style={{ display: "flex", gap: "0.5rem" }}>
+              <button
+                type="button"
+                className="comm-btn-secondary"
+                disabled={deliveriesOffset <= 0 || deliveriesLoading}
+                onClick={() => setDeliveriesOffset((o) => Math.max(0, o - DELIVERY_PAGE_SIZE))}
+              >
+                Önceki
+              </button>
+              <button
+                type="button"
+                className="comm-btn-secondary"
+                disabled={!deliveriesHasMore || deliveriesLoading}
+                onClick={() => setDeliveriesOffset((o) => o + DELIVERY_PAGE_SIZE)}
+              >
+                Sonraki
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <CommConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
+      <CommToast toast={toast} />
     </CommunicationPageShell>
   );
 }

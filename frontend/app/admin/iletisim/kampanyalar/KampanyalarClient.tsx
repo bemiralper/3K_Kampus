@@ -15,6 +15,7 @@ export default function KampanyalarClient({ portal = "admin" }: { portal?: Inbox
       title="Gönderim Geçmişi"
       subtitle="Toplu WhatsApp gönderim geçmişi ve raporları"
       icon="📋"
+      maxWidth="full"
       breadcrumbs={[
         { label: portal === "muhasebe" ? "WhatsApp" : "İletişim", href: paths.home },
         { label: "Gönderim Geçmişi" },

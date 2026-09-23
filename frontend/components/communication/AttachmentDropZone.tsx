@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, DragEvent, useRef, useState } from "react";
+import { ChangeEvent, DragEvent, useEffect, useRef, useState } from "react";
 import { CampaignAttachmentItem, uploadCampaignAttachment } from "@/lib/communication-api";
 import { ALLOWED_EXTENSIONS, validateAttachment } from "@/lib/attachment-policy";
 
@@ -25,6 +25,19 @@ export default function AttachmentDropZone({
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Art arda / eşzamanlı yüklemelerde kapanış içindeki eski `attachments`
+  // üzerine yazılmasın: en güncel liste ref'te tutulur ve `prev => next`
+  // biçiminde eşzamanlı güncellenir (fonksiyonel setState eşdeğeri).
+  const latest = useRef(attachments);
+  useEffect(() => {
+    latest.current = attachments;
+  }, [attachments]);
+
+  const emit = (update: (prev: CampaignAttachmentItem[]) => CampaignAttachmentItem[]) => {
+    const next = update(latest.current);
+    latest.current = next;
+    onChange(next);
+  };
 
   const handleFiles = async (files: FileList | File[]) => {
     setError(null);
@@ -39,7 +52,7 @@ export default function AttachmentDropZone({
       setUploading(true);
       try {
         const uploaded = await uploadCampaignAttachment(file);
-        onChange([...attachments, uploaded]);
+        emit((prev) => (prev.some((a) => a.id === uploaded.id) ? prev : [...prev, uploaded]));
       } catch (err) {
         setError(err instanceof Error ? err.message : "Yükleme başarısız");
       } finally {
@@ -61,7 +74,7 @@ export default function AttachmentDropZone({
   };
 
   const remove = (id: string) => {
-    onChange(attachments.filter((a) => a.id !== id));
+    emit((prev) => prev.filter((a) => a.id !== id));
   };
 
   return (
