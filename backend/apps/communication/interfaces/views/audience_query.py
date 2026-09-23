@@ -4,7 +4,6 @@ from django.db.models import Q
 from rest_framework import status
 from rest_framework.response import Response
 
-from apps.coaching.services.coach_access import scoped_student_ids
 from apps.communication.application.audience_catalog import build_audience_catalog
 from apps.communication.application.audience_query import AudienceQueryService, normalize_query
 from apps.communication.application.saved_audience_service import (
@@ -16,7 +15,7 @@ from apps.communication.application.saved_audience_service import (
 )
 from apps.communication.interfaces.views.campaigns import CampaignBulkView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
-from shared.permissions import user_has_any_permission
+from shared.utils import int_or_none as _int_or_none
 
 
 def _egitim_yili_id(request) -> int | None:
@@ -26,15 +25,6 @@ def _egitim_yili_id(request) -> int | None:
         or request.data.get('egitim_yili_id')
     )
     if not raw:
-        return None
-    try:
-        return int(raw)
-    except (TypeError, ValueError):
-        return None
-
-
-def _int_or_none(raw) -> int | None:
-    if raw in (None, ''):
         return None
     try:
         return int(raw)
@@ -150,18 +140,9 @@ class AudienceSearchView(CampaignBulkView):
         if len(q) < 2:
             return Response({'results': [], 'groups': [], 'query': q})
 
-        from apps.coaching.services.coach_access import get_coach_profile, is_resource_admin
+        from apps.communication.application.coach_scope import scope_student_ids_for_bulk
 
-        from apps.communication.permissions import user_can_bulk_communicate
-
-        if is_resource_admin(request.user) or user_has_any_permission(request.user, 'communication.manage'):
-            allowed = None
-        elif get_coach_profile(request.user) is not None:
-            allowed = scoped_student_ids(request.user)
-        elif user_can_bulk_communicate(request.user):
-            allowed = None
-        else:
-            allowed = scoped_student_ids(request.user)
+        allowed = scope_student_ids_for_bulk(request.user)
         include_personel = request.query_params.get('include_personel', '1') not in ('0', 'false', 'no')
         if allowed is not None:
             include_personel = False

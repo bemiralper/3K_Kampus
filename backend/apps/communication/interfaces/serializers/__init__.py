@@ -1,5 +1,5 @@
+from apps.communication.interfaces.serializers.campaign import CampaignPreviewRequestSerializer
 from apps.communication.interfaces.serializers.config import (
-    CampaignPreviewRequestSerializer,
     CampaignPreviewResponseSerializer,
     ConversationDetailSerializer,
     ConversationListSerializer,

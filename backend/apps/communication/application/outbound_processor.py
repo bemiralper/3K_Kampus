@@ -13,6 +13,7 @@ from apps.communication.application.meta_template_mapper import build_send_body_
 from apps.communication.application.meta_template_service import MetaTemplateService
 from apps.communication.application.session_window import (
     is_permanent_send_error,
+    is_rate_limit_error,
     is_session_error,
 )
 from apps.communication.application.template_component_builder import build_template_components
@@ -46,7 +47,13 @@ def _safe_refresh_campaign_stats(campaign_id) -> None:
 
 
 def _throttle_ms() -> int:
-    return int(getattr(settings, 'COMMUNICATION_QUEUE_THROTTLE_MS', 0) or 0)
+    # settings/base.py varsayılanı 200 ms; ayar yoksa da aynı değer (docstring uyumu)
+    return int(getattr(settings, 'COMMUNICATION_QUEUE_THROTTLE_MS', 200) or 0)
+
+
+def _stub_send_allowed() -> bool:
+    """Kimlik bilgisi yokken simüle gönderim başarılı sayılsın mı (yalnız test/dev)."""
+    return bool(getattr(settings, 'COMMUNICATION_ALLOW_STUB_SEND', False))
 
 
 def _build_recipient_context_from_message(message) -> dict:
@@ -478,6 +485,17 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             if retried is not None:
                 result = retried
 
+        if result.get('success') and result.get('stub') and not _stub_send_allowed():
+            # Kimlik bilgisi eksik hat: mesaj gitmedi; SENT gibi görünmesin (M-11)
+            result = {
+                'success': False,
+                'error': (
+                    'WhatsApp kimlik bilgileri eksik (Phone Number ID / Access Token). '
+                    'Hesap ayarlarını tamamlayın; mesaj iletilmedi.'
+                ),
+                'stub': True,
+            }
+
         if result.get('success'):
             provider_id = ''
             msgs = result.get('messages', [])
@@ -489,11 +507,16 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 _safe_refresh_campaign_stats(item.campaign_id)
             return True
 
+        if is_rate_limit_error(result):
+            # Meta 130429: deneme sayılmaz, kısa süre sonra tekrar (W-06)
+            OutboundQueueRepository.defer_item(item, str(result.get('error', 'Rate limit')))
+            return False
+
         # Şablon yok / 24 saat vb. tekrar denemekle çözülmez; kuyruğu boşuna meşgul etme.
         OutboundQueueRepository.mark_failed(
             item,
             str(result.get('error', 'Unknown')),
-            permanent=is_permanent_send_error(result),
+            permanent=is_permanent_send_error(result) or bool(result.get('stub')),
         )
         if item.campaign_id:
             _safe_refresh_campaign_stats(item.campaign_id)

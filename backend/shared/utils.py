@@ -78,3 +78,13 @@ def parse_schema_name(schema_name: str) -> Optional[tuple]:
         return (kurum_id, year)
     except ValueError:
         return None
+
+
+def int_or_none(value) -> Optional[int]:
+    """Sorgu/istek parametresini int'e çevirir; boş, None, 'null' veya geçersizse None."""
+    if value in (None, '', 'null'):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None

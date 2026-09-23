@@ -13,7 +13,7 @@ from apps.communication.interfaces.serializers.campaign import (
     CampaignDetailSerializer,
     CampaignListSerializer,
 )
-from apps.communication.interfaces.serializers.config import CampaignPreviewRequestSerializer
+from apps.communication.interfaces.serializers.campaign import CampaignPreviewRequestSerializer
 from apps.communication.interfaces.sube_context import assert_record_sube_access
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube, resolve_kurum_id as _resolve_kurum_id

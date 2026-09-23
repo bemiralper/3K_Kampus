@@ -253,6 +253,8 @@ class OverdueReminderService:
                 source=MessageSource(module=SOURCE_ODEME, ref_id=source_id),
                 sent_by_user_id=sent_by_user_id,
                 fallback_body=item['rendered_body'],
+                # Şablon eşlemesi ve WhatsApp hattı alıcının şubesine göre çözülsün
+                sube_id=sube_id,
             )
             if result and result.success:
                 sent += 1

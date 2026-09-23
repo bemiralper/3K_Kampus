@@ -37,9 +37,9 @@ def _load_conversation_for_messages(request, kurum_id, conversation_id, sube_id)
             )
         is_personel = conversation.contact_type == RecipientType.PERSONEL
         if is_personel:
-            if conversation.sube_id and int(conversation.sube_id) != int(sube_id):
-                conversation.sube_id = sube_id
-                conversation.save(update_fields=['sube_id', 'updated_at'])
+            # Personel sohbeti kurum genelinde erişilebilir; okuma isteği kaydı
+            # değiştirmez, şubesi ilk açıldığı yerde kalır (M-04).
+            pass
         else:
             gate = assert_conversation_sube_access(request, kurum_id, conversation)
             if gate:

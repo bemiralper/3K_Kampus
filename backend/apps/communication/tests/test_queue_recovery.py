@@ -49,7 +49,21 @@ class QueueRecoveryTest(TestCase):
         item = self._item(locked_at=timezone.now() - timedelta(minutes=30))
         batch = OutboundQueueRepository.get_pending_batch()
         self.assertEqual([i.id for i in batch], [item.id])
-        self.assertEqual(OutboundQueueRepository.count_pending(), 1)
+        # Seçilen batch aynı transaction'da kilitlenir: artık "bekleyen" sayılmaz (B-04)
+        self.assertEqual(OutboundQueueRepository.count_pending(), 0)
+        item.refresh_from_db()
+        self.assertEqual(item.locked_by, OutboundQueueRepository.worker_token())
+
+    def test_second_worker_cannot_take_locked_batch(self):
+        """İki işleyici aynı kaydı almasın — kilit seçimle birlikte yazılır (B-04)."""
+        self._item()
+        self._item()
+        first = OutboundQueueRepository.get_pending_batch(limit=1)
+        second = OutboundQueueRepository.get_pending_batch(limit=5)
+        self.assertEqual(len(first), 1)
+        self.assertEqual(len(second), 1)
+        self.assertNotEqual(first[0].id, second[0].id)
+        self.assertEqual(OutboundQueueRepository.get_pending_batch(), [])
 
     @override_settings(COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS=600)
     def test_orphan_sending_message_is_reclaimed(self):

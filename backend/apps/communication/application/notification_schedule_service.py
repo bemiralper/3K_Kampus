@@ -9,11 +9,11 @@ from django.db import DatabaseError
 from django.utils import timezone
 
 from apps.communication.application.notification_events import get_event
+from apps.communication.domain.constants import GUN_SONU_EVENT
 from apps.communication.domain.models import NotificationAutoSchedule
 
 logger = logging.getLogger(__name__)
 
-GUN_SONU_EVENT = 'finans.gun_sonu'
 DEFAULT_SEND_TIME = time(18, 0)
 SCHEDULABLE_EVENTS = frozenset({GUN_SONU_EVENT})
 REPORT_KINDS = frozenset({'ozet', 'detay', 'ikisi'})
@@ -131,10 +131,6 @@ def upsert_schedule(
     row.updated_by = user
     row.save()
     return serialize_schedule(row, event_key=event_key)
-
-
-def is_auto_enabled(kurum_id: int, event_key: str, sube_id: int | None = None) -> bool:
-    return bool(get_schedule(kurum_id, event_key, sube_id).get('is_enabled'))
 
 
 def auto_blocks_report(schedule: dict, rapor_tipi: str) -> bool:

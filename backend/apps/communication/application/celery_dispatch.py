@@ -38,7 +38,8 @@ def dispatch_process_outbound_queue(
         try:
             from apps.communication.tasks import process_outbound_queue_task
 
-            process_outbound_queue_task.delay(limit=limit)
+            # drain bilgisi task'a taşınır; aksi halde kampanya kalanı cron'a kalırdı (B-05)
+            process_outbound_queue_task.delay(limit=limit, drain=drain, max_seconds=max_seconds)
             return True
         except Exception:
             logger.exception('Celery kuyruk dispatch başarısız — yerel işleniyor')
@@ -75,6 +76,24 @@ def _run_in_thread(func, *, name: str) -> None:
             close_old_connections()
 
     threading.Thread(target=wrapper, name=name, daemon=True).start()
+
+
+def dispatch_process_webhook(payload: dict, raw_body: str) -> bool:
+    """Doğrulanmış webhook payload'ını Celery'ye devret; broker yoksa False (senkron işlenir).
+
+    Meta 200 yanıtını hızlı bekler; medya indirme gibi uzun işler istek dışına çıkar (B-03).
+    Thread kullanılmaz: gunicorn worker yaşam döngüsünde yarım kalabilir.
+    """
+    if not is_celery_enabled():
+        return False
+    try:
+        from apps.communication.tasks import process_inbound_webhook_task
+
+        process_inbound_webhook_task.delay(payload, signature_valid=True, raw_body=raw_body)
+        return True
+    except Exception:
+        logger.exception('Celery webhook dispatch başarısız — senkron işleniyor')
+        return False
 
 
 def dispatch_materialize_campaign(

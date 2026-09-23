@@ -218,7 +218,8 @@ class ConversationOpenView(CommunicationAPIView):
                     return gate
 
             conversation = sync_conversation_linked_phone(conversation)
-            update_fields = []
+            # Listeden kaldırılmış thread yeniden açılıyorsa görünür olsun (K-08)
+            update_fields = ConversationRepository.revive_fields(conversation)
             if cfg_id and not conversation.channel_config_id:
                 conversation.channel_config_id = cfg_id
                 update_fields.append('channel_config_id')
@@ -260,7 +261,10 @@ class ConversationOpenView(CommunicationAPIView):
                         conversation.veli_id = None
                         update_fields.append('veli_id')
 
-            if conversation.sube_id != sube_id:
+            # Personel thread'i her açılışta şube değiştirmez; yalnız şubesizse yazılır (M-04).
+            if conversation.sube_id != sube_id and (
+                not is_personel_thread or conversation.sube_id is None
+            ):
                 conversation.sube_id = sube_id
                 update_fields.append('sube_id')
             if update_fields:
@@ -313,7 +317,7 @@ class ConversationOpenView(CommunicationAPIView):
                 if conversation.veli_id is not None:
                     conversation.veli_id = None
                     update_fields.append('veli_id')
-                if conversation.sube_id != sube_id:
+                if conversation.sube_id is None:
                     conversation.sube_id = sube_id
                     update_fields.append('sube_id')
                 if update_fields:

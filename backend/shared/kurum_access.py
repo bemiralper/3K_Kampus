@@ -45,6 +45,45 @@ def get_allowed_kurumlar_for_user(user):
     return base_qs.filter(id__in=kurum_ids)
 
 
+def user_linked_kurum_ids(user) -> set[int]:
+    """Kullanıcının bağlı olduğu kurum kimlikleri (personel, e-posta, rol ataması).
+
+    Boş küme = hiç kurum bağı yok (UserRole.kurum boşsa "global rol").
+    """
+    ids: set[int] = set()
+    if not user or not getattr(user, 'is_authenticated', False):
+        return ids
+    ids.update(get_allowed_kurumlar_for_user(user).values_list('id', flat=True))
+    try:
+        role_kurum_id = user.user_role.kurum_id
+    except Exception:
+        role_kurum_id = None
+    if role_kurum_id:
+        ids.add(int(role_kurum_id))
+    return ids
+
+
+def user_can_access_kurum(user, kurum_id) -> bool:
+    """İstenen kurum kullanıcının bağlı olduğu kurumlardan biri mi.
+
+    Kurum bağı olan hesap yalnız kendi kurumlarına erişir. Hiç kurum bağı
+    olmayan hesap (Personel yok, rol kurumu boş) sistemde "global rol"
+    sayılır ve mevcut davranış korunur.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if getattr(user, 'is_superuser', False):
+        return True
+    try:
+        kurum_id = int(kurum_id)
+    except (TypeError, ValueError):
+        return False
+    linked = user_linked_kurum_ids(user)
+    if not linked:
+        return True
+    return kurum_id in linked
+
+
 def user_needs_kurum_picker(user) -> bool:
     """Login sonrası kurum seçimi gerekir mi?"""
     return get_allowed_kurumlar_for_user(user).count() > 1

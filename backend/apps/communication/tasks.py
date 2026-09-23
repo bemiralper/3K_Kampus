@@ -7,10 +7,19 @@ from celery import shared_task
 
 
 @shared_task(name='communication.process_outbound_queue', ignore_result=True)
-def process_outbound_queue_task(limit: int | None = None) -> dict:
-    """Giden iletişim kuyruğunu işle."""
-    from apps.communication.application.outbound_processor import process_pending_batch
+def process_outbound_queue_task(
+    limit: int | None = None,
+    drain: bool = False,
+    max_seconds: float | None = None,
+) -> dict:
+    """Giden iletişim kuyruğunu işle; `drain=True` süre bütçesi dolana kadar boşaltır (B-05)."""
+    from apps.communication.application.outbound_processor import (
+        drain_pending_queue,
+        process_pending_batch,
+    )
 
+    if drain:
+        return drain_pending_queue(max_seconds=max_seconds, batch_size=limit)
     return process_pending_batch(limit=limit)
 
 

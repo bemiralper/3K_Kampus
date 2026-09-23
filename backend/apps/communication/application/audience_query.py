@@ -34,16 +34,9 @@ from typing import Any
 
 from django.db.models import Q
 
-from apps.coaching.services.coach_access import (
-    is_resource_admin,
-    scoped_student_ids,
-)
 from apps.communication.application.contact_resolver import ContactResolver
+from apps.communication.domain.constants import OPT_IN_CATEGORY
 from apps.communication.domain.enums import RecipientType
-from shared.permissions import user_has_any_permission
-
-
-OPT_IN_CATEGORY = 'duyuru'
 
 PERSON_OGRENCI = 'ogrenci'
 PERSON_VELI = 'veli'
@@ -396,18 +389,9 @@ class AudienceQueryService:
 
     @classmethod
     def _scope_student_ids(cls, user, kurum_id: int):
-        if not user or not getattr(user, 'is_authenticated', False):
-            return None
-        if is_resource_admin(user) or user_has_any_permission(user, 'communication.manage'):
-            return None
-        from apps.coaching.services.coach_access import get_coach_profile
-        from apps.communication.permissions import user_can_bulk_communicate
+        from apps.communication.application.coach_scope import scope_student_ids_for_bulk
 
-        if get_coach_profile(user) is not None:
-            return scoped_student_ids(user)
-        if user_can_bulk_communicate(user):
-            return None
-        return scoped_student_ids(user)
+        return scope_student_ids_for_bulk(user)
 
     @classmethod
     def _eval_student_tree(

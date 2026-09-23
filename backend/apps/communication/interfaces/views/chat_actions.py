@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from apps.communication.application.coach_scope import (
     _has_full_inbox_access,
     user_can_access_conversation,
+    user_can_moderate_conversation,
 )
 from apps.communication.domain.models import Message
 from apps.communication.infrastructure.repository import (
@@ -50,6 +51,15 @@ def _load(request, conversation_id):
             {'error': 'Bu sohbete erişim yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN,
         )
     return kurum_id, sube_id, conversation, None
+
+
+def _moderation_denied(request, conversation):
+    if user_can_moderate_conversation(request.user, conversation):
+        return None
+    return Response(
+        {'error': 'Bu işlem için sohbeti üstlenmiş olmanız veya yönetici yetkisi gerekir.'},
+        status=status.HTTP_403_FORBIDDEN,
+    )
 
 
 def _serialize(conversation, request):
@@ -119,6 +129,9 @@ class ConversationDeleteView(CommunicationAPIView):
         _, _, conversation, err = _load(request, conversation_id)
         if err:
             return err
+        denied = _moderation_denied(request, conversation)
+        if denied:
+            return denied
         ConversationRepository.soft_delete(conversation, actor=request.user)
         return Response({'ok': True, 'id': str(conversation.id)})
 
@@ -139,12 +152,9 @@ class ConversationReadAllView(CommunicationAPIView):
             qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
         )
         admin_peek = _has_full_inbox_access(request.user)
-        updated = 0
-        for conversation in qs.iterator():
-            ConversationRepository.clear_notifications_for_user(conversation, request.user)
-            if not admin_peek:
-                ConversationRepository.mark_read(conversation)
-            updated += 1
+        updated = ConversationRepository.mark_all_read_bulk(
+            qs, request.user, reset_counters=not admin_peek,
+        )
         return Response({'ok': True, 'updated': updated})
 
 
@@ -233,6 +243,9 @@ class MessagePinView(CommunicationAPIView):
         _, _, conversation, err = _load(request, conversation_id)
         if err:
             return err
+        denied = _moderation_denied(request, conversation)
+        if denied:
+            return denied
         message = Message.objects.filter(
             id=message_id, conversation_id=conversation.id, deleted_at__isnull=True,
         ).first()
@@ -277,6 +290,11 @@ class MessageDeleteView(CommunicationAPIView):
         ).first()
         if not message:
             return Response({'error': 'Mesaj bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        # Kendi gönderdiği mesajı herkes kaldırabilir; başkasının/gelen mesajı moderatör
+        if message.sender_user_id != request.user.id:
+            denied = _moderation_denied(request, conversation)
+            if denied:
+                return denied
         message.deleted_at = timezone.now()
         message.deleted_by = request.user
         message.save(update_fields=['deleted_at', 'deleted_by', 'updated_at'])

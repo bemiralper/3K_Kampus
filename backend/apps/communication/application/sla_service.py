@@ -31,13 +31,29 @@ def check_and_mark_needs_support(*, limit: int = 200) -> int:
         return 0
 
     cutoff = timezone.now() - timedelta(minutes=sla_minutes())
-    qs = (
-        Conversation.objects.filter(
-            assigned_coach__isnull=False,
-            first_unanswered_at__isnull=False,
-            first_unanswered_at__lte=cutoff,
+    qs = Conversation.objects.filter(
+        first_unanswered_at__isnull=False,
+        first_unanswered_at__lte=cutoff,
+        deleted_at__isnull=True,
+    )
+    if getattr(settings, 'COMMUNICATION_SLA_INCLUDE_UNASSIGNED', True):
+        # Koçu olan sohbetler + sahipsiz (koçsuz, üstlenilmemiş) koçluk sohbetleri (F-05)
+        from django.db.models import Q
+
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        qs = qs.filter(
+            Q(assigned_coach__isnull=False)
+            | Q(
+                assigned_coach__isnull=True,
+                claimed_by_user__isnull=True,
+                department=CommunicationDepartment.COACHING,
+            )
         )
-        .exclude(
+    else:
+        qs = qs.filter(assigned_coach__isnull=False)
+    qs = (
+        qs.exclude(
             status__in=(
                 ConversationStatus.NEEDS_SUPPORT,
                 ConversationStatus.ARCHIVED,

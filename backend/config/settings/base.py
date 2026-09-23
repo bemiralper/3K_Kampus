@@ -109,6 +109,28 @@ COMMUNICATION_TICKET_ROUTING = os.environ.get('COMMUNICATION_TICKET_ROUTING', 'T
     '1', 'true', 'yes', 'on',
 )
 COMMUNICATION_SLA_MINUTES = int(os.environ.get('COMMUNICATION_SLA_MINUTES', '30'))
+# Sahipsiz (koçsuz / üstlenilmemiş) koçluk sohbetleri de SLA süresi sonunda
+# "Destek Gerekiyor" kuyruğuna düşsün (F-05). Kapatmak için 'False'.
+COMMUNICATION_SLA_INCLUDE_UNASSIGNED = os.environ.get(
+    'COMMUNICATION_SLA_INCLUDE_UNASSIGNED', 'True',
+).lower() in ('1', 'true', 'yes', 'on')
+# Otomatik/kampanya mesajları sohbeti "cevaplandı" saymaz; yalnız kişinin
+# yazdığı cevap SLA sayacını sıfırlar (M-01). Eski davranış için 'True'.
+COMMUNICATION_SYSTEM_MESSAGES_COUNT_AS_REPLY = os.environ.get(
+    'COMMUNICATION_SYSTEM_MESSAGES_COUNT_AS_REPLY', 'False',
+).lower() in ('1', 'true', 'yes', 'on')
+# Kuyruk kilidi bu süre sonra bayat sayılır (deploy/timeout ile yarıda kalan işleyici)
+COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS = int(
+    os.environ.get('COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS', '600'),
+)
+# Webhook imzası hat bazlı app secret ile doğrulanır; kapatılırsa yalnız global secret
+COMMUNICATION_WEBHOOK_ACCOUNT_SECRET = os.environ.get(
+    'COMMUNICATION_WEBHOOK_ACCOUNT_SECRET', 'True',
+).lower() in ('1', 'true', 'yes', 'on')
+# Kimlik bilgisi eksik hatta "stub" gönderim başarılı sayılmaz (M-11); test ortamı açar
+COMMUNICATION_ALLOW_STUB_SEND = os.environ.get(
+    'COMMUNICATION_ALLOW_STUB_SEND', 'False',
+).lower() in ('1', 'true', 'yes', 'on')
 
 COMMUNICATION_WHATSAPP_COST_USD = os.environ.get('COMMUNICATION_WHATSAPP_COST_USD', '0.0009')
 COMMUNICATION_ATTACHMENT_MAX_BYTES = int(

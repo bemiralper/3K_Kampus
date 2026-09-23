@@ -1,5 +1,8 @@
 """
-WhatsApp yapılandırma API.
+WhatsApp yapılandırma API (tek hesaplı eski yol).
+
+Kurum + aktif şube bağlamı `resolve_kurum_and_sube` ile doğrulanır; istemcinin
+verdiği kurum kimliği kullanıcının erişebildiği kurumlardan biri olmalıdır (K-02).
 """
 from rest_framework import status
 from rest_framework.response import Response
@@ -15,18 +18,8 @@ from apps.communication.interfaces.serializers import (
     WhatsAppConfigSerializer,
     WhatsAppConfigWriteSerializer,
 )
+from apps.communication.interfaces.views._context import resolve_kurum_and_sube
 from apps.communication.permissions import CommunicationConfigPermission
-
-
-def _resolve_kurum_id(request) -> int | None:
-    kurum_id = request.query_params.get('kurum_id') or request.data.get('kurum_id')
-    if kurum_id:
-        try:
-            return int(kurum_id)
-        except (TypeError, ValueError):
-            return None
-    active = getattr(request, 'active_kurum_id', None)
-    return int(active) if active else None
 
 
 def _webhook_diagnostics(kurum_id: int, phone_number_id: str = '') -> dict:
@@ -57,9 +50,9 @@ class WhatsAppConfigView(APIView):
     permission_classes = [CommunicationConfigPermission]
 
     def get(self, request):
-        kurum_id = _resolve_kurum_id(request)
-        if not kurum_id:
-            return Response({'error': 'kurum_id zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
+        kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
 
         config = ChannelConfigRepository.get_whatsapp_config(kurum_id)
         if not config:
@@ -72,9 +65,9 @@ class WhatsAppConfigView(APIView):
         return Response(_serialize_whatsapp_config(config, kurum_id=kurum_id))
 
     def put(self, request):
-        kurum_id = _resolve_kurum_id(request)
-        if not kurum_id:
-            return Response({'error': 'kurum_id zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
+        kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
 
         existing = ChannelConfigRepository.get_whatsapp_config(kurum_id)
         serializer = WhatsAppConfigWriteSerializer(
@@ -108,9 +101,9 @@ class WhatsAppConfigTestView(APIView):
     permission_classes = [CommunicationConfigPermission]
 
     def post(self, request):
-        kurum_id = _resolve_kurum_id(request)
-        if not kurum_id:
-            return Response({'error': 'kurum_id zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
+        kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
+        if err:
+            return err
 
         result = CommunicationService().test_whatsapp_connection(kurum_id)
         return Response(result)

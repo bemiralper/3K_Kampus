@@ -7,7 +7,7 @@ from rest_framework.response import Response
 
 from apps.coaching.services.coach_access import get_coach_profile
 from apps.communication.application.campaign_service import AudienceResolver, CampaignService
-from apps.communication.interfaces.serializers.config import CampaignPreviewRequestSerializer
+from apps.communication.interfaces.serializers.campaign import CampaignPreviewRequestSerializer
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views.campaigns import CampaignBulkView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube

@@ -55,6 +55,16 @@ def get_allowed_subeler_for_user(user, kurum_id=None, egitim_yili_id=None):
     except Exception:
         personel = None
 
+    # İstenen kurum kullanıcının bağlı olduğu kurumlardan biri olmalı.
+    # Hiç kurum bağı olmayan hesap (Personel yok, rol kurumu boş) "global rol"
+    # sayılır ve eski davranış korunur; kurum bağı olan hesap başka kuruma geçemez.
+    if kurum_id:
+        from shared.kurum_access import user_linked_kurum_ids
+
+        linked = user_linked_kurum_ids(user)
+        if linked and int(kurum_id) not in linked:
+            return Sube.objects.none()
+
     if not personel:
         if kurum_id:
             return base_qs.filter(kurum_id=kurum_id)
@@ -74,7 +84,8 @@ def get_allowed_subeler_for_user(user, kurum_id=None, egitim_yili_id=None):
         gorev_qs = gorev_qs.filter(egitim_yili_id=egitim_yili_id)
 
     sube_ids = set(gorev_qs.values_list('gorev_sube_id', flat=True))
-    if personel.sube_id:
+    # Personelin ana şubesi yalnız aynı kurumdaysa eklenir; başka kurumun şubesi sızmaz.
+    if personel.sube_id and int(personel.kurum_id or 0) == int(kid):
         sube_ids.add(personel.sube_id)
     if not sube_ids:
         return Sube.objects.none()

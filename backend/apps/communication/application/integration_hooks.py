@@ -10,6 +10,7 @@ from datetime import date, datetime, timedelta
 
 from django.core.files.base import ContentFile
 from django.core.files.storage import default_storage
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.communication.application.communication_service import (
@@ -922,20 +923,27 @@ def notify_payment_reminder(
     with_pdf: bool = False,
     force_resend: bool = False,
     category: str = 'odeme',
+    sube_id: int | None = None,
 ) -> SendResult | None:
+    """Tekil taksit hatırlatması.
+
+    `sube_id` verildiyse taksit o şubeye ait olmalı (aktif şube kapısı, K-06);
+    şablon da aynı şubenin kaydından seçilir.
+    """
     from apps.finans.application.overdue_messaging import (
         CATEGORY_ODEME_GECIKME,
         build_overdue_context,
     )
     from apps.odeme_takip.domain.models import Taksit
 
-    taksit = (
-        Taksit.objects.select_related(
-            'sozlesme__ogrenci', 'sozlesme__veli', 'sozlesme__kurum',
+    taksit_qs = Taksit.objects.select_related(
+        'sozlesme__ogrenci', 'sozlesme__veli', 'sozlesme__kurum',
+    ).filter(id=taksit_id, sozlesme__kurum_id=kurum_id)
+    if sube_id is not None:
+        taksit_qs = taksit_qs.filter(
+            Q(sozlesme__sube_id=sube_id) | Q(sozlesme__ogrenci__sube_id=sube_id),
         )
-        .filter(id=taksit_id, sozlesme__kurum_id=kurum_id)
-        .first()
-    )
+    taksit = taksit_qs.first()
     if not taksit:
         return SendResult(success=False, errors=['Taksit bulunamadı.'])
 
@@ -980,11 +988,14 @@ def notify_payment_reminder(
     from apps.communication.application.variable_resolver import resolve_variables
 
     # Kategori bazlı eski LMS şablonu (varsa) merkezi eşlemeye yedek metin olur.
-    tpl = TemplateService().list_templates(
-        kurum_id,
-        category=tpl_category,
-        active_only=True,
-    ).first()
+    # Önce öğrencinin şubesine ait şablon; yoksa kurum geneli (şubesiz) kayıt (M-14).
+    tpl_sube_id = sube_id if sube_id is not None else getattr(ogrenci, 'sube_id', None)
+    tpl_qs = TemplateService().list_templates(kurum_id, category=tpl_category, active_only=True)
+    tpl = None
+    if tpl_sube_id is not None:
+        tpl = tpl_qs.filter(sube_id=tpl_sube_id).first()
+    if tpl is None:
+        tpl = tpl_qs.filter(sube_id__isnull=True).first()
     if tpl and tpl.body:
         legacy_body = resolve_variables(tpl.body, ctx)
     else:
@@ -1335,7 +1346,14 @@ def notify_announcement(
     audience_filter: dict | None = None,
     template_name: str = '',
     template_language: str = 'tr',
+    user=None,
+    sube_id: int | None = None,
 ) -> SendResult | None:
+    """Duyuru kampanyası.
+
+    `user` verilirse kitle kapsamı (koç vb.) ve WhatsApp hesabı o kullanıcıya göre
+    çözülür; `sube_id` kampanyayı şubeye damgalar (liste/detayda görünür kalır).
+    """
     from apps.communication.application.campaign_service import CampaignService
 
     filter_json = audience_filter or {'audience_type': 'all_veliler'}
@@ -1345,6 +1363,8 @@ def notify_announcement(
         campaign = service.create_draft(
             kurum_id,
             created_by_id=sent_by_user_id,
+            user=user,
+            sube_id=sube_id,
             title=title or 'Duyuru',
             body=body,
             template_name=template_name,

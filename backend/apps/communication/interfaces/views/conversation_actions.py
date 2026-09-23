@@ -74,7 +74,7 @@ class ConversationClaimView(CommunicationAPIView):
 
 class ConversationTransferView(CommunicationAPIView):
     def post(self, request, conversation_id):
-        _, _, conversation, err = _get_conversation(request, conversation_id)
+        kurum_id, sube_id, conversation, err = _get_conversation(request, conversation_id)
         if err:
             return err
         to_user_id = request.data.get('to_user_id')
@@ -83,8 +83,17 @@ class ConversationTransferView(CommunicationAPIView):
             return Response({'error': 'to_user_id gerekli.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             to_user = User.objects.get(pk=to_user_id)
-        except User.DoesNotExist:
+        except (User.DoesNotExist, ValueError, TypeError):
             return Response({'error': 'Hedef kullanıcı bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        if to_user.id == request.user.id:
+            return Response({'error': 'Sohbet kendinize devredilemez.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Hedef aynı kurumda, iletişim yetkili ve bu şubeye erişebilen personel olmalı (K-05)
+        from apps.communication.application.transfer_targets import validate_transfer_target
+
+        problem = validate_transfer_target(kurum_id, sube_id, to_user)
+        if problem:
+            return Response({'error': problem}, status=status.HTTP_400_BAD_REQUEST)
 
         is_manage = user_has_any_permission(request.user, 'communication.manage')
         if is_manage:
@@ -163,6 +172,14 @@ class ConversationNoteDetailView(CommunicationAPIView):
             note = conversation.internal_notes.get(pk=note_id)
         except ConversationNote.DoesNotExist:
             return Response({'error': 'Not bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        # Yalnız notun yazarı veya yönetici düzenler (B-08)
+        if note.author_id != request.user.id and not user_has_any_permission(
+            request.user, 'communication.manage',
+        ):
+            return Response(
+                {'error': 'Yalnızca notun yazarı düzenleyebilir.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         body = (request.data.get('body') or '').strip()
         if not body:
             return Response({'error': 'Not metni gerekli.'}, status=status.HTTP_400_BAD_REQUEST)

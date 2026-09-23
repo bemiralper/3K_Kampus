@@ -1,5 +1,9 @@
 """
 Merkezi bildirim şablon eşlemesi API'ları — katalog, upsert ve önizleme.
+
+Kurum + aktif şube bağlamı `resolve_kurum_and_sube` ile doğrulanır; gövdede
+kapsam olarak verilen `sube_id` ve `channel_config_id` de kullanıcı erişimine
+karşı denetlenir (K-03).
 """
 from rest_framework import status
 from rest_framework.response import Response
@@ -13,18 +17,16 @@ from apps.communication.application.notification_binding_service import (
     upsert_binding,
 )
 from apps.communication.domain.enums import Channel
-from apps.communication.interfaces.views._context import resolve_kurum_id
+from apps.communication.interfaces.views._context import (
+    assert_channel_config_in_kurum,
+    assert_scope_sube_allowed,
+    resolve_kurum_and_sube,
+)
 from apps.communication.permissions import (
     CommunicationConfigPermission,
     CommunicationModulePermission,
 )
-
-
-def _int_or_none(value):
-    try:
-        return int(value) if value not in (None, '', 'null') else None
-    except (TypeError, ValueError):
-        return None
+from shared.utils import int_or_none as _int_or_none
 
 
 def _uuid_or_none(value):
@@ -40,17 +42,30 @@ def _scope_from(source: dict) -> tuple[int | None, str | None, str]:
     )
 
 
+def _resolve_scope(request, source):
+    """(kurum_id, sube_id, channel_config_id, channel, error_response)."""
+    kurum_id, _active_sube, err = resolve_kurum_and_sube(request)
+    if err:
+        return None, None, None, None, err
+    sube_id, channel_config_id, channel = _scope_from(source)
+    gate = assert_scope_sube_allowed(request, kurum_id, sube_id)
+    if gate:
+        return None, None, None, None, gate
+    gate = assert_channel_config_in_kurum(kurum_id, channel_config_id)
+    if gate:
+        return None, None, None, None, gate
+    return kurum_id, sube_id, channel_config_id, channel, None
+
+
 class NotificationEventCatalogView(APIView):
     permission_classes = [CommunicationModulePermission]
 
     def get(self, request):
-        kurum_id = resolve_kurum_id(request)
-        if not kurum_id:
-            return Response(
-                {'error': 'kurum_id zorunludur.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        sube_id, channel_config_id, channel = _scope_from(request.query_params)
+        kurum_id, sube_id, channel_config_id, channel, err = _resolve_scope(
+            request, request.query_params,
+        )
+        if err:
+            return err
         return Response(list_event_catalog(
             kurum_id,
             sube_id=sube_id,
@@ -63,13 +78,10 @@ class NotificationBindingUpsertView(APIView):
     permission_classes = [CommunicationConfigPermission]
 
     def put(self, request):
-        kurum_id = resolve_kurum_id(request)
-        if not kurum_id:
-            return Response(
-                {'error': 'kurum_id zorunludur.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         data = request.data or {}
+        kurum_id, sube_id, channel_config_id, channel, err = _resolve_scope(request, data)
+        if err:
+            return err
         event_key = (data.get('event_key') or '').strip()
         recipient_type = (data.get('recipient_type') or '').strip().upper()
         if not event_key or not recipient_type:
@@ -77,7 +89,6 @@ class NotificationBindingUpsertView(APIView):
                 {'error': 'event_key ve recipient_type zorunludur.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        sube_id, channel_config_id, channel = _scope_from(data)
         try:
             binding = upsert_binding(
                 kurum_id,
@@ -104,13 +115,10 @@ class NotificationBindingUpsertView(APIView):
         })
 
     def delete(self, request):
-        kurum_id = resolve_kurum_id(request)
-        if not kurum_id:
-            return Response(
-                {'error': 'kurum_id zorunludur.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         data = request.data or {}
+        kurum_id, sube_id, channel_config_id, channel, err = _resolve_scope(request, data)
+        if err:
+            return err
         event_key = (data.get('event_key') or '').strip()
         recipient_type = (data.get('recipient_type') or '').strip().upper()
         if not event_key or not recipient_type:
@@ -118,7 +126,6 @@ class NotificationBindingUpsertView(APIView):
                 {'error': 'event_key ve recipient_type zorunludur.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        sube_id, channel_config_id, channel = _scope_from(data)
         deleted = delete_binding(
             kurum_id,
             event_key=event_key,
@@ -134,13 +141,10 @@ class NotificationBindingPreviewView(APIView):
     permission_classes = [CommunicationModulePermission]
 
     def post(self, request):
-        kurum_id = resolve_kurum_id(request)
-        if not kurum_id:
-            return Response(
-                {'error': 'kurum_id zorunludur.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         data = request.data or {}
+        kurum_id, sube_id, channel_config_id, _channel, err = _resolve_scope(request, data)
+        if err:
+            return err
         event_key = (data.get('event_key') or '').strip()
         recipient_type = (data.get('recipient_type') or '').strip().upper()
         if not event_key or not recipient_type:
@@ -148,7 +152,6 @@ class NotificationBindingPreviewView(APIView):
                 {'error': 'event_key ve recipient_type zorunludur.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        sube_id, channel_config_id, _channel = _scope_from(data)
         context = data.get('context')
         try:
             payload = preview_binding(

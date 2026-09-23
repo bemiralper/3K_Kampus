@@ -566,6 +566,126 @@ class CoachBulkScopeTest(TestCase):
         )
         self.assertEqual(preview.ogrenci_count, 1)
 
+    def test_coach_scope_survives_materialize_without_user(self):
+        """K-04: kapsam taslağa yazılır; materialize `user` bilmese de dışarı çıkmaz."""
+        service = CampaignService()
+        campaign = service.create_draft(
+            self.kurum.id,
+            created_by_id=self.coach_user.id,
+            body='Sınıfa duyuru',
+            audience_filter={'audience_type': 'filtered', 'include_students': True},
+            user=self.coach_user,
+        )
+        self.assertEqual(
+            campaign.recipient_filter_json.get('scope_student_ids'),
+            [self.student_mine.id],
+        )
+        # Kullanıcı bilgisi olmadan çözümleme (confirm/materialize yolu)
+        preview = AudienceResolver.resolve(self.kurum.id, campaign.recipient_filter_json)
+        ids = {r.ogrenci_id for r in preview.recipients}
+        self.assertEqual(ids, {self.student_mine.id})
+        campaign = service.materialize_queue(campaign, sender_user_id=self.coach_user.id)
+        targets = set(
+            Message.objects.filter(campaign=campaign).values_list('conversation__ogrenci_id', flat=True)
+        )
+        self.assertNotIn(self.student_other.id, targets)
+
+    def test_coach_cannot_use_other_coach_id(self):
+        other_personel = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Diğer', soyad='Koç', tc_kimlik_no='33333333333',
+        )
+        other_profile = CoachProfile.objects.create(
+            teacher=other_personel, capacity=20, is_active=True, is_coach=True,
+        )
+        CoachStudentAssignment.objects.create(
+            coach=other_profile, student=self.student_other,
+            start_date=date(2026, 1, 1), is_primary=True,
+        )
+        with self.assertRaises(PermissionDenied):
+            CampaignService().create_draft(
+                self.kurum.id,
+                created_by_id=self.coach_user.id,
+                body='x',
+                audience_filter={'audience_type': 'coach_parents', 'coach_id': other_profile.id},
+                user=self.coach_user,
+            )
+
+    def test_coach_cannot_smuggle_included_ids(self):
+        with self.assertRaises(PermissionDenied):
+            CampaignService().create_draft(
+                self.kurum.id,
+                created_by_id=self.coach_user.id,
+                body='x',
+                audience_filter={
+                    'audience_type': 'custom_ids',
+                    'ogrenci_ids': [self.student_mine.id],
+                    'included_ogrenci_ids': [self.student_other.id],
+                },
+                user=self.coach_user,
+            )
+
+    def test_announcement_endpoint_forbidden_for_coach(self):
+        """Koç duyuru ucundan şubedeki tüm velilere ulaşamaz (seed rolünde bulk olsa da 403)."""
+        OgrenciVeli.objects.create(
+            ogrenci=self.student_mine, veli_turu='anne', ad='Benim', soyad='Veli',
+            telefon='05341111111', sms_bildirimleri=['duyuru'],
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=self.student_other, veli_turu='anne', ad='Başka', soyad='Veli',
+            telefon='05342222222', sms_bildirimleri=['duyuru'],
+        )
+        self.client.force_authenticate(user=self.coach_user)
+        res = self.client.post(
+            '/api/communication/announcements/send/',
+            {'kurum_id': self.kurum.id, 'body': 'Duyuru'},
+            format='json',
+            HTTP_X_SUBE_ID=str(self.sube.id),
+        )
+        self.assertEqual(res.status_code, 403)
+        self.assertEqual(
+            Message.objects.filter(conversation__contact_phone='+905342222222').count(), 0,
+        )
+
+    def test_admin_announcement_is_stamped_with_sube(self):
+        OgrenciVeli.objects.create(
+            ogrenci=self.student_mine, veli_turu='anne', ad='Benim', soyad='Veli',
+            telefon='05341111111', sms_bildirimleri=['duyuru'],
+        )
+        self.client.force_authenticate(user=self.admin_user)
+        with patch(
+            'apps.communication.infrastructure.channels.whatsapp_cloud.WhatsAppCloudClient.send_text',
+            return_value={'success': True, 'messages': [{'id': 'wamid.dy1'}]},
+        ):
+            res = self.client.post(
+                '/api/communication/announcements/send/',
+                {'kurum_id': self.kurum.id, 'body': 'Duyuru'},
+                format='json',
+                HTTP_X_SUBE_ID=str(self.sube.id),
+            )
+        self.assertEqual(res.status_code, 201, res.content)
+        campaign = OutboundCampaign.objects.get(id=res.json()['campaign_id'])
+        self.assertEqual(campaign.sube_id, self.sube.id)
+
+    def test_all_veliler_respects_sube_scope(self):
+        other_sube = Sube.objects.create(kurum=self.kurum, ad='Diğer Şube', kod='CSC-2')
+        far_student = Ogrenci.objects.create(
+            kurum=self.kurum, sube=other_sube, ad='Uzak', soyad='Ogr', telefon='05327777777', aktif_mi=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=far_student, veli_turu='anne', ad='Uzak', soyad='Anne',
+            telefon='05328888888', sms_bildirimleri=['duyuru'],
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=self.student_mine, veli_turu='anne', ad='Yakın', soyad='Anne',
+            telefon='05329999999', sms_bildirimleri=['duyuru'],
+        )
+        preview = AudienceResolver.resolve(
+            self.kurum.id, {'audience_type': 'all_veliler', 'sube_id': self.sube.id},
+        )
+        phones = {r.e164 for r in preview.recipients}
+        self.assertIn('+905329999999', phones)
+        self.assertNotIn('+905328888888', phones)
+
     def test_admin_can_create_campaign(self):
         self.client.force_authenticate(user=self.admin_user)
         response = self.client.post(

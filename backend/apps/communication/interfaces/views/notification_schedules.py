@@ -9,9 +9,24 @@ from apps.communication.application.notification_schedule_service import (
     get_schedule,
     upsert_schedule,
 )
-from apps.communication.interfaces.views._context import resolve_kurum_id
-from apps.communication.interfaces.views.notification_bindings import _int_or_none
+from apps.communication.interfaces.views._context import (
+    assert_scope_sube_allowed,
+    resolve_kurum_and_sube,
+)
+from shared.utils import int_or_none as _int_or_none
 from apps.communication.permissions import CommunicationConfigPermission, CommunicationModulePermission
+
+
+def _scope(request, source):
+    """(kurum_id, scope_sube_id, error_response) — kurum + aktif şube + hedef şube kapısı."""
+    kurum_id, _active, err = resolve_kurum_and_sube(request)
+    if err:
+        return None, None, err
+    sube_id = _int_or_none(source.get('sube_id'))
+    gate = assert_scope_sube_allowed(request, kurum_id, sube_id)
+    if gate:
+        return None, None, gate
+    return kurum_id, sube_id, None
 
 
 class NotificationScheduleView(APIView):
@@ -21,16 +36,14 @@ class NotificationScheduleView(APIView):
         return [CommunicationConfigPermission()]
 
     def get(self, request):
-        kurum_id = resolve_kurum_id(request)
-        if not kurum_id:
-            return Response({'error': 'kurum_id zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
+        kurum_id, sube_id, err = _scope(request, request.query_params)
+        if err:
+            return err
         event_key = (request.query_params.get('event_key') or '').strip()
         if not event_key:
             return Response({'error': 'event_key zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
         try:
-            return Response(get_schedule(
-                kurum_id, event_key, sube_id=_int_or_none(request.query_params.get('sube_id')),
-            ))
+            return Response(get_schedule(kurum_id, event_key, sube_id=sube_id))
         except NotificationScheduleError as exc:
             return Response({'error': exc.message}, status=status.HTTP_400_BAD_REQUEST)
         except DatabaseError:
@@ -43,10 +56,10 @@ class NotificationScheduleView(APIView):
             })
 
     def put(self, request):
-        kurum_id = resolve_kurum_id(request)
-        if not kurum_id:
-            return Response({'error': 'kurum_id zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
         data = request.data or {}
+        kurum_id, sube_id, err = _scope(request, data)
+        if err:
+            return err
         event_key = (data.get('event_key') or '').strip()
         if not event_key:
             return Response({'error': 'event_key zorunludur.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -57,7 +70,7 @@ class NotificationScheduleView(APIView):
                 is_enabled=bool(data.get('is_enabled')),
                 send_time=data.get('send_time'),
                 report_kinds=data.get('report_kinds'),
-                sube_id=_int_or_none(data.get('sube_id')),
+                sube_id=sube_id,
                 user=request.user if request.user.is_authenticated else None,
             ))
         except NotificationScheduleError as exc:

@@ -16,14 +16,20 @@ from apps.communication.domain.models import (
 
 
 class WhatsAppConfigSerializer(serializers.ModelSerializer):
+    # Verify token Meta ile paylaşılan bir sırdır; okuma yönünde yalnız "tanımlı mı" döner.
+    has_verify_token = serializers.SerializerMethodField()
+
     class Meta:
         model = CommunicationChannelConfig
         fields = [
             'id', 'channel', 'name', 'phone_number_id', 'waba_id', 'app_id',
-            'webhook_verify_token', 'display_phone', 'is_active',
+            'has_verify_token', 'display_phone', 'is_active',
             'is_default', 'scope_type', 'created_at', 'updated_at',
         ]
         read_only_fields = ['id', 'channel', 'created_at', 'updated_at']
+
+    def get_has_verify_token(self, obj) -> bool:
+        return bool(obj.webhook_verify_token)
 
 
 class WhatsAppConfigWriteSerializer(serializers.ModelSerializer):
@@ -41,6 +47,9 @@ class WhatsAppConfigWriteSerializer(serializers.ModelSerializer):
         token = validated_data.pop('access_token', None)
         if token:
             instance.access_token_encrypted = encrypt_access_token(token)
+        # Boş verify token "değiştirme" anlamına gelir; kayıtlı değer silinmez.
+        if not (validated_data.get('webhook_verify_token') or '').strip():
+            validated_data.pop('webhook_verify_token', None)
         return super().update(instance, validated_data)
 
     def create(self, validated_data):
@@ -55,17 +64,25 @@ class WhatsAppAccountSerializer(serializers.ModelSerializer):
     sube_ids = serializers.SerializerMethodField()
     role_names = serializers.SerializerMethodField()
     sube_names = serializers.SerializerMethodField()
+    has_verify_token = serializers.SerializerMethodField()
+    has_app_secret = serializers.SerializerMethodField()
 
     class Meta:
         model = CommunicationChannelConfig
         fields = [
             'id', 'channel', 'name', 'phone_number_id', 'waba_id', 'app_id',
-            'webhook_verify_token', 'display_phone', 'is_active', 'is_default',
+            'has_verify_token', 'has_app_secret', 'display_phone', 'is_active', 'is_default',
             'scope_type', 'department', 'quota_json', 'last_synced_at',
             'role_ids', 'sube_ids', 'role_names', 'sube_names',
             'created_at', 'updated_at',
         ]
         read_only_fields = fields
+
+    def get_has_verify_token(self, obj) -> bool:
+        return bool(obj.webhook_verify_token)
+
+    def get_has_app_secret(self, obj) -> bool:
+        return bool(obj.app_secret_encrypted)
 
     def get_role_ids(self, obj):
         return list(obj.allowed_roles.values_list('id', flat=True))
@@ -132,6 +149,7 @@ class ConversationListSerializer(serializers.ModelSerializer):
     is_pinned = serializers.SerializerMethodField()
     is_muted = serializers.SerializerMethodField()
     awaiting_reply = serializers.SerializerMethodField()
+    can_moderate = serializers.SerializerMethodField()
 
     class Meta:
         model = Conversation
@@ -147,9 +165,21 @@ class ConversationListSerializer(serializers.ModelSerializer):
             'first_unanswered_at', 'last_customer_message_at', 'last_reply_at',
             'needs_support_at', 'archived_at',
             'pinned_at', 'muted_until', 'is_pinned', 'is_muted', 'awaiting_reply',
-            'tags', 'sla', 'session', 'can_claim',
+            'tags', 'sla', 'session', 'can_claim', 'can_moderate',
             'created_at',
         ]
+
+    def get_can_moderate(self, obj) -> bool:
+        """Sohbeti kaldırma / sohbet geneli mesaj sabitleme hakkı (B-08)."""
+        request = self.context.get('request')
+        user = getattr(request, 'user', None) if request else None
+        if not user:
+            return False
+        from apps.communication.application.coach_scope import user_can_moderate_conversation
+
+        return user_can_moderate_conversation(
+            user, obj, cache=self.context.setdefault('_moderate_cache', {}),
+        )
 
     def _user_state(self, obj) -> tuple:
         return (self.context.get('_user_states') or {}).get(str(obj.id), (None, None))
@@ -286,7 +316,15 @@ class ConversationListSerializer(serializers.ModelSerializer):
         from apps.communication.application.conversation_display import (
             linked_student_names_for_conversation,
         )
-        return linked_student_names_for_conversation(obj)
+        # Liste view'ı sayfa için toplu çözüm verir (`_linked_names`); tekil
+        # serileştirmede de satır başına tekrar hesaplanmasın diye burada saklanır.
+        per_row = self.context.setdefault('_linked_names_local', {})
+        key = str(obj.id)
+        if key not in per_row:
+            per_row[key] = linked_student_names_for_conversation(
+                obj, cache=self.context.get('_linked_names'),
+            )
+        return list(per_row[key])
 
     def get_ogrenci_ad(self, obj) -> str:
         names = self.get_ogrenci_adlari(obj)
@@ -415,14 +453,6 @@ class MessageCreateSerializer(serializers.Serializer):
     message_type = serializers.CharField(required=False, default='TEXT')
     attachment_id = serializers.UUIDField(required=False, allow_null=True)
     reply_to_message_id = serializers.UUIDField(required=False, allow_null=True)
-
-
-class CampaignPreviewRequestSerializer(serializers.Serializer):
-    recipient_filter = serializers.JSONField(required=False, default=dict)
-    body = serializers.CharField(required=False, allow_blank=True)
-    kurum_id = serializers.IntegerField(required=False)
-    attachment_count = serializers.IntegerField(required=False, default=0, min_value=0)
-    ai_used = serializers.BooleanField(required=False, default=False)
 
 
 class CampaignPreviewResponseSerializer(serializers.Serializer):

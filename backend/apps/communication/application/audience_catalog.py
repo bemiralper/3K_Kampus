@@ -3,9 +3,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from apps.coaching.services.coach_access import scoped_student_ids
 from apps.communication.application.audience_query import ALL_PERSON_TYPES
-from shared.permissions import user_has_any_permission
 
 
 STUDENT_TYPES = ['ogrenci', 'veli']
@@ -45,20 +43,9 @@ def build_audience_catalog(
 
 
 def _allowed_student_ids(user):
-    if not user or not getattr(user, 'is_authenticated', False):
-        return None
-    if user_has_any_permission(user, 'communication.manage'):
-        return None
-    from apps.coaching.services.coach_access import get_coach_profile, is_resource_admin
-    from apps.communication.permissions import user_can_bulk_communicate
+    from apps.communication.application.coach_scope import scope_student_ids_for_bulk
 
-    if is_resource_admin(user):
-        return None
-    if get_coach_profile(user) is not None:
-        return scoped_student_ids(user)
-    if user_can_bulk_communicate(user):
-        return None
-    return scoped_student_ids(user)
+    return scope_student_ids_for_bulk(user)
 
 
 def _opt(value, label) -> dict[str, Any]:

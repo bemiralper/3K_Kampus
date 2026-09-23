@@ -75,6 +75,21 @@ def is_session_error(result: dict | None) -> bool:
     return '131047' in text or 're-engagement message' in text
 
 
+RATE_LIMIT_ERROR_CODES = frozenset({130429, 131048, 131056, 80007})
+
+
+def is_rate_limit_error(result: dict | None) -> bool:
+    """Meta hız sınırı / geçici kapasite hatası — deneme sayılmadan ertelenir."""
+    if not result:
+        return False
+    if _error_code(result) in RATE_LIMIT_ERROR_CODES:
+        return True
+    if result.get('status_code') == 429:
+        return True
+    text = str(result.get('error') or '').lower()
+    return 'rate limit' in text or '130429' in text
+
+
 def is_permanent_send_error(result: dict | None) -> bool:
     """
     Tekrar denemenin fayda etmeyeceği gönderim hataları.

@@ -224,22 +224,47 @@ class ConversationRouter:
         )
         return conversation
 
-    @staticmethod
+    # Kişinin eliyle yazdığı cevap sayılan kaynaklar; kampanya / otomatik bildirim
+    # (odeme, yoklama, odev …) SLA sayacını sıfırlamaz (M-01).
+    HUMAN_REPLY_MODULES = frozenset({'manual', 'forward', 'conversation_template', 'sohbet'})
+
+    @classmethod
+    def is_human_reply(cls, *, actor=None, source_module: str | None) -> bool:
+        if getattr(settings, 'COMMUNICATION_SYSTEM_MESSAGES_COUNT_AS_REPLY', False):
+            return True
+        module = (source_module or '').strip().lower()
+        if module in cls.HUMAN_REPLY_MODULES:
+            return True
+        # Kaynak modülü belirtilmemiş ama bir kullanıcı eliyle gönderilmiş
+        return bool(actor) and not module
+
+    @classmethod
     def apply_after_outbound(
+        cls,
         conversation: Conversation,
         *,
         actor=None,
         preview: str = '',
+        source_module: str | None = None,
     ) -> Conversation:
         now = timezone.now()
         old_status = conversation.status
-        update_fields = ['last_reply_at', 'first_unanswered_at', 'needs_support_at', 'status', 'updated_at']
+        human_reply = cls.is_human_reply(actor=actor, source_module=source_module)
 
-        conversation.last_reply_at = now
-        conversation.first_unanswered_at = None
-        conversation.needs_support_at = None
-        if conversation.status != ConversationStatus.ARCHIVED:
-            conversation.status = ConversationStatus.REPLIED
+        if human_reply:
+            update_fields = ['last_reply_at', 'first_unanswered_at', 'needs_support_at', 'status', 'updated_at']
+            conversation.last_reply_at = now
+            conversation.first_unanswered_at = None
+            conversation.needs_support_at = None
+            if conversation.status != ConversationStatus.ARCHIVED:
+                conversation.status = ConversationStatus.REPLIED
+        else:
+            # Sistem mesajı: bekleyen soru bekliyor kalır, yalnız arşivden çıkarılır
+            update_fields = ['updated_at']
+            if conversation.status == ConversationStatus.ARCHIVED:
+                conversation.status = ConversationStatus.OPEN
+                conversation.archived_at = None
+                update_fields.extend(['status', 'archived_at'])
 
         conversation.save(update_fields=update_fields)
         if old_status != conversation.status:
@@ -248,7 +273,11 @@ class ConversationRouter:
             conversation,
             ConversationEventType.MESSAGE_OUT,
             actor=actor,
-            meta={'preview': (preview or '')[:200]},
+            meta={
+                'preview': (preview or '')[:200],
+                'source_module': source_module or '',
+                'human_reply': human_reply,
+            },
         )
         return conversation
 

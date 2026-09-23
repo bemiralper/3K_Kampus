@@ -45,11 +45,13 @@ class PaymentReminderSendView(CommunicationAPIView):
             return Response({'error': 'Geçersiz taksit_id.'}, status=status.HTTP_400_BAD_REQUEST)
 
         with_pdf = bool(request.data.get('with_pdf', False))
+        # Taksit aktif şubeye ait olmalı; başka şubenin velisine gönderim kapalı (K-06)
         result = notify_payment_reminder(
             kurum_id,
             taksit_id,
             sent_by_user_id=request.user.id if request.user.is_authenticated else None,
             with_pdf=with_pdf,
+            sube_id=sube_id,
         )
 
         if result is None:
@@ -58,10 +60,13 @@ class PaymentReminderSendView(CommunicationAPIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         if not result.success:
-            return Response(
-                {'error': result.errors[0] if result.errors else 'Gönderim başarısız.'},
-                status=status.HTTP_400_BAD_REQUEST,
+            first_error = result.errors[0] if result.errors else 'Gönderim başarısız.'
+            http_status = (
+                status.HTTP_404_NOT_FOUND
+                if first_error == 'Taksit bulunamadı.'
+                else status.HTTP_400_BAD_REQUEST
             )
+            return Response({'error': first_error}, status=http_status)
 
         from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
 

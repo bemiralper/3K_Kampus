@@ -5,6 +5,7 @@ import uuid
 
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
 
 from .enums import (
     CampaignStatus,
@@ -309,6 +310,9 @@ class Conversation(models.Model):
             models.Index(fields=['kurum', 'department', 'status'], name='comm_conv_dept_status_idx'),
             models.Index(fields=['kurum', 'claimed_by_user'], name='comm_conv_claimed_idx'),
             models.Index(fields=['kurum', 'first_unanswered_at'], name='comm_conv_sla_idx'),
+            # Liste sıralaması (kurum + son mesaj) ve numara eşleşmesi (P-08)
+            models.Index(fields=['kurum', '-last_message_at'], name='comm_conv_kurum_lastmsg_idx'),
+            models.Index(fields=['kurum', 'contact_phone'], name='comm_conv_kurum_phone_idx'),
         ]
 
     def __str__(self):
@@ -1102,7 +1106,9 @@ class Message(models.Model):
         verbose_name='Sabitleyen Kullanıcı',
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
+    # Gelen mesajda Meta'nın gönderdiği zaman damgası yazılır; sıralama sunucuya
+    # ulaşma anına değil mesajın gerçek zamanına göre yapılır (M-09).
+    created_at = models.DateTimeField(default=timezone.now, editable=False, db_index=False)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -1114,6 +1120,15 @@ class Message(models.Model):
             models.Index(
                 fields=['conversation', '-created_at'],
                 name='comm_msg_conv_created_idx',
+            ),
+        ]
+        constraints = [
+            # Aynı Meta mesaj kimliği iki kez yazılamaz — webhook tekrarı /
+            # eşzamanlı teslim tek kayıt üretir (B-01).
+            models.UniqueConstraint(
+                fields=['provider_message_id'],
+                condition=models.Q(provider_message_id__gt=''),
+                name='comm_msg_provider_id_uniq',
             ),
         ]
 
@@ -1241,6 +1256,9 @@ class OutboundQueueItem(models.Model):
     max_attempts = models.PositiveSmallIntegerField(default=5)
     next_attempt_at = models.DateTimeField(verbose_name='Sonraki Deneme')
     locked_at = models.DateTimeField(null=True, blank=True)
+    # Kilidi alan işleyici (host:pid:token) — iki işleyicinin aynı kaydı
+    # göndermesini engeller (B-04).
+    locked_by = models.CharField(max_length=64, blank=True, default='')
     last_error = models.TextField(blank=True, default='')
     # Kampanya dışı şablon gönderimi: template_name, template_language,
     # channel_config_id, template_context (hafta_no, odev_baslik, …)

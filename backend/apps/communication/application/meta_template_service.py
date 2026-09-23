@@ -97,6 +97,54 @@ class MetaTemplateService:
         )
 
     @staticmethod
+    def account_covers_sube(channel_config, sube_id: int | None, user=None) -> bool:
+        """Şablonun hattı aktif şubeyi kapsıyor mu (K-07).
+
+        Tam inbox yetkili (yönetici) her hattı görür; diğerleri yalnız şubesini
+        kapsayan hatların şablonlarına erişir.
+        """
+        if sube_id is None or channel_config is None:
+            return True
+        if user is not None:
+            from apps.communication.application.coach_scope import _has_full_inbox_access
+
+            if _has_full_inbox_access(user):
+                return True
+        try:
+            return bool(channel_config.covers_sube(int(sube_id)))
+        except Exception:
+            return False
+
+    @classmethod
+    def get_scoped(cls, kurum_id: int, template_id, *, sube_id: int | None = None, user=None):
+        """`get` + hat/şube kapsamı; kapsam dışı ise None (view 404 döner)."""
+        tpl = cls.get(kurum_id, template_id)
+        if tpl is None:
+            return None
+        if not cls.account_covers_sube(tpl.channel_config, sube_id, user=user):
+            return None
+        return tpl
+
+    @staticmethod
+    def restrict_qs_to_sube(qs, kurum_id: int, sube_id: int | None, user=None):
+        """Liste sorgusunu şubeyi kapsayan hatlarla sınırla."""
+        if sube_id is None:
+            return qs
+        if user is not None:
+            from apps.communication.application.coach_scope import _has_full_inbox_access
+
+            if _has_full_inbox_access(user):
+                return qs
+        from django.db.models import Q
+
+        from apps.communication.domain.enums import WhatsAppAccountScope
+
+        return qs.filter(
+            Q(channel_config__scope_type=WhatsAppAccountScope.ALL_SUBES)
+            | Q(channel_config__allowed_subes__id=int(sube_id)),
+        ).distinct()
+
+    @staticmethod
     def _status_rank(status: str) -> int:
         order = {
             MetaTemplateStatus.APPROVED: 0,
@@ -960,13 +1008,21 @@ class MetaTemplateService:
         meta_status = event.get('event') or event.get('message_template_status') or event.get('status') or ''
         reason = event.get('reason') or event.get('rejected_reason') or ''
 
-        qs = WhatsAppMetaTemplate.objects.all()
+        # Şablon durumu WABA/hat bazlıdır; eşleşen hesap yoksa hiçbir kaydı
+        # güncelleme — aksi halde aynı adlı tüm kurumların şablonları değişir (K-07).
+        account = None
         if phone_number_id:
             account = ChannelConfigRepository.get_by_phone_number_id(phone_number_id)
-            if account:
-                qs = qs.filter(channel_config=account)
+        if account is not None:
+            qs = WhatsAppMetaTemplate.objects.filter(channel_config=account)
         elif waba_id:
-            qs = qs.filter(channel_config__waba_id=waba_id)
+            qs = WhatsAppMetaTemplate.objects.filter(channel_config__waba_id=waba_id)
+            if not qs.exists():
+                logger.info('template status webhook: bilinmeyen WABA %s, atlandı', waba_id)
+                return 0
+        else:
+            logger.warning('template status webhook: phone_number_id/waba_id yok, atlandı')
+            return 0
 
         if name:
             qs = qs.filter(name=name)
@@ -1026,20 +1082,6 @@ class MetaTemplateService:
                     return found
             return qs.select_related('channel_config').first()
         return qs.select_related('channel_config').first()
-
-    @staticmethod
-    def rebuild_components(template: WhatsAppMetaTemplate) -> WhatsAppMetaTemplate:
-        components, vmap = build_meta_components(
-            body_named=template.body_named,
-            header_json=template.header_json or {},
-            footer_text=template.footer_text or '',
-            buttons_json=template.buttons_json or [],
-            example_values=template.example_values_json or {},
-        )
-        template.components_json = components
-        template.variable_map_json = vmap
-        template.save(update_fields=['components_json', 'variable_map_json', 'updated_at'])
-        return template
 
     @staticmethod
     def ensure_variable_map(template: WhatsAppMetaTemplate) -> dict[str, str]:

@@ -80,6 +80,7 @@ class MetaTemplateListCreateView(APIView):
             include_shared_waba=include_shared,
             dedupe=dedupe,
         )
+        qs = MetaTemplateService.restrict_qs_to_sube(qs, kurum_id, _sube_id, user=request.user)
         shared_ids = (
             MetaTemplateService.shared_account_ids(kurum_id, account_id)
             if account_id else []
@@ -189,7 +190,7 @@ class MetaTemplateDetailView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=_sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         return Response(WhatsAppMetaTemplateSerializer(tpl).data)
@@ -198,7 +199,7 @@ class MetaTemplateDetailView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=_sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         ser = WhatsAppMetaTemplateWriteSerializer(data=request.data, partial=True)
@@ -256,7 +257,7 @@ class MetaTemplateDetailView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=_sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         delete_on_meta = request.query_params.get('delete_on_meta') in ('1', 'true', 'True')
@@ -274,7 +275,7 @@ class MetaTemplateSubmitView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=_sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         try:
@@ -291,7 +292,7 @@ class MetaTemplateResubmitView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=_sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         try:
@@ -308,7 +309,7 @@ class MetaTemplateRefreshStatusView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=_sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         try:
@@ -325,7 +326,7 @@ class MetaTemplateCloneView(APIView):
         kurum_id, _sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=_sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         ser = WhatsAppMetaTemplateCloneSerializer(data=request.data)
@@ -392,7 +393,7 @@ class MetaTemplateCreateAppView(APIView):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
-        tpl = MetaTemplateService.get(kurum_id, template_id)
+        tpl = MetaTemplateService.get_scoped(kurum_id, template_id, sube_id=sube_id, user=request.user)
         if not tpl:
             return Response({'error': 'Şablon bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         try:

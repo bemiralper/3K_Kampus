@@ -27,3 +27,6 @@ PASSWORD_HASHERS = [
 
 # Email
 EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
+
+# İletişim testleri: WhatsApp kimlik bilgisi yokken simüle gönderim başarılı sayılır
+COMMUNICATION_ALLOW_STUB_SEND = True

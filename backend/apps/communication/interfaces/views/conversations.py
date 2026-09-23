@@ -99,11 +99,15 @@ def _parse_chat_filters(request, kurum_id) -> dict:
 class ConversationListView(CommunicationAPIView):
     """Sohbet listesi.
 
-    `limit` gönderilirse sayfalanır (`offset` ile). Parametre yoksa eski
-    inbox'ın beklediği gibi tüm sonuçlar döner.
+    Sayfalama iki yolla çalışır:
+    - `cursor` (önerilen): son satırın (last_message_at, id) çiftinden türetilen
+      opak imleç; canlı sıralama değişse de satır atlanmaz (M-10).
+    - `offset` (eski): `limit` ile birlikte.
+    `limit` verilmezse en fazla `MAX_LIMIT` satır döner; sınırsız tam liste yok (A-02).
     """
 
     MAX_LIMIT = 100
+    DEFAULT_LIMIT = 30
 
     def get(self, request):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)
@@ -120,29 +124,48 @@ class ConversationListView(CommunicationAPIView):
 
         total = qs.count()
         limit_param = request.query_params.get('limit')
-        page = qs
+        cursor_param = (request.query_params.get('cursor') or '').strip()
+        try:
+            limit = max(1, min(int(limit_param), self.MAX_LIMIT)) if limit_param else self.MAX_LIMIT
+        except (TypeError, ValueError):
+            limit = self.DEFAULT_LIMIT
+
         offset = 0
-        if limit_param:
-            try:
-                limit = max(1, min(int(limit_param), self.MAX_LIMIT))
-            except (TypeError, ValueError):
-                limit = 30
+        next_cursor = None
+        if cursor_param:
+            qs = ConversationRepository.apply_cursor(qs, cursor_param)
+            rows = list(qs[:limit])
+            if len(rows) == limit:
+                next_cursor = ConversationRepository.cursor_for(rows[-1])
+            has_more = next_cursor is not None
+        else:
             try:
                 offset = max(0, int(request.query_params.get('offset') or 0))
             except (TypeError, ValueError):
                 offset = 0
-            page = qs[offset:offset + limit]
+            rows = list(qs[offset:offset + limit])
+            has_more = (offset + len(rows)) < total
+            if has_more and rows:
+                next_cursor = ConversationRepository.cursor_for(rows[-1])
 
-        rows = list(page)
+        from apps.communication.application.conversation_display import (
+            prefetch_linked_student_names,
+        )
+
         states = ConversationRepository.user_state_map(request.user, [c.id for c in rows])
         serializer = ConversationListSerializer(
-            rows, many=True, context={'request': request, '_user_states': states},
+            rows, many=True, context={
+                'request': request,
+                '_user_states': states,
+                '_linked_names': prefetch_linked_student_names(rows),
+            },
         )
         return Response({
             'conversations': serializer.data,
             'total': total,
             'offset': offset,
-            'has_more': bool(limit_param) and (offset + len(rows)) < total,
+            'has_more': has_more,
+            'next_cursor': next_cursor,
         })
 
 

@@ -26,6 +26,14 @@ if not WHATSAPP_APP_SECRET:
         'WHATSAPP_APP_SECRET production ortamında zorunludur (webhook HMAC doğrulaması).'
     )
 
+if not COMMUNICATION_TOKEN_ENCRYPTION_KEY:
+    # Boş anahtar WhatsApp access token / app secret'ı düz metin saklar (B-07).
+    # Üretim: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+    raise ImproperlyConfigured(
+        'COMMUNICATION_TOKEN_ENCRYPTION_KEY production ortamında zorunludur '
+        '(WhatsApp token/secret şifrelemesi).'
+    )
+
 # Database — DB_SSLMODE: require (managed DB), prefer veya disable (aynı sunucu PG)
 _db_sslmode = os.environ.get('DB_SSLMODE', 'require').strip()
 _db_options = {}

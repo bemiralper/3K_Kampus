@@ -4,7 +4,6 @@ Koç kapsamı — konuşma erişimi, ticket görünürlüğü ve toplu gönderim
 from __future__ import annotations
 
 from django.conf import settings
-from django.core.exceptions import PermissionDenied
 from django.db.models import Q
 
 from apps.coaching.services.coach_access import (
@@ -20,10 +19,6 @@ from apps.communication.domain.enums import (
     RecipientType,
 )
 from shared.permissions import user_has_any_permission
-
-COACH_AUDIENCE_TYPES = frozenset({
-    'coach_students', 'coach_parents', 'custom_ids', 'filtered', 'query',
-})
 
 # Ticket routing claim filtrelerinin üstünde kalan roller (koç profili olsa bile).
 FULL_INBOX_ROLE_CODES = frozenset({'super_admin', 'kurum_yoneticisi'})
@@ -481,12 +476,62 @@ def user_can_access_conversation(user, conversation) -> bool:
     return False
 
 
+def user_can_moderate_conversation(user, conversation, *, cache: dict | None = None) -> bool:
+    """Sohbeti/mesajı listeden kaldırma, sohbet geneli sabitleme gibi paylaşımlı
+    inbox'ı etkileyen işlemler: yönetici, üstlenen kişi veya atanmış koç (B-08).
+
+    `cache` (istek başına dict) verilirse yetki/koç profili sorguları kullanıcı
+    için bir kez çalışır — liste serileştirmesinde satır başına 2–3 sorgu yerine.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return False
+    if cache is not None:
+        if 'full_inbox' not in cache:
+            cache['full_inbox'] = _has_full_inbox_access(user)
+        full = cache['full_inbox']
+    else:
+        full = _has_full_inbox_access(user)
+    if full:
+        return True
+    if conversation.claimed_by_user_id == user.id:
+        return True
+    if cache is not None:
+        if 'coach_profile' not in cache:
+            cache['coach_profile'] = get_coach_profile(user)
+        coach_profile = cache['coach_profile']
+    else:
+        coach_profile = get_coach_profile(user)
+    if coach_profile and conversation.assigned_coach_id == coach_profile.id:
+        return True
+    return False
+
+
 def assign_coach_to_conversation(conversation) -> None:
     """Gelen mesajda öğrenci koç atamasından konuşmaya koç bağla."""
     from apps.communication.application.conversation_router import (
         assign_coach_to_conversation as router_assign,
     )
     router_assign(conversation)
+
+
+def scope_student_ids_for_bulk(user):
+    """Toplu gönderim / kitle sorgusu için öğrenci kapsamı.
+
+    `None` → kısıt yok (yönetici, kaynak yöneticisi, bulk yetkili personel);
+    `set` → yalnız bu öğrenciler (koç profili olan veya bulk yetkisi olmayan
+    kullanıcı). Eskiden 3 ayrı dosyada kopyalanmış mantığın tek tanımı (Faz 8.3).
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return None
+    if is_resource_admin(user) or user_has_any_permission(user, 'communication.manage'):
+        return None
+    from apps.communication.permissions import user_can_bulk_communicate
+
+    if get_coach_profile(user) is not None:
+        return scoped_student_ids(user)
+    if user_can_bulk_communicate(user):
+        return None
+    return scoped_student_ids(user)
 
 
 def is_coach_bulk_user(user) -> bool:
@@ -496,10 +541,3 @@ def is_coach_bulk_user(user) -> bool:
     if _bypasses_claim_visibility(user):
         return False
     return get_coach_profile(user) is not None
-
-
-def assert_coach_bulk_audience(user, audience_type: str) -> None:
-    if not is_coach_bulk_user(user):
-        return
-    if audience_type not in COACH_AUDIENCE_TYPES:
-        raise PermissionDenied('Bu alıcı kitlesi için yetkiniz yok.')

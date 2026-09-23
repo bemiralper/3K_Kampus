@@ -25,6 +25,7 @@ from apps.communication.domain.enums import (
     MetaTemplateStatus,
     RecipientType,
 )
+from apps.communication.domain.constants import OPT_IN_CATEGORY
 from apps.communication.domain.models import OutboundCampaign
 from apps.communication.infrastructure.repository import (
     ConversationRepository,
@@ -32,10 +33,7 @@ from apps.communication.infrastructure.repository import (
     OutboundCampaignRepository,
     OutboundQueueRepository,
 )
-from shared.permissions import user_has_any_permission
 
-
-OPT_IN_CATEGORY = 'duyuru'
 
 
 def _campaign_requires_template() -> bool:
@@ -124,8 +122,17 @@ class AudienceResolver:
         filter_json = filter_json or {}
         audience_type = filter_json.get('audience_type', 'filtered')
         egitim_yili_id = filter_json.get('egitim_yili_id')
+        scope_sube_id = filter_json.get('sube_id')
 
         allowed_student_ids = cls._scope_student_ids(user, kurum_id, filter_json)
+        # Taslağa yazılmış koç kapsamı (K-04): confirm / materialize / zamanlanmış
+        # komut `user` bilmez; kapsam JSON'dan gelir ve canlı kapsamla kesişir.
+        frozen_scope = cls._frozen_scope_ids(filter_json)
+        if frozen_scope is not None:
+            allowed_student_ids = (
+                frozen_scope if allowed_student_ids is None
+                else allowed_student_ids & frozen_scope
+            )
         if allowed_student_ids is not None and not allowed_student_ids:
             return AudiencePreview()
 
@@ -138,20 +145,27 @@ class AudienceResolver:
                 kurum_id,
                 filter_json,
                 user=user,
-                context_sube_id=filter_json.get('sube_id'),
+                context_sube_id=scope_sube_id,
                 context_egitim_yili_id=egitim_yili_id,
                 include_unsuitable=include_invalid,
             )
-            return AudienceQueryService.to_audience_preview(result)
+            preview = AudienceQueryService.to_audience_preview(result)
+            if frozen_scope is not None:
+                preview = cls._restrict_preview_to_scope(preview, frozen_scope)
+            return preview
 
         if audience_type == 'advanced' or cls._has_advanced_filters(filter_json):
             raw_entries.extend(
                 cls._collect_advanced(kurum_id, filter_json, allowed_student_ids)
             )
         elif audience_type == 'all_veliler':
-            raw_entries.extend(cls._collect_veliler(kurum_id, allowed_student_ids))
+            raw_entries.extend(
+                cls._collect_veliler(kurum_id, allowed_student_ids, sube_id=scope_sube_id)
+            )
         elif audience_type == 'all_ogrenciler':
-            raw_entries.extend(cls._collect_ogrenciler(kurum_id, allowed_student_ids))
+            raw_entries.extend(
+                cls._collect_ogrenciler(kurum_id, allowed_student_ids, sube_id=scope_sube_id)
+            )
         elif audience_type == 'sinif':
             sinif_id = filter_json.get('sinif_id')
             if sinif_id:
@@ -213,14 +227,53 @@ class AudienceResolver:
                 )
             if not raw_entries and audience_type in ('filtered',):
                 if filter_json.get('include_students'):
-                    raw_entries.extend(cls._collect_ogrenciler(kurum_id, allowed_student_ids))
+                    raw_entries.extend(
+                        cls._collect_ogrenciler(kurum_id, allowed_student_ids, sube_id=scope_sube_id)
+                    )
                 if filter_json.get('include_veliler'):
-                    raw_entries.extend(cls._collect_veliler(kurum_id, allowed_student_ids))
+                    raw_entries.extend(
+                        cls._collect_veliler(kurum_id, allowed_student_ids, sube_id=scope_sube_id)
+                    )
 
         raw_entries = cls._apply_manual_include_exclude(
             kurum_id, raw_entries, filter_json, allowed_student_ids,
         )
+        if allowed_student_ids is not None:
+            # Son güvence: hangi toplayıcıdan gelmiş olsun, kapsam dışı öğrenci/veli
+            # ve öğrenci bağı olmayan personel satırları koç kitlesine girmez.
+            raw_entries = [
+                e for e in raw_entries
+                if e[2] is not None and int(e[2]) in allowed_student_ids
+            ]
         return cls._dedupe_and_count(raw_entries, include_invalid=include_invalid)
+
+    @staticmethod
+    def _frozen_scope_ids(filter_json: dict) -> set[int] | None:
+        """`create_draft` sırasında yazılan koç kapsamı; yoksa None."""
+        raw = filter_json.get('scope_student_ids')
+        if raw is None:
+            return None
+        try:
+            return {int(x) for x in raw}
+        except (TypeError, ValueError):
+            return set()
+
+    @staticmethod
+    def _restrict_preview_to_scope(preview: AudiencePreview, scope: set[int]) -> AudiencePreview:
+        """Öğrenci bağı olmayan (personel vb.) alıcılar koç kapsamında yer almaz."""
+        kept = [r for r in preview.recipients if r.ogrenci_id is not None and r.ogrenci_id in scope]
+        return AudiencePreview(
+            total_recipients=len(kept),
+            ogrenci_count=sum(1 for r in kept if r.recipient_type == RecipientType.OGRENCI),
+            veli_count=sum(1 for r in kept if r.recipient_type == RecipientType.VELI),
+            personel_count=0,
+            estimated_messages=len(kept),
+            invalid_phones=preview.invalid_phones,
+            attachment_count=preview.attachment_count,
+            estimated_cost_usd=preview.estimated_cost_usd,
+            ai_used=preview.ai_used,
+            recipients=kept,
+        )
 
     @classmethod
     def _has_advanced_filters(cls, filter_json: dict) -> bool:
@@ -319,14 +372,6 @@ class AudienceResolver:
             for veli in veli_qs:
                 if not ContactResolver.veli_allows_outbound(veli, OPT_IN_CATEGORY):
                     continue
-                if filter_json.get('whatsapp_default_only'):
-                    telefonlar = getattr(veli, 'telefonlar', None) or []
-                    if telefonlar and not any(
-                        t.get('whatsapp_varsayilan') and t.get('numara') == veli.telefon
-                        for t in telefonlar if isinstance(t, dict)
-                    ):
-                        # telefon alanı zaten WA varsayılanı — atlama yok
-                        pass
                 entries.append((
                     veli.telefon,
                     RecipientType.VELI,
@@ -511,13 +556,16 @@ class AudienceResolver:
         )
 
     @classmethod
-    def _collect_veliler(cls, kurum_id: int, allowed_student_ids) -> list[tuple]:
+    def _collect_veliler(cls, kurum_id: int, allowed_student_ids, *, sube_id=None) -> list[tuple]:
         from apps.ogrenci.domain.models import OgrenciVeli
 
         qs = OgrenciVeli.objects.filter(
             ogrenci__kurum_id=kurum_id,
             ogrenci__aktif_mi=True,
         ).exclude(telefon='').select_related('ogrenci')
+        # Şube bağlamı verildiyse kurum geneli yerine o şube (M-05)
+        if sube_id:
+            qs = qs.filter(ogrenci__sube_id=int(sube_id))
         if allowed_student_ids is not None:
             qs = qs.filter(ogrenci_id__in=allowed_student_ids)
         entries = []
@@ -534,10 +582,12 @@ class AudienceResolver:
         return entries
 
     @classmethod
-    def _collect_ogrenciler(cls, kurum_id: int, allowed_student_ids) -> list[tuple]:
+    def _collect_ogrenciler(cls, kurum_id: int, allowed_student_ids, *, sube_id=None) -> list[tuple]:
         from apps.ogrenci.domain.models import Ogrenci
 
         qs = Ogrenci.objects.filter(kurum_id=kurum_id, aktif_mi=True).exclude(telefon='')
+        if sube_id:
+            qs = qs.filter(sube_id=int(sube_id))
         if allowed_student_ids is not None:
             qs = qs.filter(id__in=allowed_student_ids)
         return [
@@ -630,6 +680,7 @@ class AudienceResolver:
         veli_qs = OgrenciVeli.objects.filter(
             ogrenci_id__in=student_ids,
             ogrenci__kurum_id=kurum_id,
+            ogrenci__aktif_mi=True,
         ).exclude(telefon='')
         entries = []
         for veli in veli_qs:
@@ -758,7 +809,7 @@ class AudienceResolver:
             personel_count=personel_count,
             estimated_messages=len(recipients),
             invalid_phones=invalid,
-            recipients=recipients if include_invalid else recipients,
+            recipients=recipients,
         )
         return preview
 
@@ -859,6 +910,15 @@ class CampaignService:
             raise ValidationError('Mesaj metni veya şablon adı zorunludur.')
 
         self._validate_audience_scope(kurum_id, audience_filter, user)
+        # Koç kapsamını taslağa dondur: confirm/materialize ve zamanlanmış komut
+        # `user` bilmeden aynı kapsamı uygular (K-04).
+        frozen = self._scope_to_freeze(user)
+        if frozen is not None:
+            audience_filter = {
+                **audience_filter,
+                'scope_student_ids': sorted(frozen),
+                'scope_user_id': getattr(user, 'id', None),
+            }
 
         from apps.communication.infrastructure.repository import ChannelConfigRepository
 
@@ -1256,6 +1316,7 @@ class CampaignService:
                 conversation,
                 preview=body[:255],
                 direction=MessageDirection.OUTBOUND,
+                source_module='campaign',
             )
             OutboundQueueRepository.enqueue(
                 kurum_id=locked.kurum_id,
@@ -1301,6 +1362,20 @@ class CampaignService:
             dispatch_process_outbound_queue(drain=True, background=True)
         return {'retried_count': retried}
 
+    @staticmethod
+    def _scope_to_freeze(user) -> set[int] | None:
+        """Koç bulk kullanıcısı için taslağa yazılacak öğrenci kapsamı; diğerlerinde None."""
+        from apps.communication.application.coach_scope import is_coach_bulk_user
+
+        if not user or not getattr(user, 'is_authenticated', False):
+            return None
+        if not is_coach_bulk_user(user):
+            return None
+        allowed = scoped_student_ids(user)
+        if allowed is None:
+            return None
+        return set(int(x) for x in allowed)
+
     def _validate_audience_scope(self, kurum_id: int, audience_filter: dict, user) -> None:
         from apps.communication.application.coach_scope import is_coach_bulk_user
 
@@ -1321,12 +1396,22 @@ class CampaignService:
         ):
             raise PermissionDenied('Koç yalnızca kendi öğrenci/veli kitlesine gönderebilir.')
 
-        ogrenci_ids = audience_filter.get('ogrenci_ids') or []
+        # coach_id yalnız kendi profili olabilir (K-04/2)
+        requested_coach = audience_filter.get('coach_id')
+        if requested_coach not in (None, ''):
+            own = AudienceResolver._coach_id_from_user(user)
+            if own is None or int(requested_coach) != int(own):
+                raise PermissionDenied('Koç yalnızca kendi öğrenci/veli kitlesine gönderebilir.')
+
+        ogrenci_ids = list(audience_filter.get('ogrenci_ids') or [])
+        ogrenci_ids += list(audience_filter.get('included_ogrenci_ids') or [])
+        ogrenci_ids += list(audience_filter.get('included_ids') or [])
         for oid in ogrenci_ids:
             if int(oid) not in allowed:
                 raise PermissionDenied('Seçilen alıcılar koç kapsamının dışında.')
 
-        veli_ids = audience_filter.get('veli_ids') or []
+        veli_ids = list(audience_filter.get('veli_ids') or [])
+        veli_ids += list(audience_filter.get('included_veli_ids') or [])
         if veli_ids:
             from apps.ogrenci.domain.models import OgrenciVeli
 
@@ -1334,6 +1419,9 @@ class CampaignService:
                 veli = OgrenciVeli.objects.filter(id=vid, ogrenci__kurum_id=kurum_id).first()
                 if veli and veli.ogrenci_id not in allowed:
                     raise PermissionDenied('Seçilen alıcılar koç kapsamının dışında.')
+
+        if audience_filter.get('personel_ids') or audience_filter.get('included_personel_ids'):
+            raise PermissionDenied('Koç personel kitlesine toplu gönderim yapamaz.')
 
 
 class CampaignStatsService:
@@ -1426,12 +1514,7 @@ class CampaignStatsService:
         if done == 0:
             return
 
-        if failed > 0 and (done - failed - cancelled) > 0:
-            new_status = CampaignStatus.PARTIAL
-        elif failed > 0:
-            new_status = CampaignStatus.PARTIAL
-        else:
-            new_status = CampaignStatus.COMPLETED
+        new_status = CampaignStatus.PARTIAL if failed > 0 else CampaignStatus.COMPLETED
 
         if campaign.status != new_status:
             campaign.status = new_status

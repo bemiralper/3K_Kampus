@@ -296,6 +296,7 @@ def _discover_meta_by_name(
     recipient_type: str,
     *,
     channel_config_id=None,
+    sube_id: int | None = None,
 ):
     from apps.communication.domain.models import WhatsAppMetaTemplate
 
@@ -307,6 +308,16 @@ def _discover_meta_by_name(
         status=MetaTemplateStatus.APPROVED,
         name__in=names,
     ).select_related('channel_config')
+    if sube_id is not None and not channel_config_id:
+        # Hat verilmediyse yalnız bu şubeyi kapsayan hatların şablonları aday (M-15)
+        from django.db.models import Q
+
+        from apps.communication.domain.enums import WhatsAppAccountScope
+
+        qs = qs.filter(
+            Q(channel_config__scope_type=WhatsAppAccountScope.ALL_SUBES)
+            | Q(channel_config__allowed_subes__id=int(sube_id)),
+        ).distinct()
     if channel_config_id:
         from apps.communication.application.account_resolver import AccountResolver
         ids = AccountResolver.shared_waba_account_ids(kurum_id, channel_config_id)
@@ -440,7 +451,8 @@ def resolve_binding(
         )
         if needs_discovery:
             discovered = _discover_meta_by_name(
-                kurum_id, event, recipient_type, channel_config_id=channel_config_id,
+                kurum_id, event, recipient_type,
+                channel_config_id=channel_config_id, sube_id=sube_id,
             )
             if discovered and _meta_template_matches_event(event_key, discovered):
                 resolved.meta_template = discovered

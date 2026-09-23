@@ -208,6 +208,9 @@ class WhatsAppAccountDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        # Boş verify token "değiştirme" demektir; kayıtlı sır silinmez.
+        if not (data.get('webhook_verify_token') or '').strip():
+            data.pop('webhook_verify_token', None)
         for key, value in data.items():
             setattr(account, key, value)
         if token:

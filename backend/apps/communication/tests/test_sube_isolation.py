@@ -204,3 +204,110 @@ class CommunicationSubeIsolationAPITest(TestCase):
         self.assertTrue(created)
         self.assertIsNone(conv.sube_id)
         self.assertEqual(conv.contact_type, RecipientType.RAW_PHONE)
+
+
+class CrossKurumAccessTest(TestCase):
+    """Kurum bağı olan kullanıcı başka kurumun kimliğiyle iletişim verisine ulaşamaz."""
+
+    def setUp(self):
+        from apps.personel.domain.models import Personel
+
+        self.client = APIClient()
+        self.kurum_a = Kurum.objects.create(ad='Kurum A', kod='XK-A')
+        self.kurum_b = Kurum.objects.create(ad='Kurum B', kod='XK-B')
+        self.sube_a = Sube.objects.create(kurum=self.kurum_a, ad='A Merkez', kod='XK-A-M')
+        self.sube_b = Sube.objects.create(kurum=self.kurum_b, ad='B Merkez', kod='XK-B-M')
+        Conversation.objects.create(
+            kurum=self.kurum_b, sube=self.sube_b, channel=Channel.WHATSAPP,
+            contact_phone='+905329999999',
+        )
+
+        # Kurum A'ya bağlı yönetici (kurum_yoneticisi rolü, personel kaydı A'da)
+        self.user = User.objects.create_user(username='xk-yonetici', password='test')
+        role, _ = Role.objects.get_or_create(
+            code='kurum_yoneticisi',
+            defaults={'name': 'Kurum Yöneticisi', 'level': 10, 'is_system_role': True},
+        )
+        for code in ('communication.read', 'communication.manage', 'communication.config'):
+            perm, _ = Permission.objects.get_or_create(
+                code=code,
+                defaults={'name': code, 'module': 'communication', 'permission_type': 'read'},
+            )
+            RolePermission.objects.get_or_create(role=role, permission=perm)
+        UserRole.objects.update_or_create(user=self.user, defaults={'role': role, 'kurum': self.kurum_a})
+        Personel.objects.create(
+            kurum=self.kurum_a, sube=self.sube_a, ad='Yön', soyad='A',
+            user=self.user, aktif_mi=True,
+        )
+        self.client.force_authenticate(user=self.user)
+
+    def _get(self, path, kurum, sube):
+        return self.client.get(
+            path, {'kurum_id': kurum.id}, HTTP_X_KURUM_ID=str(kurum.id), HTTP_X_SUBE_ID=str(sube.id),
+        )
+
+    def test_own_kurum_is_accessible(self):
+        res = self._get('/api/communication/conversations/', self.kurum_a, self.sube_a)
+        self.assertEqual(res.status_code, 200)
+
+    def test_other_kurum_conversations_forbidden(self):
+        res = self._get('/api/communication/conversations/', self.kurum_b, self.sube_b)
+        self.assertEqual(res.status_code, 403)
+
+    def test_other_kurum_config_forbidden(self):
+        res = self._get('/api/communication/config/whatsapp/', self.kurum_b, self.sube_b)
+        self.assertEqual(res.status_code, 403)
+        res = self.client.put(
+            '/api/communication/config/whatsapp/',
+            {'kurum_id': self.kurum_b.id, 'phone_number_id': 'hijack'},
+            format='json', HTTP_X_KURUM_ID=str(self.kurum_b.id), HTTP_X_SUBE_ID=str(self.sube_b.id),
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_other_kurum_notification_binding_forbidden(self):
+        res = self.client.put(
+            '/api/communication/notification-bindings/',
+            {'kurum_id': self.kurum_b.id, 'event_key': 'x', 'recipient_type': 'VELI'},
+            format='json', HTTP_X_KURUM_ID=str(self.kurum_b.id), HTTP_X_SUBE_ID=str(self.sube_b.id),
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_foreign_scope_sube_in_body_forbidden(self):
+        """Kendi kurumunda ama başka kurumun şubesini kapsam olarak vermek de reddedilir."""
+        res = self.client.get(
+            '/api/communication/notification-schedules/',
+            {'kurum_id': self.kurum_a.id, 'event_key': 'gun_sonu', 'sube_id': self.sube_b.id},
+            HTTP_X_KURUM_ID=str(self.kurum_a.id), HTTP_X_SUBE_ID=str(self.sube_a.id),
+        )
+        self.assertEqual(res.status_code, 403)
+
+    def test_shared_sube_helper_blocks_other_kurum(self):
+        from shared.sube_access import get_allowed_subeler_for_user
+
+        self.assertFalse(
+            get_allowed_subeler_for_user(self.user, kurum_id=self.kurum_b.id).exists(),
+        )
+        self.assertTrue(
+            get_allowed_subeler_for_user(self.user, kurum_id=self.kurum_a.id)
+            .filter(id=self.sube_a.id).exists(),
+        )
+
+    def test_header_hijack_does_not_change_session(self):
+        from django.test import Client
+
+        web = Client()
+        web.force_login(self.user)
+        web.get('/auth/api/me/', HTTP_X_KURUM_ID=str(self.kurum_b.id))
+        self.assertNotEqual(web.session.get('active_kurum_id'), self.kurum_b.id)
+
+    def test_verify_token_not_exposed(self):
+        from apps.communication.domain.models import CommunicationChannelConfig
+
+        CommunicationChannelConfig.objects.create(
+            kurum=self.kurum_a, phone_number_id='pn-a', webhook_verify_token='gizli', is_active=True,
+        )
+        res = self._get('/api/communication/accounts/', self.kurum_a, self.sube_a)
+        self.assertEqual(res.status_code, 200)
+        acct = res.json()['accounts'][0]
+        self.assertNotIn('webhook_verify_token', acct)
+        self.assertTrue(acct['has_verify_token'])

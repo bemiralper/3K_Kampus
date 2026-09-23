@@ -73,6 +73,7 @@ class InboundProcessor:
         for entry in entries:
             for change in entry.get('changes', []):
                 value = change.get('value', {})
+                field = change.get('field') or ''
                 phone_number_id = value.get('metadata', {}).get('phone_number_id', '')
                 config = ChannelConfigRepository.get_by_phone_number_id(phone_number_id)
                 kurum_id = config.kurum_id if config else None
@@ -84,7 +85,7 @@ class InboundProcessor:
                 event = RawWebhookEventRepository.create(
                     kurum_id=kurum_id,
                     phone_number_id=phone_number_id,
-                    event_type=change.get('field', 'unknown'),
+                    event_type=field or 'unknown',
                     payload=value,
                     signature_valid=signature_valid,
                 )
@@ -98,8 +99,21 @@ class InboundProcessor:
                     errors.append('Invalid signature')
                     continue
 
+                # Bilinmeyen hat: mesajlar sessizce düşmesin; SKIPPED + hata logu (W-03)
+                if not kurum_id and field != 'message_template_status_update' and value.get('messages'):
+                    logger.error(
+                        'webhook: bilinmeyen phone_number_id=%s — %d mesaj işlenmedi',
+                        phone_number_id, len(value.get('messages') or []),
+                    )
+                    RawWebhookEventRepository.mark_processed(
+                        event,
+                        WebhookProcessingStatus.SKIPPED,
+                        error=f'Bilinmeyen phone_number_id: {phone_number_id}',
+                    )
+                    errors.append(f'unknown phone_number_id {phone_number_id}')
+                    continue
+
                 try:
-                    field = change.get('field') or ''
                     if field == 'message_template_status_update':
                         self._process_template_status_update(
                             value,
@@ -122,12 +136,26 @@ class InboundProcessor:
             kurum_id=kurum_id_for_log,
             endpoint='/webhook/',
             http_status=200 if not errors else 403,
-            request_body=raw_body[:10000] if raw_body else json.dumps(payload)[:10000],
+            request_body=self._masked_body(raw_body or json.dumps(payload)),
             response_body=json.dumps({'processed': processed}),
             error='; '.join(errors) if errors else '',
         )
 
         return {'processed': processed, 'errors': errors}
+
+    @staticmethod
+    def _masked_body(raw: str, limit: int = 10000) -> str:
+        """Log gövdesinde telefon numaralarını maskele (S-05 / KVKK)."""
+        import re
+
+        from apps.communication.application.debug_trace import mask_phone
+
+        text = (raw or '')[:limit]
+        return re.sub(
+            r'"(from|wa_id|recipient_id)"\s*:\s*"(\d{8,15})"',
+            lambda m: f'"{m.group(1)}": "{mask_phone(m.group(2))}"',
+            text,
+        )
 
     def _process_template_status_update(
         self,
@@ -282,15 +310,27 @@ class InboundProcessor:
         if quoted_id:
             reply_to = MessageRepository.get_by_provider_id(quoted_id)
 
-        message = MessageRepository.create(
-            conversation=conversation,
-            direction=MessageDirection.INBOUND,
-            message_type=message_type,
-            body=body,
-            status=MessageStatus.DELIVERED,
-            provider_message_id=provider_message_id,
-            reply_to=reply_to,
-        )
+        # Meta zaman damgası mesajın gerçek zamanıdır; geciken/tekrar teslim
+        # edilen webhook sırayı bozmaz (M-09). Kısmi unique kısıt eşzamanlı
+        # tekrarı yakalar; IntegrityError = duplicate, sessizce çıkılır (B-01).
+        from django.db import IntegrityError, transaction
+
+        occurred_at = self._parse_timestamp(msg.get('timestamp'))
+        try:
+            with transaction.atomic():
+                message = MessageRepository.create(
+                    conversation=conversation,
+                    direction=MessageDirection.INBOUND,
+                    message_type=message_type,
+                    body=body,
+                    status=MessageStatus.DELIVERED,
+                    provider_message_id=provider_message_id,
+                    reply_to=reply_to,
+                    created_at=occurred_at,
+                )
+        except IntegrityError:
+            logger.info('inbound duplicate provider_message_id=%s atlandı', provider_message_id)
+            return
 
         if media_meta.get('media_id'):
             self._save_inbound_media(
@@ -303,6 +343,7 @@ class InboundProcessor:
             direction=MessageDirection.INBOUND,
             channel_config=channel_config,
             department=department,
+            occurred_at=occurred_at,
         )
 
         try:

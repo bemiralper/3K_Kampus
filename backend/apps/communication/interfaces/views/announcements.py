@@ -9,11 +9,16 @@ from rest_framework.response import Response
 from apps.communication.application.integration_hooks import notify_announcement
 from apps.communication.interfaces.views.base import CommunicationAPIView
 from apps.communication.interfaces.views._context import resolve_kurum_and_sube
-from apps.communication.permissions import CommunicationBulkPermission
+from apps.communication.permissions import CommunicationBulkPermission, user_can_bulk_communicate
 
 
 class AnnouncementSendView(CommunicationAPIView):
-    """POST /api/communication/announcements/send/ — duyuru toplu gönderim."""
+    """POST /api/communication/announcements/send/ — duyuru toplu gönderim.
+
+    Duyuru kitlesi varsayılan olarak şubedeki tüm velilerdir; bu uç yalnız gerçek
+    toplu gönderim yetkisine (bulk / manage / muhasebe) açıktır. Koç kapsamı
+    kampanya ekranından (`campaigns/`) kapsam denetimiyle çalışır (K-04).
+    """
 
     permission_classes = [CommunicationBulkPermission]
 
@@ -21,6 +26,13 @@ class AnnouncementSendView(CommunicationAPIView):
         kurum_id, sube_id, err = resolve_kurum_and_sube(request)
         if err:
             return err
+        from apps.communication.application.coach_scope import is_coach_bulk_user
+
+        if not user_can_bulk_communicate(request.user) or is_coach_bulk_user(request.user):
+            return Response(
+                {'error': 'Duyuru göndermek için toplu gönderim yetkisi gerekir.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         body = (request.data.get('body') or '').strip()
         title = (request.data.get('title') or '').strip()
@@ -43,6 +55,8 @@ class AnnouncementSendView(CommunicationAPIView):
                 audience_filter=audience_filter,
                 template_name=template_name,
                 template_language=template_language,
+                user=request.user,
+                sube_id=sube_id,
             )
         except ValidationError as exc:
             return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)

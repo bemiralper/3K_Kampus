@@ -58,10 +58,43 @@ class ActiveContextMiddleware:
         except (TypeError, ValueError):
             return
         session_key = settings.TENANT_SESSION_KEYS[key]
-        if request.session.get(session_key) != value:
-            request.session[session_key] = value
-            request.session.modified = True
+        if request.session.get(session_key) == value:
+            return
+        # Yalnız değer değişiyorsa doğrula (her istekte sorgu açılmasın).
+        if not self._header_value_allowed(request, key, value):
+            return
+        request.session[session_key] = value
+        request.session.modified = True
     
+    @staticmethod
+    def _header_value_allowed(request, key, value) -> bool:
+        """Header'daki kurum/şube kullanıcının erişebildiği kapsamda mı.
+
+        Oturum açmamış istekte (webhook, login) doğrulama yapılmaz; kimlik yok.
+        Kurum bağı olan kullanıcı başka kurumu/şubeyi session'a yazamaz.
+        """
+        user = getattr(request, 'user', None)
+        if not user or not getattr(user, 'is_authenticated', False):
+            return True
+        if getattr(user, 'is_superuser', False):
+            return True
+        try:
+            if key == 'kurum':
+                from shared.kurum_access import user_can_access_kurum
+
+                return user_can_access_kurum(user, value)
+            if key == 'sube':
+                from shared.context import _header_int
+                from shared.sube_access import get_allowed_subeler_for_user
+
+                kurum_id = _header_int(request, 'X-Kurum-ID') or request.session.get(
+                    settings.TENANT_SESSION_KEYS['kurum']
+                )
+                return get_allowed_subeler_for_user(user, kurum_id=kurum_id).filter(id=value).exists()
+        except Exception:
+            return False
+        return True
+
     def _set_context(self, request, key, value):
         """Set context value in session"""
         session_key = settings.TENANT_SESSION_KEYS[key]

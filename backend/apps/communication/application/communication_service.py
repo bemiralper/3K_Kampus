@@ -275,10 +275,17 @@ class CommunicationService:
                 attachment.file = content.attachment_path
                 attachment.save()
 
+        actor = None
+        if sender_user_id:
+            from django.contrib.auth import get_user_model
+
+            actor = get_user_model().objects.filter(id=sender_user_id).first()
         ConversationRepository.update_on_message(
             conversation,
             preview=content.text or f'[{message_type}]',
             direction=MessageDirection.OUTBOUND,
+            actor=actor,
+            source_module=source.module,
         )
 
         send_options: dict[str, Any] = {}
@@ -320,10 +327,21 @@ class CommunicationService:
             provider_response = {'processed_immediately': True}
 
         elif queue_item:
-            from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
+            from apps.communication.application.celery_dispatch import (
+                dispatch_process_outbound_queue,
+                is_celery_enabled,
+            )
 
             dispatch_process_outbound_queue()
             message.refresh_from_db()
+            if is_celery_enabled():
+                # Task asenkron çalışır; sonuç kuyruk ekranında izlenir (B-11)
+                return SendResult(
+                    success=True,
+                    message_id=str(message.id),
+                    provider_response={'queued': True},
+                    message_status=message.status,
+                )
             if message.status not in (MessageStatus.SENT, MessageStatus.DELIVERED, MessageStatus.READ):
                 return SendResult(
                     success=False,
@@ -344,18 +362,6 @@ class CommunicationService:
     def send_message(self, *args, **kwargs) -> SendResult:
         """Alias for send()."""
         return self.send(*args, **kwargs)
-
-    def send_bulk(self, kurum_id: int, **kwargs) -> SendResult:
-        """Toplu gönderim — CampaignService.create_draft + confirm."""
-        from apps.communication.application.campaign_service import CampaignService
-
-        service = CampaignService()
-        try:
-            campaign = service.create_draft(kurum_id, **kwargs)
-            service.confirm(campaign, sender_user_id=kwargs.get('created_by_id'))
-            return SendResult(success=True, message_id=str(campaign.id))
-        except Exception as exc:
-            return SendResult(success=False, errors=[str(exc)])
 
     def retry_failed(self, campaign_id: str) -> SendResult:
         """Başarısız kampanya mesajlarını yeniden kuyruğa al."""

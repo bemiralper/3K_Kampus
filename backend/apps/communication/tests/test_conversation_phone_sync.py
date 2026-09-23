@@ -521,7 +521,9 @@ class ConversationOpenPersonelThreadTest(TestCase):
             )
         self.assertEqual(resp.status_code, 201, resp.content)
         conv.refresh_from_db()
-        self.assertEqual(conv.sube_id, self.sube_a.id)
+        # Personel sohbeti kurum genelinde erişilir; okuma/yazma isteği thread'in
+        # şubesini değiştirmez (M-04). Eskiden her erişimde aktif şubeye taşınıyordu.
+        self.assertEqual(conv.sube_id, self.sube_b.id)
 
 
 class SamePersonReusesThreadAcrossAccountsTest(TestCase):

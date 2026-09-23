@@ -5,6 +5,7 @@ from django.db import transaction
 from django.db.models import Q
 
 from apps.communication.application.notification_events import get_event
+from apps.communication.domain.constants import GUN_SONU_EVENT
 from apps.communication.domain.models import NotificationStaffRecipient
 from apps.personel.domain.models import Personel
 from apps.roller.models import UserRole
@@ -16,7 +17,6 @@ YONETICI_ROLE_CODES = (
 )
 
 KAYIT_SOZLESME_EVENT = 'ogrenci.kayit_sozlesme'
-GUN_SONU_EVENT = 'finans.gun_sonu'
 GUN_SONU_EXTRA_ROLE_CODES = ('muhasebe', 'super_admin')
 
 

@@ -164,6 +164,23 @@ def conversation_phone_tail(phone: str) -> str:
     return digits[-10:] if len(digits) >= 10 else digits
 
 
+def _advisory_lock(*parts) -> None:
+    """Transaction ömrü boyunca geçerli Postgres advisory kilidi (bigint anahtar).
+
+    Postgres dışı motorlarda (sqlite test vb.) sessizce atlanır.
+    """
+    from django.db import connection
+
+    if connection.vendor != 'postgresql':
+        return
+    import hashlib
+
+    digest = hashlib.sha1('|'.join(str(p) for p in parts).encode('utf-8')).digest()
+    key = int.from_bytes(digest[:8], 'big', signed=True)
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT pg_advisory_xact_lock(%s)', [key])
+
+
 def _conversation_phone_q(contact_phone: str) -> Q:
     """Aynı hattı +90 / 0 / ham basamak biçimlerinde de bul."""
     tail = conversation_phone_tail(contact_phone)
@@ -259,13 +276,15 @@ class ConversationRepository:
             )
             if filters.get('search_messages'):
                 # Mesaj gövdesinde geçen sohbetler de listeye girsin (WhatsApp
-                # aramasındaki gibi). Join çoğaltmasın diye alt sorgu.
+                # aramasındaki gibi). Join çoğaltmasın diye alt sorgu; sabit 2000
+                # sınırı kaldırıldı — büyük kurumda eksik sonuç veriyordu (M-12).
+                # Alt sorgu şube filtreli dış sorguyla kesişir.
                 criteria |= Q(
                     id__in=Message.objects.filter(
                         conversation__kurum_id=kurum_id,
                         deleted_at__isnull=True,
                         body__icontains=search,
-                    ).values('conversation_id')[:2000]
+                    ).values('conversation_id')
                 )
             qs = qs.filter(criteria)
         channel_config_id = filters.get('channel_config_id')
@@ -347,10 +366,44 @@ class ConversationRepository:
             'contact_identity__veli', 'contact_identity__ogrenci',
             'sube', 'channel_config',
         ).prefetch_related('tags').order_by(
+            # İmleç sayfalaması için deterministik sıra: (last_message_at desc nulls last, id desc)
             F('last_message_at').desc(nulls_last=True),
-            '-updated_at',
-            '-created_at',
+            '-id',
         )
+
+    @staticmethod
+    def cursor_for(conversation: Conversation) -> str:
+        """Liste sırasına (last_message_at desc nulls last, id desc) uygun opak imleç."""
+        import base64
+
+        ts = conversation.last_message_at.isoformat() if conversation.last_message_at else ''
+        raw = f'{ts}|{conversation.id}'.encode('utf-8')
+        return base64.urlsafe_b64encode(raw).decode('ascii')
+
+    @staticmethod
+    def apply_cursor(qs, cursor: str):
+        """İmleçten sonraki satırlar; geçersiz imleç yok sayılır (ilk sayfa)."""
+        import base64
+        from datetime import datetime
+
+        try:
+            raw = base64.urlsafe_b64decode(cursor.encode('ascii')).decode('utf-8')
+            ts_raw, _, conv_id = raw.partition('|')
+        except Exception:
+            return qs
+        if not conv_id:
+            return qs
+        if ts_raw:
+            try:
+                ts = datetime.fromisoformat(ts_raw)
+            except ValueError:
+                return qs
+            return qs.filter(
+                Q(last_message_at__lt=ts)
+                | Q(last_message_at=ts, id__lt=conv_id)
+                | Q(last_message_at__isnull=True)
+            )
+        return qs.filter(last_message_at__isnull=True, id__lt=conv_id)
 
     @staticmethod
     def _resolve_sube_id(*, ogrenci_id=None, veli_id=None) -> int | None:
@@ -503,8 +556,77 @@ class ConversationRepository:
         channel_config_id=None,
         department: str | None = None,
     ) -> tuple[Conversation, bool]:
+        """Kişi + departman için tek thread; yoksa açar.
+
+        Aynı numaradan eşzamanlı iki webhook iki sohbet açmasın diye kurum +
+        numara + departman anahtarıyla transaction'a bağlı advisory lock alınır
+        (B-02). Silinmiş (soft-delete) thread bulunursa diriltilir; gelen mesaj
+        görünmez bir sohbete düşmez (K-08).
+        """
         cfg_id = channel_config_id or getattr(channel_config, 'id', None)
         thread_dept = department or getattr(channel_config, 'department', None)
+        with transaction.atomic():
+            _advisory_lock(kurum_id, conversation_phone_tail(contact_phone) or contact_phone, thread_dept or '')
+            conversation, created = ConversationRepository._get_or_create_for_contact_locked(
+                kurum_id,
+                channel,
+                contact_phone,
+                contact_type=contact_type,
+                contact_identity=contact_identity,
+                ogrenci_id=ogrenci_id,
+                veli_id=veli_id,
+                channel_config=channel_config,
+                cfg_id=cfg_id,
+                thread_dept=thread_dept,
+            )
+        return conversation, created
+
+    @staticmethod
+    def revive_fields(conversation: Conversation) -> list[str]:
+        """Soft-delete edilmiş thread'i bellek üzerinde dirilt; değişen alan adlarını döndür.
+
+        Çağıran `save(update_fields=...)` yapar. Listeden kaldırılmış sohbete yeni
+        temas gelince kayıt yeniden görünür olur (K-08).
+        """
+        if conversation.deleted_at is None:
+            return []
+        fields = ['deleted_at', 'deleted_by']
+        conversation.deleted_at = None
+        conversation.deleted_by = None
+        if conversation.status in (ConversationStatus.CLOSED, ConversationStatus.ARCHIVED):
+            conversation.status = ConversationStatus.NEW
+            conversation.archived_at = None
+            fields.extend(['status', 'archived_at'])
+        from apps.communication.application.conversation_events import log_conversation_event
+        from apps.communication.domain.enums import ConversationEventType
+
+        log_conversation_event(
+            conversation, ConversationEventType.UNARCHIVED, meta={'revived': True},
+        )
+        return fields
+
+    @staticmethod
+    def revive_if_deleted(conversation: Conversation) -> Conversation:
+        fields = ConversationRepository.revive_fields(conversation)
+        if fields:
+            fields.append('updated_at')
+            conversation.save(update_fields=fields)
+        return conversation
+
+    @staticmethod
+    def _get_or_create_for_contact_locked(
+        kurum_id: int,
+        channel: str,
+        contact_phone: str,
+        *,
+        contact_type: str,
+        contact_identity,
+        ogrenci_id,
+        veli_id,
+        channel_config,
+        cfg_id,
+        thread_dept,
+    ) -> tuple[Conversation, bool]:
         defaults = {
             'status': ConversationStatus.OPEN,
             'contact_type': contact_type,
@@ -588,7 +710,7 @@ class ConversationRepository:
             created = True
 
         if not created:
-            update_fields = []
+            update_fields = ConversationRepository.revive_fields(conversation)
             if contact_phone and conversation.contact_phone != contact_phone:
                 conversation.contact_phone = contact_phone
                 update_fields.append('contact_phone')
@@ -648,19 +770,28 @@ class ConversationRepository:
         channel_config=None,
         actor=None,
         department: str | None = None,
+        occurred_at=None,
+        source_module: str | None = None,
     ) -> None:
         from django.conf import settings
 
-        conversation.last_message_at = timezone.now()
+        now = occurred_at or timezone.now()
+        # Geciken webhook eski bir mesaj getirdiyse "son mesaj" zamanı geri gitmez.
+        if not conversation.last_message_at or now > conversation.last_message_at:
+            conversation.last_message_at = now
         conversation.last_message_preview = (preview or '')[:255]
         if direction == MessageDirection.INBOUND:
-            conversation.unread_count_coach = (conversation.unread_count_coach or 0) + 1
+            # Eşzamanlı iki inbound sayacı ezmesin: atomik artış (M-08)
+            Conversation.objects.filter(pk=conversation.pk).update(
+                unread_count_coach=F('unread_count_coach') + 1,
+            )
+            conversation.refresh_from_db(fields=['unread_count_coach'])
             # 24 saatlik pencere bu alandan hesaplanır; ticket routing kapalıyken de yazılmalı.
-            conversation.last_customer_message_at = conversation.last_message_at
+            if not conversation.last_customer_message_at or now > conversation.last_customer_message_at:
+                conversation.last_customer_message_at = now
             conversation.save(update_fields=[
                 'last_message_at',
                 'last_message_preview',
-                'unread_count_coach',
                 'last_customer_message_at',
                 'updated_at',
             ])
@@ -685,11 +816,76 @@ class ConversationRepository:
             if getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True):
                 from apps.communication.application.conversation_router import ConversationRouter
                 ConversationRouter.apply_after_outbound(
-                    conversation, actor=actor, preview=preview,
+                    conversation, actor=actor, preview=preview, source_module=source_module,
                 )
             else:
                 conversation.status = ConversationStatus.AWAITING_REPLY
                 conversation.save(update_fields=['status', 'updated_at'])
+
+    @staticmethod
+    def mark_all_read_bulk(qs, user, *, reset_counters: bool) -> int:
+        """Bir sohbet kümesini toplu okundu yap — satır başına döngü yok (P-05).
+
+        - Kullanıcı durumlarını (`notif_cleared_at`) tek `bulk_create` + tek `update`
+        - Uygulama bildirimlerini tek `update`
+        - `reset_counters` ise `unread_count_coach=0` + statü READ tek `update`
+        Döndürülen değer etkilenen sohbet sayısıdır.
+        """
+        from apps.communication.domain.models import ConversationUserState
+
+        ids = list(qs.values_list('id', flat=True))
+        if not ids:
+            return 0
+        now = timezone.now()
+        user_id = getattr(user, 'pk', None)
+        kurum_ids = set(qs.values_list('kurum_id', flat=True).distinct())
+
+        if user_id:
+            existing = set(
+                ConversationUserState.objects.filter(
+                    user_id=user_id, conversation_id__in=ids,
+                ).values_list('conversation_id', flat=True)
+            )
+            missing = [cid for cid in ids if cid not in existing]
+            if missing:
+                ConversationUserState.objects.bulk_create(
+                    [
+                        ConversationUserState(
+                            conversation_id=cid, user_id=user_id, notif_cleared_at=now,
+                        )
+                        for cid in missing
+                    ],
+                    ignore_conflicts=True,
+                )
+            ConversationUserState.objects.filter(
+                user_id=user_id, conversation_id__in=ids,
+            ).update(notif_cleared_at=now, updated_at=now)
+            try:
+                from apps.takvim.domain.models import AppNotification
+
+                str_ids = [str(cid) for cid in ids]
+                url_q = Q()
+                for cid in str_ids:
+                    url_q |= Q(url__icontains=cid)
+                AppNotification.objects.filter(
+                    user_id=user_id, kurum_id__in=kurum_ids, is_read=False,
+                ).filter(url_q).update(is_read=True, read_at=now)
+            except Exception:
+                pass
+
+        if reset_counters:
+            update_kwargs = {'unread_count_coach': 0, 'updated_at': now}
+            Conversation.objects.filter(id__in=ids).update(**update_kwargs)
+            if getattr(settings, 'COMMUNICATION_TICKET_ROUTING', True):
+                Conversation.objects.filter(
+                    id__in=ids,
+                    status__in=[
+                        ConversationStatus.NEW,
+                        ConversationStatus.WAITING,
+                        ConversationStatus.OPEN,
+                    ],
+                ).update(status=ConversationStatus.READ, updated_at=now)
+        return len(ids)
 
     @staticmethod
     def clear_notifications_for_user(conversation: Conversation, user) -> None:
@@ -882,9 +1078,19 @@ class MessageRepository:
 
     @staticmethod
     def list_since(conversation_id, *, after_id, limit: int = 100):
-        """`after_id` sonrası gelen mesajlar — canlı thread güncellemesi."""
+        """`after_id` sonrası gelen mesajlar + durumu değişen eski mesajlar.
+
+        Teslim/okundu gibi durum güncellemeleri de bu artımlı yanıtla taşınır;
+        istemci ayrı bir "son 40 mesajı yeniden çek" isteği yapmaz (FE-01).
+        """
+        anchor = Message.objects.filter(id=after_id).values('created_at')[:1]
+        # "Durumu değişti" = oluşturulduktan en az 1 sn sonra güncellendi; aksi halde
+        # auto_now farkı yüzünden her mesaj (anchor dahil) her seferinde dönerdi.
+        status_changed = Q(updated_at__gt=anchor) & Q(
+            updated_at__gt=F('created_at') + timedelta(seconds=1),
+        )
         qs = MessageRepository.visible(conversation_id).filter(
-            created_at__gt=Message.objects.filter(id=after_id).values('created_at')[:1],
+            Q(created_at__gt=anchor) | status_changed,
         ).order_by('created_at')
         return qs.select_related('reply_to', 'forwarded_from', 'sender_user').prefetch_related(
             *MessageRepository.THREAD_PREFETCH,
@@ -1032,9 +1238,26 @@ class OutboundQueueRepository:
         )
 
     @staticmethod
+    def worker_token() -> str:
+        """Bu süreç için kilit sahibi kimliği (host:pid:rastgele)."""
+        import os
+        import socket
+        import uuid
+
+        token = getattr(OutboundQueueRepository, '_worker_token', None)
+        if token is None:
+            token = f'{socket.gethostname()[:20]}:{os.getpid()}:{uuid.uuid4().hex[:8]}'
+            OutboundQueueRepository._worker_token = token
+        return token
+
+    @staticmethod
     @transaction.atomic
     def get_pending_batch(limit: int = 20):
-        """FOR UPDATE SKIP LOCKED ile kilitlenebilir batch."""
+        """FOR UPDATE SKIP LOCKED ile seçilen batch aynı transaction'da kilitlenir.
+
+        Kilit (`locked_at`/`locked_by`) seçimle birlikte yazılır; ikinci bir
+        işleyici (cron, Celery, arka plan thread) aynı kayıtları alamaz (B-04).
+        """
         ids = list(
             OutboundQueueItem.objects.filter(OutboundQueueRepository._eligible_filter())
             .select_for_update(skip_locked=True)
@@ -1043,6 +1266,11 @@ class OutboundQueueRepository:
         )
         if not ids:
             return []
+        OutboundQueueItem.objects.filter(id__in=ids).update(
+            locked_at=timezone.now(),
+            locked_by=OutboundQueueRepository.worker_token(),
+            updated_at=timezone.now(),
+        )
         return list(
             OutboundQueueItem.objects.filter(id__in=ids).select_related(
                 'message', 'message__conversation', 'campaign',
@@ -1058,27 +1286,55 @@ class OutboundQueueRepository:
     @staticmethod
     @transaction.atomic
     def lock_item(item: OutboundQueueItem) -> OutboundQueueItem:
-        fields = ['locked_at', 'updated_at']
-        if item.locked_at is not None:
-            # Bayat kilitten geri alındı: sonsuz döngüye girmesin diye deneme say.
+        """Tekil işleme için kilit al / yenile.
+
+        `get_pending_batch` kilidi bu süreç adına zaten yazdıysa yalnız zaman
+        yenilenir. Başka bir sürecin bayat kilidi devralınıyorsa sonsuz döngüye
+        girmesin diye deneme sayılır.
+        """
+        token = OutboundQueueRepository.worker_token()
+        fields = ['locked_at', 'locked_by', 'updated_at']
+        if item.locked_at is not None and (item.locked_by or '') != token:
             item.attempt_count = min(item.attempt_count + 1, item.max_attempts)
             fields.append('attempt_count')
         item.locked_at = timezone.now()
+        item.locked_by = token
         item.save(update_fields=fields)
         return item
 
     @staticmethod
     def mark_sent(item: OutboundQueueItem, provider_message_id: str = '') -> None:
+        from django.db import IntegrityError
+
         msg = item.message
         msg.status = MessageStatus.SENT
         msg.sent_at = timezone.now()
         msg.failed_reason = ''
+        fields = ['status', 'sent_at', 'provider_message_id', 'failed_reason', 'updated_at']
         if provider_message_id:
             msg.provider_message_id = provider_message_id
-        msg.save(update_fields=[
-            'status', 'sent_at', 'provider_message_id', 'failed_reason', 'updated_at',
-        ])
+        try:
+            with transaction.atomic():
+                msg.save(update_fields=fields)
+        except IntegrityError:
+            # Sağlayıcı aynı kimliği ikinci kez döndürdü (stub / mock / anomali):
+            # mesaj yine gönderilmiş sayılır, kimlik boş kalır (comm_msg_provider_id_uniq).
+            msg.provider_message_id = ''
+            msg.save(update_fields=fields)
         item.delete()
+
+    @staticmethod
+    def defer_item(item: OutboundQueueItem, error: str, *, seconds: int = 60) -> None:
+        """Hız sınırı: deneme sayılmadan kilidi bırak, kısa süre sonra tekrar dene (W-06)."""
+        item.last_error = error
+        item.locked_at = None
+        item.locked_by = ''
+        item.next_attempt_at = timezone.now() + timedelta(seconds=seconds)
+        item.save(update_fields=['last_error', 'locked_at', 'locked_by', 'next_attempt_at', 'updated_at'])
+        msg = item.message
+        if msg.status != MessageStatus.PENDING:
+            msg.status = MessageStatus.PENDING
+            msg.save(update_fields=['status', 'updated_at'])
 
     @staticmethod
     def mark_failed(item: OutboundQueueItem, error: str, *, permanent: bool = False) -> None:
@@ -1086,11 +1342,12 @@ class OutboundQueueRepository:
         item.attempt_count = item.max_attempts if permanent else item.attempt_count + 1
         item.last_error = error
         item.locked_at = None
+        item.locked_by = ''
         backoff_minutes = [1, 5, 15, 60, 60]
         idx = min(item.attempt_count - 1, len(backoff_minutes) - 1)
         item.next_attempt_at = timezone.now() + timedelta(minutes=backoff_minutes[idx])
         item.save(update_fields=[
-            'attempt_count', 'last_error', 'locked_at', 'next_attempt_at', 'updated_at',
+            'attempt_count', 'last_error', 'locked_at', 'locked_by', 'next_attempt_at', 'updated_at',
         ])
         msg = item.message
         if item.attempt_count >= item.max_attempts:

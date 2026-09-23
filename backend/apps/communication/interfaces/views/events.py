@@ -9,7 +9,7 @@ import time
 
 from django.conf import settings
 from django.db import close_old_connections
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Max, Q, Sum
 from django.http import StreamingHttpResponse
 from rest_framework import status
 from rest_framework.renderers import BaseRenderer
@@ -91,6 +91,7 @@ class CommunicationEventsStreamView(CommunicationAPIView):
             last_conversations = -1
             last_fingerprint = ''
             last_state: dict[str, str] = {}
+            last_max_updated = None
             # Gunicorn sync worker --timeout (genelde 120s) dolmadan temiz kapanmalı.
             max_iter = int(getattr(settings, 'COMMUNICATION_SSE_MAX_ITERATIONS', 18) or 0)
             poll_sec = float(getattr(settings, 'COMMUNICATION_SSE_POLL_SECONDS', 5) or 5)
@@ -108,6 +109,20 @@ class CommunicationEventsStreamView(CommunicationAPIView):
                     qs = filter_conversations_for_user(
                         qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
                     )
+                    # Ucuz damga: görünür kümede en son değişiklik zamanı. Değişmediyse
+                    # sayaç/durum sorguları hiç çalışmaz, yalnız heartbeat gider (P-02).
+                    max_updated = qs.aggregate(m=Max('updated_at'))['m']
+                    if last_max_updated is not None and max_updated == last_max_updated:
+                        yield _sse_event('heartbeat', {'ok': True})
+                        close_old_connections()
+                        iteration += 1
+                        if max_iter and iteration >= max_iter:
+                            yield _sse_event('reconnect', {'reason': 'max_iterations', 'after_sec': 1})
+                            break
+                        time.sleep(poll_sec)
+                        continue
+                    last_max_updated = max_updated
+
                     totals = qs.aggregate(
                         unread=Sum('unread_count_coach'),
                         conversations=Count('id', filter=Q(unread_count_coach__gt=0)),
