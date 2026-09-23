@@ -998,6 +998,15 @@ class OutboundCampaign(models.Model):
     delivered_count = models.PositiveIntegerField(default=0)
     read_count = models.PositiveIntegerField(default=0)
     failed_count = models.PositiveIntegerField(default=0)
+    # Parçalı materialize ilerlemesi: kaç alıcı için Message/kuyruk üretildi.
+    materialized_count = models.PositiveIntegerField(default=0)
+    # İstemcinin ürettiği idempotency anahtarı — aynı anahtarla ikinci POST
+    # yeni kampanya açmaz, mevcut olanı döndürür (çift tık / ağ kopması).
+    client_token = models.CharField(max_length=64, blank=True, default='')
+    # Kullanıcı iptal istedi; kilitli (gönderimdeki) kayıtlar worker'da kontrol edilir.
+    cancel_requested_at = models.DateTimeField(null=True, blank=True)
+    # Teslimat satırları arşive taşındığında damgalanır (saklama politikası).
+    deliveries_archived_at = models.DateTimeField(null=True, blank=True)
     attachments = models.ManyToManyField(
         CampaignAttachment,
         blank=True,
@@ -1015,6 +1024,15 @@ class OutboundCampaign(models.Model):
         ordering = ['-created_at']
         indexes = [
             models.Index(fields=['kurum', 'sube'], name='comm_camp_kurum_sube_idx'),
+            models.Index(fields=['kurum', '-created_at'], name='comm_camp_kurum_created_idx'),
+            models.Index(fields=['kurum', 'status'], name='comm_camp_kurum_status_idx'),
+        ]
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'client_token'],
+                condition=models.Q(client_token__gt=''),
+                name='comm_camp_client_token_uniq',
+            ),
         ]
 
     def __str__(self):
@@ -1121,6 +1139,8 @@ class Message(models.Model):
                 fields=['conversation', '-created_at'],
                 name='comm_msg_conv_created_idx',
             ),
+            # Kampanya sayaçları ve teslimat listesi (status filtreli sayımlar)
+            models.Index(fields=['campaign', 'status'], name='comm_msg_camp_status_idx'),
         ]
         constraints = [
             # Aynı Meta mesaj kimliği iki kez yazılamaz — webhook tekrarı /
@@ -1259,6 +1279,10 @@ class OutboundQueueItem(models.Model):
     # Kilidi alan işleyici (host:pid:token) — iki işleyicinin aynı kaydı
     # göndermesini engeller (B-04).
     locked_by = models.CharField(max_length=64, blank=True, default='')
+    # Sağlayıcı (Meta) çağrısı başlatıldığı an. Süreç bu noktadan sonra düşerse
+    # gönderim belirsizdir: bayat kilit devralımında yeniden GÖNDERİLMEZ,
+    # "belirsiz" gerekçesiyle FAILED yapılır (çift teslim önlenir).
+    provider_call_started_at = models.DateTimeField(null=True, blank=True)
     last_error = models.TextField(blank=True, default='')
     # Kampanya dışı şablon gönderimi: template_name, template_language,
     # channel_config_id, template_context (hafta_no, odev_baslik, …)
@@ -1274,6 +1298,8 @@ class OutboundQueueItem(models.Model):
         ordering = ['priority', 'next_attempt_at']
         indexes = [
             models.Index(fields=['next_attempt_at', 'locked_at']),
+            # Kuyruk izleme sayfası: kurum bazlı liste ve sayımlar
+            models.Index(fields=['kurum', '-created_at'], name='comm_queue_kurum_created_idx'),
         ]
 
     def __str__(self):
@@ -1342,9 +1368,54 @@ class RawWebhookEvent(models.Model):
         verbose_name = 'Ham Webhook Olayı'
         verbose_name_plural = 'Ham Webhook Olayları'
         ordering = ['-created_at']
+        indexes = [
+            # Saklama temizliği (purge_communication_logs) ve kurum bazlı inceleme
+            models.Index(fields=['kurum', 'created_at'], name='comm_rawwh_kurum_created_idx'),
+        ]
 
     def __str__(self):
         return f'{self.event_type} — {self.processing_status}'
+
+
+class CampaignDeliveryArchive(models.Model):
+    """Tamamlanmış kampanyanın teslimat satırlarının arşivi (saklama politikası).
+
+    `archive_campaign_deliveries` komutu N gün önce biten kampanyaların
+    teslimat bilgisini (alıcı, telefon, durum, zaman damgaları, hata) JSON
+    olarak buraya alır ve hacmi asıl yaratan `MessageStatusEvent` satırlarını
+    siler. Mesajlar (sohbet geçmişi) varsayılan olarak korunur. Arşiv satırı
+    da ikinci bir eşikten sonra silinir.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='campaign_delivery_archives',
+    )
+    campaign = models.OneToOneField(
+        OutboundCampaign,
+        on_delete=models.CASCADE,
+        related_name='delivery_archive',
+    )
+    # [{id, contact_name, phone, contact_type, status, failed_reason, sent_at, delivered_at, read_at}]
+    rows = models.JSONField(default=list, blank=True)
+    row_count = models.PositiveIntegerField(default=0)
+    status_events_deleted = models.PositiveIntegerField(default=0)
+    messages_deleted = models.PositiveIntegerField(default=0)
+    archived_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_campaign_delivery_archive'
+        verbose_name = 'Kampanya Teslimat Arşivi'
+        verbose_name_plural = 'Kampanya Teslimat Arşivleri'
+        ordering = ['-archived_at']
+        indexes = [
+            models.Index(fields=['kurum', 'archived_at'], name='comm_cdarch_kurum_archived_idx'),
+        ]
+
+    def __str__(self):
+        return f'Arşiv {self.campaign_id} ({self.row_count})'
 
 
 class BirthdayMediaAsset(models.Model):

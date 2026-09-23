@@ -95,6 +95,8 @@ class CampaignStatus(models.TextChoices):
     COMPLETED = 'COMPLETED', 'Tamamlandı'
     PARTIAL = 'PARTIAL', 'Kısmi'
     CANCELLED = 'CANCELLED', 'İptal'
+    # Kuyruğa alınamadı (şablon onayı kalkmış, alıcı listesi boşalmış vb.) — tekrar denenmez
+    FAILED = 'FAILED', 'Başarısız'
 
 
 class LogDirection(models.TextChoices):
