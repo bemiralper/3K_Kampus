@@ -63,6 +63,12 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
   return (
     <html lang="tr">
       <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Rubik:wght@300;400;500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap"
+        />
         {/* property= zorunlu — metadata.other name= üretir; Sharing Debugger property arar */}
         {facebookAppId ? (
           <meta property="fb:app_id" content={facebookAppId} />
