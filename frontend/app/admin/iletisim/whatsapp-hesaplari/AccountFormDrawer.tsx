@@ -99,7 +99,7 @@ export default function AccountFormDrawer({
             app_id: account.app_id || "",
             access_token: "",
             app_secret: "",
-            webhook_verify_token: account.webhook_verify_token || "",
+            webhook_verify_token: "",
             display_phone: account.display_phone || "",
             is_active: account.is_active,
             is_default: account.is_default,
@@ -235,7 +235,8 @@ export default function AccountFormDrawer({
               phone_number_id: form.phone_number_id.trim(),
               waba_id: form.waba_id.trim(),
               app_id: form.app_id.trim(),
-              webhook_verify_token: form.webhook_verify_token.trim(),
+              // Boş bırakılırsa kayıtlı token korunur (sunucu boş değeri yok sayar).
+              webhook_verify_token: form.webhook_verify_token.trim() || undefined,
               display_phone: form.display_phone.trim(),
               is_active: form.is_active,
               is_default: form.is_default,
@@ -450,9 +451,15 @@ export default function AccountFormDrawer({
                   <label htmlFor="acc-verify">Webhook Verify Token</label>
                   <input
                     id="acc-verify"
-                    type="text"
+                    type="password"
+                    autoComplete="off"
                     value={form.webhook_verify_token}
                     onChange={(e) => setForm({ ...form, webhook_verify_token: e.target.value })}
+                    placeholder={
+                      account?.has_verify_token
+                        ? "Kayıtlı — değiştirmek için yeni değeri yazın"
+                        : "Meta webhook doğrulama anahtarı"
+                    }
                   />
                 </div>
               </>

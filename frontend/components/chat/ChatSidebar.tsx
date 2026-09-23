@@ -168,14 +168,19 @@ export function ChatSidebar({
         icon: <IconArchive size={16} />,
         onSelect: () => actions.onArchive(conv),
       },
-      {
-        id: "delete",
-        label: "Sohbeti sil",
-        icon: <IconTrash size={16} />,
-        danger: true,
-        separated: true,
-        onSelect: () => actions.onDelete(conv),
-      },
+      // Sohbeti silme moderasyon yetkisi ister (`can_moderate`); yoksa menüde görünmez.
+      ...(conv.can_moderate !== false
+        ? [
+            {
+              id: "delete",
+              label: "Sohbeti sil",
+              icon: <IconTrash size={16} />,
+              danger: true,
+              separated: true,
+              onSelect: () => actions.onDelete(conv),
+            },
+          ]
+        : []),
     ];
   }, [menuFor, actions]);
 

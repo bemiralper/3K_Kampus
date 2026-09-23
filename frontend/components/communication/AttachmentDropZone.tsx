@@ -1,10 +1,8 @@
 "use client";
 
 import { ChangeEvent, DragEvent, useRef, useState } from "react";
-import { CampaignAttachmentItem, uploadAttachment } from "@/lib/communication-api";
-
-const MAX_BYTES = 16 * 1024 * 1024;
-const ALLOWED = [".pdf", ".png", ".jpg", ".jpeg", ".doc", ".docx"];
+import { CampaignAttachmentItem, uploadCampaignAttachment } from "@/lib/communication-api";
+import { ALLOWED_EXTENSIONS, validateAttachment } from "@/lib/attachment-policy";
 
 interface AttachmentDropZoneProps {
   attachments: CampaignAttachmentItem[];
@@ -32,18 +30,15 @@ export default function AttachmentDropZone({
     setError(null);
     const list = Array.from(files);
     for (const file of list) {
-      const ext = file.name.slice(file.name.lastIndexOf(".")).toLowerCase();
-      if (!ALLOWED.includes(ext)) {
-        setError("Desteklenmeyen dosya türü. PDF, PNG, JPG veya DOC kullanın.");
-        continue;
-      }
-      if (file.size > MAX_BYTES) {
-        setError("Dosya boyutu 16 MB sınırını aşıyor.");
+      // Tür ve boyut kuralı sunucuyla ortak (`lib/attachment-policy`).
+      const check = validateAttachment(file);
+      if (!check.ok) {
+        setError(check.reason);
         continue;
       }
       setUploading(true);
       try {
-        const uploaded = await uploadAttachment(file);
+        const uploaded = await uploadCampaignAttachment(file);
         onChange([...attachments, uploaded]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Yükleme başarısız");
@@ -84,7 +79,7 @@ export default function AttachmentDropZone({
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
+          accept={ALLOWED_EXTENSIONS.join(",")}
           multiple
           hidden
           onChange={onFileInput}

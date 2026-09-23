@@ -15,6 +15,11 @@ import { IconAlert, IconFile } from "./icons";
 interface Props {
   open: boolean;
   conversationId: string | null;
+  /**
+   * Arayüzün bildiği alıcı türü (VELI / OGRENCI). Veli sekmesinden açılan sohbette
+   * sunucunun `preferred_audience` tahmininden önce gelir; yanlış `contact_type`'a karşı.
+   */
+  contactType?: string | null;
   onClose: () => void;
   onSent: () => void;
 }
@@ -24,6 +29,45 @@ const CATEGORY_LABELS: Record<string, string> = {
   MARKETING: "Pazarlama",
   AUTHENTICATION: "Doğrulama",
 };
+
+type Audience = "veli" | "ogrenci";
+
+/**
+ * Varsayılan şablon seçimi (eski sohbet penceresiyle aynı öncelik):
+ * 1. Arayüz niyeti (`contactType`) → `sohbet_kocluk_{veli|ogrenci}`
+ * 2. Sunucunun `preferred_template_name`'i
+ * 3. Alıcı türüne göre `sohbet_kocluk_*`, sonra `sohbet_genel_*`, sonra `*_veli` / `*_ogrenci`
+ * 4. Listenin ilk şablonu
+ */
+function pickPreferred(
+  list: WhatsAppMetaTemplateItem[],
+  contactType: string | null | undefined,
+  preferredAudience: Audience | null | undefined,
+  preferredName: string | null | undefined,
+): WhatsAppMetaTemplateItem | null {
+  const upper = (contactType || "").toUpperCase();
+  const fromProp: Audience | null = upper === "VELI" ? "veli" : upper === "OGRENCI" ? "ogrenci" : null;
+  const audience = fromProp || preferredAudience || null;
+  const wanted =
+    (fromProp ? `sohbet_kocluk_${fromProp}` : null) ||
+    preferredName ||
+    (audience ? `sohbet_kocluk_${audience}` : "");
+  const suffix = audience ? `_${audience}` : "";
+  return (
+    (wanted ? list.find((t) => t.name === wanted) : null) ||
+    (audience ? list.find((t) => t.name === `sohbet_genel_${audience}`) : null) ||
+    (suffix ? list.find((t) => (t.name || "").endsWith(suffix)) : null) ||
+    list[0] ||
+    null
+  );
+}
+
+function audienceHint(name: string | undefined): string | null {
+  if (!name) return null;
+  if (name.endsWith("_veli")) return "Veli sohbet şablonu";
+  if (name.endsWith("_ogrenci")) return "Öğrenci sohbet şablonu";
+  return null;
+}
 
 function variableNames(template: WhatsAppMetaTemplateItem): string[] {
   if (template.variables?.length) return template.variables;
@@ -47,7 +91,7 @@ function renderPreview(body: string, values: Record<string, string>): string {
  * Değişkenler sunucudan gelen sohbet bağlamıyla önceden doldurulur; kullanıcı
  * göndermeden önce gerçek metni ve varsa medya başlığını görür.
  */
-export function ChatTemplateSheet({ open, conversationId, onClose, onSent }: Props) {
+export function ChatTemplateSheet({ open, conversationId, contactType, onClose, onSent }: Props) {
   const [templates, setTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
   const [context, setContext] = useState<Record<string, string>>({});
   const [session, setSession] = useState<ConversationSessionInfo | null>(null);
@@ -72,9 +116,12 @@ export function ChatTemplateSheet({ open, conversationId, onClose, onSent }: Pro
         setTemplates(data.templates || []);
         setContext(data.context || {});
         setSession(data.session || null);
-        const preferred =
-          data.templates?.find((t) => t.name === data.preferred_template_name) ||
-          data.templates?.[0];
+        const preferred = pickPreferred(
+          data.templates || [],
+          contactType,
+          data.preferred_audience,
+          data.preferred_template_name,
+        );
         if (preferred) setSelectedId(preferred.id);
       })
       .catch((err) => {
@@ -86,7 +133,7 @@ export function ChatTemplateSheet({ open, conversationId, onClose, onSent }: Pro
     return () => {
       cancelled = true;
     };
-  }, [open, conversationId]);
+  }, [open, conversationId, contactType]);
 
   const selected = useMemo(
     () => templates.find((t) => t.id === selectedId) ?? null,
@@ -153,7 +200,9 @@ export function ChatTemplateSheet({ open, conversationId, onClose, onSent }: Pro
             {missing.length
               ? `${missing.length} değişken doldurulmalı`
               : selected
-                ? `${selected.name} · ${selected.language}`
+                ? [`${selected.name} · ${selected.language}`, audienceHint(selected.name)]
+                    .filter(Boolean)
+                    .join(" · ")
                 : ""}
           </span>
           <button type="button" className="chat-btn chat-btn--ghost" onClick={onClose}>

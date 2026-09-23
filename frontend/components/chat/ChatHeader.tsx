@@ -116,14 +116,19 @@ export function ChatHeader({
           },
         ]
       : []),
-    {
-      id: "delete",
-      label: "Sohbeti sil",
-      icon: <IconTrash size={16} />,
-      danger: true,
-      separated: true,
-      onSelect: actions.onDelete,
-    },
+    // Sohbeti silme moderasyon yetkisi ister (`can_moderate`); yoksa menüde görünmez.
+    ...(conversation.can_moderate !== false
+      ? [
+          {
+            id: "delete",
+            label: "Sohbeti sil",
+            icon: <IconTrash size={16} />,
+            danger: true,
+            separated: true,
+            onSelect: actions.onDelete,
+          },
+        ]
+      : []),
   ];
 
   if (searchOpen) {

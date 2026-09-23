@@ -13,7 +13,7 @@ export default function CoachSohbetlerContent() {
       portal="coach"
       initialConversationId={searchParams.get("conversation")}
       initialFilter={parseChatQuickFilter(searchParams.get("filter"))}
-      studentHref={(id) => `/coach/ogrencilerim/${id}`}
+      studentHref={(id) => `/coach/ogrenciler/${id}`}
     />
   );
 }

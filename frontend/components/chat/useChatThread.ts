@@ -18,6 +18,8 @@ export interface PendingMessage {
   tempId: string;
   body: string;
   fileName?: string;
+  /** Ek dosyanın kendisi — "Tekrar gönder" eki kaybetmesin diye saklanır. */
+  file?: File;
   replyToId?: string;
   failed?: boolean;
   error?: string;
@@ -172,7 +174,13 @@ export function useChatThread({ conversationId, onSent, onSessionClosed }: Optio
       const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       setPending((prev) => [
         ...prev,
-        { tempId, body: trimmed, fileName: options.file?.name, replyToId: options.replyToId },
+        {
+          tempId,
+          body: trimmed,
+          fileName: options.file?.name,
+          file: options.file,
+          replyToId: options.replyToId,
+        },
       ]);
       setSending(true);
       try {
@@ -216,7 +224,7 @@ export function useChatThread({ conversationId, onSent, onSessionClosed }: Optio
       const item = pending.find((p) => p.tempId === tempId);
       if (!item) return;
       setPending((prev) => prev.filter((p) => p.tempId !== tempId));
-      await send(item.body, { replyToId: item.replyToId });
+      await send(item.body, { file: item.file, replyToId: item.replyToId });
     },
     [pending, send],
   );

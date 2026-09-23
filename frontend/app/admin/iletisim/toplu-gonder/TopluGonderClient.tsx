@@ -19,6 +19,7 @@ import {
   WhatsAppAccount,
   WhatsAppMetaTemplateItem,
   cancelCampaign,
+  communicationPortalPaths,
   createCampaign,
   createSavedAudience,
   deleteSavedAudience,
@@ -65,12 +66,9 @@ export default function TopluGonderClient({
   campaignDetailPath,
 }: TopluGonderClientProps) {
   const isCoach = mode === "coach";
-  const detailPath =
-    campaignDetailPath
-    || ((id: string) =>
-      mode === "muhasebe"
-        ? `/muhasebe/iletisim/kampanyalar/${id}`
-        : `/admin/iletisim/kampanyalar/${id}`);
+  // Koçta kampanya detay sayfası yok; admin adresine bağlanmak yerine bağlantı gizlenir.
+  const detailPath: ((id: string) => string) | null =
+    campaignDetailPath ?? (isCoach ? null : communicationPortalPaths(mode).campaign);
   const [tab, setTab] = useState<"compose" | "history" | "saved">("compose");
   const [step, setStep] = useState(0);
   const [query, setQuery] = useState<AudienceFilter>(() => emptyAudienceQuery(isCoach ? ["ogrenci"] : []));
@@ -281,7 +279,7 @@ export default function TopluGonderClient({
               <span>Başarısız <b>{sentCampaign.failed_count}</b></span>
               <span>Bekleyen <b>{Math.max(0, (sentCampaign.total_recipients || 0) - (sentCampaign.sent_count || 0) - (sentCampaign.failed_count || 0))}</b></span>
             </div>
-            <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>
+            {detailPath && <Link href={detailPath(sentCampaign.id)}>Gönderim detayı</Link>}
           </div>
         )}
 
@@ -555,7 +553,7 @@ function HistoryTab({
   onCancel,
 }: {
   items: CampaignItem[];
-  detailPath: (id: string) => string;
+  detailPath: ((id: string) => string) | null;
   onCancel: (id: string) => Promise<void>;
 }) {
   if (!items.length) return <div className="tg-empty">Henüz gönderim yok.</div>;
@@ -581,7 +579,7 @@ function HistoryTab({
           </span>
           <span>
             {item.created_by_name || "—"}
-            <div><Link href={detailPath(item.id)}>Detay</Link></div>
+            {detailPath && <div><Link href={detailPath(item.id)}>Detay</Link></div>}
           </span>
         </div>
       ))}

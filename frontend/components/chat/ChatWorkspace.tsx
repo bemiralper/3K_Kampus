@@ -1,17 +1,22 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useCommunicationSSE } from "@/hooks/useCommunicationSSE";
+import { useAuth } from "@/lib/contexts/AuthContext";
 import {
   ChatContextData,
   ChatMessageSearchHit,
   ChatQuickFilter,
   ConversationListItem,
+  DEPARTMENT_LABELS,
   InboxPortal,
   MessageItem,
+  accountLabel,
   archiveConversation,
   claimConversation,
+  conversationInboxPath,
   deleteConversation,
   deleteMessage,
   fetchChatConversation,
@@ -46,6 +51,7 @@ import { ChatTimeline } from "./ChatTimeline";
 import { IconAlert, IconRefresh } from "./icons";
 import { useChatConversations } from "./useChatConversations";
 import { useChatThread } from "./useChatThread";
+import { OpenConversationTarget, useOpenConversation } from "./useOpenConversation";
 
 import "./chat.css";
 
@@ -59,6 +65,16 @@ interface Props {
   initialFilter?: ChatQuickFilter | null;
   /** Öğrenci detay sayfası bağlantısı — portala göre değişir. */
   studentHref?: (studentId: number) => string;
+  /**
+   * `page`: tam sohbetler sayfası (liste + akış + bilgi paneli).
+   * `drawer`: yalnızca tek sohbet akışı — öğrenci/veli/personel kartından açılan
+   * yan panel. Liste, yeni sohbet ve liste kısayolları gösterilmez.
+   */
+  variant?: "page" | "drawer";
+  /** Telefon numarasından açılacak sohbet (drawer kullanımı). */
+  initialOpen?: OpenConversationTarget | null;
+  /** Drawer kabuğunun kapatılması istendiğinde (mobil geri, sohbet silindi…). */
+  onRequestClose?: () => void;
 }
 
 export function ChatWorkspace({
@@ -66,17 +82,25 @@ export function ChatWorkspace({
   initialConversationId,
   initialFilter,
   studentHref,
+  variant = "page",
+  initialOpen,
+  onRequestClose,
 }: Props) {
+  const isDrawer = variant === "drawer";
   const department = inboxPortalDepartment(portal);
   const list = useChatConversations({ department, initialQuick: initialFilter ?? undefined });
+  const { user } = useAuth();
+  const currentUserId = user?.id ?? null;
 
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId ?? null);
   const [mobilePane, setMobilePane] = useState<MobilePane>(
-    initialConversationId ? "thread" : "list",
+    initialConversationId || isDrawer ? "thread" : "list",
   );
   const [infoOpen, setInfoOpen] = useState(false);
   const [context, setContext] = useState<ChatContextData | null>(null);
   const [contextLoading, setContextLoading] = useState(false);
+  /** Bağlamı yüklenmiş sohbetin kimliği — panel kapanıp açılınca tekrar istenmesin. */
+  const contextForRef = useRef<string | null>(null);
 
   const [replyTo, setReplyTo] = useState<MessageItem | null>(null);
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -113,6 +137,17 @@ export function ChatWorkspace({
     setMobilePane("thread");
     setDetachedError(null);
   }, [initialConversationId]);
+
+  // ── Telefondan sohbet açma (drawer) ──
+  // Açılan sohbet listede olmayabilir; `detached` üzerinden ekranda tutulur.
+  const opener = useOpenConversation({ target: isDrawer ? initialOpen : null, portal });
+  useEffect(() => {
+    if (!opener.conversation) return;
+    setDetached(opener.conversation);
+    setDetachedError(null);
+    setSelectedId(opener.conversation.id);
+    setMobilePane("thread");
+  }, [opener.conversation]);
 
   const listSelected = useMemo(
     () => list.items.find((c) => c.id === selectedId) ?? null,
@@ -196,32 +231,45 @@ export function ChatWorkspace({
   }, []);
 
   // ── Adres çubuğunu seçili sohbetle eşitle (yenilemeden) ──
+  // Drawer başka bir sayfanın (öğrenci detayı vb.) üstünde açılır; adresi bozmaz.
   useEffect(() => {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || isDrawer) return;
     const url = new URL(window.location.href);
     if (selectedId) url.searchParams.set("conversation", selectedId);
     else url.searchParams.delete("conversation");
     window.history.replaceState(null, "", url.toString());
-  }, [selectedId]);
+  }, [selectedId, isDrawer]);
 
   // ── Canlı güncelleme ──
   const onRealtime = useCallback(
     (payload?: { conversation_ids?: string[] }) => {
-      void list.reload({ silent: true });
       const touched = payload?.conversation_ids;
+      if (!touched || touched.length === 0) {
+        // Hangi sohbetlerin değiştiği bilinmiyor (yoklama düşüşü vb.): tüm liste tazelenir.
+        void list.reload({ silent: true });
+      } else {
+        // Yalnızca dokunulan satırlar çekilir; liste baştan yüklenmez.
+        void Promise.allSettled(touched.map((id) => fetchChatConversation(id))).then((results) => {
+          const rows = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
+          if (!rows.length) return;
+          const listIds = new Set(list.items.map((c) => c.id));
+          list.patchMany(rows.filter((c) => listIds.has(c.id)));
+          // Listede olmayan ama açık olan sohbetin satırı (24 saat penceresi, başlık) tazelensin.
+          const selectedRow = rows.find((c) => c.id === selectedId && !listIds.has(c.id));
+          if (selectedRow) setDetached(selectedRow);
+          // Listede hiç olmayan yeni bir sohbet geldiyse görünmesi için liste tazelenir.
+          if (rows.some((c) => !listIds.has(c.id) && c.id !== selectedId)) {
+            void list.reload({ silent: true });
+          }
+        });
+      }
       if (!selectedId) return;
       if (!touched || touched.length === 0 || touched.includes(selectedId)) {
+        // `after=` yanıtı durum değişikliklerini de içerir; ayrı durum tazelemesi gerekmez.
         void thread.refreshTail();
-        void thread.refreshStatuses();
-        // Listede olmayan sohbetin satırı (24 saat penceresi, başlık) da tazelensin.
-        if (!listSelected) {
-          void fetchChatConversation(selectedId)
-            .then(setDetached)
-            .catch(() => undefined);
-        }
       }
     },
-    [list, selectedId, thread, listSelected],
+    [list, selectedId, thread],
   );
 
   useCommunicationSSE({
@@ -229,21 +277,29 @@ export function ChatWorkspace({
     onFallbackPoll: () => onRealtime(),
   });
 
-  // ── Seçili sohbet: okundu işaretle + bağlam yükle ──
+  // ── Seçili sohbet değişti: yazma/arama durumunu sıfırla ──
   useEffect(() => {
-    if (!selectedId) {
-      setContext(null);
-      return;
-    }
+    setContext(null);
+    contextForRef.current = null;
+    if (!selectedId) return;
     setReplyTo(null);
     setSearchOpen(false);
     setSearchQuery("");
     setSearchHits([]);
+  }, [selectedId]);
+
+  // ── Bağlam (öğrenci/veli bilgisi) yalnızca bilgi paneli açıkken yüklenir ──
+  useEffect(() => {
+    if (!selectedId || !infoOpen) return;
+    // Aynı sohbet için zaten yüklendiyse panel her açılışta yeniden istenmez.
+    if (contextForRef.current === selectedId) return;
     let cancelled = false;
     setContextLoading(true);
     fetchConversationContext(selectedId)
       .then((data) => {
-        if (!cancelled) setContext(data);
+        if (cancelled) return;
+        setContext(data);
+        contextForRef.current = selectedId;
       })
       .catch(() => {
         if (!cancelled) setContext(null);
@@ -254,7 +310,7 @@ export function ChatWorkspace({
     return () => {
       cancelled = true;
     };
-  }, [selectedId]);
+  }, [selectedId, infoOpen]);
 
   useEffect(() => {
     if (!selected || (selected.unread_count_coach || 0) === 0) return;
@@ -270,7 +326,13 @@ export function ChatWorkspace({
         setQuickReplies(
           (data.templates || [])
             .filter((t) => t.is_active)
-            .map((t) => ({ id: t.id, name: t.name, body: t.body })),
+            .map((t) => ({
+              id: t.id,
+              name: t.name,
+              body: t.body,
+              category: t.category,
+              categoryLabel: t.category_label || t.category,
+            })),
         ),
       )
       .catch(() => setQuickReplies([]));
@@ -383,9 +445,12 @@ export function ChatWorkspace({
           const updated = await archiveConversation(conv.id, archiving);
           if (archiving && list.filters.quick !== "archived") {
             list.removeConversation(conv.id);
-            if (selectedId === conv.id) {
+            // Drawer'da tek sohbet var; arşivlense de ekranda kalır.
+            if (selectedId === conv.id && !isDrawer) {
               setSelectedId(null);
               setDetached(null);
+            } else if (isDrawer) {
+              setDetached((prev) => (prev && prev.id === conv.id ? { ...prev, ...updated } : prev));
             }
           } else {
             applyConversation(updated);
@@ -406,7 +471,7 @@ export function ChatWorkspace({
         void run();
       }
     },
-    [applyConversation, list, selectedId, showToast],
+    [applyConversation, list, selectedId, showToast, isDrawer],
   );
 
   const toggleRead = useCallback(
@@ -417,7 +482,7 @@ export function ChatWorkspace({
           ? await markConversationRead(conv.id)
           : await markConversationUnread(conv.id);
         applyConversation(updated);
-        if (!unread && selectedId === conv.id) {
+        if (!unread && selectedId === conv.id && !isDrawer) {
           setSelectedId(null);
           setDetached(null);
         }
@@ -425,7 +490,7 @@ export function ChatWorkspace({
         showToast("İşlem tamamlanamadı.");
       }
     },
-    [applyConversation, selectedId, showToast],
+    [applyConversation, selectedId, showToast, isDrawer],
   );
 
   const removeConversation = useCallback(
@@ -442,7 +507,8 @@ export function ChatWorkspace({
               if (selectedId === conv.id) {
                 setSelectedId(null);
                 setDetached(null);
-                setMobilePane("list");
+                if (isDrawer) onRequestClose?.();
+                else setMobilePane("list");
               }
               showToast("Sohbet silindi.");
             })
@@ -450,7 +516,7 @@ export function ChatWorkspace({
         },
       });
     },
-    [list, selectedId, showToast],
+    [list, selectedId, showToast, isDrawer, onRequestClose],
   );
 
   const claim = useCallback(async () => {
@@ -538,8 +604,19 @@ export function ChatWorkspace({
   );
 
   // ── Klavye kısayolları ──
+  // Bir pencere/sayfa (şablon, yeni sohbet, atama, yıldızlılar, iletme, onay) açıkken
+  // tek tuş kısayolları çalışmaz; aksi halde arkadaki ekranda istenmeyen işlem tetiklenir.
+  const dialogOpen =
+    templateOpen ||
+    newChatOpen ||
+    transferOpen ||
+    starredOpen ||
+    !!forwardMessageId ||
+    !!confirm;
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (dialogOpen) return;
       const target = e.target as HTMLElement | null;
       const typing =
         !!target &&
@@ -550,6 +627,17 @@ export function ChatWorkspace({
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f" && selectedId) {
         e.preventDefault();
         setSearchOpen(true);
+        return;
+      }
+      if (isDrawer) {
+        // Drawer'da liste yok: yalnızca sohbet içi arama ve Escape çalışır.
+        // Escape önce arama/bilgi panelini kapatır; kabuk (provider) ancak bunlar
+        // kapalıyken `defaultPrevented` olmayan Escape ile kendini kapatır.
+        if (e.key === "Escape" && (searchOpen || infoOpen)) {
+          e.preventDefault();
+          if (searchOpen) setSearchOpen(false);
+          else setInfoOpen(false);
+        }
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
@@ -588,13 +676,77 @@ export function ChatWorkspace({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedId, selected, sidebarItems, searchOpen, infoOpen, toggleRead, selectConversation]);
+  }, [
+    dialogOpen,
+    isDrawer,
+    selectedId,
+    selected,
+    sidebarItems,
+    searchOpen,
+    infoOpen,
+    toggleRead,
+    selectConversation,
+  ]);
 
   const composerDisabled = !selected;
 
+  // Drawer: hesap seçimi + tam ekran bağlantısı (eski sohbet penceresiyle aynı).
+  const drawerBar = isDrawer ? (
+    <div className="chat-drawer-bar">
+      {opener.accounts.length > 1 ? (
+        <label className="chat-drawer-account">
+          <span>WhatsApp hesabı (birim)</span>
+          <select
+            value={opener.accountId}
+            disabled={opener.opening}
+            onChange={(e) => opener.setAccountId(e.target.value)}
+            aria-label="WhatsApp hesabı"
+          >
+            {opener.accounts.map((acc) => {
+              const dept = acc.department
+                ? DEPARTMENT_LABELS[String(acc.department)] || String(acc.department)
+                : "";
+              return (
+                <option key={acc.id} value={acc.id}>
+                  {accountLabel(acc)}
+                  {dept ? ` — ${dept}` : ""}
+                </option>
+              );
+            })}
+          </select>
+        </label>
+      ) : (
+        <span />
+      )}
+      {selected ? (
+        <Link
+          href={conversationInboxPath(selected.id, portal)}
+          className="chat-btn chat-btn--soft chat-drawer-fullscreen"
+          onClick={() => onRequestClose?.()}
+        >
+          Tam ekran
+        </Link>
+      ) : null}
+      {selected && opener.opening ? (
+        <p className="chat-drawer-status" role="status">
+          Konuşma açılıyor…
+        </p>
+      ) : selected && opener.error ? (
+        <p className="chat-drawer-status is-error" role="alert">
+          {opener.error}
+        </p>
+      ) : null}
+    </div>
+  ) : null;
+
+  const drawerOpening = isDrawer && opener.opening;
+  const drawerError = isDrawer && !opener.opening ? opener.error : null;
+
   return (
     <div
-      className={`chat-workspace pane-${mobilePane}${infoOpen ? " info-open" : ""}`}
+      className={`chat-workspace chat-workspace--${variant} pane-${mobilePane}${
+        infoOpen ? " info-open" : ""
+      }`}
       data-portal={portal}
     >
       {!online ? (
@@ -604,38 +756,49 @@ export function ChatWorkspace({
         </div>
       ) : null}
 
+      {drawerBar}
+
       <div className="chat-panes">
-        <ChatSidebar
-          items={sidebarItems}
-          selectedId={selectedId}
-          loading={list.loading}
-          loadingMore={list.loadingMore}
-          hasMore={list.hasMore}
-          error={list.error}
-          total={list.total}
-          unreadConversations={list.unreadConversations}
-          filters={list.filters}
-          onFiltersChange={list.setFilters}
-          onSelect={selectConversation}
-          onLoadMore={list.loadMore}
-          onNewChat={() => setNewChatOpen(true)}
-          onMarkAllRead={markAllRead}
-          onOpenStarred={() => setStarredOpen(true)}
-          actions={{
-            onPin: togglePin,
-            onMute: toggleMute,
-            onArchive: toggleArchive,
-            onToggleRead: toggleRead,
-            onDelete: removeConversation,
-          }}
-          searchInputRef={listSearchRef}
-        />
+        {!isDrawer ? (
+          <ChatSidebar
+            items={sidebarItems}
+            selectedId={selectedId}
+            loading={list.loading}
+            loadingMore={list.loadingMore}
+            hasMore={list.hasMore}
+            error={list.error}
+            total={list.total}
+            unreadConversations={list.unreadConversations}
+            filters={list.filters}
+            onFiltersChange={list.setFilters}
+            onSelect={selectConversation}
+            onLoadMore={list.loadMore}
+            onNewChat={() => setNewChatOpen(true)}
+            onMarkAllRead={markAllRead}
+            onOpenStarred={() => setStarredOpen(true)}
+            actions={{
+              onPin: togglePin,
+              onMute: toggleMute,
+              onArchive: toggleArchive,
+              onToggleRead: toggleRead,
+              onDelete: removeConversation,
+            }}
+            searchInputRef={listSearchRef}
+          />
+        ) : null}
 
         <section className="chat-main" aria-label="Mesajlaşma">
           {!selected ? (
             <div className="chat-placeholder">
               <div className="chat-placeholder-mark" aria-hidden="true" />
-              {selectedId && detachedError ? (
+              {drawerError ? (
+                <>
+                  <p className="chat-placeholder-title">Konuşma açılamadı</p>
+                  <p className="chat-placeholder-text">{drawerError}</p>
+                </>
+              ) : drawerOpening || (isDrawer && initialOpen?.phone) ? (
+                <p className="chat-placeholder-text">Konuşma açılıyor…</p>
+              ) : selectedId && detachedError ? (
                 <>
                   <p className="chat-placeholder-title">Sohbet açılamadı</p>
                   <p className="chat-placeholder-text">{detachedError}</p>
@@ -673,6 +836,10 @@ export function ChatWorkspace({
                 onSearchChange={setSearchQuery}
                 onSearchStep={stepSearch}
                 onBack={() => {
+                  if (isDrawer) {
+                    onRequestClose?.();
+                    return;
+                  }
                   setMobilePane("list");
                   setSelectedId(null);
                 }}
@@ -699,6 +866,8 @@ export function ChatWorkspace({
                 searchQuery={searchOpen ? searchQuery : ""}
                 focusedMessageId={focusedMessageId}
                 actions={messageActions}
+                canModerate={selected.can_moderate !== false}
+                currentUserId={currentUserId}
                 onLoadOlder={thread.loadOlder}
                 onRetryPending={thread.retryPending}
                 onDiscardPending={thread.discardPending}
@@ -746,6 +915,7 @@ export function ChatWorkspace({
               setMobilePane("thread");
             }}
             onTransfer={() => setTransferOpen(true)}
+            onConversationPatched={applyConversation}
           />
         ) : null}
       </div>
@@ -755,6 +925,16 @@ export function ChatWorkspace({
       <ChatTemplateSheet
         open={templateOpen}
         conversationId={selectedId}
+        // Drawer'da alıcı türü açan karttan bilinir (veli sekmesi → VELI); eski pencereyle aynı.
+        contactType={
+          isDrawer
+            ? initialOpen?.veliId
+              ? "VELI"
+              : initialOpen?.ogrenciId
+                ? "OGRENCI"
+                : selected?.contact_type
+            : undefined
+        }
         onClose={() => setTemplateOpen(false)}
         onSent={() => {
           showToast("Şablon gönderildi.");
@@ -764,7 +944,7 @@ export function ChatWorkspace({
       />
 
       <NewChatDialog
-        open={newChatOpen}
+        open={newChatOpen && !isDrawer}
         department={department}
         onClose={() => setNewChatOpen(false)}
         onOpened={(conv) => {

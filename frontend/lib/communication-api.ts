@@ -1,6 +1,10 @@
 // İletişim Merkezi — API client
 
 import { isSessionExpiredResponse, notifySessionExpired } from '@/lib/api';
+import { MAX_ATTACHMENT_BYTES, formatMegabytes } from '@/lib/attachment-policy';
+
+/** Doğum günü görseli sınırı — sunucudaki `birthday_media_service.MAX_BYTES` ile aynı. */
+const BIRTHDAY_MEDIA_MAX_BYTES = 5 * 1024 * 1024;
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
 
@@ -240,6 +244,8 @@ export interface ConversationListItem {
   is_pinned?: boolean;
   is_muted?: boolean;
   awaiting_reply?: boolean;
+  /** Sohbeti silme, mesaj sabitleme ve başkasının mesajını silme yetkisi. */
+  can_moderate?: boolean;
 }
 
 /** Sohbet listesi kişi grubu — filtre sekmeleriyle birebir eşleşir. */
@@ -314,6 +320,8 @@ export interface ConversationsResponse {
   total: number;
   offset?: number;
   has_more?: boolean;
+  /** İmleç sayfalaması: bir sonraki sayfa için `cursor` parametresi; yoksa null. */
+  next_cursor?: string | null;
 }
 
 export interface MessagesResponse {
@@ -331,7 +339,8 @@ export interface WhatsAppConfig {
   phone_number_id?: string;
   waba_id?: string;
   app_id?: string;
-  webhook_verify_token?: string;
+  /** Verify token sunucudan okunmaz; yalnız tanımlı olup olmadığı döner. */
+  has_verify_token?: boolean;
   display_phone?: string;
   is_active?: boolean;
   has_token?: boolean;
@@ -749,7 +758,9 @@ export interface WhatsAppAccount {
   phone_number_id: string;
   waba_id: string;
   app_id?: string;
-  webhook_verify_token?: string;
+  /** Sırlar okunmaz; yalnız tanımlı olup olmadıkları döner. */
+  has_verify_token?: boolean;
+  has_app_secret?: boolean;
   display_phone: string;
   is_active: boolean;
   is_default: boolean;
@@ -1417,6 +1428,12 @@ export async function uploadMetaTemplateExampleMedia(
   file: File,
   channelConfigId: string,
 ): Promise<{ success: boolean; example_handle: string }> {
+  // Sunucuya boşuna yüklemeden önce boyut kontrolü.
+  if (file.size > MAX_ATTACHMENT_BYTES) {
+    return Promise.reject(
+      new Error(`Dosya boyutu ${formatMegabytes(MAX_ATTACHMENT_BYTES)} sınırını aşıyor.`),
+    );
+  }
   const form = new FormData();
   form.append('file', file);
   form.append('channel_config_id', channelConfigId);
@@ -1603,33 +1620,60 @@ export function conversationInboxBase(portal: InboxPortal): string {
   return '/coach/sohbetler';
 }
 
-/** Portal içi iletişim sayfa yolları — admin linkleri muhasebe kabuğuna sızmasın. */
-export function communicationPortalPaths(portal: InboxPortal) {
+export interface CommunicationPortalPaths {
+  home: string;
+  chats: string;
+  bulk: string;
+  /** Gönderim geçmişi — koçta toplu gönder sayfasının içindeki sekme. */
+  history: string;
+  campaign: (id: string) => string;
+  /** Şablon yönetimi sayfaları — portalda yoksa `null` (bağlantı gizlenir). */
+  templates: string | null;
+  metaTemplates: string | null;
+  notificationTemplates: string | null;
+  queue: string | null;
+}
+
+/** Portal içi iletişim sayfa yolları — admin linkleri koç/muhasebe kabuğuna sızmasın. */
+export function communicationPortalPaths(portal: InboxPortal): CommunicationPortalPaths {
   if (portal === 'muhasebe') {
     return {
       home: '/muhasebe/iletisim/sohbetler',
       chats: '/muhasebe/iletisim/sohbetler',
       templates: '/muhasebe/iletisim/sablonlar',
+      metaTemplates: null,
+      notificationTemplates: null,
       bulk: '/muhasebe/iletisim/toplu-gonder',
       history: '/muhasebe/iletisim/kampanyalar',
       campaign: (id: string) => `/muhasebe/iletisim/kampanyalar/${id}`,
       queue: '/muhasebe/iletisim/kuyruk',
     };
   }
+  if (portal === 'coach') {
+    // Koçta şablon/meta şablon yönetimi ve kampanya detayı sayfası yok.
+    return {
+      home: '/coach/dashboard',
+      chats: '/coach/sohbetler',
+      templates: null,
+      metaTemplates: null,
+      notificationTemplates: '/coach/iletisim/bildirim-sablonlari',
+      bulk: '/coach/toplu-gonder',
+      history: '/coach/toplu-gonder',
+      campaign: () => '/coach/toplu-gonder',
+      queue: null,
+    };
+  }
   return {
     home: '/admin/iletisim/panel',
     chats: '/admin/iletisim/sohbetler',
     templates: '/admin/iletisim/sablonlar',
+    metaTemplates: '/admin/iletisim/meta-sablonlar',
+    notificationTemplates: '/admin/iletisim/bildirim-sablonlari',
     bulk: '/admin/iletisim/toplu-gonder',
     history: '/admin/iletisim/kampanyalar',
     campaign: (id: string) => `/admin/iletisim/kampanyalar/${id}`,
     queue: '/admin/iletisim/kuyruk',
   };
-}
-
-export function conversationTemplatesPath(portal: InboxPortal): string {
-  if (portal === 'muhasebe') return '/muhasebe/iletisim/sablonlar';
-  return '/admin/iletisim/sablonlar';
 }
 
 export function conversationInboxPath(
@@ -1664,28 +1708,6 @@ export function rewriteConversationInboxUrl(
   const convId = extractConversationIdFromUrl(url);
   if (!convId || !INBOX_PATH_RE.test(url)) return url;
   return conversationInboxPath(convId, portal);
-}
-
-/** Veli sohbetinde "… velisi" alt satırı; öğrenci sohbetinde veli adı (varsa). */
-export function conversationRelationLabel(conv: {
-  contact_type?: string;
-  ogrenci_ad?: string;
-  ogrenci_adlari?: string[];
-  veli_ad?: string;
-  department?: string;
-}): string {
-  const students = (conv.ogrenci_adlari && conv.ogrenci_adlari.length > 0)
-    ? conv.ogrenci_adlari
-    : (conv.ogrenci_ad ? conv.ogrenci_ad.split(',').map((s) => s.trim()).filter(Boolean) : []);
-  const parts: string[] = [];
-  if (conv.department === 'ACCOUNTING') parts.push('Muhasebe');
-  else if (conv.department === 'COACHING') parts.push('Koçluk');
-  if (conv.contact_type === 'VELI' && students.length > 0) {
-    parts.push(students.length === 1 ? `${students[0]} velisi` : `${students.join(', ')} velisi`);
-  } else if (conv.contact_type === 'OGRENCI' && conv.veli_ad) {
-    parts.push(`Veli: ${conv.veli_ad}`);
-  }
-  return parts.join(' · ');
 }
 
 export async function sendPaymentReminder(
@@ -2040,8 +2062,6 @@ export interface CampaignAttachmentItem {
   url?: string;
 }
 
-export type SendMode = 'now' | 'scheduled' | 'draft';
-
 export interface CampaignAnalytics {
   total: number;
   sent: number;
@@ -2119,33 +2139,6 @@ export interface CampaignItem {
   queue_status?: CampaignQueueStatus;
 }
 
-export async function previewCampaign(
-  audienceFilter: AudienceFilter,
-  options?: {
-    attachmentCount?: number;
-    aiUsed?: boolean;
-    channelConfigId?: string;
-    includeRecipients?: boolean;
-    page?: number;
-    pageSize?: number;
-  },
-): Promise<CampaignPreviewStats> {
-  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  return request<CampaignPreviewStats>('/campaigns/preview/', {
-    method: 'POST',
-    body: JSON.stringify({
-      kurum_id: kurumId,
-      recipient_filter: audienceFilter,
-      attachment_count: options?.attachmentCount ?? 0,
-      ai_used: options?.aiUsed ?? false,
-      channel_config_id: options?.channelConfigId,
-      include_recipients: options?.includeRecipients ?? false,
-      page: options?.page,
-      page_size: options?.pageSize,
-    }),
-  });
-}
-
 export async function createCampaign(data: {
   title?: string;
   body?: string;
@@ -2165,15 +2158,6 @@ export async function createCampaign(data: {
   return request<CampaignItem>('/campaigns/', {
     method: 'POST',
     body: JSON.stringify({ ...data, kurum_id: kurumId }),
-    timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
-  });
-}
-
-export async function confirmCampaign(campaignId: string): Promise<CampaignItem> {
-  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  return request<CampaignItem>(`/campaigns/${campaignId}/confirm/`, {
-    method: 'POST',
-    body: JSON.stringify({ kurum_id: kurumId }),
     timeoutMs: CAMPAIGN_MUTATION_TIMEOUT_MS,
   });
 }
@@ -2236,20 +2220,6 @@ export const CAMPAIGN_STATUS_LABELS: Record<string, string> = {
   CANCELLED: 'İptal',
 };
 
-export const AUDIENCE_TYPE_LABELS: Record<string, string> = {
-  all_veliler: 'Tüm veliler',
-  all_ogrenciler: 'Tüm öğrenciler',
-  all_personeller: 'Personeller',
-  sinif: 'Sınıf',
-  sube: 'Şube',
-  coach_students: 'Koç öğrencileri',
-  coach_parents: 'Koç velileri',
-  custom_ids: 'Arama ile seç (öğrenci / veli / personel)',
-  filtered: 'Filtre',
-  advanced: 'Gelişmiş filtre',
-  query: 'Özel kitle',
-};
-
 export const CONTACT_KIND_LABELS: Record<ContactKind, string> = {
   ogrenci: 'Öğrenci',
   anne: 'Anne',
@@ -2257,34 +2227,10 @@ export const CONTACT_KIND_LABELS: Record<ContactKind, string> = {
   vasi: 'Vasi',
 };
 
-export const MALI_DURUM_LABELS: Record<MaliDurumFilter, string> = {
-  borclu: 'Borçlu',
-  borcu_yok: 'Borcu yok',
-  geciken: 'Gecikmiş taksidi olan',
-};
-
 /** Hesap seçici / etiketleri için okunabilir isim. */
 export function accountLabel(account: WhatsAppAccount): string {
   const base = account.name || account.display_phone || account.phone_number_id || 'WhatsApp Hesabı';
   return account.is_default ? `${base} (Varsayılan)` : base;
-}
-
-/**
- * Basit önizleme: gövde metnindeki {{veli_ad}} / {{ogrenci_ad}} belirteçlerini
- * alıcının display_name'i ile değiştirir; diğer belirteçler örnek verilerle doldurulur.
- */
-export function renderSampleMessage(
-  body: string,
-  recipient: { recipient_type?: string; display_name?: string },
-): string {
-  const name = recipient.display_name?.trim() || '';
-  const isVeli = (recipient.recipient_type || '').toUpperCase() === 'VELI';
-  let text = body;
-  if (name) {
-    text = text.replace(/\{\{veli_ad\}\}/g, isVeli ? name : recipient.display_name || '');
-    text = text.replace(/\{\{ogrenci_ad\}\}/g, !isVeli ? name : recipient.display_name || '');
-  }
-  return text;
 }
 
 export interface TemplateCategoryItem {
@@ -2298,21 +2244,6 @@ export interface TemplateCategoryItem {
   created_at: string;
   updated_at: string;
 }
-
-/** @deprecated API'den fetchTemplateCategories kullanın */
-export const TEMPLATE_CATEGORY_LABELS: Record<string, string> = {
-  deneme_sonucu: 'Deneme Sonucu',
-  haftalik_odev: 'Haftalık Ödev',
-  devamsizlik: 'Devamsızlık',
-  yoklama_gelmedi: 'Yoklama — Gelmedi',
-  yoklama_gec: 'Yoklama — Geç Kalma',
-  yoklama_cikis: 'Yoklama — Çıkış',
-  tebrik: 'Tebrik',
-  odeme: 'Ödeme',
-  karne: 'Karne',
-  duyuru: 'Duyuru',
-  ozel: 'Özel',
-};
 
 export function categoryLabelMap(categories: TemplateCategoryItem[]): Record<string, string> {
   return Object.fromEntries(categories.map((c) => [c.slug, c.label]));
@@ -2457,6 +2388,12 @@ export async function fetchBirthdayMedia(params?: {
 }
 
 export async function uploadBirthdayMedia(file: File): Promise<BirthdayMediaAsset> {
+  // Sunucuya boşuna yüklemeden önce boyut kontrolü (doğum günü görseli 5 MB).
+  if (file.size > BIRTHDAY_MEDIA_MAX_BYTES) {
+    return Promise.reject(
+      new Error(`Görsel boyutu ${formatMegabytes(BIRTHDAY_MEDIA_MAX_BYTES)} sınırını aşıyor.`),
+    );
+  }
   const form = new FormData();
   form.append('file', file);
   const csrf = getCsrfToken();
@@ -2725,14 +2662,6 @@ export async function fetchTemplateStats(id: string): Promise<{
   return request(`/templates/${id}/stats/?kurum_id=${kurumId}`);
 }
 
-export async function recordTemplateUsage(id: string): Promise<{ ok: boolean; usage_count: number }> {
-  const kurumId = readContextId(STORAGE_KEYS.activeKurum);
-  return request(`/templates/${id}/use/`, {
-    method: 'POST',
-    body: JSON.stringify({ kurum_id: kurumId }),
-  });
-}
-
 export async function uploadCampaignAttachment(file: File): Promise<CampaignAttachmentItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   const form = new FormData();
@@ -2755,9 +2684,6 @@ export async function uploadCampaignAttachment(file: File): Promise<CampaignAtta
   }
   return res.json();
 }
-
-/** @deprecated Use uploadCampaignAttachment */
-export const uploadAttachment = uploadCampaignAttachment;
 
 // ───────────────────────────────────────────────────────────────
 // Sohbetler ekranı (yeni arayüz)
@@ -2801,6 +2727,8 @@ export interface ChatListQuery {
   department?: string;
   limit?: number;
   offset?: number;
+  /** Sunucudan gelen `next_cursor`; verilirse `offset` yok sayılır. */
+  cursor?: string;
 }
 
 export async function fetchChatConversations(
@@ -2841,7 +2769,8 @@ export async function fetchChatConversations(
   if (query.department) qs.set('department', query.department);
   qs.set('period', 'all');
   qs.set('limit', String(query.limit ?? 30));
-  if (query.offset) qs.set('offset', String(query.offset));
+  if (query.cursor) qs.set('cursor', query.cursor);
+  else if (query.offset) qs.set('offset', String(query.offset));
 
   return request<ConversationsResponse>(`/conversations/?${qs.toString()}`);
 }

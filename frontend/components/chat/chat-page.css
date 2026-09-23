@@ -1,6 +1,7 @@
 /* Sohbetler sayfası kabuğu.
    Üç portalın (admin / koç / muhasebe) layout'u farklı olduğu için
-   her birinde sayfanın viewport yüksekliğini doldurması ayrı tanımlanır. */
+   her birinde sayfanın viewport yüksekliğini doldurması ayrı tanımlanır.
+   `100vh` satırları `dvh` desteklemeyen tarayıcılar için yedektir. */
 
 .chat-page {
   display: flex;
@@ -19,7 +20,9 @@
 
 /* --- Admin kabuğu --- */
 .app-main:has(.chat-page) {
+  height: 100vh;
   height: 100dvh;
+  max-height: 100vh;
   max-height: 100dvh;
   min-height: 0;
   overflow: hidden;
@@ -37,7 +40,9 @@
 
 /* --- Koç kabuğu --- */
 .coach-shell:has(.chat-page) {
+  height: 100vh;
   height: 100dvh;
+  max-height: 100vh;
   max-height: 100dvh;
   overflow: hidden;
 }
@@ -62,7 +67,9 @@
 
 /* --- Muhasebe kabuğu --- */
 .muhasebe-shell:has(.chat-page) {
+  height: 100vh;
   height: 100dvh;
+  max-height: 100vh;
   max-height: 100dvh;
   overflow: hidden;
 }

@@ -70,6 +70,10 @@ interface Props {
   onDiscardPending: (tempId: string) => void;
   /** Sabitlenmiş mesaj şeridine tıklanınca o mesaja git. */
   onJumpToMessage: (messageId: string) => void;
+  /** Sohbette sabitleme / başkasının mesajını silme yetkisi (`can_moderate`). */
+  canModerate?: boolean;
+  /** Oturumdaki kullanıcı — kendi giden mesajını silmek her zaman serbesttir. */
+  currentUserId?: number | null;
 }
 
 export function ChatTimeline({
@@ -87,6 +91,8 @@ export function ChatTimeline({
   onRetryPending,
   onDiscardPending,
   onJumpToMessage,
+  canModerate = true,
+  currentUserId = null,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -153,6 +159,11 @@ export function ChatTimeline({
     setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 120);
   };
 
+  const isOwnMessage = (message: MessageItem) =>
+    message.direction === "OUTBOUND" &&
+    currentUserId != null &&
+    message.sender_user_id === currentUserId;
+
   const menuItems: ChatMenuItem[] = menu
     ? [
         {
@@ -180,20 +191,30 @@ export function ChatTimeline({
           icon: <IconStar size={16} filled={menu.message.is_starred} />,
           onSelect: () => actions.onStar(menu.message),
         },
-        {
-          id: "pin",
-          label: menu.message.is_pinned ? "Sabitlemeyi kaldır" : "Sohbete sabitle",
-          icon: <IconPin size={16} />,
-          onSelect: () => actions.onPin(menu.message),
-        },
-        {
-          id: "delete",
-          label: "Bu ekrandan sil",
-          icon: <IconTrash size={16} />,
-          danger: true,
-          separated: true,
-          onSelect: () => actions.onDelete(menu.message),
-        },
+        // Sabitleme yalnızca moderasyon yetkisi olanlarda; sunucu da 403 döner.
+        ...(canModerate
+          ? [
+              {
+                id: "pin",
+                label: menu.message.is_pinned ? "Sabitlemeyi kaldır" : "Sohbete sabitle",
+                icon: <IconPin size={16} />,
+                onSelect: () => actions.onPin(menu.message),
+              },
+            ]
+          : []),
+        // Başkasının mesajını silmek moderasyon ister; kendi giden mesajı her zaman silinebilir.
+        ...(canModerate || isOwnMessage(menu.message)
+          ? [
+              {
+                id: "delete",
+                label: "Bu ekrandan sil",
+                icon: <IconTrash size={16} />,
+                danger: true,
+                separated: true,
+                onSelect: () => actions.onDelete(menu.message),
+              },
+            ]
+          : []),
       ]
     : [];
 
@@ -212,15 +233,17 @@ export function ChatTimeline({
               pinnedMessage.attachments?.[0]?.original_name ||
               "Ek"}
           </button>
-          <button
-            type="button"
-            className="chat-pinned-remove"
-            onClick={() => actions.onPin(pinnedMessage)}
-            aria-label="Sabitlemeyi kaldır"
-            title="Sabitlemeyi kaldır"
-          >
-            <IconClose size={14} />
-          </button>
+          {canModerate ? (
+            <button
+              type="button"
+              className="chat-pinned-remove"
+              onClick={() => actions.onPin(pinnedMessage)}
+              aria-label="Sabitlemeyi kaldır"
+              title="Sabitlemeyi kaldır"
+            >
+              <IconClose size={14} />
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -435,9 +458,10 @@ function MessageRow({
         >
           🙂
         </button>
+        {/* Mobilde balon başına yalnızca bu buton kalır; sağ tık menüsüyle aynı menüyü açar. */}
         <button
           type="button"
-          className="chat-msg-action"
+          className="chat-msg-action chat-msg-action--more"
           title="Daha fazla"
           aria-label="Daha fazla"
           onClick={onMenu}

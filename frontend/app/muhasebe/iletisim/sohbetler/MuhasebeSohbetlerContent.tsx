@@ -13,6 +13,7 @@ export default function MuhasebeSohbetlerContent() {
       portal="muhasebe"
       initialConversationId={searchParams.get("conversation")}
       initialFilter={parseChatQuickFilter(searchParams.get("filter"))}
+      studentHref={(id) => `/muhasebe/ogrenci/${id}`}
     />
   );
 }

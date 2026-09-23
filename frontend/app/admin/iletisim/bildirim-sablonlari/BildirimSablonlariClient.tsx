@@ -10,6 +10,8 @@ import { resolvePreviewVariables } from "@/components/communication/composer-uti
 import { useLivePreviewContext } from "@/components/communication/useLivePreviewContext";
 import "@/components/communication/communication.css";
 import {
+  CommunicationPortalPaths,
+  InboxPortal,
   MessageTemplateItem,
   NotificationEventCatalog,
   NotificationEventItem,
@@ -19,6 +21,7 @@ import {
   NotificationStaffRecipientItem,
   WhatsAppAccount,
   WhatsAppMetaTemplateItem,
+  communicationPortalPaths,
   deleteNotificationBinding,
   fetchLocalMetaTemplates,
   fetchNotificationEvents,
@@ -406,6 +409,8 @@ interface SlotCardProps {
   preview: NotificationPreviewResult | undefined;
   previewLoading: boolean;
   scopeAccountId: string;
+  /** Portala göre şablon yönetimi yolları; koçta ilgili bağlantılar gizlenir. */
+  paths: CommunicationPortalPaths;
   previewContext: Record<string, string>;
   copiedKey: string;
   onCopy: (text: string, key: string) => void;
@@ -434,6 +439,7 @@ function SlotCard({
   preview,
   previewLoading,
   scopeAccountId,
+  paths,
   previewContext,
   copiedKey,
   onCopy,
@@ -457,13 +463,14 @@ function SlotCard({
       : "Yalnızca metin başlıklı (TEXT / başlıksız) Meta şablonları listelenir.";
 
   const createHref = (() => {
+    if (!paths.metaTemplates) return null;
     const qs = new URLSearchParams({
       event: event.key,
       recipient: slot.recipient_type,
       bind: "1",
     });
     if (scopeAccountId) qs.set("account", scopeAccountId);
-    return `/admin/iletisim/meta-sablonlar?${qs.toString()}`;
+    return `${paths.metaTemplates}?${qs.toString()}`;
   })();
 
   // Seçili Meta gövdesi (PENDING dahil) — kullanıcı seçtiği metni görmeli.
@@ -521,9 +528,11 @@ function SlotCard({
               Aktifleştir
             </button>
           )}
-          <Link className="nbx-mini-btn" href={createHref}>
-            Şablon oluştur
-          </Link>
+          {createHref && (
+            <Link className="nbx-mini-btn" href={createHref}>
+              Şablon oluştur
+            </Link>
+          )}
           {slot.binding && (
             <button
               type="button"
@@ -615,10 +624,10 @@ function SlotCard({
               >
                 {copiedKey === `meta:${key}` ? "Kopyalandı" : slot.suggested_meta_name}
               </button>
-              {slot.binding?.meta_template_id && (
+              {slot.binding?.meta_template_id && paths.metaTemplates && (
                 <Link
                   className="nbx-inline-link"
-                  href={`/admin/iletisim/meta-sablonlar?account=${
+                  href={`${paths.metaTemplates}?account=${
                     boundMeta?.channel_config || scopeAccountId || ""
                   }`}
                 >
@@ -653,9 +662,9 @@ function SlotCard({
                 };
               })}
             />
-            {slot.binding?.message_template_id && (
+            {slot.binding?.message_template_id && paths.templates && (
               <div className="nbx-field-links">
-                <Link className="nbx-inline-link" href="/admin/iletisim/sablonlar">
+                <Link className="nbx-inline-link" href={paths.templates}>
                   LMS şablonlarda aç →
                 </Link>
               </div>
@@ -741,10 +750,18 @@ function SlotCard({
 
 /* ─────────────── Sayfa ─────────────── */
 
-export default function BildirimSablonlariClient() {
+interface BildirimSablonlariClientProps {
+  /** Sayfanın render edildiği kabuk — bağlantılar o portala göre üretilir. */
+  portal?: InboxPortal;
+}
+
+export default function BildirimSablonlariClient({
+  portal = "admin",
+}: BildirimSablonlariClientProps = {}) {
   const searchParams = useSearchParams();
   const router = useRouter();
   const pathname = usePathname();
+  const paths = useMemo(() => communicationPortalPaths(portal), [portal]);
 
   const [catalog, setCatalog] = useState<NotificationEventCatalog | null>(null);
   const [accounts, setAccounts] = useState<WhatsAppAccount[]>([]);
@@ -1325,7 +1342,11 @@ export default function BildirimSablonlariClient() {
       subtitle="Otomatik bildirimlerde hangi Meta / LMS şablonunun kullanılacağını buradan bağlayın."
       icon="🔗"
       breadcrumbs={[
-        { label: "İletişim", href: "/admin/iletisim/panel" },
+        {
+          label:
+            portal === "coach" ? "Koç Paneli" : portal === "muhasebe" ? "WhatsApp" : "İletişim",
+          href: paths.home,
+        },
         { label: "Bildirim Şablonları" },
       ]}
       actions={
@@ -1362,12 +1383,16 @@ export default function BildirimSablonlariClient() {
               </div>
             )}
           </div>
-          <Link className="comm-btn-secondary" href="/admin/iletisim/sablonlar">
-            LMS Şablonları
-          </Link>
-          <Link className="comm-btn-secondary" href="/admin/iletisim/meta-sablonlar">
-            Meta Şablonları
-          </Link>
+          {paths.templates && (
+            <Link className="comm-btn-secondary" href={paths.templates}>
+              LMS Şablonları
+            </Link>
+          )}
+          {paths.metaTemplates && (
+            <Link className="comm-btn-secondary" href={paths.metaTemplates}>
+              Meta Şablonları
+            </Link>
+          )}
         </div>
       }
       maxWidth="full"
@@ -1743,6 +1768,7 @@ export default function BildirimSablonlariClient() {
                         preview={previews[key]}
                         previewLoading={Boolean(previewLoading[key])}
                         scopeAccountId={scopeAccountId}
+                        paths={paths}
                         previewContext={previewContext}
                         copiedKey={copiedKey}
                         onCopy={copyText}

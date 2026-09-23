@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import EmojiPickerPortal from "@/components/communication/EmojiPickerPortal";
+import { ATTACHMENT_ACCEPT, validateAttachment } from "@/lib/attachment-policy";
 import type { ConversationSessionInfo, MessageItem } from "@/lib/communication-api";
 
 import { humanFileSize, isImageAttachment } from "./chat-utils";
@@ -15,15 +16,16 @@ import {
   IconTemplate,
 } from "./icons";
 
-const ACCEPTED =
-  "image/jpeg,image/png,image/webp,application/pdf,application/msword," +
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
-const MAX_FILE_MB = 16;
+// Kabul edilen türler ve boyut sınırı `lib/attachment-policy` üzerinden sunucuyla ortak.
+const ACCEPTED = ATTACHMENT_ACCEPT;
 
 export interface QuickReply {
   id: string;
   name: string;
   body: string;
+  /** Kategori kimliği ve etiketi — hazır cevap panelindeki filtre için. */
+  category?: string;
+  categoryLabel?: string;
 }
 
 interface Props {
@@ -176,6 +178,8 @@ export function ChatComposer({
   const [fileError, setFileError] = useState<string | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
+  const [quickSearch, setQuickSearch] = useState("");
+  const [quickCategory, setQuickCategory] = useState("");
   const [dragging, setDragging] = useState(false);
   const localRef = useRef<HTMLTextAreaElement>(null);
   const textareaRef = composerRef ?? localRef;
@@ -210,12 +214,43 @@ export function ChatComposer({
     return () => window.removeEventListener("mousedown", onDown);
   }, [quickOpen]);
 
+  // Panel kapanınca arama/kategori sıfırlanır; bir sonraki açılış temiz başlar.
+  useEffect(() => {
+    if (quickOpen) return;
+    setQuickSearch("");
+    setQuickCategory("");
+  }, [quickOpen]);
+
+  // Hazır cevap kategorileri: kayıtlı şablonlardan türetilir (ayrı istek yok).
+  const quickCategories = useMemo(() => {
+    const seen = new Map<string, string>();
+    quickReplies.forEach((r) => {
+      if (r.category && !seen.has(r.category)) seen.set(r.category, r.categoryLabel || r.category);
+    });
+    return [...seen.entries()].map(([id, label]) => ({ id, label }));
+  }, [quickReplies]);
+
+  const filteredQuickReplies = useMemo(() => {
+    const needle = quickSearch.trim().toLocaleLowerCase("tr");
+    return quickReplies.filter((r) => {
+      if (quickCategory && r.category !== quickCategory) return false;
+      if (!needle) return true;
+      return (
+        r.name.toLocaleLowerCase("tr").includes(needle) ||
+        r.body.toLocaleLowerCase("tr").includes(needle) ||
+        (r.categoryLabel || "").toLocaleLowerCase("tr").includes(needle)
+      );
+    });
+  }, [quickReplies, quickSearch, quickCategory]);
+
   const canSend = (!!text.trim() || !!file) && !sending && !disabled && !sessionClosed;
 
+  // Seçim, sürükle-bırak ve yapıştırma aynı doğrulamadan geçer.
   const acceptFile = (candidate: File | null | undefined) => {
     if (!candidate) return;
-    if (candidate.size > MAX_FILE_MB * 1024 * 1024) {
-      setFileError(`Dosya ${MAX_FILE_MB} MB sınırını aşıyor.`);
+    const check = validateAttachment(candidate);
+    if (!check.ok) {
+      setFileError(check.reason);
       return;
     }
     setFileError(null);
@@ -361,21 +396,60 @@ export function ChatComposer({
                 Meta onaylı şablonlar…
               </button>
               {quickReplies.length ? (
-                quickReplies.slice(0, 8).map((reply) => (
-                  <button
-                    key={reply.id}
-                    type="button"
-                    className="chat-quick-item"
-                    onClick={() => {
-                      setQuickOpen(false);
-                      onUseQuickReply(reply);
-                      setText((prev) => (prev ? `${prev}\n${reply.body}` : reply.body));
-                    }}
-                  >
-                    <span className="chat-quick-name">{reply.name}</span>
-                    <span className="chat-quick-body">{reply.body}</span>
-                  </button>
-                ))
+                <>
+                  <input
+                    type="search"
+                    className="chat-quick-search"
+                    value={quickSearch}
+                    placeholder="Hazır cevap ara"
+                    aria-label="Hazır cevap ara"
+                    onChange={(e) => setQuickSearch(e.target.value)}
+                  />
+                  {quickCategories.length > 1 ? (
+                    <div className="chat-chips chat-chips--wrap chat-quick-chips" role="tablist" aria-label="Kategori filtresi">
+                      <button
+                        type="button"
+                        role="tab"
+                        aria-selected={quickCategory === ""}
+                        className={`chat-chip${quickCategory === "" ? " is-active" : ""}`}
+                        onClick={() => setQuickCategory("")}
+                      >
+                        Tümü
+                      </button>
+                      {quickCategories.map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          role="tab"
+                          aria-selected={quickCategory === cat.id}
+                          className={`chat-chip${quickCategory === cat.id ? " is-active" : ""}`}
+                          onClick={() => setQuickCategory(cat.id)}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                  {filteredQuickReplies.length ? (
+                    filteredQuickReplies.slice(0, 30).map((reply) => (
+                      <button
+                        key={reply.id}
+                        type="button"
+                        className="chat-quick-item"
+                        onClick={() => {
+                          setQuickOpen(false);
+                          onUseQuickReply(reply);
+                          setText((prev) => (prev ? `${prev}\n${reply.body}` : reply.body));
+                        }}
+                      >
+                        <span className="chat-quick-name">{reply.name}</span>
+                        <span className="chat-quick-body">{reply.body}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <p className="chat-quick-empty">Aramaya uyan hazır cevap yok.</p>
+                  )}
+                </>
               ) : (
                 <p className="chat-quick-empty">Kayıtlı hazır cevap yok.</p>
               )}

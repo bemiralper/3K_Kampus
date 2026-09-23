@@ -13,6 +13,8 @@ import {
 import { sortConversations } from "./chat-utils";
 
 const PAGE_SIZE = 30;
+/** Sessiz yenilemede korunacak en fazla satır — daha uzun listeler bu sınıra iner. */
+const RELOAD_MAX_LIMIT = 100;
 const SEARCH_DEBOUNCE_MS = 280;
 
 export interface ChatFilters {
@@ -48,8 +50,10 @@ interface Options {
 /**
  * Sohbet listesi veri katmanı.
  *
- * Sayfalama sunucu tarafında (`limit`/`offset`); liste yalnızca kullanıcı
- * dibe yaklaştığında büyür. Filtre veya arama değişince baştan yüklenir.
+ * Sayfalama sunucu tarafında (`limit` + imleç `cursor`); liste yalnızca
+ * kullanıcı dibe yaklaştığında büyür. Filtre veya arama değişince baştan
+ * yüklenir. Sessiz yenileme (`reload({ silent: true })`) kullanıcının
+ * kaydırdığı sayfaları korur: o ana kadar yüklenen satır sayısı kadar ister.
  */
 export function useChatConversations({ accountId, department, initialQuick }: Options = {}) {
   const [filters, setFilters] = useState<ChatFilters>(
@@ -59,10 +63,14 @@ export function useChatConversations({ accountId, department, initialQuick }: Op
   const [items, setItems] = useState<ConversationListItem[]>([]);
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const requestRef = useRef(0);
+  // `load` her satır değişiminde yeniden üretilmesin diye sayı ref'te tutulur.
+  const itemCountRef = useRef(0);
+  itemCountRef.current = items.length;
 
   useEffect(() => {
     const handle = setTimeout(
@@ -88,12 +96,17 @@ export function useChatConversations({ accountId, department, initialQuick }: Op
     async (options: { silent?: boolean } = {}) => {
       const token = ++requestRef.current;
       if (!options.silent) setLoading(true);
+      // Sessiz yenilemede yüklenmiş sayfalar korunur; ilk yüklemede tek sayfa.
+      const limit = options.silent
+        ? Math.min(RELOAD_MAX_LIMIT, Math.max(PAGE_SIZE, itemCountRef.current))
+        : PAGE_SIZE;
       try {
-        const data = await fetchChatConversations({ ...query, limit: PAGE_SIZE, offset: 0 });
+        const data = await fetchChatConversations({ ...query, limit });
         if (token !== requestRef.current) return;
         setItems(sortConversations(data.conversations));
         setTotal(data.total);
-        setHasMore(!!data.has_more);
+        setNextCursor(data.next_cursor ?? null);
+        setHasMore(!!data.next_cursor || !!data.has_more);
         setError(null);
       } catch (err) {
         if (token !== requestRef.current) return;
@@ -109,10 +122,11 @@ export function useChatConversations({ accountId, department, initialQuick }: Op
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
     try {
+      // İmleç varsa onunla; eski sunucuya karşı `offset` yedeği korunur.
       const data = await fetchChatConversations({
         ...query,
         limit: PAGE_SIZE,
-        offset: items.length,
+        ...(nextCursor ? { cursor: nextCursor } : { offset: items.length }),
       });
       setItems((prev) => {
         const seen = new Set(prev.map((c) => c.id));
@@ -122,13 +136,14 @@ export function useChatConversations({ accountId, department, initialQuick }: Op
         ]);
       });
       setTotal(data.total);
-      setHasMore(!!data.has_more);
+      setNextCursor(data.next_cursor ?? null);
+      setHasMore(!!data.next_cursor || !!data.has_more);
     } catch {
       setHasMore(false);
     } finally {
       setLoadingMore(false);
     }
-  }, [hasMore, items.length, loadingMore, query]);
+  }, [hasMore, items.length, loadingMore, nextCursor, query]);
 
   useEffect(() => {
     void load();
@@ -142,6 +157,22 @@ export function useChatConversations({ accountId, department, initialQuick }: Op
       const next = [...prev];
       next[index] = { ...next[index], ...conv };
       return sortConversations(next);
+    });
+  }, []);
+
+  /** Birden çok satırı tek geçişte güncelle (SSE toplu bildirimleri için). */
+  const patchMany = useCallback((convs: ConversationListItem[]) => {
+    if (!convs.length) return;
+    setItems((prev) => {
+      const byId = new Map(convs.map((c) => [c.id, c]));
+      let changed = false;
+      const next = prev.map((c) => {
+        const patch = byId.get(c.id);
+        if (!patch) return c;
+        changed = true;
+        return { ...c, ...patch };
+      });
+      return changed ? sortConversations(next) : prev;
     });
   }, []);
 
@@ -171,6 +202,7 @@ export function useChatConversations({ accountId, department, initialQuick }: Op
     reload: load,
     loadMore,
     patchConversation,
+    patchMany,
     removeConversation,
     unreadTotal,
     unreadConversations,

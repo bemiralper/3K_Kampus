@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import SablonlarClient from "./SablonlarClient";
 
 export const metadata = {
@@ -5,5 +6,10 @@ export const metadata = {
 };
 
 export default function SablonlarPage() {
-  return <SablonlarClient />;
+  // useSearchParams kullanan istemci bileşeni; statik derlemede Suspense sınırı gerekir.
+  return (
+    <Suspense fallback={<p style={{ color: "#667781", padding: "1rem" }}>Şablonlar yükleniyor…</p>}>
+      <SablonlarClient />
+    </Suspense>
+  );
 }

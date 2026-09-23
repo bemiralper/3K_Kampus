@@ -13,7 +13,7 @@ export default function AdminSohbetlerContent() {
       portal="admin"
       initialConversationId={searchParams.get("conversation")}
       initialFilter={parseChatQuickFilter(searchParams.get("filter"))}
-      studentHref={(id) => `/admin/ogrenciler/${id}`}
+      studentHref={(id) => `/ogrenciler/${id}`}
     />
   );
 }
