@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Button, DatePicker, Select, Table } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Alert, Button, DatePicker, Select, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined } from '@ant-design/icons';
 import dayjs, { type Dayjs } from 'dayjs';
@@ -53,6 +53,8 @@ export default function DersUcretleriClient() {
   const [loading, setLoading] = useState(false);
   const [booting, setBooting] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const bootSeq = useRef(0);
+  const loadSeq = useRef(0);
 
   const boot = useCallback(async () => {
     if (!initialized) return;
@@ -60,6 +62,7 @@ export default function DersUcretleriClient() {
       setBooting(false);
       return;
     }
+    const seq = ++bootSeq.current;
     setBooting(true);
     setError(null);
     try {
@@ -67,15 +70,33 @@ export default function DersUcretleriClient() {
         fetchClassLessonPlanContext(),
         fetchLessonOpsMeta(),
       ]);
+      if (seq !== bootSeq.current) return;
       setContext(ctx);
       setMeta(ops);
-      setTermId((p) => p ?? ctx.active_term_id ?? ctx.terms[0]?.id ?? null);
+      const termIds = new Set(ctx.terms.map((t) => t.id));
+      setTermId((p) => (p && termIds.has(p) ? p : ctx.active_term_id ?? ctx.terms[0]?.id ?? null));
+      setTeacherId((p) => (p && (ops.teachers || []).some((t) => t.id === p) ? p : null));
     } catch (e) {
+      if (seq !== bootSeq.current) return;
       setError(e instanceof Error ? e.message : 'Bağlam yüklenemedi');
     } finally {
-      setBooting(false);
+      if (seq === bootSeq.current) setBooting(false);
     }
   }, [activeKurum, activeSube, initialized]);
+
+  const subeId = activeSube?.id ?? null;
+  const seenSube = useRef<number | null | undefined>(undefined);
+  useEffect(() => {
+    if (seenSube.current === undefined) {
+      seenSube.current = subeId;
+      return;
+    }
+    if (seenSube.current === subeId) return;
+    seenSube.current = subeId;
+    setTermId(null);
+    setTeacherId(null);
+    setRows([]);
+  }, [subeId]);
 
   useEffect(() => {
     boot();
@@ -83,6 +104,7 @@ export default function DersUcretleriClient() {
 
   const load = useCallback(async () => {
     if (!termId) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
       const data = await fetchLessonPaySummary({
@@ -91,14 +113,16 @@ export default function DersUcretleriClient() {
         date_to: range[1].format('YYYY-MM-DD'),
         teacher_id: teacherId ?? undefined,
       });
+      if (seq !== loadSeq.current) return;
       setRows(data.teachers);
       setTotals(data.totals);
       setError(null);
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setError(e instanceof Error ? e.message : 'Ücret özeti yüklenemedi');
       setRows([]);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [range, teacherId, termId]);
 
@@ -155,6 +179,14 @@ export default function DersUcretleriClient() {
           </Button>
         }
       />
+
+      {context?.context_year_mismatch ? (
+        <Alert
+          type="warning"
+          showIcon
+          message="Üst menüdeki eğitim yılı, ders operasyonlarının kullandığı aktif yıldan farklı. Özet aktif yılın verisini gösterir."
+        />
+      ) : null}
 
       <StatGrid>
         <StatCard icon={<IconUser />} tone="blue" value={rows.length} label="Öğretmen" />
@@ -224,7 +256,7 @@ export default function DersUcretleriClient() {
           columns={columns}
           dataSource={rows}
           pagination={false}
-          scroll={{ x: 900 }}
+          scroll={{ x: 'max-content' }}
           expandable={{
             expandedRowRender: (r) => (
               <Table

@@ -1,5 +1,5 @@
 """
-Günlük sınıf yoklama — sabah / öğleden sonra periyot oturumu.
+Günlük sınıf yoklama — sabah / öğle / akşam periyot oturumu.
 """
 from django.db import models
 
@@ -8,7 +8,8 @@ from apps.academic.domain.lesson_attendance import StudentAttendanceStatus
 
 class ClassPeriodCode(models.TextChoices):
     MORNING = 'MORNING', 'Sabah'
-    AFTERNOON = 'AFTERNOON', 'Öğleden Sonra'
+    AFTERNOON = 'AFTERNOON', 'Öğle'
+    EVENING = 'EVENING', 'Akşam'
 
 
 class ClassPeriodAttendanceSession(models.Model):

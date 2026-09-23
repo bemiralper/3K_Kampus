@@ -1658,7 +1658,7 @@ export async function saveLessonStudentAttendance(
   return unwrap(res);
 }
 
-export type ClassPeriodCode = 'MORNING' | 'AFTERNOON';
+export type ClassPeriodCode = 'MORNING' | 'AFTERNOON' | 'EVENING';
 
 export type ClassPeriodSession = {
   id: number;

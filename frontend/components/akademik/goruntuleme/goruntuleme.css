@@ -397,6 +397,10 @@
   border-bottom: 1px solid #f1f5f9;
 }
 
+.gv-wa-row.is-result {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
 .gv-wa-row:last-child {
   border-bottom: 0;
 }
@@ -427,6 +431,129 @@
   border-radius: 999px;
   padding: 3px 8px;
   white-space: nowrap;
+}
+
+.gv-wa-badge.is-sent {
+  color: #047857;
+  background: #ecfdf5;
+}
+
+.gv-wa-badge.is-failed {
+  color: #b91c1c;
+  background: #fef2f2;
+}
+
+.gv-wa-badge.is-skipped {
+  color: #92400e;
+  background: #fffbeb;
+}
+
+.gv-wa-audience p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.gv-wa-audience-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.gv-wa-audience-card {
+  appearance: none;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 14px;
+  padding: 12px 14px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.gv-wa-audience-card strong {
+  display: block;
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.gv-wa-audience-card span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.gv-wa-audience-card.is-on {
+  border-color: var(--ak-primary, #0262a7);
+  background: #f0f7fc;
+  box-shadow: 0 0 0 3px rgb(2 98 167 / 0.12);
+}
+
+.gv-wa-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.gv-wa-progress-top {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.gv-wa-progress-top span {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.gv-wa-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.gv-wa-bar i {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--ak-primary, #0262a7);
+  transition: width 0.2s ease;
+}
+
+.gv-wa-history-batch {
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #fff;
+}
+
+.gv-wa-history-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.gv-wa-history-head strong {
+  display: block;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.gv-wa-history-head small {
+  display: block;
+  margin-top: 2px;
+  color: #64748b;
+  font-size: 11px;
 }
 
 .gv-wa-section {

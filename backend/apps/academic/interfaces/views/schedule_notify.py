@@ -9,6 +9,7 @@ from rest_framework.response import Response
 
 from apps.academic.application.schedule_notify_service import (
     ScheduleNotifyError,
+    list_notify_history,
     preview_classes,
     preview_teachers,
     send_class_schedules,
@@ -200,6 +201,7 @@ def schedule_notify_send_api(request):
                 if data.get('include_veli_ids') is not None
                 else None
             ),
+            batch_id=str(data.get('batch_id') or '')[:64],
             user=request.user,
         )
     except ScheduleNotifyError as exc:
@@ -287,9 +289,40 @@ def teacher_schedule_notify_send_api(request):
                 if data.get('include_teacher_ids') is not None
                 else None
             ),
+            batch_id=str(data.get('batch_id') or '')[:64],
             user=request.user,
         )
     except ScheduleNotifyError as exc:
         return Response({'error': exc.message, 'field': exc.field}, status=400)
 
     return Response(payload)
+
+
+@csrf_exempt
+@api_view(['GET'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def schedule_notify_history_api(request):
+    """GET /api/academic/schedule/notify/history/?term_id=&target=class|teacher"""
+    if not _can_notify(request.user):
+        return Response({'error': 'Bu işlem için iletişim yetkisi gerekli.'}, status=403)
+
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+
+    try:
+        term_id = int(request.query_params.get('term_id'))
+    except (TypeError, ValueError):
+        return Response({'error': 'term_id zorunludur.'}, status=400)
+
+    _, _, gate_err = gate_term_drf(request, term_id)
+    if gate_err:
+        return gate_err
+
+    target = (request.query_params.get('target') or '').strip() or None
+    return Response(list_notify_history(
+        kurum_id=ctx['kurum_id'],
+        term_id=term_id,
+        target_kind=target,
+    ))

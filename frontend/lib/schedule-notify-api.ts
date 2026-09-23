@@ -49,6 +49,16 @@ export type ScheduleNotifyPreviewResponse = {
   classes: ScheduleNotifyClassPreview[];
 };
 
+export type ScheduleNotifyRecipient = {
+  kind: 'veli' | 'ogrenci' | 'ogretmen' | 'sinif';
+  id: number;
+  name: string;
+  phone: string;
+  status: 'sent' | 'failed' | 'skipped';
+  error: string;
+  sinif_ad: string;
+};
+
 export type ScheduleNotifySendResult = {
   sinif_id: number;
   sinif_ad: string;
@@ -57,6 +67,7 @@ export type ScheduleNotifySendResult = {
   veli_sent: number;
   ogrenci_sent: number;
   errors: string[];
+  recipients?: ScheduleNotifyRecipient[];
 };
 
 export type ScheduleNotifySendResponse = {
@@ -99,8 +110,23 @@ export type TeacherScheduleNotifySendResponse = {
     reason: string | null;
     sent: number;
     errors: string[];
+    recipients?: ScheduleNotifyRecipient[];
   }[];
   sent_at: string;
+};
+
+export type ScheduleNotifyHistoryItem = {
+  id: number;
+  batch_id: string;
+  target_kind: 'class' | 'teacher';
+  title: string;
+  status: string;
+  veli_count: number;
+  ogrenci_count: number;
+  sent_at: string | null;
+  sent_by: string;
+  recipients: ScheduleNotifyRecipient[];
+  errors: string[];
 };
 
 export async function previewScheduleNotify(body: {
@@ -127,6 +153,7 @@ export async function sendScheduleNotify(body: {
   exclude_veli_ids?: number[];
   include_ogrenci_ids?: number[];
   include_veli_ids?: number[];
+  batch_id?: string;
 }): Promise<ScheduleNotifySendResponse> {
   const res = await apiFetch<ScheduleNotifySendResponse>('/api/academic/schedule/notify/send/', {
     method: 'POST',
@@ -151,10 +178,25 @@ export async function sendTeacherScheduleNotify(body: {
   teacher_ids: number[];
   exclude_teacher_ids?: number[];
   include_teacher_ids?: number[];
+  batch_id?: string;
 }): Promise<TeacherScheduleNotifySendResponse> {
   const res = await apiFetch<TeacherScheduleNotifySendResponse>(
     '/api/academic/schedule/notify/teacher/send/',
     { method: 'POST', body: JSON.stringify(body) },
+  );
+  return unwrap(res);
+}
+
+export async function fetchScheduleNotifyHistory(params: {
+  term_id: number;
+  target: 'class' | 'teacher';
+}): Promise<{ term_id: number; items: ScheduleNotifyHistoryItem[] }> {
+  const q = new URLSearchParams({
+    term_id: String(params.term_id),
+    target: params.target,
+  });
+  const res = await apiFetch<{ term_id: number; items: ScheduleNotifyHistoryItem[] }>(
+    `/api/academic/schedule/notify/history/?${q}`,
   );
   return unwrap(res);
 }

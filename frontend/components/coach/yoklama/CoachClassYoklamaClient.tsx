@@ -487,7 +487,7 @@ export default function CoachClassYoklamaClient() {
       ) : !sessionId ? (
         <div className="cyc-empty">
           <h3>Bu gün yoklama kapalı</h3>
-          <p>{info || "Seçilen sınıfta bugün sabah veya öğleden sonra ders yok."}</p>
+          <p>{info || "Seçilen sınıfta bugün sabah, öğle veya akşam dersi yok."}</p>
         </div>
       ) : (
         <ClassYoklamaConsole
@@ -583,7 +583,7 @@ function ListView({
       {visibleCount === 0 ? (
         <div className="cyc-empty">
           <h3>Bu filtrede sınıf yok</h3>
-          <p>{filter === "done" ? "Sabah ve öğleden sonra yoklaması tamamlanan sınıf yok." : "Bekleyen yoklama kalmadı."}</p>
+          <p>{filter === "done" ? "Sabah, öğle ve akşam yoklaması tamamlanan sınıf yok." : "Bekleyen yoklama kalmadı."}</p>
         </div>
       ) : (
         groups.map((group) => (

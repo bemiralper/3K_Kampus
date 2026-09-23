@@ -24,6 +24,7 @@ from apps.academic.domain.weekly_day import DayOfWeek, WeeklyDay
 from apps.academic.services.class_period_attendance_service import (
     classify_period,
     lunch_split_time,
+    periods_available_for_date,
 )
 from apps.communication.application.notification_events import get_event
 from apps.communication.domain.enums import RecipientType
@@ -50,10 +51,23 @@ class ClassifyPeriodTest(TestCase):
             classify_period(time(13, 0), lunch_start=time(12, 20)),
             ClassPeriodCode.AFTERNOON,
         )
+        self.assertEqual(
+            classify_period(time(16, 59), lunch_start=time(12, 20)),
+            ClassPeriodCode.AFTERNOON,
+        )
+        self.assertEqual(
+            classify_period(time(17, 0), lunch_start=time(12, 20)),
+            ClassPeriodCode.EVENING,
+        )
+        self.assertEqual(
+            classify_period(time(18, 30), lunch_start=time(12, 20)),
+            ClassPeriodCode.EVENING,
+        )
 
     def test_noon_fallback(self):
         self.assertEqual(classify_period(time(11, 59), lunch_start=None), ClassPeriodCode.MORNING)
         self.assertEqual(classify_period(time(12, 0), lunch_start=None), ClassPeriodCode.AFTERNOON)
+        self.assertEqual(classify_period(time(17, 0), lunch_start=None), ClassPeriodCode.EVENING)
 
 
 class EmptyDayPeriodTest(TestCase):
@@ -329,6 +343,122 @@ class ClassPeriodAttendanceApiTest(TestCase):
             ClassPeriodAttendanceSession.objects.filter(sinif=self.sinif).count(),
             2,
         )
+
+    def test_second_calendar_does_not_hide_the_other_days(self):
+        """Sınıf iki takvimdeyse yoklama, dersin olduğu takvimi kullanır."""
+        cycle_b = WeeklyCycle.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            schedule_template=self.template,
+            name='Sadece Salı',
+            is_active=True,
+        )
+        tuesday = WeeklyDay.objects.create(
+            weekly_cycle=cycle_b,
+            day_of_week=DayOfWeek.TUESDAY,
+            name='Salı',
+            order=2,
+            is_active=True,
+        )
+        later = ScheduleVersion.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            schedule_template=self.template,
+            weekly_cycle=cycle_b,
+            name='İkinci takvim',
+            is_active=True,
+        )
+        ProgramGridCell.objects.create(
+            schedule_template=self.template,
+            weekly_cycle=cycle_b,
+            schedule_version=later,
+            weekly_day=tuesday,
+            timeslot=self.slot_am,
+            sinif=self.sinif,
+            ders=self.ders,
+            ogretmen=self.teacher,
+            class_lesson_plan=self.plan,
+            status=CellStatus.FILLED,
+            is_active=True,
+        )
+        monday = periods_available_for_date(
+            term_id=self.term.id,
+            session_date=self.monday,
+            classroom_id=self.sinif.id,
+        )
+        self.assertEqual(
+            {row['period'] for row in monday},
+            {ClassPeriodCode.MORNING, ClassPeriodCode.AFTERNOON},
+        )
+        tuesday_rows = periods_available_for_date(
+            term_id=self.term.id,
+            session_date=date(2025, 9, 2),
+            classroom_id=self.sinif.id,
+        )
+        self.assertEqual(
+            {row['period'] for row in tuesday_rows},
+            {ClassPeriodCode.MORNING},
+        )
+
+    def test_lessons_from_17_open_evening_and_keep_saved_marks(self):
+        ProgramGridCell.objects.filter(timeslot=self.slot_pm, sinif=self.sinif).update(is_active=False)
+        slot_eve = TimeSlot.objects.create(
+            schedule_template=self.template,
+            name='Akşam',
+            start_time=time(17, 30),
+            end_time=time(18, 10),
+            order=12,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        ProgramGridCell.objects.create(
+            schedule_template=self.template,
+            weekly_cycle=self.cycle,
+            schedule_version=self.version,
+            weekly_day=self.day,
+            timeslot=slot_eve,
+            sinif=self.sinif,
+            ders=self.ders,
+            ogretmen=self.teacher,
+            class_lesson_plan=self.plan,
+            status=CellStatus.FILLED,
+            is_active=True,
+        )
+        stale = ClassPeriodAttendanceSession.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            sinif=self.sinif,
+            session_date=self.monday,
+            period=ClassPeriodCode.AFTERNOON,
+        )
+        rec = ClassPeriodAttendanceRecord.objects.create(
+            session=stale,
+            student=self.ogrenci,
+            status=StudentAttendanceStatus.EXCUSED,
+            izinli_mi=True,
+        )
+        res = self.client.post(
+            '/api/academic/class-period-attendance/',
+            data={
+                'term_id': self.term.id,
+                'classroom_id': self.sinif.id,
+                'date': self.monday.isoformat(),
+                'version_id': self.version.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        periods = {p['period'] for p in res.json()['periods']}
+        self.assertEqual(periods, {ClassPeriodCode.MORNING, ClassPeriodCode.EVENING})
+        labels = {p['period']: p['period_label'] for p in res.json()['periods']}
+        self.assertEqual(labels[ClassPeriodCode.EVENING], 'Akşam')
+        self.assertEqual(labels[ClassPeriodCode.MORNING], 'Sabah')
+        stale.refresh_from_db()
+        rec.refresh_from_db()
+        self.assertEqual(stale.period, ClassPeriodCode.EVENING)
+        self.assertEqual(rec.status, StudentAttendanceStatus.PRESENT)
+        self.assertFalse(rec.izinli_mi)
 
     def test_ensure_without_version_uses_classroom_own_calendar(self):
         """

@@ -6,6 +6,7 @@ import { fetchClassScheduleGrid, type ClassScheduleGrid } from '@/lib/academic-a
 import ScheduleViewer from './ScheduleViewer';
 import GoruntulemeExportModal from './GoruntulemeExportModal';
 import GoruntulemeNotifyModal from './GoruntulemeNotifyModal';
+import GoruntulemeNotifyHistory from './GoruntulemeNotifyHistory';
 import { useGoruntulemeContext } from './useGoruntulemeContext';
 import { ContextRequired, Field } from '../ui';
 import { IconDownload, IconSend } from '../ui/icons';
@@ -26,6 +27,7 @@ export default function SinifProgramiClient() {
   const [reloadKey, setReloadKey] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const classrooms = useMemo(() => {
     const all = [...(context?.classrooms || [])].filter((c) => {
@@ -105,6 +107,12 @@ export default function SinifProgramiClient() {
               İndir
             </Button>
             <Button
+              disabled={!termId}
+              onClick={() => setHistoryOpen(true)}
+            >
+              Geçmiş
+            </Button>
+            <Button
               type="primary"
               icon={<IconSend size={14} />}
               disabled={!termId || !classroomId}
@@ -155,6 +163,12 @@ export default function SinifProgramiClient() {
         termId={termId}
         currentClassroomId={classroomId}
         classrooms={classrooms}
+      />
+      <GoruntulemeNotifyHistory
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        termId={termId}
+        target="class"
       />
     </>
   );

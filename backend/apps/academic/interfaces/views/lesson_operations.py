@@ -3,6 +3,7 @@ Ders Operasyonları API — oturum, yoklama, ücret, revizyon.
 """
 from __future__ import annotations
 
+import logging
 from datetime import date, timedelta
 
 from django.views.decorators.csrf import csrf_exempt
@@ -20,6 +21,7 @@ from rest_framework.response import Response
 from apps.academic.interfaces.sube_context import (
     gate_lesson_session_drf,
     gate_sinif_drf,
+    gate_term_drf,
     mandatory_academic_context_drf,
 )
 from apps.academic.services.lesson_session_service import (
@@ -56,6 +58,8 @@ from apps.academic.application.class_attendance_notify_service import (
 )
 from apps.personel.domain.models import Personel
 
+logger = logging.getLogger(__name__)
+
 
 def _parse_date(value, field='date'):
     if not value:
@@ -86,11 +90,20 @@ def lesson_session_materialize_api(request):
         term_id = int(request.data.get('term_id'))
     except (TypeError, ValueError):
         return Response({'error': 'term_id zorunludur.'}, status=400)
+    _, _, term_gate = gate_term_drf(request, term_id)
+    if term_gate:
+        return term_gate
+    classroom_id = request.data.get('classroom_id')
+    if classroom_id:
+        _, sinif, class_gate = gate_sinif_drf(request, classroom_id)
+        if class_gate:
+            return class_gate
+        if sinif.term_id and sinif.term_id != term_id:
+            return Response({'error': 'Sınıf seçili döneme ait değil.'}, status=400)
     try:
         session_date = _parse_date(request.data.get('date') or date.today().isoformat())
         version_id = request.data.get('version_id')
         weekly_cycle_id = request.data.get('weekly_cycle_id')
-        classroom_id = request.data.get('classroom_id')
         result = materialize_sessions_for_date(
             term_id=term_id,
             session_date=session_date,
@@ -103,8 +116,12 @@ def lesson_session_materialize_api(request):
         return Response(result, status=status.HTTP_201_CREATED if result['created_count'] else status.HTTP_200_OK)
     except LessonSessionError as e:
         return _err(e)
-    except Exception as e:
-        return Response({'error': str(e)}, status=500)
+    except Exception:
+        logger.exception('lesson_session_materialize_api')
+        return Response(
+            {'error': 'Oturumlar üretilirken hata oluştu. Tekrar deneyin.'},
+            status=500,
+        )
 
 
 @csrf_exempt
@@ -120,6 +137,9 @@ def lesson_session_list_api(request):
         term_id = int(request.query_params.get('term_id'))
     except (TypeError, ValueError):
         return Response({'error': 'term_id zorunludur.'}, status=400)
+    _, _, term_gate = gate_term_drf(request, term_id)
+    if term_gate:
+        return term_gate
 
     try:
         rows = list_sessions(
@@ -149,10 +169,19 @@ def lesson_session_create_api(request):
     if err:
         return err
     data = dict(request.data)
+    try:
+        term_id = int(data.get('term_id'))
+    except (TypeError, ValueError):
+        return Response({'error': 'term_id zorunludur.'}, status=400)
+    _, _, term_gate = gate_term_drf(request, term_id)
+    if term_gate:
+        return term_gate
     if data.get('sinif_id'):
-        _, _, gate = gate_sinif_drf(request, data['sinif_id'])
+        _, sinif, gate = gate_sinif_drf(request, data['sinif_id'])
         if gate:
             return gate
+        if sinif.term_id and sinif.term_id != term_id:
+            return Response({'error': 'Sınıf seçili döneme ait değil.'}, status=400)
     try:
         session = create_session(data=data, user=request.user)
         session = LessonSession.objects.select_related(
@@ -269,6 +298,9 @@ def lesson_pay_summary_api(request):
         term_id = int(request.query_params.get('term_id'))
     except (TypeError, ValueError):
         return Response({'error': 'term_id zorunludur.'}, status=400)
+    _, _, term_gate = gate_term_drf(request, term_id)
+    if term_gate:
+        return term_gate
 
     today = date.today()
     date_from = _parse_date(request.query_params.get('date_from')) or today.replace(day=1)
@@ -292,15 +324,36 @@ def lesson_pay_summary_api(request):
 @authentication_classes([SessionAuthentication])
 @permission_classes([AcademicModulePermission])
 def schedule_revision_list_api(request):
-    _, err = mandatory_academic_context_drf(request)
+    ctx, err = mandatory_academic_context_drf(request)
     if err:
         return err
-    term_id = request.query_params.get('term_id')
-    version_id = request.query_params.get('version_id')
+    term_raw = request.query_params.get('term_id')
+    if not term_raw:
+        return Response({'logs': [], 'count': 0})
+    try:
+        term_id = int(term_raw)
+    except (TypeError, ValueError):
+        return Response({'error': 'term_id zorunludur.'}, status=400)
+    _, term, term_gate = gate_term_drf(request, term_id)
+    if term_gate:
+        return term_gate
+    version_raw = request.query_params.get('version_id')
+    version_id = None
+    if version_raw:
+        try:
+            version_id = int(version_raw)
+        except (TypeError, ValueError):
+            return Response({'error': 'Program bulunamadı.'}, status=404)
+        from apps.academic.domain.schedule_version import ScheduleVersion
+        version = ScheduleVersion.objects.filter(pk=version_id, term_id=term.id).first()
+        if not version:
+            return Response({'error': 'Program bulunamadı.'}, status=404)
     limit = int(request.query_params.get('limit') or 100)
     rows = list_change_logs(
-        term_id=int(term_id) if term_id else None,
-        version_id=int(version_id) if version_id else None,
+        term_id=term.id,
+        version_id=version_id,
+        kurum_id=ctx['kurum_id'],
+        sube_id=ctx['sube_id'],
         limit=min(limit, 500),
     )
     return Response({'logs': rows, 'count': len(rows)})
@@ -475,7 +528,7 @@ def class_period_attendance_coach_day_roster_export_api(request):
 @authentication_classes([SessionAuthentication])
 @permission_classes([ClassPeriodAttendancePermission])
 def class_period_attendance_list_api(request):
-    """GET/POST /api/academic/class-period-attendance/ — günlük sabah/öğleden sonra."""
+    """GET/POST /api/academic/class-period-attendance/ — günlük sabah/öğle/akşam."""
     ctx, err = mandatory_academic_context_drf(request)
     if err:
         return err
@@ -487,6 +540,18 @@ def class_period_attendance_list_api(request):
     except (TypeError, ValueError):
         return Response({'error': 'term_id ve classroom_id zorunludur.'}, status=400)
 
+    _, sinif, class_gate = gate_sinif_drf(request, classroom_id)
+    if class_gate:
+        return class_gate
+    _, term, term_gate = gate_term_drf(request, term_id)
+    if term_gate:
+        return term_gate
+    if sinif.kurum_id != ctx['kurum_id']:
+        return Response({'error': 'Sınıf bulunamadı.'}, status=404)
+    if sinif.egitim_yili_id and term.egitim_yili_id and sinif.egitim_yili_id != term.egitim_yili_id:
+        return Response({'error': 'Sınıf bu eğitim yılına ait değil.'}, status=400)
+    if sinif.term_id and sinif.term_id != term.id:
+        return Response({'error': 'Sınıf seçili döneme ait değil.'}, status=400)
     denied = _forbid_classroom(request, classroom_id)
     if denied:
         return denied
@@ -499,9 +564,8 @@ def class_period_attendance_list_api(request):
 
     version_raw = request.data.get('version_id') or request.query_params.get('version_id')
     version_id = int(version_raw) if version_raw else None
-    ensure = request.method == 'POST' or str(
-        request.query_params.get('ensure') or '',
-    ).lower() in ('1', 'true', 'yes')
+    # GET yalnızca okur. Oturum oluşturmak POST ister.
+    ensure = request.method == 'POST'
 
     try:
         data = list_period_sessions_for_date(
@@ -516,17 +580,11 @@ def class_period_attendance_list_api(request):
     except LessonSessionError as e:
         return _err(e)
     except Exception:
-        return Response({
-            'date': session_date.isoformat(),
-            'classroom_id': classroom_id,
-            'periods': [],
-            'sessions': [],
-            'info': (
-                'Bu sınıfın seçilen günde programda dersi yok veya günlük yoklama '
-                'şu an kullanılamıyor. Ders programını kontrol edin.'
-            ),
-            'yoklama_kapali': True,
-        })
+        logger.exception('class_period_attendance_list_api')
+        return Response(
+            {'error': 'Günlük yoklama yüklenirken hata oluştu. Tekrar deneyin.'},
+            status=500,
+        )
 
 
 @csrf_exempt

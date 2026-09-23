@@ -437,3 +437,158 @@ class LessonOperationsApiTest(TestCase):
         )
         self.assertEqual(res.status_code, 200, res.content)
         self.assertGreaterEqual(res.json()['count'], 1)
+
+    def test_revisions_without_term_are_empty_and_foreign_term_is_hidden(self):
+        other = Kurum.objects.create(ad='Baska', kod='BASKA')
+        other_sube = Sube.objects.create(kurum=other, ad='Baska Şube', kod='BASKA-A')
+        other_term = Term.objects.create(
+            kurum=other,
+            sube=other_sube,
+            egitim_yili=self.year,
+            name='Yabancı',
+            code='YAB',
+            start_date=date(2025, 9, 1),
+            end_date=date(2026, 1, 31),
+            is_active=True,
+        )
+        ScheduleChangeLog.objects.create(
+            egitim_yili=self.year,
+            term=other_term,
+            action='CELL_FILL',
+            summary='başka kurum',
+        )
+        open_list = self.client.get('/api/academic/schedule/revisions/', **self.headers)
+        self.assertEqual(open_list.status_code, 200, open_list.content)
+        self.assertEqual(open_list.json()['count'], 0)
+        self.assertNotIn('başka kurum', open_list.content.decode())
+
+        foreign = self.client.get(
+            f'/api/academic/schedule/revisions/?term_id={other_term.id}',
+            **self.headers,
+        )
+        self.assertEqual(foreign.status_code, 404, foreign.content)
+
+    def test_create_rejects_foreign_term_student_and_makeup_source(self):
+        other = Kurum.objects.create(ad='Baska2', kod='BASKA2')
+        other_sube = Sube.objects.create(kurum=other, ad='Baska Şube 2', kod='BASKA2-A')
+        other_term = Term.objects.create(
+            kurum=other,
+            sube=other_sube,
+            egitim_yili=self.year,
+            name='Yabancı dönem',
+            code='YAB2',
+            start_date=date(2025, 9, 1),
+            end_date=date(2026, 1, 31),
+            is_active=True,
+        )
+        foreign_student = Ogrenci.objects.create(
+            kurum=other, sube=other_sube, ad='Yabancı', soyad='Öğrenci', aktif_mi=True,
+        )
+        denied_term = self.client.post(
+            '/api/academic/lesson-sessions/create/',
+            data={
+                'term_id': other_term.id,
+                'session_date': self.monday.isoformat(),
+                'timeslot_id': self.slot.id,
+                'ders_id': self.ders.id,
+                'ogretmen_id': self.teacher.id,
+                'sinif_id': self.sinif.id,
+                'session_kind': SessionKind.EXTRA,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertIn(denied_term.status_code, (403, 404), denied_term.content)
+
+        slot2 = TimeSlot.objects.create(
+            schedule_template=self.template,
+            name='3. Ders',
+            start_time=time(10, 0),
+            end_time=time(10, 40),
+            order=3,
+            slot_type=SlotType.LESSON,
+            is_active=True,
+        )
+        denied_student = self.client.post(
+            '/api/academic/lesson-sessions/create/',
+            data={
+                'term_id': self.term.id,
+                'session_date': self.monday.isoformat(),
+                'timeslot_id': slot2.id,
+                'ders_id': self.ders.id,
+                'ogretmen_id': self.teacher.id,
+                'private_student_id': foreign_student.id,
+                'session_kind': SessionKind.PRIVATE,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(denied_student.status_code, 400, denied_student.content)
+
+        source = LessonSession.objects.create(
+            egitim_yili=self.year,
+            term=other_term,
+            session_date=self.monday,
+            timeslot=self.slot,
+            start_time=time(8, 0),
+            end_time=time(8, 40),
+            ders=self.ders,
+            ogretmen=self.teacher,
+            session_kind=SessionKind.REGULAR,
+            status='CANCELLED',
+        )
+        denied_makeup = self.client.post(
+            '/api/academic/lesson-sessions/create/',
+            data={
+                'term_id': self.term.id,
+                'session_date': self.monday.isoformat(),
+                'timeslot_id': slot2.id,
+                'ders_id': self.ders.id,
+                'ogretmen_id': self.teacher.id,
+                'sinif_id': self.sinif.id,
+                'session_kind': SessionKind.MAKEUP,
+                'replaces_session_id': source.id,
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(denied_makeup.status_code, 400, denied_makeup.content)
+        self.assertFalse(
+            LessonSession.objects.filter(session_kind=SessionKind.MAKEUP, term=self.term).exists(),
+        )
+
+    def test_period_attendance_stays_in_branch_and_get_does_not_create(self):
+        from apps.academic.domain.class_period_attendance import ClassPeriodAttendanceSession
+
+        other = Kurum.objects.create(ad='Baska3', kod='BASKA3')
+        other_sube = Sube.objects.create(kurum=other, ad='Baska Şube 3', kod='BASKA3-A')
+        other_class = Sinif.objects.create(
+            kurum=other,
+            sube=other_sube,
+            egitim_yili=self.year,
+            ad='Yabancı sınıf',
+            aktif_mi=True,
+        )
+        denied = self.client.post(
+            '/api/academic/class-period-attendance/',
+            data={
+                'term_id': self.term.id,
+                'classroom_id': other_class.id,
+                'date': self.monday.isoformat(),
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(denied.status_code, 403, denied.content)
+        self.assertFalse(
+            ClassPeriodAttendanceSession.objects.filter(sinif=other_class).exists(),
+        )
+
+        before = ClassPeriodAttendanceSession.objects.count()
+        reading = self.client.get(
+            f'/api/academic/class-period-attendance/?term_id={self.term.id}'
+            f'&classroom_id={self.sinif.id}&date={self.monday.isoformat()}',
+            **self.headers,
+        )
+        self.assertEqual(reading.status_code, 200, reading.content)
+        self.assertEqual(ClassPeriodAttendanceSession.objects.count(), before)

@@ -1,5 +1,5 @@
 """
-Günlük sınıf yoklama — sabah / öğleden sonra periyot tespiti ve roster.
+Günlük sınıf yoklama — sabah / öğle / akşam periyot tespiti ve roster.
 """
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ from datetime import date, time
 from typing import Any, Optional
 
 from django.db import transaction
-from django.db.models import Count
+from django.db.models import Count, F as models_F
 
 from apps.academic.domain.class_period_attendance import (
     ClassPeriodAttendanceRecord,
@@ -29,6 +29,8 @@ from apps.sinif.domain.models import Sinif
 from apps.term.domain.models import Term
 
 NOON = time(12, 0)
+# Kütüphane ders programındaki akşam oturumu 17:00'da başlar.
+EVENING_START = time(17, 0)
 
 
 def _resolve_version(
@@ -71,6 +73,73 @@ def _resolve_version(
     return version
 
 
+def _versions_for_classroom_on_date(
+    term_id: int,
+    version_id: Optional[int],
+    classroom_id: Optional[int],
+    session_date: date,
+) -> list[ScheduleVersion]:
+    """Sınıfın o gün dersi olan programları.
+
+    Aynı sınıf birden fazla çalışma takviminde durabiliyor. Tek program
+    (en yüksek id) seçilince diğer takvimin günü "ders yok" kalıyordu.
+    """
+    if version_id or not classroom_id:
+        return [_resolve_version(term_id, version_id, classroom_id)]
+
+    ids = list(
+        ScheduleVersion.objects.filter(
+            term_id=term_id,
+            weekly_cycle__isnull=False,
+            grid_cells__sinif_id=classroom_id,
+            grid_cells__is_active=True,
+            grid_cells__status=CellStatus.FILLED,
+            grid_cells__ders__isnull=False,
+            grid_cells__weekly_day__day_of_week=session_date.weekday(),
+            grid_cells__weekly_day__is_active=True,
+            grid_cells__weekly_day__weekly_cycle_id=models_F('weekly_cycle_id'),
+        ).values_list('id', flat=True).distinct()
+    )
+    if not ids:
+        return [_resolve_version(term_id, None, classroom_id)]
+    return list(
+        ScheduleVersion.objects.select_related('weekly_cycle', 'schedule_template', 'term')
+        .filter(pk__in=ids)
+        .order_by('-is_active', '-id')
+    )
+
+
+def _periods_on_version(
+    version: ScheduleVersion,
+    session_date: date,
+    classroom_id: int,
+) -> set[str]:
+    day = WeeklyDay.objects.filter(
+        weekly_cycle=version.weekly_cycle,
+        day_of_week=session_date.weekday(),
+        is_active=True,
+    ).first()
+    if not day:
+        return set()
+    lunch = lunch_split_time(version.schedule_template_id)
+    cells = ProgramGridCell.objects.filter(
+        schedule_version=version,
+        weekly_day=day,
+        is_active=True,
+        status=CellStatus.FILLED,
+        sinif_id=classroom_id,
+        ders__isnull=False,
+        timeslot__isnull=False,
+    ).select_related('timeslot')
+    present: set[str] = set()
+    for cell in cells:
+        st = getattr(cell.timeslot, 'start_time', None)
+        if not st:
+            continue
+        present.add(classify_period(st, lunch_start=lunch))
+    return present
+
+
 def lunch_split_time(schedule_template_id: int | None) -> time | None:
     """Şablondaki ilk LUNCH_BREAK başlangıcı; yoksa None."""
     if not schedule_template_id:
@@ -87,12 +156,64 @@ def lunch_split_time(schedule_template_id: int | None) -> time | None:
     return slot.start_time if slot and slot.start_time else None
 
 
-def classify_period(start: time, *, lunch_start: time | None) -> str:
-    """Ders başlangıcına göre MORNING / AFTERNOON."""
+def classify_period(
+    start: time,
+    *,
+    lunch_start: time | None,
+    evening_start: time | None = None,
+) -> str:
+    """Ders başlangıcına göre sabah / öğle / akşam.
+
+    Öğle, öğle arasından (yoksa 12:00) 17:00'a kadardır.
+    17:00 ve sonrası akşam yoklamasıdır.
+    """
+    evening = evening_start or EVENING_START
+    if start >= evening:
+        return ClassPeriodCode.EVENING
     boundary = lunch_start or NOON
     if start < boundary:
         return ClassPeriodCode.MORNING
     return ClassPeriodCode.AFTERNOON
+
+
+def _adopt_misclassified_evening_session(
+    *,
+    classroom_id: int,
+    session_date: date,
+    present: set[str],
+) -> None:
+    """Yalnızca 17:00 sonrası dersi olan günde eski öğleden sonra oturumunu akşama taşır.
+
+    Öğle dersi de varsa oturum öğlede kalır; akşam ayrı açılır.
+    """
+    if ClassPeriodCode.EVENING not in present or ClassPeriodCode.AFTERNOON in present:
+        return
+    if ClassPeriodAttendanceSession.objects.filter(
+        is_active=True,
+        sinif_id=classroom_id,
+        session_date=session_date,
+        period=ClassPeriodCode.EVENING,
+    ).exists():
+        return
+    stale = ClassPeriodAttendanceSession.objects.filter(
+        is_active=True,
+        sinif_id=classroom_id,
+        session_date=session_date,
+        period=ClassPeriodCode.AFTERNOON,
+    ).first()
+    if not stale:
+        return
+    stale.period = ClassPeriodCode.EVENING
+    stale.save(update_fields=['period', 'updated_at'])
+    from apps.academic.services.kutuphane_izin import _apply_to_record
+
+    for rec in stale.records.all():
+        _apply_to_record(
+            rec,
+            tarih=session_date,
+            periyot=ClassPeriodCode.EVENING,
+            ogrenci_id=rec.student_id,
+        )
 
 
 def periods_available_for_date(
@@ -103,37 +224,22 @@ def periods_available_for_date(
     version_id: Optional[int] = None,
 ) -> list[dict[str, Any]]:
     """O gün sınıfta ders olan periyotları döner (oturum yoksa da planlanır)."""
-    version = _resolve_version(term_id, version_id, classroom_id)
-    weekday = session_date.weekday()
-    day = WeeklyDay.objects.filter(
-        weekly_cycle=version.weekly_cycle,
-        day_of_week=weekday,
-        is_active=True,
-    ).first()
-    if not day:
-        return []
-
-    lunch = lunch_split_time(version.schedule_template_id)
-    cells = ProgramGridCell.objects.filter(
-        schedule_version=version,
-        weekly_day=day,
-        is_active=True,
-        status=CellStatus.FILLED,
-        sinif_id=classroom_id,
-        ders__isnull=False,
-        timeslot__isnull=False,
-    ).select_related('timeslot')
-
+    versions = _versions_for_classroom_on_date(
+        term_id, version_id, classroom_id, session_date,
+    )
     present: set[str] = set()
-    for cell in cells:
-        st = getattr(cell.timeslot, 'start_time', None)
-        if not st:
-            continue
-        present.add(classify_period(st, lunch_start=lunch))
+    for version in versions:
+        present |= _periods_on_version(version, session_date, classroom_id)
 
     # Ders yoksa tabloya hiç bakma — boş liste + bilgilendirme UI tarafında
     if not present:
         return []
+
+    _adopt_misclassified_evening_session(
+        classroom_id=classroom_id,
+        session_date=session_date,
+        present=present,
+    )
 
     existing = {
         s.period: s
@@ -145,7 +251,7 @@ def periods_available_for_date(
         )
     }
 
-    order = [ClassPeriodCode.MORNING, ClassPeriodCode.AFTERNOON]
+    order = [ClassPeriodCode.MORNING, ClassPeriodCode.AFTERNOON, ClassPeriodCode.EVENING]
     rows = []
     for code in order:
         if code not in present:
@@ -192,7 +298,14 @@ def ensure_period_session(
     except (Term.DoesNotExist, Sinif.DoesNotExist) as exc:
         raise LessonSessionError('Dönem veya sınıf bulunamadı.') from exc
 
-    version = _resolve_version(term_id, version_id, classroom_id)
+    versions = _versions_for_classroom_on_date(
+        term_id, version_id, classroom_id, session_date,
+    )
+    version = versions[0]
+    for candidate in versions:
+        if period in _periods_on_version(candidate, session_date, classroom_id):
+            version = candidate
+            break
     session, _ = ClassPeriodAttendanceSession.objects.get_or_create(
         sinif=sinif,
         session_date=session_date,
@@ -318,6 +431,12 @@ def save_period_attendance(
     except ClassPeriodAttendanceSession.DoesNotExist as exc:
         raise LessonSessionError('Günlük yoklama oturumu bulunamadı.') from exc
 
+    allowed_students = set(
+        active_student_placements(
+            classroom_id=session.sinif_id,
+            term_id=session.term_id,
+        ).values_list('student_id', flat=True)
+    )
     for item in records:
         sid = item.get('student_id')
         status = item.get('status') or StudentAttendanceStatus.PRESENT
@@ -325,6 +444,8 @@ def save_period_attendance(
             raise LessonSessionError(f'Geçersiz yoklama durumu: {status}', 'status')
         if not sid:
             continue
+        if int(sid) not in allowed_students:
+            raise LessonSessionError('Öğrenci bu sınıfın yoklama listesinde değil.', 'student_id')
         late_time = None
         if status == StudentAttendanceStatus.LATE:
             late_time = late_time_or_now(item.get('late_time'))
@@ -390,7 +511,7 @@ def list_period_sessions_for_date(
     if not available:
         info = (
             'Bu sınıfın seçilen günde programda dersi yok. '
-            'Günlük yoklama yalnızca sabah ve/veya öğleden sonra dersi olan günlerde açılır.'
+            'Günlük yoklama yalnızca sabah, öğle veya akşam dersi olan günlerde açılır.'
         )
     return {
         'date': session_date.isoformat(),
@@ -673,7 +794,11 @@ def export_coach_period_day_roster(
             continue
         if wanted_classes and row['classroom_id'] not in wanted_classes:
             continue
-        if wanted_period in {'MORNING', 'AFTERNOON'} and row['period'] != wanted_period:
+        if wanted_period in {
+            ClassPeriodCode.MORNING,
+            ClassPeriodCode.AFTERNOON,
+            ClassPeriodCode.EVENING,
+        } and row['period'] != wanted_period:
             continue
         rows.append(row)
 

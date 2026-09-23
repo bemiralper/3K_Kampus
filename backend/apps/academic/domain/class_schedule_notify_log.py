@@ -11,6 +11,11 @@ class ClassScheduleNotifyStatus(models.TextChoices):
     FAILED = 'FAILED', 'Başarısız'
 
 
+class ScheduleNotifyTarget(models.TextChoices):
+    CLASS = 'class', 'Sınıf'
+    TEACHER = 'teacher', 'Öğretmen'
+
+
 class ClassScheduleNotifyLog(models.Model):
     kurum = models.ForeignKey(
         'kurum.Kurum',
@@ -26,13 +31,24 @@ class ClassScheduleNotifyLog(models.Model):
         'academic.ScheduleVersion',
         on_delete=models.CASCADE,
         related_name='notify_logs',
+        null=True,
+        blank=True,
     )
     sinif = models.ForeignKey(
         'sinif.Sinif',
         on_delete=models.CASCADE,
         related_name='schedule_notify_logs',
+        null=True,
+        blank=True,
     )
-    grid_fingerprint = models.CharField(max_length=64, db_index=True)
+    target_kind = models.CharField(
+        max_length=16,
+        choices=ScheduleNotifyTarget.choices,
+        default=ScheduleNotifyTarget.CLASS,
+        db_index=True,
+    )
+    batch_id = models.CharField(max_length=64, blank=True, default='', db_index=True)
+    grid_fingerprint = models.CharField(max_length=64, blank=True, default='', db_index=True)
     veli_count = models.PositiveIntegerField(default=0)
     ogrenci_count = models.PositiveIntegerField(default=0)
     status = models.CharField(
@@ -63,4 +79,4 @@ class ClassScheduleNotifyLog(models.Model):
         ]
 
     def __str__(self):
-        return f'{self.sinif_id} · {self.schedule_version_id} · {self.status}'
+        return f'{self.target_kind} · {self.sinif_id or self.batch_id} · {self.status}'

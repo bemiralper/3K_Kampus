@@ -256,6 +256,9 @@ class ScheduleNotifyUnitTest(TestCase):
         self.assertGreaterEqual(result['total_veli_sent'], 1)
         self.assertGreaterEqual(result['total_ogrenci_sent'], 1)
         self.assertTrue(mock_dispatch.called)
+        people = result['results'][0]['recipients']
+        self.assertTrue(any(p['name'] == 'Mehmet Yılmaz' and p['status'] == 'sent' for p in people))
+        self.assertTrue(any(p['kind'] == 'ogrenci' and p['status'] == 'sent' for p in people))
         self.assertTrue(
             ClassScheduleNotifyLog.objects.filter(
                 sinif=self.sinif,

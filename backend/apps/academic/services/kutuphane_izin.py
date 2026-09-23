@@ -21,7 +21,11 @@ from apps.academic.services.class_period_attendance_service import (
 )
 
 
-ACADEMIC_PERIODS = frozenset({ClassPeriodCode.MORNING, ClassPeriodCode.AFTERNOON})
+ACADEMIC_PERIODS = frozenset({
+    ClassPeriodCode.MORNING,
+    ClassPeriodCode.AFTERNOON,
+    ClassPeriodCode.EVENING,
+})
 
 
 def library_izin_for_academic(
@@ -29,7 +33,7 @@ def library_izin_for_academic(
     tarih: date,
     periyot_kodu: str,
 ) -> Optional[Any]:
-    """Kurum geneli eşleşen izin (salon fark etmez). Akşam yalnızca kütüphane."""
+    """Kurum geneli eşleşen izin (salon fark etmez). Sabah, öğle ve akşam."""
     if periyot_kodu not in ACADEMIC_PERIODS:
         return None
     from apps.kutuphane.application.service import OgrenciIzinService
@@ -85,6 +89,24 @@ def virtual_izin_status(
                 StudentAttendanceStatus.PRESENT
             ],
             'note': '',
+            'izinli_mi': False,
+            'izin_sebep': '',
+        }
+    # Öğle izni yanlışlıkla akşam dersine yazılmışsa rozeti düşür.
+    if (
+        rec.izinli_mi
+        and not izinli
+        and rec.status == StudentAttendanceStatus.EXCUSED
+    ):
+        rec.izinli_mi = False
+        rec.status = StudentAttendanceStatus.PRESENT
+        rec.save(update_fields=['izinli_mi', 'status', 'marked_at'])
+        return {
+            'status': StudentAttendanceStatus.PRESENT,
+            'status_display': dict(StudentAttendanceStatus.choices)[
+                StudentAttendanceStatus.PRESENT
+            ],
+            'note': rec.note,
             'izinli_mi': False,
             'izin_sebep': '',
         }

@@ -127,6 +127,7 @@ from apps.academic.interfaces.views.schedule_view import (
 )
 from apps.academic.interfaces.views.schedule_export import schedule_export_api
 from apps.academic.interfaces.views.schedule_notify import (
+    schedule_notify_history_api,
     schedule_notify_preview_api,
     schedule_notify_send_api,
     teacher_schedule_notify_preview_api,
@@ -287,6 +288,7 @@ urlpatterns = [
     path('schedule/branch/', branch_schedule_api, name='schedule-branch'),
     path('schedule/daily-flow/', daily_flow_api, name='schedule-daily-flow'),
     path('schedule/export/', schedule_export_api, name='schedule-export'),
+    path('schedule/notify/history/', schedule_notify_history_api, name='schedule-notify-history'),
     path('schedule/notify/preview/', schedule_notify_preview_api, name='schedule-notify-preview'),
     path('schedule/notify/send/', schedule_notify_send_api, name='schedule-notify-send'),
     path('schedule/notify/teacher/preview/', teacher_schedule_notify_preview_api, name='schedule-notify-teacher-preview'),

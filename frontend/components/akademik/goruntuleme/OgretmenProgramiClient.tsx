@@ -11,6 +11,7 @@ import {
 import ScheduleViewer from './ScheduleViewer';
 import GoruntulemeExportModal from './GoruntulemeExportModal';
 import GoruntulemeNotifyModal from './GoruntulemeNotifyModal';
+import GoruntulemeNotifyHistory from './GoruntulemeNotifyHistory';
 import { useGoruntulemeContext } from './useGoruntulemeContext';
 import { ContextRequired, Field } from '../ui';
 import { IconDownload, IconSend } from '../ui/icons';
@@ -25,6 +26,7 @@ export default function OgretmenProgramiClient() {
   const [reloadKey, setReloadKey] = useState(0);
   const [exportOpen, setExportOpen] = useState(false);
   const [notifyOpen, setNotifyOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   const loadTeachers = useCallback(async () => {
     if (!ready) return;
@@ -103,6 +105,12 @@ export default function OgretmenProgramiClient() {
               İndir
             </Button>
             <Button
+              disabled={!termId}
+              onClick={() => setHistoryOpen(true)}
+            >
+              Geçmiş
+            </Button>
+            <Button
               type="primary"
               icon={<IconSend size={14} />}
               disabled={!termId || !teacherId}
@@ -154,6 +162,12 @@ export default function OgretmenProgramiClient() {
         teacherId={teacherId}
         teacherIds={teachers.map((t) => t.id)}
         teacherName={teacherName}
+      />
+      <GoruntulemeNotifyHistory
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        termId={termId}
+        target="teacher"
       />
     </>
   );

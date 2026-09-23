@@ -70,6 +70,8 @@ def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False) -> dict:
                 sozlesme.id, tur, item.get('kalem_id'),
             )
             result['missing_catalog'].append(f"{tur}:{item.get('kalem_id')}")
+    closed = _close_stale_erisim(sozlesme, dry_run=dry_run)
+    result.update(closed)
     return result
 
 
@@ -109,6 +111,108 @@ def _contract_items(sozlesme) -> list[dict]:
         0,
     )
     return items
+
+
+def _close_stale_erisim(sozlesme, *, dry_run=False) -> dict:
+    """Sözleşmede kalmayan paket ve hizmet erişimini kapatır.
+
+    Kayıt anındaki paket sonradan değiştirilince öğrenci listesi ve erişim
+    eski adı göstermesin. Güncel paketin dahil hizmetleri açık kalır.
+    """
+    from apps.odeme_takip.domain.models import Sozlesme
+    from apps.ogrenci.domain.models import OgrenciEgitimPaketi, OgrenciEkHizmet
+
+    closed = {'closed_paket': [], 'closed_ek_hizmet': []}
+    if not sozlesme.ogrenci_id:
+        return closed
+
+    contracts = Sozlesme.objects.filter(
+        ogrenci_id=sozlesme.ogrenci_id,
+        durum__in=GRANTING_DURUMLAR,
+    ).prefetch_related('kalemler')
+    desired_paket: set[tuple[str, int]] = set()
+    desired_ek: set[int] = set()
+    for other in contracts:
+        for item in _contract_items(other):
+            if item['tur'] == 'ek_hizmet':
+                desired_ek.add(item['kalem_id'])
+            else:
+                desired_paket.add((item['tur'], item['kalem_id']))
+    _expand_included_access(desired_paket, desired_ek, sozlesme)
+
+    paket_qs = OgrenciEgitimPaketi.objects.filter(
+        ogrenci_id=sozlesme.ogrenci_id,
+        aktif_mi=True,
+    )
+    for ep in paket_qs:
+        if (ep.paket_turu, ep.paket_id) in desired_paket:
+            continue
+        closed['closed_paket'].append(ep.paket_adi or f'{ep.paket_turu}:{ep.paket_id}')
+        if not dry_run:
+            ep.aktif_mi = False
+            ep.save(update_fields=['aktif_mi', 'updated_at'])
+
+    ek_qs = OgrenciEkHizmet.objects.filter(
+        ogrenci_id=sozlesme.ogrenci_id,
+        aktif_mi=True,
+        egitim_yili_id=sozlesme.egitim_yili_id,
+    ).select_related('ek_hizmet')
+    for row in ek_qs:
+        if row.ek_hizmet_id in desired_ek:
+            continue
+        closed['closed_ek_hizmet'].append(
+            row.ek_hizmet.ad if row.ek_hizmet_id else str(row.ek_hizmet_id),
+        )
+        if not dry_run:
+            row.aktif_mi = False
+            row.save(update_fields=['aktif_mi', 'updated_at'])
+    return closed
+
+
+def _expand_included_access(desired_paket, desired_ek, sozlesme):
+    """Güncel grup/premium/deneme paketinin dahil ettiği erişimi koru."""
+    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, PremiumPaket
+    from apps.ogrenci_kayit.application.services import (
+        resolve_grup_dersi_inclusions,
+        resolve_premium_paket_inclusions,
+    )
+
+    kwargs = {
+        'kurum_id': sozlesme.kurum_id,
+        'sube_id': sozlesme.sube_id,
+        'egitim_yili_id': sozlesme.egitim_yili_id,
+    }
+    for tur, pid in list(desired_paket):
+        if tur == 'grup_dersi':
+            grup = GrupDersi.objects.filter(id=pid).first()
+            if not grup:
+                continue
+            ek_ids, deneme_ids, yayin_ids = resolve_grup_dersi_inclusions(grup, **kwargs)
+            desired_ek.update(ek_ids)
+            desired_paket.update(('deneme', i) for i in deneme_ids)
+            desired_paket.update(('yayin', i) for i in yayin_ids)
+        elif tur == 'premium':
+            premium = PremiumPaket.objects.filter(id=pid).first()
+            if not premium:
+                continue
+            ek_ids, deneme_ids, yayin_ids = resolve_premium_paket_inclusions(premium, **kwargs)
+            desired_ek.update(ek_ids)
+            desired_paket.update(('deneme', i) for i in deneme_ids)
+            desired_paket.update(('yayin', i) for i in yayin_ids)
+        elif tur == 'deneme':
+            deneme = Deneme.objects.filter(id=pid).first()
+            if not deneme:
+                continue
+            desired_ek.update(
+                EkHizmet.objects.filter(
+                    deneme_paketi=deneme,
+                    sube_id=sozlesme.sube_id,
+                    egitim_yili_id=sozlesme.egitim_yili_id,
+                ).values_list('id', flat=True)
+            )
+            desired_ek.update(
+                deneme.dahil_ek_hizmetler.filter(aktif_mi=True).values_list('id', flat=True)
+            )
 
 
 def _ensure_ek_hizmet(sozlesme, item, result, *, dry_run):
@@ -340,6 +444,9 @@ def _ensure_egitim_paketi(sozlesme, tur, paket_id, paket_adi, *, dry_run) -> boo
         .first()
     )
     if ep and ep.aktif_mi:
+        if paket_adi and ep.paket_adi != paket_adi and not dry_run:
+            ep.paket_adi = paket_adi
+            ep.save(update_fields=['paket_adi', 'updated_at'])
         return False
     if dry_run:
         return True
