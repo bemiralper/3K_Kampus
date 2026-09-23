@@ -887,6 +887,28 @@ def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
             kaynak=_kaynak_paket_key(oeh.kaynak_paket_turu, oeh.kaynak_paket_id),
         )
 
+    # Kütüphane / koçluk sözleşmede ayrı satır olmayabilir; aktif erişim
+    # listede ve dışa aktarmada görünsün. Deneme sarmalayıcıları yukarıda
+    # deneme adı olarak yazılır.
+    plain_qs = OgrenciEkHizmet.objects.filter(
+        ogrenci_id__in=ogrenci_ids,
+        aktif_mi=True,
+        ek_hizmet__deneme_paketi_id__isnull=True,
+    ).select_related('ek_hizmet')
+    if yil_ids:
+        plain_qs = plain_qs.filter(
+            models.Q(egitim_yili_id__in=yil_ids) | models.Q(egitim_yili_id__isnull=True)
+        )
+    for oeh in plain_qs:
+        eh = oeh.ek_hizmet
+        if not eh:
+            continue
+        _put_for_ogrenci(
+            oeh.ogrenci_id,
+            _kalem_entry('ek_hizmet', eh.id, eh.ad or ''),
+            yil_id=oeh.egitim_yili_id,
+        )
+
 
 def build_ogrenci_kalemler_map(kayit_list, filter_kalemler=None):
     """Kayıt listesi için yapılandırılmış eğitim kalemi listesi (toplu prefetch)."""
@@ -942,6 +964,30 @@ def build_ogrenci_kalemler_map(kayit_list, filter_kalemler=None):
 
     _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index)
 
+    # Filtre «Deneme — …» ek hizmetiyse satır deneme paketi olarak durur.
+    # Aynı öğrenciyi listede tutup hizmet adını boş bırakmamak için deneme
+    # satırı o ek hizmet filtresine de uyar.
+    deneme_by_ek_hizmet = {}
+    if filter_set:
+        filter_ek_ids = {kid for tur, kid in filter_set if tur == 'ek_hizmet'}
+        if filter_ek_ids:
+            for eh_id, deneme_id in EkHizmet.objects.filter(
+                id__in=filter_ek_ids,
+                deneme_paketi_id__isnull=False,
+            ).values_list('id', 'deneme_paketi_id'):
+                deneme_by_ek_hizmet[eh_id] = deneme_id
+
+    def _matches_filter(entry):
+        key = (entry['kalem_turu'], entry['kalem_id'])
+        if key in filter_set:
+            return True
+        if entry['kalem_turu'] != 'deneme':
+            return False
+        return any(
+            deneme_id == entry['kalem_id']
+            for deneme_id in deneme_by_ek_hizmet.values()
+        )
+
     result = {}
     for kayit in kayit_list:
         all_entries = list(
@@ -949,10 +995,7 @@ def build_ogrenci_kalemler_map(kayit_list, filter_kalemler=None):
         )
         all_entries.sort(key=lambda x: (x['kalem_turu'], x['kalem_adi']))
         if filter_set:
-            result[kayit.id] = [
-                e for e in all_entries
-                if (e['kalem_turu'], e['kalem_id']) in filter_set
-            ]
+            result[kayit.id] = [e for e in all_entries if _matches_filter(e)]
         else:
             result[kayit.id] = all_entries
     return result

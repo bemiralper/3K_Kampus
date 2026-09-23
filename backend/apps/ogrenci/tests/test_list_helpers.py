@@ -212,6 +212,61 @@ class BuildOgrenciKalemlerMapTest(TestCase):
         self.assertIn(('grup_dersi', 'Güncel Grup Adı'), self._turler())
         self.assertNotIn(('grup_dersi', 'Kayıt anındaki ad'), self._turler())
 
+    def test_aktif_kutuphane_filtrede_ve_listede_gorunur(self):
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme,
+            kalem_turu=KalemTuru.PAKET,
+            kalem_id=self.grup.id,
+            kalem_adi=self.grup.ad,
+        )
+        kutuphane = EkHizmet.objects.create(
+            ad='Kütüphane',
+            kod='KUT',
+            hizmet_turu='kutuphane',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.ogrenci,
+            ek_hizmet=kutuphane,
+            aktif_mi=True,
+            egitim_yili=self.yil,
+        )
+        self.assertIn(('ek_hizmet', 'Kütüphane'), self._turler())
+        filtered = build_ogrenci_kalemler_map(
+            [self.kayit],
+            filter_kalemler=[('ek_hizmet', kutuphane.id)],
+        ).get(self.kayit.id, [])
+        self.assertEqual(
+            [(e['kalem_turu'], e['kalem_adi']) for e in filtered],
+            [('ek_hizmet', 'Kütüphane')],
+        )
+
+    def test_deneme_ek_hizmet_filtresi_deneme_adini_bos_birakmaz(self):
+        eh = EkHizmet.objects.create(
+            ad=f'Deneme — {self.deneme.ad}',
+            kod='DNM_FLT',
+            hizmet_turu='kocluk',
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+            deneme_paketi=self.deneme,
+        )
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme,
+            kalem_turu=KalemTuru.EK_HIZMET,
+            kalem_id=eh.id,
+            kalem_adi=eh.ad,
+        )
+        filtered = build_ogrenci_kalemler_map(
+            [self.kayit],
+            filter_kalemler=[('ek_hizmet', eh.id)],
+        ).get(self.kayit.id, [])
+        self.assertIn(('deneme', 'TYT Deneme Paketi'), {
+            (e['kalem_turu'], e['kalem_adi']) for e in filtered
+        })
+
     def test_enrollment_grup_dersi_appears_without_sozlesme(self):
         self.sozlesme.delete()
         OgrenciEgitimPaketi.objects.create(
