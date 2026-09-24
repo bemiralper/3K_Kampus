@@ -112,6 +112,15 @@ export default function PersonPicker({
     reset();
   }, [selectedList, onPickMany, reset]);
 
+  const addOne = useCallback((hit: BulkRecipientHit) => {
+    onPickMany([hit]);
+    setSelected((prev) => {
+      const next = { ...prev };
+      delete next[hitKey(hit)];
+      return next;
+    });
+  }, [onPickMany]);
+
   const showPanel = loading || visibleGroups.length > 0 || q.trim().length >= 2;
 
   return (
@@ -135,6 +144,7 @@ export default function PersonPicker({
       />
 
       {showPanel && (
+        <div className="tg-people-panel">
         <div className="tg-people-list">
           {loading && <div className="tg-empty">Aranıyor…</div>}
           {!loading && q.trim().length >= 2 && visibleGroups.length === 0 && (
@@ -162,13 +172,19 @@ export default function PersonPicker({
                   const key = hitKey(hit);
                   const on = Boolean(selected[key]);
                   return (
-                    <button
+                    <div
                       key={key}
-                      type="button"
                       role="checkbox"
                       aria-checked={on}
+                      tabIndex={0}
                       className={`tg-opt tg-opt-card tg-fam-row${on ? " is-on" : ""}`}
                       onClick={() => toggle(hit)}
+                      onKeyDown={(e) => {
+                        if (e.key === " " || e.key === "Enter") {
+                          e.preventDefault();
+                          toggle(hit);
+                        }
+                      }}
                     >
                       <span className={`tg-check${on ? " is-on" : ""}`} aria-hidden="true" />
                       <span className="tg-fam-row-text">
@@ -178,19 +194,32 @@ export default function PersonPicker({
                           {hit.phone ? ` · ${hit.phone}` : " · telefon yok"}
                         </span>
                       </span>
-                    </button>
+                      <button
+                        type="button"
+                        className="tg-fam-add"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addOne(hit);
+                        }}
+                      >
+                        Ekle
+                      </button>
+                    </div>
                   );
                 })}
               </div>
             );
           })}
 
-          {selectedList.length > 0 && (
+        </div>
+          {visibleGroups.length > 0 && (
             <div className="tg-people-actions">
-              <span>{selectedList.length} kişi seçildi</span>
+              <span>{selectedList.length > 0 ? `${selectedList.length} kişi seçildi` : "Birden fazla kişi için işaretleyin"}</span>
               <div>
-                <button type="button" className="tg-btn" onClick={() => setSelected({})}>Temizle</button>
-                <button type="button" className="tg-btn-primary" onClick={commit}>Kitleye ekle</button>
+                <button type="button" className="tg-btn" onClick={() => setSelected({})} disabled={selectedList.length === 0}>Temizle</button>
+                <button type="button" className="tg-btn-primary" onClick={commit} disabled={selectedList.length === 0}>
+                  {selectedList.length > 0 ? `Seçilenleri ekle (${selectedList.length})` : "Seçilenleri ekle"}
+                </button>
               </div>
             </div>
           )}

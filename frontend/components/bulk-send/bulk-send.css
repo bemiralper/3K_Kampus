@@ -221,7 +221,7 @@
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
   gap: 18px;
   align-items: start;
-  padding-bottom: 88px; /* sticky gönder çubuğu */
+  padding-bottom: 12px;
 }
 .bs-col { display: grid; gap: 16px; min-width: 0; }
 
@@ -346,40 +346,95 @@
 .bs-collapse[open] summary::before { transform: rotate(90deg); }
 .bs-collapse summary small { color: var(--bs-muted); font-weight: 500; margin-left: auto; }
 
-/* gönder çubuğu */
-.bs-sendbar {
+/* gönder çubuğu — sayfa altına yapışan özet */
+.bs-dock {
   position: sticky;
   bottom: 0;
-  z-index: 20;
-  margin-top: 4px;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
-  border-top: 1px solid var(--bs-line);
-  padding: 12px 0;
-}
-.bs-sendbar-inner {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 14px;
-  flex-wrap: wrap;
-}
-.bs-sendbar-summary {
+  z-index: 40;
   display: flex;
   align-items: center;
   gap: 14px;
-  flex-wrap: wrap;
-  font-size: 0.86rem;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid var(--bs-line);
+  border-radius: 16px;
+  box-shadow: 0 10px 32px rgba(15, 23, 42, 0.1);
+}
+.bs-dock-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  flex: 1;
+}
+.bs-dock-count {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: none;
+  min-width: 72px;
+  padding-right: 14px;
+  border-right: 1px solid var(--bs-line);
+}
+.bs-dock-count b {
+  font-size: 1.55rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: var(--bs-blue);
+  font-variant-numeric: tabular-nums;
+}
+.bs-dock-count span {
+  margin-top: 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   color: var(--bs-muted);
 }
-.bs-sendbar-summary strong { color: var(--bs-ink); }
-.bs-sendbar-summary .sep { width: 1px; height: 16px; background: var(--bs-line); }
-.bs-sendbar-actions { display: flex; gap: 8px; align-items: center; }
-.bs-checks { display: grid; gap: 6px; font-size: 0.82rem; }
-.bs-check { display: flex; align-items: center; gap: 8px; color: var(--bs-muted); }
-.bs-check.ok { color: var(--bs-ok); }
-.bs-check.ok::before { content: "✓"; font-weight: 800; }
-.bs-check.todo::before { content: "○"; }
+.bs-dock-count.is-zero b { color: var(--bs-muted); }
+.bs-dock-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  min-width: 0;
+}
+.bs-dock-meta li {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  max-width: 240px;
+  padding: 5px 10px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid var(--bs-line);
+}
+.bs-dock-meta li span {
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--bs-muted);
+}
+.bs-dock-meta li strong {
+  font-size: 0.82rem;
+  font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bs-dock-meta li.ok { background: var(--bs-ok-bg); border-color: #bbf7d0; }
+.bs-dock-meta li.ok strong { color: #166534; }
+.bs-dock-meta li.bad { background: var(--bs-bad-bg); border-color: #fecaca; }
+.bs-dock-meta li.bad strong { color: var(--bs-bad); }
+.bs-dock-meta li.todo { background: var(--bs-warn-bg); border-color: #fde68a; }
+.bs-dock-meta li.todo strong { color: var(--bs-warn); }
+.bs-dock-actions { display: flex; gap: 8px; flex: none; align-items: center; }
+.bs-dock-actions .bs-btn-primary { min-height: 42px; padding-inline: 18px; justify-content: center; }
 
 /* gönderim sonrası ilerleme */
 .bs-progress-card {
@@ -496,13 +551,53 @@
 }
 .bs-back { display: none; }
 
+/* Stüdyo iki kolonken sağ kart dar kalır; telefon önizlemesi alta iner */
+@media (max-width: 1500px) {
+  .bs-studio .tg-msg-grid { grid-template-columns: 1fr; }
+}
+
+/* Telefon alt menüsünün üstünde kalsın */
+@media (max-width: 991px) {
+  .admin-mobile-shell .bs-dock {
+    bottom: calc(56px + env(safe-area-inset-bottom, 0px));
+  }
+  .muhasebe-shell .bs-dock {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}
+@media (max-width: 767px) {
+  .coach-shell .bs-dock {
+    bottom: calc(72px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 @media (max-width: 640px) {
   .bs-card { padding: 14px; border-radius: 12px; }
   .bs-quick { grid-template-columns: 1fr 1fr; }
   .bs-counter { grid-template-columns: 1fr; }
   .bs-counter-num { font-size: 1.7rem; }
-  .bs-sendbar-inner { flex-direction: column; align-items: stretch; }
-  .bs-sendbar-actions { display: grid; grid-template-columns: 1fr; }
+  .bs-dock {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    border-radius: 14px;
+    padding: 12px;
+  }
+  .bs-dock-main { flex-direction: column; align-items: stretch; gap: 10px; }
+  .bs-dock-count {
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 8px;
+    min-width: 0;
+    padding: 0 0 8px;
+    border-right: 0;
+    border-bottom: 1px solid var(--bs-line);
+  }
+  .bs-dock-count b { font-size: 1.35rem; }
+  .bs-dock-meta li { flex: 1 1 140px; max-width: none; }
+  .bs-dock-actions { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+  .bs-dock-actions .bs-btn,
+  .bs-dock-actions .bs-btn-primary { width: 100%; justify-content: center; }
   .bs-list-tools .row { grid-template-columns: 1fr; }
   .bs-table thead { display: none; }
   .bs-table tr { display: grid; gap: 4px; padding: 10px 0; border-bottom: 1px solid #f1f5f9; }
@@ -517,6 +612,128 @@
 @media (prefers-reduced-motion: reduce) {
   .bs-seg i, .bs-btn, .bs-btn-primary { transition: none; }
   .bs-badge.is-live::before, .bs-skeleton { animation: none; }
+}
+
+/* ---------- gönderim onayı ---------- */
+.bs-confirm-back {
+  position: fixed;
+  inset: 0;
+  z-index: 2000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.48);
+}
+.bs-confirm {
+  display: flex;
+  flex-direction: column;
+  width: min(480px, 100%);
+  max-height: min(88vh, 680px);
+  background: #fff;
+  color: #0f172a;
+  border-radius: 18px;
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.28);
+  overflow: hidden;
+}
+.bs-confirm-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 16px 14px 20px;
+  border-bottom: 1px solid #e2e8f0;
+  flex: none;
+}
+.bs-confirm-head h2 { margin: 0; font-size: 1.15rem; letter-spacing: -0.02em; }
+.bs-confirm-head p { margin: 4px 0 0; font-size: 0.82rem; line-height: 1.45; color: #64748b; }
+.bs-confirm-x {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+.bs-confirm-x:hover { background: #e2e8f0; }
+.bs-confirm-x:disabled { opacity: 0.5; cursor: not-allowed; }
+.bs-confirm-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 16px 20px 8px;
+  display: grid;
+  gap: 14px;
+}
+.bs-confirm-count {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: #eef5fb;
+}
+.bs-confirm-count b {
+  font-size: 2rem;
+  font-weight: 750;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  color: #0061a6;
+  font-variant-numeric: tabular-nums;
+}
+.bs-confirm-count strong { display: block; font-size: 0.95rem; }
+.bs-confirm-count span { display: block; margin-top: 2px; font-size: 0.8rem; color: #64748b; }
+.bs-confirm-facts { display: grid; gap: 8px; margin: 0; }
+.bs-confirm-facts > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  font-size: 0.88rem;
+}
+.bs-confirm-facts dt { margin: 0; color: #64748b; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; }
+.bs-confirm-facts dd { margin: 0; font-weight: 650; overflow-wrap: anywhere; }
+.bs-confirm-facts dd span { font-weight: 500; color: #64748b; }
+.bs-confirm-people-label { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; color: #64748b; margin-bottom: 6px; }
+.bs-confirm-people ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.bs-confirm-people li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  font-size: 0.84rem;
+}
+.bs-confirm-people li strong { font-weight: 650; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bs-confirm-people li span { color: #64748b; flex: none; text-align: right; }
+.bs-confirm-people li.more { justify-content: center; color: #64748b; border-style: dashed; }
+.bs-confirm-foot {
+  flex: none;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px 16px 16px;
+  border-top: 1px solid #e2e8f0;
+  background: #fff;
+}
+.bs-confirm-foot .bs-btn,
+.bs-confirm-foot .bs-btn-primary { min-height: 44px; justify-content: center; }
+@media (max-width: 640px) {
+  .bs-confirm-back { align-items: flex-end; padding: 0; }
+  .bs-confirm {
+    width: 100%;
+    max-height: min(92vh, 720px);
+    border-radius: 18px 18px 0 0;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .bs-confirm-people li { flex-direction: column; gap: 2px; }
+  .bs-confirm-people li span { text-align: left; }
+  .bs-confirm-facts > div { grid-template-columns: 1fr; gap: 2px; }
 }
 
 /* ---------- portal açılır panel (filtre seçenekleri / filtre ekle) ---------- */

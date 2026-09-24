@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import CampaignDuyuruPicker, {
   campaignMessageReady,
 } from "@/app/admin/iletisim/toplu-gonder/CampaignDuyuruPicker";
 import { querySummary } from "@/app/admin/iletisim/toplu-gonder/audience-utils";
 import "@/app/admin/iletisim/toplu-gonder/toplu-gonder.css";
-import { CommDialog } from "@/components/communication/CommDialog";
 import { CommToast, useCommToast } from "@/components/communication/CommToast";
 import CommunicationPageShell from "@/components/communication/CommunicationPageShell";
 import "@/components/communication/communication.css";
@@ -133,12 +133,6 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
     }
   };
 
-  const checks = useMemo(() => ([
-    { ok: deliverable > 0, label: deliverable > 0 ? `${deliverable.toLocaleString("tr-TR")} alıcı seçildi` : "Kitle seçilmedi" },
-    { ok: !!draft.selectedTemplate, label: draft.selectedTemplate ? `Şablon: ${draft.selectedTemplate.name}` : "Onaylı şablon seçilmedi" },
-    { ok: templateReady || !draft.selectedTemplate, label: templateReady || !draft.selectedTemplate ? "Değişkenler ve ekler tamam" : "Eksik değişken / ek var" },
-  ]), [deliverable, draft.selectedTemplate, templateReady]);
-
   const crumbs = mode === "coach"
     ? [{ label: "Koç Paneli", href: "/coach/dashboard" }, { label: "Toplu Gönderim" }]
     : mode === "muhasebe"
@@ -251,77 +245,173 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
           </div>
         </div>
 
-        <div className="bs-sendbar">
-          <div className="bs-sendbar-inner">
-            <div className="bs-sendbar-summary">
-              <div className="bs-checks">
-                {checks.map((c) => (
-                  <span key={c.label} className={`bs-check ${c.ok ? "ok" : "todo"}`}>{c.label}</span>
-                ))}
-              </div>
-              {account && (
-                <>
-                  <span className="sep" />
-                  <span>Hat: <strong>{accountLabel(account)}</strong></span>
-                </>
-              )}
+        <div className="bs-dock" role="region" aria-label="Gönderim özeti">
+          <div className="bs-dock-main">
+            <div className={`bs-dock-count${deliverable ? "" : " is-zero"}`}>
+              <b>{deliverable.toLocaleString("tr-TR")}</b>
+              <span>alıcı</span>
             </div>
-            <div className="bs-sendbar-actions">
-              <button type="button" className="bs-btn" onClick={() => { draft.reset(); setAttachments([]); }} disabled={submitting}>
-                Sıfırla
-              </button>
-              <button type="button" className="bs-btn-primary" disabled={!canSend} onClick={() => void openConfirm()}>
-                {deliverable > 0 ? `${deliverable.toLocaleString("tr-TR")} kişiye gönder` : "Gönder"}
-              </button>
-            </div>
+            <ul className="bs-dock-meta">
+              <li className={draft.selectedTemplate ? "ok" : "todo"}>
+                <span>Şablon</span>
+                <strong title={draft.selectedTemplate?.name || ""}>{draft.selectedTemplate?.name || "Seçilmedi"}</strong>
+              </li>
+              <li className={!draft.selectedTemplate ? "todo" : templateReady ? "ok" : "bad"}>
+                <span>Değişken / ek</span>
+                <strong>{!draft.selectedTemplate ? "Şablon bekleniyor" : templateReady ? "Tamam" : "Eksik"}</strong>
+              </li>
+              <li>
+                <span>Hat</span>
+                <strong title={account ? accountLabel(account) : "Varsayılan"}>{account ? accountLabel(account) : "Varsayılan"}</strong>
+              </li>
+            </ul>
+          </div>
+          <div className="bs-dock-actions">
+            <button type="button" className="bs-btn" onClick={() => { draft.reset(); setAttachments([]); }} disabled={submitting}>
+              Sıfırla
+            </button>
+            <button type="button" className="bs-btn-primary" disabled={!canSend} onClick={() => void openConfirm()}>
+              {deliverable > 0 ? `${deliverable.toLocaleString("tr-TR")} kişiye gönder` : "Gönder"}
+            </button>
           </div>
         </div>
       </div>
 
-      <CommDialog
+      <SendConfirm
         open={confirmOpen}
-        title="Gönderimi onayla"
-        description="Gönderim kuyruğa alınır ve geri alınamaz; yalnız bekleyen mesajlar iptal edilebilir."
-        width={520}
-        onClose={() => !submitting && setConfirmOpen(false)}
-        footer={
-          <>
-            <button type="button" className="bs-btn" onClick={() => setConfirmOpen(false)} disabled={submitting}>Vazgeç</button>
-            <button type="button" className="bs-btn-primary" onClick={() => void send()} disabled={submitting}>
-              {submitting ? "Gönderiliyor…" : `${deliverable.toLocaleString("tr-TR")} kişiye gönder`}
-            </button>
-          </>
-        }
-      >
-        <div className="bs">
-          <dl className="bs-facts" style={{ marginBottom: 12 }}>
-            <div><dt>Alıcı</dt><dd><strong>{deliverable.toLocaleString("tr-TR")}</strong> gönderilebilir{(draft.preview?.unsuitable_count || 0) > 0 && <span className="bs-muted"> · {draft.preview?.unsuitable_count} atlanacak</span>}</dd></div>
-            <div><dt>Şablon</dt><dd>{draft.selectedTemplate?.name} <span className="bs-muted">({draft.templateLanguage})</span></dd></div>
-            <div><dt>Hat</dt><dd>{account ? accountLabel(account) : "Varsayılan"}</dd></div>
-            {attachments.length > 0 && <div><dt>Ek</dt><dd>{attachments.length} dosya</dd></div>}
-          </dl>
-          <div className="bs-small bs-muted" style={{ marginBottom: 6 }}>İlk alıcılar</div>
-          {confirmSample === null ? (
-            <div className="bs-skeleton" style={{ height: 40 }} />
-          ) : confirmSample.length === 0 ? (
-            <div className="bs-small bs-muted">Liste alınamadı.</div>
-          ) : (
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: "0.86rem", lineHeight: 1.6 }}>
-              {confirmSample.map((r) => (
-                <li key={r.key}>{r.display_name} <span className="bs-muted">· {r.phone || r.e164}{r.class_or_role ? ` · ${r.class_or_role}` : ""}</span></li>
-              ))}
-              {deliverable > confirmSample.length && <li className="bs-muted">…ve {deliverable - confirmSample.length} kişi daha</li>}
-            </ul>
-          )}
-          {account?.send_error && (
-            <div className="bs-alert tone-warn" style={{ marginTop: 10 }}>
-              Bu hat son gönderimde hata verdi: {account.send_error.error}
-            </div>
-          )}
-        </div>
-      </CommDialog>
+        submitting={submitting}
+        deliverable={deliverable}
+        skipped={draft.preview?.unsuitable_count || 0}
+        templateName={draft.selectedTemplate?.name || "—"}
+        templateLanguage={draft.templateLanguage}
+        lineLabel={account ? accountLabel(account) : "Varsayılan"}
+        attachmentCount={attachments.length}
+        sample={confirmSample}
+        lineError={account?.send_error?.error}
+        onClose={() => setConfirmOpen(false)}
+        onSend={() => void send()}
+      />
 
       <CommToast toast={toast} />
     </CommunicationPageShell>
+  );
+}
+
+function SendConfirm({
+  open,
+  submitting,
+  deliverable,
+  skipped,
+  templateName,
+  templateLanguage,
+  lineLabel,
+  attachmentCount,
+  sample,
+  lineError,
+  onClose,
+  onSend,
+}: {
+  open: boolean;
+  submitting: boolean;
+  deliverable: number;
+  skipped: number;
+  templateName: string;
+  templateLanguage: string;
+  lineLabel: string;
+  attachmentCount: number;
+  sample: AudienceRecipientRow[] | null;
+  lineError?: string;
+  onClose: () => void;
+  onSend: () => void;
+}) {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !submitting) onCloseRef.current();
+    };
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = prev;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open, submitting]);
+
+  if (!open || typeof document === "undefined") return null;
+
+  const countLabel = deliverable.toLocaleString("tr-TR");
+
+  return createPortal(
+    <div className="bs bs-confirm-back" onMouseDown={() => !submitting && onClose()}>
+      <div
+        className="bs-confirm"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bs-confirm-title"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <header className="bs-confirm-head">
+          <div>
+            <h2 id="bs-confirm-title">Gönderimi onayla</h2>
+            <p>Kuyruğa alınır. Yalnız henüz gitmemiş mesajlar iptal edilebilir.</p>
+          </div>
+          <button type="button" className="bs-confirm-x" onClick={onClose} disabled={submitting} aria-label="Kapat">
+            ×
+          </button>
+        </header>
+
+        <div className="bs-confirm-body">
+          <div className="bs-confirm-count">
+            <b>{countLabel}</b>
+            <div>
+              <strong>kişiye gönderilecek</strong>
+              <span>{skipped > 0 ? `${skipped.toLocaleString("tr-TR")} kişi telefonsuz olduğu için atlanacak` : "Tüm seçilenler gönderilebilir"}</span>
+            </div>
+          </div>
+
+          <dl className="bs-confirm-facts">
+            <div><dt>Şablon</dt><dd>{templateName} <span>({templateLanguage})</span></dd></div>
+            <div><dt>Hat</dt><dd>{lineLabel}</dd></div>
+            {attachmentCount > 0 && <div><dt>Ek</dt><dd>{attachmentCount} dosya</dd></div>}
+          </dl>
+
+          <div className="bs-confirm-people">
+            <div className="bs-confirm-people-label">İlk alıcılar</div>
+            {sample === null ? (
+              <div className="bs-skeleton" style={{ height: 44 }} />
+            ) : sample.length === 0 ? (
+              <div className="bs-small bs-muted">Liste alınamadı. Sayı yine de geçerlidir.</div>
+            ) : (
+              <ul>
+                {sample.map((r) => (
+                  <li key={r.key}>
+                    <strong>{r.display_name}</strong>
+                    <span>{[r.phone || r.e164, r.class_or_role].filter(Boolean).join(" · ")}</span>
+                  </li>
+                ))}
+                {deliverable > sample.length && (
+                  <li className="more">ve {deliverable - sample.length} kişi daha</li>
+                )}
+              </ul>
+            )}
+          </div>
+
+          {lineError && (
+            <div className="bs-alert tone-warn">Bu hat son gönderimde hata verdi: {lineError}</div>
+          )}
+        </div>
+
+        <footer className="bs-confirm-foot">
+          <button type="button" className="bs-btn" onClick={onClose} disabled={submitting}>Vazgeç</button>
+          <button type="button" className="bs-btn-primary" onClick={onSend} disabled={submitting}>
+            {submitting ? "Gönderiliyor…" : `${countLabel} kişiye gönder`}
+          </button>
+        </footer>
+      </div>
+    </div>,
+    document.body,
   );
 }
