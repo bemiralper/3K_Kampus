@@ -1527,12 +1527,14 @@ class CampaignService:
         return locked
 
     @transaction.atomic
-    def retry_failed(self, campaign: OutboundCampaign) -> dict:
+    def retry_failed(self, campaign: OutboundCampaign, message_ids=None) -> dict:
         locked = OutboundCampaign.objects.select_for_update().get(pk=campaign.pk)
         if locked.status == CampaignStatus.CANCELLED:
             raise ValidationError('İptal edilmiş kampanya yeniden denenemez.')
 
-        retried = OutboundQueueRepository.retry_failed_for_campaign(locked)
+        retried = OutboundQueueRepository.retry_failed_for_campaign(
+            locked, message_ids=message_ids,
+        )
         if retried:
             locked.status = CampaignStatus.QUEUED
             locked.save(update_fields=['status', 'updated_at'])

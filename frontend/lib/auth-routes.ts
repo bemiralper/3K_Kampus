@@ -147,7 +147,11 @@ export function toPortalInboxPath(
 ): string | null {
   const isInbox =
     pathname.startsWith("/admin/iletisim/sohbetler")
-    || pathname.startsWith("/admin/iletisim/mesajlar");
+    || pathname.startsWith("/admin/iletisim/mesajlar")
+    || pathname.startsWith("/coach/sohbetler")
+    || pathname.startsWith("/coach/mesajlar")
+    || pathname.startsWith("/muhasebe/iletisim/sohbetler")
+    || pathname.startsWith("/muhasebe/iletisim/mesajlar");
   if (!isInbox) return null;
   const conv = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search)
     .get("conversation");
@@ -155,5 +159,6 @@ export function toPortalInboxPath(
   const active = resolveActivePortal(user);
   if (active === "muhasebe" || isMuhasebeOnlyUser(user)) return `/muhasebe/iletisim/sohbetler${suffix}`;
   if (active === "coach" || isCoachOnlyUser(user)) return `/coach/sohbetler${suffix}`;
+  if (suffix) return `/admin/iletisim/sohbetler${suffix}`;
   return null;
 }

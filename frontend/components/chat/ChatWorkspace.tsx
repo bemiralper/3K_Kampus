@@ -235,9 +235,20 @@ export function ChatWorkspace({
   useEffect(() => {
     if (typeof window === "undefined" || isDrawer) return;
     const url = new URL(window.location.href);
+    const fromUrl = url.searchParams.get("conversation");
+    // İlk karede seçim henüz yokken adresteki sohbeti silme; bildirim
+    // bağlantısı aksi halde listeye düşüp kayboluyordu.
+    if (!selectedId && fromUrl) {
+      setSelectedId(fromUrl);
+      setMobilePane("thread");
+      setDetachedError(null);
+      return;
+    }
     if (selectedId) url.searchParams.set("conversation", selectedId);
     else url.searchParams.delete("conversation");
-    window.history.replaceState(null, "", url.toString());
+    const next = `${url.pathname}${url.search}`;
+    const current = `${window.location.pathname}${window.location.search}`;
+    if (next !== current) window.history.replaceState(null, "", url.toString());
   }, [selectedId, isDrawer]);
 
   // ── Canlı güncelleme ──
@@ -871,6 +882,14 @@ export function ChatWorkspace({
                 onLoadOlder={thread.loadOlder}
                 onRetryPending={thread.retryPending}
                 onDiscardPending={thread.discardPending}
+                onResendFailed={(message) => {
+                  const body = message.body?.trim();
+                  if (!body) {
+                    showToast("Bu mesajın metni yok; yeniden göndermek için yazın.");
+                    return;
+                  }
+                  void thread.send(body, { replyToId: message.reply_to?.id });
+                }}
                 onJumpToMessage={(messageId) =>
                   selectedId && setJump({ conversationId: selectedId, messageId })
                 }

@@ -34,6 +34,7 @@ import {
   IconMore,
   IconPin,
   IconReply,
+  IconRefresh,
   IconStar,
   IconTrash,
 } from "./icons";
@@ -68,6 +69,8 @@ interface Props {
   onLoadOlder: () => void;
   onRetryPending: (tempId: string) => void;
   onDiscardPending: (tempId: string) => void;
+  /** Sunucuya ulaşmış ama WhatsApp'ın reddettiği giden mesajı yeniden yolla. */
+  onResendFailed?: (message: MessageItem) => void;
   /** Sabitlenmiş mesaj şeridine tıklanınca o mesaja git. */
   onJumpToMessage: (messageId: string) => void;
   /** Sohbette sabitleme / başkasının mesajını silme yetkisi (`can_moderate`). */
@@ -90,6 +93,7 @@ export function ChatTimeline({
   onLoadOlder,
   onRetryPending,
   onDiscardPending,
+  onResendFailed,
   onJumpToMessage,
   canModerate = true,
   currentUserId = null,
@@ -166,6 +170,15 @@ export function ChatTimeline({
 
   const menuItems: ChatMenuItem[] = menu
     ? [
+        ...(menu.message.status === "FAILED" && menu.message.direction === "OUTBOUND" && onResendFailed
+          ? [{
+              id: "resend",
+              label: "Tekrar gönder",
+              icon: <IconRefresh size={16} />,
+              disabled: !menu.message.body?.trim(),
+              onSelect: () => onResendFailed(menu.message),
+            }]
+          : []),
         {
           id: "reply",
           label: "Yanıtla",
@@ -290,6 +303,7 @@ export function ChatTimeline({
                 highlighted={message.id === focusedMessageId}
                 searchQuery={searchQuery}
                 actions={actions}
+                onResendFailed={onResendFailed}
                 onMenu={(e) => setMenu({ message, anchor: anchorFromEvent(e) })}
                 onContextMenu={(e) => {
                   e.preventDefault();
@@ -334,6 +348,7 @@ function MessageRow({
   highlighted,
   searchQuery,
   actions,
+  onResendFailed,
   onMenu,
   onContextMenu,
 }: {
@@ -342,6 +357,7 @@ function MessageRow({
   highlighted: boolean;
   searchQuery: string;
   actions: MessageActions;
+  onResendFailed?: (message: MessageItem) => void;
   onMenu: (e: React.MouseEvent) => void;
   onContextMenu: (e: React.MouseEvent) => void;
 }) {
@@ -422,10 +438,23 @@ function MessageRow({
         </span>
 
         {message.status === "FAILED" ? (
-          <p className="chat-bubble-error">
-            <IconAlert size={13} />
-            {message.failed_reason || "Mesaj gönderilemedi."}
-          </p>
+          <div className="chat-pending-actions">
+            <p className="chat-bubble-error">
+              <IconAlert size={13} />
+              {message.failed_reason || "Mesaj gönderilemedi."}
+            </p>
+            {outbound && onResendFailed ? (
+              <button
+                type="button"
+                className="chat-link-btn"
+                disabled={!message.body?.trim()}
+                title={message.body?.trim() ? "Aynı metni yeniden gönder" : "Metni olmayan mesaj buradan yeniden gönderilemez"}
+                onClick={() => onResendFailed(message)}
+              >
+                Tekrar gönder
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         {message.reactions?.length ? (

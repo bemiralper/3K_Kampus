@@ -1713,7 +1713,10 @@ export function rewriteConversationInboxUrl(
 ): string | null {
   if (!url) return null;
   const convId = extractConversationIdFromUrl(url);
-  if (!convId || !INBOX_PATH_RE.test(url)) return url;
+  if (!convId) return url;
+  // Sohbet bağlantısı hangi portala yazılmış olursa olsun, tıklayanın
+  // kendi sohbet ekranında açılsın (muhasebe bildirimi /admin'e düşmesin).
+  if (!INBOX_PATH_RE.test(url) && !/[?&]conversation=/.test(url)) return url;
   return conversationInboxPath(convId, portal);
 }
 
@@ -2333,11 +2336,17 @@ export async function fetchCampaignDeliveries(
   };
 }
 
-export async function retryFailedCampaign(campaignId: string): Promise<CampaignItem> {
+export async function retryFailedCampaign(
+  campaignId: string,
+  messageIds?: string[],
+): Promise<CampaignItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request<CampaignItem>(`/campaigns/${campaignId}/retry-failed/`, {
     method: 'POST',
-    body: JSON.stringify({ kurum_id: kurumId }),
+    body: JSON.stringify({
+      kurum_id: kurumId,
+      ...(messageIds?.length ? { message_ids: messageIds } : {}),
+    }),
   });
 }
 

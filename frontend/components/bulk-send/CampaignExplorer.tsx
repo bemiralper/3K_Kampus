@@ -272,6 +272,22 @@ function CampaignCard({ campaign: c, active, onSelect }: { campaign: CampaignIte
   );
 }
 
+function contactRoleLabel(contactType: string | undefined): string {
+  switch ((contactType || "").toUpperCase()) {
+    case "OGRENCI":
+    case "STUDENT":
+      return "Öğrenci";
+    case "VELI":
+    case "PARENT":
+      return "Veli";
+    case "PERSONEL":
+    case "STAFF":
+      return "Personel";
+    default:
+      return contactType ? contactType : "—";
+  }
+}
+
 function CampaignDetailPane({
   campaignId, mode, onBack, onChanged, onToast,
 }: {
@@ -335,6 +351,21 @@ function CampaignDetailPane({
       .finally(() => { if (!cancelled) setDLoading(false); });
     return () => { cancelled = true; };
   }, [campaignId, dOffset, dStatus, dDebounced, campaign?.sent_count, campaign?.failed_count, campaign?.read_count]);
+
+  const retryOne = async (messageId: string) => {
+    if (!campaign) return;
+    setBusy(messageId);
+    try {
+      const fresh = await retryFailedCampaign(campaign.id, [messageId]);
+      setCampaign(fresh);
+      onChanged(fresh);
+      onToast("Mesaj yeniden kuyruğa alındı.", "success");
+    } catch (err) {
+      onToast(err instanceof Error ? err.message : "Tekrar gönderilemedi", "error");
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const run = async (kind: "cancel" | "retry" | "process") => {
     if (!campaign) return;
@@ -482,7 +513,7 @@ function CampaignDetailPane({
         ) : (
           <table className="bs-table">
             <thead>
-              <tr><th>Alıcı</th><th>Durum</th><th>Zaman</th><th>Not</th></tr>
+              <tr><th>Alıcı</th><th>Kim</th><th>Durum</th><th>Zaman</th><th>Not</th></tr>
             </thead>
             <tbody>
               {deliveries.map((d) => (
@@ -491,11 +522,23 @@ function CampaignDetailPane({
                     {d.contact_name || <span className="bs-muted">İsimsiz</span>}
                     <div className="phone">{d.phone}</div>
                   </td>
+                  <td data-label="Kim">{contactRoleLabel(d.contact_type)}</td>
                   <td className="status"><MessageStatusBadge status={d.status} /></td>
                   <td data-label="Zaman">{formatDateTime(d.sent_at)}</td>
                   <td data-label="Not">
                     {d.status === "FAILED" && d.failed_reason ? <div className="err" title={d.failed_reason}>{d.failed_reason_short || d.failed_reason}</div> : null}
                     {d.queue_note ? <div className="note">{d.queue_note}</div> : null}
+                    {d.status === "FAILED" && campaign.can_manage && campaign.status !== "CANCELLED" ? (
+                      <button
+                        type="button"
+                        className="bs-btn bs-btn-sm"
+                        style={{ marginTop: 6 }}
+                        disabled={!!busy}
+                        onClick={() => void retryOne(d.id)}
+                      >
+                        {busy === d.id ? "Gönderiliyor…" : "Tekrar gönder"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

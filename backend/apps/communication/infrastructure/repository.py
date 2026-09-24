@@ -1591,7 +1591,7 @@ class OutboundQueueRepositoryExtensions:
 
     @staticmethod
     @transaction.atomic
-    def retry_failed_for_campaign(campaign: OutboundCampaign) -> int:
+    def retry_failed_for_campaign(campaign: OutboundCampaign, message_ids=None) -> int:
         """Başarısız mesajları yeniden kuyruğa alır.
 
         Deneme hakkı bitmiş kayıtların kuyruk satırı silinmez; bu yüzden eski
@@ -1604,6 +1604,8 @@ class OutboundQueueRepositoryExtensions:
             direction=MessageDirection.OUTBOUND,
             status=MessageStatus.FAILED,
         )
+        if message_ids:
+            failed_messages = failed_messages.filter(id__in=list(message_ids))
         failed_ids = list(failed_messages.values_list('id', flat=True))
         if not failed_ids:
             return 0

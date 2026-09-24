@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { Suspense, useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { canStayOnMuhasebePortal, getDefaultHomePath } from "@/lib/auth-routes";
+import { canStayOnMuhasebePortal, getDefaultHomePath, toPortalInboxPath } from "@/lib/auth-routes";
 import { KurumProvider } from "@/lib/contexts/KurumContext";
 import MuhasebeSidebar, { MuhasebeBottomNav } from "@/components/muhasebe/MuhasebeSidebar";
 import MuhasebeTopbar from "@/components/muhasebe/MuhasebeTopbar";
@@ -132,9 +132,10 @@ export default function MuhasebeLayout({ children }: { children: ReactNode }) {
     }
 
     if (!canStayOnMuhasebePortal(user)) {
-      router.replace(getDefaultHomePath(user));
+      const inbox = toPortalInboxPath(user, pathname, window.location.search);
+      router.replace(inbox || getDefaultHomePath(user));
     }
-  }, [isLoading, isAuthenticated, user, router]);
+  }, [isLoading, isAuthenticated, user, router, pathname]);
 
   const handleLogout = () => {
     logout().then(() => router.push("/?giris=1"));

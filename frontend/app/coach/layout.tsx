@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import { useEffect, useMemo } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
-import { canStayOnCoachPortal, getDefaultHomePath } from "@/lib/auth-routes";
+import { canStayOnCoachPortal, getDefaultHomePath, toPortalInboxPath } from "@/lib/auth-routes";
 import { KurumProvider } from "@/lib/contexts/KurumContext";
 import CoachSidebar, { CoachBottomNav } from "@/components/coach/CoachSidebar";
 import CoachTopbar from "@/components/coach/CoachTopbar";
@@ -92,9 +92,10 @@ export default function CoachLayout({ children }: { children: ReactNode }) {
     }
 
     if (!canStayOnCoachPortal(user)) {
-      router.replace(getDefaultHomePath(user));
+      const inbox = toPortalInboxPath(user, pathname, window.location.search);
+      router.replace(inbox || getDefaultHomePath(user));
     }
-  }, [isLoading, isAuthenticated, user, router]);
+  }, [isLoading, isAuthenticated, user, router, pathname]);
 
   const handleLogout = () => {
     logout().then(() => router.push("/login"));

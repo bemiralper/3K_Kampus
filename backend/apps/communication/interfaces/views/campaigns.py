@@ -483,9 +483,14 @@ class CampaignRetryFailedView(CampaignBulkView):
         if denied:
             return denied
 
+        raw_ids = request.data.get('message_ids') or []
+        if isinstance(raw_ids, str):
+            raw_ids = [raw_ids]
+        message_ids = [str(item) for item in raw_ids if item]
+
         service = CampaignService()
         try:
-            result = service.retry_failed(campaign)
+            result = service.retry_failed(campaign, message_ids=message_ids or None)
         except ValidationError as exc:
             return Response({'error': str(exc.message if hasattr(exc, 'message') else exc)}, status=status.HTTP_400_BAD_REQUEST)
 
