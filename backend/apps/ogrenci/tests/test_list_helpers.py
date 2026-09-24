@@ -378,6 +378,66 @@ class BuildKayitQuerysetEnrollmentTest(TestCase):
         ids = self._ids(kalemler=[('grup_dersi', self.grup.id)])
         self.assertIn(self.ogrenci.id, ids)
 
+    def _aktif_sozlesme_with(self, paket):
+        soz = Sozlesme.objects.create(
+            sozlesme_no='SZ-LST-DEG',
+            ogrenci=self.ogrenci,
+            ogrenci_kayit=self.kayit,
+            egitim_yili=self.yil,
+            kurum=self.kurum,
+            sube=self.sube,
+            baslangic_tarihi=date(2025, 9, 1),
+            bitis_tarihi=date(2026, 6, 30),
+            paket_turu=PaketTuru.GRUP_DERSI,
+            paket_id=paket.id,
+            paket_adi=paket.ad,
+            durum=SozlesmeDurum.AKTIF,
+        )
+        SozlesmeKalemi.objects.create(
+            sozlesme=soz, kalem_turu=KalemTuru.PAKET, kalem_id=paket.id, kalem_adi=paket.ad,
+        )
+        return soz
+
+    def test_sozlesme_degisince_eski_paket_filtrede_cikmaz_ve_hizmet_bos_kalmaz(self):
+        """Kayıt anındaki paket (eski) kapanmamış olsa bile: eski paket filtresi
+        öğrenciyi getirmez; yeni paket filtresinde öğrenci gelir ve Hizmet dolu olur."""
+        yeni = GrupDersi.objects.create(
+            ad='12 AYT Grup', kod='G12',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        # Kayıt sihirbazının yazdığı eski paket erişimi — senkron çalışmamış, hâlâ aktif
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.ogrenci, paket_turu='grup_dersi', paket_id=self.grup.id,
+            paket_adi=self.grup.ad, aktif_mi=True,
+        )
+        self._aktif_sozlesme_with(yeni)
+
+        eski_ids = self._ids(kalemler=[('grup_dersi', self.grup.id)])
+        self.assertNotIn(self.ogrenci.id, eski_ids, 'eski paket filtresinde öğrenci gelmemeli')
+
+        qs, _ = build_kayit_queryset(self.ctx, _list_params(kalemler=[('grup_dersi', yeni.id)]))
+        kayitlar = list(qs)
+        self.assertEqual([k.ogrenci_id for k in kayitlar], [self.ogrenci.id])
+        kalemler = build_ogrenci_kalemler_map(kayitlar, filter_kalemler=[('grup_dersi', yeni.id)])
+        self.assertEqual([e['kalem_adi'] for e in kalemler[self.kayit.id]], ['12 AYT Grup'])
+
+    def test_filtre_ile_gosterilen_hizmet_her_zaman_dolu(self):
+        """Filtre sonucundaki her kayıt için Hizmet sütunu boş olamaz."""
+        yeni = GrupDersi.objects.create(
+            ad='9 Hazırlık', kod='G9', kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.ogrenci, paket_turu='grup_dersi', paket_id=self.grup.id,
+            paket_adi=self.grup.ad, aktif_mi=True,
+        )
+        self._aktif_sozlesme_with(yeni)
+        for spec in (('grup_dersi', self.grup.id), ('grup_dersi', yeni.id)):
+            qs, _ = build_kayit_queryset(self.ctx, _list_params(kalemler=[spec]))
+            kayitlar = list(qs)
+            kalemler = build_ogrenci_kalemler_map(kayitlar, filter_kalemler=[spec])
+            for k in kayitlar:
+                self.assertTrue(kalemler.get(k.id), f'{spec}: Hizmet sütunu boş')
+
 
 class SerializeVeliFieldsTest(TestCase):
     def setUp(self):

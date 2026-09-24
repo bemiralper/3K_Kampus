@@ -600,6 +600,40 @@ def get_ogrenci_ids_by_enrollment_kalem_filters(ctx, filter_specs, use_all_years
     return ogrenci_ids
 
 
+class _KayitRef:
+    """`build_ogrenci_kalemler_map` için hafif kayıt temsili (id, ogrenci, yıl)."""
+
+    __slots__ = ('id', 'ogrenci_id', 'egitim_yili_id')
+
+    def __init__(self, id, ogrenci_id, egitim_yili_id):
+        self.id = id
+        self.ogrenci_id = ogrenci_id
+        self.egitim_yili_id = egitim_yili_id
+
+
+def reconcile_kayit_ids_with_kalemler(kayit_qs, filter_kalemler):
+    """Kalem filtresine gerçekten uyan kayıt id'leri.
+
+    Ön filtre (sözleşme + kayıt paketi) geniş bir aday kümesi verir; sözleşme
+    değiştikten sonra kapanmamış eski `OgrenciEgitimPaketi`/`OgrenciEkHizmet`
+    satırları da adaya girer. Görüntülenecek kalemler ise sözleşmeyi esas
+    alır (`_merge_enrollment_kalemler`, only_if_open). İki mantık ayrı
+    olduğu için "öğrenci listede, Hizmet sütunu boş" ve "eski hizmet filtrede
+    geliyor" hataları oluşuyordu. Burada nihai karar görüntüleme mantığına
+    bırakılır: filtreye uyan en az bir gösterilebilir kalemi olan kayıt kalır.
+    """
+    if not filter_kalemler:
+        return kayit_qs.values_list('id', flat=True)
+    refs = [
+        _KayitRef(kid, oid, yid)
+        for kid, oid, yid in kayit_qs.values_list('id', 'ogrenci_id', 'egitim_yili_id')
+    ]
+    if not refs:
+        return []
+    kalemler_map = build_ogrenci_kalemler_map(refs, filter_kalemler=list(filter_kalemler))
+    return [ref.id for ref in refs if kalemler_map.get(ref.id)]
+
+
 def build_kayit_queryset(ctx, params, apply_durum=True):
     """OgrenciKayit queryset — aktif kurum/şube/yıl ve gelişmiş filtreler.
 
@@ -699,6 +733,11 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
             ctx, filter_kalemler, use_all_years,
         )
         qs = qs.filter(ogrenci_id__in=ogrenci_ids)
+        # Filtre ile Hizmet sütunu aynı kaynağı kullansın: aday kayıtların
+        # gösterilecek kalem listesi hesaplanır, filtreye uyan kalemi olmayan
+        # kayıt listeden düşer. Böylece sözleşmesi sonradan değiştirilen
+        # öğrenci eski paket filtresinde çıkmaz, çıkan öğrencinin sütunu boş kalmaz.
+        qs = qs.filter(id__in=reconcile_kayit_ids_with_kalemler(qs, filter_kalemler))
 
     if params['q']:
         qs = apply_smart_search(qs, params['q'], prefix='ogrenci__')

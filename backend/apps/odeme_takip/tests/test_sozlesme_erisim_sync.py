@@ -185,3 +185,26 @@ class SozlesmeErisimSyncTests(TestCase):
                 ogrenci=self.ogrenci, ek_hizmet__deneme_paketi=deneme, aktif_mi=True,
             ).exists()
         )
+
+
+class KalemCikarErisimKapatirTests(SozlesmeErisimSyncTests):
+    """Sözleşmeden kalem çıkarılınca öğrencinin o hizmete erişimi de kapanır.
+
+    Eskiden `kalem_cikar` erişim senkronunu çağırmıyordu; `OgrenciEkHizmet`
+    aktif kalıyor, öğrenci listesi filtresi çıkarılmış hizmeti bulmaya devam ediyordu.
+    """
+
+    def test_kalem_cikar_erisimi_kapatir(self):
+        sync_sozlesme_erisim(self.sozlesme)
+        self.assertTrue(OgrenciEkHizmet.objects.filter(
+            ogrenci=self.ogrenci, ek_hizmet=self.kutuphane, aktif_mi=True,
+        ).exists())
+        kalem = SozlesmeKalemi.objects.get(sozlesme=self.sozlesme, kalem_id=self.kutuphane.id)
+        result, error = SozlesmeService().kalem_cikar(kalem.id)
+        self.assertIsNone(error, error)
+        self.assertFalse(OgrenciEkHizmet.objects.filter(
+            ogrenci=self.ogrenci, ek_hizmet=self.kutuphane, aktif_mi=True,
+        ).exists(), 'çıkarılan kalemin erişimi kapanmalı')
+        self.assertTrue(OgrenciEkHizmet.objects.filter(
+            ogrenci=self.ogrenci, ek_hizmet=self.kocluk, aktif_mi=True,
+        ).exists(), 'kalan kalemin erişimi açık kalmalı')

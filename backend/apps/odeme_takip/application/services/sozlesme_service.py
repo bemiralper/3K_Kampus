@@ -658,6 +658,8 @@ class SozlesmeService:
                 ensure_program_from_sozlesme(sozlesme, user=user)
             except Exception:
                 logger.exception('Özel ders program senkronu başarısız (sozlesme=%s)', sozlesme.id)
+        if kalemler_raw is not None or any(k in data for k in ('paket_id', 'paket_turu')):
+            # Kalemler ya da ana paket değişti: erişim kayıtlarını (eksik aç / eskiyi kapat) eşitle
             self._sync_erisim(sozlesme, user=user)
 
         return sozlesme, None
@@ -1055,6 +1057,10 @@ class SozlesmeService:
             'aciklama': f'Kalem çıkarıldı: {kalem_adi} (-{kalem_net} TL)',
             'islem_yapan': user,
         })
+
+        # Çıkarılan kalemin öğrenci erişimi (OgrenciEgitimPaketi / OgrenciEkHizmet)
+        # kapansın; aksi halde öğrenci listesi filtresi eski hizmeti bulmaya devam ediyordu.
+        self._sync_erisim(sozlesme, user=user)
 
         return {'removed': True}, None
 
