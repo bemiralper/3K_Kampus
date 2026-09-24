@@ -1652,7 +1652,7 @@ export function communicationPortalPaths(portal: InboxPortal): CommunicationPort
       notificationTemplates: null,
       bulk: '/muhasebe/iletisim/toplu-gonder',
       history: '/muhasebe/iletisim/kampanyalar',
-      campaign: (id: string) => `/muhasebe/iletisim/kampanyalar/${id}`,
+      campaign: (id: string) => `/muhasebe/iletisim/kampanyalar?campaign=${id}`,
       queue: '/muhasebe/iletisim/kuyruk',
     };
   }
@@ -1665,8 +1665,8 @@ export function communicationPortalPaths(portal: InboxPortal): CommunicationPort
       metaTemplates: null,
       notificationTemplates: '/coach/iletisim/bildirim-sablonlari',
       bulk: '/coach/toplu-gonder',
-      history: '/coach/toplu-gonder',
-      campaign: (id: string) => `/coach/toplu-gonder/${id}`,
+      history: '/coach/toplu-gonder/gecmis',
+      campaign: (id: string) => `/coach/toplu-gonder/gecmis?campaign=${id}`,
       queue: null,
     };
   }
@@ -1678,7 +1678,7 @@ export function communicationPortalPaths(portal: InboxPortal): CommunicationPort
     notificationTemplates: '/admin/iletisim/bildirim-sablonlari',
     bulk: '/admin/iletisim/toplu-gonder',
     history: '/admin/iletisim/kampanyalar',
-    campaign: (id: string) => `/admin/iletisim/kampanyalar/${id}`,
+    campaign: (id: string) => `/admin/iletisim/kampanyalar?campaign=${id}`,
     queue: '/admin/iletisim/kuyruk',
   };
 }

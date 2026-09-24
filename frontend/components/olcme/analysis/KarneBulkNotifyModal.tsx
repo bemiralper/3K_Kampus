@@ -286,7 +286,7 @@ export default function KarneBulkNotifyModal({
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {done.campaignId && (
                 <Link
-                  href={`/admin/iletisim/kampanyalar/${done.campaignId}`}
+                  href={`/admin/iletisim/kampanyalar?campaign=${done.campaignId}`}
                   className="btn-modern btn-primary"
                   style={{ textDecoration: 'none', padding: '8px 14px', borderRadius: 8, background: '#0061a6', color: '#fff', fontWeight: 600 }}
                 >

@@ -173,7 +173,7 @@ export default function ExamPublishNotifyModal({
             </p>
             <div style={{ display: 'flex', gap: 8 }}>
               <Link
-                href={`/admin/iletisim/kampanyalar/${campaignId}`}
+                href={`/admin/iletisim/kampanyalar?campaign=${campaignId}`}
                 className="btn-modern btn-primary"
                 style={{ textDecoration: 'none' }}
               >

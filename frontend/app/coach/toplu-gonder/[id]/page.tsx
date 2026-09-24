@@ -1,13 +1,6 @@
-import KampanyaDetayClient from "@/app/admin/iletisim/kampanyalar/[id]/KampanyaDetayClient";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Gönderim Detayı — Koç Paneli",
-};
-
-export default function CoachKampanyaDetayPage() {
-  return (
-    <div className="coach-toplu-gonder-page">
-      <KampanyaDetayClient portal="coach" />
-    </div>
-  );
+/** Eski detay adresi → liste+detay ekranı (`?campaign=`). */
+export default function Page({ params }: { params: { id: string } }) {
+  redirect(`/coach/toplu-gonder/gecmis?campaign=${encodeURIComponent(params.id)}`);
 }

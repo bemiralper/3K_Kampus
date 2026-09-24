@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import TopluGonderClient from "./TopluGonderClient";
+
+import BulkSendStudio from "@/components/bulk-send/BulkSendStudio";
 
 export const dynamic = "force-dynamic";
 
@@ -7,10 +8,10 @@ export const metadata = {
   title: "Toplu Gönderim — 3K Kampüs",
 };
 
-export default function TopluGonderPage() {
+export default function Page() {
   return (
     <Suspense fallback={<p style={{ color: "#667781", padding: "1rem" }}>Toplu gönderim yükleniyor…</p>}>
-      <TopluGonderClient />
+      <BulkSendStudio mode="admin" />
     </Suspense>
   );
 }

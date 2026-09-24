@@ -1,6 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+
+import AnchoredPopover from "@/components/bulk-send/AnchoredPopover";
 import type {
   AudienceCatalog,
   AudienceCatalogField,
@@ -133,29 +135,37 @@ function CheckboxMultiSelect({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const selectedSet = useMemo(() => new Set(selected), [selected]);
+
+  // Seçililer üstte, sonra alfabetik; arama Türkçe duyarsız
   const filtered = useMemo(() => {
     const needle = q.trim();
-    if (!needle) return options;
-    return options.filter((opt) => trIncludes(opt.label, needle));
-  }, [options, q]);
+    const list = needle ? options.filter((opt) => trIncludes(opt.label, needle)) : options;
+    return [...list].sort((a, b) => {
+      const sa = selectedSet.has(String(a.value)) ? 0 : 1;
+      const sb = selectedSet.has(String(b.value)) ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+      return a.label.localeCompare(b.label, "tr");
+    });
+  }, [options, q, selectedSet]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setQ("");
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  const close = () => {
+    setOpen(false);
+    setQ("");
+  };
 
   const toggle = (raw: string) => {
     onChange(selectedSet.has(raw) ? selected.filter((item) => item !== raw) : [...selected, raw]);
   };
+
+  const selectFiltered = () => {
+    const next = new Set(selected);
+    filtered.forEach((opt) => next.add(String(opt.value)));
+    onChange(Array.from(next));
+  };
+
+  const allFilteredOn = filtered.length > 0 && filtered.every((opt) => selectedSet.has(String(opt.value)));
 
   const summary = selected.length
     ? selected
@@ -165,45 +175,68 @@ function CheckboxMultiSelect({
     : placeholder;
 
   return (
-    <div className="tg-ms" ref={rootRef}>
+    <div className="tg-ms">
       <button
+        ref={triggerRef}
         type="button"
         className={`tg-ms-trigger${open ? " is-open" : ""}${selected.length ? " has-value" : ""}`}
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
+        aria-haspopup="listbox"
       >
         <span>{summary}</span>
         <em>{selected.length || ""}</em>
       </button>
-      {open && (
-        <div className="tg-ms-menu" role="listbox" aria-multiselectable="true">
-          <input
-            className="tg-search"
-            autoFocus
-            placeholder="Ara"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <div className="tg-ms-list">
-            {filtered.length === 0 && <div className="tg-empty">Sonuç yok</div>}
-            {filtered.map((opt) => {
-              const raw = String(opt.value);
-              const on = selectedSet.has(raw);
-              return (
-                <label key={raw} className={`tg-check-row${on ? " is-on" : ""}`}>
+      <AnchoredPopover open={open} anchorRef={triggerRef} onClose={close} width={340} maxHeight={420} ariaLabel={placeholder}>
+        <div className="bs-pop-head">
+          <strong>{placeholder}</strong>
+          <span className="bs-muted">{selected.length ? `${selected.length} seçili` : `${options.length} seçenek`}</span>
+        </div>
+        <input
+          className="bs-pop-search"
+          autoFocus
+          placeholder="Ara…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && filtered.length === 1) {
+              e.preventDefault();
+              toggle(String(filtered[0].value));
+              setQ("");
+            }
+          }}
+        />
+        <div className="bs-pop-list" role="listbox" aria-multiselectable="true">
+          {filtered.length === 0 && <div className="tg-empty">Sonuç yok</div>}
+          {filtered.map((opt, index) => {
+            const raw = String(opt.value);
+            const on = selectedSet.has(raw);
+            const prevOn = index > 0 && selectedSet.has(String(filtered[index - 1].value));
+            return (
+              <div key={raw}>
+                {!q && index > 0 && prevOn && !on && <div className="bs-pop-sep" />}
+                <label className={`bs-pop-row${on ? " is-on" : ""}`} role="option" aria-selected={on}>
                   <input type="checkbox" checked={on} onChange={() => toggle(raw)} />
                   <span>{opt.label}</span>
                 </label>
-              );
-            })}
-          </div>
-          {selected.length > 0 && (
-            <button type="button" className="tg-btn-ghost" onClick={() => onChange([])}>
-              Seçimi temizle
-            </button>
-          )}
+              </div>
+            );
+          })}
         </div>
-      )}
+        <div className="bs-pop-foot">
+          <span style={{ display: "flex", gap: 10 }}>
+            {filtered.length > 1 && !allFilteredOn && (
+              <button type="button" className="bs-counter-link" onClick={selectFiltered}>
+                {q ? "Bulunanları seç" : "Tümünü seç"} ({filtered.length})
+              </button>
+            )}
+            {selected.length > 0 && (
+              <button type="button" className="bs-counter-link" onClick={() => onChange([])}>Temizle</button>
+            )}
+          </span>
+          <button type="button" className="bs-btn-primary bs-btn-sm" onClick={close}>Tamam</button>
+        </div>
+      </AnchoredPopover>
     </div>
   );
 }
@@ -217,7 +250,7 @@ function AddFilterPicker({
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
-  const rootRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
   const grouped = useMemo(() => {
     const needle = q.trim();
     const map = new Map<string, AudienceCatalogField[]>();
@@ -232,61 +265,52 @@ function AddFilterPicker({
     return map;
   }, [fields, q]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDoc = (event: MouseEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) {
-        setOpen(false);
-        setQ("");
-      }
-    };
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open]);
+  const close = () => {
+    setOpen(false);
+    setQ("");
+  };
 
   return (
-    <div className="tg-picker" ref={rootRef}>
-      <button type="button" className="tg-btn" onClick={() => setOpen((v) => !v)}>
+    <div className="tg-picker">
+      <button ref={triggerRef} type="button" className="tg-btn" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
         + Filtre ekle
       </button>
-      {open && (
-        <div className="tg-popover tg-popover-lg">
-          <div className="tg-popover-head">
-            <strong>Filtre ekle</strong>
-            <button type="button" className="tg-icon-btn" aria-label="Kapat" onClick={() => setOpen(false)}>×</button>
-          </div>
-          <input
-            className="tg-search"
-            autoFocus
-            placeholder="Sınıf, şube, koç, paket…"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-          />
-          <div className="tg-popover-body">
-            {fields.length === 0 && <div className="tg-empty">Bu kişi türü için filtre yok.</div>}
-            {Array.from(grouped.entries()).map(([cat, list]) => (
-              <div key={cat} className="tg-popover-cat">
-                <div className="tg-cat">{cat}</div>
-                {list.map((field) => (
-                  <button
-                    key={field.key}
-                    type="button"
-                    className="tg-opt tg-opt-card"
-                    onClick={() => {
-                      onPick(field);
-                      setOpen(false);
-                      setQ("");
-                    }}
-                  >
-                    <strong>{field.label}</strong>
-                    <span>{field.options?.length ? `${field.options.length} seçenek` : "Serbest değer"}</span>
-                  </button>
-                ))}
-              </div>
-            ))}
-          </div>
+      <AnchoredPopover open={open} anchorRef={triggerRef} onClose={close} width={400} maxHeight={440} ariaLabel="Filtre ekle">
+        <div className="bs-pop-head">
+          <strong>Filtre ekle</strong>
+          <button type="button" className="tg-icon-btn" aria-label="Kapat" onClick={close}>×</button>
         </div>
-      )}
+        <input
+          className="bs-pop-search"
+          autoFocus
+          placeholder="Sınıf, şube, koç, paket…"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <div className="bs-pop-list">
+          {fields.length === 0 && <div className="tg-empty">Bu kişi türü için filtre yok.</div>}
+          {fields.length > 0 && grouped.size === 0 && <div className="tg-empty">Sonuç yok</div>}
+          {Array.from(grouped.entries()).map(([cat, list]) => (
+            <div key={cat}>
+              <div className="bs-pop-cat">{cat}</div>
+              {list.map((field) => (
+                <button
+                  key={field.key}
+                  type="button"
+                  className="bs-pop-opt"
+                  onClick={() => {
+                    onPick(field);
+                    close();
+                  }}
+                >
+                  <strong>{field.label}</strong>
+                  <span>{field.options?.length ? `${field.options.length} seçenek` : "Serbest değer"}</span>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </AnchoredPopover>
     </div>
   );
 }

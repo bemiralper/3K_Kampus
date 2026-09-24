@@ -130,7 +130,7 @@ function Row({
       </div>
       {row.campaign_id && (
         <div style={{ fontSize: 11, textAlign: 'right' }}>
-          <Link href={`/admin/iletisim/kampanyalar/${row.campaign_id}`} style={{ color: '#0262a7', fontWeight: 600 }}>
+          <Link href={`/admin/iletisim/kampanyalar?campaign=${row.campaign_id}`} style={{ color: '#0262a7', fontWeight: 600 }}>
             Gönderim geçmişi
           </Link>
         </div>

@@ -34,6 +34,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/takvim": "Takvim",
   "/coach/sohbetler": "Sohbetler",
   "/coach/toplu-gonder": "Toplu Gönder",
+  "/coach/toplu-gonder/gecmis": "Gönderim Geçmişi",
   "/coach/raporlar": "Raporlar",
 };
 

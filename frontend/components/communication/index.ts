@@ -3,7 +3,6 @@ export { default as WhatsAppPreviewBubble } from "./WhatsAppPreviewBubble";
 export { default as WhatsAppPhonePreview } from "./WhatsAppPhonePreview";
 export { default as RichMessageToolbar } from "./RichMessageToolbar";
 export { default as AttachmentDropZone } from "./AttachmentDropZone";
-export { default as CampaignHistoryPanel } from "./CampaignHistoryPanel";
 export { default as CommunicationPageShell } from "./CommunicationPageShell";
 export { CommDialog, CommConfirmDialog } from "./CommDialog";
 export type { CommConfirmState } from "./CommDialog";

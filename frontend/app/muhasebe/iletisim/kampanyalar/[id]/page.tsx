@@ -1,9 +1,6 @@
-import KampanyaDetayClient from "@/app/admin/iletisim/kampanyalar/[id]/KampanyaDetayClient";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Kampanya Raporu — Muhasebe",
-};
-
-export default function MuhasebeKampanyaDetayPage() {
-  return <KampanyaDetayClient portal="muhasebe" />;
+/** Eski detay adresi → liste+detay ekranı (`?campaign=`). */
+export default function Page({ params }: { params: { id: string } }) {
+  redirect(`/muhasebe/iletisim/kampanyalar?campaign=${encodeURIComponent(params.id)}`);
 }

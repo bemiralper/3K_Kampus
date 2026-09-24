@@ -1,9 +1,6 @@
-import KampanyaDetayClient from "./KampanyaDetayClient";
+import { redirect } from "next/navigation";
 
-export const metadata = {
-  title: "Kampanya Raporu — 3K Kampüs",
-};
-
-export default function KampanyaDetayPage() {
-  return <KampanyaDetayClient />;
+/** Eski detay adresi → liste+detay ekranı (`?campaign=`). */
+export default function Page({ params }: { params: { id: string } }) {
+  redirect(`/admin/iletisim/kampanyalar?campaign=${encodeURIComponent(params.id)}`);
 }

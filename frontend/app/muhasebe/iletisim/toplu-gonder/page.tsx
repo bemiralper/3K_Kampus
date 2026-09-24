@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import TopluGonderClient from "@/app/admin/iletisim/toplu-gonder/TopluGonderClient";
+
+import BulkSendStudio from "@/components/bulk-send/BulkSendStudio";
 
 export const dynamic = "force-dynamic";
 
@@ -7,10 +8,10 @@ export const metadata = {
   title: "Toplu Gönderim — Muhasebe",
 };
 
-export default function MuhasebeTopluGonderPage() {
+export default function Page() {
   return (
     <Suspense fallback={<p style={{ color: "#667781", padding: "1rem" }}>Toplu gönderim yükleniyor…</p>}>
-      <TopluGonderClient mode="muhasebe" />
+      <BulkSendStudio mode="muhasebe" />
     </Suspense>
   );
 }
