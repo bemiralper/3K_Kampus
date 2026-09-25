@@ -99,3 +99,6 @@ EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL') or os.environ.get('EMAIL_HOST_USER') or 'no-reply@localhost'
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Çek/senet portföyü. Tanımsızsa senkron hiç kayıt açmaz; sözleşme yine çek görünür.
+CEK_SENET_V2_ENABLED = os.environ.get('CEK_SENET_V2_ENABLED', 'true').lower() in ('1', 'true', 'yes')
