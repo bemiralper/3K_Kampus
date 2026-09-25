@@ -44,9 +44,20 @@ class Subject(models.Model):
 
 class Topic(models.Model):
     """Konu - dogrudan Ders'e bagli."""
+
+    class Program(models.TextChoices):
+        PROGRAM_2018 = 'program_2018', '2018 Programı'
+        MAARIF = 'maarif', 'Maarif Modeli'
+
     subject = models.ForeignKey(
         Subject, on_delete=models.CASCADE,
         related_name='topics', verbose_name='Ders',
+    )
+    program = models.CharField(
+        'Program', max_length=20,
+        choices=Program.choices,
+        default=Program.PROGRAM_2018,
+        db_index=True,
     )
     code  = models.CharField('Konu Kodu', max_length=30, blank=True,
                              help_text='Or: 9.1, 9.2')

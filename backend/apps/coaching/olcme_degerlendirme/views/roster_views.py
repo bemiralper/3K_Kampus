@@ -25,8 +25,10 @@ from ..services.exam_roster import (
     replace_audiences,
     replace_auto_participants,
     replace_rooms,
+    serialize_room,
     resolve_exam_candidates,
-    seating_capacity_error,
+    exam_seating_capacity_error,
+    rooms_for_session,
     serialize_participant,
 )
 from ..services.exam_schedule_groups import attach_groups_to_candidates
@@ -145,7 +147,7 @@ def apply_roster_payload(exam, data: dict) -> dict:
     seating = None
     count = _max_session_count(exam)
     if rooms and count:
-        err = seating_capacity_error(count, rooms)
+        err = exam_seating_capacity_error(exam, rooms)
         if err:
             return {'ok': False, 'error': err}
     if assignments:
@@ -230,10 +232,7 @@ def exam_participants(request, exam_pk):
     return Response({
         'count': len(rows),
         'participants': rows,
-        'rooms': [
-            {'id': r.id, 'name': r.name, 'capacity': r.capacity, 'order': r.order}
-            for r in exam.rooms.order_by('order', 'id')
-        ],
+        'rooms': [serialize_room(r) for r in exam.rooms.order_by('order', 'id')],
         'sessions': [
             {
                 'id': s.id,
@@ -321,7 +320,7 @@ def exam_participant_add(request, exam_pk):
                 p.delete()
             return Response({'error': seat_err}, status=400)
     elif p and not p.room_id:
-        for room in exam.rooms.order_by('order', 'id'):
+        for room in rooms_for_session(exam, p.exam_session_id):
             if assign_participant_to_room(p, room) is None:
                 break
     return Response(_participant_row(exam, p.pk), status=201)
@@ -436,13 +435,10 @@ def exam_rooms(request, exam_pk):
     count = _max_session_count(exam)
     cap = sum(r.capacity for r in rooms)
     return Response({
-        'rooms': [
-            {'id': r.id, 'name': r.name, 'capacity': r.capacity, 'order': r.order}
-            for r in rooms
-        ],
+        'rooms': [serialize_room(r) for r in rooms],
         'participant_count': count,
         'total_capacity': cap,
-        'warning': seating_capacity_error(count, rooms),
+        'warning': exam_seating_capacity_error(exam, rooms),
     })
 
 
@@ -887,3 +883,69 @@ def exam_hatirlatma_send(request, exam_pk):
         if row_sent and event.key == HATIRLATMA_EVENT:
             mark_seat_notified(p)
     return Response({'sent': sent, 'skipped': skipped, 'errors': errors})
+
+
+def _salon_row(row) -> dict:
+    return {'id': row.id, 'name': row.name, 'capacity': row.capacity}
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([OlcmeModulePermission])
+def deneme_salonlari(request):
+    """Şubenin kayıtlı deneme salonları. POST aynı adı günceller."""
+    ctx, err = mandatory_olcme_context(request)
+    if err:
+        return err
+    from ..models.roster import DenemeSalon
+
+    if request.method == 'GET':
+        rows = DenemeSalon.objects.filter(sube_id=ctx['sube_id'])
+        return Response([_salon_row(r) for r in rows])
+
+    name = (request.data.get('name') or '').strip()
+    if not name:
+        return Response({'error': 'Salon adı yazın.'}, status=400)
+    try:
+        capacity = max(1, int(request.data.get('capacity') or 30))
+    except (TypeError, ValueError):
+        capacity = 30
+    row, _created = DenemeSalon.objects.update_or_create(
+        sube_id=ctx['sube_id'],
+        name=name,
+        defaults={'capacity': capacity},
+    )
+    return Response(_salon_row(row))
+
+
+@api_view(['PATCH', 'DELETE'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([OlcmeModulePermission])
+def deneme_salon_detail(request, salon_id):
+    """Kayıtlı salonun adını ve kapasitesini değiştirir veya listeden siler."""
+    ctx, err = mandatory_olcme_context(request)
+    if err:
+        return err
+    from ..models.roster import DenemeSalon
+
+    row = DenemeSalon.objects.filter(pk=salon_id, sube_id=ctx['sube_id']).first()
+    if row is None:
+        return Response({'error': 'Salon bulunamadı.'}, status=404)
+    if request.method == 'DELETE':
+        row.delete()
+        return Response(status=204)
+
+    name = (request.data.get('name') or '').strip()
+    if not name:
+        return Response({'error': 'Salon adı yazın.'}, status=400)
+    try:
+        capacity = max(1, int(request.data.get('capacity') or row.capacity))
+    except (TypeError, ValueError):
+        capacity = row.capacity
+    taken = DenemeSalon.objects.filter(sube_id=ctx['sube_id'], name=name).exclude(pk=row.pk)
+    if taken.exists():
+        return Response({'error': 'Bu adla kayıtlı salon var.'}, status=400)
+    row.name = name
+    row.capacity = capacity
+    row.save(update_fields=['name', 'capacity'])
+    return Response(_salon_row(row))

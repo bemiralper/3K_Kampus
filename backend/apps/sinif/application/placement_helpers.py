@@ -233,6 +233,58 @@ def remove_students_from_sinif(
     return {'removed': removed, 'skipped': skipped, 'mevcutluk': mevcutluk}
 
 
+def classroom_on_term(sinif: Sinif, term) -> Sinif:
+    """Aynı adlı sınıfın istenen dönemdeki kopyasını döndürür.
+
+    Eğitim yılında her dönemin kendi sınıf satırı vardır. Öğrenci detayındaki
+    seçim önceki dönemin kopyasına düşerse yerleşim, listede görünen aktif
+    dönem sınıfına yazılmaz.
+    """
+    if sinif is None or term is None or sinif.term_id == term.id:
+        return sinif
+    sibling = (
+        Sinif.objects.filter(
+            kurum_id=sinif.kurum_id,
+            sube_id=sinif.sube_id,
+            egitim_yili_id=term.egitim_yili_id,
+            term_id=term.id,
+            ad=sinif.ad,
+        )
+        .order_by('-aktif_mi', 'id')
+        .first()
+    )
+    return sibling or sinif
+
+
+def rebind_placements_onto_term(term) -> int:
+    """Aktif dönem yerleşimini, o dönemin sınıf satırına taşır."""
+    if term is None:
+        return 0
+    moved = 0
+    placements = (
+        StudentClassPlacement.objects.filter(term_id=term.id, is_active=True)
+        .select_related('classroom')
+    )
+    for placement in placements:
+        classroom = placement.classroom
+        if classroom is None or classroom.term_id == term.id:
+            continue
+        target = classroom_on_term(classroom, term)
+        if target is None or target.id == classroom.id:
+            continue
+        placement.classroom_id = target.id
+        placement.save(update_fields=['classroom', 'updated_at'])
+        OgrenciKayit.objects.filter(
+            ogrenci_id=placement.student_id,
+            egitim_yili_id=term.egitim_yili_id,
+            kurum_id=term.kurum_id,
+            sube_id=term.sube_id,
+            aktif_mi=True,
+        ).update(sinif_id=target.id)
+        moved += 1
+    return moved
+
+
 def get_student_term_classroom(*, student_id: int, term_id: int) -> Sinif | None:
     active_year = get_active_academic_year()
     placement = (

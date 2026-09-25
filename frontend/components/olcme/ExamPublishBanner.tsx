@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { examApi } from './api';
+import s from '../../app/admin/olcme-degerlendirme/olcme.module.css';
 import type { ExamPublishDispatch, ExamPublishStatus } from './types';
 import ExamPublishNotifyModal from './ExamPublishNotifyModal';
 
@@ -77,20 +78,13 @@ function Row({
 
   return (
     <div style={{ display: 'grid', gap: 4 }}>
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: '96px minmax(0, 1fr) auto',
-        gap: 8,
-        alignItems: 'center',
-        fontSize: 12,
-        lineHeight: 1.3,
-      }}>
+      <div className={s.publishRow}>
         <span style={{ fontWeight: 650, color: '#334155' }}>{label}</span>
         <span style={{ color: tone, minWidth: 0 }}>
           {row.is_enabled ? fmtShort(row.scheduled_at) : (row.scheduled_at ? `Kapalı · ${fmtShort(row.scheduled_at)}` : 'Zamanlama yok')}
           <span style={{ marginLeft: 6, color: '#94a3b8' }}>{statusText(row)}</span>
         </span>
-        <span style={{ display: 'flex', gap: 4, flexShrink: 0, alignItems: 'center' }}>
+        <span className={s.publishActions}>
           <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#475569' }}>
             <input
               type="checkbox"
@@ -218,7 +212,7 @@ export default function ExamPublishBanner({
       display: 'grid',
       gap: 8,
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
         <div style={{ fontSize: 11, fontWeight: 650, color: '#94a3b8', letterSpacing: 0.3 }}>
           WHATSAPP YAYIN
         </div>
@@ -230,8 +224,8 @@ export default function ExamPublishBanner({
         </Link>
       </div>
       <p style={{ margin: 0, fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>
-        Gönder alıcı listesini açar; veli/öğrenci seçilir, öğrenciler çıkarılabilir.
-        Zamanlı gönderim isteğe bağlıdır — açılmazsa saat dolsa bile otomatik gitmez.
+        Zamanlı kutu işaretliyse saat gelince yoklamada gelen öğrencilere ve velilerine gider.
+        Kutu kapalıysa saat dolsa bile otomatik gitmez. Gönder aynı listeyi açar.
         Sonuçlar İletişim → Gönderim Geçmişi’nde görünür.
       </p>
       {rows.map(item => (

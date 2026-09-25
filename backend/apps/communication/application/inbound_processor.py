@@ -79,9 +79,6 @@ class InboundProcessor:
                 kurum_id = config.kurum_id if config else None
                 if kurum_id:
                     kurum_id_for_log = kurum_id
-                if config:
-                    ConversationRepository.align_accounting_line_conversations(config)
-
                 event = RawWebhookEventRepository.create(
                     kurum_id=kurum_id,
                     phone_number_id=phone_number_id,

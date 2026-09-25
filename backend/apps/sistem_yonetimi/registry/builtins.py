@@ -158,6 +158,7 @@ def _register_jobs():
         JobSpec('backup_run', 'Otomatik yedek çalıştır', 'run_scheduled_backups', 'Zamanlanmış yedeği hemen çalıştırır', '* * * * *', 'backup', {'force': True}),
         JobSpec('backup_purge', 'Eski yedek temizliği', 'purge_expired_backups', 'Saklama politikasına göre siler', '0 4 * * *', 'backup'),
         JobSpec('comm_queue', 'İletişim kuyruğu', 'process_communication_queue', 'WhatsApp/SMS gönderim kuyruğu', '* * * * *', 'comm'),
+        JobSpec('olcme_publish', 'Sınav yayın gönderimi', 'process_olcme_publish', 'Zamanlı karne ve cevap anahtarı', '* * * * *', 'comm'),
         JobSpec('campaigns', 'Zamanlanmış kampanyalar', 'process_scheduled_campaigns', 'Kampanya onay/kuyruk', '*/5 * * * *', 'comm'),
         JobSpec('payment_reminders', 'Ödeme hatırlatmaları', 'send_payment_reminders', 'Taksit hatırlatma kuyruğu', '0 9 * * *', 'comm'),
         JobSpec('reminders', 'Takvim hatırlatmaları', 'process_reminders', 'Takvim bildirimleri', '* * * * *', 'system'),

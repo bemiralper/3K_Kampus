@@ -7,6 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { downloadJsPdf } from '@/lib/download-file';
 import type { PdfOrientation } from '@/app/ogrenciler/lib/ogrenciListPdfExport';
 import type { ExamParticipantRow, ExamRoomItem } from '../types';
+import { seatNumbers } from './seating';
 import {
   ROSTER_KIND_TITLES,
   participantExportValue,
@@ -313,7 +314,7 @@ function drawSeatingGrid(
   doc: jsPDF,
   startY: number,
   items: ExamParticipantRow[],
-  capacity: number,
+  seats: number[],
   extraKeys: string[],
 ) {
   const pw = doc.internal.pageSize.getWidth();
@@ -332,16 +333,17 @@ function drawSeatingGrid(
       if (n > maxSeat) maxSeat = n;
     }
   }
-  const unseated = items.filter(r => !r.seat_no);
-  const total = Math.max(capacity, maxSeat, items.length);
-  const slots: { seat: number; row: ExamParticipantRow | null }[] = [];
-  for (let n = 1; n <= total; n++) {
-    slots.push({ seat: n, row: bySeat.get(n) || null });
-  }
-  unseated.forEach((row, i) => {
+  const plan = seats.length ? seats : Array.from({ length: Math.max(maxSeat, items.length) }, (_, i) => i + 1);
+  const slots: { seat: number; row: ExamParticipantRow | null }[] = plan.map(seat => ({
+    seat,
+    row: bySeat.get(seat) || null,
+  }));
+  const placed = new Set(slots.map(s => s.row?.id).filter((id): id is number => id != null));
+  items.forEach(row => {
+    if (placed.has(row.id)) return;
     const empty = slots.find(s => !s.row);
     if (empty) empty.row = row;
-    else slots.push({ seat: total + i + 1, row });
+    else slots.push({ seat: row.seat_no || slots.length + 1, row });
   });
 
   let y = startY;
@@ -426,7 +428,13 @@ export async function renderRosterPdf(opts: {
 
   groups.forEach((group, gi) => {
     if (gi > 0) doc.addPage();
-    const cap = rooms.find(r => r.name === group.title)?.capacity || 0;
+    const room = rooms.find(r => r.name === group.title);
+    const seats = room ? seatNumbers(room) : [];
+    const seatLabel = seats.length
+      ? (room?.seat_gap
+        ? `${seats[0]}’den, ara ${room.seat_gap}`
+        : `${seats[0]}–${seats[seats.length - 1]}`)
+      : '';
     const startY = drawHeader(doc, primary, logo, {
       eyebrow: ROSTER_KIND_TITLES[kind],
       examName,
@@ -434,12 +442,12 @@ export async function renderRosterPdf(opts: {
       meta: [
         examDate || '',
         `${group.items.length} öğrenci`,
-        kind === 'oturma' && cap ? `${cap} sıra` : '',
+        kind === 'oturma' && seatLabel ? seatLabel : '',
       ].filter(Boolean),
     });
 
     if (kind === 'oturma') {
-      drawSeatingGrid(doc, startY, group.items, cap || group.items.length, oturmaExtra);
+      drawSeatingGrid(doc, startY, group.items, seats, oturmaExtra);
       return;
     }
 

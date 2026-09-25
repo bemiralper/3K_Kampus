@@ -563,6 +563,15 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 language_code=lang,
                 components=components or None,
             )
+        elif message.message_type == MessageType.TEMPLATE and message.attachments.exists():
+            result = {
+                'success': False,
+                'error': 'Şablon bilgisi bulunamadı; PDF ekli mesaj düz metin olarak gönderilmedi.',
+            }
+            OutboundQueueRepository.mark_failed(item, result['error'], permanent=True)
+            if item.campaign_id:
+                _safe_refresh_campaign_stats(item.campaign_id)
+            return False
         else:
             _start_provider_call(item)
             result = client.send_text(

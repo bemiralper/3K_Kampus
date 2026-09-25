@@ -32,6 +32,7 @@ class CandidateRec:
     deneme_paketi_id: int | None = None
     source: str = 'auto'
     schedule_group: str = HAFTA_ICI
+    profil_foto: str = ''
 
     @property
     def full_name(self) -> str:
@@ -51,6 +52,7 @@ class CandidateRec:
             'deneme_paketi_id': self.deneme_paketi_id,
             'source': self.source,
             'schedule_group': self.schedule_group,
+            'profil_foto': self.profil_foto,
         }
 
 
@@ -127,7 +129,18 @@ def _to_rec(kayit, *, paket_id=None, source='auto') -> CandidateRec:
         sinif_seviyesi=_seviye_ad(kayit),
         deneme_paketi_id=paket_id,
         source=source,
+        profil_foto=_profil_foto(ogr),
     )
+
+
+def _profil_foto(ogr) -> str:
+    foto = getattr(ogr, 'profil_foto', None)
+    if not foto:
+        return ''
+    try:
+        return foto.url or ''
+    except Exception:
+        return ''
 
 
 def _deneme_ogrenci_ids_cached(paket_ids, yil_id, cache: dict) -> set[int]:
@@ -290,6 +303,18 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
             cap = max(1, int(raw.get('capacity') or 30))
         except (TypeError, ValueError):
             cap = 30
+        try:
+            seat_start = max(1, int(raw.get('seat_start') or 1))
+        except (TypeError, ValueError):
+            seat_start = 1
+        try:
+            seat_gap = max(0, int(raw.get('seat_gap') or 0))
+        except (TypeError, ValueError):
+            seat_gap = 0
+        mode = (raw.get('seating_mode') or 'shuffle').strip()
+        if mode not in ('shuffle', 'cross', 'sequential'):
+            mode = 'shuffle'
+        session_id = _room_session_id(exam, raw)
         pk = raw.get('id')
         room = None
         if pk:
@@ -299,12 +324,18 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
                 room = None
         if room:
             room.capacity = cap
+            room.seat_start = seat_start
+            room.seat_gap = seat_gap
+            room.exam_session_id = session_id
+            room.seating_mode = mode
             room.order = i
             room.name = f'__tmp_{exam.pk}_{room.pk}'
-            room.save(update_fields=['name', 'capacity', 'order'])
+            room.save(update_fields=['name', 'capacity', 'seat_start', 'seat_gap', 'exam_session', 'seating_mode', 'order'])
         else:
             room = ExamRoom.objects.create(
-                exam=exam, name=f'__tmp_new_{exam.pk}_{i}', capacity=cap, order=i,
+                exam=exam, name=f'__tmp_new_{exam.pk}_{i}', capacity=cap,
+                seat_start=seat_start, seat_gap=seat_gap, exam_session_id=session_id,
+                seating_mode=mode, order=i,
             )
         pending.append((room, name))
         keep_ids.append(room.pk)
@@ -330,11 +361,64 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
         used.add(final.casefold())
         room.name = final
         room.save(update_fields=['name'])
+    for room in exam.rooms.exclude(exam_session__isnull=True):
+        ExamParticipant.objects.filter(exam=exam, room=room).exclude(
+            exam_session_id=room.exam_session_id,
+        ).update(room=None, seat_no=None, desk_no='')
     return list(exam.rooms.order_by('order', 'id'))
 
 
+def _room_session_id(exam, raw: dict) -> int | None:
+    raw_sid = raw.get('exam_session_id')
+    if raw_sid not in (None, '', 0, '0'):
+        try:
+            sid = int(raw_sid)
+        except (TypeError, ValueError):
+            sid = None
+        if sid and exam.exam_sessions.filter(pk=sid).exists():
+            return sid
+    if raw.get('session_index') not in (None, ''):
+        try:
+            idx = int(raw['session_index'])
+        except (TypeError, ValueError):
+            return None
+        sessions = list(exam.exam_sessions.order_by('order', 'id'))
+        if 0 <= idx < len(sessions):
+            return sessions[idx].pk
+    return None
+
+
+def rooms_for_session(exam, exam_session=None) -> list[ExamRoom]:
+    """Oturuma bağlı salonlar ve oturumu boş (her güne açık) salonlar."""
+    rooms = list(exam.rooms.order_by('order', 'id'))
+    if exam_session is None:
+        if exam.exam_sessions.exists():
+            return [r for r in rooms if not r.exam_session_id]
+        return rooms
+    sid = exam_session if isinstance(exam_session, int) else exam_session.pk
+    return [r for r in rooms if not r.exam_session_id or r.exam_session_id == sid]
+
+
+def exam_seating_capacity_error(exam, rooms=None) -> str | None:
+    rooms = list(rooms if rooms is not None else exam.rooms.order_by('order', 'id'))
+    sessions = list(exam.exam_sessions.order_by('order', 'id'))
+    if not sessions:
+        return seating_capacity_error(
+            ExamParticipant.objects.filter(exam=exam).count(), rooms,
+        )
+    for sess in sessions:
+        usable = [r for r in rooms if not r.exam_session_id or r.exam_session_id == sess.id]
+        n = ExamParticipant.objects.filter(exam=exam, exam_session=sess).count()
+        if n and not usable:
+            return f'{sess.name} için salon yok. Salonu bu oturuma bağlayın.'
+        err = seating_capacity_error(n, usable)
+        if err:
+            return f'{sess.name}: {err}'
+    return None
+
+
 def seating_capacity_error(participant_count: int, rooms: list[ExamRoom]) -> str | None:
-    total = sum(r.capacity for r in rooms)
+    total = sum(len(r.seat_numbers()) for r in rooms)
     if participant_count > total:
         need = participant_count - total
         return (
@@ -373,7 +457,7 @@ def next_free_seat(exam, room: ExamRoom, exam_session=None) -> int | None:
         exam=exam, room=room, seat_no__isnull=False, **_session_filter(exam_session),
     )
     taken = set(qs.values_list('seat_no', flat=True))
-    for n in range(1, (room.capacity or 0) + 1):
+    for n in room.seat_numbers():
         if n not in taken:
             return n
     return None
@@ -385,9 +469,18 @@ def assign_participant_to_seat(p: ExamParticipant, room: ExamRoom, seat_no) -> s
         seat = int(seat_no)
     except (TypeError, ValueError):
         return 'Geçerli bir sıra seçin.'
-    cap = room.capacity or 0
-    if seat < 1 or seat > cap:
-        return f'Sıra 1–{cap} arasında olmalı.'
+    if room.exam_session_id and p.exam_session_id != room.exam_session_id:
+        return f'{room.name} başka oturuma bağlı.'
+    allowed = room.seat_numbers()
+    if seat not in allowed:
+        if not allowed:
+            return f'{room.name} için sıra tanımlı değil.'
+        if (room.seat_gap or 0) > 0:
+            return (
+                f'{room.name} sıraları {allowed[0]} numarasından başlar, '
+                f'arada {room.seat_gap} boşluk bırakılır.'
+            )
+        return f'{room.name} sırası {allowed[0]}–{allowed[-1]} arasında olmalı.'
     taken = ExamParticipant.objects.filter(
         exam=p.exam, room=room, seat_no=seat, **_session_filter(p.exam_session_id),
     ).exclude(pk=p.pk).exists()
@@ -402,11 +495,13 @@ def assign_participant_to_seat(p: ExamParticipant, room: ExamRoom, seat_no) -> s
 
 def assign_participant_to_room(p: ExamParticipant, room: ExamRoom) -> str | None:
     """Öğrenciyi salondaki ilk boş sıraya koyar. Doluysa hata metni döner."""
+    if room.exam_session_id and p.exam_session_id != room.exam_session_id:
+        return f'{room.name} başka oturuma bağlı.'
     if p.room_id == room.pk and p.seat_no:
         return None
     seat = next_free_seat(p.exam, room, p.exam_session_id)
     if seat is None:
-        return f'{room.name} dolu ({room.capacity} kişilik).'
+        return f'{room.name} dolu ({len(room.seat_numbers())} kişilik).'
     return assign_participant_to_seat(p, room, seat)
 
 
@@ -432,7 +527,7 @@ def move_participant_to_session(p: ExamParticipant, target_session, *, room=None
     p.save(update_fields=['exam_session', 'source', 'room', 'seat_no', 'desk_no', 'updated_at'])
     if room and seat_no:
         return p, assign_participant_to_seat(p, room, seat_no)
-    rooms = [room] if room else list(p.exam.rooms.order_by('order', 'id'))
+    rooms = [room] if room else rooms_for_session(p.exam, p.exam_session_id)
     for item in rooms:
         if item and assign_participant_to_room(p, item) is None:
             break
@@ -454,7 +549,6 @@ def place_unassigned(exam, exam_session=None) -> dict:
         last['unplaced'] = unplaced
         return last
 
-    rooms = list(exam.rooms.order_by('order', 'id'))
     sf = _session_filter(exam_session)
     unassigned = list(
         ExamParticipant.objects.filter(exam=exam, room__isnull=True, **sf)
@@ -463,10 +557,20 @@ def place_unassigned(exam, exam_session=None) -> dict:
     )
     if not unassigned:
         return {'ok': True, 'placed': 0, 'unplaced': 0, 'mode': 'unassigned'}
-    free = sum(
-        max(0, r.capacity - ExamParticipant.objects.filter(exam=exam, room=r, **sf).count())
-        for r in rooms
-    )
+    rooms = rooms_for_session(exam, exam_session)
+    if not rooms:
+        return {
+            'ok': False,
+            'error': 'Bu oturum için salon yok. Salonu bu oturuma bağlayın.',
+        }
+    free = 0
+    for room in rooms:
+        taken = set(
+            ExamParticipant.objects.filter(
+                exam=exam, room=room, seat_no__isnull=False, **sf,
+            ).values_list('seat_no', flat=True)
+        )
+        free += sum(1 for n in room.seat_numbers() if n not in taken)
     if len(unassigned) > free:
         return {
             'ok': False,
@@ -497,6 +601,28 @@ def place_unassigned(exam, exam_session=None) -> dict:
     }
 
 
+def _order_for_mode(people: list, mode: str) -> list:
+    people = list(people)
+    if mode == 'cross':
+        buckets: dict[str, list] = defaultdict(list)
+        for p in people:
+            key = str(getattr(p, 'sinif_seviyesi_id', None) or getattr(p, 'deneme_paketi_id', None) or 'x')
+            buckets[key].append(p)
+        for bucket in buckets.values():
+            random.shuffle(bucket)
+        ordered = []
+        while any(buckets.values()):
+            for key in list(buckets.keys()):
+                if buckets[key]:
+                    ordered.append(buckets[key].pop())
+        return ordered
+    if mode == 'sequential':
+        people.sort(key=lambda p: ((p.student.soyad or ''), (p.student.ad or ''), p.pk))
+        return people
+    random.shuffle(people)
+    return people
+
+
 def apply_seating(exam, *, mode: str = 'shuffle', only_unassigned: bool = False, exam_session=None) -> dict:
     if only_unassigned:
         return place_unassigned(exam, exam_session)
@@ -514,11 +640,16 @@ def apply_seating(exam, *, mode: str = 'shuffle', only_unassigned: bool = False,
         last['unplaced'] = unplaced
         return last
 
-    rooms = list(exam.rooms.order_by('order', 'id'))
     sf = _session_filter(exam_session)
     parts = list(
         ExamParticipant.objects.filter(exam=exam, **sf).select_related('student', 'sinif_seviyesi')
     )
+    rooms = rooms_for_session(exam, exam_session)
+    if parts and not rooms:
+        return {
+            'ok': False,
+            'error': 'Bu oturum için salon yok. Salonu bu oturuma bağlayın.',
+        }
     err = seating_capacity_error(len(parts), rooms)
     if err:
         return {'ok': False, 'error': err}
@@ -531,43 +662,24 @@ def apply_seating(exam, *, mode: str = 'shuffle', only_unassigned: bool = False,
         room=None, seat_no=None, desk_no='',
     )
 
-    if mode == 'cross':
-        buckets: dict[str, list] = defaultdict(list)
-        for p in movable:
-            key = str(p.sinif_seviyesi_id or p.deneme_paketi_id or 'x')
-            buckets[key].append(p)
-        for b in buckets.values():
-            random.shuffle(b)
-        ordered = []
-        while any(buckets.values()):
-            for key in list(buckets.keys()):
-                if buckets[key]:
-                    ordered.append(buckets[key].pop())
-        movable = ordered
-    elif mode == 'sequential':
-        movable.sort(key=lambda p: ((p.student.soyad or ''), (p.student.ad or ''), p.pk))
-    else:
-        random.shuffle(movable)
-
     taken: dict[int, set[int]] = defaultdict(set)
     for p in locked:
         taken[p.room_id].add(p.seat_no)
 
+    queue = sorted(movable, key=lambda p: ((p.student.soyad or ''), (p.student.ad or ''), p.pk))
+    cursor = 0
     idx = 0
     for room in rooms:
-        for seat in range(1, room.capacity + 1):
-            if seat in taken[room.pk]:
-                continue
-            if idx >= len(movable):
-                break
-            p = movable[idx]
+        free = [seat for seat in room.seat_numbers() if seat not in taken[room.pk]]
+        chunk = queue[cursor:cursor + len(free)]
+        cursor += len(chunk)
+        room_mode = room.seating_mode if room.seating_mode in ('shuffle', 'cross', 'sequential') else mode
+        for seat, p in zip(free, _order_for_mode(chunk, room_mode)):
             p.room = room
             p.seat_no = seat
             p.desk_no = str(seat)
             p.save(update_fields=['room', 'seat_no', 'desk_no', 'updated_at'])
             idx += 1
-        if idx >= len(movable):
-            break
 
     return {
         'ok': True,
@@ -685,6 +797,19 @@ def replace_audiences(exam, rows: list[dict]) -> None:
         ExamAudience.objects.bulk_create(to_create)
 
 
+def serialize_room(room: ExamRoom) -> dict:
+    return {
+        'id': room.id,
+        'name': room.name,
+        'capacity': room.capacity,
+        'seat_start': room.seat_start or 1,
+        'seat_gap': room.seat_gap or 0,
+        'exam_session_id': room.exam_session_id,
+        'seating_mode': room.seating_mode or 'shuffle',
+        'order': room.order,
+    }
+
+
 def serialize_participant(p: ExamParticipant) -> dict:
     st = p.student
     return {
@@ -693,6 +818,7 @@ def serialize_participant(p: ExamParticipant) -> dict:
         'ad': st.ad,
         'soyad': st.soyad,
         'full_name': f'{st.ad} {st.soyad}'.strip(),
+        'profil_foto': _profil_foto(st),
         'tc_kimlik_no': (st.tc_kimlik_no or '').strip(),
         'telefon': (st.telefon or '').strip(),
         'email': (st.email or '').strip(),

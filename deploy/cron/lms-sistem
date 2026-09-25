@@ -4,3 +4,4 @@ PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 LMS_ROOT=/var/www/lms
 
 * * * * * lms cd $LMS_ROOT/backend && set -a && . /etc/lms/env && set +a && $LMS_ROOT/venv/bin/python manage.py collect_system_metrics >> /var/log/lms/sistem_metrics.log 2>&1
+* * * * * lms cd $LMS_ROOT/backend && set -a && . /etc/lms/env && set +a && $LMS_ROOT/venv/bin/python manage.py process_olcme_publish >> /var/log/lms/olcme_publish.log 2>&1

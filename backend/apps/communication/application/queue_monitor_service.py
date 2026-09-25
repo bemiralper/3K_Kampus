@@ -257,6 +257,163 @@ def retry_queue_item(kurum_id: int, item_id, sube_id: int | None = None, *, user
     return item
 
 
+def refresh_send_options(opts: dict, conversation) -> dict:
+    """Kayıtlı şablon değişkenlerinin kişi alanlarını güncel kayıttan yazar."""
+    from apps.communication.application.variable_resolver import (
+        build_recipient_context_from_conversation,
+    )
+
+    fresh = build_recipient_context_from_conversation(conversation)
+    next_opts = dict(opts or {})
+
+    def _merge(stored):
+        if not isinstance(stored, dict):
+            return stored
+        merged = dict(stored)
+        for key, value in fresh.items():
+            if value:
+                merged[key] = value
+        return merged
+
+    if isinstance(next_opts.get('template_context'), dict):
+        next_opts['template_context'] = _merge(next_opts['template_context'])
+    fallback = next_opts.get('session_fallback')
+    if isinstance(fallback, dict) and isinstance(fallback.get('template_context'), dict):
+        fallback = dict(fallback)
+        fallback['template_context'] = _merge(fallback['template_context'])
+        next_opts['session_fallback'] = fallback
+    return next_opts
+
+
+_ODEV_SOURCE_REF = re.compile(r'^(\d+):(plan|report):(veli:\d+|ogrenci)$')
+
+
+def restore_template_send_options(message) -> dict:
+    """Silinmiş kuyruk kaydındaki şablon adını ve değişkenlerini geri yükle.
+
+    Meta gönderimi kabul edince kuyruk satırı silinir. WhatsApp sonradan
+    iletilemedi derse şablon adı kaybolur ve tekrar gönderim PDF'siz düz
+    metne düşer. Mesajda saklanan seçenekler, yoksa ödev kaynağından
+    çözülen şablon kullanılır.
+    """
+    stored = message.send_options if isinstance(getattr(message, 'send_options', None), dict) else {}
+    if stored.get('template_name'):
+        return dict(stored)
+    from apps.communication.domain.enums import MessageType
+
+    if message.message_type != MessageType.TEMPLATE:
+        return {}
+    if (message.source_module or '') != 'odev':
+        return {}
+    match = _ODEV_SOURCE_REF.match(message.source_ref_id or '')
+    if not match:
+        return {}
+    assignment_id, notify_type, recipient_key = match.groups()
+    conversation = message.conversation
+    recipient = 'VELI' if recipient_key.startswith('veli') else 'OGRENCI'
+    event_key = 'odev.plan' if notify_type == 'plan' else 'odev.rapor'
+    from apps.communication.application.notification_template_resolver import resolve_binding
+
+    resolved = resolve_binding(
+        conversation.kurum_id,
+        event_key,
+        recipient,
+        sube_id=conversation.sube_id,
+    )
+    meta = resolved.meta_template if resolved.meta_usable(needs_document=True) else None
+    if meta is None:
+        return {}
+    return {
+        'template_name': meta.name,
+        'template_language': meta.language or 'tr',
+        'channel_config_id': str(meta.channel_config_id or ''),
+        'template_context': _odev_retry_context(
+            assignment_id=int(assignment_id),
+            notify_type=notify_type,
+            conversation=conversation,
+            recipient=recipient,
+        ),
+    }
+
+
+def _odev_retry_context(*, assignment_id: int, notify_type: str, conversation, recipient: str) -> dict:
+    from apps.coaching.assignment_manual.assignment_notify_utils import build_assignment_context
+    from apps.coaching.assignment_manual.models import ManualAssignment
+
+    assignment = (
+        ManualAssignment.objects.select_related('student', 'student__kurum')
+        .filter(id=assignment_id, student__kurum_id=conversation.kurum_id)
+        .first()
+    )
+    if assignment is None:
+        return {}
+    veli = None
+    if recipient == 'VELI' and conversation.veli_id:
+        from apps.ogrenci.domain.models import OgrenciVeli
+
+        veli = OgrenciVeli.objects.filter(id=conversation.veli_id).first()
+    context = build_assignment_context(
+        assignment=assignment,
+        notify_type=notify_type,
+        veli=veli,
+        kurum=getattr(assignment.student, 'kurum', None),
+    )
+    return {key: '' if value is None else str(value) for key, value in context.items()}
+
+
+def _reset_attachment_media_ids(message) -> None:
+    """Eski Meta medya kimliği süresi dolmuş olabilir; dosya duruyorsa yeniden yüklenir."""
+    from apps.communication.domain.models import MessageAttachment
+
+    for attachment in MessageAttachment.objects.filter(message_id=message.id):
+        if attachment.file and attachment.provider_media_id:
+            attachment.provider_media_id = ''
+            attachment.save(update_fields=['provider_media_id'])
+
+
+@transaction.atomic
+def retry_failed_message(kurum_id: int, conversation, message, *, user=None) -> OutboundQueueItem:
+    """Gitmeyen giden mesajı aynı kayıt üzerinden yeniden kuyruğa alır.
+
+    Şablon değişkenleri (öğrenci/veli adı vb.) yeniden çözülür. Yeni serbest
+    metin veya şablon seçim penceresi açılmaz.
+    """
+    from apps.communication.domain.enums import MessageDirection
+    from apps.communication.domain.models import Message, OutboundQueueItem
+
+    if message.direction != MessageDirection.OUTBOUND:
+        raise ValueError('Yalnızca giden mesaj yeniden gönderilir.')
+    if message.status != MessageStatus.FAILED:
+        raise ValueError('Yalnızca gitmeyen mesaj yeniden gönderilir.')
+    if message.conversation_id != conversation.id:
+        raise ValueError('Mesaj bu sohbete ait değil.')
+
+    item = (
+        OutboundQueueItem.objects.select_for_update()
+        .filter(message_id=message.id, kurum_id=kurum_id)
+        .first()
+    )
+    if item is None:
+        item = OutboundQueueItem.objects.create(
+            kurum_id=kurum_id,
+            message=message,
+            next_attempt_at=timezone.now(),
+            send_options={},
+        )
+    opts = item.send_options if isinstance(item.send_options, dict) else {}
+    if not opts.get('template_name'):
+        recovered = restore_template_send_options(message)
+        if recovered.get('template_name'):
+            opts = {**recovered, **{key: value for key, value in opts.items() if value}}
+    item.send_options = refresh_send_options(opts, conversation)
+    item.save(update_fields=['send_options', 'updated_at'])
+    if item.send_options.get('template_name'):
+        _reset_attachment_media_ids(message)
+    item = retry_queue_item(kurum_id, item.id, conversation.sube_id, user=user)
+    Message.objects.filter(pk=message.id).update(failed_reason='')
+    return item
+
+
 @transaction.atomic
 def cancel_queue_item(kurum_id: int, item_id, sube_id: int | None = None, *, user=None) -> None:
     """Bekleyen kaydı iptal eder.

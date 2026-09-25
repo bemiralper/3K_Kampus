@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { curriculumApi, examApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import {
   EXAM_TYPES,
@@ -19,6 +19,7 @@ import type {
   SchedulePreference,
   SeatingMode,
   SessionCreateForm,
+  DenemeSalon,
   SubjectItem,
 } from '../../../../components/olcme/types';
 import {
@@ -30,8 +31,11 @@ import {
 } from '../../../../components/olcme/curriculum-band';
 import { matchSubjectId } from '../../../../components/olcme/SubjectPicker';
 import tree from '../../../../components/olcme/section-tree.module.css';
-import { groupSeated, previewSeating } from '../../../../components/olcme/roster/seating';
+import { groupSeated, previewSeating, seatNumbers } from '../../../../components/olcme/roster/seating';
+import type { SeatedStudent } from '../../../../components/olcme/roster/seating';
+import { resolveCoachPhotoUrl } from '../../../../lib/coach-media';
 import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
+import DenemeSalonCatalog from '../../../../components/olcme/roster/DenemeSalonCatalog';
 import ManualSectionsEditor, { TemplatePreview } from '../../../../components/olcme/ManualSectionsEditor';
 import {
   isManualSectionExamType,
@@ -98,6 +102,49 @@ const fmtSessionDate = (d: string) =>
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+const SEAT_MODES: { value: SeatingMode; label: string }[] = [
+  { value: 'shuffle', label: 'Karışık' },
+  { value: 'cross', label: 'Çapraz' },
+  { value: 'sequential', label: 'Sıralı' },
+];
+
+function SeatPhoto({ foto, name }: { foto?: string | null; name: string }) {
+  const [open, setOpen] = useState(false);
+  const src = resolveCoachPhotoUrl(foto);
+  return (
+    <>
+      {src ? (
+        <button type="button" className={y.thumbBtn} onClick={() => setOpen(true)} aria-label={`${name} fotoğrafını büyüt`}>
+          <img src={src} alt="" />
+        </button>
+      ) : (
+        <span className={y.thumbFallback} aria-hidden>
+          <img src="/img/3k-logo.png" alt="" />
+        </span>
+      )}
+      {open && src && (
+        <button type="button" className={y.zoom} onClick={() => setOpen(false)} aria-label="Kapat">
+          <img src={src} alt={name} />
+        </button>
+      )}
+    </>
+  );
+}
+
+function SeatStudentRow({ st, roomName }: { st: SeatedStudent; roomName: string }) {
+  return (
+    <div className={y.seatRow}>
+      <span className={r.seat}>{st.seat_no}</span>
+      <SeatPhoto foto={st.profil_foto} name={st.full_name} />
+      <div>
+        <div className={r.name}>{st.full_name}</div>
+        <div className={r.meta}>{st.sinif || st.sinif_seviyesi || '—'}</div>
+      </div>
+      <span className={r.meta}>{roomName}</span>
+    </div>
+  );
+}
+
 export default function YeniSinavPage() {
   const router = useRouter();
 
@@ -124,7 +171,8 @@ export default function YeniSinavPage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [removedAutoIds, setRemovedAutoIds] = useState<number[]>([]);
   const [manuals, setManuals] = useState<PreviewStudent[]>([]);
-  const [rooms, setRooms] = useState<ExamRoomItem[]>([{ name: 'Salon 1', capacity: 30, order: 0 }]);
+  const [rooms, setRooms] = useState<ExamRoomItem[]>([{ name: 'Salon 1', capacity: 30, seat_start: 1, seat_gap: 0, order: 0 }]);
+  const [salonlar, setSalonlar] = useState<DenemeSalon[]>([]);
   const [seatingMode, setSeatingMode] = useState<SeatingMode>('shuffle');
   const [seatingTick, setSeatingTick] = useState(0);
 
@@ -133,12 +181,24 @@ export default function YeniSinavPage() {
     examApi.siniflar().then(setSiniflar).catch(() => {});
     examApi.sinifSeviyeleri().then(setSinifSeviyeleri).catch(() => {});
     examApi.denemePaketleri().then(setDenemePaketleri).catch(() => {});
+    examApi.denemeSalonlari().then(setSalonlar).catch(() => {});
     examApi.list().then(list => setExistingNames(list.map(e => e.name))).catch(() => {});
     puanAyarlariApi.get().then(d => {
       setKurumDefaultYear(d.default_puan_yili);
       setManagedYears(d.managed_years);
     }).catch(() => {});
   }, []);
+
+  const rememberSalon = async (room: ExamRoomItem) => {
+    const name = room.name.trim();
+    if (!name) return;
+    try {
+      const saved = await examApi.saveDenemeSalon(name, Number(room.capacity) || 30);
+      setSalonlar(prev => [...prev.filter(s => s.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'tr')));
+    } catch {
+      setError('Salon kaydedilemedi.');
+    }
+  };
 
   useEffect(() => {
     examApi.templates(form.include_optional_philosophy).then(setTemplates).catch(() => {});
@@ -147,16 +207,29 @@ export default function YeniSinavPage() {
   const currentTemplate = form.exam_type ? templates[form.exam_type] : null;
   const manualTemplate = isManualSectionExamType(form.exam_type);
 
-  /* Sınav türü seçilince süre şablondan gelir; konu tarama/kazanım/özelde şablon kapalı */
+  /* Sınav türü seçilince toplam süre şablondan gelir. Elle değiştirilmiş oturum süresi korunur. */
+  const appliedDuration = useRef('');
   useEffect(() => {
     if (!form.exam_type) return;
     const tpl = templates[form.exam_type];
+    const nextDuration = tpl ? String(tpl.duration) : '';
+    const previous = appliedDuration.current;
     setForm(p => ({
       ...p,
-      duration_minutes: tpl ? String(tpl.duration) : p.duration_minutes,
+      duration_minutes: nextDuration || p.duration_minutes,
       apply_template: !isManualSectionExamType(form.exam_type),
       curriculum_band: resolveBand(form.exam_type, p.curriculum_band),
     }));
+    if (nextDuration) {
+      setSessions(prev => prev.map(ss => {
+        if (ss.duration_minutes && previous && ss.duration_minutes !== previous) return ss;
+        const next = { ...ss, duration_minutes: nextDuration };
+        const computed = addMinutes(ss.start_time, Number(nextDuration));
+        if (computed) next.end_time = computed;
+        return next;
+      }));
+      appliedDuration.current = nextDuration;
+    }
     setManualSections([]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [form.exam_type, templates]);
@@ -369,16 +442,34 @@ export default function YeniSinavPage() {
     return [...auto, ...manuals.filter(m => !taken.has(m.student_id))];
   }, [preview, removedAutoIds, manuals]);
 
-  const totalCap = rooms.reduce((a, r) => a + (Number(r.capacity) || 0), 0);
-  const capError = rooms.some(r => r.name.trim()) && roster.length > totalCap
-    ? `${roster.length} öğrenci için toplam salon kapasitesi ${totalCap}.`
-    : '';
+  const totalCap = rooms.reduce((a, r) => a + seatNumbers(r).length, 0);
+  const capError = (() => {
+    if (!rooms.some(r => r.name.trim())) return '';
+    const split = sessions.length > 1 && rooms.some(r => r.session_index != null);
+    if (!split) {
+      return roster.length > totalCap
+        ? `${roster.length} öğrenci için toplam salon kapasitesi ${totalCap}.`
+        : '';
+    }
+    for (let i = 0; i < sessions.length; i += 1) {
+      const pref = sessions[i].schedule_preference || 'FARKETMEZ';
+      const count = roster.filter(st => pref === 'FARKETMEZ' || (st.schedule_group || 'HAFTA_ICI') === pref).length;
+      const cap = rooms
+        .filter(r => r.name.trim() && (r.session_index == null || r.session_index === i))
+        .reduce((a, r) => a + seatNumbers(r).length, 0);
+      if (count > cap) {
+        const name = sessions[i].name || `${i + 1}. oturum`;
+        return `${name}: ${count} öğrenci, bu oturumun salon kapasitesi ${cap}.`;
+      }
+    }
+    return '';
+  })();
 
   const seated = useMemo(
-    () => previewSeating(roster, rooms, seatingMode),
+    () => previewSeating(roster, rooms, seatingMode, sessions),
     // seatingTick yeniden karıştırmayı tetikler
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [roster, rooms, seatingMode, seatingTick],
+    [roster, rooms, seatingMode, seatingTick, sessions],
   );
   const seatedByRoom = useMemo(() => groupSeated(seated), [seated]);
 
@@ -442,6 +533,7 @@ export default function YeniSinavPage() {
           room_name: x.room_name,
           room_index: x.room_index,
           seat_no: x.seat_no,
+          ...(x.session_index != null ? { session_index: x.session_index } : {}),
         })),
         sessions,
       });
@@ -526,9 +618,10 @@ export default function YeniSinavPage() {
       </header>
 
       {error && (
-        <div className={`${y.notice} ${y.noticeError}`} role="alert">
+        <div className={`${r.toast} mobile-above-nav`} role="alert">
           <Icon name="error" size={18} />
-          <div>{error}</div>
+          <span>{error}</span>
+          <button type="button" className={r.toastClose} onClick={() => setError('')} aria-label="Kapat">×</button>
         </div>
       )}
 
@@ -940,7 +1033,11 @@ export default function YeniSinavPage() {
             <div className={r.hero}>
               <div className={r.heroCopy}>
                 <h2>Salonlar</h2>
-                <p>{roster.length} öğrenci yerleştirilecek. Toplam kapasite {totalCap} olmalı.</p>
+                <p>
+                  {sessions.length > 1
+                    ? 'Her salonu bir oturuma bağla. Hafta içi öğrencileri o salona, hafta sonu öğrencileri kendi salonuna oturur.'
+                    : 'Kapasite, salondaki numaralı yer sayısıdır. 120 ve ara boşluk 1 ise öğrenciler 1, 3, 5 diye 120’ye kadar oturur.'}
+                </p>
               </div>
               <div className={r.stat}>
                 <span className={r.statValue}>{totalCap}</span>
@@ -950,23 +1047,77 @@ export default function YeniSinavPage() {
             {capError && <div className={`${y.notice} ${y.noticeError}`}>{capError}</div>}
             <section className={r.card}>
               <div className={r.cardBody}>
+                <DenemeSalonCatalog
+                  salonlar={salonlar}
+                  onChange={next => { setSalonlar(next); setError(''); }}
+                  onError={setError}
+                />
                 {rooms.map((room, i) => (
                   <div key={i} className={y.roomEdit}>
+                    <label className={y.field}>
+                      <span>Kayıtlı salon</span>
+                      <select
+                        value={salonlar.find(s => s.name === room.name)?.id ?? ''}
+                        onChange={e => {
+                          const salon = salonlar.find(s => s.id === Number(e.target.value));
+                          if (!salon) return;
+                          setRooms(p => p.map((item, j) => j === i ? { ...item, name: salon.name, capacity: salon.capacity } : item));
+                        }}
+                      >
+                        <option value="">Seç veya yeni yaz</option>
+                        {salonlar.map(s => (
+                          <option key={s.id} value={s.id}>{s.name} · {s.capacity}</option>
+                        ))}
+                      </select>
+                    </label>
                     <label className={y.field}>
                       <span>Salon adı</span>
                       <input value={room.name}
                         onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, name: e.target.value } : item))} />
                     </label>
+                    {sessions.length > 1 && (
+                      <label className={y.field}>
+                        <span>Oturum</span>
+                        <select
+                          value={room.session_index ?? ''}
+                          onChange={e => setRooms(p => p.map((item, j) => j === i ? {
+                            ...item,
+                            session_index: e.target.value === '' ? null : Number(e.target.value),
+                          } : item))}
+                        >
+                          <option value="">Tüm oturumlar</option>
+                          {sessions.map((sess, si) => (
+                            <option key={si} value={si}>
+                              {sess.name || `${si + 1}. oturum`}
+                              {SCHEDULE_PREFERENCES.find(p => p.value === sess.schedule_preference)?.label
+                                ? ` · ${SCHEDULE_PREFERENCES.find(p => p.value === sess.schedule_preference)?.label}`
+                                : ''}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     <label className={y.field}>
                       <span>Kapasite</span>
                       <input type="number" min={1} inputMode="numeric" value={room.capacity}
                         onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, capacity: Number(e.target.value) || 1 } : item))} />
                     </label>
+                    <label className={y.field}>
+                      <span>İlk sıra</span>
+                      <input type="number" min={1} inputMode="numeric" value={room.seat_start ?? 1}
+                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, seat_start: Math.max(1, Number(e.target.value) || 1) } : item))} />
+                    </label>
+                    <label className={y.field}>
+                      <span>Ara boşluk</span>
+                      <input type="number" min={0} inputMode="numeric" value={room.seat_gap ?? 0}
+                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, seat_gap: Math.max(0, Number(e.target.value) || 0) } : item))} />
+                    </label>
+                    <button type="button" className={y.ghost} onClick={() => rememberSalon(room)}>Kaydet</button>
                     <button type="button" className={y.danger} onClick={() => setRooms(p => p.filter((_, j) => j !== i))}>×</button>
                   </div>
                 ))}
                 <button type="button" className={y.ghost}
-                  onClick={() => setRooms(p => [...p, { name: `Salon ${p.length + 1}`, capacity: 30, order: p.length }])}>
+                  onClick={() => setRooms(p => [...p, { name: `Salon ${p.length + 1}`, capacity: 30, seat_start: 1, seat_gap: 0, order: p.length }])}>
                   <Icon name="plus" size={14} /> Salon ekle
                 </button>
               </div>
@@ -979,50 +1130,83 @@ export default function YeniSinavPage() {
             <div className={r.hero}>
               <div className={r.heroCopy}>
                 <h2>Oturma düzeni</h2>
-                <p>Kuralı seçin, listeyi görün. Beğenmezseniz yeniden karıştırın — kayıtta bu düzen kullanılır.</p>
+                <p>Her salonun kuralı ayrıdır. Fotoğrafa tıklayınca büyür. Kayıtta bu düzen kullanılır.</p>
               </div>
               <button type="button" className={y.primary} onClick={() => setSeatingTick(n => n + 1)}>
                 Yeniden karıştır
               </button>
             </div>
             {capError && <div className={`${y.notice} ${y.noticeError}`}>{capError}</div>}
-            <div className={r.modeGrid}>
-              {([
-                ['shuffle', 'Karışık', 'Salonlara rastgele dağıtılır.'],
-                ['cross', 'Çapraz', 'Seviye / paket karışık oturur.'],
-                ['sequential', 'Sıralı', 'Ada göre A’dan Z’ye.'],
-              ] as const).map(([mode, title, desc]) => (
-                <button key={mode} type="button"
-                  className={seatingMode === mode ? r.modeOn : r.mode}
-                  onClick={() => setSeatingMode(mode)}>
-                  <b>{title}</b>
-                  <small>{desc}</small>
-                </button>
-              ))}
-            </div>
-            {seatedByRoom.length === 0 ? (
+            {seated.length === 0 ? (
               <div className={r.empty}><b>Yerleşecek öğrenci yok</b>Önce liste ve salon ekleyin.</div>
-            ) : seatedByRoom.map(([roomName, items]) => (
+            ) : sessions.length > 1 ? (
+              sessions.map((sess, si) => {
+                const pref = SCHEDULE_PREFERENCES.find(p => p.value === sess.schedule_preference)?.label;
+                const items = seated.filter(st => st.session_index === si);
+                const byRoom = groupSeated(items);
+                return (
+                  <section key={si} className={y.sessionBlock}>
+                    <div className={y.sessionBlockHead}>
+                      <strong>{sess.name || `${si + 1}. oturum`}</strong>
+                      <span>{pref ? `${pref} · ` : ''}{items.length} öğrenci</span>
+                    </div>
+                    {byRoom.length === 0 ? (
+                      <div className={r.empty}><b>Bu oturumda yerleşen yok</b>Salonun oturumunu ve kapasitesini kontrol edin.</div>
+                    ) : byRoom.map(([roomName, roomItems]) => {
+                      const roomIndex = roomItems[0]?.room_index ?? 0;
+                      const current = rooms[roomIndex]?.seating_mode || 'shuffle';
+                      return (
+                      <div key={`${si}-${roomName}`} className={r.roomBlock}>
+                        <div className={r.roomHead}>
+                          <strong>{roomName}</strong>
+                          <span>{roomItems.length} öğrenci</span>
+                        </div>
+                        <div className={y.modeChips}>
+                          {SEAT_MODES.map(m => (
+                            <button key={m.value} type="button"
+                              className={current === m.value ? y.modeChipOn : y.modeChip}
+                              onClick={() => setRooms(prev => prev.map((item, j) => j === roomIndex ? { ...item, seating_mode: m.value } : item))}>
+                              {m.label}
+                            </button>
+                          ))}
+                        </div>
+                        <div className={r.list}>
+                          {roomItems.map(st => (
+                            <SeatStudentRow key={`${si}-${st.student_id}`} st={st} roomName={roomName} />
+                          ))}
+                        </div>
+                      </div>
+                      );
+                    })}
+                  </section>
+                );
+              })
+            ) : seatedByRoom.map(([roomName, items]) => {
+              const roomIndex = items[0]?.room_index ?? 0;
+              const current = rooms[roomIndex]?.seating_mode || 'shuffle';
+              return (
               <section key={roomName} className={r.roomBlock}>
                 <div className={r.roomHead}>
                   <strong>{roomName}</strong>
                   <span>{items.length} öğrenci</span>
                 </div>
+                <div className={y.modeChips}>
+                  {SEAT_MODES.map(m => (
+                    <button key={m.value} type="button"
+                      className={current === m.value ? y.modeChipOn : y.modeChip}
+                      onClick={() => setRooms(prev => prev.map((item, j) => j === roomIndex ? { ...item, seating_mode: m.value } : item))}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
                 <div className={r.list}>
                   {items.map(st => (
-                    <div key={st.student_id} className={r.row}>
-                      <span className={r.seat}>{st.seat_no}</span>
-                      <div>
-                        <div className={r.name}>{st.full_name}</div>
-                        <div className={r.meta}>{st.sinif || st.sinif_seviyesi || '—'}</div>
-                      </div>
-                      <span className={r.meta}>{roomName}</span>
-                      <span />
-                    </div>
+                    <SeatStudentRow key={st.student_id} st={st} roomName={roomName} />
                   ))}
                 </div>
               </section>
-            ))}
+              );
+            })}
           </div>
         )}
 

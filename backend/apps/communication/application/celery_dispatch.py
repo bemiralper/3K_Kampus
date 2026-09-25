@@ -61,6 +61,24 @@ def dispatch_process_outbound_queue(
     return True
 
 
+def dispatch_outbound_queue_after_commit() -> None:
+    """İşlem commit olduktan sonra kuyruğu boşalt.
+
+    Cevap anahtarı / karne gönderimi atomik işlem içinde mesaj açar. Celery
+    veya başka süreç commit'ten önce kuyruğu boş görür; mesajlar
+    "Gönderiliyor"da kalır. Commit sonrası arka planda boşaltılır.
+    """
+    from django.db import transaction
+
+    def _run() -> None:
+        dispatch_process_outbound_queue(drain=True, background=True)
+
+    if transaction.get_connection().in_atomic_block:
+        transaction.on_commit(_run)
+    else:
+        _run()
+
+
 def _run_in_thread(func, *, name: str) -> None:
     import threading
 

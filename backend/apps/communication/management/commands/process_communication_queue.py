@@ -67,7 +67,10 @@ class Command(BaseCommand):
         if options['dry_run']:
             pending_count = OutboundQueueRepository.count_pending()
             self.stdout.write(f'📊 İşlenecek kuyruk kaydı: {pending_count}')
+            self._publish_due(dry_run=True)
             return
+
+        self._publish_due(dry_run=False)
 
         if options['once']:
             result = process_pending_batch(limit=batch_size)
@@ -85,3 +88,18 @@ class Command(BaseCommand):
                 f'Kalan: {result.get("pending_left", 0)}'
             )
         )
+
+    def _publish_due(self, *, dry_run: bool) -> None:
+        """Zamanlı kutusu açık sınav karne / cevap anahtarı gönderimlerini kuyruğa alır."""
+        try:
+            from apps.coaching.application.olcme_publish import process_due
+            result = process_due(dry_run=dry_run)
+        except Exception as exc:
+            self.stderr.write(f'Sınav yayın zamanlaması işlenemedi: {exc}')
+            return
+        if result.get('processed'):
+            self.stdout.write(
+                f"Sınav yayını — işlenen {result['processed']}, "
+                f"kuyruğa alınan {result['sent']}, eksik {result['overdue']}"
+                + (' (dry-run)' if dry_run else '')
+            )

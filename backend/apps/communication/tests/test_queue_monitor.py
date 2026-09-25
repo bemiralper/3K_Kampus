@@ -1,7 +1,9 @@
 """Mesaj kuyruğu canlı liste, arşiv ve yeniden deneme."""
 from datetime import timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
+from django.core.files.base import ContentFile
 from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
@@ -9,10 +11,16 @@ from rest_framework.test import APIClient
 from apps.communication.application.queue_monitor_service import (
     archive_old_failures,
     list_outbound_queue,
+    retry_failed_message,
     retry_queue_item,
 )
-from apps.communication.domain.enums import Channel, MessageDirection, MessageStatus
-from apps.communication.domain.models import Conversation, Message, OutboundQueueItem
+from apps.communication.domain.enums import Channel, MessageDirection, MessageStatus, MessageType
+from apps.communication.domain.models import (
+    Conversation,
+    Message,
+    MessageAttachment,
+    OutboundQueueItem,
+)
 from apps.communication.infrastructure.repository import OutboundQueueRepository
 from apps.kurum.domain.models import Kurum
 from apps.roller.models import Permission, Role, RolePermission, UserRole
@@ -93,6 +101,92 @@ class QueueMonitorServiceTest(TestCase):
         self.assertEqual(deleted, 1)
         self.assertFalse(OutboundQueueItem.objects.filter(id=old.id).exists())
         self.assertTrue(Message.objects.filter(id=msg_id, status=MessageStatus.FAILED).exists())
+
+    def test_retry_failed_message_keeps_template_and_refreshes_name(self):
+        item = self._item(status=MessageStatus.FAILED, attempts=5)
+        item.send_options = {
+            'template_name': 'odev_plan_veli',
+            'template_language': 'tr',
+            'template_context': {
+                'ogrenci_ad': 'Eski Ad',
+                'hafta_no': '4',
+                'odev_baslik': 'Fen planı',
+            },
+        }
+        item.save(update_fields=['send_options'])
+        self.conv.contact_name = 'Yeni Veli'
+        self.conv.save(update_fields=['contact_name'])
+        retry_failed_message(self.kurum.id, self.conv, item.message)
+        item.refresh_from_db()
+        item.message.refresh_from_db()
+        ctx = item.send_options['template_context']
+        self.assertEqual(item.send_options['template_name'], 'odev_plan_veli')
+        self.assertEqual(ctx['hafta_no'], '4')
+        self.assertEqual(ctx['odev_baslik'], 'Fen planı')
+        self.assertEqual(item.message.status, MessageStatus.PENDING)
+        self.assertEqual(item.attempt_count, 0)
+
+    def test_retry_restores_pdf_template_after_queue_row_deleted(self):
+        msg = Message.objects.create(
+            conversation=self.conv,
+            direction=MessageDirection.OUTBOUND,
+            body='Ödev planı ektedir.',
+            status=MessageStatus.FAILED,
+            message_type=MessageType.TEMPLATE,
+            source_module='odev',
+            source_ref_id='12:plan:ogrenci',
+            send_options={
+                'template_name': 'odev_plani_ogrenci_v2',
+                'template_language': 'tr',
+                'template_context': {'hafta_no': '3', 'odev_baslik': 'Matematik'},
+            },
+        )
+        attachment = MessageAttachment.objects.create(
+            message=msg,
+            mime_type='application/pdf',
+            original_name='plan.pdf',
+            provider_media_id='stale-media',
+        )
+        attachment.file.save('plan.pdf', ContentFile(b'%PDF-1.4 test'), save=True)
+        retry_failed_message(self.kurum.id, self.conv, msg)
+        item = OutboundQueueItem.objects.get(message=msg)
+        self.assertEqual(item.send_options['template_name'], 'odev_plani_ogrenci_v2')
+        self.assertEqual(item.send_options['template_context']['hafta_no'], '3')
+        attachment.refresh_from_db()
+        self.assertEqual(attachment.provider_media_id, '')
+        msg.refresh_from_db()
+        self.assertEqual(msg.status, MessageStatus.PENDING)
+
+    def test_retry_recovers_odev_template_when_options_were_never_stored(self):
+        msg = Message.objects.create(
+            conversation=self.conv,
+            direction=MessageDirection.OUTBOUND,
+            body='Ödev raporu ektedir.',
+            status=MessageStatus.FAILED,
+            message_type=MessageType.TEMPLATE,
+            source_module='odev',
+            source_ref_id='44:report:veli:9',
+        )
+
+        class _Meta:
+            name = 'odev_raporu_veli_v2'
+            language = 'tr'
+            channel_config_id = 'acc-1'
+
+        class _Resolved:
+            meta_template = _Meta()
+
+            def meta_usable(self, **kwargs):
+                return True
+
+        with patch(
+            'apps.communication.application.notification_template_resolver.resolve_binding',
+            return_value=_Resolved(),
+        ):
+            retry_failed_message(self.kurum.id, self.conv, msg)
+        item = OutboundQueueItem.objects.get(message=msg)
+        self.assertEqual(item.send_options['template_name'], 'odev_raporu_veli_v2')
+        self.assertEqual(item.send_options['template_language'], 'tr')
 
     def test_retry_resets_failed_item(self):
         item = self._item(status=MessageStatus.FAILED, attempts=5)

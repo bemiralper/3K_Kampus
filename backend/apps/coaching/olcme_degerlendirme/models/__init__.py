@@ -17,7 +17,7 @@ from .curriculum import Subject, Topic, Outcome, SubOutcome
 from .mapping_template import MappingTemplate
 from .scoring_settings import OlcmePuanAyar, OlcmeKatsayiSeti
 from .roster import (
-    ExamAudience, ExamRoom, ExamParticipant,
+    ExamAudience, ExamRoom, ExamParticipant, DenemeSalon,
     OlcmeSeviyeOturumAyar, OlcmeOgrenciOturumTercihi, ScheduleGroup,
 )
 from .publish import ExamScheduledDispatch

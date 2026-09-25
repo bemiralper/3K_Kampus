@@ -34,6 +34,16 @@ def exam_is_graded(exam: Exam) -> bool:
     return ExamSession.objects.filter(exam=exam, status=ExamSession.Status.COMPLETED).exists()
 
 
+def present_student_ids(exam: Exam) -> set[int]:
+    """Yoklamada geldi işaretli katılımcılar."""
+    return set(
+        ExamParticipant.objects.filter(
+            exam=exam,
+            attendance=ExamParticipant.Attendance.PRESENT,
+        ).exclude(student_id__isnull=True).values_list('student_id', flat=True)
+    )
+
+
 def answer_key_ready(exam: Exam) -> bool:
     if getattr(exam, 'answer_key_pdf', None) and exam.answer_key_pdf:
         return True
@@ -79,7 +89,9 @@ def publish_status(exam: Exam) -> dict:
         'graded': exam_is_graded(exam),
         'answer_key_ready': answer_key_ready(exam),
         'has_uploaded_pdf': bool(getattr(exam, 'answer_key_pdf', None) and exam.answer_key_pdf),
-        'karne_students': StudentAnswer.objects.filter(session__exam=exam).count(),
+        'karne_students': StudentAnswer.objects.filter(
+            session__exam=exam, student_id__in=present_student_ids(exam),
+        ).count(),
         'answer_key_students': ExamParticipant.objects.filter(
             exam=exam, attendance=ExamParticipant.Attendance.PRESENT,
         ).count(),
@@ -283,9 +295,10 @@ def preview_publish_recipients(exam: Exam, kind: str) -> dict:
 
     from apps.coaching.application.olcme_karne_notify import preview_karne_notify
 
+    present = present_student_ids(exam)
     answers = list(
         StudentAnswer.objects.select_related('student')
-        .filter(session__exam=exam)
+        .filter(session__exam=exam, student_id__in=present)
         .order_by('id')
     )
     students = []
@@ -371,17 +384,18 @@ def _send_karnes(
         build_student_detail_payload,
     )
 
+    present = present_student_ids(exam)
     answers = list(
         StudentAnswer.objects.select_related('student', 'session')
         .prefetch_related('section_scores__section')
-        .filter(session__exam=exam)
+        .filter(session__exam=exam, student_id__in=present)
         .order_by('id')
     )
     if answer_ids is not None:
         allowed = {int(x) for x in answer_ids}
         answers = [a for a in answers if a.id in allowed]
     if not answers:
-        raise ValueError('Gönderilecek karne yok — sınav henüz okunmadı.')
+        raise ValueError('Yoklamada gelen ve sonucu olan öğrenci yok.')
 
     ranking_year = resolve_puan_yili(exam, None)
     sent = 0
@@ -567,7 +581,7 @@ def send_now(
 
 def process_due(*, now=None, exam_id: int | None = None, dry_run: bool = False) -> dict:
     now = now or timezone.now()
-    qs = ExamScheduledDispatch.objects.select_related('exam').filter(
+    qs = ExamScheduledDispatch.objects.filter(
         status=ST_PENDING,
         is_enabled=True,
         scheduled_at__isnull=False,
@@ -575,12 +589,28 @@ def process_due(*, now=None, exam_id: int | None = None, dry_run: bool = False) 
     )
     if exam_id:
         qs = qs.filter(exam_id=exam_id)
+    ids = list(qs.order_by('scheduled_at', 'id').values_list('id', flat=True))
     processed = 0
     sent = 0
     overdue = 0
     errors: list[str] = []
-    for row in qs.order_by('scheduled_at', 'id'):
-        result = fire_dispatch(row, force=False, dry_run=dry_run)
+    for pk in ids:
+        with transaction.atomic():
+            row = (
+                ExamScheduledDispatch.objects.select_for_update(skip_locked=True)
+                .select_related('exam')
+                .filter(
+                    pk=pk,
+                    status=ST_PENDING,
+                    is_enabled=True,
+                    scheduled_at__isnull=False,
+                    scheduled_at__lte=now,
+                )
+                .first()
+            )
+            if row is None:
+                continue
+            result = fire_dispatch(row, force=False, dry_run=dry_run)
         processed += 1
         if result.get('status') == ST_SENT:
             sent += 1

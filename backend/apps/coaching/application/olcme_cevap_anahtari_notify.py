@@ -250,10 +250,9 @@ def send_answer_key_notify(
                     skipped += 1
 
     if sent:
-        try:
-            from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
-            dispatch_process_outbound_queue()
-        except Exception:
-            pass
+        from apps.communication.application.celery_dispatch import (
+            dispatch_outbound_queue_after_commit,
+        )
+        dispatch_outbound_queue_after_commit()
 
     return {'sent': sent, 'skipped': skipped, 'errors': errors, 'message_ids': message_ids}

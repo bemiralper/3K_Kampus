@@ -48,7 +48,42 @@ class ExamRoom(models.Model):
     )
     name = models.CharField('Salon Adı', max_length=100)
     capacity = models.PositiveIntegerField('Kapasite', default=30)
+    seat_start = models.PositiveIntegerField(
+        'İlk sıra',
+        default=1,
+        help_text='Bu sınavın bu salondaki ilk sıra numarası. 51 ise öğrenciler 51’den başlar.',
+    )
+    seat_gap = models.PositiveSmallIntegerField(
+        'Ara boşluk',
+        default=0,
+        help_text='Öğrenciler arasında bırakılan boş sıra. 0 bitişik oturur, 2 ise 1, 4, 7 gider.',
+    )
     order = models.PositiveSmallIntegerField('Sıra', default=0)
+    seating_mode = models.CharField(
+        'Oturma kuralı',
+        max_length=12,
+        default='shuffle',
+        help_text='Bu salondaki öğrencilerin sıra düzeni: shuffle, cross veya sequential.',
+    )
+    exam_session = models.ForeignKey(
+        'olcme_degerlendirme.ExamSessionModel',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='rooms',
+        verbose_name='Oturum',
+        help_text='Boşsa salon her oturumda kullanılır. Doluysa yalnız bu oturumun öğrencileri buraya oturur.',
+    )
+
+    def seat_numbers(self) -> list[int]:
+        """Numaralı yerler start..start+kapasite-1. Ara boşluk bu numaraların arasını atlar."""
+        start = max(1, int(self.seat_start or 1))
+        gap = max(0, int(self.seat_gap or 0))
+        cap = max(0, int(self.capacity or 0))
+        if cap == 0:
+            return []
+        end = start + cap - 1
+        return list(range(start, end + 1, gap + 1))
 
     class Meta:
         app_label = 'olcme_degerlendirme'
@@ -61,6 +96,30 @@ class ExamRoom(models.Model):
 
     def __str__(self):
         return f'{self.exam_id} – {self.name}'
+
+
+class DenemeSalon(models.Model):
+    """Şubede kayıtlı deneme salonu. Sınav oluştururken seçilir."""
+
+    sube = models.ForeignKey(
+        'sube.Sube',
+        on_delete=models.CASCADE,
+        related_name='deneme_salonlari',
+    )
+    name = models.CharField('Salon adı', max_length=100)
+    capacity = models.PositiveIntegerField('Kapasite', default=30)
+
+    class Meta:
+        app_label = 'olcme_degerlendirme'
+        verbose_name = 'Deneme salonu'
+        verbose_name_plural = 'Deneme salonları'
+        ordering = ['name', 'id']
+        constraints = [
+            models.UniqueConstraint(fields=['sube', 'name'], name='unique_deneme_salon_name'),
+        ]
+
+    def __str__(self):
+        return self.name
 
 
 class OlcmeSeviyeOturumAyar(models.Model):

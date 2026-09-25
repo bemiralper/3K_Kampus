@@ -206,6 +206,37 @@ class ConversationMessageContextView(CommunicationAPIView):
         })
 
 
+class MessageRetryView(CommunicationAPIView):
+    """POST — gitmeyen giden mesajı aynı içerikle yeniden kuyruğa alır."""
+
+    def post(self, request, conversation_id, message_id):
+        kurum_id, _, conversation, err = _load(request, conversation_id)
+        if err:
+            return err
+        message = Message.objects.filter(
+            id=message_id, conversation_id=conversation.id, deleted_at__isnull=True,
+        ).select_related('conversation').first()
+        if not message:
+            return Response({'error': 'Mesaj bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        from apps.communication.application.queue_monitor_service import retry_failed_message
+
+        try:
+            retry_failed_message(kurum_id, conversation, message)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        from apps.communication.application.celery_dispatch import (
+            dispatch_outbound_queue_after_commit,
+        )
+        dispatch_outbound_queue_after_commit()
+        message = (
+            Message.objects.filter(id=message.id)
+            .select_related('reply_to', 'forwarded_from', 'sender_user')
+            .prefetch_related(*MessageRepository.THREAD_PREFETCH)
+            .first()
+        )
+        return Response(MessageSerializer(message, context={'_user_id': request.user.id}).data)
+
+
 class MessageStarView(CommunicationAPIView):
     """PATCH — mesajı yıldızla / yıldızı kaldır (kullanıcıya özel)."""
 

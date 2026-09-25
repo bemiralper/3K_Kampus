@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ConversationSessionInfo,
   MessageItem,
+  retryFailedMessage,
   SessionWindowClosedError,
   fetchConversationMessages,
   fetchMessageContext,
@@ -229,6 +230,18 @@ export function useChatThread({ conversationId, onSent, onSessionClosed }: Optio
     [pending, send],
   );
 
+  const retryFailed = useCallback(
+    async (messageId: string) => {
+      if (!conversationId) return;
+      const message = await retryFailedMessage(conversationId, messageId);
+      if (conversationRef.current === conversationId && message?.id) {
+        setMessages((prev) => mergeMessages(prev, [message]));
+      }
+      onSent?.();
+    },
+    [conversationId, onSent],
+  );
+
   const discardPending = useCallback((tempId: string) => {
     setPending((prev) => prev.filter((p) => p.tempId !== tempId));
   }, []);
@@ -269,6 +282,7 @@ export function useChatThread({ conversationId, onSent, onSessionClosed }: Optio
     loadAround,
     send,
     retryPending,
+    retryFailed,
     discardPending,
     patchMessage,
     applyPin,

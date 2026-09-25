@@ -142,7 +142,7 @@ class Exam(models.Model):
     # ── KİTAPÇIK ─────────────────────────────────────────────────────────────
     booklet_type = models.CharField(
         'Kitapçık Türü', max_length=4,
-        choices=BookletType.choices, default=BookletType.NONE,
+        choices=BookletType.choices, default=BookletType.AB,
     )
     booklet_auto_detect = models.BooleanField(
         'Kitapçık Otomatik Tespit', default=True,

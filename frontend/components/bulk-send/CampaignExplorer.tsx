@@ -272,6 +272,58 @@ function CampaignCard({ campaign: c, active, onSelect }: { campaign: CampaignIte
   );
 }
 
+function groupDeliveries(rows: CampaignDelivery[]) {
+  const groups: Array<{ key: string; title: string; rows: CampaignDelivery[] }> = [];
+  const index = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.ogrenci_id ? `ogr-${row.ogrenci_id}` : `solo-${row.id}`;
+    const title = row.student_name || row.contact_name || "Alıcı";
+    const at = index.get(key);
+    if (at == null) {
+      index.set(key, groups.length);
+      groups.push({ key, title, rows: [row] });
+    } else {
+      groups[at].rows.push(row);
+    }
+  }
+  return groups;
+}
+
+function DeliveryGroups({ deliveries }: { deliveries: CampaignDelivery[] }) {
+  const groups = groupDeliveries(deliveries);
+  return (
+    <div className="bs-families">
+      {groups.map((group) => (
+        <section key={group.key} className="bs-family">
+          <header className="bs-family-head">
+            <strong>{group.title}</strong>
+            <span>{group.rows.length} alıcı</span>
+          </header>
+          <ul>
+            {group.rows.map((d) => (
+              <li key={d.id}>
+                <div className="who">
+                  <b>{d.contact_name || "İsimsiz"}</b>
+                  <span>{contactRoleLabel(d.contact_type)}</span>
+                  {d.phone ? <span className="phone">{d.phone}</span> : null}
+                </div>
+                <div className="state">
+                  <MessageStatusBadge status={d.status} />
+                  <time>{formatDateTime(d.sent_at)}</time>
+                </div>
+                {d.status === "FAILED" && d.failed_reason ? (
+                  <p className="err" title={d.failed_reason}>{d.failed_reason_short || d.failed_reason}</p>
+                ) : null}
+                {d.queue_note ? <p className="note">{d.queue_note}</p> : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
+  );
+}
+
 function contactRoleLabel(contactType: string | undefined): string {
   switch ((contactType || "").toUpperCase()) {
     case "OGRENCI":
@@ -352,21 +404,6 @@ function CampaignDetailPane({
     return () => { cancelled = true; };
   }, [campaignId, dOffset, dStatus, dDebounced, campaign?.sent_count, campaign?.failed_count, campaign?.read_count]);
 
-  const retryOne = async (messageId: string) => {
-    if (!campaign) return;
-    setBusy(messageId);
-    try {
-      const fresh = await retryFailedCampaign(campaign.id, [messageId]);
-      setCampaign(fresh);
-      onChanged(fresh);
-      onToast("Mesaj yeniden kuyruğa alındı.", "success");
-    } catch (err) {
-      onToast(err instanceof Error ? err.message : "Tekrar gönderilemedi", "error");
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const run = async (kind: "cancel" | "retry" | "process") => {
     if (!campaign) return;
     setBusy(kind);
@@ -430,13 +467,13 @@ function CampaignDetailPane({
               <button type="button" className="bs-btn bs-btn-sm" disabled={!!busy} onClick={() => void run("process")}>Kuyruğu işle</button>
             )}
             {canRetry && (
-              <button type="button" className="bs-btn bs-btn-sm" disabled={!!busy} onClick={() => setConfirm({
-                title: "Başarısızları yeniden dene",
-                description: `${campaign.failed_count} başarısız mesaj yeniden kuyruğa alınacak.`,
-                confirmLabel: "Yeniden dene",
+              <button type="button" className="bs-btn-primary bs-btn-sm" disabled={!!busy} onClick={() => setConfirm({
+                title: "Gitmeyenlere gönder",
+                description: `${campaign.failed_count} kişiye mesaj ulaşmadı. Hepsi yeniden kuyruğa alınacak.`,
+                confirmLabel: "Gitmeyenlere gönder",
                 onConfirm: () => run("retry"),
               })}>
-                Yeniden dene ({campaign.failed_count})
+                Gitmeyenlere gönder ({campaign.failed_count})
               </button>
             )}
             {canCancel && (
@@ -511,39 +548,7 @@ function CampaignDetailPane({
         ) : deliveries.length === 0 ? (
           <div className="bs-empty">Bu filtreye uyan alıcı yok.</div>
         ) : (
-          <table className="bs-table">
-            <thead>
-              <tr><th>Alıcı</th><th>Kim</th><th>Durum</th><th>Zaman</th><th>Not</th></tr>
-            </thead>
-            <tbody>
-              {deliveries.map((d) => (
-                <tr key={d.id}>
-                  <td className="name">
-                    {d.contact_name || <span className="bs-muted">İsimsiz</span>}
-                    <div className="phone">{d.phone}</div>
-                  </td>
-                  <td data-label="Kim">{contactRoleLabel(d.contact_type)}</td>
-                  <td className="status"><MessageStatusBadge status={d.status} /></td>
-                  <td data-label="Zaman">{formatDateTime(d.sent_at)}</td>
-                  <td data-label="Not">
-                    {d.status === "FAILED" && d.failed_reason ? <div className="err" title={d.failed_reason}>{d.failed_reason_short || d.failed_reason}</div> : null}
-                    {d.queue_note ? <div className="note">{d.queue_note}</div> : null}
-                    {d.status === "FAILED" && campaign.can_manage && campaign.status !== "CANCELLED" ? (
-                      <button
-                        type="button"
-                        className="bs-btn bs-btn-sm"
-                        style={{ marginTop: 6 }}
-                        disabled={!!busy}
-                        onClick={() => void retryOne(d.id)}
-                      >
-                        {busy === d.id ? "Gönderiliyor…" : "Tekrar gönder"}
-                      </button>
-                    ) : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <DeliveryGroups deliveries={deliveries} />
         )}
         {dPages > 1 && (
           <div className="bs-pager">

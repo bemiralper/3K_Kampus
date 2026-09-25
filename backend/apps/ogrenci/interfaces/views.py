@@ -68,7 +68,15 @@ def _sync_term_placement_from_kayit(ogrenci, sinif_id):
                 sinif = Sinif.objects.get(id=sinif_id)
             except Sinif.DoesNotExist:
                 return
+            from apps.sinif.application.placement_helpers import classroom_on_term
+            sinif = classroom_on_term(sinif, aktif_donem)
             assign_students_to_sinif(sinif=sinif, term_id=aktif_donem.id, student_ids=[ogrenci.id])
+            if sinif.id != sinif_id:
+                OgrenciKayit.objects.filter(
+                    ogrenci_id=ogrenci.id,
+                    egitim_yili_id=aktif_donem.egitim_yili_id,
+                    aktif_mi=True,
+                ).update(sinif_id=sinif.id)
         else:
             mevcut_sinif = get_student_term_classroom(student_id=ogrenci.id, term_id=aktif_donem.id)
             if mevcut_sinif:
@@ -406,6 +414,12 @@ def ogrenci_filter_options_api(request):
     ).select_related('sinif_seviyesi')
     if ctx.get('egitim_yili_id'):
         sinif_qs = sinif_qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
+    from apps.academic.services.active_term import get_active_term_or_none
+    aktif_donem = get_active_term_or_none(kurum_id=ctx['kurum_id'], sube_id=ctx['sube_id'])
+    if aktif_donem:
+        from apps.sinif.application.placement_helpers import rebind_placements_onto_term
+        rebind_placements_onto_term(aktif_donem)
+        sinif_qs = sinif_qs.filter(term_id=aktif_donem.id)
 
     siniflar = [
         {

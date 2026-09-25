@@ -179,17 +179,29 @@
   text-align: center;
 }
 
+.tools {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
 .iconBtn {
   appearance: none;
-  border: 1px solid #fecaca;
+  border: 1px solid #e2e8f0;
   background: #fff;
-  color: #dc2626;
+  color: #475569;
   border-radius: 8px;
   width: 32px;
   height: 32px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   line-height: 1;
+}
+
+.iconBtnDanger {
+  composes: iconBtn;
+  border-color: #fecaca;
+  color: #dc2626;
 }
 
 .addBar {
@@ -241,14 +253,22 @@
   .row,
   .rowMain,
   .rowSub {
-    grid-template-columns: 76px minmax(0, 1fr) 40px;
+    grid-template-columns: minmax(0, 1fr) auto;
     grid-template-areas:
-      "badge name del"
-      "badge range count";
+      "badge tools"
+      "name name"
+      "picker picker"
+      "range count";
+    align-items: center;
+    row-gap: 8px;
   }
+  .rowSub { padding-left: 14px; }
   .badgeMain, .badgeSub { grid-area: badge; }
-  .name { grid-area: name; }
-  .range { grid-area: range; text-align: left; }
-  .countInput, .countLabel { grid-area: count; }
-  .iconBtn { grid-area: del; }
+  .name { display: contents; }
+  .nameText { grid-area: name; min-width: 0; }
+  .subjectSelect { grid-area: picker; }
+  .range { grid-area: range; text-align: left; white-space: normal; }
+  .countLabel { grid-area: count; justify-self: end; }
+  .tools { grid-area: tools; }
+  .tree { padding: 14px 14px calc(76px + env(safe-area-inset-bottom, 0px)); }
 }

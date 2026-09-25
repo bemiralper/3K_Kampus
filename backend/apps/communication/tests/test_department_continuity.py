@@ -55,7 +55,7 @@ def _grant(user, code, perms):
 
 
 class InboundDepartmentContinuityTest(TestCase):
-    """Cevap, kişiyle en son konuşan departmanın sohbetine düşer."""
+    """Cevap, mesajın geldiği hattın departmanında kalır."""
 
     def setUp(self):
         self.kurum = Kurum.objects.create(ad='Dept Kurum', kod='DPT')
@@ -106,7 +106,8 @@ class InboundDepartmentContinuityTest(TestCase):
         }
         self.processor.process_webhook(payload, signature_valid=True)
 
-    def test_reply_stays_in_accounting_thread(self):
+    def test_coaching_line_does_not_steal_accounting_thread(self):
+        """Koçluk hattına gelen cevap, muhasebe daha yeni konuşmuş olsa da koçlukta kalır."""
         coaching = self._conv(CommunicationDepartment.COACHING, minutes_ago=600)
         accounting = self._conv(CommunicationDepartment.ACCOUNTING, minutes_ago=5)
 
@@ -115,10 +116,9 @@ class InboundDepartmentContinuityTest(TestCase):
         accounting.refresh_from_db()
         coaching.refresh_from_db()
         self.assertEqual(accounting.department, CommunicationDepartment.ACCOUNTING)
-        self.assertEqual(
-            Message.objects.filter(conversation=accounting).count(), 1,
-        )
-        self.assertEqual(Message.objects.filter(conversation=coaching).count(), 0)
+        self.assertEqual(coaching.department, CommunicationDepartment.COACHING)
+        self.assertEqual(Message.objects.filter(conversation=coaching).count(), 1)
+        self.assertEqual(Message.objects.filter(conversation=accounting).count(), 0)
 
     def test_reply_stays_in_coaching_when_coaching_spoke_last(self):
         coaching = self._conv(CommunicationDepartment.COACHING, minutes_ago=5)

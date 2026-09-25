@@ -168,8 +168,12 @@ class ConversationRouter:
         )
         resolved = resolve_rule_actions(rule, has_coach=has_coach) if rule else None
 
-        # Departman: kural override → çağıranın çözdüğü departman → WABA hesabı
-        if resolved and resolved.department:
+        # Departman: hattın kendi departmanı kazanır. Yönlendirme kuralı
+        # muhasebe cevabını koçluğa (veya tersi) taşıyamaz.
+        line_dept = getattr(channel_config, 'department', None) if channel_config else None
+        if line_dept:
+            dept = line_dept
+        elif resolved and resolved.department:
             dept = resolved.department
         elif department:
             dept = department

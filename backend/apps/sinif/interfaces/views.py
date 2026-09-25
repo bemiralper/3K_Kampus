@@ -207,7 +207,9 @@ def sinif_list_api(request):
 
     if term:
         from apps.term.application.service import rehome_inherited_classes
+        from apps.sinif.application.placement_helpers import rebind_placements_onto_term
         rehome_inherited_classes(term)
+        rebind_placements_onto_term(term)
         sinif_list = [s for s in siniflar if s.term_id == term.id]
         counts = placement_counts_for_term(term.id, [s.id for s in sinif_list])
         data = [_serialize_sinif_row(s, counts.get(s.id, 0)) for s in sinif_list]

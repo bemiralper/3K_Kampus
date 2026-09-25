@@ -311,6 +311,10 @@
     font-size: 18px;
   }
 
+  .crumbCurrent {
+    max-width: 22ch;
+  }
+
   .titleIcon {
     width: 38px;
     height: 38px;
@@ -319,14 +323,27 @@
 
   .pipeline {
     padding: 4px 12px 14px;
+    overflow-x: auto;
+  }
+
+  .step {
+    flex: 1 0 76px;
   }
 
   .stepLabel {
     font-size: 10px;
   }
 
+  .metrics {
+    grid-template-columns: 1fr 1fr;
+  }
+
   .metric {
     padding: 10px 14px;
+  }
+
+  .metricLabel {
+    white-space: normal;
   }
 
   .metricValue {

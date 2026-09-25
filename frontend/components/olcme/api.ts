@@ -12,6 +12,7 @@ import type {
   ExamParticipantRow,
   ParticipantSearchHit,
   ExamRoomItem,
+  DenemeSalon,
   ExamSessionItem,
   PreviewStudent,
   SeatingMode,
@@ -303,6 +304,24 @@ export const examApi = {
       total_capacity: number;
       warning: string | null;
     }>(`${BASE}/${examId}/rooms/`),
+
+  denemeSalonlari: () =>
+    request<DenemeSalon[]>('/api/coaching/olcme-degerlendirme/deneme-salonlari/'),
+
+  saveDenemeSalon: (name: string, capacity: number) =>
+    request<DenemeSalon>('/api/coaching/olcme-degerlendirme/deneme-salonlari/', {
+      method: 'POST',
+      body: JSON.stringify({ name, capacity }),
+    }),
+
+  updateDenemeSalon: (id: number, name: string, capacity: number) =>
+    request<DenemeSalon>(`/api/coaching/olcme-degerlendirme/deneme-salonlari/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify({ name, capacity }),
+    }),
+
+  deleteDenemeSalon: (id: number) =>
+    request<void>(`/api/coaching/olcme-degerlendirme/deneme-salonlari/${id}/`, { method: 'DELETE' }),
 
   saveRooms: (examId: number, rooms: ExamRoomItem[]) =>
     request<{
@@ -1043,17 +1062,20 @@ const CURRICULUM_BASE = '/api/coaching/olcme-degerlendirme/curriculum';
 
 export const curriculumApi = {
   /** Ders listesi (özet) */
-  listSubjects: (examType?: string, band?: string) => {
+  listSubjects: (examType?: string, band?: string, program?: string) => {
     const params = new URLSearchParams();
     if (examType) params.set('exam_type', examType);
     if (band) params.set('band', band);
+    if (program) params.set('program', program);
     const qs = params.toString() ? `?${params}` : '';
     return request<SubjectItem[]>(`${CURRICULUM_BASE}/subjects/${qs}`);
   },
 
   /** Ders detayı (tüm konu/kazanım ağacı) */
-  getSubject: (subjectId: number) =>
-    request<SubjectItem>(`${CURRICULUM_BASE}/subjects/${subjectId}/`),
+  getSubject: (subjectId: number, program?: string) => {
+    const qs = program ? `?program=${encodeURIComponent(program)}` : '';
+    return request<SubjectItem>(`${CURRICULUM_BASE}/subjects/${subjectId}/${qs}`);
+  },
 
   /** Yeni ders oluştur */
   createSubject: (data: { code: string; name: string; display_name?: string; exam_type_filter?: string; order?: number }) =>
@@ -1078,7 +1100,7 @@ export const curriculumApi = {
     request<TopicItem[]>(`${CURRICULUM_BASE}/subjects/${subjectId}/topics/`),
 
   /** Yeni konu oluştur */
-  createTopic: (subjectId: number, data: { code?: string; name: string; order?: number; outcomes?: object[] }) =>
+  createTopic: (subjectId: number, data: { code?: string; name: string; order?: number; program?: string; outcomes?: object[] }) =>
     request<TopicItem>(`${CURRICULUM_BASE}/subjects/${subjectId}/topics/`, {
       method: 'POST',
       body: JSON.stringify(data),
@@ -1172,6 +1194,21 @@ export const curriculumApi = {
     downloadBlob(blob, `kazanim-katalogu-${stamp}.json`);
   },
 
+  downloadOutcomesExcel: async (program: string) => {
+    const res = await fetch(`${CURRICULUM_BASE}/catalog/export-excel/?program=${encodeURIComponent(program)}`, {
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Excel indirilemedi.');
+    }
+    const blob = await res.blob();
+    const name = program === 'maarif' ? 'kazanimlar-maarif-modeli.xlsx' : 'kazanimlar-2018-programi.xlsx';
+    const { downloadBlob } = await import('@/lib/download-file');
+    downloadBlob(blob, name);
+  },
+
   importCatalog: async (file: File, mode: 'replace' | 'merge', dryRun = false) => {
     const form = new FormData();
     form.append('file', file);
@@ -1199,7 +1236,7 @@ export const curriculumApi = {
   },
 
   /** Metin formatında toplu içe aktarım (kopyala-yapıştır) */
-  bulkTextImport: (data: { subject_id: number; text: string }) =>
+  bulkTextImport: (data: { subject_id: number; text: string; program?: string }) =>
     request<{ message: string; stats: { topics: number; outcomes: number; sub_outcomes: number }; subject: SubjectItem }>(
       `${CURRICULUM_BASE}/bulk-text-import/`,
       { method: 'POST', body: JSON.stringify(data) },

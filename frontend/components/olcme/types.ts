@@ -206,10 +206,25 @@ export interface ExamDetail extends ExamListItem {
   updated_at: string;
 }
 
+export interface DenemeSalon {
+  id: number;
+  name: string;
+  capacity: number;
+}
+
 export interface ExamRoomItem {
   id?: number;
   name: string;
   capacity: number;
+  /** Bu sınavda kullanılacak ilk fiziksel sıra. Varsayılan 1. */
+  seat_start?: number;
+  /** Öğrenciler arasında bırakılan boş sıra. 0 bitişik, 2 ise 1, 4, 7. */
+  seat_gap?: number;
+  /** Boşsa salon her oturumda kullanılır. */
+  exam_session_id?: number | null;
+  /** Kayıt öncesi sihirbazda oturum sırası. */
+  session_index?: number | null;
+  seating_mode?: SeatingMode;
   order?: number;
 }
 
@@ -219,6 +234,7 @@ export interface ExamParticipantRow {
   ad: string;
   soyad: string;
   full_name: string;
+  profil_foto?: string | null;
   tc_kimlik_no: string;
   telefon?: string;
   email?: string;
@@ -275,6 +291,7 @@ export interface PreviewStudent {
   deneme_paketi_id?: number | null;
   source?: string;
   schedule_group?: 'HAFTA_ICI' | 'HAFTA_SONU';
+  profil_foto?: string | null;
 }
 
 export type SeatingMode = 'sequential' | 'shuffle' | 'cross';
@@ -322,7 +339,7 @@ export const EXAM_CREATE_FORM_DEFAULT: ExamCreateForm = {
   per_section_penalty:  true,
   puan_yili:            null,
   include_optional_philosophy: true,
-  booklet_type:         'NONE',
+  booklet_type:         'AB',
   booklet_auto_detect:  true,
   apply_template:       true,
 };

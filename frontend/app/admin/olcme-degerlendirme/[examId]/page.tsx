@@ -51,18 +51,10 @@ const errText = (err: unknown, fallback: string) =>
 /** İşlem hatalarını gösteren şerit. Hatalar sessizce yutulmamalı. */
 function ErrorBar({ message, onClose }: { message: string; onClose: () => void }) {
   return (
-    <div style={{
-      padding: '12px 18px', background: '#fef2f2', border: '1px solid #fecaca',
-      borderRadius: 12, color: '#991b1b', marginBottom: 16, fontSize: 13,
-      display: 'flex', alignItems: 'center', gap: 12,
-    }}>
+    <div className={`${r.toast} mobile-above-nav`} role="alert">
       <Icon name="error" size={18} />
-      <span style={{ flex: 1 }}>{message}</span>
-      <button onClick={onClose} aria-label="Kapat"
-        style={{
-          background: 'none', border: 'none', cursor: 'pointer', color: '#b91c1c',
-          display: 'flex', alignItems: 'center', padding: 0,
-        }}>
+      <span>{message}</span>
+      <button type="button" className={r.toastClose} onClick={onClose} aria-label="Kapat">
         <Icon name="close" size={16} />
       </button>
     </div>
@@ -439,35 +431,33 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 
       {tabError && <ErrorBar message={tabError} onClose={() => setTabError('')} />}
 
-      {/* ── Düzenle / Kaydet Butonları ─────────────────────────────────── */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-        {!editing ? (
-          <button className="btn-modern btn-primary" onClick={handleStartEdit}
-            style={{ padding: '7px 18px', fontSize: 13 }}>
-            ✏️ Düzenle
-          </button>
-        ) : (
-          <>
-            <button className="btn-modern btn-secondary" onClick={handleCancelEdit}
-              style={{ padding: '7px 18px', fontSize: 13 }}>
-              İptal
-            </button>
-            <button className="btn-modern btn-primary" onClick={handleSave} disabled={saving}
-              style={{ padding: '7px 18px', fontSize: 13 }}>
-              {saving ? '⏳ Kaydediliyor…' : '💾 Kaydet'}
-            </button>
-          </>
-        )}
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      <div className={s.infoSplit}>
         {/* ── Sınav Bilgileri ──────────────────────────────────────────── */}
         <div className="card-modern">
-          <div className="card-modern-header">
+          <div className={`card-modern-header ${s.examCardHead}`}>
             <h3>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
               Sınav Bilgileri
             </h3>
+            <div className="card-modern-header-actions">
+              {!editing ? (
+                <button className="btn-modern btn-primary" onClick={handleStartEdit}
+                  style={{ padding: '7px 18px', fontSize: 13 }}>
+                  ✏️ Düzenle
+                </button>
+              ) : (
+                <>
+                  <button className="btn-modern btn-secondary" onClick={handleCancelEdit}
+                    style={{ padding: '7px 18px', fontSize: 13 }}>
+                    İptal
+                  </button>
+                  <button className="btn-modern btn-primary" onClick={handleSave} disabled={saving}
+                    style={{ padding: '7px 18px', fontSize: 13 }}>
+                    {saving ? '⏳ Kaydediliyor…' : '💾 Kaydet'}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
           <div className={`card-modern-body ${s.cardBody}`}>
             {!editing ? (
@@ -971,13 +961,9 @@ function SessionCard({ session, index, onRemove, onUpdate }: {
   }
 
   return (
-    <div style={{
-      background: '#fff', border: '1px solid var(--border)', borderRadius: 12,
-      padding: '16px 20px', marginTop: index > 0 ? 12 : 0,
-      transition: 'border-color .15s',
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+    <div className={s.sessionCard} style={{ marginTop: index > 0 ? 12 : 0 }}>
+      <div className={s.sessionCardHead}>
+        <div className={s.sessionCardMain}>
           <span className={s.sessionOrder}>{index + 1}</span>
           <div>
             <span className={s.sessionName}>{session.name}</span>
@@ -1006,7 +992,7 @@ function SessionCard({ session, index, onRemove, onUpdate }: {
             </div>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 6 }}>
+        <div className={s.sessionCardActions}>
           <button className="btn-modern" onClick={startEdit}
             style={{ color: 'var(--primary)', fontSize: 12, padding: '4px 10px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer' }}>
             ✏️ Düzenle

@@ -31,6 +31,7 @@ def _deliveries_qs(campaign, *, status_filter: str = '', q: str = ''):
     qs = Message.objects.filter(campaign=campaign).select_related(
         'conversation',
         'conversation__veli',
+        'conversation__veli__ogrenci',
         'conversation__ogrenci',
         'conversation__contact_identity',
         'conversation__contact_identity__veli',
@@ -52,7 +53,12 @@ def _deliveries_qs(campaign, *, status_filter: str = '', q: str = ''):
             | _Q(conversation__ogrenci__ad__icontains=q)
             | _Q(conversation__ogrenci__soyad__icontains=q)
         )
-    return qs.order_by('created_at')
+    return qs.order_by(
+        'conversation__ogrenci__ad',
+        'conversation__ogrenci__soyad',
+        'conversation__contact_type',
+        'created_at',
+    )
 
 
 def _campaign_deliveries(campaign, *, limit=500, offset=0, status_filter: str = '', q: str = '',
@@ -92,11 +98,19 @@ def _campaign_deliveries(campaign, *, limit=500, offset=0, status_filter: str = 
         else:
             short_reason, full_reason = '', ''
         item = queue_by_message.get(msg.id)
+        student_name = ''
+        ogrenci = getattr(conv, 'ogrenci', None) if conv else None
+        if ogrenci is None and conv is not None and getattr(conv, 'veli', None) is not None:
+            ogrenci = getattr(conv.veli, 'ogrenci', None)
+        if ogrenci is not None:
+            student_name = f'{getattr(ogrenci, "ad", "")} {getattr(ogrenci, "soyad", "")}'.strip()
         rows.append({
             'id': str(msg.id),
             'contact_name': name,
             'phone': (conv.contact_phone if conv else '') or '',
             'contact_type': (conv.contact_type if conv else '') or '',
+            'ogrenci_id': getattr(ogrenci, 'id', None),
+            'student_name': student_name,
             'status': msg.status,
             'failed_reason': full_reason,
             'failed_reason_short': short_reason if full_reason else '',
@@ -131,6 +145,8 @@ def _campaign_deliveries(campaign, *, limit=500, offset=0, status_filter: str = 
             'contact_name': name,
             'phone': phone,
             'contact_type': skipped.get('contact_type') or '',
+            'ogrenci_id': skipped.get('ogrenci_id'),
+            'student_name': student,
             'status': skipped.get('status') or 'FAILED',
             'failed_reason': reason,
             'failed_reason_short': reason,
@@ -354,8 +370,18 @@ class CampaignDetailView(CampaignBulkView):
             return gate
 
         from apps.communication.application.campaign_service import CampaignStatsService
+        from apps.communication.domain.enums import CampaignStatus
 
-        CampaignStatsService.refresh_if_dirty(campaign.id)
+        if campaign.status in (
+            CampaignStatus.QUEUED, CampaignStatus.PROCESSING, CampaignStatus.CONFIRMED,
+        ):
+            CampaignStatsService.refresh_campaign_stats(campaign.id)
+            from apps.communication.application.celery_dispatch import (
+                dispatch_process_outbound_queue,
+            )
+            dispatch_process_outbound_queue(drain=True, background=True)
+        else:
+            CampaignStatsService.refresh_if_dirty(campaign.id)
         campaign.refresh_from_db()
         data = CampaignDetailSerializer(campaign).data
         limit = _int_q(request, 'deliveries_limit', 50, 1, 500)

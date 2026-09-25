@@ -10,7 +10,7 @@ import type {
   SubjectItem,
   OutcomeItem,
 } from '../../../../components/olcme/types';
-import s from '../olcme.module.css';
+import k from './answer-key.module.css';
 import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
 import {
   filterTopicsByQuery,
@@ -68,6 +68,7 @@ export default function AnswerKeyTab({ exam }: Props) {
   const [loading, setLoading]       = useState(true);
   const [saving, setSaving]         = useState(false);
   const [msg, setMsg]               = useState('');
+  const [showJumps, setShowJumps]   = useState(false);
   const [pdfMeta, setPdfMeta]       = useState<{ has_uploaded: boolean; can_generate: boolean; filename: string } | null>(null);
   const [pdfBusy, setPdfBusy]       = useState('');
   const [pdfCopies, setPdfCopies]   = useState<1 | 2 | 4 | 6 | 8>(1);
@@ -437,365 +438,238 @@ export default function AnswerKeyTab({ exam }: Props) {
   const outcomeCount = rows.filter(r => r.outcome_id).length;
   const bCount       = rows.filter(r => r.b_question_number).length;
 
+  useEffect(() => {
+    const onScroll = () => setShowJumps(window.scrollY > 160);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
   if (loading) return (
-    <div className="card-modern" style={{ textAlign: 'center', padding: 60 }}>
-      <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 14 }}>Yükleniyor…</p>
+    <div className={k.panel} style={{ textAlign: 'center' }}>
+      <p className={k.hint} style={{ margin: 0 }}>Yükleniyor…</p>
     </div>
   );
 
-  const stepLabels: { key: Step; label: string; icon: string }[] = [
-    { key: 'answers',   label: 'Cevaplar',    icon: '✏️' },
-    ...(hasB ? [{ key: 'b_booklet' as Step, label: 'B Kitapçığı', icon: '🔄' }] : []),
-    { key: 'outcomes',  label: 'Kazanımlar',  icon: '🎯' },
-    { key: 'preview',   label: 'Önizleme',    icon: '👁' },
+  const stepLabels: { key: Step; label: string; short: string; hint: string }[] = [
+    { key: 'answers', label: 'Cevaplar', short: 'Cevap', hint: 'Yapıştır' },
+    ...(hasB ? [{ key: 'b_booklet' as Step, label: 'B kitapçığı', short: 'B', hint: 'Eşle' }] : []),
+    { key: 'outcomes', label: 'Kazanımlar', short: 'Kazanım', hint: 'İsteğe bağlı' },
+    { key: 'preview', label: 'Önizleme', short: 'Önizle', hint: 'Kaydet' },
   ];
   const currentStepIdx = stepLabels.findIndex(sl => sl.key === step);
+  const toastKind = msg.includes('❌') || /hata/i.test(msg)
+    ? k.toastErr
+    : msg.includes('⚠️') ? k.toastWarn : k.toastOk;
+
+  const scrollPage = (to: 'top' | 'bottom') => {
+    const root = document.scrollingElement || document.documentElement;
+    const top = to === 'top' ? 0 : root.scrollHeight;
+    root.scrollTo({ top, behavior: 'auto' });
+    window.scrollTo({ top, behavior: 'auto' });
+  };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-      <div className="card-modern">
-        <div className="card-modern-header">
-          <h3>Cevap anahtarı PDF</h3>
+    <div className={k.page}>
+      {msg && (
+        <div className={`${k.toast} ${toastKind} mobile-above-nav`} role="status">
+          <span>{msg}</span>
+          <button type="button" aria-label="Kapat" onClick={() => setMsg('')}>×</button>
         </div>
-        <div className={`card-modern-body ${s.cardBody}`}>
-          <p style={{ margin: '0 0 12px', fontSize: 13, color: '#64748b' }}>
-            Kayıtlı cevaplardan PDF üretilir. Sayfada birden fazla tablo seçerek
-            çıktıyı kesip dağıtabilirsiniz. Yayın saatinde WhatsApp’a tek tablo gider.
-          </p>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569' }}>
-              Sayfada tablo
-              <select
-                value={pdfCopies}
-                onChange={e => setPdfCopies(Number(e.target.value) as 1 | 2 | 4 | 6 | 8)}
-                style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}
-              >
-                <option value={1}>1</option>
-                <option value={2}>2</option>
-                <option value={4}>4</option>
-                <option value={6}>6</option>
-                <option value={8}>8</option>
+      )}
+
+      <div className={k.stats}>
+        <div className={k.stat}><b>{filledCount}</b><span>Cevap</span></div>
+        <div className={k.stat}><b>{totalQuestions}</b><span>Soru</span></div>
+        <div className={k.stat}><b>{outcomeCount}</b><span>Kazanım</span></div>
+        <div className={k.stat}><b>{hasB ? bCount : '—'}</b><span>B eşleme</span></div>
+      </div>
+
+      <div className={k.steps}>
+        {stepLabels.map((sl, i) => (
+          <button
+            key={sl.key}
+            type="button"
+            className={step === sl.key ? k.stepOn : i < currentStepIdx ? k.stepDone : k.step}
+            onClick={() => {
+              if (i <= currentStepIdx || hasExistingData) setStep(sl.key);
+            }}
+          >
+            <b>
+              <span className={k.full}>{i < currentStepIdx ? '✓ ' : `${i + 1}. `}{sl.label}</span>
+              <span className={k.short}>{i < currentStepIdx ? '✓' : i + 1} {sl.short}</span>
+            </b>
+            <span className={k.hintLine}>{sl.hint}</span>
+          </button>
+        ))}
+      </div>
+
+      <section className={k.panel}>
+        <div className={k.pdf}>
+          <label className={k.field} title="Bir sayfaya kaç cevap anahtarı basılacağı">
+            Cevap anahtarı
+            <select value={pdfCopies} onChange={e => setPdfCopies(Number(e.target.value) as 1 | 2 | 4 | 6 | 8)}>
+              <option value={1}>1 adet</option>
+              <option value={2}>2 adet</option>
+              <option value={4}>4 adet</option>
+              <option value={6}>6 adet</option>
+              <option value={8}>8 adet</option>
+            </select>
+          </label>
+          {bookletOptions.length > 0 && (
+            <label className={k.field}>
+              Kitapçık
+              <select value={pdfBooklet} onChange={e => setPdfBooklet(e.target.value)}>
+                <option value="">Tümü</option>
+                {bookletOptions.map(letter => (
+                  <option key={letter} value={letter}>{letter}</option>
+                ))}
               </select>
             </label>
-            {bookletOptions.length > 0 && (
-              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: '#475569' }}>
-                Kitapçık
-                <select
-                  value={pdfBooklet}
-                  onChange={e => setPdfBooklet(e.target.value)}
-                  style={{ padding: '6px 8px', borderRadius: 8, border: '1px solid #e2e8f0', fontSize: 13 }}
-                >
-                  <option value="">Tümü</option>
-                  {bookletOptions.map(letter => (
-                    <option key={letter} value={letter}>{letter}</option>
-                  ))}
-                </select>
-              </label>
-            )}
-            <button
-              type="button"
-              className="btn-modern btn-primary"
-              disabled={pdfBusy !== '' || !canDownloadPdf}
-              title={canDownloadPdf ? 'Cevap anahtarı PDF indir' : 'Önce cevapları kaydedin'}
-              onClick={() => downloadPdf('generated')}
-            >
-              {pdfBusy ? 'Hazırlanıyor…' : 'PDF indir'}
+          )}
+          <button
+            type="button"
+            className={k.btnPrimary}
+            disabled={pdfBusy !== '' || !canDownloadPdf}
+            title={canDownloadPdf ? 'Cevap anahtarı PDF indir' : 'Önce cevapları kaydedin'}
+            onClick={() => downloadPdf('generated')}
+          >
+            {pdfBusy ? 'Hazırlanıyor…' : 'PDF indir'}
+          </button>
+        </div>
+      </section>
+
+      {step === 'answers' && (
+        <section className={k.panel}>
+          <h3>Cevapları yapıştırın</h3>
+          <p className={k.hint}>{totalQuestions} soru bekleniyor. Alt alta, yan yana veya Excel sütunu olarak yapıştırabilirsiniz.</p>
+          <div className={k.formats}>
+            <div className={k.format}><b>Alt alta</b><code>{'A\nB\nC\nD\nE'}</code></div>
+            <div className={k.format}><b>Yan yana</b><code>ABCDEABCDE</code></div>
+            <div className={k.format}><b>İptal</b><code>{'A\nİPTAL\nC'}</code></div>
+          </div>
+          <textarea
+            className={k.area}
+            value={answerText}
+            onChange={e => setAnswerText(e.target.value)}
+            placeholder={'Cevapları buraya yapıştırın. İptal için İPTAL, X veya INVALID.'}
+            rows={8}
+            autoFocus
+          />
+          <div className={k.bar}>
+            <span />
+            <button type="button" className={k.btnPrimary} onClick={applyAnswers} disabled={!answerText.trim()}>
+              İleri
             </button>
           </div>
-        </div>
-      </div>
-
-      {/* ────────────────────────────────────────────────────────────────── */}
-      {/*  Başlık + Adım göstergesi                                        */}
-      {/* ────────────────────────────────────────────────────────────────── */}
-      <div className="card-modern">
-        <div className="card-modern-header">
-          <h3>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/></svg>
-            Cevap Anahtarı
-          </h3>
-          <div className="card-modern-header-actions">
-            {hasExistingData && (
-              <button className="btn-modern" onClick={handleReset}
-                style={{ padding: '6px 14px', fontSize: 12, color: 'var(--danger)', border: '1px solid #fecaca' }}>
-                🗑 Sıfırla
-              </button>
-            )}
-          </div>
-        </div>
-        <div className={`card-modern-body ${s.cardBody}`}>
-
-          {/* Adım göstergesi */}
-          <div className={s.akSteps}>
-            {stepLabels.map((sl, i) => (
-              <button
-                key={sl.key}
-                type="button"
-                className={[
-                  s.akStep,
-                  step === sl.key ? s.akStepActive : '',
-                  i < currentStepIdx ? s.akStepDone : '',
-                ].filter(Boolean).join(' ')}
-                onClick={() => {
-                  if (i <= currentStepIdx || hasExistingData) setStep(sl.key);
-                }}
-              >
-                <span className={s.akStepNum}>{i < currentStepIdx ? '✓' : i + 1}</span>
-                <span className={s.akStepLabel}>{sl.icon} {sl.label}</span>
-              </button>
-            ))}
-          </div>
-
-          {msg && (
-            <div style={{
-              padding: '10px 14px', borderRadius: 8, marginTop: 14,
-              background: msg.includes('❌') ? '#fef2f2' : msg.includes('⚠️') ? '#fffbeb' : '#f0fdf4',
-              color: msg.includes('❌') ? '#991b1b' : msg.includes('⚠️') ? '#92400e' : '#166534',
-              fontSize: 13, lineHeight: 1.5,
-            }}>
-              {msg}
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* ────────────────────────────────────────────────────────────────── */}
-      {/*  ADIM 1: CEVAPLAR                                                 */}
-      {/* ────────────────────────────────────────────────────────────────── */}
-      {step === 'answers' && (
-        <div className="card-modern">
-          <div className="card-modern-header"><h3>✏️ Adım 1: Cevapları Yapıştırın</h3></div>
-          <div className={`card-modern-body ${s.cardBody}`}>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-              Excel&apos;den veya metin dosyasından cevapları kopyalayıp aşağıya yapıştırın.
-              <strong> {totalQuestions} soru</strong> bekleniyor.
-            </p>
-
-            <div className={s.akFormatHelp}>
-              <div className={s.akFormatCard}>
-                <strong>📝 Alt Alta</strong>
-                <code>{'A\nB\nC\nD\nE'}</code>
-              </div>
-              <div className={s.akFormatCard}>
-                <strong>📝 Yan Yana</strong>
-                <code>ABCDEABCDE…</code>
-              </div>
-              <div className={s.akFormatCard}>
-                <strong>📝 Excel Sütunu</strong>
-                <code>{'A\nB\nİPTAL\nC\nD'}</code>
-              </div>
-            </div>
-
-            <textarea
-              className={s.akTextarea}
-              value={answerText}
-              onChange={e => setAnswerText(e.target.value)}
-              placeholder={`Cevapları buraya yapıştırın…\nÖrnek: ABCDEABCDE veya her satırda bir cevap\n\nİptal: İPTAL, X veya INVALID yazabilirsiniz`}
-              rows={8}
-              autoFocus
-            />
-
-            <div className={s.akStepActions}>
-              <div />
-              <button className="btn-modern btn-primary" onClick={applyAnswers}
-                style={{ padding: '8px 20px', fontSize: 13 }}
-                disabled={!answerText.trim()}>
-                İleri →
-              </button>
-            </div>
-          </div>
-        </div>
+        </section>
       )}
 
-      {/* ────────────────────────────────────────────────────────────────── */}
-      {/*  ADIM 2: B KİTAPÇIĞI (opsiyonel, sadece hasB)                   */}
-      {/* ────────────────────────────────────────────────────────────────── */}
       {step === 'b_booklet' && hasB && (
-        <div className="card-modern">
-          <div className="card-modern-header">
-            <h3>🔄 Adım 2: B Kitapçığı Soru Numaraları
-              <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 6 }}>(opsiyonel)</span>
-            </h3>
-          </div>
-          <div className={`card-modern-body ${s.cardBody}`}>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-              A kitapçığındaki her sorunun B kitapçığındaki karşılık soru numarasını alt alta yapıştırın.
-            </p>
-
-            <textarea
-              className={s.akTextarea}
-              value={bBookletText}
-              onChange={e => setBBookletText(e.target.value)}
-              placeholder={'B kitapçığı soru numaralarını yapıştırın…\nÖrnek:\n3\n1\n5\n2\n4'}
-              rows={6}
-              autoFocus
-            />
-
-            <div className={s.akStepActions}>
-              <button className="btn-modern" onClick={() => setStep('answers')}
-                style={{ padding: '8px 20px', fontSize: 13 }}>
-                ← Geri
-              </button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-modern" onClick={() => { setBBookletText(''); setStep('outcomes'); }}
-                  style={{ padding: '8px 20px', fontSize: 13 }}>
-                  Atla
-                </button>
-                <button className="btn-modern btn-primary" onClick={applyBBooklet}
-                  style={{ padding: '8px 20px', fontSize: 13 }}>
-                  İleri →
-                </button>
-              </div>
+        <section className={k.panel}>
+          <h3>B kitapçığı soru numaraları</h3>
+          <p className={k.hint}>A kitapçığındaki her sorunun B kitapçığındaki karşılığını alt alta yapıştırın. Bu adım isteğe bağlı.</p>
+          <textarea
+            className={k.area}
+            value={bBookletText}
+            onChange={e => setBBookletText(e.target.value)}
+            placeholder={'3\n1\n5\n2\n4'}
+            rows={6}
+            autoFocus
+          />
+          <div className={k.bar}>
+            <button type="button" className={k.btn} onClick={() => setStep('answers')}>Geri</button>
+            <div className={k.actions}>
+              <button type="button" className={k.btn} onClick={() => { setBBookletText(''); setStep('outcomes'); }}>Atla</button>
+              <button type="button" className={k.btnPrimary} onClick={applyBBooklet}>İleri</button>
             </div>
           </div>
-        </div>
+        </section>
       )}
 
-      {/* ────────────────────────────────────────────────────────────────── */}
-      {/*  ADIM 3: KAZANIMLAR (opsiyonel)                                   */}
-      {/* ────────────────────────────────────────────────────────────────── */}
       {step === 'outcomes' && (
-        <div className="card-modern">
-          <div className="card-modern-header">
-            <h3>🎯 Adım {hasB ? '3' : '2'}: Kazanımlar
-              <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 6 }}>(opsiyonel)</span>
-            </h3>
-          </div>
-          <div className={`card-modern-body ${s.cardBody}`}>
-            <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: '0 0 12px' }}>
-              Her sorunun kazanımını alt alta yapıştırın.
-              Kazanım <strong>kodunu</strong> (ör. M.6.1.1.1) veya <strong>açıklamasını</strong> (ör. Doğal sayılarla dört işlem yapar)
-              yazabilirsiniz. Sistem otomatik eşleştirecektir.
-            </p>
-
-            <div className={s.akFormatHelp}>
-              <div className={s.akFormatCard} style={{ flex: '1 1 auto' }}>
-                <strong>📋 Kazanım Kodu veya Açıklaması</strong>
-                <code style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
-                  {'M.6.1.1.1\nDoğal sayılarla dört işlem yapar\nM.6.1.2.3\nKesirlerle toplama işlemi yapar'}
-                </code>
-              </div>
-            </div>
-
-            <textarea
-              className={s.akTextarea}
-              value={outcomeText}
-              onChange={e => setOutcomeText(e.target.value)}
-              placeholder={'Kazanımları buraya yapıştırın…\nHer satıra bir kazanım kodu veya açıklaması\n\nÖrnek:\nM.6.1.1.1\nDoğal sayılarla dört işlem yapar'}
-              rows={6}
-              autoFocus
-            />
-
-            {allOutcomes.length === 0 && (
-              <div style={{ padding: '10px 14px', borderRadius: 8, background: '#fffbeb', color: '#92400e', fontSize: 12, marginTop: 8 }}>
-                ⚠️ Kazanım verisi bulunamadı. Müfredat modülünden kazanım eklediğinizden emin olun.
-              </div>
-            )}
-
-            <div className={s.akStepActions}>
-              <button className="btn-modern" onClick={() => setStep(hasB ? 'b_booklet' : 'answers')}
-                style={{ padding: '8px 20px', fontSize: 13 }}>
-                ← Geri
-              </button>
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn-modern" onClick={() => { setOutcomeText(''); setStep('preview'); }}
-                  style={{ padding: '8px 20px', fontSize: 13 }}>
-                  Atla
-                </button>
-                <button className="btn-modern btn-primary" onClick={applyOutcomes}
-                  style={{ padding: '8px 20px', fontSize: 13 }}
-                  disabled={!outcomeText.trim()}>
-                  İleri →
-                </button>
-              </div>
+        <section className={k.panel}>
+          <h3>Kazanımlar</h3>
+          <p className={k.hint}>Her satıra bir kazanım kodu veya açıklaması. Eşleşmeyenler önizlemede elle seçilir. Bu adım isteğe bağlı.</p>
+          <div className={k.formats}>
+            <div className={k.format}>
+              <b>Kod veya açıklama</b>
+              <code>{'M.6.1.1.1\nDoğal sayılarla dört işlem yapar'}</code>
             </div>
           </div>
-        </div>
+          <textarea
+            className={k.area}
+            value={outcomeText}
+            onChange={e => setOutcomeText(e.target.value)}
+            placeholder={'M.6.1.1.1\nDoğal sayılarla dört işlem yapar'}
+            rows={6}
+            autoFocus
+          />
+          {allOutcomes.length === 0 && (
+            <div className={k.warn}>Kazanım listesi boş. Müfredattan kazanım ekleyince buradan eşleşir.</div>
+          )}
+          <div className={k.bar}>
+            <button type="button" className={k.btn} onClick={() => setStep(hasB ? 'b_booklet' : 'answers')}>Geri</button>
+            <div className={k.actions}>
+              <button type="button" className={k.btn} onClick={() => { setOutcomeText(''); setStep('preview'); }}>Atla</button>
+              <button type="button" className={k.btnPrimary} onClick={applyOutcomes} disabled={!outcomeText.trim()}>İleri</button>
+            </div>
+          </div>
+        </section>
       )}
 
-      {/* ────────────────────────────────────────────────────────────────── */}
-      {/*  ÖNİZLEME + DÜZENLEME                                            */}
-      {/* ────────────────────────────────────────────────────────────────── */}
       {step === 'preview' && (
-        <div className="card-modern">
-          <div className="card-modern-header">
-            <h3>
-              👁 Önizleme
-              <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 8 }}>
-                {filledCount}/{totalQuestions} cevap
-                {outcomeCount > 0 && ` · ${outcomeCount} kazanım`}
-                {hasB && bCount > 0 && ` · ${bCount} B eşleme`}
-              </span>
-            </h3>
-            <div className="card-modern-header-actions">
-              <div style={{ display: 'flex', gap: 8 }}>
-                {!hasExistingData && (
-                  <button className="btn-modern" onClick={() => setStep('answers')}
-                    style={{ padding: '6px 14px', fontSize: 12 }}>
-                    ← Adımlara Dön
-                  </button>
-                )}
-                <button className="btn-modern btn-primary" onClick={handleSave}
-                  disabled={saving || filledCount === 0}
-                  style={{ padding: '6px 14px', fontSize: 12 }}>
-                  {saving ? '⏳ Kaydediliyor…' : '💾 Kaydet'}
-                </button>
-              </div>
+        <>
+          <div className={k.tools}>
+            <div>
+              <h3>Önizleme</h3>
+              <p>{filledCount}/{totalQuestions} cevap{outcomeCount > 0 ? ` · ${outcomeCount} kazanım` : ''}{hasB && bCount > 0 ? ` · ${bCount} B eşleme` : ''}</p>
+            </div>
+            <div className={k.actions}>
+              {!hasExistingData && (
+                <button type="button" className={k.btn} onClick={() => setStep('answers')}>Adımlara dön</button>
+              )}
+              {hasExistingData && (
+                <button type="button" className={k.btnDanger} onClick={handleReset}>Sıfırla</button>
+              )}
+              <button type="button" className={k.btnPrimary} onClick={handleSave} disabled={saving || filledCount === 0}>
+                {saving ? 'Kaydediliyor…' : 'Kaydet'}
+              </button>
             </div>
           </div>
-          <div className="card-modern-body" style={{ padding: 0, overflowX: 'auto' }}>
-            <table className={s.akTable}>
-              <thead>
-                <tr>
-                  <th style={{ width: 50 }}>Soru</th>
-                  <th style={{ width: 80 }}>Bölüm</th>
-                  <th>Doğru Cevap</th>
-                  {hasB && <th style={{ width: 70 }}>B Kit.</th>}
-                  <th>Kazanım</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((row, idx) => {
-                  const showHeader = idx === 0 || rows[idx - 1].section_id !== row.section_id;
-                  const colSpan = hasB ? 5 : 4;
-                  const sec = sections.find(ss => ss.id === row.section_id);
-                  const sectionInfo = sec
-                    ? { name: sec.name, question_count: sec.question_end - sec.question_start + 1 }
-                    : undefined;
-                  return (
-                    <PreviewRow
-                      key={row.question_number}
-                      row={row}
-                      idx={idx}
-                      showHeader={showHeader}
-                      colSpan={colSpan}
-                      hasB={hasB}
-                      onAnswer={setAnswer}
-                      onBQuestion={setBQuestion}
-                      onOpenOutcome={() => setOutcomeModal({ rowIdx: idx })}
-                      onClearOutcome={() => setOutcome(idx, null)}
-                      sectionInfo={sectionInfo}
-                    />
-                  );
-                })}
-              </tbody>
-            </table>
 
+          <section className={k.panel}>
+            {rows.map((row, idx) => {
+              const showHeader = idx === 0 || rows[idx - 1].section_id !== row.section_id;
+              const sec = sections.find(ss => ss.id === row.section_id);
+              const sectionInfo = sec
+                ? { name: sec.name, question_count: sec.question_end - sec.question_start + 1 }
+                : undefined;
+              return (
+                <PreviewRow
+                  key={row.question_number}
+                  row={row}
+                  idx={idx}
+                  showHeader={showHeader}
+                  hasB={hasB}
+                  onAnswer={setAnswer}
+                  onBQuestion={setBQuestion}
+                  onOpenOutcome={() => setOutcomeModal({ rowIdx: idx })}
+                  onClearOutcome={() => setOutcome(idx, null)}
+                  sectionInfo={sectionInfo}
+                />
+              );
+            })}
             {filledCount === 0 && (
-              <div style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--text-secondary)' }}>
-                <p style={{ fontSize: 14 }}>Henüz cevap girilmemiş.</p>
-                <button className="btn-modern btn-primary" onClick={() => setStep('answers')}
-                  style={{ marginTop: 8, padding: '8px 20px', fontSize: 13 }}>
-                  ✏️ Cevapları Gir
-                </button>
+              <div className={k.blank}>
+                <p>Henüz cevap girilmemiş.</p>
+                <button type="button" className={k.btnPrimary} onClick={() => setStep('answers')}>Cevapları gir</button>
               </div>
             )}
-          </div>
-        </div>
+          </section>
+        </>
       )}
 
-      {/* ── Kazanım Seçici Modal ─── */}
       {outcomeModal !== null && (
         <OutcomePickerModal
           subjects={subjectsForSection(
@@ -808,23 +682,25 @@ export default function AnswerKeyTab({ exam }: Props) {
           onClose={() => setOutcomeModal(null)}
         />
       )}
+
+      {showJumps && (
+        <div className={k.jumps}>
+          <button type="button" className={k.jump} aria-label="Yukarı" onClick={() => scrollPage('top')}>↑</button>
+          <button type="button" className={k.jump} aria-label="Aşağı" onClick={() => scrollPage('bottom')}>↓</button>
+        </div>
+      )}
     </div>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Önizleme Tablo Satırı                                                    */
-/* ═══════════════════════════════════════════════════════════════════════════ */
-
 function PreviewRow({
-  row, idx, showHeader, colSpan, hasB,
+  row, idx, showHeader, hasB,
   onAnswer, onBQuestion, onOpenOutcome, onClearOutcome,
   sectionInfo,
 }: {
   row: GridRow;
   idx: number;
   showHeader: boolean;
-  colSpan: number;
   hasB: boolean;
   onAnswer: (idx: number, a: AnswerChoice) => void;
   onBQuestion: (idx: number, v: string) => void;
@@ -835,81 +711,59 @@ function PreviewRow({
   return (
     <>
       {showHeader && (
-        <tr className={s.akSectionRow}>
-          <td colSpan={colSpan}>
-            📁 {sectionInfo?.name ?? row.section_name}
-            {sectionInfo && (
-              <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 8, fontSize: 11 }}>
-                ({sectionInfo.question_count} soru)
-              </span>
-            )}
-          </td>
-        </tr>
+        <div className={k.section}>
+          {sectionInfo?.name ?? row.section_name}
+          {sectionInfo ? ` · ${sectionInfo.question_count} soru` : ''}
+        </div>
       )}
-      <tr className={row.is_cancelled ? s.akCancelled : undefined}>
-        <td>{row.question_number}</td>
-        <td style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{row.section_name}</td>
-        <td>
-          <div className={s.akAnswerGroup}>
-            {['A', 'B', 'C', 'D', 'E'].map(ch => (
-              <button
-                key={ch}
-                type="button"
-                className={row.correct_answer === ch ? s.akAnswerBtnActive : s.akAnswerBtn}
-                onClick={() => onAnswer(idx, ch as AnswerChoice)}
-              >
-                {ch}
-              </button>
-            ))}
+      <div className={k.q}>
+        <div className={k.num}>{row.question_number}</div>
+        <div className={k.choices}>
+          {['A', 'B', 'C', 'D', 'E'].map(ch => (
             <button
+              key={ch}
               type="button"
-              className={row.is_cancelled ? s.akAnswerBtnCancelled : s.akAnswerBtn}
-              onClick={() => onAnswer(idx, 'INVALID')}
-              title="İptal"
-              style={{ fontSize: 10 }}
+              className={row.correct_answer === ch ? k.choiceOn : k.choice}
+              onClick={() => onAnswer(idx, ch as AnswerChoice)}
             >
-              ✕
+              {ch}
             </button>
-          </div>
-        </td>
-        {hasB && (
-          <td>
+          ))}
+          <button
+            type="button"
+            className={row.is_cancelled ? k.choiceOff : k.choice}
+            onClick={() => onAnswer(idx, 'INVALID')}
+            title="İptal"
+          >
+            ×
+          </button>
+        </div>
+        <div className={k.side}>
+          {hasB && (
             <input
-              className={s.akBInput}
+              className={k.bInput}
               type="number"
               min={1}
               value={row.b_question_number ?? ''}
               onChange={e => onBQuestion(idx, e.target.value)}
-              placeholder="—"
+              placeholder="B"
+              aria-label="B kitapçığı soru numarası"
             />
-          </td>
-        )}
-        <td>
-          <div className={s.akOutcomeCell}>
-            {row.outcome_code && (
-              <span className={s.akOutcomeTag} title={row.outcome_text}>
-                {row.outcome_code}
-              </span>
-            )}
-            <button className={s.akOutcomeBtn} onClick={onOpenOutcome} title="Kazanım Seç">
-              {row.outcome_id ? '✏' : '+'}
-            </button>
-            {row.outcome_id && (
-              <button className={s.akOutcomeBtn} onClick={onClearOutcome} title="Kazanımı Kaldır"
-                style={{ color: 'var(--danger)' }}>
-                ✕
-              </button>
-            )}
-          </div>
-        </td>
-      </tr>
+          )}
+          {row.outcome_code && (
+            <span className={k.tag} title={row.outcome_text}>{row.outcome_code}</span>
+          )}
+          <button type="button" className={k.iconBtn} onClick={onOpenOutcome} title="Kazanım seç">
+            {row.outcome_id ? '✎' : '+'}
+          </button>
+          {row.outcome_id && (
+            <button type="button" className={k.iconBtn} onClick={onClearOutcome} title="Kazanımı kaldır">×</button>
+          )}
+        </div>
+      </div>
     </>
   );
 }
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Kazanım Seçici Modal                                                     */
-/* ═══════════════════════════════════════════════════════════════════════════ */
 
 function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
   subjects: SubjectItem[];
@@ -919,45 +773,37 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
   onClose: () => void;
 }) {
   return (
-    <div className={s.outcomeModal} onClick={onClose}>
-      <div className={s.outcomeModalContent} onClick={e => e.stopPropagation()}>
-        <div className={s.outcomeModalHeader}>
-          <h3>Kazanım Seç</h3>
-          <button onClick={onClose}
-            style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: '0 4px', color: 'var(--text-secondary)' }}>
-            ✕
-          </button>
+    <div className={k.modal} onClick={onClose}>
+      <div className={k.sheet} onClick={e => e.stopPropagation()}>
+        <div className={k.sheetHead}>
+          <h3>Kazanım seç</h3>
+          <button type="button" className={k.iconBtn} onClick={onClose} aria-label="Kapat">×</button>
         </div>
-        <div className={s.outcomeModalBody}>
+        <div className={k.sheetBody}>
           <input
-            className={s.outcomeSearch}
+            className={k.search}
             type="text"
-            placeholder="Kazanım kodu veya metin ara…"
+            placeholder="Kazanım kodu veya metin ara"
             value={search}
             onChange={e => onSearch(e.target.value)}
             autoFocus
           />
-
           {subjects.map(subj => {
             const filteredTopics = filterTopicsByQuery(subj.topics ?? [], search)
               .filter(t => (t.outcomes ?? []).length > 0);
-
             if (filteredTopics.length === 0) return null;
-
             return (
-              <div key={subj.id} className={s.outcomeGroup}>
-                <div className={s.outcomeGroupTitle}>📚 {subj.name}</div>
+              <div key={subj.id} className={k.group}>
+                <b>{subj.name}</b>
                 {filteredTopics.map(topic => (
-                  <div key={topic.id} style={{ marginLeft: 12, marginBottom: 4 }}>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, padding: '4px 0' }}>
-                      {topic.name}
-                    </div>
+                  <div key={topic.id}>
+                    <div className={k.topic}>{topic.name}</div>
                     {topic.outcomes.map(o => (
                       <div key={o.id}>
                         <button
-                          className={s.outcomeOption}
+                          type="button"
+                          className={k.opt}
                           onClick={() => onSelect({ ...o, sub_outcome_id: null })}
-                          style={{ marginLeft: 8 }}
                         >
                           <strong>{o.code}</strong>
                           {o.text}
@@ -965,14 +811,14 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
                         {(o.sub_outcomes ?? []).map(sub => (
                           <button
                             key={sub.id}
-                            className={s.outcomeOption}
+                            type="button"
+                            className={`${k.opt} ${k.sub}`}
                             onClick={() => onSelect({
                               id: o.id,
                               code: sub.code,
                               text: sub.text,
                               sub_outcome_id: sub.id,
                             })}
-                            style={{ marginLeft: 24 }}
                           >
                             <strong>{sub.code}</strong>
                             {sub.text}
@@ -985,11 +831,10 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
               </div>
             );
           })}
-
           {subjects.length === 0 && (
-            <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-secondary)' }}>
+            <div className={k.blank}>
               <p>Kazanım verisi bulunamadı.</p>
-              <p style={{ fontSize: 12 }}>Müfredat modülünden kazanım ekleyebilirsiniz.</p>
+              <p>Müfredat modülünden kazanım ekleyebilirsiniz.</p>
             </div>
           )}
         </div>

@@ -229,11 +229,11 @@ def _with_optional_philosophy(
 
 
 _DEFAULT_DURATIONS: dict[str, int] = {
-    'YKS_TYT':     135,
+    'YKS_TYT':     165,
     'YKS_AYT':     180,
     'LGS':         155,
     'LGS_7':       155,
-    'DENEME':      135,
+    'DENEME':      165,
     'KURUM_ICI':    90,
     'KONU_TARAMA':  45,
     'KAZANIM':      30,

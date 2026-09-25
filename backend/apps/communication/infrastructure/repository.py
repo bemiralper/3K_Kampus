@@ -477,12 +477,12 @@ class ConversationRepository:
     ) -> str | None:
         """Gelen mesaj hangi departmanın sohbetine düşmeli.
 
-        Muhasebe olarak tanımlı hat (WABA) her zaman muhasebe portalına düşer.
-        Aksi halde aynı numarayı paylaşan hatlarda kişiyle en son konuşan
-        sohbetin departmanı esas alınır; hiç sohbet yoksa hattın departmanı.
+        Hattın departmanı esas alınır. Koçluk hattına gelen cevap muhasebe
+        sohbetine, muhasebe hattına gelen cevap koçluk sohbetine kaymaz.
+        Departmanı boş hatlarda kişiyle en son konuşan sohbet kullanılır.
         """
         cfg_dept = getattr(channel_config, 'department', None)
-        if cfg_dept == CommunicationDepartment.ACCOUNTING:
+        if cfg_dept:
             return cfg_dept
 
         cfg_id = getattr(channel_config, 'id', None)
@@ -1240,13 +1240,17 @@ class OutboundQueueRepository:
         priority: int = 100,
         send_options: dict | None = None,
     ) -> OutboundQueueItem:
+        options = send_options or {}
+        if options.get('template_name'):
+            message.send_options = options
+            message.save(update_fields=['send_options', 'updated_at'])
         return OutboundQueueItem.objects.create(
             kurum_id=kurum_id,
             message=message,
             campaign=campaign,
             priority=priority,
             next_attempt_at=next_attempt_at or timezone.now(),
-            send_options=send_options or {},
+            send_options=options,
         )
 
     @staticmethod
@@ -1273,8 +1277,8 @@ class OutboundQueueRepository:
             Q(next_attempt_at__lte=now)
             & (
                 ((unlocked | stale_locked) & (Q(message__status=MessageStatus.PENDING) | retryable))
-                # Gönderim sırasında düşen süreçten kalan kayıtlar
-                | (stale_locked & Q(message__status=MessageStatus.SENDING))
+                # Gönderim sırasında düşen süreç: kilit bayat ya da hiç yazılmamış
+                | ((unlocked | stale_locked) & Q(message__status=MessageStatus.SENDING))
             )
         )
 
@@ -1376,6 +1380,11 @@ class OutboundQueueRepository:
         msg.sent_at = timezone.now()
         msg.failed_reason = ''
         fields = ['status', 'sent_at', 'provider_message_id', 'failed_reason', 'updated_at']
+        opts = item.send_options if isinstance(item.send_options, dict) else {}
+        stored = msg.send_options if isinstance(getattr(msg, 'send_options', None), dict) else {}
+        if opts.get('template_name') and not stored.get('template_name'):
+            msg.send_options = opts
+            fields.append('send_options')
         if provider_message_id:
             msg.provider_message_id = provider_message_id
         try:
@@ -1441,6 +1450,70 @@ class OutboundQueueRepository:
             msg.status = MessageStatus.PENDING
             msg.failed_reason = error
         msg.save(update_fields=['status', 'failed_reason', 'updated_at'])
+
+    @staticmethod
+    def release_stale_sending_for_campaign(campaign_id) -> int:
+        """Uzun süredir Gönderiliyor kalan kampanya mesajlarını çöz.
+
+        Sağlayıcı kimliği yazılmışsa mesaj gitmiştir → SENT.
+        Çağrı başlamış ama sonuç yoksa yeniden gönderme (çift mesaj) → başarısız.
+        Çağrı hiç başlamamışsa kuyruğa geri al.
+        """
+        from apps.communication.application.outbound_processor import UNCERTAIN_SEND_ERROR
+
+        timeout = int(getattr(settings, 'COMMUNICATION_QUEUE_LOCK_TIMEOUT_SECONDS', 600) or 600)
+        stale_before = timezone.now() - timedelta(seconds=timeout)
+        stuck = list(
+            Message.objects.filter(
+                campaign_id=campaign_id,
+                direction=MessageDirection.OUTBOUND,
+                status=MessageStatus.SENDING,
+                updated_at__lt=stale_before,
+            ).select_related('conversation')
+        )
+        if not stuck:
+            return 0
+        items = {
+            item.message_id: item
+            for item in OutboundQueueItem.objects.filter(message_id__in=[m.id for m in stuck])
+        }
+        changed = 0
+        for msg in stuck:
+            item = items.get(msg.id)
+            if item is not None and item.locked_at and item.locked_at >= stale_before:
+                continue
+            if (msg.provider_message_id or '').strip():
+                msg.status = MessageStatus.SENT
+                if not msg.sent_at:
+                    msg.sent_at = timezone.now()
+                msg.save(update_fields=['status', 'sent_at', 'updated_at'])
+                if item is not None:
+                    OutboundQueueItem.objects.filter(pk=item.pk).delete()
+                changed += 1
+                continue
+            if item is not None and item.provider_call_started_at:
+                OutboundQueueRepository.mark_failed(item, UNCERTAIN_SEND_ERROR, permanent=True)
+                changed += 1
+                continue
+            if item is not None:
+                OutboundQueueItem.objects.filter(pk=item.pk).update(
+                    locked_at=None,
+                    locked_by='',
+                    provider_call_started_at=None,
+                    next_attempt_at=timezone.now(),
+                    updated_at=timezone.now(),
+                )
+            elif msg.conversation_id:
+                OutboundQueueRepository.enqueue(
+                    msg.conversation.kurum_id,
+                    msg,
+                    campaign=OutboundCampaign.objects.filter(id=campaign_id).first(),
+                )
+            msg.status = MessageStatus.PENDING
+            msg.failed_reason = ''
+            msg.save(update_fields=['status', 'failed_reason', 'updated_at'])
+            changed += 1
+        return changed
 
 
 class CommunicationLogRepository:

@@ -15,6 +15,11 @@ const EXAM_TYPE_OPTIONS = [
   { value: 'LGS', label: 'LGS' },
 ];
 
+const PROGRAMS = [
+  { id: 'program_2018', label: '2018 Programı' },
+  { id: 'maarif', label: 'Maarif Modeli' },
+] as const;
+
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
 export default function KazanimlarPage() {
@@ -25,6 +30,8 @@ export default function KazanimlarPage() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState('');
   const [examTypeFilter, setExamTypeFilter] = useState('');
+  const [program, setProgram] = useState<(typeof PROGRAMS)[number]['id']>('program_2018');
+  const [excelBusy, setExcelBusy] = useState(false);
   const [treeSearch, setTreeSearch] = useState('');
 
   // Ağaç açma/kapama durumları
@@ -65,19 +72,19 @@ export default function KazanimlarPage() {
   const fetchSubjects = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await curriculumApi.listSubjects(examTypeFilter || undefined);
+      const data = await curriculumApi.listSubjects(examTypeFilter || undefined, undefined, program);
       setSubjects(data);
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Bir hata oluştu');
     } finally {
       setLoading(false);
     }
-  }, [examTypeFilter]);
+  }, [examTypeFilter, program]);
 
   const fetchSubjectDetail = useCallback(async (id: number) => {
     setDetailLoading(true);
     try {
-      const data = await curriculumApi.getSubject(id);
+      const data = await curriculumApi.getSubject(id, program);
       setSelectedSubject(data);
       // İlk açılışta ağacı kapalı tut (yüzlerce kazanım DOM'a dökülmesin).
       // Sonradan yenilemede kullanıcının açık bıraktığı konular korunur.
@@ -91,9 +98,14 @@ export default function KazanimlarPage() {
     } finally {
       setDetailLoading(false);
     }
-  }, []);
+  }, [program]);
 
   useEffect(() => { fetchSubjects(); }, [fetchSubjects]);
+  useEffect(() => {
+    if (selectedSubject?.id) fetchSubjectDetail(selectedSubject.id);
+    // Sekme değişince açık dersin ağacı yenilensin. Seçim tıklaması ayrıca yükler.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [program]);
 
   /* ── Toast ── */
   const showToast = (msg: string, type: 'success' | 'error' = 'success') => {
@@ -136,6 +148,7 @@ export default function KazanimlarPage() {
       await curriculumApi.createTopic(selectedSubject.id, {
         code: newTopicForm.code || undefined,
         name: newTopicForm.name,
+        program,
       });
       showToast('Konu eklendi');
       setAddingTopicTo(null);
@@ -272,6 +285,7 @@ export default function KazanimlarPage() {
       const result = await curriculumApi.bulkTextImport({
         subject_id: selectedSubject.id,
         text: bulkText,
+        program,
       });
       setBulkResult(result);
       showToast(result.message);
@@ -421,10 +435,41 @@ export default function KazanimlarPage() {
             Kazanım Yönetimi
           </h1>
           <p className={styles.subtitle}>
-            Ders, Konu, Kazanım ve Alt Kazanım tanımlarını yönetin
+            Ders, konu, kazanım ve alt kazanım tanımlarını yönetin
           </p>
+          <div className={styles.programs} role="tablist">
+            {PROGRAMS.map(item => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={program === item.id}
+                className={program === item.id ? styles.programOn : styles.program}
+                onClick={() => setProgram(item.id)}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className={styles.headerActions}>
+          <button
+            type="button"
+            className={styles.btnOutline}
+            disabled={excelBusy}
+            onClick={async () => {
+              setExcelBusy(true);
+              try {
+                await curriculumApi.downloadOutcomesExcel(program);
+              } catch (e: unknown) {
+                showToast(e instanceof Error ? e.message : 'Excel indirilemedi', 'error');
+              } finally {
+                setExcelBusy(false);
+              }
+            }}
+          >
+            {excelBusy ? 'Hazırlanıyor…' : 'Excel indir'}
+          </button>
           <select
             className={styles.filterSelect}
             value={examTypeFilter}
@@ -475,7 +520,7 @@ export default function KazanimlarPage() {
                   </div>
                   {(s.linked_sections?.length ?? 0) > 0 && (
                     <div className={styles.linkedSections}>
-                      🔗 {s.linked_sections?.map(ls => ls.section_name).join(', ')}
+                      🔗 {[...new Set(s.linked_sections?.map(ls => ls.section_name))].join(', ')}
                     </div>
                   )}
                 </div>
@@ -810,8 +855,16 @@ export default function KazanimlarPage() {
 
                 {(!selectedSubject.topics || selectedSubject.topics.length === 0) && (
                   <div className={styles.emptyTree}>
-                    <p>Bu derste henüz konu ve kazanım tanımlanmamış.</p>
-                    <p>📋 <strong>Toplu Ekle</strong> butonunu kullanarak kopyala-yapıştır ile hızlıca kazanım girebilirsiniz.</p>
+                    {program === 'maarif' && selectedSubject.code === 'GEOMETRI' ? (
+                      <p>Maarif modelinde geometri, matematik dersinin içindedir.</p>
+                    ) : program === 'maarif' && selectedSubject.code === 'INGILIZCE' ? (
+                      <p>Maarif İngilizce programı CEFR düzenindedir. Bu ağaca ayrı yüklenmedi.</p>
+                    ) : (
+                      <>
+                        <p>Bu derste bu program için konu yok.</p>
+                        <p>Toplu Ekle ile kazanım yapıştırabilirsiniz.</p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

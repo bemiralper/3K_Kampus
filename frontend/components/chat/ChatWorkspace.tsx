@@ -883,12 +883,9 @@ export function ChatWorkspace({
                 onRetryPending={thread.retryPending}
                 onDiscardPending={thread.discardPending}
                 onResendFailed={(message) => {
-                  const body = message.body?.trim();
-                  if (!body) {
-                    showToast("Bu mesajın metni yok; yeniden göndermek için yazın.");
-                    return;
-                  }
-                  void thread.send(body, { replyToId: message.reply_to?.id });
+                  void thread.retryFailed(message.id).catch((err) => {
+                    showToast(err instanceof Error ? err.message : "Mesaj yeniden gönderilemedi.");
+                  });
                 }}
                 onJumpToMessage={(messageId) =>
                   selectedId && setJump({ conversationId: selectedId, messageId })

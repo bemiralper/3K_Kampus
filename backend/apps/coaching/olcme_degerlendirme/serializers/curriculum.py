@@ -68,7 +68,7 @@ class TopicSerializer(serializers.ModelSerializer):
     class Meta:
         model = Topic
         fields = [
-            'id', 'subject', 'code', 'name', 'order',
+            'id', 'subject', 'program', 'code', 'name', 'order',
             'outcomes', 'outcome_count',
         ]
         read_only_fields = ['id']
@@ -252,6 +252,7 @@ class BulkTextImportSerializer(serializers.Serializer):
     Kullanıcı doğrudan MEB kazanım metnini yapıştırır.
     """
     subject_id = serializers.IntegerField()
+    program = serializers.CharField(required=False, allow_blank=True, default='')
     text = serializers.CharField(
         help_text='Yapıştırılan kazanım metni. Satır satır ayrıştırılır.',
     )

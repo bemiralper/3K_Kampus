@@ -182,6 +182,51 @@ class SeatingUniqueTest(RosterFixtureMixin, TestCase):
         self.assertEqual(p.room_id, self.r1.id)
         self.assertEqual(p.seat_no, 1)
 
+    def test_session_rooms_do_not_share_students(self):
+        ExamRoom.objects.filter(exam=self.exam).delete()
+        ExamParticipant.objects.filter(exam=self.exam).delete()
+        ici = ExamSessionModel.objects.create(
+            exam=self.exam, name='Hafta içi', order=0, schedule_preference='HAFTA_ICI',
+        )
+        sonu = ExamSessionModel.objects.create(
+            exam=self.exam, name='Hafta sonu', order=1, schedule_preference='HAFTA_SONU',
+        )
+        weekday = ExamRoom.objects.create(
+            exam=self.exam, name='Hafta içi salon', capacity=10, order=0, exam_session=ici,
+        )
+        weekend = ExamRoom.objects.create(
+            exam=self.exam, name='Hafta sonu salon', capacity=10, order=1, exam_session=sonu,
+        )
+        ExamParticipant.objects.create(exam=self.exam, student=self.in_class, exam_session=ici)
+        ExamParticipant.objects.create(exam=self.exam, student=self.classless_12, exam_session=ici)
+        ExamParticipant.objects.create(exam=self.exam, student=self.packaged, exam_session=sonu)
+        result = apply_seating(self.exam, mode='sequential')
+        self.assertTrue(result['ok'], result)
+        self.assertEqual(
+            ExamParticipant.objects.get(exam=self.exam, student=self.in_class).room_id,
+            weekday.id,
+        )
+        self.assertEqual(
+            ExamParticipant.objects.get(exam=self.exam, student=self.classless_12).room_id,
+            weekday.id,
+        )
+        self.assertEqual(
+            ExamParticipant.objects.get(exam=self.exam, student=self.packaged).room_id,
+            weekend.id,
+        )
+
+    def test_start_and_gap_control_seat_numbers(self):
+        ExamRoom.objects.filter(exam=self.exam).delete()
+        ExamRoom.objects.create(
+            exam=self.exam, name='Büyük', capacity=7, seat_start=51, seat_gap=2, order=0,
+        )
+        result = apply_seating(self.exam, mode='sequential')
+        self.assertTrue(result['ok'], result)
+        seats = sorted(
+            ExamParticipant.objects.filter(exam=self.exam).values_list('seat_no', flat=True)
+        )
+        self.assertEqual(seats, [51, 54, 57])
+
     def test_overflow_blocks_seating(self):
         ExamRoom.objects.filter(exam=self.exam).delete()
         ExamRoom.objects.create(exam=self.exam, name='Küçük', capacity=1, order=0)
@@ -387,6 +432,19 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         )
         self.assertEqual(res.status_code, 200, res.content[:300])
         self.assertEqual(res.json()['seat_no'], 2)
+
+    def test_rooms_put_keeps_start_and_gap(self):
+        res = self.client.put(
+            f'{EXAMS_URL}{self.exam.id}/rooms/',
+            {'rooms': [{'name': 'Salon A', 'capacity': 40, 'seat_start': 51, 'seat_gap': 2}]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        room = res.json()['rooms'][0]
+        self.assertEqual(room['seat_start'], 51)
+        self.assertEqual(room['seat_gap'], 2)
+        saved = ExamRoom.objects.get(exam=self.exam, name='Salon A')
+        self.assertEqual(saved.seat_numbers()[:3], [51, 54, 57])
 
     def test_rooms_put_warns_on_overflow(self):
         ExamParticipant.objects.create(exam=self.exam, student=self.in_class)
@@ -717,6 +775,27 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
                 exam=self.exam, exam_session=sonu, room=room, seat_no=4,
             ).exists()
         )
+
+    def test_deneme_salon_rename_and_delete(self):
+        base = '/api/coaching/olcme-degerlendirme/deneme-salonlari/'
+        created = self.client.post(base, {'name': 'Vizyon', 'capacity': 84}, format='json', **self.headers)
+        self.assertEqual(created.status_code, 200, created.content[:300])
+        salon_id = created.json()['id']
+        renamed = self.client.patch(
+            f'{base}{salon_id}/',
+            {'name': 'Vizyon A', 'capacity': 90},
+            format='json', **self.headers,
+        )
+        self.assertEqual(renamed.status_code, 200, renamed.content[:300])
+        self.assertEqual(renamed.json()['name'], 'Vizyon A')
+        self.assertEqual(renamed.json()['capacity'], 90)
+        listed = self.client.get(base, **self.headers)
+        self.assertEqual(listed.status_code, 200)
+        self.assertEqual([row['name'] for row in listed.json()], ['Vizyon A'])
+        deleted = self.client.delete(f'{base}{salon_id}/', **self.headers)
+        self.assertEqual(deleted.status_code, 204)
+        listed = self.client.get(base, **self.headers)
+        self.assertEqual(listed.json(), [])
 
     def test_hatirlatma_preview_rejects_unknown_event(self):
         res = self.client.post(

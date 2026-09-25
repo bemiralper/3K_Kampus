@@ -156,7 +156,7 @@ export default function ExamSectionsEditor({
 
   const rangeCell = (sec: ExamSection) => (
     editingId === sec.id ? (
-      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <div className={t.range} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
         <input
           type="number"
           min={1}
@@ -179,39 +179,30 @@ export default function ExamSectionsEditor({
   );
 
   const rowActions = (sec: ExamSection) => {
-    if (locked) return null;
+    if (locked) return <span />;
     if (editingId === sec.id) {
       return (
-        <div className={t.actions}>
-          <button className="btn-modern" onClick={() => saveRange(sec.id)} disabled={saving}
-            style={{ padding: '2px 8px', fontSize: 11, color: '#16a34a', border: '1px solid #bbf7d0' }}>✓</button>
-          <button className="btn-modern" onClick={() => setEditingId(null)}
-            style={{ padding: '2px 8px', fontSize: 11, color: '#ef4444', border: '1px solid #fecaca' }}>✕</button>
+        <div className={t.tools}>
+          <button type="button" className={t.iconBtn} onClick={() => saveRange(sec.id)} disabled={saving} aria-label="Aralığı kaydet">✓</button>
+          <button type="button" className={t.iconBtnDanger} onClick={() => setEditingId(null)} aria-label="Vazgeç">✕</button>
         </div>
       );
     }
     return (
-      <div className={t.actions}>
+      <div className={t.tools}>
         <button
-          className="btn-modern"
+          type="button"
+          className={t.iconBtn}
           onClick={() => {
             setEditingId(sec.id);
             setError('');
             setEditForm({ question_start: sec.question_start, question_end: sec.question_end });
           }}
-          style={{ padding: '2px 8px', fontSize: 11, color: '#64748b' }}
-          title="Soru aralığını düzenle"
+          aria-label="Soru aralığını düzenle"
         >
-          ✏️
+          ✎
         </button>
-        <button
-          className="btn-modern"
-          onClick={() => removeSec(sec)}
-          style={{ padding: '2px 8px', fontSize: 11, color: 'var(--danger)' }}
-          title="Kaldır"
-        >
-          ✕
-        </button>
+        <button type="button" className={t.iconBtnDanger} onClick={() => removeSec(sec)} aria-label="Kaldır">✕</button>
       </div>
     );
   };
@@ -266,10 +257,10 @@ export default function ExamSectionsEditor({
               const subForm = subDraft[main.id] || { name: '', count: '5', subject_id: null };
               return (
                 <div key={main.id} className={t.block}>
-                  <div className={t.main}>
+                  <div className={t.rowMain}>
+                    <span className={t.badgeMain}>Üst ders</span>
                     <div className={t.name}>
-                      <span className={t.badgeMain}>Üst ders</span>
-                      <span>{main.name}</span>
+                      <span className={t.nameText}>{main.name}</span>
                       {!locked && subjects.length > 0 && (
                         <SubjectPicker
                           subjects={subjects}
@@ -287,14 +278,14 @@ export default function ExamSectionsEditor({
                       )}
                     </div>
                     {rangeCell(main)}
+                    <span className={t.countLabel}>{qCount(main)} soru</span>
                     {rowActions(main)}
                   </div>
                   {subs.map(sub => (
-                    <div key={sub.id} className={t.sub}>
+                    <div key={sub.id} className={t.rowSub}>
+                      <span className={t.badgeSub}>Alt ders</span>
                       <div className={t.name}>
-                        <span className={t.mark}>↳</span>
-                        <span className={t.badgeSub}>Alt ders</span>
-                        <span>{sub.name}</span>
+                        <span className={t.nameText}>{sub.name}</span>
                         {!locked && subjects.length > 0 && (
                           <SubjectPicker
                             subjects={subjects}
@@ -312,12 +303,12 @@ export default function ExamSectionsEditor({
                         )}
                       </div>
                       {rangeCell(sub)}
+                      <span className={t.countLabel}>{qCount(sub)}</span>
                       {rowActions(sub)}
                     </div>
                   ))}
                   {!locked && (
-                    <div className={t.sub}>
-                      <div className={t.addRow} style={{ width: '100%' }}>
+                    <div className={t.rowForm}>
                         <div className={s.formGroup} style={{ flex: '1 1 140px', minWidth: 120, margin: 0 }}>
                           <label>Alt ders</label>
                           {subjects.length > 0 ? (
@@ -359,7 +350,6 @@ export default function ExamSectionsEditor({
                         >
                           + Alt ders
                         </button>
-                      </div>
                     </div>
                   )}
                 </div>
@@ -369,7 +359,7 @@ export default function ExamSectionsEditor({
         )}
 
         {!locked && (
-          <div className={t.addRow}>
+          <div className={t.addBar}>
             <div className={s.formGroup} style={{ flex: '1 1 180px', minWidth: 150, margin: 0 }}>
               <label>Üst ders</label>
               {subjects.length > 0 ? (

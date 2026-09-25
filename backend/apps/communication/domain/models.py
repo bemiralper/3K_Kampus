@@ -1077,6 +1077,9 @@ class Message(models.Model):
     )
     source_module = models.CharField(max_length=50, blank=True, default='')
     source_ref_id = models.CharField(max_length=64, blank=True, default='')
+    # Kuyruk kaydı gönderimden sonra silinir. Tekrar gönder, şablon adı ve
+    # değişkenleri buradan okur; aksi halde PDF başlığı düşer, yalnız metin gider.
+    send_options = models.JSONField(default=dict, blank=True)
     failed_reason = models.TextField(blank=True, default='')
     sent_at = models.DateTimeField(null=True, blank=True)
     delivered_at = models.DateTimeField(null=True, blank=True)

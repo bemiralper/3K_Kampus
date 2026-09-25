@@ -78,10 +78,19 @@ function isDumpTopic(topic: TopicItem): boolean {
   return (topic.name || '').trim() === 'Toplu Yükleme' || (topic.code || '').trim().toUpperCase() === 'TOPLU';
 }
 
+/** '9. sınıf · Nicelikler ve Değişimler' → 'Nicelikler ve Değişimler' */
+function withoutGrade(name: string): string {
+  const raw = (name || '').trim();
+  if (!raw) return '';
+  const parts = raw.split(/\s*·\s*/).map(part => part.trim()).filter(Boolean);
+  const kept = parts.filter(part => !/^\d+\.\s*s[ıi]n[ıi]f$/i.test(part) && !/^maarif$/i.test(part));
+  return (kept.join(' · ') || raw).trim();
+}
+
 function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   for (const t of topics) {
     if (isDumpTopic(t)) continue;
-    if ((t.outcomes ?? []).some(o => o.id === outcomeId)) return topicDisplayName(t.name);
+    if ((t.outcomes ?? []).some(o => o.id === outcomeId)) return withoutGrade(t.name);
   }
   return '';
 }
@@ -131,11 +140,11 @@ function topicNameFromCode(topics: TopicItem[], raw: string): string {
     if (isDumpTopic(t)) continue;
     const topicCode = (t.code || '').trim().replace(/\.+$/, '').toLowerCase();
     if (topicCode && (topicCode === code || topicCode === parent)) {
-      return topicDisplayName(t.name);
+      return withoutGrade(t.name);
     }
     for (const o of t.outcomes ?? []) {
       const oc = (o.code || '').trim().replace(/\.+$/, '').toLowerCase();
-      if (oc === code || codeIsUnder(oc, code)) return topicDisplayName(t.name);
+      if (oc === code || codeIsUnder(oc, code)) return withoutGrade(t.name);
     }
   }
   return '';
@@ -325,9 +334,9 @@ export default function OutcomesTab({ exam }: Props) {
           const outcomeId = item.outcome || resolved?.id || null;
           const outcomeCode = item.outcome_code || resolved?.code || '';
           const outcomeText = item.outcome_text || resolved?.text || '';
-          const topicName = item.topic_name
+          const topicName = withoutGrade(item.topic_name
             || (outcomeId && ssInfo ? findTopicForOutcome(ssInfo.topics, outcomeId) : '')
-            || (ssInfo ? topicNameFromCode(ssInfo.topics, item.imported_outcome_text || outcomeCode) : '');
+            || (ssInfo ? topicNameFromCode(ssInfo.topics, item.imported_outcome_text || outcomeCode) : ''));
           const importedCode = item.imported_outcome_text || item.outcome_code || '';
           const headingHit = !outcomeId && isHeadingCode(importedCode) && !!(topicName || outcomeText);
           const matchScore = outcomeId
@@ -398,7 +407,7 @@ export default function OutcomesTab({ exam }: Props) {
 
     // UI güncelle
     const ssInfo = subSections.find(ss => ss.section.id === row.section_id);
-    const topicName = outcome && ssInfo ? findTopicForOutcome(ssInfo.topics, outcome.id) : '';
+    const topicName = withoutGrade(outcome && ssInfo ? findTopicForOutcome(ssInfo.topics, outcome.id) : '');
     const matchScore = outcome ? 100 : 0; // kullanıcı seçtiği için yüksek puan
 
     setRows(prev => {

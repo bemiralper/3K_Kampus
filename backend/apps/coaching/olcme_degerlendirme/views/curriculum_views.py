@@ -49,12 +49,26 @@ from ..interfaces.sube_context import get_exam_or_response
 logger = logging.getLogger(__name__)
 
 
-def _subject_tree_qs():
+def _curriculum_program(value: str | None) -> str:
+    value = (value or '').strip()
+    if value in (Topic.Program.PROGRAM_2018, Topic.Program.MAARIF):
+        return value
+    return ''
+
+
+def _subject_tree_qs(program: str = ''):
     """Konu → kazanım → alt kazanım ağacını tek seferde yükler (N+1 yok)."""
+    topics = Topic.objects.order_by('order')
+    topic_filter = Q()
+    outcome_filter = Q(topics__outcomes__is_active=True)
+    if program:
+        topics = topics.filter(program=program)
+        topic_filter = Q(topics__program=program)
+        outcome_filter &= Q(topics__program=program)
     return Subject.objects.prefetch_related(
         Prefetch(
             'topics',
-            queryset=Topic.objects.order_by('order').prefetch_related(
+            queryset=topics.prefetch_related(
                 Prefetch(
                     'outcomes',
                     queryset=Outcome.objects.filter(is_active=True).order_by('order').prefetch_related(
@@ -71,10 +85,10 @@ def _subject_tree_qs():
             queryset=ExamSection.objects.select_related('exam').order_by('-exam__exam_date', '-id'),
         ),
     ).annotate(
-        topic_count=Count('topics', distinct=True),
+        topic_count=Count('topics', filter=topic_filter, distinct=True),
         outcome_count=Count(
             'topics__outcomes',
-            filter=Q(topics__outcomes__is_active=True),
+            filter=outcome_filter,
             distinct=True,
         ),
     )
@@ -222,11 +236,16 @@ def subject_list(request):
         purge_empty_exam_type_stubs()
         exam_type = request.query_params.get('exam_type', None)
         band = (request.query_params.get('band') or '').strip().upper()
+        program = _curriculum_program(request.query_params.get('program'))
+        topic_filter = Q(topics__program=program) if program else Q()
+        outcome_filter = Q(topics__outcomes__is_active=True)
+        if program:
+            outcome_filter &= Q(topics__program=program)
         qs = Subject.objects.annotate(
-            topic_count=Count('topics', distinct=True),
+            topic_count=Count('topics', filter=topic_filter, distinct=True),
             outcome_count=Count(
                 'topics__outcomes',
-                filter=Q(topics__outcomes__is_active=True),
+                filter=outcome_filter,
                 distinct=True,
             ),
         ).prefetch_related(
@@ -273,7 +292,7 @@ def subject_detail(request, subject_pk):
     if request.method == 'GET':
         from ..services.curriculum_heal import uygula_karisan_kazanim_temizligi
         uygula_karisan_kazanim_temizligi()
-        subject = _subject_tree_qs().get(pk=subject.pk)
+        subject = _subject_tree_qs(_curriculum_program(request.query_params.get('program'))).get(pk=subject.pk)
         serializer = SubjectDetailSerializer(subject)
         return Response(serializer.data)
 
@@ -316,6 +335,7 @@ def topic_list(request, subject_pk):
         auto_order = _next_topic_order(subject)
     topic = Topic.objects.create(
         subject=subject,
+        program=_curriculum_program(data.get('program')) or Topic.Program.PROGRAM_2018,
         code=auto_code,
         name=data.get('name', ''),
         order=auto_order,
@@ -617,10 +637,12 @@ def bulk_text_import(request):
 
     try:
         with transaction.atomic():
+            program = _curriculum_program(ser.validated_data.get('program')) or Topic.Program.PROGRAM_2018
             existing_topic_count = subject.topics.count()
             for t_idx, t_data in enumerate(topics_data):
                 topic = Topic.objects.create(
                     subject=subject,
+                    program=program,
                     code=t_data['code'],
                     name=t_data['name'],
                     order=t_data.get('order', existing_topic_count + t_idx),
@@ -1807,6 +1829,67 @@ def catalog_export(request):
     data = json.dumps(payload, ensure_ascii=False, indent=2)
     response = HttpResponse(data, content_type='application/json; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="{catalog_filename()}"'
+    return response
+
+
+_EXCEL_ILLEGAL = re.compile(r'[\000-\010]|[\013-\014]|[\016-\037]')
+
+
+def _excel_text(value) -> str:
+    """Excel hücrelerine yazılamayan kontrol karakterlerini ayıklar."""
+    return _EXCEL_ILLEGAL.sub('', '' if value is None else str(value))
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def curriculum_excel(request):
+    """Seçilen programın kazanım ağacını Excel olarak indirir."""
+    from io import BytesIO
+    from openpyxl import Workbook
+
+    program = _curriculum_program(request.query_params.get('program')) or Topic.Program.PROGRAM_2018
+    label = Topic.Program(program).label
+    wb = Workbook()
+    ws = wb.active
+    ws.title = label[:31]
+    ws.append([
+        'Ders', 'Program', 'Konu kodu', 'Konu',
+        'Kazanım kodu', 'Kazanım', 'Alt kod', 'Alt metin',
+    ])
+    topics = (
+        Topic.objects
+        .filter(program=program)
+        .select_related('subject')
+        .prefetch_related('outcomes__sub_outcomes')
+        .order_by('subject__order', 'subject__name', 'order', 'id')
+    )
+    for topic in topics:
+        ders = _excel_text(topic.subject.display_name or topic.subject.name)
+        konu = _excel_text(topic.name)
+        outcomes = [o for o in topic.outcomes.all() if o.is_active]
+        if not outcomes:
+            ws.append([ders, label, topic.code, konu, '', '', '', ''])
+            continue
+        for outcome in outcomes:
+            kazanım = _excel_text(outcome.text)
+            subs = [s for s in outcome.sub_outcomes.all() if s.is_active]
+            if not subs:
+                ws.append([ders, label, topic.code, konu, outcome.code, kazanım, '', ''])
+                continue
+            for sub in subs:
+                ws.append([
+                    ders, label, topic.code, konu,
+                    outcome.code, kazanım, sub.code, _excel_text(sub.text),
+                ])
+    buf = BytesIO()
+    wb.save(buf)
+    filename = 'kazanimlar-maarif-modeli.xlsx' if program == Topic.Program.MAARIF else 'kazanimlar-2018-programi.xlsx'
+    response = HttpResponse(
+        buf.getvalue(),
+        content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
 

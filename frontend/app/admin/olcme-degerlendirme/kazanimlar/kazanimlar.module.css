@@ -60,6 +60,27 @@
   color: var(--text-secondary, #64748b);
   font-size: 14px;
 }
+.programs {
+  display: flex;
+  gap: 8px;
+  margin-top: 14px;
+}
+.program, .programOn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  color: #0f172a;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.programOn {
+  background: #0262a7;
+  border-color: #0262a7;
+  color: #fff;
+}
 .headerActions {
   display: flex;
   gap: 10px;
@@ -129,8 +150,6 @@
 }
 .subjectList {
   padding: 8px;
-  max-height: calc(100vh - 240px);
-  overflow-y: auto;
 }
 
 /* ── Ders Kartları ── */
@@ -188,6 +207,9 @@
   margin-top: 6px;
   font-size: 11px;
   color: var(--text-secondary, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Main Panel ── */

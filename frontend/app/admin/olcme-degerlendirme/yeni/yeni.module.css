@@ -701,9 +701,122 @@
   flex: 1;
 }
 
+.seatRow {
+  display: grid;
+  grid-template-columns: 44px 32px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.thumbBtn,
+.thumbFallback {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  max-width: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.thumbBtn img,
+.thumbFallback img {
+  width: 32px;
+  height: 32px;
+  max-width: 32px;
+  max-height: 32px;
+  object-fit: cover;
+  display: block;
+}
+
+.thumbFallback {
+  padding: 4px;
+  border: 1px solid #e2e8f0;
+}
+
+.thumbFallback img {
+  width: 22px;
+  height: 22px;
+  max-width: 22px;
+  max-height: 22px;
+  object-fit: contain;
+}
+
+.zoom {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  border: 0;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.72);
+  display: grid;
+  place-items: center;
+}
+
+.zoom img {
+  max-width: min(420px, 86vw);
+  max-height: 70vh;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.modeChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.modeChip,
+.modeChipOn {
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 999px;
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  color: #475569;
+}
+
+.modeChipOn {
+  background: #1e3a8a;
+  border-color: #1e3a8a;
+  color: #fff;
+}
+
+.sessionBlock {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  background: #f8fafc;
+}
+
+.sessionBlockHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: baseline;
+  margin-bottom: 10px;
+  font-size: 15px;
+}
+
+.sessionBlockHead span {
+  font-size: 12px;
+  color: #64748b;
+}
+
 .roomEdit {
   display: grid;
-  grid-template-columns: 1fr 110px 40px;
+  grid-template-columns: minmax(0, 1.2fr) minmax(140px, 1fr) 88px 88px 88px 40px;
   gap: 10px;
   align-items: end;
   margin-bottom: 10px;
@@ -810,6 +923,9 @@
   }
 
   .roomEdit {
-    grid-template-columns: 1fr 88px 40px;
+    grid-template-columns: 1fr 1fr 1fr 40px;
+  }
+  .roomEdit .field:nth-child(-n + 2) {
+    grid-column: 1 / -1;
   }
 }

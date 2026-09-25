@@ -72,7 +72,7 @@ export default function StudentsPanel({
     <div className={s.analysisPanel}>
       <div className={s.analysisPanelHeader}>
         <h3 className={s.analysisPanelTitle}>Öğrenci Bazlı Analiz</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <div className={s.analysisToolbar}>
           {/* Alan Filtresi */}
           <select
             className={s.analysisSelect}
@@ -92,19 +92,11 @@ export default function StudentsPanel({
             value={search}
             onChange={e => onSearch(e.target.value)}
           />
-          <button
-            className={s.analysisBtnSmall}
-            onClick={() => setShowPdfModal(true)}
-            style={{ background: '#0262a7', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-          >
-            📄 PDF
+          <button className={s.olcmeBtnPrimary} onClick={() => setShowPdfModal(true)}>
+            PDF
           </button>
-          <button
-            className={s.analysisBtnSmall}
-            onClick={() => setShowBulkNotify(true)}
-            style={{ background: '#059669', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
-          >
-            💬 Toplu WhatsApp
+          <button className={s.olcmeBtnSuccess} onClick={() => setShowBulkNotify(true)}>
+            Toplu WhatsApp
           </button>
         </div>
       </div>

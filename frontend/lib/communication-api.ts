@@ -673,6 +673,16 @@ export async function fetchConversationMessages(
   );
 }
 
+export async function retryFailedMessage(
+  conversationId: string,
+  messageId: string,
+): Promise<MessageItem> {
+  return request<MessageItem>(
+    `/conversations/${conversationId}/messages/${messageId}/retry/`,
+    { method: 'POST', body: JSON.stringify({}) },
+  );
+}
+
 export async function sendConversationMessage(
   conversationId: string,
   text: string,
@@ -2079,6 +2089,8 @@ export interface CampaignDelivery {
   contact_name: string;
   phone: string;
   contact_type: string;
+  ogrenci_id?: number | null;
+  student_name?: string;
   status: string;
   failed_reason: string;
   failed_reason_short?: string;

@@ -175,7 +175,7 @@ export function ChatTimeline({
               id: "resend",
               label: "Tekrar gönder",
               icon: <IconRefresh size={16} />,
-              disabled: !menu.message.body?.trim(),
+              disabled: false,
               onSelect: () => onResendFailed(menu.message),
             }]
           : []),
@@ -447,8 +447,7 @@ function MessageRow({
               <button
                 type="button"
                 className="chat-link-btn"
-                disabled={!message.body?.trim()}
-                title={message.body?.trim() ? "Aynı metni yeniden gönder" : "Metni olmayan mesaj buradan yeniden gönderilemez"}
+                title="Gitmeyen mesajı yeniden gönder"
                 onClick={() => onResendFailed(message)}
               >
                 Tekrar gönder

@@ -5,6 +5,7 @@ import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import WhatsAppPhonePreview from '@/components/communication/WhatsAppPhonePreview';
 import '@/components/communication/communication.css';
+import { fetchCampaign, isCampaignActive, type CampaignItem } from '@/lib/communication-api';
 import { examApi } from './api';
 import type { ExamPublishPreview } from './types';
 import './roster/sinav-roster-notify.css';
@@ -37,6 +38,7 @@ export default function ExamPublishNotifyModal({
   const [includeStudent, setIncludeStudent] = useState(true);
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0);
+  const [live, setLive] = useState<CampaignItem | null>(null);
 
   useEffect(() => { setMounted(true); }, []);
 
@@ -71,6 +73,32 @@ export default function ExamPublishNotifyModal({
     })();
     return () => { cancelled = true; };
   }, [examId, kind]);
+
+  useEffect(() => {
+    if (!campaignId) return;
+    let stop = false;
+    const tick = async () => {
+      try {
+        const row = await fetchCampaign(campaignId);
+        if (!stop) setLive(row);
+        return isCampaignActive(row.status);
+      } catch {
+        return true;
+      }
+    };
+    let timer = 0;
+    tick().then((again) => {
+      if (stop || !again) return;
+      timer = window.setInterval(async () => {
+        const again = await tick();
+        if (!again) window.clearInterval(timer);
+      }, 2000);
+    });
+    return () => {
+      stop = true;
+      window.clearInterval(timer);
+    };
+  }, [campaignId]);
 
   const selectedStudents = useMemo(() => {
     if (!preview) return [];
@@ -164,14 +192,19 @@ export default function ExamPublishNotifyModal({
         {error && <div className="srn-error">{error}</div>}
 
         {campaignId ? (
-          <div style={{ padding: 24 }}>
-            <div style={{ color: '#15803d', fontSize: 14, fontWeight: 650, marginBottom: 8 }}>
-              {sentCount} mesaj kuyruğa alındı.
-            </div>
-            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              Kime gittiğini / gitmediğini İletişim → Gönderim Geçmişi sayfasından görebilirsiniz.
+          <div className="srn-result">
+            <SendProgress
+              queued={sentCount}
+              total={live?.total_recipients ?? sentCount}
+              sent={live?.sent_count ?? 0}
+              delivered={live?.delivered_count ?? 0}
+              failed={live?.failed_count ?? 0}
+              active={!live || isCampaignActive(live.status)}
+            />
+            <p>
+              Çubuk dolunca gönderim bitti sayılır. Gitmeyenler İletişim → Gönderim Geçmişi’nde tek düğmeyle yeniden gönderilir.
             </p>
-            <div style={{ display: 'flex', gap: 8 }}>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Link
                 href={`/admin/iletisim/kampanyalar?campaign=${campaignId}`}
                 className="btn-modern btn-primary"
@@ -262,7 +295,10 @@ export default function ExamPublishNotifyModal({
               </div>
             </div>
             <div className="srn-footer">
-              <span className="srn-meta">{sendable} alıcı seçili</span>
+              <div className="srn-footer-status">
+                <span className="srn-meta">{sendable} alıcı seçili</span>
+                {sending && <SendProgress queued={sendable} total={sendable} sent={0} delivered={0} failed={0} active />}
+              </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" className="btn-modern btn-secondary" onClick={onClose} disabled={sending}>
                   Vazgeç
@@ -282,6 +318,37 @@ export default function ExamPublishNotifyModal({
       </div>
     </div>,
     document.body,
+  );
+}
+
+function SendProgress({
+  queued, total, sent, delivered, failed, active,
+}: {
+  queued: number;
+  total: number;
+  sent: number;
+  delivered: number;
+  failed: number;
+  active: boolean;
+}) {
+  const done = Math.min(total || queued || 1, sent + failed);
+  const base = Math.max(total || queued || 1, 1);
+  const pct = active && done === 0 ? 8 : Math.round((done / base) * 100);
+  return (
+    <div className="srn-progress" aria-live="polite">
+      <div className="srn-progress-top">
+        <strong>{active ? 'Gönderiliyor' : (failed ? 'Kısmen gitti' : 'Gönderim bitti')}</strong>
+        <span>{done}/{base}</span>
+      </div>
+      <div className="srn-progress-track" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}>
+        <i style={{ width: `${pct}%` }} />
+      </div>
+      <div className="srn-progress-meta">
+        <span>Kuyruk {queued}</span>
+        <span>İletildi {delivered}</span>
+        <span>Gitmedi {failed}</span>
+      </div>
+    </div>
   );
 }
 

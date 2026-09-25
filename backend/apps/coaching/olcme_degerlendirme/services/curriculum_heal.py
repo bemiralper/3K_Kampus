@@ -58,6 +58,8 @@ def karisan_kazanimlari_bul():
     for outcome in qs.iterator():
         if _looks_like_catalog_konu(outcome, getattr(outcome, 'sub_count', 0)):
             continue
+        if getattr(getattr(outcome, 'topic', None), 'program', '') == 'maarif':
+            continue
         prose = outcome_prose(outcome.text or '').lower()
         if len(prose) < MIN_METIN_UZUNLUGU:
             continue

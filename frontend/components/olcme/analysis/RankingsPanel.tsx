@@ -178,9 +178,9 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
     <div className={s.analysisPanel}>
       <div className={s.analysisPanelHeader}>
         <h3 className={s.analysisPanelTitle}>Sıralama ve Yüzdelik Dilim</h3>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <div className={s.analysisToolbar}>
           {/* Alan Filtresi */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <div className={s.analysisField}>
             <label style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>Alan:</label>
             <select
               className={s.analysisSelect}
@@ -205,7 +205,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
               Dersler
             </label>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div className={s.analysisField}>
             <label style={{ fontSize: 12, color: '#64748b', whiteSpace: 'nowrap' }}>Puan yılı:</label>
             <select
               className={s.analysisSelect}
@@ -221,28 +221,24 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
           </div>
           {/* Excel / CSV Dışa Aktar Butonları */}
           <button
-            className={s.analysisBtnSmall}
+            className={s.olcmeBtnExcel}
             onClick={() => handleTableExport('xlsx')}
             disabled={exporting !== null}
-            style={{ background: '#16a34a', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: exporting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: exporting ? 0.7 : 1 }}
           >
-            📊 {exporting === 'xlsx' ? 'Hazırlanıyor…' : 'Excel'}
+            {exporting === 'xlsx' ? 'Hazırlanıyor…' : 'Excel'}
           </button>
           <button
-            className={s.analysisBtnSmall}
+            className={s.olcmeBtnMuted}
             onClick={() => handleTableExport('csv')}
             disabled={exporting !== null}
-            style={{ background: '#475569', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: exporting ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 4, opacity: exporting ? 0.7 : 1 }}
           >
-            🧾 {exporting === 'csv' ? 'Hazırlanıyor…' : 'CSV'}
+            {exporting === 'csv' ? 'Hazırlanıyor…' : 'CSV'}
           </button>
-          {/* PDF Dışa Aktar Butonu */}
           <button
-            className={s.analysisBtnSmall}
+            className={s.olcmeBtnPrimary}
             onClick={() => setShowPdfModal(true)}
-            style={{ background: '#0262a7', color: '#fff', padding: '4px 12px', borderRadius: 6, fontSize: 12, fontWeight: 600, border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}
           >
-            📄 PDF İndir
+            PDF İndir
           </button>
         </div>
       </div>

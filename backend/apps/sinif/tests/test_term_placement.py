@@ -227,6 +227,96 @@ class SinifTermPlacementApiTest(TestCase):
         self.assertEqual(body['donem_sinif']['ad'], '9-A')
         self.assertEqual(body['aktif_donem']['id'], self.term.id)
 
+    def test_ogrenci_put_sinif_uses_active_term_copy(self):
+        """Önceki dönemin aynı adlı sınıfı seçilince yerleşim aktif dönem kopyasına yazılır."""
+        import json
+
+        eski_donem = Term.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+            name='Yaz Kursu',
+            code='Yaz25',
+            start_date=self.term.start_date,
+            end_date=self.term.end_date,
+            order_no=0,
+            is_active=False,
+        )
+        eski_sinif = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+            term=eski_donem,
+            ad='9-A',
+            kod='9A-eski',
+            kapasite=30,
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+
+        res = self.client.put(
+            f'/ogrenciler/api/{self.ogrenci1.id}/',
+            data=json.dumps({'ad': 'Ali', 'soyad': 'Veli', 'sinif_id': eski_sinif.id}),
+            content_type='application/json',
+            **self._headers(),
+        )
+        self.assertEqual(res.status_code, 200)
+
+        placement = StudentClassPlacement.objects.get(
+            term=self.term, student=self.ogrenci1, is_active=True,
+        )
+        self.assertEqual(placement.classroom_id, self.sinif.id)
+
+        kayit = OgrenciKayit.objects.get(ogrenci=self.ogrenci1, egitim_yili=self.egitim_yili)
+        self.assertEqual(kayit.sinif_id, self.sinif.id)
+
+        liste = self.client.get('/siniflar/api/', **self._headers()).json()
+        row = next(s for s in liste['siniflar'] if s['id'] == self.sinif.id)
+        self.assertEqual(row['mevcutluk'], 1)
+
+    def test_list_rebinds_placement_from_previous_term_class(self):
+        """Eski sınıf kopyasına yazılmış yerleşim, sınıf listesi açılınca aktif kopyaya taşınır."""
+        eski_donem = Term.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+            name='Yaz Kursu',
+            code='Yaz25b',
+            start_date=self.term.start_date,
+            end_date=self.term.end_date,
+            order_no=0,
+            is_active=False,
+        )
+        eski_sinif = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.egitim_yili,
+            term=eski_donem,
+            ad='9-A',
+            kod='9A-eski-2',
+            kapasite=30,
+            sinif_seviyesi=self.seviye,
+            aktif_mi=True,
+        )
+        StudentClassPlacement.objects.create(
+            academic_year=self.egitim_yili,
+            term=self.term,
+            student=self.ogrenci1,
+            classroom=eski_sinif,
+            is_active=True,
+        )
+        OgrenciKayit.objects.filter(ogrenci=self.ogrenci1).update(sinif=eski_sinif)
+
+        liste = self.client.get('/siniflar/api/', **self._headers()).json()
+        row = next(s for s in liste['siniflar'] if s['id'] == self.sinif.id)
+        self.assertEqual(row['mevcutluk'], 1)
+        self.assertFalse(any(s['id'] == eski_sinif.id for s in liste['siniflar']))
+
+        placement = StudentClassPlacement.objects.get(
+            term=self.term, student=self.ogrenci1, is_active=True,
+        )
+        self.assertEqual(placement.classroom_id, self.sinif.id)
+
     def test_ogrenci_put_sinif_creates_placement(self):
         """Öğrenci detay drawer'ından sınıf ataması, dönem bazlı yerleşime de yansımalı."""
         import json

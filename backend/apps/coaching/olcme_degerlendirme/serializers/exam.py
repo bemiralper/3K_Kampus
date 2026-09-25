@@ -13,6 +13,7 @@ from ..services.exam_templates import (
 )
 from ..models.scoring_settings import MANAGED_PUAN_YILLARI
 from ..services.curriculum_band import normalize_band, resolved_band
+from ..services.exam_roster import serialize_room
 
 
 def _validate_puan_yili(value):
@@ -262,10 +263,7 @@ class ExamDetailSerializer(serializers.ModelSerializer):
         ))
 
     def get_rooms(self, obj):
-        return [
-            {'id': r.id, 'name': r.name, 'capacity': r.capacity, 'order': r.order}
-            for r in obj.rooms.order_by('order', 'id')
-        ]
+        return [serialize_room(r) for r in obj.rooms.order_by('order', 'id')]
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

@@ -269,6 +269,33 @@ class OlcmePublishDispatchTest(TestCase):
         self.assertEqual(res.json()['karne_students'], 0)
         self.assertEqual(res.json()['answer_key_students'], 1)
 
+    def test_due_karne_goes_to_present_student_and_veli_only(self):
+        present_answer = self._grade()
+        StudentAnswer.objects.create(
+            session=present_answer.session, student=self.absent, raw_student_id='2',
+        )
+        self.exam.result_publish_date = self._due(-1)
+        self.exam.save(update_fields=['result_publish_date'])
+        sync_dispatches_from_exam(self.exam)
+        self._enable()
+        with patch(
+            'apps.coaching.olcme_degerlendirme.views.analysis_views.build_student_detail_payload',
+            return_value={'student_name': 'Ada Geldi', 'exam_name': 'Yayın Sınav'},
+        ), patch(
+            'apps.coaching.application.olcme_karne_pdf.render_karne_pdf',
+            return_value=b'%PDF-1.4',
+        ), patch(
+            'apps.coaching.application.olcme_karne_notify.send_karne_notify_bulk',
+            return_value={'sent': 2, 'skipped': 0, 'errors': [], 'message_ids': []},
+        ) as send:
+            result = process_due(exam_id=self.exam.id)
+        self.assertEqual(result['sent'], 1)
+        send.assert_called_once()
+        items = send.call_args.kwargs['items']
+        self.assertEqual([item['answer_id'] for item in items], [present_answer.id])
+        self.assertTrue(send.call_args.kwargs['include_veli'])
+        self.assertTrue(send.call_args.kwargs['include_student'])
+
     def test_disabled_schedule_is_not_processed(self):
         self._grade()
         self.exam.result_publish_date = self._due(-1)

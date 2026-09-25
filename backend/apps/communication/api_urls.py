@@ -90,6 +90,7 @@ from apps.communication.interfaces.views.chat_actions import (
     MessageDeleteView,
     MessageForwardView,
     MessagePinView,
+    MessageRetryView,
     MessageStarView,
     StarredMessagesView,
 )
@@ -284,6 +285,11 @@ urlpatterns = [
         'conversations/<uuid:conversation_id>/template-messages/',
         ConversationTemplateSendView.as_view(),
         name='conversation-template-messages',
+    ),
+    path(
+        'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/retry/',
+        MessageRetryView.as_view(),
+        name='message-retry',
     ),
     path(
         'conversations/<uuid:conversation_id>/messages/<uuid:message_id>/reactions/',

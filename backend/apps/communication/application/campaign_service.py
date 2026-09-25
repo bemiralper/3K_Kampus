@@ -1421,6 +1421,7 @@ class CampaignService:
                         ogrenci_id=None if is_personel else (recipient.ogrenci_id or resolved.ogrenci_id),
                         veli_id=None if is_personel else (recipient.veli_id or resolved.veli_id),
                         channel_config=locked.channel_config,
+                        department=getattr(locked.channel_config, 'department', None),
                     )
                     if is_personel and personel:
                         update_fields = []
@@ -1659,6 +1660,9 @@ class CampaignStatsService:
         campaign = OutboundCampaign.objects.filter(id=campaign_id).first()
         if not campaign:
             return
+
+        from apps.communication.infrastructure.repository import OutboundQueueRepository
+        OutboundQueueRepository.release_stale_sending_for_campaign(campaign_id)
 
         msgs = Message.objects.filter(campaign_id=campaign_id, direction=MessageDirection.OUTBOUND)
         agg = msgs.aggregate(

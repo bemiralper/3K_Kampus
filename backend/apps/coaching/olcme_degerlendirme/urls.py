@@ -9,7 +9,7 @@ from .views.roster_views import (
     preview_participants, exam_audience, exam_participants,
     exam_participant_add, exam_participant_detail, exam_participant_search,
     exam_participants_bulk_attendance,
-    exam_rooms, exam_seating, exam_roster_export,
+    exam_rooms, exam_seating, exam_roster_export, deneme_salonlari, deneme_salon_detail,
     exam_hatirlatma_preview, exam_hatirlatma_send,
 )
 from .views.publish_views import (
@@ -60,7 +60,7 @@ from .views.curriculum_views import (
     outcome_list, outcome_detail,
     sub_outcome_create, sub_outcome_detail,
     bulk_import, bulk_text_import,
-    catalog_export, catalog_import,
+    catalog_export, catalog_import, curriculum_excel,
     link_subject_to_section, unlink_subject_from_section,
     reorder_topics,
     match_outcomes,
@@ -96,6 +96,8 @@ answer_key_bulk_assign_outcomes = AnswerKeyViewSet.as_view({
 urlpatterns = [
     path('exams/list-pdf/', exam_list_pdf, name='exam-list-pdf'),
     path('exams/preview-participants/', preview_participants, name='exam-preview-participants'),
+    path('deneme-salonlari/', deneme_salonlari, name='deneme-salonlari'),
+    path('deneme-salonlari/<int:salon_id>/', deneme_salon_detail, name='deneme-salon-detail'),
     path('exams/rematch-all/', rematch_all_exams, name='result-rematch-all'),
     path('exams/mapping-templates/', list_mapping_templates, name='mapping-template-list'),
     path('exams/mapping-templates/create/', create_mapping_template, name='mapping-template-create'),
@@ -176,6 +178,7 @@ urlpatterns = [
     path('curriculum/bulk-import/', bulk_import, name='curriculum-bulk-import'),
     path('curriculum/bulk-text-import/', bulk_text_import, name='curriculum-bulk-text-import'),
     path('curriculum/catalog/export/', catalog_export, name='curriculum-catalog-export'),
+    path('curriculum/catalog/export-excel/', curriculum_excel, name='curriculum-excel'),
     path('curriculum/catalog/import/', catalog_import, name='curriculum-catalog-import'),
     path('curriculum/link-section/', link_subject_to_section, name='curriculum-link-section'),
     path('curriculum/unlink-section/', unlink_subject_from_section, name='curriculum-unlink-section'),

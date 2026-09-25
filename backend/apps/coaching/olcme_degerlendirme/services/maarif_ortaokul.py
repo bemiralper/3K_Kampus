@@ -43,6 +43,8 @@ def load_catalog(path: Path | None = None) -> dict:
 
 
 def topic_is_ortaokul(topic: Topic) -> bool:
+    if getattr(topic, 'program', '') == Topic.Program.MAARIF:
+        return False
     texts = [topic.code or '', topic.name or '']
     texts.extend(
         code for code in topic.outcomes.values_list('code', flat=True)[:12] if code
