@@ -292,6 +292,42 @@ class InboundWebhookTest(TestCase):
         message.refresh_from_db()
         self.assertEqual(message.status, MessageStatus.DELIVERED)
 
+    def test_replay_applies_status_that_arrived_before_provider_id(self):
+        conv, _ = ConversationRepository.get_or_create_by_phone(
+            self.kurum.id, Channel.WHATSAPP, '+905327776655',
+        )
+        message = MessageRepository.create(
+            conversation=conv,
+            direction=MessageDirection.OUTBOUND,
+            body='Karne',
+            status=MessageStatus.SENT,
+            provider_message_id='',
+        )
+        self.processor.process_webhook({
+            'entry': [{
+                'changes': [{
+                    'field': 'messages',
+                    'value': {
+                        'metadata': {'phone_number_id': 'PNID123'},
+                        'statuses': [{
+                            'id': 'wamid.early',
+                            'status': 'read',
+                            'timestamp': '1710000002',
+                        }],
+                    },
+                }],
+            }],
+        }, signature_valid=True)
+        message.refresh_from_db()
+        self.assertEqual(message.status, MessageStatus.SENT)
+
+        message.provider_message_id = 'wamid.early'
+        message.save(update_fields=['provider_message_id', 'updated_at'])
+        applied = self.processor.replay_recent_status_webhooks(minutes=60)
+        message.refresh_from_db()
+        self.assertEqual(applied, 1)
+        self.assertEqual(message.status, MessageStatus.READ)
+
 
 class CoachScopeAPITest(TestCase):
     def setUp(self):

@@ -713,4 +713,11 @@ def drain_pending_queue(
             break
 
     totals['pending_left'] = OutboundQueueRepository.count_pending()
+    try:
+        from apps.communication.application.inbound_processor import InboundProcessor
+
+        totals['status_replayed'] = InboundProcessor().replay_recent_status_webhooks()
+    except Exception:
+        logger.exception('Teslim durumu yeniden uygulanamadı')
+        totals['status_replayed'] = 0
     return totals

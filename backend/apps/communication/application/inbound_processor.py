@@ -258,6 +258,36 @@ class InboundProcessor:
                 message.refresh_from_db()
                 TemplateService.update_stats_on_message_status(message, mapped)
 
+    def replay_recent_status_webhooks(self, *, minutes: int = 20) -> int:
+        """Gönderim sırasında kaçan teslim webhook'larını yeniden uygular.
+
+        Meta, kimlik kayda geçmeden 'iletildi/okundu' gönderebiliyor. O olay
+        işlendi sayılıp yutuluyor; mesaj ekranda 'gönderildi' kalıyor.
+        """
+        from datetime import timedelta
+
+        from apps.communication.domain.models import RawWebhookEvent
+
+        since = timezone.now() - timedelta(minutes=minutes)
+        applied = 0
+        events = RawWebhookEvent.objects.filter(created_at__gte=since).order_by('created_at')
+        for event in events.iterator():
+            statuses = (event.payload or {}).get('statuses') or []
+            if not statuses:
+                continue
+            config = ChannelConfigRepository.get_by_phone_number_id(event.phone_number_id)
+            for status in statuses:
+                message = MessageRepository.get_by_provider_id(status.get('id', ''))
+                before = message.status if message else None
+                self._process_status(
+                    status, kurum_id=event.kurum_id, channel_config=config,
+                )
+                if message is not None:
+                    message.refresh_from_db()
+                    if message.status != before:
+                        applied += 1
+        return applied
+
     def _process_inbound_message(
         self,
         kurum_id: int,
