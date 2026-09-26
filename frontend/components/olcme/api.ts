@@ -902,6 +902,12 @@ export const analysisApi = {
     );
   },
 
+  karneNotifyBulkProgress: (examId: number) => {
+    return request<{ success: boolean; error?: string; data?: KarneBulkProgress }>(
+      `${BASE}/${examId}/analysis/students/notify-bulk-progress/`,
+    );
+  },
+
   karneNotifyBulkSend: (
     examId: number,
     payload: {
@@ -1002,6 +1008,16 @@ export interface KarneBulkQueueResponse {
     campaign_id: string | null;
     already: boolean;
   };
+}
+
+export interface KarneBulkProgress {
+  state: 'idle' | 'running' | 'done' | 'error';
+  students_total: number;
+  students_done: number;
+  sent: number;
+  skipped: number;
+  campaign_id?: string | null;
+  error?: string;
 }
 
 export interface KarneBulkSendResponse {

@@ -306,6 +306,17 @@ def exam_karne_notify_bulk_start(request, exam_pk):
     })
 
 
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def exam_karne_notify_bulk_progress(request, exam_pk):
+    exam, err = _get_exam_or_404(request, exam_pk)
+    if err:
+        return err
+    from apps.coaching.application.olcme_publish import karne_queue_progress
+    return Response({'success': True, 'data': karne_queue_progress(exam)})
+
+
 @api_view(['POST'])
 @authentication_classes([CsrfExemptSessionAuthentication])
 @permission_classes([IsAuthenticated])

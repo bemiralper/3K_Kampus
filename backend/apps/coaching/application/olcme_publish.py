@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from django.db import transaction
 from django.utils import timezone
@@ -23,7 +23,7 @@ ST_SENT = ExamScheduledDispatch.Status.SENT
 ST_OVERDUE = ExamScheduledDispatch.Status.OVERDUE_UNREAD
 ST_CANCELLED = ExamScheduledDispatch.Status.CANCELLED
 
-KARNE_CHUNK = 80
+KARNE_CHUNK = 10
 
 
 def exam_is_graded(exam: Exam) -> bool:
@@ -244,9 +244,13 @@ def attach_publish_campaign(
             OutboundQueueItem.objects.filter(message_id__in=valid_ids).update(campaign_id=campaign.id)
     msg_n = Message.objects.filter(campaign_id=campaign.id).count()
     skip_n = len((campaign.send_options_json or {}).get('skipped_recipients') or [])
-    total = msg_n + skip_n
-    if campaign.total_recipients != total:
-        campaign.total_recipients = total
+    shown = msg_n + skip_n
+    expected = int((campaign.send_options_json or {}).get('expected_recipients') or 0)
+    # İş bitene kadar geçmişte planlanan alıcı sayısı görünsün; 0 kalmasın.
+    if expected > shown and not (campaign.send_options_json or {}).get('finalize_totals'):
+        shown = expected
+    if campaign.total_recipients != shown:
+        campaign.total_recipients = shown
         campaign.save(update_fields=['total_recipients', 'updated_at'])
     if msg_n or skip_n:
         CampaignStatsService.refresh_campaign_stats(campaign.id)
@@ -377,6 +381,7 @@ def _send_karnes(
     answer_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
     ranking_year: int | None = None,
+    on_chunk=None,
 ) -> dict:
     from apps.coaching.application.olcme_karne_notify import send_karne_notify_bulk
     from apps.coaching.application.olcme_karne_pdf import karne_filename, render_karne_pdf
@@ -437,6 +442,15 @@ def _send_karnes(
         skipped += result.get('skipped') or 0
         errors.extend(result.get('errors') or [])
         message_ids.extend(result.get('message_ids') or [])
+        if on_chunk:
+            on_chunk({
+                'students': len(chunk),
+                'sent_delta': result.get('sent') or 0,
+                'skipped_delta': result.get('skipped') or 0,
+                'answer_ids': [a.id for a in chunk],
+                'message_ids': list(result.get('message_ids') or []),
+                'skipped_recipients': list(result.get('skipped_recipients') or []),
+            })
     return {'sent': sent, 'skipped': skipped, 'errors': errors, 'message_ids': message_ids}
 
 
@@ -460,6 +474,32 @@ def _send_answer_keys(
         student_ids=student_ids,
         veli_ids=veli_ids,
     )
+
+
+def _record_karne_chunk(row: ExamScheduledDispatch, exam: Exam, chunk: dict) -> None:
+    """Her parça bitince ilerlemeyi ve gönderim geçmişini günceller."""
+    opts = dict(row.send_options or {})
+    opts['students_done'] = int(opts.get('students_done') or 0) + int(chunk.get('students') or 0)
+    opts['messages_sent'] = int(opts.get('messages_sent') or 0) + int(chunk.get('sent_delta') or 0)
+    opts['messages_skipped'] = int(opts.get('messages_skipped') or 0) + int(chunk.get('skipped_delta') or 0)
+    done_ids = {int(x) for x in (chunk.get('answer_ids') or [])}
+    if done_ids and opts.get('answer_ids'):
+        opts['answer_ids'] = [int(x) for x in opts['answer_ids'] if int(x) not in done_ids]
+    if not opts.get('students_total'):
+        opts['students_total'] = opts['students_done'] + len(opts.get('answer_ids') or [])
+    row.send_options = opts
+    row.sent_count = opts['messages_sent']
+    row.skipped_count = opts['messages_skipped']
+    row.save(update_fields=['send_options', 'sent_count', 'skipped_count', 'updated_at'])
+    campaign = attach_publish_campaign(
+        exam, row.kind, chunk.get('message_ids') or [],
+        sent_by_user_id=opts.get('sent_by_user_id'),
+        campaign=load_publish_campaign(exam, str(row.campaign_id) if row.campaign_id else None),
+        skipped_recipients=chunk.get('skipped_recipients') or [],
+    )
+    if row.campaign_id != campaign.id:
+        row.campaign_id = campaign.id
+        row.save(update_fields=['campaign_id', 'updated_at'])
 
 
 def fire_dispatch(
@@ -513,6 +553,7 @@ def fire_dispatch(
         missing = 'Sınav henüz okunmadı.'
         send_kwargs['answer_ids'] = answer_ids
         send_kwargs['ranking_year'] = ranking_year
+        send_kwargs['on_chunk'] = lambda chunk, row=row, exam=exam: _record_karne_chunk(row, exam, chunk)
         sender = _send_karnes
     else:
         ready = answer_key_ready(exam)
@@ -544,19 +585,33 @@ def fire_dispatch(
         row.save(update_fields=['status', 'last_error', 'updated_at'])
         return {'ok': False, 'status': ST_OVERDUE, 'error': str(exc)}
 
+    campaign = load_publish_campaign(exam, str(row.campaign_id) if row.campaign_id else None)
+    if campaign is not None:
+        opts = dict(campaign.send_options_json or {})
+        opts['finalize_totals'] = True
+        campaign.send_options_json = opts
+        campaign.save(update_fields=['send_options_json', 'updated_at'])
     campaign = attach_publish_campaign(
         exam, row.kind, result.get('message_ids') or [],
         sent_by_user_id=sent_by_user_id,
-        campaign=load_publish_campaign(exam, str(row.campaign_id) if row.campaign_id else None),
+        campaign=campaign,
     )
     row.status = ST_SENT
     row.sent_at = timezone.now()
-    row.sent_count = (row.sent_count or 0) + (result.get('sent') or 0)
-    row.skipped_count = (row.skipped_count or 0) + (result.get('skipped') or 0)
+    if row.kind == KIND_KARNE:
+        stored_now = row.send_options if isinstance(row.send_options, dict) else {}
+        row.sent_count = int(stored_now.get('messages_sent') or result.get('sent') or 0)
+        row.skipped_count = int(stored_now.get('messages_skipped') or result.get('skipped') or 0)
+    else:
+        row.sent_count = (row.sent_count or 0) + (result.get('sent') or 0)
+        row.skipped_count = (row.skipped_count or 0) + (result.get('skipped') or 0)
     row.last_error = '; '.join((result.get('errors') or [])[:8])
     row.campaign_id = campaign.id
     row.is_enabled = False
-    row.send_options = {}
+    row.send_options = {
+        'students_total': int((row.send_options or {}).get('students_total') or 0),
+        'students_done': int((row.send_options or {}).get('students_done') or 0),
+    }
     row.save(update_fields=[
         'status', 'sent_at', 'sent_count', 'skipped_count', 'last_error',
         'campaign_id', 'is_enabled', 'send_options', 'updated_at',
@@ -612,6 +667,8 @@ def queue_karne_send(
         'include_student': bool(include_student),
         'sent_by_user_id': sent_by_user_id,
         'ranking_year': ranking_year,
+        'students_total': len(answer_ids),
+        'students_done': 0,
     }
     row.scheduled_at = timezone.now()
     row.is_enabled = True
@@ -672,6 +729,7 @@ def send_now(
 
 def process_due(*, now=None, exam_id: int | None = None, dry_run: bool = False) -> dict:
     now = now or timezone.now()
+    _reclaim_stale_karne_jobs(now)
     qs = ExamScheduledDispatch.objects.filter(
         status=ST_PENDING,
         is_enabled=True,
@@ -686,22 +744,19 @@ def process_due(*, now=None, exam_id: int | None = None, dry_run: bool = False) 
     overdue = 0
     errors: list[str] = []
     for pk in ids:
-        with transaction.atomic():
+        if dry_run:
             row = (
-                ExamScheduledDispatch.objects.select_for_update(skip_locked=True)
-                .select_related('exam')
-                .filter(
-                    pk=pk,
-                    status=ST_PENDING,
-                    is_enabled=True,
-                    scheduled_at__isnull=False,
-                    scheduled_at__lte=now,
-                )
-                .first()
+                ExamScheduledDispatch.objects.select_related('exam').filter(pk=pk).first()
             )
             if row is None:
                 continue
-            result = fire_dispatch(row, force=False, dry_run=dry_run)
+            result = fire_dispatch(row, force=False, dry_run=True)
+        else:
+            # Kilidi yalnızca işi üstlenirken tut. PDF üretimi dakikalar sürebilir.
+            if not _claim_dispatch(pk, now):
+                continue
+            row = ExamScheduledDispatch.objects.select_related('exam').get(pk=pk)
+            result = fire_dispatch(row, force=True, dry_run=False)
         processed += 1
         if result.get('status') == ST_SENT:
             sent += 1
@@ -715,4 +770,76 @@ def process_due(*, now=None, exam_id: int | None = None, dry_run: bool = False) 
         'overdue': overdue,
         'errors': errors,
         'dry_run': dry_run,
+    }
+
+
+def _claim_dispatch(pk: int, now) -> bool:
+    with transaction.atomic():
+        row = (
+            ExamScheduledDispatch.objects.select_for_update(skip_locked=True)
+            .filter(
+                pk=pk,
+                status=ST_PENDING,
+                is_enabled=True,
+                scheduled_at__isnull=False,
+                scheduled_at__lte=now,
+            )
+            .first()
+        )
+        if row is None:
+            return False
+        opts = dict(row.send_options or {})
+        opts['running_since'] = now.isoformat()
+        opts.setdefault('students_done', 0)
+        if opts.get('answer_ids') is not None and not opts.get('students_total'):
+            opts['students_total'] = len(opts['answer_ids']) + int(opts.get('students_done') or 0)
+        row.send_options = opts
+        row.is_enabled = False
+        row.save(update_fields=['send_options', 'is_enabled', 'updated_at'])
+        return True
+
+
+def _reclaim_stale_karne_jobs(now) -> None:
+    """Çöken işi 15 dakika sonra yeniden dene."""
+    cutoff = now - timedelta(minutes=15)
+    for row in ExamScheduledDispatch.objects.filter(status=ST_PENDING, is_enabled=False):
+        opts = row.send_options if isinstance(row.send_options, dict) else {}
+        if not opts.get('running_since') or not opts.get('answer_ids'):
+            continue
+        if row.updated_at and row.updated_at > cutoff:
+            continue
+        opts.pop('running_since', None)
+        row.send_options = opts
+        row.is_enabled = True
+        row.scheduled_at = now
+        row.save(update_fields=['send_options', 'is_enabled', 'scheduled_at', 'updated_at'])
+
+
+def karne_queue_progress(exam: Exam) -> dict:
+    row = ExamScheduledDispatch.objects.filter(exam=exam, kind=KIND_KARNE).first()
+    if row is None:
+        return {'state': 'idle', 'students_total': 0, 'students_done': 0, 'sent': 0, 'skipped': 0}
+    opts = row.send_options if isinstance(row.send_options, dict) else {}
+    total = int(opts.get('students_total') or 0)
+    done = int(opts.get('students_done') or 0)
+    if row.status == ST_SENT:
+        state = 'done'
+        if not total:
+            total = (row.sent_count or 0) + (row.skipped_count or 0)
+        if total and done < total:
+            done = total
+    elif row.status == ST_OVERDUE:
+        state = 'error'
+    elif opts.get('running_since') or (row.is_enabled and opts.get('answer_ids')):
+        state = 'running'
+    else:
+        state = 'idle'
+    return {
+        'state': state,
+        'students_total': total,
+        'students_done': done,
+        'sent': row.sent_count or 0,
+        'skipped': row.skipped_count or 0,
+        'campaign_id': str(row.campaign_id) if row.campaign_id else None,
+        'error': (row.last_error or '')[:300],
     }

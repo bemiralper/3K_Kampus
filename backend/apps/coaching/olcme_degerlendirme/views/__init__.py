@@ -46,6 +46,7 @@ from .karne_views import (
     exam_karne_notify_send,
     exam_karne_notify_bulk_preview,
     exam_karne_notify_bulk_queue,
+    exam_karne_notify_bulk_progress,
     exam_karne_notify_bulk_send,
 )
 from .student_exam_views import student_exam_development, student_exam_results
@@ -91,6 +92,7 @@ __all__ = [
     'exam_karne_notify_send',
     'exam_karne_notify_bulk_preview',
     'exam_karne_notify_bulk_queue',
+    'exam_karne_notify_bulk_progress',
     'exam_karne_notify_bulk_send',
     'student_exam_results',
     'student_exam_development',

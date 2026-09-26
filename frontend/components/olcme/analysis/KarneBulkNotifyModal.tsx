@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { analysisApi, type KarneBulkStudentRow } from '../api';
+import { analysisApi, type KarneBulkProgress, type KarneBulkStudentRow } from '../api';
 import { ALAN_LABELS } from '../pdfExport';
 import type { StudentAnalysis } from '../types';
 
@@ -30,12 +30,9 @@ export default function KarneBulkNotifyModal({
   const [error, setError] = useState('');
   const [rows, setRows] = useState<KarneBulkStudentRow[]>([]);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
-  const [queued, setQueued] = useState<{
-    students: number;
-    recipients: number;
-    campaignId: string | null;
-    already: boolean;
-  } | null>(null);
+  const [queued, setQueued] = useState(false);
+  const [live, setLive] = useState<KarneBulkProgress | null>(null);
+  const [banner, setBanner] = useState<KarneBulkProgress | null>(null);
 
   const filtered = useMemo(() => {
     let list = [...students];
@@ -112,11 +109,14 @@ export default function KarneBulkNotifyModal({
         rankingYear,
       );
       if (!res.success) throw new Error(res.error || 'Gönderim kuyruğa alınamadı.');
-      setQueued({
-        students: res.data?.queued ?? sendable.length,
-        recipients: kisiSelected,
-        campaignId: res.data?.campaign_id ?? null,
-        already: Boolean(res.data?.already),
+      setQueued(true);
+      setLive({
+        state: 'running',
+        students_total: sendable.length,
+        students_done: 0,
+        sent: 0,
+        skipped: 0,
+        campaign_id: res.data?.campaign_id ?? null,
       });
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Gönderim hatası');
@@ -124,6 +124,39 @@ export default function KarneBulkNotifyModal({
       setSending(false);
     }
   };
+
+  useEffect(() => {
+    let stop = false;
+    let timer = 0;
+    const tick = async () => {
+      try {
+        const res = await analysisApi.karneNotifyBulkProgress(examId);
+        if (stop || !res.success || !res.data) return;
+        if (res.data.state === 'idle') return;
+        if (res.data.state === 'running' || queued) {
+          setLive(res.data);
+          setBanner(null);
+          if (res.data.state === 'running') {
+            setQueued(true);
+            timer = window.setTimeout(tick, 2000);
+          }
+          return;
+        }
+        setBanner(res.data);
+      } catch {
+        if (!stop && queued) timer = window.setTimeout(tick, 3000);
+      }
+    };
+    timer = window.setTimeout(tick, queued ? 400 : 0);
+    return () => {
+      stop = true;
+      window.clearTimeout(timer);
+    };
+  }, [examId, queued]);
+
+  const pct = live && live.students_total
+    ? Math.min(100, Math.round((live.students_done / live.students_total) * 100))
+    : 0;
 
   return (
     <div
@@ -191,23 +224,37 @@ export default function KarneBulkNotifyModal({
           </label>
         </div>
 
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Alıcılar yükleniyor…</div>
-        ) : queued ? (
+        {live && live.state !== 'idle' ? (
           <div style={{ padding: 24 }}>
-            <div style={{ color: '#15803d', fontSize: 14, fontWeight: 650, marginBottom: 8 }}>
-              {queued.already
-                ? 'Bu sınavın karne gönderimi hâlihazırda kuyrukta.'
-                : `${queued.students} öğrencinin karnesi arka plana alındı — ${queued.recipients} kişiye gidecek.`}
+            <div style={{ fontSize: 14, fontWeight: 650, color: '#0f172a', marginBottom: 6 }}>
+              {live.state === 'done'
+                ? 'Karneler kuyruğa alındı'
+                : live.state === 'error'
+                  ? 'Gönderim durdu'
+                  : 'Karneler hazırlanıyor'}
+            </div>
+            <div style={{ fontSize: 12, color: '#475569', marginBottom: 8 }}>
+              {live.students_done} / {live.students_total || '…'} öğrenci
+              {live.sent ? ` · ${live.sent} mesaj kuyrukta` : ''}
+              {live.skipped ? ` · ${live.skipped} gidemedi` : ''}
+            </div>
+            <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden', marginBottom: 12 }}>
+              <div style={{
+                width: `${live.state === 'done' ? 100 : pct}%`,
+                height: '100%',
+                background: live.state === 'error' ? '#b45309' : '#0061a6',
+                transition: 'width 0.25s ease',
+              }} />
             </div>
             <p style={{ margin: '0 0 16px', fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
-              Bu pencereyi kapatabilirsiniz; karneler sunucuda üretilip gönderilir.
-              Kime gittiğini gönderim geçmişinden izleyebilirsiniz.
+              {live.state === 'error'
+                ? (live.error || 'Karne üretimi tamamlanamadı.')
+                : 'Bu pencereyi kapatabilirsiniz; gönderim sunucuda sürer. Kime gittiğini gönderim geçmişinden izleyebilirsiniz.'}
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {queued.campaignId && (
+              {live.campaign_id && (
                 <Link
-                  href={`/admin/iletisim/kampanyalar?campaign=${queued.campaignId}`}
+                  href={`/admin/iletisim/kampanyalar?campaign=${live.campaign_id}`}
                   className="btn-modern btn-primary"
                   style={{ textDecoration: 'none', padding: '8px 14px', borderRadius: 8, background: '#0061a6', color: '#fff', fontWeight: 600 }}
                 >
@@ -226,8 +273,25 @@ export default function KarneBulkNotifyModal({
               padding: '8px 14px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer',
             }}>Geri dön</button>
           </div>
+        ) : loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Alıcılar yükleniyor…</div>
         ) : (
           <>
+            {banner && (
+              <div style={{ margin: '12px 16px 0', padding: '10px 12px', borderRadius: 10, background: banner.state === 'error' ? '#fff7ed' : '#f0fdf4', border: '1px solid #e2e8f0', fontSize: 12, color: '#334155' }}>
+                Son gönderim: {banner.students_done}/{banner.students_total || banner.students_done} öğrenci
+                {banner.sent ? ` · ${banner.sent} mesaj` : ''}
+                {banner.skipped ? ` · ${banner.skipped} gidemedi` : ''}
+                {banner.campaign_id && (
+                  <>
+                    {' · '}
+                    <Link href={`/admin/iletisim/kampanyalar?campaign=${banner.campaign_id}`} style={{ color: '#0262a7', fontWeight: 650 }}>
+                      Gönderim geçmişi
+                    </Link>
+                  </>
+                )}
+              </div>
+            )}
             <div style={{ overflowY: 'auto', padding: '12px 16px', flex: 1 }}>
               {rows.map(r => {
                 const blocked = Boolean(r.skip_reason);

@@ -430,7 +430,7 @@ class OlcmePublishDispatchTest(TestCase):
         row.refresh_from_db()
         self.assertEqual(row.status, ST_SENT)
         self.assertEqual(row.sent_count, 1)
-        self.assertEqual(row.send_options, {})
+        self.assertEqual(row.send_options.get('students_done'), 1)
         self.assertEqual(str(row.campaign_id), campaign_id)
         # Yalnızca veli seçilmişti; öğrenciye gitmemeli.
         self.assertEqual(dispatch.call_count, 1)
