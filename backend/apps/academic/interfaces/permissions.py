@@ -49,22 +49,24 @@ def user_is_active_coach(user) -> bool:
 
 
 def user_can_access_classroom_attendance(user, classroom_id: int) -> bool:
-    """Akademik yetkili veya o sınıfta öğrencisi olan koç."""
+    """Akademik yetkili veya kurumunun aktif yılındaki sınıfa bakan koç."""
     if user_can_read_academic(user):
         return True
-    if not user_is_active_coach(user):
+    if not user_is_active_coach(user) or not classroom_id:
         return False
-    from apps.academic.domain.placement_queries import active_student_placements
-    from apps.coaching.services.coach_access import scoped_student_ids
+    from apps.academic.services.active_academic_year import get_active_academic_year
+    from apps.coaching.services.coach_access import get_coach_profile
+    from apps.sinif.domain.models import Sinif
 
-    ids = scoped_student_ids(user)
-    if ids is None:
-        return True
-    if not ids or not classroom_id:
+    profile = get_coach_profile(user)
+    if profile is None:
         return False
-    return active_student_placements(
-        classroom_id=classroom_id,
-        student_id__in=ids,
+    year = get_active_academic_year()
+    return Sinif.objects.filter(
+        pk=classroom_id,
+        kurum_id=profile.teacher.kurum_id,
+        egitim_yili=year,
+        aktif_mi=True,
     ).exists()
 
 

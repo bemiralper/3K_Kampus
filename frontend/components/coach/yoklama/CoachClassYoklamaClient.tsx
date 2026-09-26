@@ -547,7 +547,7 @@ function ListView({
     return (
       <div className="cyc-empty">
         <h3>Aktif yılda sınıf yok</h3>
-        <p>Yalnızca aktif eğitim yılındaki, birincil koç atamanızdaki öğrencilerin sınıfları listelenir.</p>
+        <p>Aktif eğitim yılındaki sınıflar burada listelenir.</p>
       </div>
     );
   }

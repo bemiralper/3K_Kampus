@@ -412,7 +412,7 @@ def _forbid_classroom(request, classroom_id: int):
 
 
 def _forbid_coach_notify(request, source_type: str, source_id: int):
-    """Koç yalnızca kendi sınıflarının günlük yoklama bildirimini gönderir."""
+    """Koç, kurumunun aktif yılındaki sınıfların günlük yoklama bildirimini gönderir."""
     if user_can_write_academic(request.user):
         return None
     if source_type != ClassAttendanceNotifySource.PERIOD:

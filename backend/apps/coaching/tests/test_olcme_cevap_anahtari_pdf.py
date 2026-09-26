@@ -195,7 +195,7 @@ class CevapAnahtariPdfTest(TestCase):
 
     def test_parse_copies(self):
         self.assertEqual(parse_copies('6'), 6)
-        self.assertEqual(parse_copies('8'), 8)
+        self.assertEqual(parse_copies('8'), 1)
         self.assertEqual(parse_copies('3'), 1)
         self.assertEqual(parse_copies(None), 1)
 
@@ -208,9 +208,8 @@ class CevapAnahtariPdfTest(TestCase):
         data = render_cevap_anahtari_pdf(self.exam, copies_per_page=6, booklets=['A'])
         self.assertTrue(data.startswith(b'%PDF'))
         self.assertGreater(len(data), 800)
-        eight = render_cevap_anahtari_pdf(self.exam, copies_per_page=8, booklets=['A'])
-        self.assertTrue(eight.startswith(b'%PDF'))
-        self.assertGreater(len(eight), 800)
+        fallback = render_cevap_anahtari_pdf(self.exam, copies_per_page=8, booklets=['A'])
+        self.assertTrue(fallback.startswith(b'%PDF'))
 
     def test_b_booklet_uses_a_mapping(self):
         from apps.coaching.application.olcme_cevap_anahtari_pdf import _group_items, _group_rows, _key_payloads

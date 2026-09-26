@@ -739,7 +739,7 @@ class ClassPeriodAttendanceApiTest(TestCase):
             )
         return user
 
-    def test_coach_scoped_to_assigned_classroom(self):
+    def test_coach_sees_every_active_year_classroom(self):
         other = Sinif.objects.create(
             kurum=self.kurum,
             sube=self.sube,
@@ -759,7 +759,7 @@ class ClassPeriodAttendanceApiTest(TestCase):
         self.assertEqual(ctx.status_code, 200, ctx.content)
         classroom_ids = {c['id'] for c in ctx.json()['classrooms']}
         self.assertIn(self.sinif.id, classroom_ids)
-        self.assertNotIn(other.id, classroom_ids)
+        self.assertIn(other.id, classroom_ids)
 
         own = client.post(
             '/api/academic/class-period-attendance/',
@@ -773,7 +773,7 @@ class ClassPeriodAttendanceApiTest(TestCase):
         )
         self.assertEqual(own.status_code, 200, own.content)
 
-        denied = client.post(
+        opened = client.post(
             '/api/academic/class-period-attendance/',
             data={
                 'term_id': self.term.id,
@@ -783,7 +783,7 @@ class ClassPeriodAttendanceApiTest(TestCase):
             content_type='application/json',
             **self.headers,
         )
-        self.assertEqual(denied.status_code, 403)
+        self.assertEqual(opened.status_code, 200, opened.content)
 
     def test_coach_context_hides_other_year_and_marks_taken(self):
         old_year = EgitimYili.objects.create(

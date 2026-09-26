@@ -71,7 +71,7 @@ export default function AnswerKeyTab({ exam }: Props) {
   const [showJumps, setShowJumps]   = useState(false);
   const [pdfMeta, setPdfMeta]       = useState<{ has_uploaded: boolean; can_generate: boolean; filename: string } | null>(null);
   const [pdfBusy, setPdfBusy]       = useState('');
-  const [pdfCopies, setPdfCopies]   = useState<1 | 2 | 4 | 6 | 8>(1);
+  const [pdfCopies, setPdfCopies]   = useState<1 | 2 | 4 | 6>(1);
   const [pdfBooklet, setPdfBooklet] = useState('');
 
   const [rows, setRows]               = useState<GridRow[]>([]);
@@ -508,12 +508,11 @@ export default function AnswerKeyTab({ exam }: Props) {
         <div className={k.pdf}>
           <label className={k.field} title="Bir sayfaya kaç cevap anahtarı basılacağı">
             Cevap anahtarı
-            <select value={pdfCopies} onChange={e => setPdfCopies(Number(e.target.value) as 1 | 2 | 4 | 6 | 8)}>
+            <select value={pdfCopies} onChange={e => setPdfCopies(Number(e.target.value) as 1 | 2 | 4 | 6)}>
               <option value={1}>1 adet</option>
               <option value={2}>2 adet</option>
               <option value={4}>4 adet</option>
               <option value={6}>6 adet</option>
-              <option value={8}>8 adet</option>
             </select>
           </label>
           {bookletOptions.length > 0 && (

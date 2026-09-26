@@ -16,7 +16,7 @@ from apps.coaching.application.olcme_pdf_brand import (
 )
 
 GRID_COLS = 12
-ALLOWED_COPIES = (1, 2, 4, 6, 8)
+ALLOWED_COPIES = (1, 2, 4, 6)
 BOOKLET_ORDER = {'': 0, 'A': 1, 'B': 2, 'C': 3, 'D': 4}
 
 _MONTHS = (
@@ -36,7 +36,6 @@ _LAYOUT = {
     2: {'cols': 2, 'rows': 1},
     4: {'cols': 2, 'rows': 2},
     6: {'cols': 2, 'rows': 3},
-    8: {'cols': 2, 'rows': 4},
 }
 
 
@@ -380,10 +379,10 @@ def _tile_scale(copies: int, side_by_side: bool = False) -> dict:
     if density == 2:
         return {'header': 6.5, 'subject': 6.2, 'cell': 5.6, 'hpad': 1.4, 'vpad': 1.4}
     if density == 4:
-        return {'header': 5.6, 'subject': 5.2, 'cell': 4.6, 'hpad': 1.0, 'vpad': 1.0}
+        return {'header': 6.4, 'subject': 6.0, 'cell': 5.4, 'hpad': 1.2, 'vpad': 1.2}
     if density == 6:
-        return {'header': 5.0, 'subject': 4.6, 'cell': 4.0, 'hpad': 0.7, 'vpad': 0.7}
-    return {'header': 4.6, 'subject': 4.2, 'cell': 3.6, 'hpad': 0.5, 'vpad': 0.55}
+        return {'header': 6.0, 'subject': 5.6, 'cell': 5.0, 'hpad': 1.0, 'vpad': 1.0}
+    return {'header': 5.4, 'subject': 5.0, 'cell': 4.4, 'hpad': 0.8, 'vpad': 0.8}
 
 
 def _styles(font: str, font_bold: str, scale: dict):
@@ -420,17 +419,43 @@ def _natural_row_heights(kinds: list[str], scale: dict) -> list[float]:
     return [sizes[kind] for kind in kinds]
 
 
-def _fit_row_heights(kinds: list[str], scale: dict, target_h: float | None) -> list[float]:
-    """Doğal satır yüksekliği; yalnızca taşarsa küçültür, asla şişirmez."""
+_SCALE_KEYS = ('header', 'subject', 'cell', 'hpad', 'vpad')
+
+
+def _scale_fonts(scale: dict, factor: float) -> dict:
+    """Yazı ve boşluğu aynı oranda değiştirir; satır yüksekliği yazıyı kesmez."""
+    fitted = dict(scale)
+    for key in _SCALE_KEYS:
+        fitted[key] = scale[key] * factor
+    return fitted
+
+
+def _scale_for_tile(scale: dict, kinds: list[str], target_h: float | None, *, allow_grow: bool) -> dict:
+    """Tablo kutuyu doldursun; sığmazsa yazı da küçülsün, satır kesilmesin."""
+    if not target_h:
+        return scale
+    total = sum(_natural_row_heights(kinds, scale)) or 1
+    factor = target_h / total
+    if factor > 1 and not allow_grow:
+        return scale
+    if factor > 1.45:
+        factor = 1.45
+    if 0.985 <= factor <= 1.015:
+        return scale
+    return _scale_fonts(scale, factor)
+
+
+def _fit_row_heights(kinds: list[str], scale: dict, target_h: float | None, *, fill: bool = False) -> list[float]:
+    """Yazı ölçüsüne göre satır. fill ise tabloyu kutu yüksekliğine kadar büyütür."""
     heights = _natural_row_heights(kinds, scale)
     total = sum(heights) or 1
-    if target_h and total > target_h:
+    if fill and target_h and abs(total - target_h) > 0.5:
         factor = target_h / total
         return [h * factor for h in heights]
     return heights
 
 
-def _booklet_table(exam, key, items, width, styles, scale, *, height=None, font: str):
+def _booklet_table(exam, key, items, width, styles, scale, *, height=None, fill_height: bool = False, font: str):
     letter = (getattr(key, 'booklet', None) or '').strip().upper()
     fill = subject_fill(letter)
     groups = _group_items(items, include_empty=True)
@@ -445,7 +470,7 @@ def _booklet_table(exam, key, items, width, styles, scale, *, height=None, font:
             kinds.append('data')
 
     col_w = width / GRID_COLS
-    row_h = _fit_row_heights(kinds, scale, height)
+    row_h = _fit_row_heights(kinds, scale, height, fill=fill_height)
     header = _header_cell(
         booklet_header_text(exam, key), styles['hdr'],
         width=width, row_h=row_h[0], hpad=scale['hpad'], vpad=scale['vpad'],
@@ -666,8 +691,8 @@ def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) 
 
     font, font_bold = _register_fonts()
     page_w, page_h = A4
-    margin = 6 * mm
-    gap = 8 * mm
+    margin = 5 * mm
+    gap = 5 * mm
     # SimpleDocTemplate çerçevesinin varsayılan iç boşluğu 6 pt.
     frame_pad = 6
     usable_w = page_w - 2 * margin - 2 * frame_pad
@@ -690,21 +715,30 @@ def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) 
 
     tile_w = (usable_w - gap * (grid_cols - 1)) / grid_cols
     scale = _tile_scale(copies, side_by_side=side_by_side)
-    styles = _styles(font, font_bold, scale)
-    natural_h = max(
-        sum(_natural_row_heights(_row_kinds(items), scale))
-        for _, items in sequence
+    tallest = max(sequence, key=lambda pair: len(_row_kinds(pair[1])))
+    preview_h = None
+    if not (grid_rows == 1 and copies == 1 and not side_by_side):
+        room = usable_h - gap * (grid_rows - 1)
+        preview_h = room / grid_rows
+    scale = _scale_for_tile(
+        scale,
+        _row_kinds(tallest[1]),
+        preview_h,
+        allow_grow=copies != 1 or side_by_side,
     )
-    if grid_rows == 1 and copies == 1 and not side_by_side:
+    styles = _styles(font, font_bold, scale)
+    fill_tile = not (copies == 1 and not side_by_side)
+    if copies == 1 and not side_by_side:
         tile_h = usable_h
     else:
         room = usable_h - gap * (grid_rows - 1)
-        tile_h = natural_h if natural_h * grid_rows <= room else room / grid_rows
+        tile_h = room / grid_rows
 
     def tile(payload, width, height):
         key, items = payload
         return _booklet_table(
-            exam, key, items, width, styles, scale, height=height, font=font,
+            exam, key, items, width, styles, scale,
+            height=height, fill_height=fill_tile, font=font,
         )
 
     buf = io.BytesIO()

@@ -567,12 +567,16 @@ def build_coach_period_attendance_context(
     sube_id: int,
     session_date: date | None = None,
 ) -> dict[str, Any]:
-    """Koç portalı: yalnızca aktif eğitim yılı sınıfları + günün yoklama durumu."""
+    """Koç portalı: şubedeki aktif eğitim yılı sınıfları + günün yoklama durumu.
+
+    Sınıf listesi koçun kendi öğrencisiyle sınırlı değildir; kurumdaki her koç
+    aynı şubenin bütün sınıflarını görür.
+    """
     from apps.academic.services.active_academic_year import get_active_academic_year
-    from apps.coaching.services.coach_access import scoped_student_ids
     from apps.sinif.domain.models import Sinif
     from apps.term.domain.models import Term
 
+    del user
     year = get_active_academic_year()
     terms = list(Term.objects.filter(
         kurum_id=kurum_id,
@@ -582,17 +586,9 @@ def build_coach_period_attendance_context(
     term_ids = [t.id for t in terms]
     active_term = next((t for t in terms if t.is_active), terms[0] if terms else None)
 
-    student_ids = scoped_student_ids(user)
     placement_qs = active_student_placements(academic_year=year)
     if term_ids:
         placement_qs = placement_qs.filter(term_id__in=term_ids)
-    if student_ids is not None:
-        if not student_ids:
-            placement_qs = placement_qs.none()
-        else:
-            placement_qs = placement_qs.filter(student_id__in=student_ids)
-
-    placed_ids = list(placement_qs.values_list('classroom_id', flat=True).distinct())
     counts = dict(
         placement_qs.values('classroom_id').annotate(
             n=Count('student_id', distinct=True),
@@ -611,8 +607,6 @@ def build_coach_period_attendance_context(
         egitim_yili=year,
         aktif_mi=True,
     ).select_related('term', 'sinif_seviyesi')
-    if student_ids is not None:
-        classroom_qs = classroom_qs.filter(id__in=placed_ids)
 
     day = session_date or date.today()
     classrooms = list(classroom_qs.order_by('sinif_seviyesi__ad', 'ad'))
@@ -674,35 +668,18 @@ def build_coach_period_day_roster(
     sube_id: int,
     session_date: date | None = None,
 ) -> dict[str, Any]:
-    """Seçilen günde koçun sınıflarındaki tüm öğrenci yoklama durumları."""
+    """Seçilen günde şubedeki bütün sınıfların öğrenci yoklama durumları."""
     from apps.academic.services.active_academic_year import get_active_academic_year
-    from apps.coaching.services.coach_access import scoped_student_ids
     from apps.sinif.domain.models import Sinif
-    from apps.term.domain.models import Term
 
+    del user
     year = get_active_academic_year()
-    terms = list(Term.objects.filter(
-        kurum_id=kurum_id,
-        sube_id=sube_id,
-        egitim_yili=year,
-    ).values_list('id', flat=True))
-    student_ids = scoped_student_ids(user)
-    placement_qs = active_student_placements(academic_year=year)
-    if terms:
-        placement_qs = placement_qs.filter(term_id__in=terms)
-    if student_ids is not None:
-        placement_qs = placement_qs.filter(student_id__in=student_ids) if student_ids else placement_qs.none()
-    placed_ids = list(placement_qs.values_list('classroom_id', flat=True).distinct())
-
-    classroom_qs = Sinif.objects.filter(
+    classroom_ids = list(Sinif.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
         egitim_yili=year,
         aktif_mi=True,
-    )
-    if student_ids is not None:
-        classroom_qs = classroom_qs.filter(id__in=placed_ids)
-    classroom_ids = list(classroom_qs.values_list('id', flat=True))
+    ).values_list('id', flat=True))
 
     day = session_date or date.today()
     records = ClassPeriodAttendanceRecord.objects.filter(
@@ -710,9 +687,6 @@ def build_coach_period_day_roster(
         session__session_date=day,
         session__sinif_id__in=classroom_ids,
     ).select_related('student', 'session', 'session__sinif')
-    if student_ids is not None:
-        records = records.filter(student_id__in=student_ids) if student_ids else records.none()
-
     status_counts = {
         StudentAttendanceStatus.PRESENT: 0,
         StudentAttendanceStatus.LATE: 0,
