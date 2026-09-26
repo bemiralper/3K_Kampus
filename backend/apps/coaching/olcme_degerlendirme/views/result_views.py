@@ -442,6 +442,16 @@ def _score_answers(answers_raw, total_questions, booklet,
     return answers_dict, comparison_dict, section_scores_data, (t_correct, t_wrong, t_empty, round(t_net, 2))
 
 
+def split_dat_lines(text: str) -> list[str]:
+    """Satır sonlarını ayır. Dosyanın tamamı strip() edilmez.
+
+    Son kaydın sondaki boşlukları sabit genişliğin parçasıdır. strip() onları
+    silince satır kısa sanılıp başa boşluk ekleniyor; son öğrencinin cevapları
+    kayıyor.
+    """
+    return [ln for ln in text.splitlines() if ln.strip()]
+
+
 def _normalize_lines(lines):
     """
     DAT satırlarını normalize et.
@@ -689,7 +699,7 @@ def parse_dat(request, exam_pk, session_pk):
                 continue
         else:
             text = raw.decode('latin-1', errors='replace')
-        lines = text.strip().splitlines()
+        lines = split_dat_lines(text)
     except Exception as e:
         return Response({'error': f'Dosya okunamadı: {str(e)}'}, status=400)
 

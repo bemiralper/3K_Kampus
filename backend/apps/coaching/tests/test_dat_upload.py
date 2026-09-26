@@ -7,6 +7,10 @@ from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.coaching.olcme_degerlendirme.models import Exam
+from apps.coaching.olcme_degerlendirme.views.result_views import (
+    _normalize_lines,
+    split_dat_lines,
+)
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
@@ -14,6 +18,16 @@ from apps.sube.domain.models import Sube
 User = get_user_model()
 
 UPLOAD_URL = '/api/coaching/olcme-degerlendirme/exams/{}/results/upload/'
+
+
+class DatLineSplitTest(TestCase):
+    def test_last_line_trailing_spaces_stay_in_place(self):
+        first = 'ALI VELI'.ljust(222)
+        last = 'ZEHRA K'.ljust(222)
+        lines = _normalize_lines(split_dat_lines(first + '\n' + last))
+        self.assertEqual(len(lines), 2)
+        self.assertEqual(len(lines[1]), 222)
+        self.assertTrue(lines[1].startswith('ZEHRA K'))
 
 
 class DatUploadPreviewTest(TestCase):

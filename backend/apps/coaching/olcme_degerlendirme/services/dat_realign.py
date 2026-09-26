@@ -32,10 +32,10 @@ def _read_dat_lines(session):
             continue
     if text is None:
         text = raw.decode('latin-1', errors='replace')
-    lines = text.strip().splitlines()
+    from ..views.result_views import _normalize_lines, split_dat_lines
+    lines = split_dat_lines(text)
     if session.first_line_is_header and lines:
         lines = lines[1:]
-    from ..views.result_views import _normalize_lines
     return [ln for ln in _normalize_lines(lines) if ln.strip()]
 
 
