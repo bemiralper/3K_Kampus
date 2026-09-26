@@ -42,6 +42,7 @@ from .views.karne_views import (
     exam_karne_notify_send,
     exam_karne_notify_bulk_preview,
     exam_karne_notify_bulk_start,
+    exam_karne_notify_bulk_queue,
     exam_karne_notify_bulk_send,
 )
 from .views.mapping_template_views import (
@@ -154,6 +155,7 @@ urlpatterns = [
     path('exams/<int:exam_pk>/analysis/students/karneler-pdf/', exam_karneler_pdf, name='analysis-karneler-pdf'),
     path('exams/<int:exam_pk>/analysis/students/notify-bulk-preview/', exam_karne_notify_bulk_preview, name='analysis-karne-notify-bulk-preview'),
     path('exams/<int:exam_pk>/analysis/students/notify-bulk-start/', exam_karne_notify_bulk_start, name='analysis-karne-notify-bulk-start'),
+    path('exams/<int:exam_pk>/analysis/students/notify-bulk-queue/', exam_karne_notify_bulk_queue, name='analysis-karne-notify-bulk-queue'),
     path('exams/<int:exam_pk>/analysis/students/notify-bulk/', exam_karne_notify_bulk_send, name='analysis-karne-notify-bulk-send'),
     path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/karne-pdf/', exam_karne_pdf, name='analysis-karne-pdf'),
     path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/notify-preview/', exam_karne_notify_preview, name='analysis-karne-notify-preview'),

@@ -376,28 +376,35 @@ def _send_karnes(
     include_student: bool = True,
     answer_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
+    ranking_year: int | None = None,
 ) -> dict:
     from apps.coaching.application.olcme_karne_notify import send_karne_notify_bulk
     from apps.coaching.application.olcme_karne_pdf import karne_filename, render_karne_pdf
     from apps.coaching.olcme_degerlendirme.services.scoring_settings import resolve_puan_yili
     from apps.coaching.olcme_degerlendirme.views.analysis_views import (
+        build_exam_payload_context,
         build_student_detail_payload,
     )
 
-    present = present_student_ids(exam)
-    answers = list(
+    qs = (
         StudentAnswer.objects.select_related('student', 'session')
         .prefetch_related('section_scores__section')
-        .filter(session__exam=exam, student_id__in=present)
+        .filter(session__exam=exam)
         .order_by('id')
     )
-    if answer_ids is not None:
-        allowed = {int(x) for x in answer_ids}
-        answers = [a for a in answers if a.id in allowed]
+    if answer_ids is None:
+        # Otomatik/zamanlı gönderim: yalnızca yoklamada gelenler.
+        answers = list(qs.filter(student_id__in=present_student_ids(exam)))
+        empty_error = 'Yoklamada gelen ve sonucu olan öğrenci yok.'
+    else:
+        # Kullanıcı seçimi yoklamadan bağımsızdır; analizde görünen herkes gönderilebilir.
+        answers = list(qs.filter(pk__in={int(x) for x in answer_ids}))
+        empty_error = 'Seçilen öğrencilerin karnesi bulunamadı.'
     if not answers:
-        raise ValueError('Yoklamada gelen ve sonucu olan öğrenci yok.')
+        raise ValueError(empty_error)
 
-    ranking_year = resolve_puan_yili(exam, None)
+    ranking_year = resolve_puan_yili(exam, ranking_year)
+    payload_ctx = build_exam_payload_context(exam, ranking_year)
     sent = 0
     skipped = 0
     errors: list[str] = []
@@ -406,7 +413,9 @@ def _send_karnes(
         chunk = answers[i:i + KARNE_CHUNK]
         items = []
         for answer in chunk:
-            karne = build_student_detail_payload(exam, answer, ranking_year, include_trend=False)
+            karne = build_student_detail_payload(
+                exam, answer, ranking_year, include_trend=False, context=payload_ctx,
+            )
             items.append({
                 'answer_id': answer.id,
                 'karne': karne,
@@ -464,6 +473,7 @@ def fire_dispatch(
     student_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
     answer_ids: list[int] | None = None,
+    ranking_year: int | None = None,
 ) -> dict:
     exam = row.exam
     exam.refresh_from_db()
@@ -474,6 +484,24 @@ def fire_dispatch(
             'status': ST_OVERDUE,
             'error': row.last_error or 'Saat geçti — Hemen gönder veya yeniden zamanla.',
         }
+    stored = row.send_options if isinstance(row.send_options, dict) else {}
+    if stored:
+        # Arka plan işi: seçim cron çalışırken satırdan okunur.
+        if answer_ids is None and stored.get('answer_ids') is not None:
+            answer_ids = [int(x) for x in stored['answer_ids']]
+        if student_ids is None and stored.get('student_ids') is not None:
+            student_ids = [int(x) for x in stored['student_ids']]
+        if veli_ids is None and stored.get('veli_ids') is not None:
+            veli_ids = [int(x) for x in stored['veli_ids']]
+        if 'include_veli' in stored:
+            include_veli = bool(stored['include_veli'])
+        if 'include_student' in stored:
+            include_student = bool(stored['include_student'])
+        if sent_by_user_id is None:
+            sent_by_user_id = stored.get('sent_by_user_id')
+        if ranking_year is None and stored.get('ranking_year') is not None:
+            ranking_year = int(stored['ranking_year'])
+
     send_kwargs = {
         'sent_by_user_id': sent_by_user_id,
         'include_veli': include_veli,
@@ -484,6 +512,7 @@ def fire_dispatch(
         ready = exam_is_graded(exam)
         missing = 'Sınav henüz okunmadı.'
         send_kwargs['answer_ids'] = answer_ids
+        send_kwargs['ranking_year'] = ranking_year
         sender = _send_karnes
     else:
         ready = answer_key_ready(exam)
@@ -518,6 +547,7 @@ def fire_dispatch(
     campaign = attach_publish_campaign(
         exam, row.kind, result.get('message_ids') or [],
         sent_by_user_id=sent_by_user_id,
+        campaign=load_publish_campaign(exam, str(row.campaign_id) if row.campaign_id else None),
     )
     row.status = ST_SENT
     row.sent_at = timezone.now()
@@ -526,15 +556,76 @@ def fire_dispatch(
     row.last_error = '; '.join((result.get('errors') or [])[:8])
     row.campaign_id = campaign.id
     row.is_enabled = False
+    row.send_options = {}
     row.save(update_fields=[
         'status', 'sent_at', 'sent_count', 'skipped_count', 'last_error',
-        'campaign_id', 'is_enabled', 'updated_at',
+        'campaign_id', 'is_enabled', 'send_options', 'updated_at',
     ])
     return {
         'ok': True,
         'status': ST_SENT,
         **result,
         'campaign_id': str(campaign.id),
+    }
+
+
+@transaction.atomic
+def queue_karne_send(
+    exam: Exam,
+    *,
+    answer_ids: list[int],
+    include_veli: bool = True,
+    include_student: bool = True,
+    sent_by_user_id: int | None = None,
+    expected_recipients: int | None = None,
+    ranking_year: int | None = None,
+) -> dict:
+    """Seçilen karneleri arka plan işine yazar.
+
+    Karne PDF üretimi öğrenci başına ~1,5 sn sürdüğü için yüzlerce karne
+    istek içinde üretilemez. İş `ExamScheduledDispatch` satırında durur;
+    `process_olcme_publish` cron'u üretip kuyruğa alır, tarayıcı kapanabilir.
+    """
+    if not answer_ids:
+        raise ValueError('Öğrenci seçilmedi.')
+
+    row, _ = ExamScheduledDispatch.objects.select_for_update().get_or_create(
+        exam=exam, kind=KIND_KARNE,
+        defaults={'status': ST_PENDING, 'is_enabled': False},
+    )
+    if row.status == ST_PENDING and row.is_enabled and row.send_options:
+        return {
+            'queued': 0,
+            'already': True,
+            'campaign_id': str(row.campaign_id) if row.campaign_id else None,
+        }
+
+    campaign = attach_publish_campaign(
+        exam, KIND_KARNE, [],
+        sent_by_user_id=sent_by_user_id,
+        expected_total=expected_recipients if expected_recipients is not None else len(answer_ids),
+    )
+    row.refresh_from_db()
+    row.send_options = {
+        'answer_ids': [int(x) for x in answer_ids],
+        'include_veli': bool(include_veli),
+        'include_student': bool(include_student),
+        'sent_by_user_id': sent_by_user_id,
+        'ranking_year': ranking_year,
+    }
+    row.scheduled_at = timezone.now()
+    row.is_enabled = True
+    row.status = ST_PENDING
+    row.last_error = ''
+    row.campaign_id = campaign.id
+    row.save(update_fields=[
+        'send_options', 'scheduled_at', 'is_enabled', 'status',
+        'last_error', 'campaign_id', 'updated_at',
+    ])
+    return {
+        'queued': len(answer_ids),
+        'campaign_id': str(campaign.id),
+        'already': False,
     }
 
 

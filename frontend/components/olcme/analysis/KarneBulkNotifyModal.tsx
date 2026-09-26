@@ -6,6 +6,8 @@ import { analysisApi, type KarneBulkStudentRow } from '../api';
 import { ALAN_LABELS } from '../pdfExport';
 import type { StudentAnalysis } from '../types';
 
+const PREVIEW_CHUNK = 40;
+
 interface Props {
   examId: number;
   examName: string;
@@ -28,20 +30,11 @@ export default function KarneBulkNotifyModal({
   const [error, setError] = useState('');
   const [rows, setRows] = useState<KarneBulkStudentRow[]>([]);
   const [excluded, setExcluded] = useState<Set<number>>(new Set());
-  const [progress, setProgress] = useState<{
-    done: number;
-    total: number;
-    sent: number;
-    skipped: number;
-    currentName: string;
+  const [queued, setQueued] = useState<{
+    students: number;
+    recipients: number;
     campaignId: string | null;
-  } | null>(null);
-  const [done, setDone] = useState<{
-    sent: number;
-    skipped: number;
-    errors: string[];
-    campaignId: string | null;
-    partial: boolean;
+    already: boolean;
   } | null>(null);
 
   const filtered = useMemo(() => {
@@ -64,12 +57,18 @@ export default function KarneBulkNotifyModal({
       setLoading(true);
       setError('');
       try {
-        const res = await analysisApi.karneNotifyBulkPreview(examId, filtered.map(st => st.answer_id));
-        if (!res.success || !res.data) throw new Error(res.error || 'Önizleme yüklenemedi');
+        const ids = filtered.map(st => st.answer_id);
+        const students: KarneBulkStudentRow[] = [];
+        for (let i = 0; i < ids.length; i += PREVIEW_CHUNK) {
+          if (cancelled) return;
+          const res = await analysisApi.karneNotifyBulkPreview(examId, ids.slice(i, i + PREVIEW_CHUNK));
+          if (!res.success || !res.data) throw new Error(res.error || 'Önizleme yüklenemedi');
+          students.push(...(res.data.students || []));
+        }
         if (!cancelled) {
-          setRows(res.data.students || []);
+          setRows(students);
           const next = new Set<number>();
-          for (const r of res.data.students || []) {
+          for (const r of students) {
             if (r.skip_reason) next.add(r.answer_id);
           }
           setExcluded(next);
@@ -102,100 +101,30 @@ export default function KarneBulkNotifyModal({
     setSending(true);
     setError('');
     setDone(null);
-    const payloadBase = {
-      include_veli: includeVeli,
-      include_student: includeStudent,
-      expected_recipients: kisiSelected,
-    };
-    let campaignId: string | null = null;
-    let sent = 0;
-    let skipped = 0;
-    const errors: string[] = [];
-    setProgress({
-      done: 0, total: sendable.length, sent: 0, skipped: 0,
-      currentName: sendable[0]?.student_name || '', campaignId: null,
-    });
     try {
-      const start = await analysisApi.karneNotifyBulkStart(examId, {
-        answer_ids: sendable.map(r => r.answer_id),
-        expected_recipients: kisiSelected,
-      });
-      if (!start.success || !start.data?.campaign_id) {
-        throw new Error(start.error || 'Gönderim kaydı açılamadı.');
-      }
-      campaignId = start.data.campaign_id;
-      setProgress(prev => prev ? { ...prev, campaignId } : prev);
-
-      for (let i = 0; i < sendable.length; i++) {
-        const row = sendable[i];
-        setProgress({
-          done: i,
-          total: sendable.length,
-          sent,
-          skipped,
-          currentName: row.student_name,
-          campaignId,
-        });
-        try {
-          const res = await analysisApi.karneNotifyBulkSend(
-            examId,
-            {
-              ...payloadBase,
-              answer_ids: [row.answer_id],
-              campaign_id: campaignId,
-            },
-            rankingYear,
-          );
-          if (!res.success) {
-            skipped += 1;
-            errors.push(`${row.student_name}: ${res.error || 'Gönderilemedi'}`);
-          } else {
-            sent += res.data?.sent ?? 0;
-            skipped += res.data?.skipped ?? 0;
-            for (const err of res.data?.errors || []) errors.push(err);
-            if (res.data?.campaign_id) campaignId = res.data.campaign_id;
-          }
-        } catch (e) {
-          skipped += 1;
-          errors.push(`${row.student_name}: ${e instanceof Error ? e.message : 'Gönderilemedi'}`);
-        }
-        setProgress({
-          done: i + 1,
-          total: sendable.length,
-          sent,
-          skipped,
-          currentName: row.student_name,
-          campaignId,
-        });
-      }
-
-      setDone({
-        sent,
-        skipped,
-        errors: errors.slice(0, 12),
-        campaignId,
-        partial: sent === 0 || errors.length > 0,
+      const res = await analysisApi.karneNotifyBulkQueue(
+        examId,
+        {
+          answer_ids: sendable.map(r => r.answer_id),
+          include_veli: includeVeli,
+          include_student: includeStudent,
+          expected_recipients: kisiSelected,
+        },
+        rankingYear,
+      );
+      if (!res.success) throw new Error(res.error || 'Gönderim kuyruğa alınamadı.');
+      setQueued({
+        students: res.data?.queued ?? sendable.length,
+        recipients: kisiSelected,
+        campaignId: res.data?.campaign_id ?? null,
+        already: Boolean(res.data?.already),
       });
     } catch (e) {
-      if (campaignId) {
-        setDone({
-          sent,
-          skipped,
-          errors: [e instanceof Error ? e.message : 'Gönderim hatası', ...errors].slice(0, 12),
-          campaignId,
-          partial: true,
-        });
-      } else {
-        setError(e instanceof Error ? e.message : 'Gönderim hatası');
-      }
+      setError(e instanceof Error ? e.message : 'Gönderim hatası');
     } finally {
       setSending(false);
     }
   };
-
-  const pct = progress && progress.total
-    ? Math.round((progress.done / progress.total) * 100)
-    : 0;
 
   return (
     <div
@@ -265,28 +194,21 @@ export default function KarneBulkNotifyModal({
 
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Alıcılar yükleniyor…</div>
-        ) : done ? (
+        ) : queued ? (
           <div style={{ padding: 24 }}>
-            <div style={{
-              color: done.sent > 0 ? '#15803d' : '#b45309',
-              fontSize: 14, fontWeight: 650, marginBottom: 8,
-            }}>
-              {done.sent > 0
-                ? `${done.sent} mesaj kuyruğa alındı${done.skipped ? `, ${done.skipped} alıcıya gidemedi` : ''}.`
-                : 'Hiçbir alıcıya gönderilemedi.'}
+            <div style={{ color: '#15803d', fontSize: 14, fontWeight: 650, marginBottom: 8 }}>
+              {queued.already
+                ? 'Bu sınavın karne gönderimi hâlihazırda kuyrukta.'
+                : `${queued.students} öğrencinin karnesi arka plana alındı — ${queued.recipients} kişiye gidecek.`}
             </div>
-            {done.partial && done.errors.length > 0 && (
-              <ul style={{ margin: '0 0 16px', paddingLeft: 18, fontSize: 12, color: '#b91c1c', lineHeight: 1.5 }}>
-                {done.errors.map(err => <li key={err}>{err}</li>)}
-              </ul>
-            )}
-            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#475569', lineHeight: 1.5 }}>
-              Kime gittiğini / gitmediğini gönderim geçmişinden görebilirsiniz.
+            <p style={{ margin: '0 0 16px', fontSize: 13, color: '#475569', lineHeight: 1.6 }}>
+              Bu pencereyi kapatabilirsiniz; karneler sunucuda üretilip gönderilir.
+              Kime gittiğini gönderim geçmişinden izleyebilirsiniz.
             </p>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              {done.campaignId && (
+              {queued.campaignId && (
                 <Link
-                  href={`/admin/iletisim/kampanyalar?campaign=${done.campaignId}`}
+                  href={`/admin/iletisim/kampanyalar?campaign=${queued.campaignId}`}
                   className="btn-modern btn-primary"
                   style={{ textDecoration: 'none', padding: '8px 14px', borderRadius: 8, background: '#0061a6', color: '#fff', fontWeight: 600 }}
                 >
@@ -307,28 +229,6 @@ export default function KarneBulkNotifyModal({
           </div>
         ) : (
           <>
-            {sending && progress && (
-              <div style={{ padding: '16px 20px', borderBottom: '1px solid #e2e8f0', background: '#f8fafc' }}>
-                <div style={{ fontSize: 13, fontWeight: 650, color: '#0f172a', marginBottom: 6 }}>
-                  {progress.currentName} gönderiliyor…
-                </div>
-                <div style={{ fontSize: 12, color: '#475569', marginBottom: 8 }}>
-                  {progress.done} / {progress.total} öğrenci · {progress.sent} kişi kuyruğa alındı
-                  {progress.skipped ? ` · ${progress.skipped} gidemedi` : ''}
-                </div>
-                <div style={{ height: 8, borderRadius: 999, background: '#e2e8f0', overflow: 'hidden' }}>
-                  <div style={{
-                    width: `${pct}%`, height: '100%', background: '#0061a6',
-                    transition: 'width 0.25s ease',
-                  }} />
-                </div>
-                {progress.campaignId && (
-                  <div style={{ marginTop: 8, fontSize: 11, color: '#64748b' }}>
-                    Gönderim kaydı açıldı — tarayıcı kapanırsa geçmişten devamını görebilirsiniz.
-                  </div>
-                )}
-              </div>
-            )}
             <div style={{ overflowY: 'auto', padding: '12px 16px', flex: 1 }}>
               {rows.map(r => {
                 const blocked = Boolean(r.skip_reason);
@@ -374,8 +274,13 @@ export default function KarneBulkNotifyModal({
               padding: '12px 16px', borderTop: '1px solid #e2e8f0',
               display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8,
             }}>
-              <div style={{ fontSize: 12, color: '#475569' }}>
+              <div style={{ fontSize: 12, color: '#475569', lineHeight: 1.45 }}>
                 Toplam <strong>{kisiSelected}</strong> kişi
+                {kisiSelected > 250 && (
+                  <div style={{ marginTop: 4, color: '#92400e' }}>
+                    Mesajlar kuyruğa alınır. WhatsApp günde yaklaşık 250 farklı kişiye izin verir; kalanı limit açılınca gider.
+                  </div>
+                )}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
                 <button type="button" onClick={onClose} disabled={sending} style={{
@@ -392,7 +297,7 @@ export default function KarneBulkNotifyModal({
                     cursor: sending || kisiSelected === 0 ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {sending ? 'Gönderiliyor…' : `${kisiSelected} kişiye gönder`}
+                  {sending ? 'Kuyruğa alınıyor…' : `${kisiSelected} kişiye gönder`}
                 </button>
               </div>
             </div>

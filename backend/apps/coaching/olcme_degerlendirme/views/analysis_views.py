@@ -388,13 +388,14 @@ def _pick_exam_session_for_answer(sessions, answer):
     return pool[0]
 
 
-def _student_session_fields(exam, answer):
+def _student_session_fields(exam, answer, sessions=None):
     """Öğrencinin oturum tarihi ve başlama saati."""
-    sessions = list(
-        ExamSessionModel.objects.filter(exam=exam)
-        .prefetch_related('sections')
-        .order_by('order', 'id')
-    )
+    if sessions is None:
+        sessions = list(
+            ExamSessionModel.objects.filter(exam=exam)
+            .prefetch_related('sections')
+            .order_by('order', 'id')
+        )
     chosen = _pick_exam_session_for_answer(sessions, answer)
     session_date = chosen.session_date if chosen else None
     start_time = chosen.start_time if chosen else None
@@ -1154,25 +1155,107 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
     return Response(build_student_detail_payload(exam, answer, ranking_year))
 
 
-def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=True):
-    """Öğrenci karne / detay sözlüğü — analiz modalı ve PDF aynı kaynağı kullanır."""
-    sec_map = _build_section_map(exam)
+def build_exam_payload_context(exam, ranking_year) -> dict:
+    """Sınav geneli türetilmiş veriler.
 
-    # ── Tüm cevaplar (kurum ortalaması için) ──────────────────────────────
-    all_answers = _get_session_answers(exam)
+    Karne içeriği her öğrenci için kurum ortalamasını, sıralamayı ve diğer
+    öğrencilerin puanlarını yeniden hesaplar. Toplu gönderimde (yüzlerce karne)
+    bu O(n²) olur; bağlam bir kez kurulup paylaşılır.
+    """
+    all_answers = list(_get_session_answers(exam))
     all_nets = [_safe_float(a.total_net) for a in all_answers]
-    total_students = len(all_nets)
-    kurum_avg_net = sum(all_nets) / total_students if total_students else 0
 
-    # Kurum section ortalamalarını hesapla
     kurum_section_nets = defaultdict(list)
     for a in all_answers:
         for ss in a.section_scores.all():
             kurum_section_nets[ss.section_id].append(_safe_float(ss.net))
+    kurum_section_avgs = {
+        sec_id: round(sum(nets) / len(nets), 2) if nets else 0
+        for sec_id, nets in kurum_section_nets.items()
+    }
 
-    kurum_section_avgs = {}
-    for sec_id, nets in kurum_section_nets.items():
-        kurum_section_avgs[sec_id] = round(sum(nets) / len(nets), 2) if nets else 0
+    student_ids = [a.student_id for a in all_answers if a.student_id]
+    kayit_map = {
+        k.ogrenci_id: k
+        for k in OgrenciKayit.objects.filter(
+            ogrenci_id__in=student_ids,
+            egitim_yili=exam.egitim_yili,
+            aktif_mi=True,
+        ).select_related('sinif')
+    }
+    sinif_ids = {k.sinif_id for k in kayit_map.values() if k.sinif_id}
+    sinif_members: dict[int, list[int]] = defaultdict(list)
+    if sinif_ids:
+        rows = OgrenciKayit.objects.filter(
+            sinif_id__in=sinif_ids,
+            egitim_yili=exam.egitim_yili,
+            aktif_mi=True,
+        ).values_list('sinif_id', 'ogrenci_id')
+        for sinif_id, ogrenci_id in rows:
+            sinif_members[sinif_id].append(ogrenci_id)
+
+    is_ayt = exam.exam_type == 'YKS_AYT'
+    kurum_scores: list = []
+    pt_score_lists: dict[str, list] = {'SAY': [], 'EA': [], 'SOZ': []}
+    for other in all_answers:
+        other_nets = _build_scoring_nets(other, exam)
+        if is_ayt:
+            tyt_nets_o = (
+                _get_linked_tyt_nets(
+                    exam, other.student_id, other.raw_student_name, other.raw_student_id,
+                )
+                if getattr(exam, 'linked_tyt_exam_id', None)
+                else {}
+            )
+            all_pt = calculate_all_ayt_scores(
+                other_nets, tyt_nets_o, year=ranking_year, kurum_id=exam.kurum_id,
+            )
+            kurum_scores.append(all_pt['SAY']['puan'])
+            for pt in pt_score_lists:
+                if pt in all_pt:
+                    pt_score_lists[pt].append(all_pt[pt]['puan'])
+        else:
+            other_score = calculate_score_for_exam(
+                exam, other_nets, year=ranking_year,
+                student_id=other.student_id,
+                raw_student_name=other.raw_student_name,
+                raw_student_id=other.raw_student_id,
+            )
+            kurum_scores.append(other_score['puan'])
+
+    return {
+        'sec_map': _build_section_map(exam),
+        'all_answers': all_answers,
+        'all_nets': all_nets,
+        'kurum_section_avgs': kurum_section_avgs,
+        'kutuphane_ids': _kutuphane_student_ids(student_ids, exam.egitim_yili),
+        'kayit_map': kayit_map,
+        'sinif_members': sinif_members,
+        'kurum_scores': kurum_scores,
+        'pt_score_lists': pt_score_lists,
+        'exam_sessions': list(
+            ExamSessionModel.objects.filter(exam=exam)
+            .prefetch_related('sections')
+            .order_by('order', 'id')
+        ),
+    }
+
+
+def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=True, context=None):
+    """Öğrenci karne / detay sözlüğü — analiz modalı ve PDF aynı kaynağı kullanır.
+
+    `context`: `build_exam_payload_context` çıktısı. Toplu karne üretiminde
+    aynı bağlam tüm öğrenciler için paylaşılır.
+    """
+    ctx = context if context is not None else build_exam_payload_context(exam, ranking_year)
+    sec_map = ctx['sec_map']
+
+    # ── Tüm cevaplar (kurum ortalaması için) ──────────────────────────────
+    all_answers = ctx['all_answers']
+    all_nets = ctx['all_nets']
+    total_students = len(all_nets)
+    kurum_avg_net = sum(all_nets) / total_students if total_students else 0
+    kurum_section_avgs = ctx['kurum_section_avgs']
 
     # ── Sınıf ortalaması ──────────────────────────────────────────────────
     sinif_adi = ''
@@ -1185,30 +1268,18 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     has_deneme = False
     sinif_student_ids = []
     if answer.student:
-        has_kutuphane = answer.student_id in _kutuphane_student_ids(
-            [answer.student_id], exam.egitim_yili,
-        )
+        has_kutuphane = answer.student_id in ctx['kutuphane_ids']
         has_deneme = _is_deneme_kulubu_kayit(answer.student)
-        kayit = OgrenciKayit.objects.filter(
-            ogrenci=answer.student,
-            egitim_yili=exam.egitim_yili,
-            aktif_mi=True,
-        ).select_related('sinif').first()
+        kayit = ctx['kayit_map'].get(answer.student_id)
 
         if kayit:
             sinif_adi = _sinif_ad(kayit)
             # Aynı sınıftaki diğer öğrencileri bul (sınıf atanmamışsa kıyaslama yok)
-            if not kayit.sinif_id:
-                sinif_student_ids = []
-            else:
-                sinif_student_ids = list(
-                    OgrenciKayit.objects.filter(
-                        sinif=kayit.sinif,
-                        egitim_yili=exam.egitim_yili,
-                        aktif_mi=True,
-                    ).values_list('ogrenci_id', flat=True)
-                )
-            sinif_answers = all_answers.filter(student_id__in=sinif_student_ids)
+            sinif_student_ids = (
+                list(ctx['sinif_members'].get(kayit.sinif_id) or []) if kayit.sinif_id else []
+            )
+            member_ids = set(sinif_student_ids)
+            sinif_answers = [a for a in all_answers if a.student_id in member_ids]
             sinif_nets = [_safe_float(a.total_net) for a in sinif_answers]
             sinif_student_count = len(sinif_nets)
             sinif_avg_net = round(sum(sinif_nets) / len(sinif_nets), 2) if sinif_nets else 0
@@ -1273,22 +1344,8 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
 
     # Kurum sırası — AYT'de yayınevi gibi SAY puanına göre
     if is_ayt:
-        say_scores = []
-        for other in all_answers:
-            other_nets = _build_scoring_nets(other, exam)
-            other_tyt = (
-                _get_linked_tyt_nets(
-                    exam, other.student_id, other.raw_student_name, other.raw_student_id,
-                )
-                if getattr(exam, 'linked_tyt_exam_id', None)
-                else {}
-            )
-            other_say = calculate_all_ayt_scores(
-                other_nets, other_tyt, year=ranking_year, kurum_id=exam.kurum_id,
-            )['SAY']['puan']
-            say_scores.append(other_say)
         my_say = all_scores_data['SAY']['puan']
-        sorted_say = sorted(say_scores, reverse=True)
+        sorted_say = sorted(ctx['kurum_scores'], reverse=True)
         kurum_sira = sorted_say.index(my_say) + 1 if my_say in sorted_say else 0
     else:
         sorted_all_nets = sorted(all_nets, reverse=True)
@@ -1341,25 +1398,8 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     answer_grids = _build_answer_grids(exam, comparison)
     topic_blocks = _build_topic_blocks(exam, comparison, answer.booklet or '')
 
-    kurum_scores = []
-    pt_score_lists = {'SAY': [], 'EA': [], 'SOZ': []}
-    for other in all_answers:
-        other_nets = _build_scoring_nets(other, exam)
-        if is_ayt:
-            tyt_nets_o = _get_linked_tyt_nets(exam, other.student_id, other.raw_student_name, other.raw_student_id) if getattr(exam, 'linked_tyt_exam_id', None) else {}
-            all_pt = calculate_all_ayt_scores(other_nets, tyt_nets_o, year=ranking_year, kurum_id=exam.kurum_id)
-            kurum_scores.append(all_pt['SAY']['puan'])
-            for pt in pt_score_lists:
-                if pt in all_pt:
-                    pt_score_lists[pt].append(all_pt[pt]['puan'])
-        else:
-            other_score = calculate_score_for_exam(
-                exam, other_nets, year=ranking_year,
-                student_id=other.student_id,
-                raw_student_name=other.raw_student_name,
-                raw_student_id=other.raw_student_id,
-            )
-            kurum_scores.append(other_score['puan'])
+    kurum_scores = ctx['kurum_scores']
+    pt_score_lists = ctx['pt_score_lists']
     kurum_avg_puan = round(sum(kurum_scores) / len(kurum_scores), 3) if kurum_scores else 0
     puan_turleri_avgs = {
         pt: round(sum(vals) / len(vals), 3) if vals else 0
@@ -1421,7 +1461,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'exam_type_label': _exam_type_short(exam.exam_type),
         'kurum_ad': getattr(exam.kurum, 'ad', '') if exam.kurum_id else '',
         'sube_ad': getattr(exam.sube, 'ad', '') if exam.sube_id else '',
-        **_student_session_fields(exam, answer),
+        **_student_session_fields(exam, answer, ctx['exam_sessions']),
         'kurum_avg_puan': kurum_avg_puan,
         'puan_turleri_avgs': puan_turleri_avgs,
         'answer_grids': answer_grids,

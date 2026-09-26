@@ -177,6 +177,19 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertEqual(data['ogrenci_total'], 1)
         self.assertEqual(data['kisi_total'], 2)
 
+    def test_bulk_notify_accepts_more_than_eighty_students(self):
+        from apps.coaching.olcme_degerlendirme.views.karne_views import (
+            MAX_BULK_KARNELER,
+            _parse_answer_ids,
+        )
+
+        ids, err = _parse_answer_ids(list(range(1, 122)))
+        self.assertIsNone(err)
+        self.assertEqual(len(ids), 121)
+        capped, err = _parse_answer_ids(list(range(1, 90)), limit=MAX_BULK_KARNELER)
+        self.assertIsNone(capped)
+        self.assertEqual(err.status_code, 400)
+
     @patch('apps.coaching.application.olcme_karne_notify.dispatch_event')
     def test_bulk_notify_send(self, mock_dispatch):
         class FakeResult:

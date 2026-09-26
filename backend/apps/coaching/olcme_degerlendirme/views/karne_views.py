@@ -83,7 +83,7 @@ def exam_karneler_pdf(request, exam_pk):
         return Response({'error': 'answer_ids zorunludur.'}, status=400)
     if len(answer_ids) > MAX_BULK_KARNELER:
         return Response(
-            {'error': f'En fazla {MAX_BULK_KARNELER} karne indirilebilir.'},
+            {'error': f'En fazla {MAX_BULK_KARNELER} karne tek PDF olarak indirilebilir.'},
             status=400,
         )
 
@@ -172,7 +172,8 @@ def exam_karne_notify_send(request, exam_pk, answer_pk):
     return Response({'success': True, 'data': result})
 
 
-def _parse_answer_ids(raw) -> tuple[list[int] | None, Response | None]:
+def _parse_answer_ids(raw, *, limit: int | None = None) -> tuple[list[int] | None, Response | None]:
+    """WhatsApp gönderiminde öğrenci tavanı yok; karne PDF indirme `limit` verir."""
     if isinstance(raw, list):
         values = raw
     elif isinstance(raw, str):
@@ -185,9 +186,9 @@ def _parse_answer_ids(raw) -> tuple[list[int] | None, Response | None]:
         return None, Response({'success': False, 'error': 'answer_ids geçersiz.'}, status=400)
     if not answer_ids:
         return None, Response({'success': False, 'error': 'answer_ids zorunludur.'}, status=400)
-    if len(answer_ids) > MAX_BULK_KARNELER:
+    if limit is not None and len(answer_ids) > limit:
         return None, Response(
-            {'success': False, 'error': f'En fazla {MAX_BULK_KARNELER} öğrenci seçilebilir.'},
+            {'success': False, 'error': f'En fazla {limit} öğrenci seçilebilir.'},
             status=400,
         )
     return answer_ids, None
@@ -303,6 +304,36 @@ def exam_karne_notify_bulk_start(request, exam_pk):
             'expected_recipients': expected,
         },
     })
+
+
+@api_view(['POST'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def exam_karne_notify_bulk_queue(request, exam_pk):
+    """Seçimi arka plan işine yazar — tarayıcı kapanabilir, cron üretip kuyruğa alır."""
+    exam, err = _get_exam_or_404(request, exam_pk)
+    if err:
+        return err
+    body = request.data or {}
+    answer_ids, err = _parse_answer_ids(body.get('answer_ids'))
+    if err:
+        return err
+
+    from apps.coaching.application.olcme_publish import queue_karne_send
+
+    try:
+        result = queue_karne_send(
+            exam,
+            answer_ids=answer_ids,
+            include_veli=body.get('include_veli', True) is not False,
+            include_student=bool(body.get('include_student', True)),
+            sent_by_user_id=getattr(request.user, 'id', None),
+            expected_recipients=_expected_recipients(body),
+            ranking_year=_resolve_ranking_year(request, exam),
+        )
+    except ValueError as exc:
+        return Response({'success': False, 'error': str(exc)}, status=400)
+    return Response({'success': True, 'data': result})
 
 
 @api_view(['POST'])

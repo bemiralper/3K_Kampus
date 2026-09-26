@@ -32,6 +32,10 @@ class ExamScheduledDispatch(models.Model):
         help_text='Kapalıysa yayın saati dolsa bile otomatik gönderilmez.',
     )
     campaign_id = models.UUIDField(null=True, blank=True)
+    send_options = models.JSONField(
+        default=dict, blank=True,
+        help_text='Arka plan gönderimi için seçim: answer_ids, include_veli, include_student.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

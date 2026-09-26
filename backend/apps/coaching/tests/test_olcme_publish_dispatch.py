@@ -385,6 +385,56 @@ class OlcmePublishDispatchTest(TestCase):
         self.assertEqual(row.status, ExamScheduledDispatch.Status.CANCELLED)
         self.assertEqual(str(row.campaign_id), res.json()['data']['campaign_id'])
 
+    def test_bulk_queue_runs_in_background_and_ignores_attendance(self):
+        """Pencere kapansa da cron üretip gönderir; seçim yoklamadan bağımsız."""
+        session = ExamSession.objects.create(
+            exam=self.exam, status=ExamSession.Status.COMPLETED, original_filename='x.dat',
+        )
+        # Yoklamada "gelmedi" işaretli öğrenci — kullanıcı seçtiyse gönderilir.
+        answer = StudentAnswer.objects.create(
+            session=session, student=self.absent, raw_student_id='2',
+        )
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/analysis/students/notify-bulk-queue/',
+            {
+                'answer_ids': [answer.id],
+                'include_veli': True,
+                'include_student': False,
+                'expected_recipients': 1,
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        data = res.json()['data']
+        self.assertEqual(data['queued'], 1)
+        campaign_id = data['campaign_id']
+        self.assertTrue(campaign_id)
+
+        row = ExamScheduledDispatch.objects.get(exam=self.exam, kind=KIND_KARNE)
+        self.assertTrue(row.is_enabled)
+        self.assertEqual(row.send_options['answer_ids'], [answer.id])
+        self.assertFalse(row.send_options['include_student'])
+
+        with patch(
+            'apps.coaching.application.olcme_karne_pdf.render_karne_pdf',
+            return_value=b'%PDF-1.4 x',
+        ), patch(
+            'apps.coaching.application.olcme_karne_notify.dispatch_event',
+        ) as dispatch:
+            dispatch.return_value = type(
+                'R', (), {'success': True, 'errors': [], 'message_status': 'QUEUED', 'message_id': None},
+            )()
+            summary = process_due()
+
+        self.assertEqual(summary['sent'], 1, summary)
+        row.refresh_from_db()
+        self.assertEqual(row.status, ST_SENT)
+        self.assertEqual(row.sent_count, 1)
+        self.assertEqual(row.send_options, {})
+        self.assertEqual(str(row.campaign_id), campaign_id)
+        # Yalnızca veli seçilmişti; öğrenciye gitmemeli.
+        self.assertEqual(dispatch.call_count, 1)
+
     def test_send_now_api_requires_ready_answer_key(self):
         res = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/publish-dispatch/send-now/',
