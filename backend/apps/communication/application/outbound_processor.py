@@ -212,8 +212,25 @@ def _send_attachment_message(client, kurum_id, phone, message, attachment) -> di
 
 
 def _send_options(item) -> dict:
+    """Kuyruk satırındaki şablon. Satır boşsa mesajın kendi kaydına düş.
+
+    Meta kabul edince kuyruk satırı silinir. Gitmeyenlere yeniden gönder
+    yeni satırı boş açarsa şablon adı kaybolur ve PDF'li şablon gönderilmez.
+    """
     opts = getattr(item, 'send_options', None) or {}
-    return opts if isinstance(opts, dict) else {}
+    if not isinstance(opts, dict):
+        opts = {}
+    if opts.get('template_name') or opts.get('session_fallback'):
+        return opts
+    message = getattr(item, 'message', None)
+    stored = getattr(message, 'send_options', None) if message is not None else None
+    if isinstance(stored, dict) and (stored.get('template_name') or stored.get('session_fallback')):
+        merged = dict(stored)
+        for key, value in opts.items():
+            if value not in (None, '', [], {}):
+                merged[key] = value
+        return merged
+    return opts
 
 
 def _stamp_conversation_channel(conversation, item) -> None:

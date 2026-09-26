@@ -1629,6 +1629,29 @@ class OutboundCampaignRepository:
         return qs
 
 
+def _retry_send_options(message, campaign) -> dict:
+    """Yeniden denemede şablon adını ve PDF bağlamını kaybetme.
+
+    İlk kabulden sonra kuyruk satırı silinir. Şablon mesajın kendisinde kalır.
+    """
+    stored = message.send_options if isinstance(getattr(message, 'send_options', None), dict) else {}
+    if stored.get('template_name') or stored.get('session_fallback'):
+        return dict(stored)
+    opts = campaign.send_options_json if isinstance(getattr(campaign, 'send_options_json', None), dict) else {}
+    if opts.get('template_name') or opts.get('session_fallback'):
+        return dict(opts)
+    filt = campaign.recipient_filter_json if isinstance(getattr(campaign, 'recipient_filter_json', None), dict) else {}
+    name = (filt.get('template_name') or '').strip()
+    if not name:
+        return dict(stored)
+    return {
+        'template_name': name,
+        'template_language': filt.get('template_language') or 'tr',
+        'channel_config_id': str(filt.get('channel_config_id') or filt.get('account_id') or ''),
+        'template_context': dict(filt.get('template_context') or {}),
+    }
+
+
 class OutboundQueueRepositoryExtensions:
     """OutboundQueueRepository kampanya yardımcıları."""
 
@@ -1698,6 +1721,14 @@ class OutboundQueueRepositoryExtensions:
             next_attempt_at=now,
             updated_at=now,
         )
+        for item in OutboundQueueItem.objects.filter(message_id__in=reset_message_ids).select_related('message'):
+            opts = item.send_options if isinstance(item.send_options, dict) else {}
+            if opts.get('template_name') or opts.get('session_fallback'):
+                continue
+            restored = _retry_send_options(item.message, campaign)
+            if restored:
+                item.send_options = restored
+                item.save(update_fields=['send_options', 'updated_at'])
         with_item = set(existing.values_list('message_id', flat=True))
         missing_ids = [mid for mid in failed_ids if mid not in with_item]
         for msg in Message.objects.filter(id__in=missing_ids):
@@ -1706,10 +1737,23 @@ class OutboundQueueRepositoryExtensions:
                 message=msg,
                 campaign=campaign,
                 next_attempt_at=now,
+                send_options=_retry_send_options(msg, campaign) or None,
             )
         touched = set(reset_message_ids) | set(missing_ids)
         Message.objects.filter(id__in=touched).update(
-            status=MessageStatus.PENDING, failed_reason='', updated_at=now,
+            status=MessageStatus.PENDING,
+            failed_reason='',
+            provider_message_id='',
+            sent_at=None,
+            delivered_at=None,
+            read_at=None,
+            updated_at=now,
+        )
+        # Eski Meta medya kimliği süresi dolmuş olabilir; dosya duruyorsa yeniden yüklenir.
+        from apps.communication.domain.models import MessageAttachment
+
+        MessageAttachment.objects.filter(message_id__in=touched).exclude(file='').update(
+            provider_media_id='',
         )
         return len(touched)
 

@@ -166,3 +166,102 @@ class TemplateDocumentOutboundTest(TestCase):
         mock_send.assert_not_called()
         item.refresh_from_db()
         self.assertIn('header', item.last_error.lower())
+
+    @patch.object(WhatsAppCloudClient, 'upload_media', return_value='media_uploaded_2')
+    @patch.object(WhatsAppCloudClient, 'send_template')
+    def test_empty_queue_options_use_message_template(self, mock_send, _mock_upload):
+        mock_send.return_value = {'success': True, 'messages': [{'id': 'wamid.doc2'}]}
+        message = Message.objects.create(
+            conversation=self.conversation,
+            direction=MessageDirection.OUTBOUND,
+            message_type=MessageType.TEMPLATE,
+            body='Karne',
+            status=MessageStatus.PENDING,
+            source_module='sinav',
+            send_options={
+                'template_name': 'odev_plani_veli',
+                'template_language': 'tr',
+                'channel_config_id': str(self.account.id),
+                'template_context': {'ogrenci_ad': 'Ali', 'hafta': '4. Hafta'},
+            },
+        )
+        att = MessageAttachment(
+            message=message,
+            original_name='karne.pdf',
+            mime_type='application/pdf',
+            file_size=len(MINIMAL_PDF),
+            provider_media_id='stale-media',
+        )
+        att.file.save('karne.pdf', ContentFile(MINIMAL_PDF), save=True)
+        item = OutboundQueueItem.objects.create(
+            kurum=self.kurum,
+            message=message,
+            next_attempt_at=timezone.now(),
+            send_options={},
+        )
+        ok = process_queue_item(item, WhatsAppCloudClient(channel_config=self.account))
+        self.assertTrue(ok, item.last_error)
+        self.assertEqual(mock_send.call_args.kwargs['template_name'], 'odev_plani_veli')
+        components = mock_send.call_args.kwargs['components']
+        self.assertEqual(components[0]['type'], 'header')
+        self.assertEqual(components[0]['parameters'][0]['type'], 'document')
+
+    def test_retry_failed_restores_template_on_queue_item(self):
+        from apps.communication.application.campaign_service import CampaignService
+        from apps.communication.domain.models import OutboundCampaign
+
+        campaign = OutboundCampaign.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            title='Karne',
+            status='PARTIAL',
+            send_options_json={'kind': 'karne'},
+        )
+        message = Message.objects.create(
+            conversation=self.conversation,
+            campaign=campaign,
+            direction=MessageDirection.OUTBOUND,
+            message_type=MessageType.TEMPLATE,
+            body='Karne',
+            status=MessageStatus.FAILED,
+            failed_reason='iletilemedi',
+            provider_message_id='wamid.old',
+            source_module='sinav',
+            send_options={
+                'template_name': 'odev_plani_veli',
+                'template_language': 'tr',
+                'channel_config_id': str(self.account.id),
+                'template_context': {'ogrenci_ad': 'Ali'},
+            },
+        )
+        att = MessageAttachment(
+            message=message,
+            original_name='karne.pdf',
+            mime_type='application/pdf',
+            provider_media_id='stale-media',
+        )
+        att.file.save('karne.pdf', ContentFile(MINIMAL_PDF), save=True)
+        OutboundQueueItem.objects.create(
+            kurum=self.kurum,
+            message=message,
+            campaign=campaign,
+            next_attempt_at=timezone.now(),
+            send_options={},
+            attempt_count=5,
+            max_attempts=5,
+            last_error='Şablon bilgisi bulunamadı',
+        )
+        with patch(
+            'apps.communication.application.celery_dispatch.dispatch_process_outbound_queue',
+            return_value=True,
+        ):
+            result = CampaignService().retry_failed(campaign)
+        self.assertEqual(result['retried_count'], 1)
+        item = OutboundQueueItem.objects.get(message=message)
+        self.assertEqual(item.send_options['template_name'], 'odev_plani_veli')
+        self.assertEqual(item.send_options['template_context']['ogrenci_ad'], 'Ali')
+        message.refresh_from_db()
+        self.assertEqual(message.status, MessageStatus.PENDING)
+        self.assertEqual(message.provider_message_id, '')
+        att.refresh_from_db()
+        self.assertEqual(att.provider_media_id, '')
