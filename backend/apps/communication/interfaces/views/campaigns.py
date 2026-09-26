@@ -267,9 +267,9 @@ class CampaignListCreateView(CampaignBulkView):
         limit = _int_q(request, 'limit', self.MAX_LIMIT if not request.query_params.get('limit') else self.DEFAULT_LIMIT, 1, self.MAX_LIMIT)
         offset = _int_q(request, 'offset', 0, 0, 10_000_000)
         rows = list(qs.order_by('-created_at')[offset:offset + limit])
-        # Aktif kampanyalarda ertelenmiş sayaç yenilemesini tamamla
+        # Kuyruk ve yeni bitmiş gönderimlerde ertelenmiş sayaç yenilemesini tamamla
         for c in rows:
-            if c.status in ('QUEUED', 'PROCESSING'):
+            if c.status in ('CONFIRMED', 'QUEUED', 'PROCESSING', 'PARTIAL', 'COMPLETED'):
                 CampaignStatsService.refresh_if_dirty(c.id)
         data = CampaignListSerializer(rows, many=True).data
         for row, c in zip(data, rows):
@@ -372,14 +372,25 @@ class CampaignDetailView(CampaignBulkView):
         from apps.communication.application.campaign_service import CampaignStatsService
         from apps.communication.domain.enums import CampaignStatus
 
+        from datetime import timedelta
+
+        from django.utils import timezone as dj_tz
+
+        young = bool(
+            campaign.created_at
+            and campaign.created_at >= dj_tz.now() - timedelta(hours=48)
+        )
         if campaign.status in (
             CampaignStatus.QUEUED, CampaignStatus.PROCESSING, CampaignStatus.CONFIRMED,
-        ):
+        ) or young:
             CampaignStatsService.refresh_campaign_stats(campaign.id)
-            from apps.communication.application.celery_dispatch import (
-                dispatch_process_outbound_queue,
-            )
-            dispatch_process_outbound_queue(drain=True, background=True)
+            if campaign.status in (
+                CampaignStatus.QUEUED, CampaignStatus.PROCESSING, CampaignStatus.CONFIRMED,
+            ):
+                from apps.communication.application.celery_dispatch import (
+                    dispatch_process_outbound_queue,
+                )
+                dispatch_process_outbound_queue(drain=True, background=True)
         else:
             CampaignStatsService.refresh_if_dirty(campaign.id)
         campaign.refresh_from_db()

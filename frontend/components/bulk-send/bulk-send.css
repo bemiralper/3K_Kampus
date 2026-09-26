@@ -441,6 +441,38 @@
   border: 1px solid #cfe3f4;
   background: linear-gradient(180deg, #f8fbff, #fff);
 }
+.bs-statboard { margin-top: 14px; }
+.bs-statboard-head { display: flex; align-items: flex-start; gap: 12px; }
+.bs-statboard-head .bs-seg { height: 14px; }
+.bs-statboard-head > div:first-child { flex: 1; min-width: 0; }
+.bs-live-dot {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #0369a1;
+}
+.bs-live-dot::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 99px;
+  background: #0284c7;
+  box-shadow: 0 0 0 0 rgba(2, 132, 199, 0.6);
+  animation: bs-live-pulse 1.4s ease-out infinite;
+}
+@keyframes bs-live-pulse {
+  70% { box-shadow: 0 0 0 7px rgba(2, 132, 199, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(2, 132, 199, 0); }
+}
+@keyframes bs-kpi-tick {
+  from { transform: translateY(6px); opacity: 0.35; }
+  to { transform: none; opacity: 1; }
+}
 .bs-progress-kpis {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
@@ -450,11 +482,26 @@
 .bs-kpi {
   border: 1px solid var(--bs-line);
   border-radius: 12px;
-  padding: 10px 12px;
+  padding: 10px 12px 8px;
   background: #fff;
 }
-.bs-kpi b { display: block; font-size: 1.3rem; letter-spacing: -0.02em; line-height: 1.1; }
+.bs-kpi b {
+  display: block;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  font-variant-numeric: tabular-nums;
+  animation: bs-kpi-tick 0.35s ease;
+}
 .bs-kpi span { font-size: 0.74rem; color: var(--bs-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.bs-kpi-meter {
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 99px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+.bs-kpi-meter i { display: block; height: 100%; border-radius: 99px; transition: width 0.45s ease; }
 
 /* segmentli ilerleme çubuğu */
 .bs-seg {
@@ -650,8 +697,8 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .bs-seg i, .bs-btn, .bs-btn-primary { transition: none; }
-  .bs-badge.is-live::before, .bs-skeleton { animation: none; }
+  .bs-seg i, .bs-btn, .bs-btn-primary, .bs-kpi-meter i { transition: none; }
+  .bs-badge.is-live::before, .bs-skeleton, .bs-live-dot::before, .bs-kpi b { animation: none; }
 }
 
 /* ---------- gönderim onayı ---------- */

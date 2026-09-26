@@ -2149,6 +2149,25 @@ export function isCampaignActive(status: string | null | undefined): boolean {
   return !!status && CAMPAIGN_ACTIVE_STATUSES.includes(status);
 }
 
+const STATS_LIVE_MS = 48 * 60 * 60 * 1000;
+
+/** Sayaçlar hâlâ değişebilir: kuyruk sürüyor ya da teslim/okunma bildirimi gelebilir. */
+export function campaignStatsLive(c: {
+  status?: string | null;
+  created_at?: string | null;
+  total_recipients?: number;
+  sent_count?: number;
+  failed_count?: number;
+} | null | undefined): boolean {
+  if (!c?.status || c.status === 'CANCELLED' || c.status === 'DRAFT') return false;
+  if (isCampaignActive(c.status)) return true;
+  const pending = Math.max(0, (c.total_recipients || 0) - (c.sent_count || 0) - (c.failed_count || 0));
+  if (pending > 0) return true;
+  if (!c.created_at) return false;
+  const age = Date.now() - new Date(c.created_at).getTime();
+  return age >= 0 && age < STATS_LIVE_MS;
+}
+
 export interface CampaignItem {
   id: string;
   title: string;

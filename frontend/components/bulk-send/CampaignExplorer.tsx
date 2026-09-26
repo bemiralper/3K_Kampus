@@ -19,13 +19,14 @@ import {
   fetchCampaign,
   fetchCampaignDeliveries,
   fetchCampaigns,
-  isCampaignActive,
+  campaignStatsLive,
   processCampaignQueue,
   retryFailedCampaign,
 } from "@/lib/communication-api";
 
 import {
   CampaignSegmentBar,
+  CampaignStatBoard,
   CampaignStatusBadge,
   MessageStatusBadge,
   campaignSegments,
@@ -99,9 +100,9 @@ export default function CampaignExplorer({ mode = "admin" }: Props) {
 
   const statuses = useMemo(() => STATUS_FILTERS.find((f) => f.key === statusKey)?.statuses ?? [], [statusKey]);
 
-  const load = useCallback(async (offset = 0, append = false) => {
+  const load = useCallback(async (offset = 0, append = false, silent = false) => {
     const mySeq = ++seq.current;
-    if (!append) setLoading(true);
+    if (!silent && !append) setLoading(true);
     setListError(null);
     try {
       const res = await fetchCampaigns({
@@ -129,13 +130,13 @@ export default function CampaignExplorer({ mode = "admin" }: Props) {
 
   useEffect(() => { void load(0, false); }, [load]);
 
-  // Devam eden kampanya varken ilk sayfayı sessizce tazele
-  const anyActive = items.some((c) => isCampaignActive(c.status));
+  // Kuyruk ya da taze teslim/okunma varken listeyi sessizce tazele
+  const anyLive = items.some((c) => campaignStatsLive(c));
   useEffect(() => {
-    if (!anyActive) return;
-    const id = window.setInterval(() => void load(0, false), 6000);
+    if (!anyLive) return;
+    const id = window.setInterval(() => void load(0, false, true), 4000);
     return () => window.clearInterval(id);
-  }, [anyActive, load]);
+  }, [anyLive, load]);
 
   const select = (id: string | null) => {
     const sp = new URLSearchParams(params.toString());
@@ -381,11 +382,12 @@ function CampaignDetailPane({
 
   useEffect(() => { void loadCampaign(); }, [loadCampaign]);
 
+  const statsLive = campaignStatsLive(campaign);
   useEffect(() => {
-    if (!campaign || !isCampaignActive(campaign.status)) return;
-    const id = window.setInterval(() => void loadCampaign(), 4000);
+    if (!statsLive) return;
+    const id = window.setInterval(() => void loadCampaign(), 3000);
     return () => window.clearInterval(id);
-  }, [campaign, loadCampaign]);
+  }, [statsLive, loadCampaign]);
 
   useEffect(() => { setDOffset(0); }, [dStatus, dDebounced]);
 
@@ -402,7 +404,7 @@ function CampaignDetailPane({
       .catch(() => { if (!cancelled) setDeliveries([]); })
       .finally(() => { if (!cancelled) setDLoading(false); });
     return () => { cancelled = true; };
-  }, [campaignId, dOffset, dStatus, dDebounced, campaign?.sent_count, campaign?.failed_count, campaign?.read_count]);
+  }, [campaignId, dOffset, dStatus, dDebounced, campaign?.sent_count, campaign?.delivered_count, campaign?.failed_count, campaign?.read_count, campaign?.replied_count]);
 
   const run = async (kind: "cancel" | "retry" | "process") => {
     if (!campaign) return;
@@ -497,17 +499,7 @@ function CampaignDetailPane({
           </div>
         )}
 
-        <div style={{ marginTop: 14 }}>
-          <CampaignSegmentBar campaign={campaign} legend />
-        </div>
-        <div className="bs-progress-kpis">
-          <div className="bs-kpi"><b>{campaign.total_recipients}</b><span>Alıcı</span></div>
-          <div className="bs-kpi"><b>{campaign.sent_count}</b><span>Gönderildi</span></div>
-          <div className="bs-kpi"><b>{campaign.delivered_count}</b><span>İletildi</span></div>
-          <div className="bs-kpi"><b>{campaign.read_count}</b><span>Okundu</span></div>
-          <div className="bs-kpi"><b style={{ color: campaign.failed_count ? "var(--bs-bad)" : undefined }}>{campaign.failed_count}</b><span>Başarısız</span></div>
-          <div className="bs-kpi"><b>{campaign.replied_count ?? 0}</b><span>Yanıt</span></div>
-        </div>
+        <CampaignStatBoard campaign={campaign} live={statsLive} />
 
         {(campaign.resolved_body || campaign.template_name) && (
           <details className="bs-collapse" open>

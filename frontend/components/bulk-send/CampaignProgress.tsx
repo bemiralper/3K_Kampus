@@ -15,6 +15,42 @@ export function campaignSegments(c: CampaignItem) {
   return { total: c.total_recipients || 0, read, delivered, sent, failed, pending, pct };
 }
 
+export function CampaignStatBoard({ campaign, live = false }: { campaign: CampaignItem; live?: boolean }) {
+  const total = campaign.total_recipients || 0;
+  const denom = Math.max(1, total);
+  const replied = campaign.replied_count ?? 0;
+  const rows: Array<{ label: string; value: number; color: string; ofTotal: boolean }> = [
+    { label: "Alıcı", value: total, color: "#334155", ofTotal: false },
+    { label: "Gönderildi", value: campaign.sent_count || 0, color: "#3b82f6", ofTotal: true },
+    { label: "İletildi", value: campaign.delivered_count || 0, color: "#2563eb", ofTotal: true },
+    { label: "Okundu", value: campaign.read_count || 0, color: "#0e7490", ofTotal: true },
+    { label: "Başarısız", value: campaign.failed_count || 0, color: "#ef4444", ofTotal: true },
+    { label: "Yanıt", value: replied, color: "#7c3aed", ofTotal: true },
+  ];
+  return (
+    <div className={`bs-statboard${live ? " is-live" : ""}`}>
+      <div className="bs-statboard-head">
+        <CampaignSegmentBar campaign={campaign} legend />
+        {live && <span className="bs-live-dot">Canlı</span>}
+      </div>
+      <div className="bs-progress-kpis">
+        {rows.map((row) => {
+          const width = row.ofTotal ? Math.min(100, (row.value / denom) * 100) : (total ? 100 : 0);
+          return (
+            <div className="bs-kpi" key={row.label}>
+              <b key={row.value}>{row.value.toLocaleString("tr-TR")}</b>
+              <span>{row.label}</span>
+              <div className="bs-kpi-meter" aria-hidden>
+                <i style={{ width: `${width}%`, background: row.color }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function CampaignSegmentBar({ campaign, legend = false }: { campaign: CampaignItem; legend?: boolean }) {
   const s = campaignSegments(campaign);
   const label = `${s.read} okundu, ${s.delivered} iletildi, ${s.sent} gönderildi, ${s.failed} başarısız, ${s.pending} bekliyor`;
