@@ -100,7 +100,6 @@ export default function KarneBulkNotifyModal({
     if (!sendable.length || (!includeVeli && !includeStudent) || kisiSelected === 0) return;
     setSending(true);
     setError('');
-    setDone(null);
     try {
       const res = await analysisApi.karneNotifyBulkQueue(
         examId,
