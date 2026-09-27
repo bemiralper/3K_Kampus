@@ -133,27 +133,30 @@ OPTIONAL_PHILOSOPHY_COUNT = 5
 OPTIONAL_PHILOSOPHY_AFTER = 'Sosyal Bilimler'
 _SHIFT_PARENTS = ('Temel Matematik', 'Fen Bilimleri')
 
-# TYT / Deneme: Sosyal 41–60, seçmeli 61–65, Mat/Fen +5.
-# AYT: Sosyal-2 41–80, seçmeli 81–85, Mat/Fen +5.
-# Ana sosyal blok uzunluğu değişmez (TYT 4'lü / AYT 40'lı formül bozulmasın).
+# TYT / Deneme: Sosyal 41–60, seçmeli 61–65 (5), Mat/Fen +5.
+# AYT: Sosyal-2 41–80, seçmeli 81–86 (6, din kültürü kadar), Mat/Fen +6.
+# Ana sosyal blok uzunluğu değişmez.
 _OPTIONAL_PHILOSOPHY_LAYOUT: dict[str, dict] = {
     'YKS_TYT': {
         'after': 'Sosyal Bilimler',
         'shift_parents': ('Temel Matematik', 'Fen Bilimleri'),
         'social_end': 60,
         'trailing_start': 121,
+        'count': 5,
     },
     'DENEME': {
         'after': 'Sosyal Bilimler',
         'shift_parents': ('Temel Matematik', 'Fen Bilimleri'),
         'social_end': 60,
         'trailing_start': 121,
+        'count': 5,
     },
     'YKS_AYT': {
         'after': 'Sosyal Bilimler-2',
         'shift_parents': ('Matematik', 'Fen Bilimleri'),
         'social_end': 80,
         'trailing_start': 161,
+        'count': 6,
     },
 }
 OPTIONAL_PHILOSOPHY_EXAM_TYPES = tuple(_OPTIONAL_PHILOSOPHY_LAYOUT)
@@ -184,13 +187,14 @@ def _with_optional_philosophy(
 ):
     """
     Seçmeli felsefe ayrı üst test değildir; Sosyal / Sosyal-2 içinde
-    Din Kültürü'nün alternatif 5 sorusudur (TYT 61–65, AYT 81–85).
-    Matematik / Fen numaraları +5 kayar. Sosyal ana blok uzunluğu aynı kalır.
+    Din Kültürü'nün alternatifidir (TYT 5 soru, 61–65; AYT 6 soru, 81–86).
+    Matematik / Fen bu kadar kayar. Sosyal ana blok uzunluğu aynı kalır.
     """
     layout = layout or _OPTIONAL_PHILOSOPHY_LAYOUT['YKS_TYT']
     after = layout['after']
     shift_parents = layout['shift_parents']
     default_end = layout['social_end']
+    count = layout.get('count', OPTIONAL_PHILOSOPHY_COUNT)
 
     mains: list[tuple] = []
     inserted = False
@@ -201,7 +205,7 @@ def _with_optional_philosophy(
             sosyal_end = qe
             inserted = True
         elif inserted:
-            mains.append((name, qs + OPTIONAL_PHILOSOPHY_COUNT, qe + OPTIONAL_PHILOSOPHY_COUNT, order))
+            mains.append((name, qs + count, qe + count, order))
         else:
             mains.append((name, qs, qe, order))
 
@@ -215,12 +219,12 @@ def _with_optional_philosophy(
             shifted_subs[parent] = list(rows) + [(
                 OPTIONAL_PHILOSOPHY_NAME,
                 last_end + 1,
-                last_end + OPTIONAL_PHILOSOPHY_COUNT,
+                last_end + count,
                 len(rows),
             )]
         elif parent in shift_parents:
             shifted_subs[parent] = [
-                (n, s + OPTIONAL_PHILOSOPHY_COUNT, e + OPTIONAL_PHILOSOPHY_COUNT, o)
+                (n, s + count, e + count, o)
                 for n, s, e, o in rows
             ]
         else:
@@ -862,7 +866,7 @@ def sync_optional_philosophy_section(exam) -> None:
     include = getattr(exam, 'include_optional_philosophy', True)
     current = _philosophy_layout(exam)
     social_end = layout['social_end']
-    count = OPTIONAL_PHILOSOPHY_COUNT
+    count = layout.get('count', OPTIONAL_PHILOSOPHY_COUNT)
     old_last = layout['trailing_start'] - 1
 
     needs_apply = False
@@ -887,6 +891,15 @@ def sync_optional_philosophy_section(exam) -> None:
             shift_after=social_end,
         )
         needs_apply = True
+    elif include and current == 'after_dkab':
+        # Eski AYT şablonu bu bloğu 5 sayıyordu. Soru numarası kitapçık
+        # sırasıyla yazılmış olabilir; numarayı kaydırma, sınırı uzat.
+        from ..models.exam import ExamSection
+
+        phil = ExamSection.objects.filter(exam=exam, name=OPTIONAL_PHILOSOPHY_NAME).first()
+        actual = (phil.question_end - phil.question_start + 1) if phil else 0
+        if phil and phil.question_start == social_end + 1 and actual != count:
+            needs_apply = True
 
     # Yerleşim zaten doğruysa şablon aralıklarını yazma — Mat/Geo özel sayıları silinmesin.
     if needs_apply:

@@ -57,6 +57,7 @@ export interface DashboardData {
     enabled: boolean;
     kind: string;
     max_artifacts: number;
+    max_age_days?: number;
     auto_delete_old: boolean;
     last_run_at: string | null;
     last_run_status?: string | null;
@@ -87,6 +88,8 @@ export interface ScheduleData {
   kind: string;
   resource_codes: string[];
   max_artifacts: number;
+  max_age_days?: number;
+  chat_attachment_days?: number;
   auto_delete_old: boolean;
   encrypt: boolean;
   last_run_at: string | null;
@@ -301,6 +304,7 @@ export function fetchJob(id: number): Promise<ApiResponse<{ job: BackupJob }>> {
 export async function downloadBackup(id: number, fallbackFilename: string): Promise<void> {
   const { describeHttpStatus, extractHtmlErrorMessage, extractApiError } = await import('./api');
   const url = resolveApiUrl(`${BASE}/backups/${id}/download/`);
+  // Başlıklar gelince gövdeyi kes. blob() tüm arşivi sekme belleğine alır.
   const res = await fetch(url, { method: 'GET', credentials: 'include' });
   if (!res.ok) {
     const contentType = res.headers.get('content-type') || '';
@@ -322,15 +326,17 @@ export async function downloadBackup(id: number, fallbackFilename: string): Prom
     }
     throw new Error(errMsg);
   }
-  const blob = await res.blob();
   const cd = res.headers.get('Content-Disposition') || '';
   const match = /filename="?([^"]+)"?/.exec(cd);
   const filename = match?.[1] || fallbackFilename;
+  if (res.body) {
+    await res.body.cancel().catch(() => undefined);
+  }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
+  a.href = url;
   a.download = filename;
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  URL.revokeObjectURL(a.href);
 }

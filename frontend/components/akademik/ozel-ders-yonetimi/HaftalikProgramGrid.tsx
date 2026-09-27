@@ -52,13 +52,19 @@ export default function HaftalikProgramGrid({
 
   const cellMap = useMemo(() => {
     const map = new Map<string, BirebirSlot>();
+    const extra: BirebirSlot[] = [];
     for (const lesson of activeLessons) {
       const period = matchLessonToPeriod(lesson, periods);
-      if (!period) continue;
+      if (!period) {
+        extra.push(lesson);
+        continue;
+      }
       const key = `${lesson.gun}:${period.key}`;
-      if (!map.has(key)) map.set(key, lesson);
+      if (map.has(key)) extra.push(lesson);
+      else map.set(key, lesson);
     }
-    return map;
+    extra.sort((a, b) => a.gun - b.gun || a.baslangic.localeCompare(b.baslangic));
+    return { map, extra };
   }, [activeLessons, periods]);
 
   function endDrag() {
@@ -100,7 +106,7 @@ export default function HaftalikProgramGrid({
     if (!lesson) return;
     suppressClickRef.current = true;
     const key = `${gun}:${period.key}`;
-    const existing = cellMap.get(key);
+    const existing = cellMap.map.get(key);
     if (existing && existing.id !== lesson.id) {
       onSwap(lesson, existing);
     } else if (
@@ -146,7 +152,7 @@ export default function HaftalikProgramGrid({
               </td>
               {DAYS.map((gun) => {
                 const key = `${gun}:${period.key}`;
-                const lesson = cellMap.get(key);
+                const lesson = cellMap.map.get(key);
                 const isDrop = dropTarget === key;
                 return (
                   <td
@@ -183,7 +189,11 @@ export default function HaftalikProgramGrid({
                         <div className="od-week-block-title">
                           {resolveDersLabel(lesson, useKisaAd)}
                         </div>
-                        <div className="od-week-block-sub">{lesson.ogretmen_ad}</div>
+                        <div className="od-week-block-sub">
+                          {lesson.bitis.slice(0, 5) !== period.bitis
+                            ? `${lesson.baslangic.slice(0, 5)}–${lesson.bitis.slice(0, 5)} · ${lesson.ogretmen_ad}`
+                            : lesson.ogretmen_ad}
+                        </div>
                       </div>
                     ) : (
                       <span className="od-grid-empty">+</span>
@@ -193,6 +203,46 @@ export default function HaftalikProgramGrid({
               })}
             </tr>
           ))}
+          {cellMap.extra.length > 0 && (
+            <tr>
+              <td className="od-grid-time-col">
+                <strong>Diğer</strong>
+                <span>Saat dışı</span>
+              </td>
+              {DAYS.map((gun) => {
+                const items = cellMap.extra.filter((lesson) => lesson.gun === gun);
+                return (
+                  <td key={gun} className={`od-grid-cell is-extra${items.length ? ' is-filled' : ''}`}>
+                    {items.map((lesson) => (
+                      <div
+                        key={lesson.id}
+                        className={`od-grid-lesson${draggingId === lesson.id ? ' is-dragging' : ''}`}
+                        draggable={!moving}
+                        style={{ background: weekBlockColor(lesson.ders_ad || lesson.ders) }}
+                        onDragStart={(e) => {
+                          e.stopPropagation();
+                          onBlockDragStart(e, lesson);
+                        }}
+                        onDragEnd={endDrag}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpen(lesson);
+                        }}
+                      >
+                        <div className="od-week-block-title">
+                          {resolveDersLabel(lesson, useKisaAd)}
+                        </div>
+                        <div className="od-week-block-sub">
+                          {lesson.baslangic.slice(0, 5)}–{lesson.bitis.slice(0, 5)}
+                        </div>
+                        <div className="od-week-block-sub">{lesson.ogretmen_ad}</div>
+                      </div>
+                    ))}
+                  </td>
+                );
+              })}
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

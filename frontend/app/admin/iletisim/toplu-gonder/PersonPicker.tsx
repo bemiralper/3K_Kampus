@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   AudiencePersonType,
   BulkRecipientGroup,
@@ -11,8 +11,15 @@ import { personTypeLabel } from "./audience-utils";
 
 interface PersonPickerProps {
   allowPersonel: boolean;
-  excludeKeys?: Set<string>;
+  /** Kitleye çoktan eklenmiş kişiler. Listede kalır, renkli işaretlenir. */
+  addedKeys?: Set<string>;
   onPickMany: (hits: BulkRecipientHit[]) => void;
+  onRemove?: (hit: BulkRecipientHit) => void;
+  autoFocus?: boolean;
+  /** Toplu gönderim kartının içine gömülü arama. */
+  embedded?: boolean;
+  /** Arama kutusu ile sonuçlar arasında, eklenen kişiler. */
+  children?: ReactNode;
 }
 
 const hitKey = (hit: BulkRecipientHit) => `${hit.kind}:${hit.id}`;
@@ -43,13 +50,24 @@ function groupsFromResults(results: BulkRecipientHit[]): BulkRecipientGroup[] {
 
 export default function PersonPicker({
   allowPersonel,
-  excludeKeys,
+  addedKeys,
   onPickMany,
+  onRemove,
+  autoFocus = false,
+  embedded = false,
+  children,
 }: PersonPickerProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
   const [q, setQ] = useState("");
+
+  useEffect(() => {
+    if (!autoFocus) return;
+    const id = window.setTimeout(() => inputRef.current?.focus(), 30);
+    return () => window.clearTimeout(id);
+  }, [autoFocus]);
   const [groups, setGroups] = useState<BulkRecipientGroup[]>([]);
   const [loading, setLoading] = useState(false);
-  const [selected, setSelected] = useState<Record<string, BulkRecipientHit>>({});
 
   useEffect(() => {
     const needle = q.trim();
@@ -70,159 +88,117 @@ export default function PersonPicker({
     return () => window.clearTimeout(id);
   }, [q, allowPersonel]);
 
-  // Zaten kitleye eklenmiş kişiler listede görünmez.
-  const visibleGroups = useMemo(() => (
-    groups
-      .map((group) => ({ ...group, items: group.items.filter((hit) => !excludeKeys?.has(hitKey(hit))) }))
-      .filter((group) => group.items.length > 0)
-  ), [groups, excludeKeys]);
+  const visibleGroups = useMemo(
+    () => groups.filter((group) => group.items.length > 0),
+    [groups],
+  );
 
-  const selectedList = useMemo(() => Object.values(selected), [selected]);
-
-  const toggle = useCallback((hit: BulkRecipientHit) => {
-    setSelected((prev) => {
-      const next = { ...prev };
-      const key = hitKey(hit);
-      if (next[key]) delete next[key];
-      else next[key] = hit;
-      return next;
-    });
-  }, []);
-
-  const toggleGroup = useCallback((group: BulkRecipientGroup, on: boolean) => {
-    setSelected((prev) => {
-      const next = { ...prev };
-      for (const hit of group.items) {
-        if (on) next[hitKey(hit)] = hit;
-        else delete next[hitKey(hit)];
-      }
-      return next;
-    });
-  }, []);
-
-  const reset = useCallback(() => {
-    setSelected({});
+  const clearSearch = () => {
     setQ("");
     setGroups([]);
-  }, []);
+  };
 
-  const commit = useCallback(() => {
-    if (selectedList.length === 0) return;
-    onPickMany(selectedList);
-    reset();
-  }, [selectedList, onPickMany, reset]);
+  const activate = (hit: BulkRecipientHit) => {
+    if (addedKeys?.has(hitKey(hit))) onRemove?.(hit);
+    else onPickMany([hit]);
+  };
 
-  const addOne = useCallback((hit: BulkRecipientHit) => {
-    onPickMany([hit]);
-    setSelected((prev) => {
-      const next = { ...prev };
-      delete next[hitKey(hit)];
-      return next;
-    });
-  }, [onPickMany]);
+  const addPending = (group: BulkRecipientGroup) => {
+    const pending = group.items.filter((hit) => !addedKeys?.has(hitKey(hit)));
+    if (pending.length) onPickMany(pending);
+  };
 
   const showPanel = loading || visibleGroups.length > 0 || q.trim().length >= 2;
 
   return (
-    <div className="tg-people">
-      <label className="tg-people-label" htmlFor="tg-person-search">Kişi ekle</label>
+    <div className={embedded ? "tg-people bs-who-picker" : "tg-people"}>
+      <label className="tg-people-label" htmlFor={inputId}>Kişi ekle</label>
       <input
-        id="tg-person-search"
+        id={inputId}
+        ref={inputRef}
         className="tg-search"
         value={q}
         onChange={(e) => setQ(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            commit();
-          } else if (e.key === "Escape") {
-            reset();
+            const first = visibleGroups
+              .flatMap((group) => group.items)
+              .find((hit) => !addedKeys?.has(hitKey(hit)));
+            if (first) onPickMany([first]);
+          } else if (e.key === "Escape" && q.trim()) {
+            e.stopPropagation();
+            clearSearch();
           }
         }}
-        placeholder="Ad, soyad veya telefon — öğrenci arayınca velisi de listelenir"
+        placeholder="Ad, soyad veya telefon — öğrenci yazınca velisi de listelenir"
         autoComplete="off"
       />
 
+      {children}
+
       {showPanel && (
         <div className="tg-people-panel">
-        <div className="tg-people-list">
-          {loading && <div className="tg-empty">Aranıyor…</div>}
-          {!loading && q.trim().length >= 2 && visibleGroups.length === 0 && (
-            <div className="tg-empty">Kişi bulunamadı.</div>
-          )}
+          <div className="tg-people-list">
+            {loading && <div className="tg-empty">Aranıyor…</div>}
+            {!loading && q.trim().length >= 2 && visibleGroups.length === 0 && (
+              <div className="tg-empty">Kişi bulunamadı.</div>
+            )}
 
-          {visibleGroups.map((group) => {
-            const allOn = group.items.every((hit) => selected[hitKey(hit)]);
-            return (
-              <div key={group.key} className="tg-fam">
-                <div className="tg-fam-head">
-                  <span className="tg-fam-title">
-                    {group.kind === "aile" ? group.label : "Personel"}
-                    {group.meta ? <small>{group.meta}</small> : null}
-                  </span>
-                  <button
-                    type="button"
-                    className="tg-fam-all"
-                    onClick={() => toggleGroup(group, !allOn)}
-                  >
-                    {allOn ? "Seçimi kaldır" : `Tümünü seç (${group.items.length})`}
-                  </button>
-                </div>
-                {group.items.map((hit) => {
-                  const key = hitKey(hit);
-                  const on = Boolean(selected[key]);
-                  return (
-                    <div
-                      key={key}
-                      role="checkbox"
-                      aria-checked={on}
-                      tabIndex={0}
-                      className={`tg-opt tg-opt-card tg-fam-row${on ? " is-on" : ""}`}
-                      onClick={() => toggle(hit)}
-                      onKeyDown={(e) => {
-                        if (e.key === " " || e.key === "Enter") {
-                          e.preventDefault();
-                          toggle(hit);
-                        }
-                      }}
-                    >
-                      <span className={`tg-check${on ? " is-on" : ""}`} aria-hidden="true" />
-                      <span className="tg-fam-row-text">
-                        <strong>{hit.label}</strong>
-                        <span>
-                          {hit.role || personTypeLabel(hit.kind)}
-                          {hit.phone ? ` · ${hit.phone}` : " · telefon yok"}
-                        </span>
-                      </span>
+            {visibleGroups.map((group) => {
+              const pending = group.items.filter((hit) => !addedKeys?.has(hitKey(hit)));
+              return (
+                <div key={group.key} className="tg-fam">
+                  <div className="tg-fam-head">
+                    <span className="tg-fam-title">
+                      {group.kind === "aile" ? group.label : "Personel"}
+                      {group.meta ? <small>{group.meta}</small> : null}
+                    </span>
+                    {group.items.length > 1 && pending.length > 0 && (
                       <button
                         type="button"
-                        className="tg-fam-add"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          addOne(hit);
+                        className="tg-fam-all"
+                        onClick={() => addPending(group)}
+                      >
+                        {pending.length === group.items.length
+                          ? `Tümünü ekle (${group.items.length})`
+                          : `Kalanı ekle (${pending.length})`}
+                      </button>
+                    )}
+                  </div>
+                  {group.items.map((hit) => {
+                    const added = Boolean(addedKeys?.has(hitKey(hit)));
+                    return (
+                      <div
+                        key={hitKey(hit)}
+                        role="button"
+                        aria-pressed={added}
+                        tabIndex={0}
+                        className={`tg-opt tg-opt-card tg-fam-row${added ? " is-added" : ""} is-${hit.kind}`}
+                        onClick={() => activate(hit)}
+                        onKeyDown={(e) => {
+                          if (e.key === " " || e.key === "Enter") {
+                            e.preventDefault();
+                            activate(hit);
+                          }
                         }}
                       >
-                        Ekle
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })}
-
-        </div>
-          {visibleGroups.length > 0 && (
-            <div className="tg-people-actions">
-              <span>{selectedList.length > 0 ? `${selectedList.length} kişi seçildi` : "Birden fazla kişi için işaretleyin"}</span>
-              <div>
-                <button type="button" className="tg-btn" onClick={() => setSelected({})} disabled={selectedList.length === 0}>Temizle</button>
-                <button type="button" className="tg-btn-primary" onClick={commit} disabled={selectedList.length === 0}>
-                  {selectedList.length > 0 ? `Seçilenleri ekle (${selectedList.length})` : "Seçilenleri ekle"}
-                </button>
-              </div>
-            </div>
-          )}
+                        <span className={`bs-pick-mark${added ? " is-on" : ""}`} aria-hidden="true" />
+                        <span className="tg-fam-row-text">
+                          <strong>{hit.label}</strong>
+                          <span>
+                            {hit.role || personTypeLabel(hit.kind)}
+                            {hit.phone ? ` · ${hit.phone}` : " · telefon yok"}
+                          </span>
+                        </span>
+                        {added && <span className="bs-pick-state">Eklendi</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

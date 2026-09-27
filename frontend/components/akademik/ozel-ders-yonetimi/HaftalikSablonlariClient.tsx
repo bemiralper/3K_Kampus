@@ -45,9 +45,11 @@ import HaftalikProgramGrid from './HaftalikProgramGrid';
 import HaftalikProgramShareButtons from './HaftalikProgramShareButtons';
 import {
   buildPeriods,
+  durationBetween,
   timeToMinutes,
   type PeriodRow,
 } from './haftalikGridUtils';
+import SlotClockFields from './SlotClockFields';
 import SlotSureFields from './SlotSureFields';
 import { EMPTY_SLOT_SURE, slotSureFromLesson, slotSurePayload } from './slotSure';
 import './ozel-ders.css';
@@ -425,6 +427,10 @@ export default function HaftalikSablonlariClient() {
     const dersId = Number(form.ders_id);
     const targetProgramId = resolveProgramIdForDers(siblingPrograms, dersId);
     if (!targetProgramId) return;
+    if (durationBetween(form.baslangic, form.bitis) == null) {
+      show('Bitiş saati başlangıçtan sonra olmalı.', 'error');
+      return;
+    }
     setSaving(true);
     try {
       await createSlot(targetProgramId, {
@@ -464,6 +470,10 @@ export default function HaftalikSablonlariClient() {
   async function onSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!detailLesson) return;
+    if (durationBetween(editForm.baslangic, editForm.bitis) == null) {
+      show('Bitiş saati başlangıçtan sonra olmalı.', 'error');
+      return;
+    }
     setSavingEdit(true);
     try {
       await updateSlot(detailLesson.id, {
@@ -941,23 +951,12 @@ export default function HaftalikSablonlariClient() {
                 ))}
               </select>
             </div>
-            <div className="od-form-row">
-              <div className="od-form-group">
-                <label>Başlangıç</label>
-                <input type="time" required value={form.baslangic} readOnly />
-              </div>
-              <div className="od-form-group">
-                <label>Bitiş</label>
-                <input type="time" required value={form.bitis} readOnly />
-              </div>
-              <div className="od-form-group">
-                <label>Süre</label>
-                <input value={`${form.sure_dk} dk`} readOnly />
-              </div>
-            </div>
-            <p className="od-cell-muted" style={{ margin: 0 }}>
-              Saat, üstteki Zaman Ayarları panelinden gelir (bu öğrenciye özel).
-            </p>
+            <SlotClockFields
+              value={form}
+              onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+              periods={lessonPeriods}
+              defaultSureDk={config.sureDk}
+            />
           </div>
 
           <div className="od-drawer-section">
@@ -1043,43 +1042,12 @@ export default function HaftalikSablonlariClient() {
                   ))}
                 </select>
               </div>
-              <div className="od-form-row">
-                <div className="od-form-group">
-                  <label>Başlangıç</label>
-                  <select
-                    value={
-                      lessonPeriods.some((p) => p.baslangic === editForm.baslangic)
-                        ? editForm.baslangic
-                        : lessonPeriods[0]?.baslangic || editForm.baslangic
-                    }
-                    onChange={(e) => {
-                      const period = lessonPeriods.find((p) => p.baslangic === e.target.value);
-                      if (!period) return;
-                      setEditForm((f) => ({
-                        ...f,
-                        baslangic: period.baslangic,
-                        bitis: period.bitis,
-                        sure_dk: String(config.sureDk),
-                      }));
-                    }}
-                  >
-                    {!lessonPeriods.some((p) => p.baslangic === editForm.baslangic) && (
-                      <option value={editForm.baslangic}>
-                        Mevcut · {editForm.baslangic}–{editForm.bitis}
-                      </option>
-                    )}
-                    {lessonPeriods.map((p) => (
-                      <option key={p.key} value={p.baslangic}>
-                        {p.label} · {p.baslangic}–{p.bitis}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div className="od-form-group">
-                  <label>Bitiş</label>
-                  <input type="time" required value={editForm.bitis} readOnly />
-                </div>
-              </div>
+              <SlotClockFields
+                value={editForm}
+                onChange={(next) => setEditForm((f) => ({ ...f, ...next }))}
+                periods={lessonPeriods}
+                defaultSureDk={config.sureDk}
+              />
             </div>
 
             <div className="od-drawer-section">

@@ -1296,6 +1296,16 @@ button.od-entity-card {
   cursor: default;
 }
 
+.od-grid-cell.is-extra {
+  height: auto;
+  min-height: 56px;
+  vertical-align: top;
+}
+
+.od-grid-cell.is-extra .od-grid-lesson + .od-grid-lesson {
+  margin-top: 4px;
+}
+
 .od-grid-empty {
   display: flex;
   align-items: center;

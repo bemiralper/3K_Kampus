@@ -293,11 +293,25 @@ BACKUP_CONFIG = {
         'monthly': int(os.environ.get('BACKUP_RETENTION_MONTHLY', '12')),
         'manual': int(os.environ.get('BACKUP_RETENTION_MANUAL', '30')),
         'pre_restore': int(os.environ.get('BACKUP_RETENTION_PRE_RESTORE', '5')),
-        'max_age_days': int(os.environ.get('BACKUP_MAX_AGE_DAYS', '0')) or None,
+        # 0 = yaş sınırı yok. Varsayılan: 5 günden eski her yedek silinir (GFS bunu uzatamaz).
+        'max_age_days': int(os.environ.get('BACKUP_MAX_AGE_DAYS', '5')) or None,
     },
     'upload_max_bytes': int(os.environ.get('BACKUP_UPLOAD_MAX_BYTES', str(2 * 1024 ** 3))),
     'min_free_bytes': int(os.environ.get('BACKUP_MIN_FREE_BYTES', str(256 * 1024 * 1024))),
     'max_job_age_hours': int(os.environ.get('BACKUP_MAX_JOB_AGE_HOURS', '3')),
+}
+
+# Operasyon artığı: yedek temizliğiyle aynı gece işinde silinir.
+# Sohbet eki dosyası mesajdan daha kısa ömürlüdür; metin ve dosya adı kalır.
+DATA_RETENTION = {
+    'metric_days': int(os.environ.get('RETENTION_METRIC_DAYS', '30')),
+    'error_days': int(os.environ.get('RETENTION_ERROR_DAYS', '30')),
+    'timeline_days': int(os.environ.get('RETENTION_TIMELINE_DAYS', '30')),
+    'job_run_days': int(os.environ.get('RETENTION_JOB_RUN_DAYS', '30')),
+    'audit_days': int(os.environ.get('RETENTION_AUDIT_DAYS', '90')),
+    'backup_log_days': int(os.environ.get('RETENTION_BACKUP_LOG_DAYS', '30')),
+    'communication_log_days': int(os.environ.get('RETENTION_COMM_LOG_DAYS', '30')),
+    'chat_attachment_days': int(os.environ.get('RETENTION_CHAT_ATTACHMENT_DAYS', '90')),
 }
 
 # Sistem Yönetimi (System Center)

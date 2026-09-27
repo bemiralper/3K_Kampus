@@ -94,13 +94,44 @@ export default function AnchoredPopover({
     };
   }, [open, onClose, panel, anchorRef]);
 
-  // Bottom sheet açıkken arka plan kaymasın
+  // Liste kaydırılınca tekerlek sayfaya kaçmasın.
   useEffect(() => {
-    if (!open || !placement?.sheet) return;
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => { document.body.style.overflow = prev; };
-  }, [open, placement?.sheet]);
+    if (!open) return;
+    const html = document.documentElement;
+    const locked: HTMLElement[] = [html, document.body];
+    document.querySelectorAll(".app-main, .app-content, .coach-main, .coach-content").forEach((el) => {
+      locked.push(el as HTMLElement);
+    });
+    const previous = locked.map((el) => el.style.overflow);
+    html.classList.add("bs-pop-lock");
+    locked.forEach((el) => { el.style.overflow = "hidden"; });
+
+    const stopBackgroundScroll = (event: WheelEvent | TouchEvent) => {
+      const node = event.target instanceof Element
+        ? event.target
+        : event.target instanceof Node
+          ? event.target.parentElement
+          : null;
+      const scroller = node?.closest(".bs-pop-list");
+      if (!(scroller instanceof HTMLElement)) {
+        event.preventDefault();
+        return;
+      }
+      if (!(event instanceof WheelEvent)) return;
+      const atTop = scroller.scrollTop <= 0 && event.deltaY < 0;
+      const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1 && event.deltaY > 0;
+      if (atTop || atBottom || scroller.scrollHeight <= scroller.clientHeight) event.preventDefault();
+    };
+    document.addEventListener("wheel", stopBackgroundScroll, { passive: false, capture: true });
+    document.addEventListener("touchmove", stopBackgroundScroll, { passive: false, capture: true });
+
+    return () => {
+      html.classList.remove("bs-pop-lock");
+      locked.forEach((el, index) => { el.style.overflow = previous[index]; });
+      document.removeEventListener("wheel", stopBackgroundScroll, true);
+      document.removeEventListener("touchmove", stopBackgroundScroll, true);
+    };
+  }, [open]);
 
   if (!open || !placement || typeof document === "undefined") return null;
 

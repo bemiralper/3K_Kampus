@@ -469,7 +469,7 @@ export const examApi = {
     const options = typeof opts === 'string' ? { source: opts } : (opts || {});
     const qs = new URLSearchParams({ download: '1' });
     if (options.source === 'generated') qs.set('source', 'generated');
-    if (options.copies && options.copies !== 1) qs.set('copies', String(options.copies));
+    if (options.copies) qs.set('copies', String(options.copies));
     if (options.booklet) qs.set('booklet', options.booklet);
     const res = await fetch(`${BASE}/${examId}/answer-key-pdf/?${qs}`, {
       credentials: 'include',

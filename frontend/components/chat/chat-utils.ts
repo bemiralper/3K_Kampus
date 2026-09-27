@@ -97,6 +97,40 @@ export function listTimestamp(iso: string | null | undefined): string {
   return SHORT_DATE_FMT.format(date);
 }
 
+/** Giden mesajı kimin gönderdiği. Kişi yoksa kaynak (ödev, kampanya, sistem). */
+const OUTBOUND_SOURCE_LABELS: Record<string, string> = {
+  odev: "Ödev",
+  odeme: "Ödeme",
+  finans: "Finans",
+  yoklama: "Yoklama",
+  kutuphane: "Kütüphane",
+  gorusme: "Görüşme",
+  sinav: "Sınav",
+  devamsizlik: "Devamsızlık",
+  duyuru: "Duyuru",
+  koc: "Koçluk",
+  ogrenci: "Öğrenci kaydı",
+  takvim: "Takvim",
+  akademik: "Akademik",
+  ozel_ders: "Özel ders",
+  campaign: "Toplu gönderim",
+  manual: "Sohbet",
+  birthday: "Doğum günü",
+};
+
+export function sentByLabel(message: {
+  direction?: string;
+  sender_name?: string | null;
+  source_module?: string | null;
+}): string {
+  if (message.direction !== "OUTBOUND") return "";
+  const name = (message.sender_name || "").trim();
+  if (name) return name;
+  const source = (message.source_module || "").trim();
+  if (source && OUTBOUND_SOURCE_LABELS[source]) return OUTBOUND_SOURCE_LABELS[source];
+  return "Sistem";
+}
+
 export function messageTime(iso: string | null | undefined): string {
   if (!iso) return "";
   const date = new Date(iso);

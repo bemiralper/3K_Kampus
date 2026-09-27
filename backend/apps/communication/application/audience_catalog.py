@@ -52,6 +52,50 @@ def _opt(value, label) -> dict[str, Any]:
     return {'value': value, 'label': label}
 
 
+def _scope_to_branch_students(qs, sube_id, egitim_yili_id, kurum_id):
+    """Aktif öğrenci kaydı seçili şube ve eğitim yılındaysa bırak."""
+    from django.db.models import Q
+
+    if not sube_id and not egitim_yili_id:
+        return qs
+    cond = Q(ogrenci__kayitlar__aktif_mi=True, ogrenci__kayitlar__kurum_id=kurum_id)
+    if sube_id:
+        cond &= Q(ogrenci__kayitlar__sube_id=sube_id)
+    if egitim_yili_id:
+        cond &= Q(ogrenci__kayitlar__egitim_yili_id=egitim_yili_id)
+    return qs.filter(cond).distinct()
+
+
+def _other_branch_package_keys(kurum_id: int, sube_id: int | None) -> set[tuple]:
+    """Başka şubeye bağlı eğitim paketi kimlikleri. Şubesiz paket kurum ortak sayılır."""
+    if not sube_id:
+        return set()
+    from apps.egitim_paketleri.models import (
+        DavranisPaketi,
+        Deneme,
+        GrupDersi,
+        OzelDers,
+        PremiumPaket,
+        YayinPaketi,
+    )
+
+    mapping = {
+        'grup_dersi': GrupDersi,
+        'ozel_ders': OzelDers,
+        'premium': PremiumPaket,
+        'yayin': YayinPaketi,
+        'deneme': Deneme,
+        'davranis': DavranisPaketi,
+    }
+    keys: set[tuple] = set()
+    for turu, model in mapping.items():
+        ids = model.objects.filter(
+            sube__kurum_id=kurum_id,
+        ).exclude(sube_id=sube_id).values_list('id', flat=True)
+        keys.update((turu, pid) for pid in ids)
+    return keys
+
+
 def _field(
     key: str,
     label: str,
@@ -116,13 +160,15 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed) -> li
         ogrenci__kurum_id=kurum_id,
         aktif_mi=True,
     )
+    packet_qs = _scope_to_branch_students(packet_qs, sube_id, egitim_yili_id, kurum_id)
     if allowed is not None:
         packet_qs = packet_qs.filter(ogrenci_id__in=allowed)
+    other_branch_packets = _other_branch_package_keys(kurum_id, sube_id)
     packets = []
     seen = set()
-    for ep in packet_qs.exclude(paket_adi='').values('paket_turu', 'paket_id', 'paket_adi'):
+    for ep in packet_qs.exclude(paket_adi='').order_by().values('paket_turu', 'paket_id', 'paket_adi'):
         key = (ep['paket_turu'], ep['paket_id'])
-        if key in seen:
+        if key in seen or key in other_branch_packets:
             continue
         seen.add(key)
         packets.append(_opt(
@@ -137,6 +183,9 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed) -> li
         aktif_mi=True,
         ogrenci__kurum_id=kurum_id,
     )
+    hizmet_kayit_qs = _scope_to_branch_students(hizmet_kayit_qs, sube_id, egitim_yili_id, kurum_id)
+    if egitim_yili_id:
+        hizmet_kayit_qs = hizmet_kayit_qs.filter(egitim_yili_id=egitim_yili_id)
     if allowed is not None:
         hizmet_kayit_qs = hizmet_kayit_qs.filter(ogrenci_id__in=allowed)
     hizmet_ids = set(hizmet_kayit_qs.values_list('ek_hizmet_id', flat=True))
@@ -144,7 +193,11 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed) -> li
     ek_hizmet_opts = []
     turler_seen = set()
     if hizmet_ids:
-        hizmet_qs = EkHizmet.objects.filter(id__in=hizmet_ids).order_by('hizmet_turu', 'ad')
+        hizmet_qs = EkHizmet.objects.filter(id__in=hizmet_ids)
+        if sube_id:
+            from django.db.models import Q
+            hizmet_qs = hizmet_qs.filter(Q(sube_id=sube_id) | Q(sube_id__isnull=True))
+        hizmet_qs = hizmet_qs.order_by('hizmet_turu', 'ad')
         for h in hizmet_qs:
             ek_hizmet_opts.append(_opt(h.id, f'{h.get_hizmet_turu_display()} — {h.ad}'))
             turler_seen.add(h.hizmet_turu)

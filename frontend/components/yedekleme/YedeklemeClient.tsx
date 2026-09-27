@@ -1050,7 +1050,9 @@ export default function YedeklemeClient() {
                     </label>
                     <label className="yedekleme-check">
                       <input type="checkbox" checked={schedule.auto_delete_old} onChange={(event) => setSchedule({ ...schedule, auto_delete_old: event.target.checked })} />
-                      Eski arşivleri otomatik sil
+                      {schedule.max_age_days
+                        ? `${schedule.max_age_days} gün içindeki fazla kopyaları da sil`
+                        : 'Eski arşivleri otomatik sil'}
                     </label>
                     <label className="yedekleme-check">
                       <input type="checkbox" checked={schedule.encrypt} onChange={(event) => setSchedule({ ...schedule, encrypt: event.target.checked })} />
@@ -1068,7 +1070,10 @@ export default function YedeklemeClient() {
                       </button>
                     )}
                     <p className="yedekleme-help yedekleme-field--full">
-                      “Şimdi Çalıştır” bitene kadar bekler; yarıda kesilemez. Gelecekteki otomatik çalıştırmaları durdurmak için
+                      {schedule.max_age_days
+                        ? `${schedule.max_age_days} günden eski yedekler her gece 04:00’te ve her başarılı otomatik yedekten sonra silinir. Aynı turda eski sistem logları, hata kayıtları ve ${schedule.chat_attachment_days || 90} günden eski sohbet eki dosyaları da temizlenir. Sohbet metni kalır.`
+                        : 'Yaş sınırı kapalı; yedekler yalnızca sayı sınırına göre silinir.'}
+                      {' '}“Şimdi Çalıştır” bitene kadar bekler; yarıda kesilemez. Gelecekteki otomatik çalıştırmaları durdurmak için
                       {' '}<strong>Otomatiği Durdur</strong> veya sıklığı <strong>Kapalı</strong> yapıp kaydedin.
                     </p>
                   </div>

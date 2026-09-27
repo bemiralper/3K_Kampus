@@ -1157,10 +1157,9 @@ class BackupEngine:
             status=job.status,
             message=job.error_message or job.message or artifact.filename,
         )
-        # Retention: zamanlı yedek sonrası eski yedekleri otomatik temizle.
         try:
-            from apps.yedekleme.engine.retention import RetentionService
-            RetentionService().purge()
+            from apps.yedekleme.engine.housekeeping import run_housekeeping
+            run_housekeeping()
         except Exception:  # noqa: BLE001
             pass
         return artifact, job

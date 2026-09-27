@@ -45,25 +45,24 @@ export function buildPeriods(
   return rows;
 }
 
+/** Yalnızca başlangıcı satırla birebir aynı olan ders o satıra oturur. */
 export function matchLessonToPeriod<T extends { baslangic: string }>(
   lesson: T,
   periods: PeriodRow[],
 ): PeriodRow | null {
-  const start = lesson.baslangic.slice(0, 5);
-  const lessonPeriods = periods.filter((p) => !p.isBreak);
-  const exact = lessonPeriods.find((p) => p.baslangic === start);
-  if (exact) return exact;
-  const startM = timeToMinutes(start);
-  let best: PeriodRow | null = null;
-  let bestDiff = Infinity;
-  for (const p of lessonPeriods) {
-    const diff = Math.abs(timeToMinutes(p.baslangic) - startM);
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = p;
-    }
-  }
-  return bestDiff <= 30 ? best : null;
+  const start = (lesson.baslangic || '').slice(0, 5);
+  return periods.find((p) => !p.isBreak && p.baslangic === start) ?? null;
+}
+
+export function shiftTime(start: string, minutes: number): string {
+  return minutesToTime(timeToMinutes(start) + minutes);
+}
+
+/** Bitiş başlangıçtan sonraysa dakika cinsinden süre; değilse null. */
+export function durationBetween(start: string, end: string): number | null {
+  if (!start || !end) return null;
+  const diff = timeToMinutes(end.slice(0, 5)) - timeToMinutes(start.slice(0, 5));
+  return diff > 0 ? diff : null;
 }
 
 export function formatDurationDk(dk: number): string {

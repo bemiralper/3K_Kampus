@@ -15,6 +15,7 @@ import {
   isPdfAttachment,
   messageTime,
   sameDay,
+  sentByLabel,
   splitHighlight,
   splitLinks,
 } from "./chat-utils";
@@ -290,6 +291,8 @@ export function ChatTimeline({
             new Date(message.created_at).getTime() -
               new Date(prev.created_at).getTime() <
               4 * 60_000;
+          const senderLabel = sentByLabel(message);
+          const showSender = Boolean(senderLabel) && (!grouped || sentByLabel(prev || {}) !== senderLabel);
           return (
             <div key={message.id}>
               {showDivider ? (
@@ -300,6 +303,7 @@ export function ChatTimeline({
               <MessageRow
                 message={message}
                 grouped={grouped}
+                senderLabel={showSender ? senderLabel : ""}
                 highlighted={message.id === focusedMessageId}
                 searchQuery={searchQuery}
                 actions={actions}
@@ -345,6 +349,7 @@ export function ChatTimeline({
 function MessageRow({
   message,
   grouped,
+  senderLabel,
   highlighted,
   searchQuery,
   actions,
@@ -354,6 +359,7 @@ function MessageRow({
 }: {
   message: MessageItem;
   grouped: boolean;
+  senderLabel: string;
   highlighted: boolean;
   searchQuery: string;
   actions: MessageActions;
@@ -390,6 +396,7 @@ function MessageRow({
       onContextMenu={onContextMenu}
     >
       <div className="chat-bubble">
+        {senderLabel ? <span className="chat-bubble-sender">{senderLabel}</span> : null}
         {message.is_forwarded ? <p className="chat-bubble-forward">İletildi</p> : null}
         {message.reply_to ? (
           <div className="chat-bubble-quote">
@@ -617,6 +624,19 @@ function FileCard({ attachment }: { attachment: MessageAttachmentItem }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const canPreview = isPdfAttachment(attachment.mime_type) && !!attachment.file_url;
   const preview = usePdfPreview(canPreview && previewOpen ? attachment.file_url : null);
+  if (!attachment.file_url) {
+    return (
+      <div className="chat-attach-file is-expired">
+        <span className="chat-attach-icon">
+          <IconFile size={20} />
+        </span>
+        <span className="chat-attach-meta">
+          <span className="chat-attach-name">{attachment.original_name || "Dosya"}</span>
+          <span className="chat-attach-sub">Saklama süresi doldu</span>
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="chat-attach-block">

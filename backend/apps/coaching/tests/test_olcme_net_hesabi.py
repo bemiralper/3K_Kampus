@@ -302,32 +302,32 @@ class OptionalPhilosophyQuestionSpanTest(TestCase):
 
 
 class OptionalPhilosophyAytQuestionSpanTest(TestCase):
-    """AYT seçmeli felsefe 81–85 ekler; Fen/Biyoloji 126–165 / 153–165 olur."""
+    """AYT seçmeli felsefe 81–86 ekler; Fen/Biyoloji 127–166 / 154–166 olur."""
 
     def setUp(self):
         self.tde = _Sec(1, 1, 40)
         self.sosyal = _Sec(2, 41, 80)
-        self.mat = _Sec(3, 86, 125)
-        self.fen = _Sec(4, 126, 165)
-        self.felsefe = _Sec(5, 81, 85, parent=2)
-        self.fizik = _Sec(6, 126, 139, parent=4)
-        self.kimya = _Sec(7, 140, 152, parent=4)
-        self.biyoloji = _Sec(8, 153, 165, parent=4)
+        self.mat = _Sec(3, 87, 126)
+        self.fen = _Sec(4, 127, 166)
+        self.felsefe = _Sec(5, 81, 86, parent=2)
+        self.fizik = _Sec(6, 127, 140, parent=4)
+        self.kimya = _Sec(7, 141, 153, parent=4)
+        self.biyoloji = _Sec(8, 154, 166, parent=4)
         self.sections = [self.tde, self.sosyal, self.mat, self.fen]
         self.subs = [self.felsefe, self.fizik, self.kimya, self.biyoloji]
 
     def test_span_is_last_question_not_main_sum(self):
         self.assertEqual(sum(s.question_end - s.question_start + 1 for s in self.sections), 160)
-        self.assertEqual(exam_question_span(self.sections, self.subs), 165)
+        self.assertEqual(exam_question_span(self.sections, self.subs), 166)
 
-    def test_optional_column_lands_on_81_85(self):
+    def test_optional_column_lands_on_81_86(self):
         line = 'X' * 200
         section_fields = {
-            'ders_5': (0, 5),
+            'ders_5': (0, 6),
         }
         assembled = _assemble_section_answers(
-            line, self.sections, self.subs, section_fields, 165, True,
+            line, self.sections, self.subs, section_fields, 166, True,
         )
-        self.assertEqual(assembled[80:85], 'XXXXX')
+        self.assertEqual(assembled[80:86], 'XXXXXX')
         self.assertEqual(assembled[79], ' ')
-        self.assertEqual(assembled[85], ' ')
+        self.assertEqual(assembled[86], ' ')

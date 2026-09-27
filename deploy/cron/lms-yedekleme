@@ -13,5 +13,5 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Her dakika — zamanlanmış yedek penceresi
 * * * * * lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups >> /var/log/lms/backups.log 2>&1
 
-# Her gün 04:00 — retention / eski yedek temizliği
+# Her gün 04:00 — 5 günden eski yedekler, log/hata kayıtları, süresi dolmuş sohbet ekleri
 0 4 * * * lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1

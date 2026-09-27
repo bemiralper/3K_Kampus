@@ -199,6 +199,27 @@ class CevapAnahtariPdfTest(TestCase):
         self.assertEqual(parse_copies('3'), 1)
         self.assertEqual(parse_copies(None), 1)
 
+    def test_one_copy_is_a_single_card(self):
+        from apps.coaching.application.olcme_cevap_anahtari_pdf import _copy_sequence
+
+        key_a = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
+        key_b = AnswerKey.objects.create(exam=self.exam, booklet='B', is_primary=False)
+        for n in range(1, 4):
+            AnswerKeyItem.objects.create(
+                answer_key=key_a, section=self.section, question_number=n, correct_answer='A',
+            )
+            AnswerKeyItem.objects.create(
+                answer_key=key_b, section=self.section, question_number=n, correct_answer='B',
+            )
+        payloads = [key_a, key_b]
+        self.assertEqual(len(_copy_sequence(payloads, 1)), 1)
+        self.assertEqual(len(_copy_sequence(payloads, 2)), 2)
+        self.assertEqual(len(_copy_sequence(payloads, 6)), 6)
+        one = render_cevap_anahtari_pdf(self.exam, copies_per_page=1)
+        six = render_cevap_anahtari_pdf(self.exam, copies_per_page=6)
+        self.assertTrue(one.startswith(b'%PDF'))
+        self.assertNotEqual(one, six)
+
     def test_six_tables_per_page(self):
         key = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
         for n in range(1, 5):

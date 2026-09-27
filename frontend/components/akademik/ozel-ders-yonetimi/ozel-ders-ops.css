@@ -742,6 +742,12 @@
   background: #fff;
 }
 
+.od-week-cal-table .od-grid-cell.is-extra {
+  height: auto;
+  min-height: 72px;
+  vertical-align: top;
+}
+
 .od-week-cal-table .od-grid-cell.is-today {
   background: #f8fbff;
 }

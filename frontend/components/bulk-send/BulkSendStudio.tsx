@@ -1,19 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import CampaignDuyuruPicker, {
-  campaignMessageReady,
-} from "@/app/admin/iletisim/toplu-gonder/CampaignDuyuruPicker";
-import { querySummary } from "@/app/admin/iletisim/toplu-gonder/audience-utils";
+import RecipientsModal from "@/app/admin/iletisim/toplu-gonder/RecipientsModal";
+import { hasAnyFilter, hasIncluded, querySummary } from "@/app/admin/iletisim/toplu-gonder/audience-utils";
 import "@/app/admin/iletisim/toplu-gonder/toplu-gonder.css";
 import { CommToast, useCommToast } from "@/components/communication/CommToast";
 import CommunicationPageShell from "@/components/communication/CommunicationPageShell";
+import WhatsAppPhonePreview from "@/components/communication/WhatsAppPhonePreview";
 import "@/components/communication/communication.css";
 import {
-  AudienceRecipientRow,
   CampaignAttachmentItem,
   CampaignItem,
   SavedAudienceItem,
@@ -22,35 +19,41 @@ import {
   createCampaign,
   createSavedAudience,
   deleteSavedAudience,
-  fetchAudienceRecipients,
   fetchCampaign,
   fetchSavedAudiences,
   isCampaignActive,
   newCampaignClientToken,
 } from "@/lib/communication-api";
 
-import AudienceComposer from "./AudienceComposer";
 import { CampaignSegmentBar, CampaignStatusBadge } from "./CampaignProgress";
+import StepAudience from "./StepAudience";
+import StepMessage from "./StepMessage";
+import StepReview from "./StepReview";
+import { campaignMessageReady, composePreview } from "./message-helpers";
 import { type BulkSendMode, useBulkSendDraft } from "./useBulkSendDraft";
 import "./bulk-send.css";
+import "./studio.css";
 
 interface Props {
   mode?: BulkSendMode;
 }
 
+type StepNo = 1 | 2 | 3;
+
 /**
- * Toplu Gönderim v2 — tek ekran: solda kitle, sağda mesaj, altta sabit gönder çubuğu,
- * gönderimden sonra aynı ekranda canlı ilerleme. Backend sözleşmesi değişmedi.
+ * Toplu Gönderim — üç adımlı tek sayfa: kitle → mesaj → gönder.
+ * Sağda canlı önizleme, altta her adımda görünen alıcı sayısı ve tek eylem.
+ * Backend sözleşmesi aynı; burada yalnız arayüz var.
  */
 export default function BulkSendStudio({ mode = "admin" }: Props) {
   const draft = useBulkSendDraft(mode);
   const paths = communicationPortalPaths(mode);
   const { toast, show: showToast } = useCommToast();
 
+  const [step, setStep] = useState<StepNo>(1);
   const [attachments, setAttachments] = useState<CampaignAttachmentItem[]>([]);
   const [saved, setSaved] = useState<SavedAudienceItem[]>([]);
-  const [confirmOpen, setConfirmOpen] = useState(false);
-  const [confirmSample, setConfirmSample] = useState<AudienceRecipientRow[] | null>(null);
+  const [showRecipients, setShowRecipients] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<CampaignItem | null>(null);
@@ -67,18 +70,12 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
   }, []);
   useEffect(() => { if (mode !== "coach") void loadSaved(); }, [loadSaved, mode]);
 
-  const deliverable = draft.preview?.deliverable_count ?? 0;
-  const templateReady = campaignMessageReady(draft.selectedTemplate, draft.variableValues, attachments);
-  const canSend = deliverable > 0 && templateReady && !submitting;
-  const account = draft.accounts.find((a) => a.id === draft.accountId) || null;
-
-  // Gönderim sonrası kampanya canlıyken 4 sn'de bir tazele
+  // Gönderim sonrası kampanya canlıyken kendini tazeler.
   useEffect(() => {
     if (!sent || !isCampaignActive(sent.status)) return;
     const id = window.setInterval(async () => {
       try {
-        const fresh = await fetchCampaign(sent.id);
-        setSent(fresh);
+        setSent(await fetchCampaign(sent.id));
       } catch {
         /* geçici hata — sonraki turda tekrar */
       }
@@ -86,26 +83,50 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
     return () => window.clearInterval(id);
   }, [sent]);
 
-  const openConfirm = async () => {
-    if (!canSend) return;
-    if (!clientToken.current) clientToken.current = newCampaignClientToken();
-    setConfirmSample(null);
-    setConfirmOpen(true);
-    try {
-      const page = await fetchAudienceRecipients(draft.query, { page: 1, pageSize: 3 });
-      setConfirmSample(page.recipients || []);
-    } catch {
-      setConfirmSample([]);
-    }
+  const deliverable = draft.preview?.deliverable_count ?? 0;
+  const audienceTouched = draft.personTypes.length > 0 || hasIncluded(draft.query) || hasAnyFilter(draft.query);
+  const messageReady = campaignMessageReady(draft.selectedTemplate, draft.variableValues, attachments);
+  const canSend = deliverable > 0 && messageReady && !submitting;
+  const account = draft.accounts.find((item) => item.id === draft.accountId) || null;
+  const previewText = composePreview(draft.selectedTemplate, draft.variableValues);
+
+  const steps: Array<{ no: StepNo; label: string; hint: string; ok: boolean }> = useMemo(() => [
+    {
+      no: 1,
+      label: "Kime",
+      hint: deliverable > 0
+        ? `${deliverable.toLocaleString("tr-TR")} kişi`
+        : audienceTouched ? "Alıcı yok" : "Kitle seçin",
+      ok: deliverable > 0,
+    },
+    {
+      no: 2,
+      label: "Mesaj",
+      hint: draft.selectedTemplate ? draft.selectedTemplate.name : "Şablon seçin",
+      ok: messageReady,
+    },
+    {
+      no: 3,
+      label: "Gönder",
+      hint: canSend ? "Hazır" : "Eksik var",
+      ok: canSend,
+    },
+  ], [deliverable, audienceTouched, draft.selectedTemplate, messageReady, canSend]);
+
+  const resetAll = () => {
+    draft.reset();
+    setAttachments([]);
+    setStep(1);
   };
 
   const send = async () => {
     if (!canSend) return;
+    if (!clientToken.current) clientToken.current = newCampaignClientToken();
     setSubmitting(true);
     setError(null);
     try {
       const templateContext = Object.fromEntries(
-        Object.entries(draft.variableValues).filter(([, v]) => (v || "").trim()),
+        Object.entries(draft.variableValues).filter(([, value]) => (value || "").trim()),
       );
       const result = await createCampaign({
         title: draft.title.trim() || querySummary(draft.query),
@@ -113,7 +134,7 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
         template_name: draft.templateName,
         template_language: draft.templateLanguage,
         audience_filter: draft.query,
-        attachment_ids: attachments.map((a) => a.id),
+        attachment_ids: attachments.map((item) => item.id),
         send_options: { template_context: templateContext },
         channel_config_id: draft.accountId || undefined,
         client_token: clientToken.current || undefined,
@@ -121,10 +142,11 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
       setSent(result);
       setReplayed(!!result.idempotent_replay);
       clientToken.current = null;
-      setConfirmOpen(false);
-      setAttachments([]);
-      draft.reset();
-      showToast(result.idempotent_replay ? "Bu gönderim zaten kuyruğa alınmıştı." : "Gönderim kuyruğa alındı.", "success");
+      resetAll();
+      showToast(
+        result.idempotent_replay ? "Bu gönderim zaten kuyruğa alınmıştı." : "Gönderim kuyruğa alındı.",
+        "success",
+      );
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Gönderim başlatılamadı");
@@ -142,34 +164,34 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
   return (
     <CommunicationPageShell
       title="Toplu Gönderim"
-      subtitle="Kitleyi seçin, şablonu doldurun, tek adımda gönderin"
+      subtitle="Kitleyi kurun, mesajı hazırlayın, tek yerden gönderin"
       breadcrumbs={crumbs}
       maxWidth="full"
       actions={
-        <Link href={mode === "coach" ? "/coach/toplu-gonder" : paths.history} className="bs-btn">
+        <Link href={mode === "coach" ? "/coach/toplu-gonder" : paths.history} className="bss-btn">
           Gönderim geçmişi
         </Link>
       }
     >
-      <div className="bs">
+      <div className="bs bss">
         {draft.restoredFromDraft && (
-          <div className="bs-alert tone-info" style={{ marginBottom: 12, display: "flex", justifyContent: "space-between", gap: 10 }}>
-            <span>Kaydedilmiş taslağınız geri yüklendi.</span>
-            <span style={{ display: "flex", gap: 10 }}>
-              <button type="button" className="bs-counter-link" onClick={draft.dismissRestored}>Tamam</button>
-              <button type="button" className="bs-counter-link" onClick={() => { draft.reset(); setAttachments([]); }}>Taslağı temizle</button>
+          <div className="bss-alert tone-info">
+            <span>Yarım kalan taslağınız geri yüklendi.</span>
+            <span className="bss-alert-actions">
+              <button type="button" className="bss-link" onClick={draft.dismissRestored}>Devam et</button>
+              <button type="button" className="bss-link" onClick={resetAll}>Taslağı sil</button>
             </span>
           </div>
         )}
-        {error && <div className="bs-alert tone-bad" style={{ marginBottom: 12 }}>{error}</div>}
+        {error && <div className="bss-alert tone-bad">{error}</div>}
 
         {sent && (
-          <section className="bs-card bs-progress-card" style={{ marginBottom: 16 }} aria-live="polite">
-            <div className="bs-card-head">
+          <section className="bss-panel bss-sent" aria-live="polite">
+            <header className="bss-panel-head">
               <div>
-                <h2 style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <h3>
                   {sent.title || "Gönderim"} <CampaignStatusBadge status={sent.status} />
-                </h2>
+                </h3>
                 <p>
                   {replayed
                     ? "Bu gönderim daha önce kuyruğa alınmıştı; yeni kampanya açılmadı."
@@ -180,238 +202,231 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
                         : "Gönderim tamamlandı."}
                 </p>
               </div>
-              <div className="bs-detail-actions">
+              <span className="bss-sent-actions">
                 {paths.campaign && (
-                  <Link href={paths.campaign(sent.id)} className="bs-btn bs-btn-sm">Detay</Link>
+                  <Link href={paths.campaign(sent.id)} className="bss-btn is-sm">Detay</Link>
                 )}
-                <button type="button" className="bs-btn-ghost bs-btn-sm" onClick={() => setSent(null)}>Kapat</button>
+                <button type="button" className="bss-link" onClick={() => setSent(null)}>Kapat</button>
+              </span>
+            </header>
+            <CampaignSegmentBar campaign={sent} legend />
+            <div className="bss-kpis">
+              <div><b>{sent.total_recipients}</b><span>Alıcı</span></div>
+              <div><b>{sent.sent_count}</b><span>Gönderildi</span></div>
+              <div><b>{sent.delivered_count}</b><span>İletildi</span></div>
+              <div><b>{sent.read_count}</b><span>Okundu</span></div>
+              <div className={sent.failed_count ? "is-bad" : ""}>
+                <b>{sent.failed_count}</b><span>Başarısız</span>
               </div>
             </div>
-            <CampaignSegmentBar campaign={sent} legend />
-            <div className="bs-progress-kpis">
-              <div className="bs-kpi"><b>{sent.total_recipients}</b><span>Alıcı</span></div>
-              <div className="bs-kpi"><b>{sent.sent_count}</b><span>Gönderildi</span></div>
-              <div className="bs-kpi"><b>{sent.delivered_count}</b><span>İletildi</span></div>
-              <div className="bs-kpi"><b>{sent.read_count}</b><span>Okundu</span></div>
-              <div className="bs-kpi"><b style={{ color: sent.failed_count ? "var(--bs-bad)" : undefined }}>{sent.failed_count}</b><span>Başarısız</span></div>
-            </div>
-            {sent.materialize_error && <div className="bs-alert tone-bad">{sent.materialize_error}</div>}
+            {sent.materialize_error && <p className="bss-alert tone-bad">{sent.materialize_error}</p>}
           </section>
         )}
 
-        <div className="bs-studio">
-          <div className="bs-col">
-            <AudienceComposer
-              draft={draft}
-              saved={saved}
-              onSaveAudience={async (name) => {
-                await createSavedAudience({ name, query: draft.query, description: querySummary(draft.query) });
-                await loadSaved();
-                showToast("Kitle kaydedildi.", "success");
-              }}
-              onDeleteSaved={async (id) => {
-                await deleteSavedAudience(id);
-                await loadSaved();
-              }}
-            />
-          </div>
+        <nav className="bss-rail" aria-label="Gönderim adımları">
+          {steps.map((item) => (
+            <button
+              key={item.no}
+              type="button"
+              className={`bss-rail-step${step === item.no ? " is-active" : ""}${item.ok ? " is-ok" : ""}`}
+              aria-current={step === item.no ? "step" : undefined}
+              onClick={() => setStep(item.no)}
+            >
+              <span className="bss-rail-no" aria-hidden="true">{item.ok ? "✓" : item.no}</span>
+              <span className="bss-rail-text">
+                <strong>{item.label}</strong>
+                <small>{item.hint}</small>
+              </span>
+            </button>
+          ))}
+        </nav>
 
-          <div className="bs-col">
-            <section className="bs-card">
-              <div className="bs-card-head">
-                <div>
-                  <h2><span className="bs-step">2</span>Ne gönderilecek?</h2>
-                  <p>Meta onaylı şablon seçin; değişkenler önizlemede anında dolar.</p>
-                </div>
-              </div>
-              <div className="tg">
-                <CampaignDuyuruPicker
-                  title={draft.title}
-                  onTitleChange={draft.setTitle}
-                  accounts={draft.accounts}
-                  accountId={draft.accountId}
-                  onAccountChange={draft.setAccountId}
-                  personTypes={draft.personTypes}
-                  templateName={draft.templateName}
-                  selectedTemplate={draft.selectedTemplate}
-                  onTemplateChange={draft.onTemplateChange}
-                  variableValues={draft.variableValues}
-                  onVariableValuesChange={draft.setVariableValues}
+        <div className="bss-body">
+          <main className="bss-main">
+            {step === 1 && (
+              <StepAudience
+                draft={draft}
+                saved={saved}
+                onOpenRecipients={() => setShowRecipients(true)}
+                onSaveAudience={async (name) => {
+                  await createSavedAudience({
+                    name,
+                    query: draft.query,
+                    description: querySummary(draft.query),
+                  });
+                  await loadSaved();
+                  showToast("Kitle kaydedildi.", "success");
+                }}
+                onDeleteSaved={async (id) => {
+                  await deleteSavedAudience(id);
+                  await loadSaved();
+                }}
+              />
+            )}
+            {step === 2 && (
+              <StepMessage draft={draft} attachments={attachments} onAttachmentsChange={setAttachments} />
+            )}
+            {step === 3 && (
+              <StepReview
+                draft={draft}
+                attachments={attachments}
+                onGoToStep={setStep}
+                onOpenRecipients={() => setShowRecipients(true)}
+              />
+            )}
+          </main>
+
+          <aside className="bss-side" aria-label={step === 1 ? "Kitle özeti" : "Mesaj önizlemesi"}>
+            {step === 1 ? (
+              <AudienceInsight draft={draft} onOpenRecipients={() => setShowRecipients(true)} />
+            ) : (
+              <div className="bss-side-card">
+                <div className="bss-side-head">Önizleme</div>
+                <WhatsAppPhonePreview
+                  text={previewText || "Şablonu seçince mesaj burada görünür."}
                   attachments={attachments}
-                  onAttachmentsChange={setAttachments}
+                  previewContext={draft.variableValues}
                 />
+                <p className="bss-side-note">
+                  Değişkenler örnek değerlerle gösterilir; her alıcıda kendi bilgisiyle dolar.
+                </p>
               </div>
-            </section>
-          </div>
+            )}
+          </aside>
         </div>
 
-        <div className="bs-dock" role="region" aria-label="Gönderim özeti">
-          <div className="bs-dock-main">
-            <div className={`bs-dock-count${deliverable ? "" : " is-zero"}`}>
+        <div className="bss-bar" role="region" aria-label="Gönderim özeti">
+          <div className={`bss-bar-count${deliverable ? "" : " is-zero"}`}>
+            {draft.previewLoading && !draft.preview ? (
+              <span className="bss-skeleton is-inline" />
+            ) : (
               <b>{deliverable.toLocaleString("tr-TR")}</b>
-              <span>alıcı</span>
-            </div>
-            <ul className="bs-dock-meta">
-              <li className={draft.selectedTemplate ? "ok" : "todo"}>
-                <span>Şablon</span>
-                <strong title={draft.selectedTemplate?.name || ""}>{draft.selectedTemplate?.name || "Seçilmedi"}</strong>
-              </li>
-              <li className={!draft.selectedTemplate ? "todo" : templateReady ? "ok" : "bad"}>
-                <span>Değişken / ek</span>
-                <strong>{!draft.selectedTemplate ? "Şablon bekleniyor" : templateReady ? "Tamam" : "Eksik"}</strong>
-              </li>
-              <li>
-                <span>Hat</span>
-                <strong title={account ? accountLabel(account) : "Varsayılan"}>{account ? accountLabel(account) : "Varsayılan"}</strong>
-              </li>
-            </ul>
+            )}
+            <span>alıcı</span>
           </div>
-          <div className="bs-dock-actions">
-            <button type="button" className="bs-btn" onClick={() => { draft.reset(); setAttachments([]); }} disabled={submitting}>
-              Sıfırla
-            </button>
-            <button type="button" className="bs-btn-primary" disabled={!canSend} onClick={() => void openConfirm()}>
-              {deliverable > 0 ? `${deliverable.toLocaleString("tr-TR")} kişiye gönder` : "Gönder"}
-            </button>
+          <p className="bss-bar-note">
+            {step === 1
+              ? querySummary(draft.query)
+              : step === 2
+                ? draft.selectedTemplate?.name || "Şablon seçilmedi"
+                : canSend
+                  ? `${account ? accountLabel(account) : "Varsayılan hat"} üzerinden gönderilecek`
+                  : "Eksikleri tamamlayın"}
+          </p>
+          <div className="bss-bar-actions">
+            {step > 1 && (
+              <button
+                type="button"
+                className="bss-btn"
+                onClick={() => setStep((current) => (current === 3 ? 2 : 1))}
+                disabled={submitting}
+              >
+                Geri
+              </button>
+            )}
+            {step < 3 ? (
+              <button type="button" className="bss-btn is-primary" onClick={() => setStep(step === 1 ? 2 : 3)}>
+                {step === 1 ? "Mesaja geç" : "Son kontrole geç"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="bss-btn is-primary"
+                disabled={!canSend}
+                onClick={() => void send()}
+              >
+                {submitting
+                  ? "Gönderiliyor…"
+                  : deliverable > 0
+                    ? `${deliverable.toLocaleString("tr-TR")} kişiye gönder`
+                    : "Gönder"}
+              </button>
+            )}
           </div>
         </div>
       </div>
 
-      <SendConfirm
-        open={confirmOpen}
-        submitting={submitting}
-        deliverable={deliverable}
-        skipped={draft.preview?.unsuitable_count || 0}
-        templateName={draft.selectedTemplate?.name || "—"}
-        templateLanguage={draft.templateLanguage}
-        lineLabel={account ? accountLabel(account) : "Varsayılan"}
-        attachmentCount={attachments.length}
-        sample={confirmSample}
-        lineError={account?.send_error?.error}
-        onClose={() => setConfirmOpen(false)}
-        onSend={() => void send()}
-      />
+      {showRecipients && (
+        <RecipientsModal
+          query={draft.query}
+          allowPersonel={!draft.isCoach}
+          onClose={() => setShowRecipients(false)}
+          onChangeQuery={draft.setQuery}
+        />
+      )}
 
       <CommToast toast={toast} />
     </CommunicationPageShell>
   );
 }
 
-function SendConfirm({
-  open,
-  submitting,
-  deliverable,
-  skipped,
-  templateName,
-  templateLanguage,
-  lineLabel,
-  attachmentCount,
-  sample,
-  lineError,
-  onClose,
-  onSend,
+/** 1. adımda sağ kolon: canlı kitle dağılımı. */
+function AudienceInsight({
+  draft,
+  onOpenRecipients,
 }: {
-  open: boolean;
-  submitting: boolean;
-  deliverable: number;
-  skipped: number;
-  templateName: string;
-  templateLanguage: string;
-  lineLabel: string;
-  attachmentCount: number;
-  sample: AudienceRecipientRow[] | null;
-  lineError?: string;
-  onClose: () => void;
-  onSend: () => void;
+  draft: ReturnType<typeof useBulkSendDraft>;
+  onOpenRecipients: () => void;
 }) {
-  const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !submitting) onCloseRef.current();
-    };
-    const prev = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = prev;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [open, submitting]);
+  const { preview, previewLoading, previewError, query } = draft;
+  const deliverable = preview?.deliverable_count ?? 0;
+  const matched = preview?.matched_count ?? 0;
+  const unsuitable = preview?.unsuitable_count ?? 0;
 
-  if (!open || typeof document === "undefined") return null;
+  const rows = [
+    { label: "Öğrenci", value: preview?.ogrenci_count ?? 0 },
+    { label: "Veli", value: preview?.veli_count ?? 0 },
+    { label: "Personel", value: preview?.personel_count ?? 0 },
+  ].filter((row) => row.value > 0);
 
-  const countLabel = deliverable.toLocaleString("tr-TR");
-
-  return createPortal(
-    <div className="bs bs-confirm-back" onMouseDown={() => !submitting && onClose()}>
-      <div
-        className="bs-confirm"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="bs-confirm-title"
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <header className="bs-confirm-head">
-          <div>
-            <h2 id="bs-confirm-title">Gönderimi onayla</h2>
-            <p>Kuyruğa alınır. Yalnız henüz gitmemiş mesajlar iptal edilebilir.</p>
-          </div>
-          <button type="button" className="bs-confirm-x" onClick={onClose} disabled={submitting} aria-label="Kapat">
-            ×
-          </button>
-        </header>
-
-        <div className="bs-confirm-body">
-          <div className="bs-confirm-count">
-            <b>{countLabel}</b>
-            <div>
-              <strong>kişiye gönderilecek</strong>
-              <span>{skipped > 0 ? `${skipped.toLocaleString("tr-TR")} kişi telefonsuz olduğu için atlanacak` : "Tüm seçilenler gönderilebilir"}</span>
-            </div>
-          </div>
-
-          <dl className="bs-confirm-facts">
-            <div><dt>Şablon</dt><dd>{templateName} <span>({templateLanguage})</span></dd></div>
-            <div><dt>Hat</dt><dd>{lineLabel}</dd></div>
-            {attachmentCount > 0 && <div><dt>Ek</dt><dd>{attachmentCount} dosya</dd></div>}
-          </dl>
-
-          <div className="bs-confirm-people">
-            <div className="bs-confirm-people-label">İlk alıcılar</div>
-            {sample === null ? (
-              <div className="bs-skeleton" style={{ height: 44 }} />
-            ) : sample.length === 0 ? (
-              <div className="bs-small bs-muted">Liste alınamadı. Sayı yine de geçerlidir.</div>
+  return (
+    <div className="bss-side-card">
+      <div className="bss-side-head">Kitle</div>
+      {previewError ? (
+        <p className="bss-alert tone-bad">{previewError}</p>
+      ) : (
+        <>
+          <div className={`bss-side-count${deliverable ? "" : " is-zero"}`}>
+            {previewLoading && !preview ? (
+              <span className="bss-skeleton is-inline" />
             ) : (
-              <ul>
-                {sample.map((r) => (
-                  <li key={r.key}>
-                    <strong>{r.display_name}</strong>
-                    <span>{[r.phone || r.e164, r.class_or_role].filter(Boolean).join(" · ")}</span>
-                  </li>
-                ))}
-                {deliverable > sample.length && (
-                  <li className="more">ve {deliverable - sample.length} kişi daha</li>
-                )}
-              </ul>
+              <b>{deliverable.toLocaleString("tr-TR")}</b>
             )}
+            <span>kişiye gidecek</span>
           </div>
+          <p className="bss-side-sub">{querySummary(query)}</p>
 
-          {lineError && (
-            <div className="bs-alert tone-warn">Bu hat son gönderimde hata verdi: {lineError}</div>
+          {rows.length > 0 && (
+            <ul className="bss-breakdown">
+              {rows.map((row) => (
+                <li key={row.label}>
+                  <span>{row.label}</span>
+                  <b>{row.value.toLocaleString("tr-TR")}</b>
+                </li>
+              ))}
+              {matched > deliverable && (
+                <li className="is-soft">
+                  <span>Eşleşen</span>
+                  <b>{matched.toLocaleString("tr-TR")}</b>
+                </li>
+              )}
+              {unsuitable > 0 && (
+                <li className="is-warn">
+                  <span>Telefonsuz</span>
+                  <b>{unsuitable.toLocaleString("tr-TR")}</b>
+                </li>
+              )}
+            </ul>
           )}
-        </div>
 
-        <footer className="bs-confirm-foot">
-          <button type="button" className="bs-btn" onClick={onClose} disabled={submitting}>Vazgeç</button>
-          <button type="button" className="bs-btn-primary" onClick={onSend} disabled={submitting}>
-            {submitting ? "Gönderiliyor…" : `${countLabel} kişiye gönder`}
+          {deliverable === 0 && !previewLoading && (
+            <p className="bss-side-note">Hazır kitle seçin veya kişi türü işaretleyin.</p>
+          )}
+          <button type="button" className="bss-btn is-block" onClick={onOpenRecipients}>
+            Alıcı listesini aç
           </button>
-        </footer>
-      </div>
-    </div>,
-    document.body,
+        </>
+      )}
+    </div>
   );
 }

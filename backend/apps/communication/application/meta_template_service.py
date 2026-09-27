@@ -8,7 +8,7 @@ import re
 from typing import Any
 
 from django.db import transaction
-from django.db.models import F, QuerySet
+from django.db.models import F, Q, QuerySet
 from django.utils import timezone
 
 from apps.communication.application.meta_template_mapper import (
@@ -139,9 +139,11 @@ class MetaTemplateService:
 
         from apps.communication.domain.enums import WhatsAppAccountScope
 
+        wide_ids = MetaTemplateService.institution_wide_campaign_ids(kurum_id)
         return qs.filter(
             Q(channel_config__scope_type=WhatsAppAccountScope.ALL_SUBES)
-            | Q(channel_config__allowed_subes__id=int(sube_id)),
+            | Q(channel_config__allowed_subes__id=int(sube_id))
+            | Q(pk__in=wide_ids),
         ).distinct()
 
     @staticmethod
@@ -231,6 +233,17 @@ class MetaTemplateService:
         return rows[0]
 
     @staticmethod
+    def institution_wide_campaign_ids(kurum_id: int) -> list:
+        """Kitlesi genel olan toplu mesaj şablonları — tüm hesaplarda görünür."""
+        return list(
+            WhatsAppMetaTemplate.objects.filter(
+                kurum_id=kurum_id,
+                usage_scope=MetaTemplateUsage.CAMPAIGN,
+                campaign_audience=CampaignAudience.GENEL,
+            ).values_list('id', flat=True)
+        )
+
+    @staticmethod
     def list_templates(
         kurum_id: int,
         *,
@@ -261,9 +274,15 @@ class MetaTemplateService:
         if channel_config_id:
             if include_shared_waba:
                 shared = MetaTemplateService.shared_account_ids(kurum_id, channel_config_id)
-                qs = qs.filter(channel_config_id__in=shared or [channel_config_id])
+                account_q = Q(channel_config_id__in=shared or [channel_config_id])
             else:
-                qs = qs.filter(channel_config_id=channel_config_id)
+                account_q = Q(channel_config_id=channel_config_id)
+            # Genel kitleli toplu şablonlar her WhatsApp hesabında listelenir.
+            wide_ids = MetaTemplateService.institution_wide_campaign_ids(kurum_id)
+            if wide_ids:
+                qs = qs.filter(account_q | Q(pk__in=wide_ids))
+            else:
+                qs = qs.filter(account_q)
         if status:
             qs = qs.filter(status=status)
         if meta_category:

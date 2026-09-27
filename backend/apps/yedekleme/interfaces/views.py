@@ -177,6 +177,12 @@ def _schedule_json(schedule: BackupSchedule) -> dict:
         'kind': schedule.kind,
         'resource_codes': schedule.resource_codes or [],
         'max_artifacts': schedule.max_artifacts,
+        'max_age_days': int(
+            ((getattr(settings, 'BACKUP_CONFIG', {}) or {}).get('retention') or {}).get('max_age_days') or 0
+        ),
+        'chat_attachment_days': int(
+            (getattr(settings, 'DATA_RETENTION', {}) or {}).get('chat_attachment_days') or 90
+        ),
         'auto_delete_old': schedule.auto_delete_old,
         'encrypt': schedule.encrypt,
         'last_run_at': schedule.last_run_at.isoformat() if schedule.last_run_at else None,

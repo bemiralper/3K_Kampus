@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   AudienceFilter,
   AudienceRecipientRow,
@@ -11,6 +12,7 @@ import {
   excludePerson,
   includePerson,
   personTypeLabel,
+  removeIncluded,
   unexcludePerson,
 } from "./audience-utils";
 import PersonPicker from "./PersonPicker";
@@ -22,18 +24,20 @@ interface RecipientsModalProps {
   onChangeQuery: (query: AudienceFilter) => void;
 }
 
+const PAGE_SIZE = 25;
+
 export default function RecipientsModal({
   query,
   allowPersonel,
   onClose,
   onChangeQuery,
 }: RecipientsModalProps) {
+  const dialogRef = useRef<HTMLDivElement>(null);
   const [rows, setRows] = useState<AudienceRecipientRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  // Kitle değişince sayfa 1'e dön; eski sayfa numarası yeni toplamı aşabilir.
   useEffect(() => {
     setPage(1);
   }, [query]);
@@ -41,7 +45,7 @@ export default function RecipientsModal({
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    fetchAudienceRecipients(query, { page, pageSize: 25 })
+    fetchAudienceRecipients(query, { page, pageSize: PAGE_SIZE })
       .then((res) => {
         if (cancelled) return;
         setRows(res.recipients || []);
@@ -55,6 +59,62 @@ export default function RecipientsModal({
       });
     return () => { cancelled = true; };
   }, [query, page]);
+
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    const html = document.documentElement;
+    const locked: HTMLElement[] = [html, document.body];
+    document.querySelectorAll(".app-main, .app-content, .coach-main, .coach-content").forEach((el) => {
+      locked.push(el as HTMLElement);
+    });
+    const previous = locked.map((el) => el.style.overflow);
+    html.classList.add("bs-rcpt-lock");
+    locked.forEach((el) => { el.style.overflow = "hidden"; });
+
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      const active = document.activeElement;
+      if (
+        active instanceof HTMLInputElement
+        && active.closest(".bs-rcpt-search")
+        && active.value.trim()
+      ) {
+        return;
+      }
+      event.preventDefault();
+      onCloseRef.current();
+    };
+    const stopBackgroundScroll = (event: WheelEvent | TouchEvent) => {
+      const node = event.target instanceof Element
+        ? event.target
+        : event.target instanceof Node
+          ? event.target.parentElement
+          : null;
+      const scroller = node?.closest(".bs-rcpt-list, .tg-people-list");
+      if (!(scroller instanceof HTMLElement)) {
+        event.preventDefault();
+        return;
+      }
+      if (!(event instanceof WheelEvent)) return;
+      const atTop = scroller.scrollTop <= 0 && event.deltaY < 0;
+      const atBottom = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1 && event.deltaY > 0;
+      if (atTop || atBottom || scroller.scrollHeight <= scroller.clientHeight) event.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    document.addEventListener("wheel", stopBackgroundScroll, { passive: false, capture: true });
+    document.addEventListener("touchmove", stopBackgroundScroll, { passive: false, capture: true });
+    dialogRef.current?.focus();
+
+    return () => {
+      html.classList.remove("bs-rcpt-lock");
+      locked.forEach((el, index) => { el.style.overflow = previous[index]; });
+      window.removeEventListener("keydown", onKey);
+      document.removeEventListener("wheel", stopBackgroundScroll, true);
+      document.removeEventListener("touchmove", stopBackgroundScroll, true);
+    };
+  }, []);
 
   const excluded = useMemo(() => new Set([
     ...(query.excluded_ogrenci_ids || []).map((id) => `ogrenci:${id}`),
@@ -86,6 +146,10 @@ export default function RecipientsModal({
     onChangeQuery(hits.reduce((acc, hit) => includePerson(acc, hit.kind, hit.id), query));
   };
 
+  const removeHit = (hit: BulkRecipientHit) => {
+    onChangeQuery(removeIncluded(query, hit.kind, hit.id));
+  };
+
   const pageSelected = rows.filter((row) => !excluded.has(rowKey(row)));
   const togglePage = (selected: boolean) => {
     let next = query;
@@ -97,38 +161,64 @@ export default function RecipientsModal({
     onChangeQuery(next);
   };
 
-  const pageCount = Math.max(1, Math.ceil(total / 25));
+  const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
   const pickedKeys = new Set([
     ...(query.included_ogrenci_ids || []).map((id) => `ogrenci:${id}`),
     ...(query.included_veli_ids || []).map((id) => `veli:${id}`),
     ...(query.included_personel_ids || []).map((id) => `personel:${id}`),
   ]);
 
-  return (
-    <div className="tg-modal-back" role="dialog" aria-modal="true" aria-label="Alıcılar">
-      <div className="tg-modal">
-        <div className="tg-group-head">
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="bs-rcpt-back" onMouseDown={onClose}>
+      <div
+        ref={dialogRef}
+        className="bs-rcpt"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="bs-rcpt-title"
+        tabIndex={-1}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="bs-rcpt-head">
           <div>
-            <h2 style={{ margin: 0 }}>Alıcılar</h2>
-            <p className="lead" style={{ marginBottom: 0 }}>{total} kişi bu kitlenin içinde</p>
+            <h2 id="bs-rcpt-title">Alıcılar</h2>
+            <p>
+              {loading && total === 0
+                ? "Liste hazırlanıyor"
+                : `${total.toLocaleString("tr-TR")} kişi bu kitlenin içinde`}
+            </p>
           </div>
-          <button type="button" className="tg-btn" onClick={onClose}>Kapat</button>
+          <button type="button" className="bs-rcpt-close" onClick={onClose}>
+            Kapat
+            <kbd>Esc</kbd>
+          </button>
+        </header>
+
+        <div className="bs-rcpt-search">
+          <span>Kitleye kişi ekle</span>
+          <PersonPicker
+            embedded
+            allowPersonel={allowPersonel}
+            addedKeys={pickedKeys}
+            onPickMany={includeHits}
+            onRemove={removeHit}
+          />
         </div>
 
-        <PersonPicker
-          allowPersonel={allowPersonel}
-          excludeKeys={pickedKeys}
-          onPickMany={includeHits}
-        />
-
-        {loading ? (
-          <p className="tg-empty">Liste yükleniyor…</p>
-        ) : (
-          <div className="tg-table-scroll">
-            <table className="tg-table tg-table--recipients">
+        <div className="bs-rcpt-list">
+          {loading ? (
+            <p className="bs-rcpt-empty">Liste yükleniyor…</p>
+          ) : rows.length === 0 ? (
+            <p className="bs-rcpt-empty">Bu kitlede gösterilecek kişi yok.</p>
+          ) : (
+            <table className="bs-rcpt-table">
               <thead>
                 <tr>
-                  <th style={{ width: 36 }}>
+                  <th className="bs-rcpt-check">
                     <input
                       type="checkbox"
                       checked={rows.length > 0 && pageSelected.length === rows.length}
@@ -137,10 +227,10 @@ export default function RecipientsModal({
                     />
                   </th>
                   <th>Ad soyad</th>
-                  <th className="tg-col-secondary">Kişi türü</th>
-                  <th className="tg-col-secondary">Sınıf / Rol</th>
-                  <th className="tg-col-secondary">Şube</th>
-                  <th className="tg-col-secondary">Koç</th>
+                  <th className="bs-rcpt-extra">Kişi türü</th>
+                  <th className="bs-rcpt-extra">Sınıf / Rol</th>
+                  <th className="bs-rcpt-extra">Şube</th>
+                  <th className="bs-rcpt-extra">Koç</th>
                   <th>Telefon</th>
                 </tr>
               </thead>
@@ -148,42 +238,61 @@ export default function RecipientsModal({
                 {rows.map((row) => {
                   const selected = !excluded.has(rowKey(row));
                   return (
-                    <tr key={row.key} className={selected ? "" : "is-off"}>
-                      <td>
+                    <tr
+                      key={row.key}
+                      className={selected ? "" : "is-off"}
+                      onClick={() => toggleRow(row, !selected)}
+                    >
+                      <td className="bs-rcpt-check">
                         <input
                           type="checkbox"
                           checked={selected}
-                          onChange={(e) => toggleRow(row, e.target.checked)}
+                          onClick={(event) => event.stopPropagation()}
+                          onChange={(event) => toggleRow(row, event.target.checked)}
                           aria-label={`${row.display_name} seç`}
                         />
                       </td>
                       <td>
-                        {row.display_name}
+                        <strong>{row.display_name}</strong>
                         {!row.deliverable && (
-                          <div><span className="tg-badge no">{row.skip_reason || "Uygun değil"}</span></div>
+                          <em>{row.skip_reason || "Uygun değil"}</em>
                         )}
                       </td>
-                      <td className="tg-col-secondary"><span className="tg-badge">{personTypeLabel(row.person_type)}</span></td>
-                      <td className="tg-col-secondary">{row.class_or_role || "—"}</td>
-                      <td className="tg-col-secondary">{row.sube_name || "—"}</td>
-                      <td className="tg-col-secondary">{row.coach_name || "—"}</td>
-                      <td>{row.phone || "—"}</td>
+                      <td className="bs-rcpt-extra">
+                        <span className={`bs-rcpt-type is-${row.person_type}`}>
+                          {personTypeLabel(row.person_type)}
+                        </span>
+                      </td>
+                      <td className="bs-rcpt-extra">{row.class_or_role || "—"}</td>
+                      <td className="bs-rcpt-extra">{row.sube_name || "—"}</td>
+                      <td className="bs-rcpt-extra">{row.coach_name || "—"}</td>
+                      <td className="bs-rcpt-phone">{row.phone || "—"}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
-          </div>
-        )}
+          )}
+        </div>
 
-        {pageCount > 1 && (
-          <div className="tg-footer" style={{ marginTop: 12 }}>
-            <button type="button" className="tg-btn" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Önceki</button>
-            <span>{page} / {pageCount}</span>
-            <button type="button" className="tg-btn" disabled={page >= pageCount} onClick={() => setPage((p) => p + 1)}>Sonraki</button>
+        <footer className="bs-rcpt-foot">
+          <span>
+            {total === 0
+              ? "0 kişi"
+              : `${rangeStart.toLocaleString("tr-TR")}–${rangeEnd.toLocaleString("tr-TR")} / ${total.toLocaleString("tr-TR")}`}
+          </span>
+          <div>
+            <button type="button" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
+              Önceki
+            </button>
+            <b>{page} / {pageCount}</b>
+            <button type="button" disabled={page >= pageCount || loading} onClick={() => setPage((p) => p + 1)}>
+              Sonraki
+            </button>
           </div>
-        )}
+        </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

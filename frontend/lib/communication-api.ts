@@ -300,6 +300,8 @@ export interface MessageItem {
   status: string;
   provider_message_id?: string;
   sender_user_id?: number | null;
+  sender_name?: string;
+  source_module?: string;
   failed_reason?: string;
   sent_at?: string | null;
   delivered_at?: string | null;
@@ -308,7 +310,6 @@ export interface MessageItem {
   attachments?: MessageAttachmentItem[];
   reactions?: MessageReactionItem[];
   reply_to?: MessageReplyPreview | null;
-  sender_name?: string;
   is_starred?: boolean;
   is_forwarded?: boolean;
   is_pinned?: boolean;

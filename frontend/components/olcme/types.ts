@@ -27,8 +27,8 @@ export function examSupportsOptionalPhilosophy(examType: string): boolean {
 
 export function optionalPhilosophyHint(examType: string): string {
   return examType === 'YKS_AYT'
-    ? 'Sosyal Bilimler-2 içinde, Din Kültürü sonrası'
-    : 'Sosyal Bilimler içinde, Din Kültürü sonrası';
+    ? 'Sosyal Bilimler-2 içinde, Din Kültürü sonrası 6 soru'
+    : 'Sosyal Bilimler içinde, Din Kültürü sonrası 5 soru';
 }
 
 export const EXAM_STATUS = [

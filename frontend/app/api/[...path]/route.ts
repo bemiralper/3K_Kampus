@@ -61,6 +61,32 @@ const HOP_BY_HOP_HEADERS = new Set([
   'proxy-authorization',
 ]);
 
+/**
+ * Büyük dosyayı (yedek zip’i birkaç GB) belleğe almadan ilet.
+ * arrayBuffer() tüm gövdeyi Node’da tutar; 4 GB sunucuda OOM → nginx 502.
+ */
+function streamProxyResponse(response: Response): Response {
+  const headers = new Headers();
+  response.headers.forEach((value, key) => {
+    const lowerKey = key.toLowerCase();
+    if (lowerKey === 'transfer-encoding' || lowerKey === 'connection' || lowerKey === 'keep-alive') {
+      return;
+    }
+    if (lowerKey === 'set-cookie') {
+      headers.append('Set-Cookie', value);
+    } else {
+      headers.set(key, value);
+    }
+  });
+  headers.set('Cache-Control', 'no-store');
+  headers.set('X-Accel-Buffering', 'no');
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 /** PDF, Excel vb. binary yanıtlar text() ile okunursa dosya bozulur (boş sayfa). */
 function isBinaryResponse(contentType: string, disposition: string | null): boolean {
   const ct = contentType.toLowerCase();
@@ -140,6 +166,7 @@ async function proxyRequest(request: NextRequest, path: string) {
     headers,
     body,
     redirect: 'manual',
+    cache: 'no-store',
   };
   const safeRetry =
     !isEventStream && ['GET', 'HEAD'].includes(request.method.toUpperCase());
@@ -183,14 +210,15 @@ async function proxyRequest(request: NextRequest, path: string) {
       return streamResponse;
     }
 
-    // Binary export (PDF, Excel) — arrayBuffer ile ilet; text() bozar
+    // Binary (PDF, Excel, yedek arşivi) — akıt; text() bozar, arrayBuffer() belleği doldurur
     const responseContentType = response.headers.get('content-type') || '';
     const disposition = response.headers.get('content-disposition');
     const binary = isBinaryResponse(responseContentType, disposition);
+    if (binary && response.body) {
+      return streamProxyResponse(response);
+    }
 
-    const responseBody = binary
-      ? await response.arrayBuffer()
-      : await response.text();
+    const responseBody = await response.text();
 
     const proxyResponse = new NextResponse(responseBody, {
       status: response.status,

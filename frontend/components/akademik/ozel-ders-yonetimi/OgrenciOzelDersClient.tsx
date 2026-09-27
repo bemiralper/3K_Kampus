@@ -91,6 +91,7 @@ import {
   addDaysIso,
   buildPeriods,
   dateOnIsoWeek,
+  durationBetween,
   formatDateTr,
   formatDurationDk,
   isoWeekday,
@@ -98,6 +99,7 @@ import {
   timeToMinutes,
   type PeriodRow,
 } from './haftalikGridUtils';
+import SlotClockFields from './SlotClockFields';
 import './ozel-ders.css';
 import './ozel-ders-ops.css';
 
@@ -747,6 +749,10 @@ export default function OgrenciOzelDersClient() {
     const dersId = Number(form.ders_id);
     const targetProgramId = resolveProgramIdForDers(programs, dersId);
     if (!targetProgramId) return;
+    if (durationBetween(form.baslangic, form.bitis) == null) {
+      show('Bitiş saati başlangıçtan sonra olmalı.', 'error');
+      return;
+    }
     setSaving(true);
     try {
       await createSlot(targetProgramId, {
@@ -787,6 +793,10 @@ export default function OgrenciOzelDersClient() {
   async function onSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!detailLesson) return;
+    if (durationBetween(editForm.baslangic, editForm.bitis) == null) {
+      show('Bitiş saati başlangıçtan sonra olmalı.', 'error');
+      return;
+    }
     setSavingEdit(true);
     try {
       await updateSlot(detailLesson.id, {
@@ -1869,16 +1879,12 @@ export default function OgrenciOzelDersClient() {
               ))}
             </select>
           </div>
-          <div className="od-form-row">
-            <div className="od-form-group">
-              <label>Başlangıç</label>
-              <input type="time" value={form.baslangic} readOnly />
-            </div>
-            <div className="od-form-group">
-              <label>Bitiş</label>
-              <input type="time" value={form.bitis} readOnly />
-            </div>
-          </div>
+          <SlotClockFields
+            value={form}
+            onChange={(next) => setForm((f) => ({ ...f, ...next }))}
+            periods={periods}
+            defaultSureDk={config.sureDk}
+          />
           <div className="od-form-group">
             <label>
               Ders <span className="req">*</span>
@@ -2054,32 +2060,12 @@ export default function OgrenciOzelDersClient() {
                 ))}
               </select>
             </div>
-            <div className="od-form-group">
-              <label>Saat dilimi</label>
-              <select
-                value={
-                  periods.some((p) => p.baslangic === editForm.baslangic)
-                    ? editForm.baslangic
-                    : periods[0]?.baslangic || editForm.baslangic
-                }
-                onChange={(e) => {
-                  const period = periods.find((p) => p.baslangic === e.target.value);
-                  if (!period) return;
-                  setEditForm((f) => ({
-                    ...f,
-                    baslangic: period.baslangic,
-                    bitis: period.bitis,
-                    sure_dk: String(config.sureDk),
-                  }));
-                }}
-              >
-                {periods.map((p) => (
-                  <option key={p.key} value={p.baslangic}>
-                    {p.label}: {p.baslangic}–{p.bitis}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <SlotClockFields
+              value={editForm}
+              onChange={(next) => setEditForm((f) => ({ ...f, ...next }))}
+              periods={periods}
+              defaultSureDk={config.sureDk}
+            />
             <div className="od-form-group">
               <label>Ders</label>
               <select

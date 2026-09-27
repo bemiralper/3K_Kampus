@@ -337,7 +337,11 @@ export default function OgrenciHaftalikTakvim({
                               }}
                             >
                               <span className="od-week-chip-title">{resolveDersLabel(o, useKisaAd)}</span>
-                              <span className="od-week-chip-sub">{o.ogretmen_ad}</span>
+                              <span className="od-week-chip-sub">
+                                {o.end_time.slice(0, 5) !== period.bitis
+                                  ? `${o.start_time.slice(0, 5)}–${o.end_time.slice(0, 5)} · ${o.ogretmen_ad}`
+                                  : o.ogretmen_ad}
+                              </span>
                               <span className="od-week-chip-status">{durumLine(o)}</span>
                             </button>
                           ))
@@ -358,7 +362,7 @@ export default function OgrenciHaftalikTakvim({
                   {days.map((date) => {
                     const items = cellMap.extra.filter((o) => o.session_date === date);
                     return (
-                      <td key={date} className={`od-grid-cell${items.length ? ' is-filled' : ''}`}>
+                      <td key={date} className={`od-grid-cell is-extra${items.length ? ' is-filled' : ''}`}>
                         {items.map((o) => (
                           <button
                             key={o.id}
@@ -368,7 +372,7 @@ export default function OgrenciHaftalikTakvim({
                           >
                             <span className="od-week-chip-title">{resolveDersLabel(o, useKisaAd)}</span>
                             <span className="od-week-chip-sub">
-                              {o.start_time.slice(0, 5)} · {o.ogretmen_ad}
+                              {o.start_time.slice(0, 5)}–{o.end_time.slice(0, 5)} · {o.ogretmen_ad}
                             </span>
                             <span className="od-week-chip-status">{durumLine(o)}</span>
                           </button>

@@ -285,6 +285,70 @@ class AudienceQueryScenarioTest(TestCase):
         self.assertEqual(quick['kutuphane_ogrenciler']['add_field'], 'ek_hizmet_turu')
         self.assertEqual(quick['kutuphane_ogrenciler']['add_value'], ['kutuphane'])
 
+    def test_catalog_hides_other_branch_packages_and_services(self):
+        from apps.egitim_paketleri.models import GrupDersi
+        from apps.communication.application.audience_catalog import build_audience_catalog
+
+        other = Sube.objects.create(kurum=self.kurum, ad='Diğer', kod='KTL-D')
+        other_sinif = Sinif.objects.create(
+            kurum=self.kurum, sube=other, egitim_yili=self.year,
+            ad='11-D', kod='11D', sinif_seviyesi=self.seviye_11, aktif_mi=True,
+        )
+        other_student = Ogrenci.objects.create(
+            kurum=self.kurum, sube=other, ad='Ela', soyad='Diger',
+            telefon='05321110099', aktif_mi=True,
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=other_student, sinif=other_sinif, sinif_seviyesi=self.seviye_11,
+            egitim_yili=self.year, kurum=self.kurum, sube=other, aktif_mi=True,
+        )
+        other_paket = GrupDersi.objects.create(
+            kurum=self.kurum, sube=other, egitim_yili=self.year,
+            ad='Diğer Şube YKS', kod='D-YKS',
+        )
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=other_student, paket_turu='grup_dersi', paket_id=other_paket.id,
+            paket_adi='Diğer Şube YKS', aktif_mi=True,
+        )
+        # Bu şubenin öğrencisi başka şubenin paketine yazılmış olsa da listelenmez.
+        OgrenciEgitimPaketi.objects.create(
+            ogrenci=self.s_11a, paket_turu='grup_dersi', paket_id=other_paket.id,
+            paket_adi='Diğer Şube YKS', aktif_mi=True,
+        )
+        other_hizmet = EkHizmet.objects.create(
+            kurum=self.kurum, sube=other, egitim_yili=self.year,
+            ad='Diğer Kütüphane', kod='KTP-D', hizmet_turu='kutuphane',
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=other_student, ek_hizmet=other_hizmet,
+            egitim_yili=self.year, aktif_mi=True,
+        )
+
+        catalog = build_audience_catalog(
+            self.kurum.id,
+            user=self.admin,
+            sube_id=self.sube.id,
+            egitim_yili_id=self.year.id,
+        )
+        fields = {f['key']: f for f in catalog['fields']}
+        packet_values = {o['value'] for o in fields['paket']['options']}
+        hizmet_values = {o['value'] for o in fields['ek_hizmet_id']['options']}
+        self.assertNotIn(f'grup_dersi:{other_paket.id}', packet_values)
+        self.assertIn('grup_dersi:101', packet_values)
+        self.assertNotIn(other_hizmet.id, hizmet_values)
+        self.assertIn(self.hizmet_kutuphane.id, hizmet_values)
+
+        other_catalog = build_audience_catalog(
+            self.kurum.id,
+            user=self.admin,
+            sube_id=other.id,
+            egitim_yili_id=self.year.id,
+        )
+        other_fields = {f['key']: f for f in other_catalog['fields']}
+        other_packets = {o['value'] for o in other_fields['paket']['options']}
+        self.assertIn(f'grup_dersi:{other_paket.id}', other_packets)
+        self.assertNotIn('grup_dersi:101', other_packets)
+
     def test_scenario_9_kayit_turu(self):
         result = self._resolve(_query(['ogrenci'], [_group(_f('kayit_turu', 'misafir'))]))
         self.assertEqual(self._ids(result, 'ogrenci'), {self.s_12b.id})

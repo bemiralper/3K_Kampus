@@ -69,11 +69,13 @@ class Command(BaseCommand):
         )
         self.stdout.write(self.style.SUCCESS(f'Yedek oluşturuldu: {artifact.filename}'))
 
-        # Retention: zamanlı yedek sonrası eski yedekleri otomatik temizle.
+        # Yaş sınırı, log temizliği ve eski sohbet ekleri — yedekle aynı turda.
         try:
-            from apps.yedekleme.engine.retention import RetentionService
-            purged = RetentionService().purge()
-            if purged.get('deleted'):
-                self.stdout.write(f'Retention: {purged["deleted"]} eski yedek silindi.')
+            from apps.yedekleme.engine.housekeeping import run_housekeeping
+            purged = run_housekeeping()
+            deleted = (purged.get('backups') or {}).get('deleted') or 0
+            files = (purged.get('attachments') or {}).get('files_deleted') or 0
+            if deleted or files:
+                self.stdout.write(f'Temizlik: {deleted} eski yedek, {files} sohbet eki silindi.')
         except Exception as exc:  # noqa: BLE001
-            self.stderr.write(f'Retention uyarısı: {exc}')
+            self.stderr.write(f'Temizlik uyarısı: {exc}')

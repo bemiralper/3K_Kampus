@@ -8,6 +8,7 @@ from apps.communication.application.meta_template_service import (
     MetaTemplateServiceError,
 )
 from apps.communication.domain.enums import (
+    CampaignAudience,
     Channel,
     MetaTemplateCategory,
     MetaTemplateStatus,
@@ -94,6 +95,36 @@ class SharedWabaTemplateTests(TestCase):
         winner = next(t for t in listed if t.name == 'ortak_sablon')
         self.assertEqual(winner.id, on_a.id)
         self.assertNotEqual(winner.id, on_b.id)
+
+    def test_genel_campaign_template_lists_on_every_account(self):
+        self._make_tpl(
+            self.acc_other,
+            name='kurum_genel_duyuru',
+            campaign_audience=CampaignAudience.GENEL,
+        )
+        self._make_tpl(
+            self.acc_other,
+            name='veli_ozel_duyuru',
+            campaign_audience=CampaignAudience.VELI,
+        )
+        self._make_tpl(
+            self.acc_other,
+            name='sistem_bildirim',
+            usage_scope=MetaTemplateUsage.SYSTEM,
+            campaign_audience='',
+        )
+
+        listed = list(
+            MetaTemplateService.list_templates(
+                self.kurum.id,
+                channel_config_id=self.acc_a.id,
+                include_shared_waba=False,
+            )
+        )
+        names = {t.name for t in listed}
+        self.assertIn('kurum_genel_duyuru', names)
+        self.assertNotIn('veli_ozel_duyuru', names)
+        self.assertNotIn('sistem_bildirim', names)
 
     def test_list_without_shared_flag_is_exact(self):
         self._make_tpl(self.acc_b, name='sadece_b')

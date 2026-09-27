@@ -179,8 +179,8 @@ class OptionalPhilosophyAytTemplateTest(TestCase):
         fen = next(row for row in mains if row['name'] == 'Fen Bilimleri')
         self.assertEqual((tde['question_start'], tde['question_end']), (1, 40))
         self.assertEqual((sosyal['question_start'], sosyal['question_end']), (41, 80))
-        self.assertEqual((mat['question_start'], mat['question_end']), (86, 125))
-        self.assertEqual((fen['question_start'], fen['question_end']), (126, 165))
+        self.assertEqual((mat['question_start'], mat['question_end']), (87, 126))
+        self.assertEqual((fen['question_start'], fen['question_end']), (127, 166))
 
         sosyal_subs = [row['name'] for row in subs['Sosyal Bilimler-2']]
         self.assertEqual(
@@ -191,9 +191,9 @@ class OptionalPhilosophyAytTemplateTest(TestCase):
             ],
         )
         phil = next(row for row in subs['Sosyal Bilimler-2'] if row['name'] == OPTIONAL_PHILOSOPHY_NAME)
-        self.assertEqual((phil['question_start'], phil['question_end']), (81, 85))
+        self.assertEqual((phil['question_start'], phil['question_end']), (81, 86))
         bio = next(row for row in subs['Fen Bilimleri'] if row['name'] == 'Biyoloji')
-        self.assertEqual((bio['question_start'], bio['question_end']), (153, 165))
+        self.assertEqual((bio['question_start'], bio['question_end']), (154, 166))
 
     def test_template_without_optional_keeps_classic_ranges(self):
         mains = get_template_sections('YKS_AYT', include_optional_philosophy=False)
@@ -218,7 +218,7 @@ class OptionalPhilosophyAytTemplateTest(TestCase):
         phil = names[OPTIONAL_PHILOSOPHY_NAME]
         self.assertTrue(phil.is_sub_section)
         self.assertEqual(phil.parent_section.name, 'Sosyal Bilimler-2')
-        self.assertEqual((phil.question_start, phil.question_end), (81, 85))
+        self.assertEqual((phil.question_start, phil.question_end), (81, 86))
         self.assertEqual(phil.subject_id, subject.id)
         self.assertEqual(names['Felsefe Grubu'].subject_id, subject.id)
 
@@ -241,13 +241,47 @@ class OptionalPhilosophyAytTemplateTest(TestCase):
         sync_optional_philosophy_section(exam)
 
         item.refresh_from_db()
-        self.assertEqual(item.question_number, 86)
+        self.assertEqual(item.question_number, 87)
         phil = exam.sections.get(name=OPTIONAL_PHILOSOPHY_NAME)
-        self.assertEqual((phil.question_start, phil.question_end), (81, 85))
+        self.assertEqual((phil.question_start, phil.question_end), (81, 86))
         mat.refresh_from_db()
-        self.assertEqual((mat.question_start, mat.question_end), (86, 115))
+        self.assertEqual((mat.question_start, mat.question_end), (87, 116))
 
-    def test_sync_off_does_not_invent_section(self):
+    def test_short_ayt_block_grows_without_moving_question_numbers(self):
+        from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
+        from apps.coaching.olcme_degerlendirme.models.exam import ExamSection
+
+        exam = Exam.objects.create(
+            name='AYT Eski 5', exam_type='YKS_AYT', include_optional_philosophy=True,
+        )
+        sosyal = ExamSection.objects.create(
+            exam=exam, name='Sosyal Bilimler-2', question_start=41, question_end=80, order=1,
+        )
+        ExamSection.objects.create(
+            exam=exam, name=OPTIONAL_PHILOSOPHY_NAME, question_start=81, question_end=85,
+            order=4, is_sub_section=True, parent_section=sosyal,
+        )
+        mat = ExamSection.objects.create(
+            exam=exam, name='Matematik', question_start=86, question_end=125, order=2,
+        )
+        geo = ExamSection.objects.create(
+            exam=exam, name='Geometri', question_start=116, question_end=125,
+            order=1, is_sub_section=True, parent_section=mat,
+        )
+        key = AnswerKey.objects.create(exam=exam, booklet='A', is_primary=True)
+        kept = AnswerKeyItem.objects.create(
+            answer_key=key, section=geo, question_number=86, correct_answer='C',
+        )
+
+        sync_optional_philosophy_section(exam)
+
+        kept.refresh_from_db()
+        self.assertEqual(kept.question_number, 86)
+        phil = exam.sections.get(name=OPTIONAL_PHILOSOPHY_NAME)
+        self.assertEqual((phil.question_start, phil.question_end), (81, 86))
+        self.assertEqual(kept.section_id, phil.id)
+        mat.refresh_from_db()
+        self.assertEqual((mat.question_start, mat.question_end), (87, 126))
         exam = Exam.objects.create(
             name='AYT Classic', exam_type='YKS_AYT', include_optional_philosophy=False,
         )
@@ -278,8 +312,8 @@ class OptionalPhilosophyAnswerGridTest(TestCase):
             ['TDE-Sosyal Bilimler-1', 'Sosyal Bilimler-2', OPTIONAL_PHILOSOPHY_NAME],
         )
         phil = next(g for g in grids if g['section_name'] == OPTIONAL_PHILOSOPHY_NAME)
-        self.assertEqual([q['q'] for q in phil['questions']], [81, 82, 83, 84, 85])
-        self.assertEqual([q['n'] for q in phil['questions']], [1, 2, 3, 4, 5])
+        self.assertEqual([q['q'] for q in phil['questions']], [81, 82, 83, 84, 85, 86])
+        self.assertEqual([q['n'] for q in phil['questions']], [1, 2, 3, 4, 5, 6])
         fen = next(g for g in grids if g['section_name'] == 'Fen Bilimleri')
         self.assertEqual(fen['questions'][0]['n'], 1)
         self.assertEqual(len(fen['questions']), 40)

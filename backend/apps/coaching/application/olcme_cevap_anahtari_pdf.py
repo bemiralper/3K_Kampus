@@ -8,7 +8,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import mm
-from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Table, TableStyle
 
 from apps.coaching.application.olcme_pdf_brand import (
     BRAND, BRAND_DARK, BRAND_SOFT, INK,
@@ -45,6 +45,14 @@ def cevap_anahtari_filename(exam) -> str:
     if date_label:
         return f'{name}_{_safe_filename(date_label)}.pdf'
     return f'{name}.pdf'
+
+
+def _copy_sequence(payloads, copies: int) -> list:
+    """Sayfadaki kart sayısı seçilen adettir. 1 adet tek kart basar, 6 slota tamamlanmaz."""
+    if not payloads:
+        return []
+    count = copies if copies in ALLOWED_COPIES else 1
+    return [payloads[i % len(payloads)] for i in range(count)]
 
 
 def parse_copies(value) -> int:
@@ -698,41 +706,33 @@ def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) 
     usable_w = page_w - 2 * margin - 2 * frame_pad
     usable_h = page_h - 2 * margin - 2 * frame_pad
 
-    side_by_side = copies == 1 and len(payloads) > 1
-    if side_by_side:
-        grid_cols, grid_rows = 2, 1
-        sequence = payloads[:2]
-        extra = payloads[2:]
-    elif copies == 1:
-        grid_cols, grid_rows = 1, 1
-        sequence = payloads
-        extra = []
-    else:
+    # 1 ve 2 kopya da 6'lık kartın tablosunu kullanır. Sayfa boyuna gerilmez
+    # ve 6 slota tamamlanmaz.
+    sequence = _copy_sequence(payloads, copies)
+    card = _LAYOUT[6]
+    card_cols, card_rows = card['cols'], card['rows']
+    card_w = (usable_w - gap * (card_cols - 1)) / card_cols
+    card_h = (usable_h - gap * (card_rows - 1)) / card_rows
+    if copies >= 4:
         layout = _LAYOUT[copies]
         grid_cols, grid_rows = layout['cols'], layout['rows']
-        sequence = [payloads[i % len(payloads)] for i in range(copies)]
-        extra = []
-
-    tile_w = (usable_w - gap * (grid_cols - 1)) / grid_cols
-    scale = _tile_scale(copies, side_by_side=side_by_side)
+        tile_w = (usable_w - gap * (grid_cols - 1)) / grid_cols
+        tile_h = (usable_h - gap * (grid_rows - 1)) / grid_rows
+        scale = _tile_scale(copies)
+    else:
+        grid_cols = 1 if len(sequence) == 1 else 2
+        grid_rows = (len(sequence) + grid_cols - 1) // grid_cols
+        tile_w, tile_h = card_w, card_h
+        scale = _tile_scale(6)
     tallest = max(sequence, key=lambda pair: len(_row_kinds(pair[1])))
-    preview_h = None
-    if not (grid_rows == 1 and copies == 1 and not side_by_side):
-        room = usable_h - gap * (grid_rows - 1)
-        preview_h = room / grid_rows
     scale = _scale_for_tile(
         scale,
         _row_kinds(tallest[1]),
-        preview_h,
-        allow_grow=copies != 1 or side_by_side,
+        tile_h,
+        allow_grow=True,
     )
     styles = _styles(font, font_bold, scale)
-    fill_tile = not (copies == 1 and not side_by_side)
-    if copies == 1 and not side_by_side:
-        tile_h = usable_h
-    else:
-        room = usable_h - gap * (grid_rows - 1)
-        tile_h = room / grid_rows
+    fill_tile = True
 
     def tile(payload, width, height):
         key, items = payload
@@ -750,19 +750,10 @@ def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) 
     )
     story = []
 
-    if copies == 1 and not side_by_side:
-        for payload in sequence:
-            story.append(tile(payload, usable_w, tile_h))
-    else:
-        cells = []
-        for payload in sequence:
-            cells.append(tile(payload, tile_w, tile_h))
-        while len(cells) < grid_cols * grid_rows:
-            cells.append('')
-        story.append(_gapped_grid(cells, grid_cols, grid_rows, tile_w, tile_h, gap))
-        for payload in extra:
-            story.append(Spacer(1, gap))
-            story.append(tile(payload, usable_w, None))
+    cells = [tile(payload, tile_w, tile_h) for payload in sequence]
+    while len(cells) < grid_cols * grid_rows:
+        cells.append('')
+    story.append(_gapped_grid(cells, grid_cols, grid_rows, tile_w, tile_h, gap))
 
     doc.build(story)
     return buf.getvalue()

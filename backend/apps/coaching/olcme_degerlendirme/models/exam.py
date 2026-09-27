@@ -128,8 +128,8 @@ class Exam(models.Model):
         'Felsefe (Seçmeli)',
         default=True,
         help_text=(
-            'TYT ve AYT’de Din Kültürü’nden hemen sonra gelen 5 soruluk seçmeli felsefe. '
-            'Varsayılan: dahil. Sözel puan hesaplamasında kullanılır.'
+            'Din Kültürü’nden hemen sonra gelen seçmeli felsefe '
+            '(TYT 5 soru, AYT 6 soru). Varsayılan: dahil. Sözel puan hesaplamasında kullanılır.'
         ),
     )
     answer_key_pdf = models.FileField(
