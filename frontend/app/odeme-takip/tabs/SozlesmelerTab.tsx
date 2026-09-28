@@ -1673,10 +1673,6 @@ function OdemePlaniSubTab({
       setSaveError(`Plan toplamı (${formatCurrency(manuelToplam)}) hedef tutarla (${formatCurrency(hedefTutar)}) uyuşmuyor.`);
       return;
     }
-    if (korunanOdeme && taksitPlanDirty) {
-      setSaveError("Ödenmiş taksitler varken satır düzenlemesi yapılamaz. Parametreleri değiştirip «Eşit Böl» kullanın.");
-      return;
-    }
 
     let yontem: string;
     if (korunanOdeme) {
@@ -1697,7 +1693,7 @@ function OdemePlaniSubTab({
       };
       if (yontem === "esit") {
         body.pesinat = effectivePesinat;
-      } else if (yontem === "manuel") {
+      } else if (yontem === "manuel" || yontem === "kalani_bol") {
         body.taksitler = validRows.map(r => ({
           tutar: parseFloat(r.tutar),
           vade_tarihi: r.vade_tarihi,
@@ -1821,7 +1817,7 @@ function OdemePlaniSubTab({
                 🔒 {odenmisTaksitler.length} taksit ödenmiş ({formatCurrency(toplamOdenmis)}) — korunacak
               </div>
               <div className="odeme-warning-text" style={{ fontSize: 13, color: "#78350f", marginTop: 4 }}>
-                Kalan bakiye {formatCurrency(kalanTutar)} yeni plana eşit bölünecek. Satır düzenlemesi devre dışı.
+                Ödenmiş taksit yerinde kalır. Aşağıdaki satırlar yalnızca kalan {formatCurrency(kalanTutar)} içindir; tutar ve vadeyi değiştirebilirsiniz.
               </div>
             </div>
           )}
@@ -1896,16 +1892,13 @@ function OdemePlaniSubTab({
               <div key={i} style={{ display: "grid", gridTemplateColumns: isCekSenetSozlesme ? "40px 1fr 1fr 1fr 40px" : "40px 1fr 1fr 40px", gap: 8, alignItems: "center" }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: "#6b7280" }}>{i + 1}</span>
                 <input className="odeme-form-control" type="number" min="0" step="1" value={row.tutar}
-                  disabled={korunanOdeme}
                   onChange={e => handleManuelTutarChange(i, e.target.value)} placeholder="Tutar" />
                 <input className="odeme-form-control" type="date" value={row.vade_tarihi}
-                  disabled={korunanOdeme}
                   onChange={e => handleManuelDateChange(i, e.target.value)} />
                 {isCekSenetSozlesme && (
                   <select
                     className="odeme-form-control"
                     value={row.odeme_yontemi_id ?? ""}
-                    disabled={korunanOdeme}
                     onChange={(e) => {
                       const rows = [...manuelRows];
                       rows[i].odeme_yontemi_id = e.target.value ? Number(e.target.value) : "";
@@ -1921,22 +1914,18 @@ function OdemePlaniSubTab({
                     ))}
                   </select>
                 )}
-                {!korunanOdeme && (
-                  <button type="button" onClick={() => {
-                    if (manuelRows.length <= 1) return;
-                    applyTaksitSayisi(taksitSayisiInt - 1);
-                  }}
-                    disabled={manuelRows.length <= 1}
-                    style={{ border: "none", background: "none", cursor: "pointer", color: "#dc2626", fontSize: 16, opacity: manuelRows.length <= 1 ? 0.3 : 1 }}>✕</button>
-                )}
+                <button type="button" onClick={() => {
+                  if (manuelRows.length <= 1) return;
+                  applyTaksitSayisi(taksitSayisiInt - 1);
+                }}
+                  disabled={manuelRows.length <= 1}
+                  style={{ border: "none", background: "none", cursor: "pointer", color: "#dc2626", fontSize: 16, opacity: manuelRows.length <= 1 ? 0.3 : 1 }}>✕</button>
               </div>
             ))}
-            {!korunanOdeme && (
-              <button type="button" onClick={() => applyTaksitSayisi(taksitSayisiInt + 1)}
-                className="btn-modern btn-secondary" style={{ justifyContent: "center", border: "1px dashed var(--border-color)" }}>
-                + Taksit Ekle
-              </button>
-            )}
+            <button type="button" onClick={() => applyTaksitSayisi(taksitSayisiInt + 1)}
+              className="btn-modern btn-secondary" style={{ justifyContent: "center", border: "1px dashed var(--border-color)" }}>
+              + Taksit Ekle
+            </button>
             <div className="odeme-preview" style={{ background: Math.abs(manuelToplam - hedefTutar) < 1 ? "#ecfdf5" : "#fef2f2", borderColor: Math.abs(manuelToplam - hedefTutar) < 1 ? "#bbf7d0" : "#fecaca" }}>
               <div className="odeme-preview-grid">
                 <span>Plan Toplamı:</span><span style={{ fontWeight: 700, textAlign: "right" }}>{formatCurrency(manuelToplam)}</span>

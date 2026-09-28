@@ -628,12 +628,35 @@ class SozlesmeService:
                 durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI],
             ).exists()
             if is_aktif and has_paid_taksit:
-                self.taksit_service.create_remaining_plan(
-                    sozlesme=sozlesme,
-                    taksit_sayisi=sozlesme.taksit_sayisi,
-                    ilk_odeme_tarihi=sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi,
-                    periyot=sozlesme.taksit_periyodu,
-                )
+                # Ödenmiş taksit varken kullanıcının tablosu yok sayılıp kalan
+                # borç taksit_sayisi kadar YENİ eşit taksite bölünüyordu.
+                yontem = data.get('taksit_yontemi') or 'esit'
+                manuel = data.get('manuel_taksitler') or []
+                if yontem == 'manuel' and manuel:
+                    self.taksit_service.apply_plan_preserving_paid(sozlesme, manuel)
+                elif yontem == 'yuzde' and data.get('yuzde_dagilim'):
+                    raise ValueError(
+                        'Ödemesi olan sözleşmede yüzde planı uygulanamaz. '
+                        'Taksit tutarlarını satır satır girin.'
+                    )
+                else:
+                    paid_count = Taksit.objects.filter(
+                        sozlesme=sozlesme,
+                        durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI],
+                    ).count()
+                    remaining_count = max(1, int(sozlesme.taksit_sayisi or 1) - paid_count)
+                    self.taksit_service.create_remaining_plan(
+                        sozlesme=sozlesme,
+                        taksit_sayisi=remaining_count,
+                        ilk_odeme_tarihi=sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi,
+                        periyot=sozlesme.taksit_periyodu,
+                    )
+                final_count = Taksit.objects.filter(sozlesme=sozlesme).exclude(
+                    durum=TaksitDurum.IPTAL,
+                ).count()
+                if sozlesme.taksit_sayisi != final_count:
+                    sozlesme.taksit_sayisi = final_count
+                    sozlesme.save(update_fields=['taksit_sayisi', 'updated_at'])
             else:
                 self._apply_taksit_plan(sozlesme, data)
 

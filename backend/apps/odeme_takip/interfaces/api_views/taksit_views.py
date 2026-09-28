@@ -99,7 +99,7 @@ def taksit_plani_olustur(request, sozlesme_id):
         periyot=periyot,
         yontem=yontem,
         pesinat=pesinat,
-        manuel_taksitler=manuel_taksitler if yontem == 'manuel' else None,
+        manuel_taksitler=manuel_taksitler if yontem in ('manuel', 'kalani_bol') else None,
         yuzde_listesi=yuzde_listesi if yontem == 'yuzde' else None,
         taksit_odeme_yontemleri=taksit_odeme_yontemleri,
     )
@@ -109,7 +109,9 @@ def taksit_plani_olustur(request, sozlesme_id):
 
     # Sözleşmeyi de güncelle
     update_fields = {}
-    if yontem != 'manuel':
+    if yontem == 'kalani_bol' and isinstance(result, list):
+        update_fields['taksit_sayisi'] = len(result)
+    elif yontem != 'manuel':
         update_fields['taksit_sayisi'] = taksit_sayisi
     else:
         update_fields['taksit_sayisi'] = len(manuel_taksitler) + len(

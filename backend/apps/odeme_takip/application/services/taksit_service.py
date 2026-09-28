@@ -141,6 +141,100 @@ class TaksitService:
                 f'Taksit toplamı ({toplam} TL) sözleşme net tutarıyla ({net} TL) uyuşmuyor'
             )
 
+    def apply_plan_preserving_paid(self, sozlesme, taksitler):
+        """Ödemesi olan taksitleri silmeden, kullanıcının planını yazar.
+
+        Planın başındaki satırlar ödenmiş taksit tutarlarıyla aynı kalmalıdır.
+        Sonraki satırlar bekleyen taksitlerin yerine geçer.
+        """
+        from datetime import date as date_cls
+
+        from django.db.models import Q
+        from django.db.models.deletion import ProtectedError
+
+        from apps.odeme_takip.domain.enums import TahsilatDurum
+        from apps.odeme_takip.domain.models import Tahsilat
+
+        rows = []
+        for raw in taksitler or []:
+            tutar = int(round(float(raw['tutar'])))
+            vade = raw['vade_tarihi']
+            if isinstance(vade, str):
+                vade = date_cls.fromisoformat(vade[:10])
+            rows.append({
+                'tutar': tutar,
+                'vade_tarihi': vade,
+                'odeme_yontemi_id': raw.get('odeme_yontemi_id') or None,
+            })
+        if not rows:
+            raise ValueError('Taksit listesi boş')
+
+        toplam = sum(row['tutar'] for row in rows)
+        net = int(sozlesme.net_tutar)
+        if abs(toplam - net) > 1:
+            raise ValueError(
+                f'Taksit toplamı ({toplam} TL) sözleşme net tutarıyla ({net} TL) uyuşmuyor'
+            )
+
+        linked_ids = Tahsilat.objects.filter(
+            sozlesme=sozlesme,
+            taksit__isnull=False,
+        ).exclude(
+            durum=TahsilatDurum.IPTAL_EDILDI,
+        ).values_list('taksit_id', flat=True)
+
+        locked_qs = Taksit.objects.filter(sozlesme=sozlesme).filter(
+            Q(id__in=linked_ids)
+            | Q(durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI])
+            | Q(odenen_tutar__gt=0)
+        ).order_by('taksit_no', 'id')
+        locked = []
+        seen = set()
+        for taksit in locked_qs:
+            if taksit.id in seen:
+                continue
+            seen.add(taksit.id)
+            locked.append(taksit)
+
+        if len(rows) < len(locked):
+            raise ValueError(
+                'Ödenmiş taksitler plandan çıkarılamaz. '
+                f'Plan en az {len(locked)} satır olmalı ve ödenen tutarlar başta aynen kalmalı.'
+            )
+
+        for index, taksit in enumerate(locked):
+            row = rows[index]
+            if row['tutar'] != int(taksit.tutar):
+                raise ValueError(
+                    f'Ödenmiş {taksit.taksit_no}. taksit ({int(taksit.tutar)} TL) değiştirilemez. '
+                    'Bu tutar planın başında aynı kalmalı; kalan borcu sonraki satırlarda bölün.'
+                )
+            if taksit.vade_tarihi != row['vade_tarihi']:
+                taksit.vade_tarihi = row['vade_tarihi']
+                taksit.save(update_fields=['vade_tarihi', 'updated_at'])
+
+        try:
+            Taksit.objects.filter(sozlesme=sozlesme).exclude(
+                id__in=[taksit.id for taksit in locked],
+            ).delete()
+        except ProtectedError as exc:
+            raise ValueError(
+                'Ödemesi olan bir taksit silinemedi. Ödenmiş satırlar planın başında aynen durmalı.'
+            ) from exc
+
+        son_no = locked[-1].taksit_no if locked else 0
+        for offset, row in enumerate(rows[len(locked):]):
+            Taksit.objects.create(
+                sozlesme=sozlesme,
+                taksit_no=son_no + 1 + offset,
+                vade_tarihi=row['vade_tarihi'],
+                tutar=row['tutar'],
+                odenen_tutar=0,
+                kalan_tutar=row['tutar'],
+                durum=TaksitDurum.BEKLEMEDE,
+                odeme_yontemi_id=row['odeme_yontemi_id'] or None,
+            )
+
     # ─── YÜZDE BAZLI TAKSİT PLANI ────────
     def create_percentage_plan(self, sozlesme, yuzde_listesi, tarih_listesi):
         """
@@ -170,44 +264,114 @@ class TaksitService:
                 durum=TaksitDurum.BEKLEMEDE,
             )
 
+    def _payment_locked_taksits(self, sozlesme):
+        """Tahsilatı olan veya ödenmiş/kısmi taksitler. Silinmez."""
+        from django.db.models import Q
+
+        from apps.odeme_takip.domain.enums import TahsilatDurum
+        from apps.odeme_takip.domain.models import Tahsilat
+
+        linked_ids = Tahsilat.objects.filter(
+            sozlesme=sozlesme,
+            taksit__isnull=False,
+        ).exclude(
+            durum=TahsilatDurum.IPTAL_EDILDI,
+        ).values_list('taksit_id', flat=True)
+        locked_qs = Taksit.objects.filter(sozlesme=sozlesme).filter(
+            Q(id__in=linked_ids)
+            | Q(durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI])
+            | Q(odenen_tutar__gt=0)
+        ).order_by('taksit_no', 'id')
+        locked = []
+        seen = set()
+        for taksit in locked_qs:
+            if taksit.id in seen:
+                continue
+            seen.add(taksit.id)
+            locked.append(taksit)
+        return locked
+
+    def _delete_unlocked_taksits(self, sozlesme, locked):
+        from django.db.models.deletion import ProtectedError
+
+        qs = Taksit.objects.filter(sozlesme=sozlesme)
+        if locked:
+            qs = qs.exclude(id__in=[taksit.id for taksit in locked])
+        try:
+            qs.delete()
+        except ProtectedError as exc:
+            raise ValueError(
+                'Ödemesi olan bir taksit silinemedi. Ödenmiş satırlar planda kalmalı.'
+            ) from exc
+
+    def _remaining_debt(self, sozlesme, locked):
+        """Net tutardan tahsil edilmiş kısmı düşer. Taksit yüzü değil, ödenen tutar."""
+        odenen = sum(int(taksit.odenen_tutar or 0) for taksit in locked)
+        return int(sozlesme.net_tutar) - odenen
+
+    def replace_unpaid_plan(self, sozlesme, taksitler):
+        """Ödenmiş taksitleri bırakır; bekleyenleri verilen satırlarla değiştirir.
+
+        Satırlar kalan borca eşittir, ödenmiş taksiti içermez.
+        """
+        from datetime import date as date_cls
+
+        rows = []
+        for raw in taksitler or []:
+            vade = raw['vade_tarihi']
+            if isinstance(vade, str):
+                vade = date_cls.fromisoformat(vade[:10])
+            rows.append({
+                'tutar': int(round(float(raw['tutar']))),
+                'vade_tarihi': vade,
+                'odeme_yontemi_id': raw.get('odeme_yontemi_id') or None,
+            })
+        if not rows:
+            raise ValueError('Taksit listesi boş')
+
+        locked = self._payment_locked_taksits(sozlesme)
+        kalan = self._remaining_debt(sozlesme, locked)
+        toplam = sum(row['tutar'] for row in rows)
+        if abs(toplam - kalan) > 1:
+            raise ValueError(
+                f'Kalan plan toplamı ({toplam} TL) kalan borçla ({kalan} TL) uyuşmuyor. '
+                'Ödenmiş taksit bu listeye yazılmaz.'
+            )
+
+        self._delete_unlocked_taksits(sozlesme, locked)
+        son_no = max((taksit.taksit_no for taksit in locked), default=0)
+        for offset, row in enumerate(rows):
+            Taksit.objects.create(
+                sozlesme=sozlesme,
+                taksit_no=son_no + 1 + offset,
+                vade_tarihi=row['vade_tarihi'],
+                tutar=row['tutar'],
+                odenen_tutar=0,
+                kalan_tutar=row['tutar'],
+                durum=TaksitDurum.BEKLEMEDE,
+                odeme_yontemi_id=row['odeme_yontemi_id'] or None,
+            )
+
     # ─── KALAN TUTAR İÇİN YENİ PLAN ─────
     def create_remaining_plan(self, sozlesme, taksit_sayisi, ilk_odeme_tarihi, periyot='aylik'):
         """
         Aktif sözleşmelerde: ödenmemiş kalan tutarı yeni taksitlere böl.
         Mevcut ödenmiş/kısmi taksitler korunur.
+        taksit_sayisi, ödenmişlerin üstüne eklenecek yeni satır sayısıdır.
         """
-        from apps.odeme_takip.domain.enums import TaksitDurum
+        locked = self._payment_locked_taksits(sozlesme)
+        self._delete_unlocked_taksits(sozlesme, locked)
 
-        # Ödenmemiş taksitleri sil
-        Taksit.objects.filter(
-            sozlesme=sozlesme,
-            durum=TaksitDurum.BEKLEMEDE,
-        ).delete()
-
-        # Kalan borcu hesapla
-        kalan_borc = sozlesme.net_tutar
-        odenmis_toplam = Taksit.objects.filter(
-            sozlesme=sozlesme,
-            durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI],
-        ).values_list('tutar', flat=True)
-
-        for t in odenmis_toplam:
-            kalan_borc -= int(t)
-
+        kalan_borc = self._remaining_debt(sozlesme, locked)
         if kalan_borc <= 0:
             return
 
-        # Mevcut en yüksek taksit_no
-        son_no = Taksit.objects.filter(
-            sozlesme=sozlesme
-        ).order_by('-taksit_no').values_list('taksit_no', flat=True).first() or 0
-
+        son_no = max((taksit.taksit_no for taksit in locked), default=0)
         installment_count = max(1, int(taksit_sayisi or 1))
         amounts = self._split_equal_amounts(kalan_borc, installment_count)
 
         for i, tutar in enumerate(amounts):
             vade = self._hesapla_vade(ilk_odeme_tarihi, i, periyot)
-
             Taksit.objects.create(
                 sozlesme=sozlesme,
                 taksit_no=son_no + 1 + i,
@@ -262,14 +426,17 @@ class TaksitService:
                     tarih_listesi.append(vade)
                 self.create_percentage_plan(sozlesme, yuzde_listesi, tarih_listesi)
             elif yontem == 'kalani_bol':
-                if not ilk_tarih:
-                    return None, {'error': 'İlk vade tarihi zorunludur'}
-                self.create_remaining_plan(
-                    sozlesme=sozlesme,
-                    taksit_sayisi=taksit_sayisi or sozlesme.taksit_sayisi or 1,
-                    ilk_odeme_tarihi=ilk_tarih,
-                    periyot=periyot or sozlesme.taksit_periyodu,
-                )
+                if manuel_taksitler:
+                    self.replace_unpaid_plan(sozlesme, manuel_taksitler)
+                else:
+                    if not ilk_tarih:
+                        return None, {'error': 'İlk vade tarihi zorunludur'}
+                    self.create_remaining_plan(
+                        sozlesme=sozlesme,
+                        taksit_sayisi=taksit_sayisi or sozlesme.taksit_sayisi or 1,
+                        ilk_odeme_tarihi=ilk_tarih,
+                        periyot=periyot or sozlesme.taksit_periyodu,
+                    )
             else:
                 return None, {'error': f'Geçersiz taksit yöntemi: {yontem}'}
 

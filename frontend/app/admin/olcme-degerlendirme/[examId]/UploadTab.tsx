@@ -323,6 +323,7 @@ export default function UploadTab({ exam }: Props) {
   const [dragOver, setDragOver]         = useState(false);
   const fileInputRef                    = useRef<HTMLInputElement>(null);
   const gridRef                         = useRef<HTMLDivElement>(null);
+  const [hScroll, setHScroll]           = useState({ left: 0, max: 0 });
   const ctxMenuRef                      = useRef<HTMLDivElement>(null);
 
   // ── Eşleştirme Şablonları ──────────────────────────────────────────────
@@ -470,6 +471,29 @@ export default function UploadTab({ exam }: Props) {
 
   useEffect(() => { fetchTemplates(); }, [fetchTemplates]);
 
+  /* Uzun satır kutuyu büyütmeden yatay kaydırma. Range her zaman görünür. */
+  useEffect(() => {
+    if (step !== 'mapping') return;
+    const wrap = gridRef.current;
+    if (!wrap) return;
+    const sync = () => {
+      const max = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+      const left = wrap.scrollLeft;
+      setHScroll(prev => (prev.left === left && prev.max === max ? prev : { left, max }));
+    };
+    sync();
+    const raf = requestAnimationFrame(sync);
+    wrap.addEventListener('scroll', sync, { passive: true });
+    const ro = new ResizeObserver(sync);
+    ro.observe(wrap);
+    if (wrap.firstElementChild) ro.observe(wrap.firstElementChild);
+    return () => {
+      cancelAnimationFrame(raf);
+      wrap.removeEventListener('scroll', sync);
+      ro.disconnect();
+    };
+  }, [step, lines]);
+
   /* ── File Upload ────────────────────────────────────────────────────────── */
   const handleFile = async (file: File) => {
     setError('');
@@ -505,10 +529,75 @@ export default function UploadTab({ exam }: Props) {
 
   /* ── Column Selection (mousedown → mousemove → mouseup) ─────────────────── */
   const draggingRef = useRef(false);
+  const touchScrollRef = useRef(false);
+  const dragClientXRef = useRef<number | null>(null);
+  const dragScrollRafRef = useRef(0);
+  const dragScrollFrameRef = useRef<() => void>(() => {});
+
+  const stopColumnDrag = () => {
+    draggingRef.current = false;
+    dragClientXRef.current = null;
+    if (dragScrollRafRef.current) {
+      cancelAnimationFrame(dragScrollRafRef.current);
+      dragScrollRafRef.current = 0;
+    }
+  };
+
+  // Kenara sürükleyince görünmeyen ders sütunları kayarak seçilebilsin.
+  dragScrollFrameRef.current = () => {
+    const wrap = gridRef.current;
+    const clientX = dragClientXRef.current;
+    if (!wrap || clientX === null || !draggingRef.current) return;
+    const rect = wrap.getBoundingClientRect();
+    const edge = 56;
+    let delta = 0;
+    if (clientX > rect.right - edge) {
+      delta = Math.min(42, 10 + (clientX - (rect.right - edge)) * 0.45);
+    } else if (clientX < rect.left + edge) {
+      delta = -Math.min(42, 10 + ((rect.left + edge) - clientX) * 0.45);
+    }
+    if (delta === 0) return;
+    wrap.scrollLeft += delta;
+    const textSpan = wrap.querySelector('[data-text-line]') as HTMLElement | null;
+    if (!textSpan) return;
+    const spanRect = textSpan.getBoundingClientRect();
+    const len = textSpan.textContent?.length || 1;
+    const measured = spanRect.width / len;
+    const chW = measured > 0.5 ? measured : (chWidthRef.current || 7.5);
+    chWidthRef.current = chW;
+    setSelEnd(Math.max(0, Math.floor((clientX - spanRect.left) / chW)));
+  };
+
+  const ensureDragScroll = () => {
+    if (dragScrollRafRef.current) return;
+    const loop = () => {
+      if (!draggingRef.current) {
+        dragScrollRafRef.current = 0;
+        return;
+      }
+      dragScrollFrameRef.current();
+      dragScrollRafRef.current = requestAnimationFrame(loop);
+    };
+    dragScrollRafRef.current = requestAnimationFrame(loop);
+  };
 
   const onGridMouseDown = (e: React.MouseEvent) => {
+    if (touchScrollRef.current) {
+      touchScrollRef.current = false;
+      return;
+    }
     if (e.button !== 0) return;
-    e.preventDefault(); // prevent native text selection during drag
+    // preventDefault kaydırma çubuğunun sürüklenmesini iptal ediyordu.
+    // Metin seçimi CSS user-select ile kapalı. Çubuğun üstündeyse sütun seçme.
+    const wrap = gridRef.current;
+    if (wrap) {
+      const rect = wrap.getBoundingClientRect();
+      const barX = wrap.offsetWidth - wrap.clientWidth;
+      const barY = wrap.offsetHeight - wrap.clientHeight;
+      if ((barX > 1 && e.clientX >= rect.right - barX - 4) || (barY > 1 && e.clientY >= rect.bottom - barY - 4)) {
+        return;
+      }
+    }
     const pos = charPosFromEvent(e);
     if (pos === null) return;
 
@@ -519,27 +608,49 @@ export default function UploadTab({ exam }: Props) {
     setSelStart(pos);
     setSelEnd(pos);
     draggingRef.current = true;
+    dragClientXRef.current = e.clientX;
+    ensureDragScroll();
     setCtxMenu(null);
+  };
+
+  const onGridPointerDown = (e: React.PointerEvent) => {
+    // Parmakla sağa-sola kaydırma sütun seçimine dönmesin.
+    if (e.pointerType === 'touch') {
+      touchScrollRef.current = true;
+      window.setTimeout(() => { touchScrollRef.current = false; }, 700);
+      return;
+    }
+    onGridMouseDown(e);
   };
 
   const onGridMouseMove = (e: React.MouseEvent) => {
     if (!draggingRef.current) return;
+    dragClientXRef.current = e.clientX;
     const pos = charPosFromEvent(e);
     if (pos !== null) setSelEnd(pos);
   };
 
   const onGridMouseUp = (_e: React.MouseEvent) => {
     if (!draggingRef.current) return;
-    draggingRef.current = false;
+    stopColumnDrag();
   };
 
   // Document-level mouseup to catch releases outside grid
   useEffect(() => {
     const handleGlobalMouseUp = () => {
-      draggingRef.current = false;
+      stopColumnDrag();
+    };
+    const handleGlobalMouseMove = (ev: MouseEvent) => {
+      if (!draggingRef.current) return;
+      dragClientXRef.current = ev.clientX;
     };
     document.addEventListener('mouseup', handleGlobalMouseUp);
-    return () => document.removeEventListener('mouseup', handleGlobalMouseUp);
+    document.addEventListener('mousemove', handleGlobalMouseMove);
+    return () => {
+      document.removeEventListener('mouseup', handleGlobalMouseUp);
+      document.removeEventListener('mousemove', handleGlobalMouseMove);
+      if (dragScrollRafRef.current) cancelAnimationFrame(dragScrollRafRef.current);
+    };
   }, []);
 
   /* ── Context Menu (right-click) ─────────────────────────────────────────── */
@@ -925,7 +1036,7 @@ export default function UploadTab({ exam }: Props) {
 
   /* ── Ruler chars ────────────────────────────────────────────────────────── */
   const maxLen = lines.reduce((mx, l) => Math.max(mx, l.length), 0);
-  const rulerChars = Array.from({ length: Math.min(maxLen, 300) }, (_, i) => i);
+  const rulerChars = Array.from({ length: Math.min(maxLen, 4000) }, (_, i) => i);
 
   /* ── Result stats ───────────────────────────────────────────────────────── */
   const avgNet  = results.length > 0 ? results.reduce((sum, r) => sum + Number(r.total_net), 0) / results.length : 0;
@@ -1486,7 +1597,7 @@ export default function UploadTab({ exam }: Props) {
                 onMouseDown={onGridMouseDown}
                 onMouseMove={onGridMouseMove}
                 onMouseUp={onGridMouseUp}
-                onPointerDown={onGridMouseDown}
+                onPointerDown={onGridPointerDown}
                 onPointerMove={onGridMouseMove}
                 onPointerUp={onGridMouseUp}
                 onContextMenu={onGridContextMenu}
@@ -1506,7 +1617,7 @@ export default function UploadTab({ exam }: Props) {
                   {lines.map((line, idx) => (
                     <span key={idx} className={s.datGridLine}>
                       <span className={s.datGridLineNum}>{idx + 1}</span>
-                      <span data-text-line>{line}</span>
+                      <span className={s.datLineText} data-text-line>{line}</span>
                     </span>
                   ))}
 
@@ -1521,6 +1632,21 @@ export default function UploadTab({ exam }: Props) {
                   />
                 </div>
               </div>
+              {hScroll.max > 1 && (
+                <input
+                  type="range"
+                  className={s.datHScroll}
+                  min={0}
+                  max={hScroll.max}
+                  value={Math.min(hScroll.left, hScroll.max)}
+                  onChange={(e) => {
+                    const left = Number(e.target.value);
+                    if (gridRef.current) gridRef.current.scrollLeft = left;
+                    setHScroll(prev => ({ ...prev, left }));
+                  }}
+                  aria-label="DAT satırını sağa sola kaydır"
+                />
+              )}
             </div>
           </div>
         </div>
