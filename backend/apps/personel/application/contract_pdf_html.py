@@ -28,18 +28,18 @@ def _fmt_tl(amount: float | int) -> str:
     try:
         n = float(amount)
     except (TypeError, ValueError):
-        return '₺0'
-    return f'₺{n:,.0f}'.replace(',', '.')
+        return '0 ₺'
+    return f'{n:,.0f} ₺'.replace(',', '.')
 
 
 def _fmt_tl_dec(amount: float | int) -> str:
     try:
         n = float(amount)
     except (TypeError, ValueError):
-        return '₺0,00'
+        return '0,00 ₺'
     whole = int(n)
     frac = int(round((n - whole) * 100))
-    return f'₺{whole:,}'.replace(',', '.') + f',{frac:02d}'
+    return f'{whole:,}'.replace(',', '.') + f',{frac:02d} ₺'
 
 
 def _fmt_tarih(value: str | None) -> str:
@@ -176,9 +176,6 @@ def build_personel_sozlesme_html(data: dict) -> str:
     brans_gorev = ' · '.join(
         x for x in (data.get('brans_snapshot'), data.get('gorev_snapshot')) if x
     ) or '—'
-
-    brand_bits = [x for x in (data.get('sube_ad'), kurum.get('telefon_sabit')) if x]
-    brand_sub_html = f'<p>{_esc(" · ".join(brand_bits))}</p>' if brand_bits else ''
 
     mesai_block = (
         f'<table class="grid compact"><thead><tr>'
@@ -353,7 +350,6 @@ def build_personel_sozlesme_html(data: dict) -> str:
     {logo_html}
     <div class="brand">
       <h1>{kurum_ad}</h1>
-      {brand_sub_html}
     </div>
     <div class="doc-id">
       <strong>{_esc(data.get("sozlesme_no"))}</strong>
@@ -384,7 +380,7 @@ def build_personel_sozlesme_html(data: dict) -> str:
         </table>
       </div>
       <div>
-        <div class="col-head">İşçi</div>
+        <div class="col-head">Personel</div>
         <table class="kv">
           {_kv_rows([
               ('Ad soyad', _esc(data.get('personel_ad'))),
@@ -449,7 +445,7 @@ def build_personel_sozlesme_html(data: dict) -> str:
       <span>Ad soyad · İmza · Kaşe</span>
     </div>
     <div class="sign">
-      <strong>İşçi / Personel</strong>
+      <strong>Personel</strong>
       <span>{_esc(data.get('personel_ad'))}</span>
       <span>İmza</span>
     </div>

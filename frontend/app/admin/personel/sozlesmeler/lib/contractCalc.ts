@@ -336,21 +336,17 @@ export const GUN_ADLARI: Record<number, string> = {
   7: 'Pazar',
 };
 
-export const fmtTL = (n: number) =>
-  new Intl.NumberFormat('tr-TR', {
-    style: 'currency',
-    currency: 'TRY',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  }).format(n);
+function fmtTry(n: number, digits: number): string {
+  const formatted = new Intl.NumberFormat('tr-TR', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(Number.isFinite(n) ? n : 0);
+  return `${formatted} ₺`;
+}
 
-export const fmtTLDec = (n: number) =>
-  new Intl.NumberFormat('tr-TR', {
-    style: 'currency',
-    currency: 'TRY',
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(n);
+export const fmtTL = (n: number) => fmtTry(n, 0);
+
+export const fmtTLDec = (n: number) => fmtTry(n, 2);
 
 export const fmtTarih = (d: string | null | undefined) => {
   if (!d) return '—';

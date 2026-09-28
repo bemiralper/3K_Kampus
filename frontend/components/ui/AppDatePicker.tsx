@@ -64,9 +64,8 @@ export default function AppDatePicker({
         disabled={disabled}
         allowClear={allowClear}
         size={size}
-        getPopupContainer={
-          getPopupContainer || ((trigger) => trigger.parentElement || document.body)
-        }
+        getPopupContainer={getPopupContainer || (() => document.body)}
+        popupStyle={{ zIndex: 2100 }}
         disabledDate={
           disableFuture
             ? (current) => !!current && current > dayjs().endOf("day")

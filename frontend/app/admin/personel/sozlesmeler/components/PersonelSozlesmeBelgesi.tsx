@@ -147,7 +147,6 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
     (data.sozlesme_turu === "TAM_ZAMANLI" || data.sozlesme_turu === "KARMA") &&
     (data.maas_plani?.length ?? 0) > 0;
   const showDers = data.sozlesme_turu === "DERS_UCRETLI" || data.sozlesme_turu === "KARMA";
-  const brandBits = [data.sube_ad, data.kurum?.telefon_sabit].filter(Boolean);
   const th: React.CSSProperties = {
     background: ACCENT,
     color: "#fff",
@@ -206,11 +205,6 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
           <h1 style={{ margin: 0, fontSize: 13, fontWeight: 700, letterSpacing: "-0.02em", color: "#fff" }}>
             {kurumAd}
           </h1>
-          {brandBits.length > 0 && (
-            <p style={{ margin: "2px 0 0", fontSize: 8, color: "rgba(255,255,255,.8)" }}>
-              {brandBits.join(" · ")}
-            </p>
-          )}
         </div>
         <div style={{ textAlign: "right", fontSize: 8, color: "rgba(255,255,255,.8)", lineHeight: 1.35 }}>
           <strong
@@ -286,7 +280,7 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
                 marginBottom: 4,
               }}
             >
-              İşçi
+              Personel
             </div>
             <Kv
               rows={[
@@ -540,7 +534,7 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
       >
         {[
           { title: "İşveren / Kurum Yetkilisi", lines: ["Ad soyad · İmza · Kaşe"] },
-          { title: "İşçi / Personel", lines: [data.personel_ad || "—", "İmza"] },
+          { title: "Personel", lines: [data.personel_ad || "—", "İmza"] },
         ].map((box) => (
           <div key={box.title} style={{ borderTop: `1.5px solid ${ACCENT}`, paddingTop: 8, minHeight: 56 }}>
             <strong style={{ display: "block", fontSize: 9, color: ACCENT }}>{box.title}</strong>
