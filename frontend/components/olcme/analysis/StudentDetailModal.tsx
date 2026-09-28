@@ -279,18 +279,22 @@ export default function StudentDetailModal({
     if (isAyt && detail.puan_turleri) {
       return (['SAY', 'EA', 'SOZ'] as const).map(pt => ({
         label: pt === 'SOZ' ? 'SÖZ' : pt,
+        net: detail.puan_turleri![pt].ayt_net,
         puan: detail.puan_turleri![pt].puan,
         avg: detail.puan_turleri_avgs?.[pt] ?? detail.kurum_avg_puan ?? 0,
         tahmini: detail.puan_turleri![pt].tahmini_siralama ?? null,
         kurumSira: detail.puan_turleri![pt].kurum_ici_sira ?? null,
+        sinifSira: detail.puan_turleri![pt].sinif_ici_sira ?? null,
       }));
     }
     return [{
       label: typeLabel,
+      net: null as number | null,
       puan: detail.puan,
       avg: detail.kurum_avg_puan ?? 0,
       tahmini: detail.tahmini_siralama,
       kurumSira: detail.kurum_ici_sira,
+      sinifSira: null as number | null,
     }];
   })();
 
@@ -353,7 +357,11 @@ export default function StudentDetailModal({
                   ['Doğru', fmtInt(detail.total_correct), 'green'],
                   ['Yanlış', fmtInt(detail.total_wrong), 'red'],
                   ['Boş', fmtInt(detail.total_empty), 'muted'],
-                  ['Net', fmt(detail.toplam_net, 2), 'brand'],
+                  [
+                    isAyt && detail.net_etiket ? detail.net_etiket : 'Net',
+                    fmt(isAyt && detail.alan_net != null ? detail.alan_net : detail.toplam_net, 2),
+                    'brand',
+                  ],
                   ['Puan', fmt(detail.puan, 2), 'brand'],
                   ['Kurum Sırası', fmtInt(detail.kurum_ici_sira), 'ink'],
                 ].map(([label, value, tone]) => (
@@ -363,6 +371,16 @@ export default function StudentDetailModal({
                   </div>
                 ))}
               </div>
+              {isAyt && detail.alan_net != null && (
+                <p className={s.karneNetNote}>
+                  {detail.net_etiket === 'EA NET'
+                    ? 'Eşit ağırlık neti'
+                    : detail.net_etiket === 'SÖZ NET'
+                      ? 'Sözel net'
+                      : 'Sayısal net'}{' '}
+                  öğrencinin alanına giren testlerdir. Tüm testler: {fmt(detail.toplam_net, 2)}. Alan dışı testler bu nete yazılmaz.
+                </p>
+              )}
 
               <KarneSecHead
                 title="Puan ve Sıralama"
@@ -373,6 +391,7 @@ export default function StudentDetailModal({
                   <thead>
                     <tr>
                       <th style={{ textAlign: 'left' }}>Puan Türü</th>
+                      {isAyt && <th>Net</th>}
                       <th>Puan</th>
                       <th>Kurum Ort.</th>
                       <th>Sınıf Sırası</th>
@@ -384,15 +403,21 @@ export default function StudentDetailModal({
                     {rankingRows.map((row, i) => (
                       <tr key={row.label}>
                         <td className={s.karneLeft}>{row.label}</td>
+                        {isAyt && <td>{row.net != null ? fmt(row.net, 2) : '—'}</td>}
                         <td>{fmt(row.puan, 2)}</td>
                         <td>{fmt(row.avg, 2)}</td>
-                        <td>{i === 0 ? (hasClass && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—') : ''}</td>
+                        <td>{
+                          isAyt
+                            ? (hasClass && row.sinifSira ? fmtInt(row.sinifSira) : '—')
+                            : (i === 0 ? (hasClass && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—') : '')
+                        }</td>
                         <td>{row.kurumSira ? fmtInt(row.kurumSira) : '—'}</td>
                         <td>{row.tahmini ? fmtInt(row.tahmini) : '—'}</td>
                       </tr>
                     ))}
                     <tr>
                       <td className={s.karneLeft}>Katılım</td>
+                      {isAyt && <td className={s.karneMuted}>—</td>}
                       <td className={s.karneMuted}>—</td>
                       <td className={s.karneMuted}>—</td>
                       <td className={s.karneMuted}>

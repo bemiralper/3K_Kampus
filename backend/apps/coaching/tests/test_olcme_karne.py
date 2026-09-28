@@ -6,11 +6,12 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 
 from apps.coaching.olcme_degerlendirme.models import (
-    Exam, ExamSection, ExamSession, ExamSessionModel, StudentAnswer, StudentSectionScore,
+    Exam, ExamSection, ExamSession, ExamSessionModel, ExamParticipant,
+    StudentAnswer, StudentSectionScore,
 )
 from apps.communication.application.notification_events import get_event
 from apps.egitim_yili.domain.models import EgitimYili
@@ -283,6 +284,31 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertEqual(data['session_date'], '2026-03-14')
         self.assertEqual(data['session_start_time'], '10:00')
 
+    def test_karne_uses_student_own_session_date(self):
+        later = ExamSessionModel.objects.create(
+            exam=self.exam,
+            name='Hafta sonu',
+            order=1,
+            session_date=date(2026, 3, 21),
+            start_time=time(11, 30),
+            end_time=time(13, 0),
+        )
+        later.sections.add(self.section)
+        ExamParticipant.objects.create(
+            exam=self.exam,
+            student=self.ogrenci,
+            exam_session=later,
+        )
+        res = self.client.get(
+            f'{self.base}/students/{self.answer.id}/detail/',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data['session_date'], '2026-03-21')
+        self.assertEqual(data['session_start_time'], '11:30')
+        self.assertEqual(data['session_name'], 'Hafta sonu')
+
     def test_karne_pdf_with_student_photo(self):
         from PIL import Image
 
@@ -461,6 +487,61 @@ class KarneTopicBlockUsesOutcomeTextTest(TestCase):
         self.assertEqual(rows[0]['soru'], 2)
         self.assertNotIn('İSLAM', rows[0]['name'])
         self.assertNotIn('İTİKADİ', rows[0]['name'])
+
+
+class AlanNetInclusionTest(SimpleTestCase):
+    def test_sayisal_sosyal_puana_dahil_degil(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _mark_alan_inclusion
+
+        rows = [
+            {'section_id': 1, 'section_name': 'Matematik', 'is_sub_section': False, 'parent_id': None, 'source': 'ayt'},
+            {'section_id': 2, 'section_name': 'Fizik', 'is_sub_section': True, 'parent_id': 8, 'source': 'ayt'},
+            {'section_id': 8, 'section_name': 'Fen Bilimleri', 'is_sub_section': False, 'parent_id': None, 'source': 'ayt'},
+            {'section_id': 3, 'section_name': 'Tarih-1', 'is_sub_section': True, 'parent_id': 9, 'source': 'ayt'},
+            {'section_id': 9, 'section_name': 'Sosyal Bilimler-1', 'is_sub_section': False, 'parent_id': None, 'source': 'ayt'},
+            {'section_id': 4, 'section_name': 'Türkçe', 'is_sub_section': False, 'parent_id': None, 'source': 'tyt'},
+        ]
+        _mark_alan_inclusion(rows, 'YKS_AYT', 'SAYISAL')
+        included = {row['section_name']: row['alana_dahil'] for row in rows}
+        self.assertTrue(included['Matematik'])
+        self.assertTrue(included['Fizik'])
+        self.assertTrue(included['Fen Bilimleri'])
+        self.assertFalse(included['Tarih-1'])
+        self.assertFalse(included['Sosyal Bilimler-1'])
+        self.assertTrue(included['Türkçe'])
+
+    def test_karne_pdf_say_netini_ayirir(self):
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+
+        pdf = render_karne_pdf({
+            'exam_name': 'AYT Deneme',
+            'exam_type': 'YKS_AYT',
+            'student_name': 'Sayısal Öğrenci',
+            'sube_ad': 'Merkez',
+            'kurum_ad': '3K',
+            'toplam_net': 80,
+            'alan_net': 55,
+            'net_etiket': 'SAY NET',
+            'puan': 410,
+            'puan_turleri': {
+                'SAY': {'puan': 410, 'ayt_net': 55, 'kurum_ici_sira': 3, 'sinif_ici_sira': 1, 'tahmini_siralama': 12000},
+                'EA': {'puan': 380, 'ayt_net': 40, 'kurum_ici_sira': 8, 'sinif_ici_sira': 2, 'tahmini_siralama': 20000},
+                'SOZ': {'puan': 300, 'ayt_net': 25, 'kurum_ici_sira': 15, 'sinif_ici_sira': 4, 'tahmini_siralama': 40000},
+            },
+            'section_details': [
+                {
+                    'section_id': 1, 'section_name': 'Tarih-1', 'is_sub_section': True,
+                    'parent_id': 9, 'source': 'ayt', 'alana_dahil': False,
+                    'question_count': 10, 'correct': 8, 'wrong': 2, 'empty': 0, 'net': 7.5,
+                    'verimlilik': 75, 'sinif_avg_net': 4, 'kurum_avg_net': 3,
+                    'diff_sinif': 3.5, 'diff_kurum': 4.5,
+                },
+            ],
+            'answer_grids': [],
+            'topic_blocks': [],
+        })
+        self.assertTrue(pdf.startswith(b'%PDF'))
+        self.assertGreater(len(pdf), 1500)
 
 
 class KarnePdfLongTopicTableTest(TestCase):

@@ -319,7 +319,9 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
             <tr>
               <th style={{ position: 'sticky', left: 0, background: '#f8fafc', zIndex: 2 }}>Sıra</th>
               <th style={{ position: 'sticky', left: 40, background: '#f8fafc', zIndex: 2 }}>Öğrenci</th>
-              <th style={{ textAlign: 'center' }}>Net</th>
+              <th style={{ textAlign: 'center' }} title={examType === 'YKS_AYT' ? 'Öğrencinin alanına giren AYT neti. Tüm testlerin ham toplamı değil.' : undefined}>
+                {examType === 'YKS_AYT' ? 'Alan neti' : 'Net'}
+              </th>
               {orderedSections.map(sec => {
                 const isSub = sec.is_sub_section;
                 const baseStyle = {
@@ -364,7 +366,12 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                   {r._displaySira <= 3 ? '🏅 ' : ''}{r._displaySira}
                 </td>
                 <td style={{ fontWeight: 600, whiteSpace: 'nowrap', position: 'sticky', left: 40, background: '#fff', zIndex: 1 }}>{r.student_name}</td>
-                <td style={{ textAlign: 'center', fontWeight: 600 }}>{r.toplam_net.toFixed(2)}</td>
+                <td
+                  style={{ textAlign: 'center', fontWeight: 600 }}
+                  title={examType === 'YKS_AYT' ? `Tüm testler: ${r.toplam_net.toFixed(2)}` : undefined}
+                >
+                  {(r.alan_net ?? r.toplam_net).toFixed(2)}
+                </td>
                 {orderedSections.map(sec => {
                   const data = getRowData(r, sec);
                   const net = data?.net;

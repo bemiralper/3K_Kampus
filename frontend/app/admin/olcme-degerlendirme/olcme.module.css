@@ -3710,6 +3710,12 @@
 .karneSummaryValue[data-tone="red"] { color: #dc2626; }
 .karneSummaryValue[data-tone="muted"] { color: #64748b; }
 .karneSummaryValue[data-tone="brand"] { color: #0262a7; }
+.karneNetNote {
+  margin: -4px 12px 10px;
+  font-size: 11px;
+  line-height: 1.4;
+  color: #64748b;
+}
 .karneSecHead {
   display: flex;
   align-items: baseline;

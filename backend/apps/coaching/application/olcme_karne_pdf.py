@@ -312,6 +312,7 @@ def _build_styles(font: str, font_bold: str) -> dict[str, Any]:
         # Bölüm başlığı
         'sectionTitle': mk('KSecTitle', size=9, bold=True, color=INK),
         'sectionNote': mk('KSecNote', size=7.5, color=MUTED, align=2),
+        'alanNote': mk('KAlanNote', size=7.5, color=MUTED, align=0),
         # Tablolar
         'th': mk('KTh', size=7, bold=True, color='#FFFFFF', align=1),
         'thLeft': mk('KThLeft', size=7, bold=True, color='#FFFFFF', align=0),
@@ -892,11 +893,14 @@ def _kpi_band(ctx: _Ctx, data: dict):
     from reportlab.lib import colors
     from reportlab.platypus import Flowable
 
+    is_ayt = data.get('exam_type') == 'YKS_AYT' and data.get('alan_net') is not None
+    net_label = (data.get('net_etiket') or 'SAY NET') if is_ayt else 'NET'
+    net_value = data.get('alan_net') if is_ayt else data.get('toplam_net')
     tiles = [
         ('DOĞRU', _fmt_int(data.get('total_correct')), GREEN),
         ('YANLIŞ', _fmt_int(data.get('total_wrong')), RED),
         ('BOŞ', _fmt_int(data.get('total_empty')), MUTED),
-        ('NET', _fmt(data.get('toplam_net'), 2), BRAND),
+        (net_label, _fmt(net_value, 2), BRAND),
         ('PUAN', _fmt(data.get('puan'), 2), BRAND),
         ('KURUM SIRASI', _fmt_int(data.get('kurum_ici_sira')), INK),
     ]
@@ -942,6 +946,25 @@ def _kpi_band(ctx: _Ctx, data: dict):
     return KpiRow()
 
 
+def _alan_net_note(ctx: _Ctx, data: dict):
+    """AYT'de büyük netin alan neti olduğunu ve ham toplamı ayrı yazar."""
+    from reportlab.platypus import Paragraph
+
+    if data.get('exam_type') != 'YKS_AYT' or data.get('alan_net') is None:
+        return None
+    etiket = {
+        'SAY NET': 'Sayısal net',
+        'EA NET': 'Eşit ağırlık neti',
+        'SÖZ NET': 'Sözel net',
+    }.get(data.get('net_etiket') or '', 'Alan neti')
+    text = (
+        f"{etiket} öğrencinin alanına giren testlerdir. "
+        f"Tüm testler: {_fmt(data.get('toplam_net'), 2)}. "
+        "Alan dışı testler bu nete yazılmaz; ders tablosunda ayrıca görünür."
+    )
+    return Paragraph(text, ctx.s('alanNote'))
+
+
 # ── Sıralama tablosu ───────────────────────────────────────────────────────
 
 def _ranking_table(ctx: _Ctx, data: dict):
@@ -955,29 +978,40 @@ def _ranking_table(ctx: _Ctx, data: dict):
     def sinif_rank():
         return _fmt_int(data.get('sinif_rank')) if has_class else '—'
 
-    rows = [[
-        Paragraph('Puan Türü', ctx.s('thLeft')),
-        Paragraph('Puan', th),
-        Paragraph('Kurum Ort.', th),
-        Paragraph('Sınıf Sırası', th),
-        Paragraph('Kurum Sırası', th),
-        Paragraph('Tahmini TR Sırası', th),
-    ]]
+    if is_ayt and data.get('puan_turleri'):
+        rows = [[
+            Paragraph('Puan Türü', ctx.s('thLeft')),
+            Paragraph('Net', th),
+            Paragraph('Puan', th),
+            Paragraph('Kurum Ort.', th),
+            Paragraph('Sınıf Sırası', th),
+            Paragraph('Kurum Sırası', th),
+            Paragraph('Tahmini TR', th),
+        ]]
+    else:
+        rows = [[
+            Paragraph('Puan Türü', ctx.s('thLeft')),
+            Paragraph('Puan', th),
+            Paragraph('Kurum Ort.', th),
+            Paragraph('Sınıf Sırası', th),
+            Paragraph('Kurum Sırası', th),
+            Paragraph('Tahmini TR Sırası', th),
+        ]]
 
     if is_ayt and data.get('puan_turleri'):
         avgs = data.get('puan_turleri_avgs') or {}
-        first = True
         for key, label in (('SAY', 'SAY'), ('EA', 'EA'), ('SOZ', 'SÖZ')):
             info = data['puan_turleri'].get(key) or {}
+            sinif_sira = info.get('sinif_ici_sira')
             rows.append([
                 Paragraph(label, td_name),
+                Paragraph(_fmt(info.get('ayt_net'), 2), td),
                 Paragraph(_fmt(info.get('puan'), 2), td),
                 Paragraph(_fmt(avgs.get(key, data.get('kurum_avg_puan')), 2), td),
-                Paragraph(sinif_rank() if first else '', td),
+                Paragraph(_fmt_int(sinif_sira) if has_class and sinif_sira else '—', td),
                 Paragraph(_fmt_int(info.get('kurum_ici_sira')), td),
                 Paragraph(_fmt_int(info.get('tahmini_siralama')), td),
             ])
-            first = False
     else:
         rows.append([
             Paragraph(type_label, td_name),
@@ -988,7 +1022,7 @@ def _ranking_table(ctx: _Ctx, data: dict):
             Paragraph(_fmt_int(data.get('tahmini_siralama')), td),
         ])
 
-    rows.append([
+    katilim = [
         Paragraph('Katılım', ctx.s('tdLeft')),
         Paragraph('—', ctx.s('tdMuted')),
         Paragraph('—', ctx.s('tdMuted')),
@@ -999,9 +1033,15 @@ def _ranking_table(ctx: _Ctx, data: dict):
         ),
         Paragraph(f"{_fmt_int(data.get('toplam_ogrenci'))} öğrenci", ctx.s('tdMuted')),
         Paragraph('—', ctx.s('tdMuted')),
-    ])
+    ]
+    if is_ayt and data.get('puan_turleri'):
+        katilim.insert(1, Paragraph('—', ctx.s('tdMuted')))
+    rows.append(katilim)
 
-    widths = [ctx.page_w * x for x in (0.20, 0.14, 0.16, 0.16, 0.16, 0.18)]
+    if is_ayt and data.get('puan_turleri'):
+        widths = [ctx.page_w * x for x in (0.16, 0.12, 0.13, 0.15, 0.15, 0.15, 0.14)]
+    else:
+        widths = [ctx.page_w * x for x in (0.20, 0.14, 0.16, 0.16, 0.16, 0.18)]
     tbl = Table(rows, colWidths=widths)
     tbl.setStyle(TableStyle(_hairline_table_style(ctx)))
     return tbl
@@ -1443,6 +1483,10 @@ def _summary_page(ctx: _Ctx, data: dict) -> list[Any]:
     flow.append(_hero_header(ctx, data))
     flow.append(Spacer(1, 8))
     flow.append(_kpi_band(ctx, data))
+    note = _alan_net_note(ctx, data)
+    if note is not None:
+        flow.append(Spacer(1, 4))
+        flow.append(note)
     flow.append(Spacer(1, 12))
 
     ref_year = data.get('referans_yil')

@@ -151,7 +151,7 @@ function registerFonts(doc: jsPDF, fonts: { regular: string; bold: string }) {
 function sortRankings(data: RankingItem[], field: SortField): RankingItem[] {
   const arr = [...data];
   switch (field) {
-    case 'net':        arr.sort((a, b) => b.toplam_net - a.toplam_net); break;
+    case 'net':        arr.sort((a, b) => (b.alan_net ?? b.toplam_net) - (a.alan_net ?? a.toplam_net)); break;
     case 'puan':       arr.sort((a, b) => b.puan - a.puan); break;
     case 'say':        arr.sort((a, b) => (b.puan_turleri?.SAY?.puan ?? b.puan) - (a.puan_turleri?.SAY?.puan ?? a.puan)); break;
     case 'ea':         arr.sort((a, b) => (b.puan_turleri?.EA?.puan ?? b.puan) - (a.puan_turleri?.EA?.puan ?? a.puan)); break;
@@ -164,7 +164,7 @@ function sortRankings(data: RankingItem[], field: SortField): RankingItem[] {
 export function sortStudents(data: StudentAnalysis[], field: SortField): StudentAnalysis[] {
   const arr = [...data];
   switch (field) {
-    case 'net':        arr.sort((a, b) => b.toplam_net - a.toplam_net); break;
+    case 'net':        arr.sort((a, b) => (b.alan_net ?? b.toplam_net) - (a.alan_net ?? a.toplam_net)); break;
     case 'puan':       arr.sort((a, b) => b.puan - a.puan); break;
     case 'say':        arr.sort((a, b) => (b.puan_turleri?.SAY?.puan ?? b.puan) - (a.puan_turleri?.SAY?.puan ?? a.puan)); break;
     case 'ea':         arr.sort((a, b) => (b.puan_turleri?.EA?.puan ?? b.puan) - (a.puan_turleri?.EA?.puan ?? a.puan)); break;
@@ -467,6 +467,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   // Toplam col: PFX + secCols + 1(T.Net) + [Puan] + ptCols + suffixAfterPT
   const TOTAL = PFX + secColCount + 1 + tytPuanCols + ptColCount + suffixAfterPT.length;
   const TNET_COL = PFX + secColCount; // T.Net sütun indeksi
+  const netHead = isAyt ? 'Alan' : 'T.Net';
   const PUAN_COL = TNET_COL + 1;
 
   // ═══ HEADER satırları oluştur ═══
@@ -509,7 +510,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     });
 
     // T.Net + TYT Puan
-    r2[TNET_COL] = 'T.Net';
+    r2[TNET_COL] = netHead;
     if (showTytPuan) r2[PUAN_COL] = 'Puan';
 
     // Puan Türleri
@@ -535,7 +536,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
       const label = s.name.length > 8 ? s.name.substring(0, 7) + '.' : s.name;
       h.push(`${label} (${qc})`);
     });
-    h.push('T.Net');
+    h.push(netHead);
     if (showTytPuan) h.push('Puan');
     ptList.forEach(pt => { ptStarts.push(h.length); h.push(pt, 'Kurs', 'YKS Tah.'); });
     suffixAfterPT.forEach(s => h.push(s));
@@ -631,7 +632,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
     });
 
     // T.Net + TYT Puan
-    row[TNET_COL] = r.toplam_net.toFixed(2);
+    row[TNET_COL] = (r.alan_net ?? r.toplam_net).toFixed(2);
     if (showTytPuan) row[PUAN_COL] = r.puan != null ? String(r.puan) : '';
 
     // Puan türleri: Puan | Kurs Sıra | Genel Tahmini Sıra (alan-bazlı)
@@ -734,7 +735,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
           // T.Net / TYT Puan → rowSpan=3
           else if (ci === TNET_COL) {
             data.cell.rowSpan = 3; data.cell.styles.valign = 'middle';
-            data.cell.text = ['T.Net'];
+            data.cell.text = [netHead];
           }
           else if (showTytPuan && ci === PUAN_COL) {
             data.cell.rowSpan = 3; data.cell.styles.valign = 'middle';
@@ -1018,7 +1019,7 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
   heads.push('Öğrenci');
   if (columns.showSinif) heads.push('Sınıf');
   if (columns.showDYB) heads.push('D', 'Y', 'B');
-  heads.push('Net', 'Puan');
+  heads.push(isAyt ? 'Alan neti' : 'Net', 'Puan');
   if (isAyt && hasPT && columns.showPuanTurleri) columns.visiblePuanTurleri.forEach(pt => heads.push(pt));
   if (columns.showKurumYuzdelik) heads.push('Kurum %');
   if (columns.showTahminiSiralama) heads.push('Tah. Sıra');
@@ -1031,7 +1032,7 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
     row.push(st.student_name);
     if (columns.showSinif) row.push(st.sinif || '—');
     if (columns.showDYB) row.push(String(st.total_correct), String(st.total_wrong), String(st.total_empty));
-    row.push(st.toplam_net.toFixed(2), String(st.puan));
+    row.push((st.alan_net ?? st.toplam_net).toFixed(2), String(st.puan));
     if (isAyt && hasPT && columns.showPuanTurleri) {
       columns.visiblePuanTurleri.forEach(pt => {
         const val = st.puan_turleri?.[pt as 'SAY' | 'EA' | 'SOZ']?.puan;

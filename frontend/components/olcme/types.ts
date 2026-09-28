@@ -709,6 +709,8 @@ export interface StudentAnalysis {
   has_deneme?: boolean;
   alan?: string | null;  // SAYISAL | SOZEL | ESIT_AGIRLIK | null
   toplam_net: number;
+  alan_net?: number;
+  net_etiket?: string;
   total_correct: number;
   total_wrong: number;
   total_empty: number;
@@ -758,6 +760,7 @@ export interface StudentDetailSectionItem {
   bos_potansiyel: number;
   hata_orani: number;
   source?: 'ayt' | 'tyt';
+  alana_dahil?: boolean;
 }
 
 export interface StudentDetailResponse {
@@ -775,6 +778,8 @@ export interface StudentDetailResponse {
   sinif_student_count: number;
   sinif_rank: number;
   toplam_net: number;
+  alan_net?: number;
+  net_etiket?: string;
   total_correct: number;
   total_wrong: number;
   total_empty: number;
@@ -782,9 +787,9 @@ export interface StudentDetailResponse {
   puan: number;
   ham_puan: number;
   puan_turleri: {
-    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
-    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
-    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number };
+    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
+    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
+    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
   } | null;
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
@@ -857,6 +862,7 @@ export interface RankingSectionInfo {
 
 export interface RankingPuanTuruInfo {
   puan: number;
+  ayt_net?: number;
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
   kurum_ici_sira?: number;
@@ -868,6 +874,8 @@ export interface RankingItem {
   student_name: string;
   raw_student_id: string;
   toplam_net: number;
+  alan_net?: number;
+  net_etiket?: string;
   puan: number;
   puan_turleri: Record<string, RankingPuanTuruInfo> | null;
   tahmini_siralama: number | null;

@@ -98,7 +98,10 @@ def _context(karne: dict, *, veli=None) -> dict[str, Any]:
         'bitis_saati': bitis,
         'oturum_ad': karne.get('session_name') or '',
         'puan': _fmt_num(karne.get('puan'), 3),
-        'net': _fmt_num(karne.get('toplam_net'), 2),
+        'net': _fmt_num(
+            karne.get('alan_net') if karne.get('alan_net') is not None else karne.get('toplam_net'),
+            2,
+        ),
         'pdf_baslik': PDF_TITLE,
         'kurum_ad': karne.get('kurum_ad') or '',
         'sube': karne.get('sube_ad') or '',

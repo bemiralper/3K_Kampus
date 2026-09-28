@@ -142,7 +142,9 @@ export default function StudentsPanel({
               <th>#</th>
               <th>Öğrenci</th>
               <th>Sınıf / Program</th>
-              <th style={{ textAlign: 'center' }}>Net</th>
+              <th style={{ textAlign: 'center' }} title={examType === 'YKS_AYT' ? 'Öğrencinin alanına giren AYT neti. Tüm testlerin ham toplamı değil.' : undefined}>
+                {examType === 'YKS_AYT' ? 'Alan neti' : 'Net'}
+              </th>
               <th style={{ textAlign: 'center' }}>Puan</th>
               {examType === 'YKS_AYT' && displayStudents.length > 0 && displayStudents[0].puan_turleri && (
                 <>
@@ -165,7 +167,12 @@ export default function StudentsPanel({
                 <td style={{ color: '#94a3b8', fontSize: 12 }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}</td>
                 <td style={{ fontWeight: 600 }}>{st.student_name}</td>
                 <td>{st.sinif || '—'}</td>
-                <td style={{ textAlign: 'center', fontWeight: 700 }}>{st.toplam_net}</td>
+                <td
+                  style={{ textAlign: 'center', fontWeight: 700 }}
+                  title={examType === 'YKS_AYT' ? `Tüm testler: ${st.toplam_net}` : undefined}
+                >
+                  {st.alan_net ?? st.toplam_net}
+                </td>
                 <td style={{ textAlign: 'center', fontWeight: 600, color: '#0262a7' }}>{st.puan}</td>
                 {examType === 'YKS_AYT' && st.puan_turleri && (
                   <>
