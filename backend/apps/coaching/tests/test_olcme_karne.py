@@ -510,6 +510,29 @@ class AlanNetInclusionTest(SimpleTestCase):
         self.assertFalse(included['Sosyal Bilimler-1'])
         self.assertTrue(included['Türkçe'])
 
+    def test_sayisal_alan_soru_sayisi_seksen(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import (
+            _mark_alan_inclusion,
+            student_alan_question_count,
+        )
+
+        rows = [
+            {'section_id': 1, 'section_name': 'TDE-Sosyal Bilimler-1', 'is_sub_section': False, 'parent_id': None, 'source': 'ayt', 'question_count': 40},
+            {'section_id': 2, 'section_name': 'Türk Dili ve Edebiyatı', 'is_sub_section': True, 'parent_id': 1, 'source': 'ayt', 'question_count': 24},
+            {'section_id': 3, 'section_name': 'Tarih-1', 'is_sub_section': True, 'parent_id': 1, 'source': 'ayt', 'question_count': 10},
+            {'section_id': 4, 'section_name': 'Coğrafya-1', 'is_sub_section': True, 'parent_id': 1, 'source': 'ayt', 'question_count': 6},
+            {'section_id': 5, 'section_name': 'Matematik', 'is_sub_section': False, 'parent_id': None, 'source': 'ayt', 'question_count': 40},
+            {'section_id': 6, 'section_name': 'Matematik', 'is_sub_section': True, 'parent_id': 5, 'source': 'ayt', 'question_count': 30},
+            {'section_id': 7, 'section_name': 'Geometri', 'is_sub_section': True, 'parent_id': 5, 'source': 'ayt', 'question_count': 10},
+            {'section_id': 8, 'section_name': 'Fen Bilimleri', 'is_sub_section': False, 'parent_id': None, 'source': 'ayt', 'question_count': 40},
+            {'section_id': 9, 'section_name': 'Fizik', 'is_sub_section': True, 'parent_id': 8, 'source': 'ayt', 'question_count': 14},
+            {'section_id': 10, 'section_name': 'Kimya', 'is_sub_section': True, 'parent_id': 8, 'source': 'ayt', 'question_count': 13},
+            {'section_id': 11, 'section_name': 'Biyoloji', 'is_sub_section': True, 'parent_id': 8, 'source': 'ayt', 'question_count': 13},
+            {'section_id': 12, 'section_name': 'Türkçe', 'is_sub_section': False, 'parent_id': None, 'source': 'tyt', 'question_count': 40},
+        ]
+        _mark_alan_inclusion(rows, 'YKS_AYT', 'SAYISAL')
+        self.assertEqual(student_alan_question_count(rows), 80)
+
     def test_karne_pdf_say_netini_ayirir(self):
         from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
 

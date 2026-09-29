@@ -62,7 +62,56 @@ class ContractPdfHtmlTests(SimpleTestCase):
         self.assertNotIn('₺50.000', html)
         self.assertNotIn('₺500.000', html)
         self.assertIn('10 ay', html)
+        self.assertIn('30 SGK', html)
+        self.assertIn('Aylık Maaş Planı', html)
+        self.assertNotIn('Haftalık izin', html)
         self.assertIn('<img src="data:image/', html)
+
+    def test_zero_sgk_and_ders_ucretli_omit_salary_insurance_and_shifts(self):
+        mod = _load_html_module()
+        sample = {
+            'sozlesme_no': 'PS-2026-0002',
+            'dogrulama_kodu': 'XYZ',
+            'personel_ad': 'Ali Demir',
+            'sozlesme_turu': 'DERS_UCRETLI',
+            'sozlesme_turu_display': 'Ders Ücretli',
+            'durum_display': 'Aktif',
+            'baslangic_tarihi': '2026-09-01',
+            'bitis_tarihi': '2027-06-30',
+            'egitim_yili_display': '2026-2027',
+            'toplam_calisma_suresi_ay': 10,
+            'belge_basligi': 'Öğretmen İş Sözleşmesi',
+            'haftalik_calisma_gun_sayisi': 3,
+            'sgk_gun': 0,
+            'net_maas': 45000,
+            'toplam_sozlesme_bedeli': 450000,
+            'ders_ucret_tipi': 'SAAT_BASI',
+            'ders_birim_ucret': 500,
+            'maas_plani': [
+                {
+                    'sira_no': 1,
+                    'baslangic_tarihi': '2026-09-01',
+                    'bitis_tarihi': '2026-09-30',
+                    'calisilan_gun': 30,
+                    'maas': 45000,
+                    'aciklama': '',
+                },
+            ],
+            'mesai_saatleri': [
+                {'gun': 1, 'baslangic': '09:00', 'bitis': '18:00', 'mola_dakika': 0, 'aktif': True},
+            ],
+            'kurum': {'ad': 'Demo Kurum'},
+        }
+        html = mod.build_personel_sozlesme_html(sample)
+        self.assertNotIn('SGK', html)
+        self.assertNotIn('Aylık Maaş Planı', html)
+        self.assertNotIn('Net maaş', html)
+        self.assertNotIn('Toplam net bedel', html)
+        self.assertNotIn('Tanımlı mesai', html)
+        self.assertNotIn('09:00', html)
+        self.assertNotIn('Haftalık izin', html)
+        self.assertIn('Ders Ücreti', html)
+        self.assertIn('Saatlik', html)
 
     def test_logo_from_sube_media_url_with_cache_bust(self):
         from apps.finans.application.export.report_html_template import resolve_sube_banner_logo

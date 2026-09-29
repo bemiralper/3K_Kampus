@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { resolveCoachPhotoUrl } from '@/lib/coach-media';
 import InfoTip from './InfoTip';
 import PdfExportModal from '../PdfExportModal';
 import KarneNotifyModal from './KarneNotifyModal';
@@ -9,6 +10,42 @@ import { analysisApi } from '../api';
 import { ALAN_LABELS } from '../pdfExport';
 import type { StudentAnalysis } from '../types';
 import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
+
+function StudentListPhoto({ foto, name }: { foto?: string | null; name: string }) {
+  const [open, setOpen] = useState(false);
+  const src = resolveCoachPhotoUrl(foto);
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [open]);
+  return (
+    <>
+      {src ? (
+        <button
+          type="button"
+          className={s.studentListThumb}
+          onClick={e => { e.stopPropagation(); setOpen(true); }}
+          aria-label={`${name} fotoğrafını büyüt`}
+        >
+          <img src={src} alt="" />
+        </button>
+      ) : (
+        <span className={s.studentListLogo} aria-hidden>
+          <img src="/img/3k-logo.png" alt="" />
+        </span>
+      )}
+      {open && src && (
+        <button type="button" className={s.studentListZoom} onClick={() => setOpen(false)} aria-label="Kapat">
+          <img src={src} alt={name} />
+        </button>
+      )}
+    </>
+  );
+}
 
 const ALAN_TO_PT: Record<string, 'SAY' | 'EA' | 'SOZ'> = {
   SAYISAL: 'SAY',
@@ -148,9 +185,9 @@ export default function StudentsPanel({
               <th style={{ textAlign: 'center' }}>Puan</th>
               {examType === 'YKS_AYT' && displayStudents.length > 0 && displayStudents[0].puan_turleri && (
                 <>
-                  <th style={{ textAlign: 'center', color: '#0262a7', fontSize: 11 }}>SAY</th>
-                  <th style={{ textAlign: 'center', color: '#7c3aed', fontSize: 11 }}>EA</th>
-                  <th style={{ textAlign: 'center', color: '#059669', fontSize: 11 }}>SÖZ</th>
+                  <th style={{ textAlign: 'center', color: '#0262a7', fontSize: 11 }} title="Sayısal net (Matematik + Fen). Alt satır puan.">SAY</th>
+                  <th style={{ textAlign: 'center', color: '#7c3aed', fontSize: 11 }} title="Eşit ağırlık neti (Sosyal-1 + Matematik). Alt satır puan.">EA</th>
+                  <th style={{ textAlign: 'center', color: '#059669', fontSize: 11 }} title="Sözel net (Sosyal-1 + Sosyal-2). Alt satır puan.">SÖZ</th>
                 </>
               )}
               <th style={{ textAlign: 'center' }}>Kurum Sıra</th>
@@ -165,7 +202,12 @@ export default function StudentsPanel({
             {displayStudents.map((st, idx) => (
               <tr key={st.answer_id}>
                 <td style={{ color: '#94a3b8', fontSize: 12 }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}</td>
-                <td style={{ fontWeight: 600 }}>{st.student_name}</td>
+                <td>
+                  <div className={s.studentListWho}>
+                    <StudentListPhoto foto={st.profil_foto} name={st.student_name} />
+                    <span className={s.studentListName}>{st.student_name}</span>
+                  </div>
+                </td>
                 <td>{st.sinif || '—'}</td>
                 <td
                   style={{ textAlign: 'center', fontWeight: 700 }}
@@ -176,9 +218,18 @@ export default function StudentsPanel({
                 <td style={{ textAlign: 'center', fontWeight: 600, color: '#0262a7' }}>{st.puan}</td>
                 {examType === 'YKS_AYT' && st.puan_turleri && (
                   <>
-                    <td style={{ textAlign: 'center', fontWeight: 600, color: '#0262a7', fontSize: 12 }}>{st.puan_turleri.SAY.puan}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600, color: '#7c3aed', fontSize: 12 }}>{st.puan_turleri.EA.puan}</td>
-                    <td style={{ textAlign: 'center', fontWeight: 600, color: '#059669', fontSize: 12 }}>{st.puan_turleri.SOZ.puan}</td>
+                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#0262a7', fontSize: 12 }} title={`Puan ${st.puan_turleri.SAY.puan}`}>
+                      {st.puan_turleri.SAY.ayt_net.toFixed(2)}
+                      <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.SAY.puan}</div>
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#7c3aed', fontSize: 12 }} title={`Puan ${st.puan_turleri.EA.puan}`}>
+                      {st.puan_turleri.EA.ayt_net.toFixed(2)}
+                      <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.EA.puan}</div>
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#059669', fontSize: 12 }} title={`Puan ${st.puan_turleri.SOZ.puan}`}>
+                      {st.puan_turleri.SOZ.ayt_net.toFixed(2)}
+                      <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.SOZ.puan}</div>
+                    </td>
                   </>
                 )}
                 <td style={{ textAlign: 'center' }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}/{alanViewFilter ? displayStudents.length : st.toplam_ogrenci}</td>

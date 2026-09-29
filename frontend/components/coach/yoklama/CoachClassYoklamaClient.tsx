@@ -104,6 +104,16 @@ function levelLabel(seviye: string) {
   return /sınıf/i.test(seviye) ? seviye : `${seviye}. Sınıf`;
 }
 
+function withRemainder(
+  groups: { title: string; items: CoachPeriodClassroom[] }[],
+  rows: CoachPeriodClassroom[],
+) {
+  const shown = new Set(groups.flatMap((g) => g.items.map((r) => r.id)));
+  const rest = rows.filter((r) => !shown.has(r.id));
+  if (!rest.length) return groups;
+  return [...groups, { title: "Diğer", items: sortClassrooms(rest) }];
+}
+
 function groupClassrooms(rows: CoachPeriodClassroom[]) {
   const terms = [...new Set(rows.map((r) => r.term_name).filter(Boolean))];
   const levels = [...new Set(rows.map((r) => r.seviye).filter(Boolean))];
@@ -111,8 +121,10 @@ function groupClassrooms(rows: CoachPeriodClassroom[]) {
   const multiLevel = levels.length > 1;
 
   if (multiTerm && multiLevel) {
-    const keys = [...new Set(rows.map((r) => `${r.term_name}|||${r.seviye}`))];
-    return keys
+    const keys = [...new Set(
+      rows.filter((r) => r.term_name && r.seviye).map((r) => `${r.term_name}|||${r.seviye}`),
+    )];
+    const groups = keys
       .sort((a, b) => a.localeCompare(b, "tr", { numeric: true }))
       .map((key) => {
         const [term, seviye] = key.split("|||");
@@ -121,19 +133,22 @@ function groupClassrooms(rows: CoachPeriodClassroom[]) {
           items: sortClassrooms(rows.filter((r) => r.term_name === term && r.seviye === seviye)),
         };
       });
+    return withRemainder(groups, rows);
   }
   if (multiTerm) {
-    return terms
+    const groups = terms
       .sort((a, b) => a.localeCompare(b, "tr"))
       .map((title) => ({ title, items: sortClassrooms(rows.filter((r) => r.term_name === title)) }));
+    return withRemainder(groups, rows);
   }
   if (multiLevel) {
-    return levels
+    const groups = levels
       .sort((a, b) => a.localeCompare(b, "tr", { numeric: true }))
       .map((title) => ({
         title: levelLabel(title),
         items: sortClassrooms(rows.filter((r) => r.seviye === title)),
       }));
+    return withRemainder(groups, rows);
   }
   return [{ title: "", items: sortClassrooms(rows) }];
 }
@@ -147,7 +162,7 @@ export default function CoachClassYoklamaClient() {
   const [classroomId, setClassroomId] = useState<number | null>(null);
   const [termId, setTermId] = useState<number | null>(null);
   const [date, setDate] = useState(todayISO);
-  const [filter, setFilter] = useState<ListFilter>("action");
+  const [filter, setFilter] = useState<ListFilter>("all");
   const [query, setQuery] = useState("");
   const [sessions, setSessions] = useState<ClassPeriodSession[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
@@ -546,8 +561,8 @@ function ListView({
   if (!classrooms.length) {
     return (
       <div className="cyc-empty">
-        <h3>Aktif yılda sınıf yok</h3>
-        <p>Aktif eğitim yılındaki sınıflar burada listelenir.</p>
+        <h3>Bu yılda sınıf yok</h3>
+        <p>Seçili eğitim yılı ve şubedeki sınıflar burada listelenir.</p>
       </div>
     );
   }

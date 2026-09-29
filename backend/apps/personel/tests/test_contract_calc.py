@@ -18,6 +18,7 @@ calc_toplam_calisma_suresi = _calc.calc_toplam_calisma_suresi
 format_calisma_suresi_ay = _calc.format_calisma_suresi_ay
 sozlesme_belge_basligi = _calc.sozlesme_belge_basligi
 derive_month_dates = _calc.derive_month_dates
+clamp_maas_plani = _calc.clamp_maas_plani
 chain_fill_from_index = _calc.chain_fill_from_index
 calc_haftalik_saat = _calc.calc_haftalik_saat
 

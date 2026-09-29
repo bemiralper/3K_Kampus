@@ -241,8 +241,12 @@ export default function SozlesmeDetayClient({ sozlesmeId }: Props) {
               <Descriptions.Item label="Şube">{s.sube_ad || '—'}</Descriptions.Item>
               <Descriptions.Item label="Başlangıç">{fmtTarih(s.baslangic_tarihi)}</Descriptions.Item>
               <Descriptions.Item label="Bitiş">{fmtTarih(s.bitis_tarihi)}</Descriptions.Item>
-              <Descriptions.Item label="Net Maaş">{fmtTL(contractNetMaas(s))}</Descriptions.Item>
-              <Descriptions.Item label="SGK Gün">{s.sgk_gun}</Descriptions.Item>
+              {s.sozlesme_turu !== 'DERS_UCRETLI' && (
+                <Descriptions.Item label="Net Maaş">{fmtTL(contractNetMaas(s))}</Descriptions.Item>
+              )}
+              {s.sgk_gun > 0 && (
+                <Descriptions.Item label="SGK Gün">{s.sgk_gun}</Descriptions.Item>
+              )}
               {s.gorev_snapshot && <Descriptions.Item label="Görev">{s.gorev_snapshot}</Descriptions.Item>}
               {s.departman_snapshot && <Descriptions.Item label="Departman">{s.departman_snapshot}</Descriptions.Item>}
               {s.personel_no_snapshot && <Descriptions.Item label="Personel No">{s.personel_no_snapshot}</Descriptions.Item>}
@@ -257,7 +261,7 @@ export default function SozlesmeDetayClient({ sozlesmeId }: Props) {
         </Col>
 
         <Col xs={24} lg={12}>
-          {s.mesai_saatleri && s.mesai_saatleri.length > 0 && (
+          {s.sozlesme_turu !== 'DERS_UCRETLI' && s.mesai_saatleri && s.mesai_saatleri.length > 0 && (
             <Card title="Mesai Saatleri" bordered={false} style={{ borderRadius: 12, marginBottom: 16 }}>
               <Descriptions column={1} size="small" labelStyle={{ color: '#64748b', width: 100 }}>
                 {s.mesai_saatleri.map((m) => (
@@ -292,7 +296,7 @@ export default function SozlesmeDetayClient({ sozlesmeId }: Props) {
         </Col>
       </Row>
 
-      {s.maas_plani && s.maas_plani.length > 0 && (
+      {s.sozlesme_turu !== 'DERS_UCRETLI' && s.maas_plani && s.maas_plani.length > 0 && (
         <Card
           title="Maaş Planı"
           bordered={false}

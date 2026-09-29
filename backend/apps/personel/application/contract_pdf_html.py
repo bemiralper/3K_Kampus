@@ -51,6 +51,18 @@ def _fmt_tarih(value: str | None) -> str:
         return _esc(value)
 
 
+def _sgk_gun(data: dict) -> int:
+    """0 veya boş sigorta günü belgede gösterilmez."""
+    raw = data.get('sgk_gun')
+    if raw in (None, ''):
+        return 0
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return 0
+    return n if n > 0 else 0
+
+
 def _kv_rows(rows: list[tuple[str, Any]]) -> str:
     return ''.join(
         f'<tr><th>{_esc(label)}</th><td>{value}</td></tr>'
@@ -138,8 +150,13 @@ def build_personel_sozlesme_html(data: dict) -> str:
           </table>
         </section>'''
 
+    ders_ucretli = tur_raw == 'DERS_UCRETLI'
+    sgk = _sgk_gun(data)
+    show_maas = (not ders_ucretli) and tur_raw in ('TAM_ZAMANLI', 'KARMA')
+    show_mesai = not ders_ucretli
+
     maas_html = ''
-    if tur_raw in ('TAM_ZAMANLI', 'KARMA') and (data.get('maas_plani') or []):
+    if show_maas and (data.get('maas_plani') or []):
         maas_html = f'''
         <section>
           <h2>Aylık Maaş Planı</h2>
@@ -156,9 +173,6 @@ def build_personel_sozlesme_html(data: dict) -> str:
             </tr></tfoot>
           </table>
         </section>'''
-
-    izin_gunleri = data.get('haftalik_izin_gunleri') or []
-    izin_text = ', '.join(GUN_ADLARI[g - 1] for g in izin_gunleri if 1 <= g <= 7) or '—'
 
     sure = format_calisma_suresi_ay(
         (data.get('ozet') or {}).get('toplam_calisma_suresi_ay')
@@ -177,13 +191,52 @@ def build_personel_sozlesme_html(data: dict) -> str:
         x for x in (data.get('brans_snapshot'), data.get('gorev_snapshot')) if x
     ) or '—'
 
-    mesai_block = (
-        f'<table class="grid compact"><thead><tr>'
-        f'<th>Gün</th><th>Başlangıç</th><th>Bitiş</th><th class="c">Mola (dk)</th>'
-        f'</tr></thead><tbody>{mesai_rows}</tbody></table>'
-        if mesai_rows
-        else '<p class="empty">Tanımlı mesai yok.</p>'
-    )
+    mesai_block = ''
+    if show_mesai:
+        mesai_block = (
+            f'<table class="grid compact"><thead><tr>'
+            f'<th>Gün</th><th>Başlangıç</th><th>Bitiş</th><th class="c">Mola (dk)</th>'
+            f'</tr></thead><tbody>{mesai_rows}</tbody></table>'
+            if mesai_rows
+            else '<p class="empty">Tanımlı mesai yok.</p>'
+        )
+
+    haftalik_gun = data.get('haftalik_calisma_gun_sayisi') or '—'
+    fact_cells = [
+        ('Çalışma tipi', tur),
+        ('Durum', _esc(data.get('durum_display'))),
+        ('Başlangıç', _fmt_tarih(data.get('baslangic_tarihi'))),
+        ('Bitiş', _fmt_tarih(data.get('bitis_tarihi'))),
+        ('Toplam süre', sure),
+    ]
+    if show_maas:
+        fact_cells.append(('Net maaş', _fmt_tl(_contract_net_maas(data))))
+        fact_cells.append(('Toplam net bedel', _fmt_tl(data.get('toplam_sozlesme_bedeli') or 0)))
+    if sgk:
+        fact_cells.append(('Haftalık / SGK', f'{haftalik_gun} gün · {sgk} SGK'))
+    else:
+        fact_cells.append(('Haftalık', f'{haftalik_gun} gün'))
+
+    facts_rows = ''
+    for i in range(0, len(fact_cells), 2):
+        pair = fact_cells[i:i + 2]
+        cells = ''.join(f'<th>{label}</th><td>{value}</td>' for label, value in pair)
+        if len(pair) == 1:
+            cells += '<th></th><td></td>'
+        facts_rows += f'<tr>{cells}</tr>'
+
+    duzen_rows = [
+        ('Haftalık çalışma', f'{haftalik_gun} gün'),
+    ]
+    if sgk:
+        duzen_rows.append(('SGK gün', str(sgk)))
+    if show_mesai:
+        duzen_html = (
+            f'<div class="work"><div><table class="kv">{_kv_rows(duzen_rows)}</table></div>'
+            f'<div>{mesai_block}</div></div>'
+        )
+    else:
+        duzen_html = f'<table class="kv">{_kv_rows(duzen_rows)}</table>'
 
     return f'''<!DOCTYPE html>
 <html lang="tr">
@@ -397,23 +450,7 @@ def build_personel_sozlesme_html(data: dict) -> str:
   <section>
     <h2>Sözleşme Özeti</h2>
     <table class="facts">
-      <tr>
-        <th>Çalışma tipi</th><td>{tur}</td>
-        <th>Durum</th><td>{_esc(data.get("durum_display"))}</td>
-      </tr>
-      <tr>
-        <th>Başlangıç</th><td>{_fmt_tarih(data.get("baslangic_tarihi"))}</td>
-        <th>Bitiş</th><td>{_fmt_tarih(data.get("bitis_tarihi"))}</td>
-      </tr>
-      <tr>
-        <th>Toplam süre</th><td>{sure}</td>
-        <th>Net maaş</th><td>{_fmt_tl(_contract_net_maas(data))}</td>
-      </tr>
-      <tr>
-        <th>Toplam net bedel</th><td>{_fmt_tl(data.get("toplam_sozlesme_bedeli") or 0)}</td>
-        <th>Haftalık / SGK</th>
-        <td>{data.get("haftalik_calisma_gun_sayisi") or "—"} gün · {data.get("sgk_gun") or "—"} SGK</td>
-      </tr>
+      {facts_rows}
     </table>
   </section>
 
@@ -422,18 +459,7 @@ def build_personel_sozlesme_html(data: dict) -> str:
 
   <section>
     <h2>Çalışma Düzeni</h2>
-    <div class="work">
-      <div>
-        <table class="kv">
-          {_kv_rows([
-              ('Haftalık çalışma', f'{data.get("haftalik_calisma_gun_sayisi") or "—"} gün'),
-              ('SGK gün', str(data.get('sgk_gun') or '—')),
-              ('Haftalık izin', _esc(izin_text)),
-          ])}
-        </table>
-      </div>
-      <div>{mesai_block}</div>
-    </div>
+    {duzen_html}
   </section>
 
   {maddeler_html}

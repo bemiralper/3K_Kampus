@@ -702,6 +702,7 @@ export interface StudentAnalysis {
   answer_id: number;
   student_id: number | null;
   student_name: string;
+  profil_foto?: string | null;
   raw_student_id: string;
   sinif: string;
   has_class?: boolean;
@@ -784,12 +785,22 @@ export interface StudentDetailResponse {
   total_wrong: number;
   total_empty: number;
   total_questions: number;
+  alan_soru?: number;
   puan: number;
   ham_puan: number;
   puan_turleri: {
     SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
     EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
     SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
+  } | null;
+  alan_puan_turu?: 'SAY' | 'EA' | 'SOZ' | null;
+  tyt_siralama?: {
+    net?: number | null;
+    puan: number;
+    kurum_ici_sira: number;
+    sinif_ici_sira: number;
+    tahmini_siralama: number | null;
+    toplam_ogrenci: number;
   } | null;
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
@@ -837,6 +848,19 @@ export interface StudentDetailResponse {
       }[];
     }[];
   }[];
+  difficulty?: {
+    participant_count: number;
+    note: string;
+    bands: {
+      key: 'kolay' | 'orta' | 'zor';
+      label: string;
+      scope?: '' | 'alan';
+      soru: number;
+      dogru: number;
+      yanlis: number;
+      bos: number;
+    }[];
+  } | null;
 }
 
 export interface ClassAnalysis {

@@ -47,6 +47,25 @@ def month_end(d: date) -> date:
     return date(d.year, d.month, monthrange(d.year, d.month)[1])
 
 
+def clamp_maas_plani(rows: list[dict], contract_end: date | str | None) -> list[dict]:
+    """Sözleşme bitişinden sonra başlayan ayları at, taşan son ayı bitişe kısalt."""
+    end = _parse_date(contract_end)
+    if not end:
+        return rows
+    out: list[dict] = []
+    for row in rows:
+        r = dict(row)
+        start = _parse_date(r.get('baslangic_tarihi'))
+        row_end = _parse_date(r.get('bitis_tarihi'))
+        if start and start > end:
+            continue
+        if row_end and row_end > end:
+            r['bitis_tarihi'] = end.isoformat()
+            r['calisilan_gun'] = calc_calisilan_gun(r.get('baslangic_tarihi'), r['bitis_tarihi'])
+        out.append(r)
+    return out
+
+
 def derive_month_dates(rows: list[dict], contract_start: date | str | None) -> list[dict]:
     """1. ay başlangıcından itibaren sonraki ayların tarihlerini türet.
 
@@ -316,7 +335,9 @@ def apply_computed_totals(sozlesme, maas_plani: list) -> None:
         first_start = _parse_date(rows[0].get('baslangic_tarihi'))
         if first_start and (not sozlesme.baslangic_tarihi or _parse_date(sozlesme.baslangic_tarihi) != first_start):
             sozlesme.baslangic_tarihi = first_start
-        if last_end and (not sozlesme.bitis_tarihi or _parse_date(sozlesme.bitis_tarihi) < last_end):
+        # Bitiş tarihi forma yazılmışsa maaş planı onu geri uzatmasın.
+        # Plan daha uzunsa sözleşme bitişi olduğu yerde kalır; kırpma kayıtta yapılır.
+        if last_end and not sozlesme.bitis_tarihi:
             sozlesme.bitis_tarihi = last_end
 
 

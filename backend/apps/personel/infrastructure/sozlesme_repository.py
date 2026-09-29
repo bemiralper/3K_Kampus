@@ -17,6 +17,7 @@ from apps.personel.application.contract_calc_service import (
     generate_sozlesme_no,
     personel_no_from_id,
     derive_month_dates,
+    clamp_maas_plani,
     calc_calisilan_gun,
     default_mesai_saatleri,
 )
@@ -97,6 +98,7 @@ class SozlesmeRepository:
             rows = data['maas_plani'] or []
             contract_start = sozlesme.baslangic_tarihi
             rows = derive_month_dates(rows, contract_start)
+            rows = clamp_maas_plani(rows, sozlesme.bitis_tarihi)
             for row in rows:
                 b = row.get('baslangic_tarihi')
                 e = row.get('bitis_tarihi')
@@ -116,7 +118,9 @@ class SozlesmeRepository:
 
         if 'mesai_saatleri' in data:
             sozlesme.mesai_saatleri.all().delete()
-            rows = data['mesai_saatleri'] or default_mesai_saatleri()
+            rows = data['mesai_saatleri']
+            if rows is None:
+                rows = default_mesai_saatleri()
             for row in rows:
                 SozlesmeMesaiSaati.objects.create(
                     sozlesme=sozlesme,

@@ -54,7 +54,7 @@ function top3Rank(detail: StudentDetailResponse) {
 }
 
 function kurumRankLabel(rank: number) {
-  return `Kurum ${rank}. si`;
+  return ({ 1: 'Birinci', 2: 'İkinci', 3: 'Üçüncü' } as Record<number, string>)[rank] || '';
 }
 
 function sessionHours(detail: StudentDetailResponse) {
@@ -104,7 +104,6 @@ function KarneHeader({ detail }: { detail: StudentDetailResponse }) {
               {medal > 0 && (
                 <span className={s.karneChipRank} data-rank={medal}>
                   {kurumRankLabel(medal)}
-                  {detail.toplam_ogrenci ? ` / ${detail.toplam_ogrenci}` : ''}
                 </span>
               )}
             </span>
@@ -121,6 +120,45 @@ function KarneHeader({ detail }: { detail: StudentDetailResponse }) {
       </div>
     </div>
   );
+}
+
+const DIFF_COPY: Record<string, { hint: string; tag: string }> = {
+  kolay: { hint: 'Çoğu öğrenci bildi', tag: '%70+' },
+  orta: { hint: 'Ayırt eden sorular', tag: '%40–70' },
+  zor: { hint: 'Az öğrenci bildi', tag: '%40 altı' },
+};
+
+function difficultyFocus(band: { key: string; dogru: number; yanlis: number; bos: number; soru: number }) {
+  const wrong = band.yanlis || 0;
+  const empty = band.bos || 0;
+  const correct = band.dogru || 0;
+  let value = correct;
+  let unit = 'doğru';
+  let tone = 'ok';
+  if (wrong && band.key === 'kolay') {
+    value = wrong; unit = 'yanlış'; tone = 'alert';
+  } else if (wrong && band.key === 'orta') {
+    value = wrong; unit = 'yanlış'; tone = 'warn';
+  } else if (wrong) {
+    value = wrong; unit = 'yanlış'; tone = 'ink';
+  } else if (empty && band.key === 'kolay') {
+    value = empty; unit = 'boş'; tone = 'warn';
+  }
+  const bits: string[] = [];
+  if (unit !== 'doğru' && correct) bits.push(`${correct} doğru`);
+  if (unit !== 'yanlış' && wrong) bits.push(`${wrong} yanlış`);
+  if (unit !== 'boş' && empty) bits.push(`${empty} boş`);
+  bits.push(`${band.soru} soru`);
+  const total = Math.max(band.soru || correct + wrong + empty, 1);
+  return {
+    value,
+    unit,
+    tone,
+    meta: bits.join(' · '),
+    dogruPct: (correct / total) * 100,
+    yanlisPct: (wrong / total) * 100,
+    bosPct: (empty / total) * 100,
+  };
 }
 
 function KarneSecHead({ title, note }: { title: string; note?: string }) {
@@ -278,6 +316,7 @@ export default function StudentDetailModal({
     if (!detail) return [];
     if (isAyt && detail.puan_turleri) {
       return (['SAY', 'EA', 'SOZ'] as const).map(pt => ({
+        key: pt,
         label: pt === 'SOZ' ? 'SÖZ' : pt,
         net: detail.puan_turleri![pt].ayt_net,
         puan: detail.puan_turleri![pt].puan,
@@ -288,6 +327,7 @@ export default function StudentDetailModal({
       }));
     }
     return [{
+      key: typeLabel,
       label: typeLabel,
       net: null as number | null,
       puan: detail.puan,
@@ -297,6 +337,8 @@ export default function StudentDetailModal({
       sinifSira: null as number | null,
     }];
   })();
+  const alanPt = detail?.alan_puan_turu || 'SAY';
+  const tytRank = detail?.tyt_siralama;
 
   const hasClass = detail?.has_class ?? Boolean(detail?.sinif_student_count || detail?.sinif_rank);
 
@@ -354,9 +396,9 @@ export default function StudentDetailModal({
 
               <div className={s.karneSummary}>
                 {[
+                  ['Soru', fmtInt(detail.alan_soru || detail.total_questions), 'ink'],
                   ['Doğru', fmtInt(detail.total_correct), 'green'],
                   ['Yanlış', fmtInt(detail.total_wrong), 'red'],
-                  ['Boş', fmtInt(detail.total_empty), 'muted'],
                   [
                     isAyt && detail.net_etiket ? detail.net_etiket : 'Net',
                     fmt(isAyt && detail.alan_net != null ? detail.alan_net : detail.toplam_net, 2),
@@ -386,12 +428,66 @@ export default function StudentDetailModal({
                 title="Puan ve Sıralama"
                 note={detail.referans_yil ? `Tahmini sıralama ${detail.referans_yil} verilerine göre` : ''}
               />
+              {isAyt && detail.puan_turleri ? (
+                <div className={s.karneRankSplit}>
+                  <div className={s.karneRankPanel}>
+                    <div className={s.karneRankCap}>TYT</div>
+                    <div className={s.karneTableWrap}>
+                      <table className={s.karneTable}>
+                        <thead>
+                          <tr>
+                            <th>Net</th><th>Puan</th><th>Kurum</th><th>Sınıf</th><th>Türkiye</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          <tr>
+                            <td>{tytRank?.net != null ? fmt(tytRank.net, 2) : '—'}</td>
+                            <td>{tytRank ? fmt(tytRank.puan, 2) : '—'}</td>
+                            <td>{tytRank?.kurum_ici_sira ? fmtInt(tytRank.kurum_ici_sira) : '—'}</td>
+                            <td>{hasClass && tytRank?.sinif_ici_sira ? fmtInt(tytRank.sinif_ici_sira) : '—'}</td>
+                            <td>{tytRank?.tahmini_siralama ? fmtInt(tytRank.tahmini_siralama) : '—'}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className={s.karneRankFoot}>
+                      {tytRank ? `${fmtInt(tytRank.toplam_ogrenci)} öğrenci` : 'Bağlı TYT sonucu yok'}
+                    </div>
+                  </div>
+                  <div className={s.karneRankPanel}>
+                    <div className={s.karneRankCap}>AYT</div>
+                    <div className={s.karneTableWrap}>
+                      <table className={s.karneTable}>
+                        <thead>
+                          <tr>
+                            <th style={{ textAlign: 'left' }}>Tür</th>
+                            <th>Net</th>
+                            <th>Puan</th><th>Kurum</th><th>Sınıf</th><th>Türkiye</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rankingRows.map(row => (
+                            <tr key={row.key} className={row.key === alanPt ? s.karneAlanRow : undefined}>
+                              <td className={s.karneLeft}>{row.label}</td>
+                              <td>{row.net != null ? fmt(row.net, 2) : '—'}</td>
+                              <td>{fmt(row.puan, 2)}</td>
+                              <td>{row.kurumSira ? fmtInt(row.kurumSira) : '—'}</td>
+                              <td>{hasClass && row.sinifSira ? fmtInt(row.sinifSira) : '—'}</td>
+                              <td>{row.tahmini ? fmtInt(row.tahmini) : '—'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className={s.karneRankFoot}>{fmtInt(detail.toplam_ogrenci)} öğrenci</div>
+                  </div>
+                </div>
+              ) : (
               <div className={s.karneTableWrap}>
                 <table className={s.karneTable}>
                   <thead>
                     <tr>
                       <th style={{ textAlign: 'left' }}>Puan Türü</th>
-                      {isAyt && <th>Net</th>}
                       <th>Puan</th>
                       <th>Kurum Ort.</th>
                       <th>Sınıf Sırası</th>
@@ -403,21 +499,15 @@ export default function StudentDetailModal({
                     {rankingRows.map((row, i) => (
                       <tr key={row.label}>
                         <td className={s.karneLeft}>{row.label}</td>
-                        {isAyt && <td>{row.net != null ? fmt(row.net, 2) : '—'}</td>}
                         <td>{fmt(row.puan, 2)}</td>
                         <td>{fmt(row.avg, 2)}</td>
-                        <td>{
-                          isAyt
-                            ? (hasClass && row.sinifSira ? fmtInt(row.sinifSira) : '—')
-                            : (i === 0 ? (hasClass && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—') : '')
-                        }</td>
+                        <td>{i === 0 ? (hasClass && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—') : ''}</td>
                         <td>{row.kurumSira ? fmtInt(row.kurumSira) : '—'}</td>
                         <td>{row.tahmini ? fmtInt(row.tahmini) : '—'}</td>
                       </tr>
                     ))}
                     <tr>
                       <td className={s.karneLeft}>Katılım</td>
-                      {isAyt && <td className={s.karneMuted}>—</td>}
                       <td className={s.karneMuted}>—</td>
                       <td className={s.karneMuted}>—</td>
                       <td className={s.karneMuted}>
@@ -431,6 +521,7 @@ export default function StudentDetailModal({
                   </tbody>
                 </table>
               </div>
+              )}
 
               <KarneSecHead title="Ders / Test Performansı" note="Fark sütunları öğrencinin ortalamaya göre konumudur" />
               <div className={s.karneTableWrap}>
@@ -484,6 +575,47 @@ export default function StudentDetailModal({
                   </tbody>
                 </table>
               </div>
+
+              {detail.difficulty && detail.difficulty.bands.length > 0 ? (
+                <>
+                  <KarneSecHead
+                    title="Zorluk Seviyesi"
+                    note="Soru, kurumun doğru oranına göre gruplandı"
+                  />
+                  <div className={s.karneDiffGrid}>
+                    {detail.difficulty.bands.map(band => {
+                      const focus = difficultyFocus(band);
+                      const copy = DIFF_COPY[band.key];
+                      const hint = band.scope === 'alan' && band.key === 'orta'
+                        ? 'Alanındaki ayırt eden sorular'
+                        : band.scope === 'alan' && band.key === 'zor'
+                          ? 'Alanındaki zor sorular'
+                          : copy?.hint;
+                      return (
+                        <article key={band.key} className={s.karneDiffCard} data-band={band.key} data-tone={focus.tone}>
+                          <header className={s.karneDiffHead}>
+                            <strong>{band.label}</strong>
+                            <span>{copy?.tag}</span>
+                          </header>
+                          <p className={s.karneDiffHint}>{hint}</p>
+                          <p className={s.karneDiffHero}>
+                            <b>{focus.value}</b> {focus.unit}
+                          </p>
+                          <p className={s.karneDiffMeta}>{focus.meta}</p>
+                          <div className={s.karneDiffMeter} aria-hidden>
+                            <i data-part="dogru" style={{ width: `${focus.dogruPct}%` }} />
+                            <i data-part="yanlis" style={{ width: `${focus.yanlisPct}%` }} />
+                            <i data-part="bos" style={{ width: `${focus.bosPct}%` }} />
+                          </div>
+                        </article>
+                      );
+                    })}
+                  </div>
+                  {detail.difficulty.note ? (
+                    <p className={s.karneDifficultyNote}>{detail.difficulty.note}</p>
+                  ) : null}
+                </>
+              ) : null}
             </div>
 
             {!!detail.answer_grids?.length && (
@@ -533,19 +665,28 @@ export default function StudentDetailModal({
                 })}
               </div>
 
-              <KarneSecHead title="Verimlilik" note="Doğru / (doğru + yanlış) oranı" />
-              <div className={s.karneVerimGrid}>
-                {detail.section_details.map(sd => (
-                  <div key={`v-${sd.section_id}`} className={s.karneVerimCard} style={{ borderTopColor: verimColor(sd.verimlilik) }}>
-                    <div className={s.karneVerimVal} style={{ color: verimColor(sd.verimlilik) }}>
-                      %{Math.round(sd.verimlilik)}
+              <KarneSecHead title="Verimlilik" note="Net / soru" />
+              <div className={s.karneVerimList}>
+                {sectionRows.map(({ sd, main }) => {
+                  const pct = Math.max(0, Math.min(100, sd.verimlilik || 0));
+                  return (
+                    <div
+                      key={`v-${sd.section_id}`}
+                      className={main ? `${s.karneVerimRow} ${s.karneVerimRowMain}` : s.karneVerimRow}
+                    >
+                      <span className={s.karneVerimName}>{sd.section_name}</span>
+                      <span className={s.karneVerimTrack}>
+                        <span
+                          className={s.karneVerimFill}
+                          style={{ width: `${pct}%`, background: verimColor(sd.verimlilik) }}
+                        />
+                      </span>
+                      <strong className={s.karneVerimPct} style={{ color: verimColor(sd.verimlilik) }}>
+                        %{Math.round(pct)}
+                      </strong>
                     </div>
-                    <div className={s.karneVerimName}>{sd.section_name}</div>
-                    {sd.bos_potansiyel > 0 && (
-                      <div className={s.karneVerimPot}>+{fmt(sd.bos_potansiyel, 1)} pot.</div>
-                    )}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <KarneSecHead title="Güçlü ve Geliştirilecek Alanlar" />

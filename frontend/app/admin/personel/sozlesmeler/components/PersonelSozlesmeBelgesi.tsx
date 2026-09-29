@@ -143,10 +143,45 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
   const turLabel = data.sozlesme_turu_display || data.sozlesme_turu;
   const qrValue = `${data.sozlesme_no}|${data.dogrulama_kodu || ""}`;
   const duzenlemeTarihi = fmtTarih(data.duzenlenme_tarihi || data.baslangic_tarihi);
+  const dersUcretli = data.sozlesme_turu === "DERS_UCRETLI";
   const showMaas =
+    !dersUcretli &&
     (data.sozlesme_turu === "TAM_ZAMANLI" || data.sozlesme_turu === "KARMA") &&
     (data.maas_plani?.length ?? 0) > 0;
+  const showSalary = !dersUcretli;
+  const showMesai = !dersUcretli;
+  const sgkGun = Number(data.sgk_gun);
+  const showSgk = Number.isFinite(sgkGun) && sgkGun > 0;
   const showDers = data.sozlesme_turu === "DERS_UCRETLI" || data.sozlesme_turu === "KARMA";
+  const summaryCells: { h: string; v: string }[] = [
+    { h: "Çalışma tipi", v: turLabel },
+    { h: "Durum", v: data.durum_display || "—" },
+    { h: "Başlangıç", v: fmtTarih(data.baslangic_tarihi) },
+    { h: "Bitiş", v: fmtTarih(data.bitis_tarihi) },
+    {
+      h: "Toplam süre",
+      v: fmtAySuresi(
+        data.ozet?.toplam_calisma_suresi_ay ??
+          data.toplam_calisma_suresi_ay ??
+          data.maas_plani?.length ??
+          0,
+      ),
+    },
+  ];
+  if (showSalary) {
+    summaryCells.push({ h: "Net maaş", v: fmtTL(contractNetMaas(data)) });
+    summaryCells.push({ h: "Toplam net bedel", v: fmtTL(data.toplam_sozlesme_bedeli ?? 0) });
+  }
+  summaryCells.push({
+    h: showSgk ? "Haftalık / SGK" : "Haftalık",
+    v: showSgk
+      ? `${data.haftalik_calisma_gun_sayisi ?? "—"} gün · ${sgkGun} SGK`
+      : `${data.haftalik_calisma_gun_sayisi ?? "—"} gün`,
+  });
+  const summaryRows: { h: string; v: string }[][] = [];
+  for (let i = 0; i < summaryCells.length; i += 2) {
+    summaryRows.push(summaryCells.slice(i, i + 2));
+  }
   const th: React.CSSProperties = {
     background: ACCENT,
     color: "#fff",
@@ -302,35 +337,7 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
       <Section title="Sözleşme Özeti">
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 8.5 }}>
           <tbody>
-            {[
-              [
-                { h: "Çalışma tipi", v: turLabel },
-                { h: "Durum", v: data.durum_display },
-              ],
-              [
-                { h: "Başlangıç", v: fmtTarih(data.baslangic_tarihi) },
-                { h: "Bitiş", v: fmtTarih(data.bitis_tarihi) },
-              ],
-              [
-                {
-                  h: "Toplam süre",
-                  v: fmtAySuresi(
-                    data.ozet?.toplam_calisma_suresi_ay ??
-                      data.toplam_calisma_suresi_ay ??
-                      data.maas_plani?.length ??
-                      0,
-                  ),
-                },
-                { h: "Net maaş", v: fmtTL(contractNetMaas(data)) },
-              ],
-              [
-                { h: "Toplam net bedel", v: fmtTL(data.toplam_sozlesme_bedeli ?? 0) },
-                {
-                  h: "Haftalık / SGK",
-                  v: `${data.haftalik_calisma_gun_sayisi ?? "—"} gün · ${data.sgk_gun ?? "—"} SGK`,
-                },
-              ],
-            ].map((row, i) => (
+            {summaryRows.map((row, i) => (
               <tr key={i}>
                 {row.flatMap((cell) => [
                   <th
@@ -453,18 +460,21 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
       )}
 
       <Section title="Çalışma Düzeni">
-        <div style={{ display: "grid", gridTemplateColumns: "0.9fr 1.4fr", gap: 14, alignItems: "start" }}>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: showMesai ? "0.9fr 1.4fr" : "1fr",
+            gap: 14,
+            alignItems: "start",
+          }}
+        >
           <Kv
             rows={[
               { label: "Haftalık çalışma", value: `${data.haftalik_calisma_gun_sayisi ?? "—"} gün` },
-              { label: "SGK gün", value: String(data.sgk_gun ?? "—") },
-              {
-                label: "Haftalık izin",
-                value: (data.haftalik_izin_gunleri || []).map((g) => GUN_ADLARI[g - 1]).join(", ") || "—",
-              },
+              ...(showSgk ? [{ label: "SGK gün", value: String(sgkGun) }] : []),
             ]}
           />
-          {data.mesai_saatleri && data.mesai_saatleri.length > 0 ? (
+          {showMesai && data.mesai_saatleri && data.mesai_saatleri.length > 0 ? (
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 8 }}>
               <thead>
                 <tr>
@@ -488,9 +498,9 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
                 ))}
               </tbody>
             </table>
-          ) : (
+          ) : showMesai ? (
             <p style={{ margin: 0, color: MUTED, fontSize: 8.5 }}>Tanımlı mesai yok.</p>
-          )}
+          ) : null}
         </div>
       </Section>
 

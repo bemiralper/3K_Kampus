@@ -2613,6 +2613,63 @@
 .analysisTable tbody tr:hover {
   background: #f8fafc;
 }
+.studentListWho {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.studentListName {
+  font-weight: 600;
+  min-width: 0;
+}
+.studentListThumb,
+.studentListLogo {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.studentListThumb { cursor: zoom-in; }
+.studentListThumb img,
+.studentListLogo img {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  display: block;
+}
+.studentListLogo {
+  border: 1px solid #e2e8f0;
+  padding: 4px;
+}
+.studentListLogo img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+.studentListZoom {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  border: 0;
+  background: rgba(15, 23, 42, 0.72);
+  display: grid;
+  place-items: center;
+  cursor: zoom-out;
+}
+.studentListZoom img {
+  max-width: min(420px, 86vw);
+  max-height: 70vh;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #fff;
+}
 
 /* ── Arama ─────────────────────────────────────────────────────────────── */
 .analysisSearchInput {
@@ -3492,9 +3549,9 @@
   line-height: 1.25;
 }
 .karneHeroDoc {
-  margin-top: 4px;
+  margin-top: 8px;
   font-size: 11px;
-  font-weight: 700;
+  font-weight: 600;
 }
 .karneHeroCap {
   margin-top: 6px;
@@ -3716,6 +3773,84 @@
   line-height: 1.4;
   color: #64748b;
 }
+.karneDiffGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin: 0 12px 8px;
+}
+.karneDiffCard {
+  border: 1px solid #dce5ef;
+  border-left: 3px solid #15803d;
+  border-radius: 8px;
+  background: #fff;
+  padding: 8px 10px 9px;
+}
+.karneDiffCard[data-band="orta"] { border-left-color: #b45309; }
+.karneDiffCard[data-band="zor"] { border-left-color: #dc2626; }
+.karneDiffHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 800;
+  color: #15803d;
+}
+.karneDiffCard[data-band="orta"] .karneDiffHead { color: #b45309; }
+.karneDiffCard[data-band="zor"] .karneDiffHead { color: #dc2626; }
+.karneDiffHead span {
+  font-size: 10px;
+  font-weight: 700;
+  color: #94a3b8;
+}
+.karneDiffHint {
+  margin: 1px 0 4px;
+  font-size: 11px;
+  color: #64748b;
+}
+.karneDiffHero {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+.karneDiffHero b {
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: #15803d;
+  margin-right: 4px;
+}
+.karneDiffCard[data-tone="alert"] .karneDiffHero b { color: #dc2626; }
+.karneDiffCard[data-tone="warn"] .karneDiffHero b { color: #b45309; }
+.karneDiffCard[data-tone="ink"] .karneDiffHero b { color: #0f172a; }
+.karneDiffMeta {
+  margin: 2px 0 6px;
+  font-size: 10px;
+  color: #64748b;
+}
+.karneDiffMeter {
+  display: flex;
+  height: 6px;
+  border-radius: 99px;
+  overflow: hidden;
+  background: #e6edf5;
+}
+.karneDiffMeter i { display: block; height: 100%; }
+.karneDiffMeter i[data-part="dogru"] { background: #15803d; }
+.karneDiffMeter i[data-part="yanlis"] { background: #dc2626; }
+.karneDiffMeter i[data-part="bos"] { background: #cbd5e1; }
+.karneDifficultyNote {
+  margin: 0 12px 12px;
+  padding: 8px 10px;
+  background: #eaf2fa;
+  border-left: 3px solid #0262a7;
+  border-radius: 0 6px 6px 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #0f172a;
+}
 .karneSecHead {
   display: flex;
   align-items: baseline;
@@ -3750,6 +3885,53 @@
   font-size: 11px;
   color: #64748b;
   text-align: right;
+}
+.karneRankSplit {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 6.4fr);
+  gap: 10px;
+  margin: 0 12px 12px;
+  align-items: start;
+}
+.karneRankPanel {
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
+}
+.karneRankCap {
+  background: #0262a7;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  padding: 6px 8px;
+}
+.karneRankPanel .karneTableWrap { margin: 0; overflow: hidden; }
+.karneRankPanel .karneTable {
+  table-layout: fixed;
+  font-size: 10px;
+}
+.karneRankPanel .karneTable th,
+.karneRankPanel .karneTable td {
+  padding: 4px 2px;
+  font-size: 10px;
+}
+.karneRankPanel .karneTable th {
+  background: #eaf2fa;
+  color: #014a7f;
+  font-size: 9px;
+}
+.karneRankFoot {
+  padding: 5px 8px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #64748b;
+  border-top: 1px solid #dce5ef;
+}
+.karneTable tbody tr.karneAlanRow td {
+  background: #eaf2fa;
+  font-weight: 700;
 }
 .karneTableWrap {
   margin: 0 12px 12px;
@@ -3924,23 +4106,58 @@
 .karneBarFillStudent { background: #0262a7; }
 .karneBarFillSinif { background: #7c3aed; }
 .karneBarFillKurum { background: #d97706; }
-.karneVerimGrid {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 8px;
+.karneVerimList {
   margin: 0 12px 14px;
+  border: 1px solid #dce5ef;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #fff;
 }
-.karneVerimCard {
-  background: #f4f8fc;
-  border: 1px solid #d6e4f0;
-  border-top: 3px solid #0262a7;
-  border-radius: 6px;
-  padding: 8px 6px;
-  text-align: center;
+.karneVerimRow {
+  display: grid;
+  grid-template-columns: minmax(108px, 36%) 1fr 46px;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border-top: 1px solid #eef2f6;
 }
-.karneVerimVal { font-size: 18px; font-weight: 800; line-height: 1.1; }
-.karneVerimName { font-size: 10px; color: #64748b; margin-top: 3px; }
-.karneVerimPot { font-size: 10px; color: #d97706; font-weight: 700; margin-top: 2px; }
+.karneVerimRow:first-child { border-top: none; }
+.karneVerimRowMain {
+  background: #eaf2fa;
+  box-shadow: inset 2.5px 0 0 #0262a7;
+}
+.karneVerimName {
+  font-size: 12px;
+  font-weight: 500;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.karneVerimRowMain .karneVerimName {
+  font-weight: 800;
+  color: #0f172a;
+}
+.karneVerimRow:not(.karneVerimRowMain) .karneVerimName { padding-left: 12px; }
+.karneVerimTrack {
+  height: 6px;
+  background: #e8eef5;
+  border-radius: 99px;
+  overflow: hidden;
+}
+.karneVerimFill {
+  display: block;
+  height: 100%;
+  border-radius: 99px;
+  min-width: 2px;
+}
+.karneVerimPct {
+  font-size: 13px;
+  font-weight: 800;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
 .karneAreaPair {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -3979,7 +4196,8 @@
 
 @media (max-width: 720px) {
   .karneSummary { grid-template-columns: repeat(3, 1fr); }
-  .karneVerimGrid { grid-template-columns: repeat(2, 1fr); }
+  .karneRankSplit { grid-template-columns: 1fr; }
+  .karneVerimRow { grid-template-columns: minmax(88px, 42%) 1fr 42px; gap: 8px; }
   .karneAreaPair { grid-template-columns: 1fr; }
   .karneBarLine { grid-template-columns: 48px minmax(0, 1fr) 3.4em; }
   .karneBarTrack { max-width: none; }

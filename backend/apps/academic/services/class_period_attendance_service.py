@@ -560,24 +560,37 @@ def _classroom_attendance_snapshot(
     return {'periods': periods, 'attendance_state': state}
 
 
+def _coach_list_year(egitim_yili_id: int | None):
+    """Eğitim tanımlarıyla aynı yıl: istekteki seçili yıl, yoksa işaretli aktif yıl."""
+    from apps.academic.services.active_academic_year import get_active_academic_year
+    from apps.egitim_yili.domain.models import EgitimYili
+
+    if egitim_yili_id:
+        year = EgitimYili.objects.filter(pk=egitim_yili_id).first()
+        if year is not None:
+            return year
+    return get_active_academic_year()
+
+
 def build_coach_period_attendance_context(
     *,
     user,
     kurum_id: int,
     sube_id: int,
     session_date: date | None = None,
+    egitim_yili_id: int | None = None,
 ) -> dict[str, Any]:
-    """Koç portalı: şubedeki aktif eğitim yılı sınıfları + günün yoklama durumu.
+    """Koç portalı: şubenin seçili eğitim yılındaki sınıfları + günün yoklama durumu.
 
-    Sınıf listesi koçun kendi öğrencisiyle sınırlı değildir; kurumdaki her koç
-    aynı şubenin bütün sınıflarını görür.
+    Liste, Eğitim Tanımları → Sınıflar ile aynı yıl ve şubedeki aktif sınıflardır.
+    Yıl başlığı yoksa işaretli aktif yıla düşer. Koçun kendi öğrencisiyle sınırlı
+    değildir; kurumdaki her koç aynı şubenin bütün sınıflarını görür.
     """
-    from apps.academic.services.active_academic_year import get_active_academic_year
     from apps.sinif.domain.models import Sinif
     from apps.term.domain.models import Term
 
     del user
-    year = get_active_academic_year()
+    year = _coach_list_year(egitim_yili_id)
     terms = list(Term.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
@@ -667,13 +680,13 @@ def build_coach_period_day_roster(
     kurum_id: int,
     sube_id: int,
     session_date: date | None = None,
+    egitim_yili_id: int | None = None,
 ) -> dict[str, Any]:
-    """Seçilen günde şubedeki bütün sınıfların öğrenci yoklama durumları."""
-    from apps.academic.services.active_academic_year import get_active_academic_year
+    """Seçilen günde, seçili eğitim yılındaki sınıfların öğrenci yoklama durumları."""
     from apps.sinif.domain.models import Sinif
 
     del user
-    year = get_active_academic_year()
+    year = _coach_list_year(egitim_yili_id)
     classroom_ids = list(Sinif.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
@@ -742,6 +755,7 @@ def export_coach_period_day_roster(
     kurum_id: int,
     sube_id: int,
     session_date: date | None = None,
+    egitim_yili_id: int | None = None,
     fmt: str = 'xlsx',
     statuses: list[str] | None = None,
     classroom_ids: list[int] | None = None,
@@ -758,6 +772,7 @@ def export_coach_period_day_roster(
         kurum_id=kurum_id,
         sube_id=sube_id,
         session_date=session_date,
+        egitim_yili_id=egitim_yili_id,
     )
     wanted_status = {s.upper() for s in (statuses or []) if s}
     wanted_classes = {int(i) for i in (classroom_ids or []) if i}

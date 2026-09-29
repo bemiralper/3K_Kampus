@@ -44,7 +44,6 @@ import {
 import { useMaasPlaniChainFill } from '../hooks/useMaasPlaniChainFill';
 import { useSozlesmeHesap } from '../hooks/useSozlesmeHesap';
 import { useSozlesmeForm } from '../hooks/useSozlesmeForm';
-import AppDatePicker from '@/components/ui/AppDatePicker';
 import '../sozlesme-editor.css';
 
 type EditorTab =
@@ -137,7 +136,13 @@ function sozlesmeToForm(s: Sozlesme): SozlesmeFormData {
 }
 
 /* ═══ Özet Paneli ═══ */
-function SozlesmeOzetiPanel({ ozet }: { ozet: OzetMetrikleri }) {
+function SozlesmeOzetiPanel({
+  ozet,
+  dersUcretli,
+}: {
+  ozet: OzetMetrikleri;
+  dersUcretli: boolean;
+}) {
   return (
     <div className="sozlesme-editor__ozet-panel">
       <div className="sozlesme-editor__ozet-header">
@@ -145,52 +150,62 @@ function SozlesmeOzetiPanel({ ozet }: { ozet: OzetMetrikleri }) {
         <p>Canlı hesaplama</p>
       </div>
       <div className="sozlesme-editor__ozet-body">
-        <div className="sozlesme-editor__ozet-row">
-          <span className="sozlesme-editor__ozet-label">Toplam Net Maaş</span>
-          <span className="sozlesme-editor__ozet-value">{fmtTL(ozet.toplam_maas)}</span>
-        </div>
+        {!dersUcretli && (
+          <div className="sozlesme-editor__ozet-row">
+            <span className="sozlesme-editor__ozet-label">Toplam Net Maaş</span>
+            <span className="sozlesme-editor__ozet-value">{fmtTL(ozet.toplam_maas)}</span>
+          </div>
+        )}
         <div className="sozlesme-editor__ozet-row">
           <span className="sozlesme-editor__ozet-label">Çalışma Süresi</span>
           <span className="sozlesme-editor__ozet-value">{fmtAySuresi(ozet.toplam_calisma_suresi_ay)}</span>
         </div>
-        <div className="sozlesme-editor__ozet-row">
-          <span className="sozlesme-editor__ozet-label">Haftalık Saat</span>
-          <span className="sozlesme-editor__ozet-value">{ozet.haftalik_calisma_saati.toFixed(1)} saat</span>
-        </div>
-        <div className="sozlesme-editor__ozet-row">
-          <span className="sozlesme-editor__ozet-label">Günlük Ücret</span>
-          <span className="sozlesme-editor__ozet-value">{fmtTLDec(ozet.gunluk_ucret)}</span>
-        </div>
-        <div className="sozlesme-editor__ozet-row">
-          <span className="sozlesme-editor__ozet-label">Saatlik Ücret</span>
-          <span className="sozlesme-editor__ozet-value">{fmtTLDec(ozet.saatlik_ucret)}</span>
-        </div>
-        <div className="sozlesme-editor__ozet-row">
-          <span className="sozlesme-editor__ozet-label">Tahmini Aylık</span>
-          <span className="sozlesme-editor__ozet-value">{fmtTL(ozet.tahmini_aylik_maliyet)}</span>
-        </div>
+        {!dersUcretli && (
+          <>
+            <div className="sozlesme-editor__ozet-row">
+              <span className="sozlesme-editor__ozet-label">Haftalık Saat</span>
+              <span className="sozlesme-editor__ozet-value">{ozet.haftalik_calisma_saati.toFixed(1)} saat</span>
+            </div>
+            <div className="sozlesme-editor__ozet-row">
+              <span className="sozlesme-editor__ozet-label">Günlük Ücret</span>
+              <span className="sozlesme-editor__ozet-value">{fmtTLDec(ozet.gunluk_ucret)}</span>
+            </div>
+            <div className="sozlesme-editor__ozet-row">
+              <span className="sozlesme-editor__ozet-label">Saatlik Ücret</span>
+              <span className="sozlesme-editor__ozet-value">{fmtTLDec(ozet.saatlik_ucret)}</span>
+            </div>
+            <div className="sozlesme-editor__ozet-row">
+              <span className="sozlesme-editor__ozet-label">Tahmini Aylık</span>
+              <span className="sozlesme-editor__ozet-value">{fmtTL(ozet.tahmini_aylik_maliyet)}</span>
+            </div>
+          </>
+        )}
         {ozet.ders_ucreti > 0 && (
           <div className="sozlesme-editor__ozet-row">
             <span className="sozlesme-editor__ozet-label">Ders Ücreti</span>
             <span className="sozlesme-editor__ozet-value">{fmtTLDec(ozet.ders_ucreti)}</span>
           </div>
         )}
-        <div className="sozlesme-editor__ozet-row">
-          <span className="sozlesme-editor__ozet-label">SGK Gün</span>
-          <span className="sozlesme-editor__ozet-value">{ozet.sgk_gun}</span>
-        </div>
+        {ozet.sgk_gun > 0 && (
+          <div className="sozlesme-editor__ozet-row">
+            <span className="sozlesme-editor__ozet-label">SGK Gün</span>
+            <span className="sozlesme-editor__ozet-value">{ozet.sgk_gun}</span>
+          </div>
+        )}
         {ozet.kalan_gun > 0 && (
           <div className="sozlesme-editor__ozet-row">
             <span className="sozlesme-editor__ozet-label">Kalan Gün</span>
             <span className="sozlesme-editor__ozet-value">{ozet.kalan_gun} gün</span>
           </div>
         )}
-        <div className="sozlesme-editor__ozet-highlight">
-          <div className="sozlesme-editor__ozet-row">
-            <span className="sozlesme-editor__ozet-label">Toplam Net Bedel</span>
-            <span className="sozlesme-editor__ozet-value">{fmtTL(ozet.toplam_maas)}</span>
+        {!dersUcretli && (
+          <div className="sozlesme-editor__ozet-highlight">
+            <div className="sozlesme-editor__ozet-row">
+              <span className="sozlesme-editor__ozet-label">Toplam Net Bedel</span>
+              <span className="sozlesme-editor__ozet-value">{fmtTL(ozet.toplam_maas)}</span>
+            </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -266,21 +281,19 @@ function MaasPlaniGrid({
               <tr key={idx}>
                 <td>{row.sira_no}</td>
                 <td>
-                  <AppDatePicker
-                    size="small"
+                  <input
+                    type="date"
                     className="se-input"
-                    value={row.baslangic_tarihi}
-                    onChange={(iso) => updateRow(idx, 'baslangic_tarihi', iso)}
-                    allowClear={false}
+                    value={(row.baslangic_tarihi || '').slice(0, 10)}
+                    onChange={(e) => updateRow(idx, 'baslangic_tarihi', e.target.value)}
                   />
                 </td>
                 <td>
-                  <AppDatePicker
-                    size="small"
+                  <input
+                    type="date"
                     className="se-input"
-                    value={row.bitis_tarihi}
-                    onChange={(iso) => updateRow(idx, 'bitis_tarihi', iso)}
-                    allowClear={false}
+                    value={(row.bitis_tarihi || '').slice(0, 10)}
+                    onChange={(e) => updateRow(idx, 'bitis_tarihi', e.target.value)}
                   />
                 </td>
                 <td style={{ textAlign: 'center', fontWeight: 600 }}>{row.calisilan_gun}</td>
@@ -514,14 +527,17 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
   };
 
   const buildPayload = useCallback((durum?: string): SozlesmeFormData => {
-    const dersAktif = form.sozlesme_turu === 'DERS_UCRETLI' || form.sozlesme_turu === 'KARMA';
+    const dersUcretli = form.sozlesme_turu === 'DERS_UCRETLI';
+    const dersAktif = dersUcretli || form.sozlesme_turu === 'KARMA';
     const firstMaas = form.maas_plani?.[0]?.maas ?? form.net_maas ?? 0;
     return {
       ...form,
       durum: (durum || form.durum || 'TASLAK') as SozlesmeFormData['durum'],
       ders_ucreti_aktif: dersAktif,
       ders_ucretleri: dersAktif ? form.ders_ucretleri : [],
-      net_maas: firstMaas,
+      maas_plani: dersUcretli ? [] : form.maas_plani,
+      mesai_saatleri: dersUcretli ? [] : form.mesai_saatleri,
+      net_maas: dersUcretli ? 0 : firstMaas,
       brut_maas: 0,
     };
   }, [form]);
@@ -579,8 +595,14 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
   const personelFoto = sozlesme?.personel_foto || selectedPersonel?.fotograf || null;
   const crossSubeUyari = !isEdit ? selectedPersonel?.uyari || null : null;
 
-  const showDersUcreti =
-    form.sozlesme_turu === 'DERS_UCRETLI' || form.sozlesme_turu === 'KARMA';
+  const isDersUcretli = form.sozlesme_turu === 'DERS_UCRETLI';
+  const showDersUcreti = isDersUcretli || form.sozlesme_turu === 'KARMA';
+
+  useEffect(() => {
+    if (isDersUcretli && (activeTab === 'maas-plani' || activeTab === 'mesai')) {
+      setActiveTab('ders-ucreti');
+    }
+  }, [isDersUcretli, activeTab]);
 
   const handlePersonelChange = (personelId: number) => {
     const p = helper?.personeller.find((x) => x.id === personelId);
@@ -787,17 +809,24 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
         {/* Main column */}
         <div className="sozlesme-editor__main-col">
           <nav className="sozlesme-editor__tabs">
-            {TABS.map((tab) => (
-              <button
-                key={tab.id}
-                type="button"
-                className={`sozlesme-editor__tab-btn${activeTab === tab.id ? ' is-active' : ''}`}
-                onClick={() => setActiveTab(tab.id)}
-              >
-                <span>{tab.icon}</span>
-                {tab.label}
-              </button>
-            ))}
+            {TABS.map((tab) => {
+              const passive = isDersUcretli && (tab.id === 'maas-plani' || tab.id === 'mesai');
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  className={`sozlesme-editor__tab-btn${activeTab === tab.id ? ' is-active' : ''}`}
+                  disabled={passive}
+                  title={passive ? 'Ders ücretli sözleşmede kullanılmaz' : undefined}
+                  onClick={() => {
+                    if (!passive) setActiveTab(tab.id);
+                  }}
+                >
+                  <span>{tab.icon}</span>
+                  {tab.label}
+                </button>
+              );
+            })}
           </nav>
 
           <div className="sozlesme-editor__content">
@@ -869,30 +898,31 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                   </div>
                   <div className="se-field">
                     <label>Düzenlenme Tarihi</label>
-                    <AppDatePicker
+                    <input
+                      type="date"
                       className="se-input"
-                      value={form.duzenlenme_tarihi || ''}
-                      onChange={(iso) => patchForm({ duzenlenme_tarihi: iso })}
+                      value={(form.duzenlenme_tarihi || '').slice(0, 10)}
+                      onChange={(e) => patchForm({ duzenlenme_tarihi: e.target.value })}
                     />
                   </div>
                 </div>
                 <div className="se-grid-2">
                   <div className="se-field">
                     <label>Başlangıç Tarihi *</label>
-                    <AppDatePicker
+                    <input
+                      type="date"
                       className="se-input"
-                      value={form.baslangic_tarihi}
-                      onChange={(iso) => handleTarihChange('baslangic_tarihi', iso)}
-                      allowClear={false}
+                      value={(form.baslangic_tarihi || '').slice(0, 10)}
+                      onChange={(e) => handleTarihChange('baslangic_tarihi', e.target.value)}
                     />
                   </div>
                   <div className="se-field">
                     <label>Bitiş Tarihi *</label>
-                    <AppDatePicker
+                    <input
+                      type="date"
                       className="se-input"
-                      value={form.bitis_tarihi}
-                      onChange={(iso) => handleTarihChange('bitis_tarihi', iso)}
-                      allowClear={false}
+                      value={(form.bitis_tarihi || '').slice(0, 10)}
+                      onChange={(e) => handleTarihChange('bitis_tarihi', e.target.value)}
                     />
                   </div>
                 </div>
@@ -959,8 +989,16 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                       max={30}
                       className="se-input"
                       value={form.sgk_gun}
-                      onChange={(e) => patchForm({ sgk_gun: parseInt(e.target.value, 10) || 30 })}
+                      onChange={(e) => {
+                        const n = parseInt(e.target.value, 10);
+                        patchForm({
+                          sgk_gun: Number.isFinite(n) ? Math.max(0, Math.min(30, n)) : 0,
+                        });
+                      }}
                     />
+                    <p style={{ margin: '6px 0 0', fontSize: 11, color: '#64748b' }}>
+                      0 girilirse sözleşmede sigorta bilgisi yer almaz.
+                    </p>
                   </div>
                   <div className="se-field">
                     <label>Haftalık Çalışma Günü</label>
@@ -975,21 +1013,23 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                       }
                     />
                   </div>
-                  <div className="se-field">
-                    <label>Net Maaş (₺)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="se-input"
-                      value={form.net_maas || ''}
-                      onChange={(e) => {
-                        const net = parseFloat(e.target.value) || 0;
-                        const plan = [...(form.maas_plani || [])];
-                        if (plan.length > 0) plan[0] = { ...plan[0], maas: net };
-                        patchForm({ net_maas: net, maas_plani: plan.length ? plan : form.maas_plani });
-                      }}
-                    />
-                  </div>
+                  {!isDersUcretli && (
+                    <div className="se-field">
+                      <label>Net Maaş (₺)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="se-input"
+                        value={form.net_maas || ''}
+                        onChange={(e) => {
+                          const net = parseFloat(e.target.value) || 0;
+                          const plan = [...(form.maas_plani || [])];
+                          if (plan.length > 0) plan[0] = { ...plan[0], maas: net };
+                          patchForm({ net_maas: net, maas_plani: plan.length ? plan : form.maas_plani });
+                        }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1201,7 +1241,7 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
 
         {/* Summary column */}
         <aside className="sozlesme-editor__summary-col">
-          <SozlesmeOzetiPanel ozet={ozet} />
+          <SozlesmeOzetiPanel ozet={ozet} dersUcretli={isDersUcretli} />
         </aside>
       </div>
     </div>

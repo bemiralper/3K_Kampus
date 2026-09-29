@@ -159,9 +159,14 @@
   border-left: 3px solid transparent;
 }
 
-.sozlesme-editor__tab-btn:hover {
+.sozlesme-editor__tab-btn:hover:not(:disabled) {
   background: var(--se-bg);
   color: var(--se-text);
+}
+
+.sozlesme-editor__tab-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }
 
 .sozlesme-editor__tab-btn.is-active {
@@ -295,6 +300,11 @@
   background: #fff;
   outline: none;
   transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+input[type="date"].se-input {
+  min-height: 38px;
+  color-scheme: light;
 }
 
 .se-input:focus,

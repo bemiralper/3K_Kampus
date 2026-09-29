@@ -2,7 +2,7 @@
 
 Belge dört bölümden oluşur:
 
-1. Künye + özet      — kimlik şeridi, temel göstergeler, sıralama, ders tablosu
+1. Künye + özet      — kimlik şeridi, temel göstergeler, sıralama, ders tablosu, zorluk bandı
 2. Karşılaştırma     — ders bazlı öğrenci/sınıf/kurum barları, verimlilik, güçlü-zayıf
 3. Kazanım analizi   — `topic_blocks` doluysa
 4. Cevap anahtarı    — `answer_grids` doluysa
@@ -313,6 +313,7 @@ def _build_styles(font: str, font_bold: str) -> dict[str, Any]:
         'sectionTitle': mk('KSecTitle', size=9, bold=True, color=INK),
         'sectionNote': mk('KSecNote', size=7.5, color=MUTED, align=2),
         'alanNote': mk('KAlanNote', size=7.5, color=MUTED, align=0),
+        'diffNote': mk('KDiffNote', size=8, color=INK_SOFT, align=0),
         # Tablolar
         'th': mk('KTh', size=7, bold=True, color='#FFFFFF', align=1),
         'thLeft': mk('KThLeft', size=7, bold=True, color='#FFFFFF', align=0),
@@ -423,10 +424,12 @@ def _hero_brand_layout(canv, exam_name: str, font_bold: str, left_w=176, header_
         canv, exam_name or 'Sınav', font_bold, title_w,
     )
     leading = title_size + 2
-    exam_bottom_y = 34
+    # Alt yazı ("Sınav Sonuç Belgesi") 8 pt ve y=24. Sınav adı onun üstünde,
+    # descender ile çakışmadan dursun.
+    exam_bottom_y = 42
     exam_top_baseline = exam_bottom_y + leading * (len(exam_lines) - 1)
     exam_top = exam_top_baseline + title_size * 0.85
-    logo_gap = 6
+    logo_gap = 8
     logo_top_margin = 8
     max_logo_h = header_h - logo_top_margin - exam_top - logo_gap
     logo_h = min(52, max(26, max_logo_h))
@@ -575,8 +578,8 @@ def _hero_header(ctx: _Ctx, data: dict):
             c.setFont(ctx.font_bold, title_size)
             for i, line in enumerate(exam_lines):
                 c.drawString(pad, brand['exam_top_baseline'] - i * brand['leading'], line)
-            c.setFont(ctx.font_bold, 8)
-            c.drawString(pad, 26, 'Sınav Sonuç Belgesi')
+            c.setFont(ctx.font, 8)
+            c.drawString(pad, 24, 'Sınav Sonuç Belgesi')
             if caption:
                 cap, cap_s = _fit_canvas_text(c, caption, ctx.font, 6.5, title_w)
                 c.setFont(ctx.font, cap_s)
@@ -613,13 +616,7 @@ def _hero_header(ctx: _Ctx, data: dict):
             text_w = nx - tx
             type_label = (data.get('exam_type_label') or '').strip()
             rank = _top3_rank(data)
-            try:
-                total = int(data.get('toplam_ogrenci') or 0)
-            except (TypeError, ValueError):
-                total = 0
-            rank_label = ''
-            if rank:
-                rank_label = f'Kurum {rank} / {total}' if total else f'Kurum {rank}.'
+            rank_label = {1: 'Birinci', 2: 'İkinci', 3: 'Üçüncü'}.get(rank, '')
 
             def _chip(x, y, text, fill, ink):
                 tw = c.stringWidth(text, ctx.font_bold, 6.5) + 10
@@ -889,20 +886,29 @@ def _identity_strip(ctx: _Ctx, data: dict):
 # ── Gösterge şeridi ────────────────────────────────────────────────────────
 
 def _kpi_band(ctx: _Ctx, data: dict):
-    """Altı ayrı kart: doğru / yanlış / boş / net / puan / kurum sırası."""
+    """Üst şerit: alan soru sayısı, doğru, yanlış, net, puan, kurum sırası."""
     from reportlab.lib import colors
     from reportlab.platypus import Flowable
 
     is_ayt = data.get('exam_type') == 'YKS_AYT' and data.get('alan_net') is not None
     net_label = (data.get('net_etiket') or 'SAY NET') if is_ayt else 'NET'
     net_value = data.get('alan_net') if is_ayt else data.get('toplam_net')
+    try:
+        alan_soru = int(data.get('alan_soru') or 0)
+    except (TypeError, ValueError):
+        alan_soru = 0
+    if alan_soru <= 0:
+        try:
+            alan_soru = int(data.get('total_questions') or 0)
+        except (TypeError, ValueError):
+            alan_soru = 0
     tiles = [
-        ('DOĞRU', _fmt_int(data.get('total_correct')), GREEN),
-        ('YANLIŞ', _fmt_int(data.get('total_wrong')), RED),
-        ('BOŞ', _fmt_int(data.get('total_empty')), MUTED),
-        (net_label, _fmt(net_value, 2), BRAND),
-        ('PUAN', _fmt(data.get('puan'), 2), BRAND),
-        ('KURUM SIRASI', _fmt_int(data.get('kurum_ici_sira')), INK),
+        ('SORU', _fmt_int(alan_soru) if alan_soru else '—', '', INK),
+        ('DOĞRU', _fmt_int(data.get('total_correct')), '', GREEN),
+        ('YANLIŞ', _fmt_int(data.get('total_wrong')), '', RED),
+        (net_label, _fmt(net_value, 2), '', BRAND),
+        ('PUAN', _fmt(data.get('puan'), 2), '', BRAND),
+        ('KURUM SIRASI', _fmt_int(data.get('kurum_ici_sira')), '', INK),
     ]
 
     class KpiRow(Flowable):
@@ -921,7 +927,7 @@ def _kpi_band(ctx: _Ctx, data: dict):
             gap = 5
             cw = (self.width - gap * (n - 1)) / n
             ch = self.height
-            for i, (label, value, color) in enumerate(tiles):
+            for i, (label, value, suffix, color) in enumerate(tiles):
                 x = i * (cw + gap)
                 c.setFillColor(colors.white)
                 c.setStrokeColor(colors.HexColor(LINE))
@@ -935,10 +941,18 @@ def _kpi_band(ctx: _Ctx, data: dict):
                 c.rect(x, ch - 3.2, cw, 3.2, fill=1, stroke=0)
                 c.restoreState()
 
-                val, size = _fit_canvas_text(c, value, ctx.font_bold, 13, cw - 8)
+                suf_size = 7.5
+                suf_w = c.stringWidth(suffix, ctx.font_bold, suf_size) if suffix else 0
+                val, size = _fit_canvas_text(c, value, ctx.font_bold, 13, max(12, cw - 8 - suf_w))
+                val_w = c.stringWidth(val, ctx.font_bold, size)
+                x0 = x + (cw - val_w - suf_w) / 2
                 c.setFillColor(colors.HexColor(color))
                 c.setFont(ctx.font_bold, size)
-                c.drawCentredString(x + cw / 2, 16, val)
+                c.drawString(x0, 16, val)
+                if suffix:
+                    c.setFillColor(colors.HexColor(MUTED))
+                    c.setFont(ctx.font_bold, suf_size)
+                    c.drawString(x0 + val_w, 16, suffix)
                 c.setFillColor(colors.HexColor(MUTED))
                 c.setFont(ctx.font_bold, 6)
                 c.drawCentredString(x + cw / 2, 6.5, label)
@@ -967,6 +981,53 @@ def _alan_net_note(ctx: _Ctx, data: dict):
 
 # ── Sıralama tablosu ───────────────────────────────────────────────────────
 
+def _rank_num(n):
+    try:
+        value = int(n)
+    except (TypeError, ValueError):
+        return '—'
+    return _fmt_int(value) if value else '—'
+
+
+def _rank_panel(ctx, title, col_heads, body, foot, width, highlight=None, widths=None):
+    """Başlıklı sıralama kartı. highlight, gövde satır indeksi (0 tabanlı)."""
+    from reportlab.lib import colors
+    from reportlab.platypus import Paragraph, Table, TableStyle
+
+    th, td_muted = ctx.s('th'), ctx.s('tdMuted')
+    sub = ctx.s('td').clone(f'rankHead{title}')
+    sub.fontName = ctx.font_bold
+    sub.fontSize = 6.5
+    sub.leading = 8
+    sub.textColor = colors.HexColor(BRAND_DARK)
+    sub.alignment = 1
+    heads = [Paragraph(label, sub) for label in col_heads]
+    rows = [[Paragraph(title, th)] + [Paragraph('', th)] * (len(col_heads) - 1)]
+    rows.append(heads)
+    rows.extend(body)
+    rows.append([Paragraph(foot, td_muted)] + [Paragraph('', td_muted)] * (len(col_heads) - 1))
+
+    cols = widths or [width / len(col_heads)] * len(col_heads)
+    tbl = Table(rows, colWidths=cols)
+    style = _hairline_table_style(ctx, header_rows=2, zebra=False)
+    last = len(rows) - 1
+    style.extend([
+        ('SPAN', (0, 0), (-1, 0)),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor(BRAND_SOFT)),
+        ('LEFTPADDING', (0, 0), (-1, -1), 2),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
+        ('SPAN', (0, last), (-1, last)),
+        ('BACKGROUND', (0, last), (-1, last), colors.white),
+        ('ALIGN', (0, last), (-1, last), 'LEFT'),
+        ('LINEBELOW', (0, 1), (-1, -2), 0.3, colors.HexColor(LINE)),
+    ])
+    if highlight is not None:
+        row = highlight + 2
+        style.append(('BACKGROUND', (0, row), (-1, row), colors.HexColor(BRAND_SOFT)))
+    tbl.setStyle(TableStyle(style))
+    return tbl
+
+
 def _ranking_table(ctx: _Ctx, data: dict):
     from reportlab.platypus import Paragraph, Table, TableStyle
 
@@ -975,54 +1036,91 @@ def _ranking_table(ctx: _Ctx, data: dict):
     type_label = data.get('exam_type_label') or ('AYT' if is_ayt else 'TYT')
     has_class = _has_class_context(data)
 
+    if is_ayt and data.get('puan_turleri'):
+        tyt = data.get('tyt_siralama') or {}
+        left_body = [[
+            Paragraph(_fmt(tyt.get('net'), 2) if tyt else '—', td),
+            Paragraph(_fmt(tyt.get('puan'), 2) if tyt else '—', td),
+            Paragraph(_rank_num(tyt.get('kurum_ici_sira')), td),
+            Paragraph(_rank_num(tyt.get('sinif_ici_sira')) if has_class else '—', td),
+            Paragraph(_rank_num(tyt.get('tahmini_siralama')), td),
+        ]]
+        left_foot = (
+            f"{_fmt_int(tyt.get('toplam_ogrenci'))} öğrenci"
+            if tyt else 'Bağlı TYT sonucu yok'
+        )
+
+        alan = data.get('alan_puan_turu') or 'SAY'
+        right_body = []
+        highlight = None
+        for key, label in (('SAY', 'SAY'), ('EA', 'EA'), ('SOZ', 'SÖZ')):
+            info = data['puan_turleri'].get(key) or {}
+            if key == alan:
+                highlight = len(right_body)
+            name = ctx.s('tdName')
+            right_body.append([
+                Paragraph(label, name),
+                Paragraph(_fmt(info.get('ayt_net'), 2), td),
+                Paragraph(_fmt(info.get('puan'), 2), td),
+                Paragraph(_rank_num(info.get('kurum_ici_sira')), td),
+                Paragraph(_rank_num(info.get('sinif_ici_sira')) if has_class else '—', td),
+                Paragraph(_rank_num(info.get('tahmini_siralama')), td),
+            ])
+        right_foot = f"{_fmt_int(data.get('toplam_ogrenci'))} öğrenci"
+
+        gap = 8
+        left_mins = [38, 46, 34, 32, 52]
+        right_mins = [24, 38, 46, 34, 32, 54]
+        share = ctx.page_w - gap
+        left_w = share * sum(left_mins) / (sum(left_mins) + sum(right_mins))
+        right_w = share - left_w
+
+        def _fit(mins, total):
+            raw = sum(mins)
+            return [m * total / raw for m in mins]
+
+        left = _rank_panel(
+            ctx, 'TYT', ['Net', 'Puan', 'Kurum', 'Sınıf', 'Türkiye'],
+            left_body, left_foot, left_w,
+            widths=_fit(left_mins, left_w),
+        )
+        right = _rank_panel(
+            ctx, 'AYT', ['Tür', 'Net', 'Puan', 'Kurum', 'Sınıf', 'Türkiye'],
+            right_body, right_foot, right_w, highlight=highlight,
+            widths=_fit(right_mins, right_w),
+        )
+        pair = Table([[left, right]], colWidths=[left_w + gap, right_w])
+        pair.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (0, 0), 0),
+            ('RIGHTPADDING', (0, 0), (0, 0), gap),
+            ('LEFTPADDING', (1, 0), (1, 0), 0),
+            ('RIGHTPADDING', (1, 0), (1, 0), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        return pair
+
     def sinif_rank():
         return _fmt_int(data.get('sinif_rank')) if has_class else '—'
 
-    if is_ayt and data.get('puan_turleri'):
-        rows = [[
-            Paragraph('Puan Türü', ctx.s('thLeft')),
-            Paragraph('Net', th),
-            Paragraph('Puan', th),
-            Paragraph('Kurum Ort.', th),
-            Paragraph('Sınıf Sırası', th),
-            Paragraph('Kurum Sırası', th),
-            Paragraph('Tahmini TR', th),
-        ]]
-    else:
-        rows = [[
-            Paragraph('Puan Türü', ctx.s('thLeft')),
-            Paragraph('Puan', th),
-            Paragraph('Kurum Ort.', th),
-            Paragraph('Sınıf Sırası', th),
-            Paragraph('Kurum Sırası', th),
-            Paragraph('Tahmini TR Sırası', th),
-        ]]
-
-    if is_ayt and data.get('puan_turleri'):
-        avgs = data.get('puan_turleri_avgs') or {}
-        for key, label in (('SAY', 'SAY'), ('EA', 'EA'), ('SOZ', 'SÖZ')):
-            info = data['puan_turleri'].get(key) or {}
-            sinif_sira = info.get('sinif_ici_sira')
-            rows.append([
-                Paragraph(label, td_name),
-                Paragraph(_fmt(info.get('ayt_net'), 2), td),
-                Paragraph(_fmt(info.get('puan'), 2), td),
-                Paragraph(_fmt(avgs.get(key, data.get('kurum_avg_puan')), 2), td),
-                Paragraph(_fmt_int(sinif_sira) if has_class and sinif_sira else '—', td),
-                Paragraph(_fmt_int(info.get('kurum_ici_sira')), td),
-                Paragraph(_fmt_int(info.get('tahmini_siralama')), td),
-            ])
-    else:
-        rows.append([
-            Paragraph(type_label, td_name),
-            Paragraph(_fmt(data.get('puan'), 2), td),
-            Paragraph(_fmt(data.get('kurum_avg_puan'), 2), td),
-            Paragraph(sinif_rank(), td),
-            Paragraph(_fmt_int(data.get('kurum_ici_sira')), td),
-            Paragraph(_fmt_int(data.get('tahmini_siralama')), td),
-        ])
-
-    katilim = [
+    rows = [[
+        Paragraph('Puan Türü', ctx.s('thLeft')),
+        Paragraph('Puan', th),
+        Paragraph('Kurum Ort.', th),
+        Paragraph('Sınıf Sırası', th),
+        Paragraph('Kurum Sırası', th),
+        Paragraph('Tahmini TR Sırası', th),
+    ]]
+    rows.append([
+        Paragraph(type_label, td_name),
+        Paragraph(_fmt(data.get('puan'), 2), td),
+        Paragraph(_fmt(data.get('kurum_avg_puan'), 2), td),
+        Paragraph(sinif_rank(), td),
+        Paragraph(_fmt_int(data.get('kurum_ici_sira')), td),
+        Paragraph(_fmt_int(data.get('tahmini_siralama')), td),
+    ])
+    rows.append([
         Paragraph('Katılım', ctx.s('tdLeft')),
         Paragraph('—', ctx.s('tdMuted')),
         Paragraph('—', ctx.s('tdMuted')),
@@ -1033,15 +1131,8 @@ def _ranking_table(ctx: _Ctx, data: dict):
         ),
         Paragraph(f"{_fmt_int(data.get('toplam_ogrenci'))} öğrenci", ctx.s('tdMuted')),
         Paragraph('—', ctx.s('tdMuted')),
-    ]
-    if is_ayt and data.get('puan_turleri'):
-        katilim.insert(1, Paragraph('—', ctx.s('tdMuted')))
-    rows.append(katilim)
-
-    if is_ayt and data.get('puan_turleri'):
-        widths = [ctx.page_w * x for x in (0.16, 0.12, 0.13, 0.15, 0.15, 0.15, 0.14)]
-    else:
-        widths = [ctx.page_w * x for x in (0.20, 0.14, 0.16, 0.16, 0.16, 0.18)]
+    ])
+    widths = [ctx.page_w * x for x in (0.20, 0.14, 0.16, 0.16, 0.16, 0.18)]
     tbl = Table(rows, colWidths=widths)
     tbl.setStyle(TableStyle(_hairline_table_style(ctx)))
     return tbl
@@ -1121,11 +1212,11 @@ def _performance_table(ctx: _Ctx, data: dict):
 
 # ── Karşılaştırma barları ──────────────────────────────────────────────────
 
-def _bar(value, cap, width, color, colors, Table, TableStyle):
+def _bar(value, cap, width, color, colors, Table, TableStyle, height=5):
     pct = max(0.0, min(1.0, float(value or 0) / max(float(cap), 1)))
     fill_w = max(1.2, width * max(pct, 0.012))
     rest_w = max(0.8, width - fill_w)
-    t = Table([['', '']], colWidths=[fill_w, rest_w], rowHeights=[5])
+    t = Table([['', '']], colWidths=[fill_w, rest_w], rowHeights=[height])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (0, 0), colors.HexColor(color)),
         ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#EDF2F7')),
@@ -1134,6 +1225,7 @@ def _bar(value, cap, width, color, colors, Table, TableStyle):
         ('TOPPADDING', (0, 0), (-1, -1), 0),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
+    t.hAlign = 'LEFT'
     return t
 
 
@@ -1235,61 +1327,84 @@ def _legend(ctx: _Ctx, items: list[tuple[str, str]]):
 # ── Verimlilik kartları ────────────────────────────────────────────────────
 
 def _efficiency_grid(ctx: _Ctx, data: dict):
+    """Tek panel, sabit satır yüksekliği. Ana ders koyu, alt test girintili."""
     from reportlab.lib import colors
-    from reportlab.platypus import Paragraph, Table, TableStyle
+    from reportlab.platypus import Flowable, Paragraph, Table, TableStyle
 
-    cols = 4
-    col_w = ctx.page_w / cols
-    cards: list[Any] = []
-
-    for sd, _is_main in _ordered_sections(data):
-        verim = sd.get('verimlilik') or 0
-        tone = _verim_color(verim)
-        value_style = ctx.s('cardValue').clone(f'Eff{len(cards)}')
-        value_style.textColor = colors.HexColor(tone)
-
-        rows = [
-            [Paragraph(_pct(verim), value_style)],
-            [Paragraph(sd.get('section_name') or '', ctx.s('cardName'))],
-        ]
-        pot = sd.get('bos_potansiyel') or 0
-        try:
-            has_pot = float(pot) > 0
-        except (TypeError, ValueError):
-            has_pot = False
-        if has_pot:
-            rows.append([Paragraph(f'+{_fmt(pot, 1)} net potansiyel', ctx.s('cardNote'))])
-
-        card = Table(rows, colWidths=[col_w - 8])
-        card.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.white),
-            ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
-            ('LINEABOVE', (0, 0), (-1, 0), 2, colors.HexColor(tone)),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-        ]))
-        cards.append(card)
-
-    if not cards:
+    ordered = _ordered_sections(data)
+    if not ordered:
         return None
 
-    grid_rows = []
-    for i in range(0, len(cards), cols):
-        chunk = list(cards[i:i + cols])
-        while len(chunk) < cols:
-            chunk.append('')
-        grid_rows.append(chunk)
+    name_w = ctx.page_w * 0.38
+    pct_w = 46
+    bar_w = ctx.page_w - name_w - pct_w
+    rows = []
+    main_rows: list[int] = []
 
-    grid = Table(grid_rows, colWidths=[col_w] * cols)
-    grid.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 3),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-        ('TOPPADDING', (0, 0), (-1, -1), 3),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-    ]))
-    return grid
+    class _Meter(Flowable):
+        def __init__(self, pct, color):
+            super().__init__()
+            self.pct = max(0.0, min(1.0, float(pct or 0) / 100))
+            self.color = color
+            self.height = 7
+            self._w = 0
+
+        def wrap(self, availWidth, availHeight):
+            self._w = availWidth
+            return availWidth, self.height
+
+        def draw(self):
+            c = self.canv
+            h = self.height
+            c.setFillColor(colors.HexColor('#E6EDF5'))
+            c.roundRect(0, 0, self._w, h, 2, fill=1, stroke=0)
+            fill_w = self._w * self.pct
+            if fill_w <= 0:
+                return
+            c.setFillColor(colors.HexColor(self.color))
+            c.saveState()
+            clip = c.beginPath()
+            clip.roundRect(0, 0, self._w, h, 2)
+            c.clipPath(clip, stroke=0)
+            c.rect(0, 0, max(fill_w, 2), h, fill=1, stroke=0)
+            c.restoreState()
+
+    for index, (sd, is_main) in enumerate(ordered):
+        verim = sd.get('verimlilik') or 0
+        tone = _verim_color(verim)
+        value_style = ctx.s('td').clone(f'EffPct{index}')
+        value_style.textColor = colors.HexColor(tone)
+        value_style.fontName = ctx.font_bold
+        value_style.alignment = 2
+        if is_main:
+            main_rows.append(index)
+        rows.append([
+            Paragraph(sd.get('section_name') or '', ctx.s('tdName') if is_main else ctx.s('tdSub')),
+            _Meter(verim, tone),
+            Paragraph(_pct(verim), value_style),
+        ])
+
+    tbl = Table(rows, colWidths=[name_w, bar_w, pct_w])
+    cmds = [
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor(LINE)),
+        ('LINEBELOW', (0, 0), (-1, -2), 0.3, colors.HexColor(LINE)),
+        ('LEFTPADDING', (0, 0), (0, -1), 10),
+        ('RIGHTPADDING', (0, 0), (0, -1), 6),
+        ('LEFTPADDING', (1, 0), (1, -1), 4),
+        ('RIGHTPADDING', (1, 0), (1, -1), 6),
+        ('LEFTPADDING', (2, 0), (2, -1), 0),
+        ('RIGHTPADDING', (2, 0), (2, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]
+    for row in main_rows:
+        cmds.append(('BACKGROUND', (0, row), (-1, row), colors.HexColor(BRAND_SOFT)))
+        cmds.append(('LINEBEFORE', (0, row), (0, row), 2.5, colors.HexColor(BRAND)))
+    tbl.setStyle(TableStyle(cmds))
+    tbl.hAlign = 'LEFT'
+    return tbl
 
 
 # ── Güçlü / zayıf alanlar ──────────────────────────────────────────────────
@@ -1474,6 +1589,218 @@ def _answer_grids(ctx: _Ctx, data: dict) -> list[Any]:
     return flow
 
 
+# ── Zorluk bandı ───────────────────────────────────────────────────────────
+
+_BAND_COPY = {
+    'kolay': ('Kolay', 'Çoğu öğrenci bildi', '%70+', GREEN),
+    'orta': ('Orta', 'Ayırt eden sorular', '%40–70', AMBER),
+    'zor': ('Zor', 'Az öğrenci bildi', '%40 altı', RED),
+}
+
+
+def _difficulty_focus(band: dict) -> tuple[str, str, str]:
+    """Kartın büyük sayısı: kolaydaki yanlış öne çıkar, temiz bant doğruyu gösterir."""
+    key = band.get('key') or ''
+    wrong = int(band.get('yanlis') or 0)
+    empty = int(band.get('bos') or 0)
+    correct = int(band.get('dogru') or 0)
+    if wrong and key == 'kolay':
+        return str(wrong), 'yanlış', RED
+    if wrong and key == 'orta':
+        return str(wrong), 'yanlış', AMBER
+    if wrong:
+        return str(wrong), 'yanlış', INK
+    if empty and key == 'kolay':
+        return str(empty), 'boş', AMBER
+    return str(correct), 'doğru', GREEN
+
+
+def _difficulty_block(ctx: _Ctx, data: dict) -> list[Any]:
+    """Kolay / orta / zor kartları. Bant yoksa veya kurum 20 kişinin altındaysa boş."""
+    from reportlab.lib import colors
+    from reportlab.platypus import Flowable, Paragraph, Spacer, Table, TableStyle
+
+    block = data.get('difficulty') or {}
+    bands = block.get('bands') or []
+    if not bands:
+        return []
+
+    class _SplitMeter(Flowable):
+        def __init__(self, dogru, yanlis, bos):
+            super().__init__()
+            self.parts = (
+                (int(dogru or 0), GREEN),
+                (int(yanlis or 0), RED),
+                (int(bos or 0), '#CBD5E1'),
+            )
+            self.height = 7
+            self._w = 0
+
+        def wrap(self, availWidth, availHeight):
+            self._w = availWidth
+            return availWidth, self.height
+
+        def draw(self):
+            c = self.canv
+            total = sum(n for n, _ in self.parts) or 1
+            h = self.height
+            c.saveState()
+            clip = c.beginPath()
+            clip.roundRect(0, 0, self._w, h, 2)
+            c.clipPath(clip, stroke=0)
+            c.setFillColor(colors.HexColor('#E6EDF5'))
+            c.rect(0, 0, self._w, h, fill=1, stroke=0)
+            x = 0
+            for count, color in self.parts:
+                w = self._w * count / total
+                if w <= 0:
+                    continue
+                c.setFillColor(colors.HexColor(color))
+                c.rect(x, 0, w, h, fill=1, stroke=0)
+                x += w
+            c.restoreState()
+
+    gap = 6
+    n = len(bands)
+    card_w = (ctx.page_w - gap * (n - 1)) / n
+    cards = []
+    for band in bands:
+        key = band.get('key') or ''
+        label, hint, tag, tone = _BAND_COPY.get(
+            key, (band.get('label') or '', '', '', INK),
+        )
+        if band.get('scope') == 'alan' and key == 'orta':
+            hint = 'Alanındaki ayırt eden sorular'
+        elif band.get('scope') == 'alan' and key == 'zor':
+            hint = 'Alanındaki zor sorular'
+        value, unit, num_color = _difficulty_focus(band)
+        correct = int(band.get('dogru') or 0)
+        wrong = int(band.get('yanlis') or 0)
+        empty = int(band.get('bos') or 0)
+        total = int(band.get('soru') or 0)
+        bits = []
+        if unit != 'doğru' and correct:
+            bits.append(f'{correct} doğru')
+        if unit != 'yanlış' and wrong:
+            bits.append(f'{wrong} yanlış')
+        if unit != 'boş' and empty:
+            bits.append(f'{empty} boş')
+        bits.append(f'{total} soru')
+
+        inner_w = card_w - 14
+        title = ctx.s('tdName').clone(f'diffTitle{key}')
+        title.textColor = colors.HexColor(tone)
+        title.fontSize = 9
+        tag_style = ctx.s('tdMuted').clone(f'diffTag{key}')
+        tag_style.alignment = 2
+        hint_style = ctx.s('tdMuted').clone(f'diffHint{key}')
+        hint_style.alignment = 0
+        hint_style.fontSize = 7
+        num = ctx.s('tdName').clone(f'diffNum{key}')
+        num.fontSize = 16
+        num.leading = 18
+        num.textColor = colors.HexColor(num_color)
+        unit_style = ctx.s('tdMuted').clone(f'diffUnit{key}')
+        unit_style.alignment = 0
+        meta = ctx.s('tdLeft').clone(f'diffMeta{key}')
+        meta.fontSize = 7
+        meta.textColor = colors.HexColor(INK_SOFT)
+
+        head = Table(
+            [[Paragraph(label, title), Paragraph(tag, tag_style)]],
+            colWidths=[inner_w * 0.62, inner_w * 0.38],
+        )
+        head.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        figure = Table(
+            [[Paragraph(value, num), Paragraph(unit, unit_style)]],
+            colWidths=[inner_w * 0.32, inner_w * 0.68],
+        )
+        figure.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 1),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+        ]))
+        body = Table(
+            [
+                [head],
+                [Paragraph(hint, hint_style)],
+                [figure],
+                [Paragraph(' · '.join(bits), meta)],
+                [_SplitMeter(correct, wrong, empty)],
+            ],
+            colWidths=[card_w],
+        )
+        body.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.white),
+            ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor(LINE)),
+            ('LINEBEFORE', (0, 0), (0, -1), 3, colors.HexColor(tone)),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, 0), 6),
+            ('BOTTOMPADDING', (0, -1), (-1, -1), 7),
+            ('TOPPADDING', (0, 1), (-1, -2), 1),
+            ('BOTTOMPADDING', (0, 0), (-1, -2), 1),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        cards.append(body)
+
+    row = []
+    widths = []
+    for index, card in enumerate(cards):
+        row.append(card)
+        widths.append(card_w + (gap if index < n - 1 else 0))
+    grid = Table([row], colWidths=widths)
+    pad_cmds = [
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 0),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+    ]
+    for index in range(n - 1):
+        pad_cmds.append(('RIGHTPADDING', (index, 0), (index, 0), gap))
+    grid.setStyle(TableStyle(pad_cmds))
+    grid.hAlign = 'LEFT'
+
+    flow: list[Any] = [
+        Spacer(1, 12),
+        _section_heading(
+            ctx,
+            'Zorluk Seviyesi',
+            'Soru, kurumun doğru oranına göre gruplandı',
+        ),
+        Spacer(1, 6),
+        grid,
+    ]
+    note = (block.get('note') or '').strip()
+    if note:
+        callout = Table(
+            [[Paragraph(_xml_escape(note), ctx.s('diffNote'))]],
+            colWidths=[ctx.page_w],
+        )
+        callout.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(BRAND_SOFT)),
+            ('LINEBEFORE', (0, 0), (0, -1), 3, colors.HexColor(BRAND)),
+            ('LEFTPADDING', (0, 0), (-1, -1), 8),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ]))
+        callout.hAlign = 'LEFT'
+        flow.append(Spacer(1, 6))
+        flow.append(callout)
+    return flow
+
+
 # ── Sayfa kurgusu ──────────────────────────────────────────────────────────
 
 def _summary_page(ctx: _Ctx, data: dict) -> list[Any]:
@@ -1499,6 +1826,7 @@ def _summary_page(ctx: _Ctx, data: dict) -> list[Any]:
     flow.append(_section_heading(ctx, 'Ders / Test Performansı', 'Fark sütunları öğrencinin ortalamaya göre konumudur'))
     flow.append(Spacer(1, 5))
     flow.append(_performance_table(ctx, data))
+    flow.extend(_difficulty_block(ctx, data))
     return flow
 
 
@@ -1528,7 +1856,7 @@ def _analysis_page(ctx: _Ctx, data: dict) -> list[Any]:
 
     grid = _efficiency_grid(ctx, data)
     if grid is not None:
-        flow.append(_section_heading(ctx, 'Verimlilik', 'Doğru / (doğru + yanlış) oranı'))
+        flow.append(_section_heading(ctx, 'Verimlilik', 'Net / soru'))
         flow.append(Spacer(1, 5))
         flow.append(grid)
         flow.append(Spacer(1, 12))

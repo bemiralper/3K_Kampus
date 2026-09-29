@@ -450,6 +450,7 @@ def class_period_attendance_coach_context_api(request):
         kurum_id=ctx['kurum_id'],
         sube_id=ctx['sube_id'],
         session_date=session_date,
+        egitim_yili_id=ctx.get('egitim_yili_id'),
     ))
 
 
@@ -474,6 +475,7 @@ def class_period_attendance_coach_day_roster_api(request):
         kurum_id=ctx['kurum_id'],
         sube_id=ctx['sube_id'],
         session_date=session_date,
+        egitim_yili_id=ctx.get('egitim_yili_id'),
     ))
 
 
@@ -516,6 +518,7 @@ def class_period_attendance_coach_day_roster_export_api(request):
         kurum_id=ctx['kurum_id'],
         sube_id=ctx['sube_id'],
         session_date=session_date,
+        egitim_yili_id=ctx.get('egitim_yili_id'),
         fmt=fmt,
         statuses=statuses,
         classroom_ids=classroom_ids,

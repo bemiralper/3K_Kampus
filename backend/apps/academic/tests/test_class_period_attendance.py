@@ -785,6 +785,37 @@ class ClassPeriodAttendanceApiTest(TestCase):
         )
         self.assertEqual(opened.status_code, 200, opened.content)
 
+    def test_coach_context_lists_classrooms_of_selected_year(self):
+        other_year = EgitimYili.objects.create(
+            baslangic_yil=2024, bitis_yil=2025, aktif_mi=False,
+        )
+        fresh = Sinif.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=other_year,
+            ad='Yeni Tanım',
+            aktif_mi=True,
+        )
+        coach_user = self._make_coach(username='cpa_selected_year')
+        client = Client()
+        client.force_login(coach_user)
+
+        ctx = client.get(
+            '/api/academic/class-period-attendance/coach-context/',
+            **{
+                **self.headers,
+                'HTTP_X_EGITIMYILI_ID': str(other_year.id),
+            },
+        )
+        self.assertEqual(ctx.status_code, 200, ctx.content)
+        body = ctx.json()
+        classroom_ids = {row['id'] for row in body['classrooms']}
+        self.assertIn(fresh.id, classroom_ids)
+        self.assertNotIn(self.sinif.id, classroom_ids)
+        self.assertEqual(body['active_year']['id'], other_year.id)
+        created = next(row for row in body['classrooms'] if row['id'] == fresh.id)
+        self.assertEqual(created['attendance_state'], 'no_lesson')
+
     def test_coach_context_hides_other_year_and_marks_taken(self):
         old_year = EgitimYili.objects.create(
             baslangic_yil=2024, bitis_yil=2025, aktif_mi=False,
