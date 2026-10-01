@@ -5,15 +5,9 @@ import { useRouter } from 'next/navigation';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import {
   Table,
-  Card,
-  Row,
-  Col,
-  Statistic,
   Button,
   Input,
   Select,
-  Space,
-  Tag,
   Dropdown,
   Avatar,
   Modal,
@@ -42,7 +36,6 @@ import {
   DollarOutlined,
   AuditOutlined,
   BarChartOutlined,
-  TeamOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import {
@@ -55,12 +48,13 @@ import {
   fetchPrintToken,
   getPrintTokenUrl,
 } from './services/api';
-import type { Sozlesme, SozlesmeStats, HelperData, FesihData, SozlesmeDurumu } from './types';
+import type { Sozlesme, SozlesmeStats, HelperData, FesihData } from './types';
 import { DURUM_LABELS } from './types';
 import { contractNetMaas } from './lib/contractCalc';
 import AppDatePicker from '@/components/ui/AppDatePicker';
+import styles from './sozlesmeler.module.css';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { TextArea } = Input;
 
 const fmtPara = (n: number) =>
@@ -71,26 +65,26 @@ const fmtTarih = (d: string | null | undefined) => {
   return dayjs(d).format('DD.MM.YYYY');
 };
 
-const durumTagColor = (durum: SozlesmeDurumu): string => {
+const durumClass = (durum: string) => {
   const map: Record<string, string> = {
-    TASLAK: 'default',
-    AKTIF: 'success',
-    PASIF: 'warning',
-    ASKIDA: 'warning',
-    FESHEDILDI: 'error',
-    SURESI_DOLMU: 'default',
-    SONA_ERDI: 'default',
+    TASLAK: styles.durum_TASLAK,
+    AKTIF: styles.durum_AKTIF,
+    PASIF: styles.durum_PASIF,
+    ASKIDA: styles.durum_ASKIDA,
+    FESHEDILDI: styles.durum_FESHEDILDI,
+    SURESI_DOLMU: styles.durum_SURESI_DOLMU,
+    SONA_ERDI: styles.durum_SONA_ERDI,
   };
-  return map[durum] || 'default';
+  return map[durum] || styles.durum_TASLAK;
 };
 
-const turTagColor = (tur: string): string => {
+const turClass = (tur: string) => {
   const map: Record<string, string> = {
-    TAM_ZAMANLI: 'blue',
-    DERS_UCRETLI: 'purple',
-    KARMA: 'cyan',
+    TAM_ZAMANLI: styles.tur_TAM_ZAMANLI,
+    DERS_UCRETLI: styles.tur_DERS_UCRETLI,
+    KARMA: styles.tur_KARMA,
   };
-  return map[tur] || 'default';
+  return map[tur] || styles.durum_TASLAK;
 };
 
 export default function SozlesmelerClient() {
@@ -256,22 +250,20 @@ export default function SozlesmelerClient() {
       fixed: 'left',
       width: 260,
       render: (_, s) => (
-        <div
-          style={{ display: 'flex', alignItems: 'center', gap: 12, cursor: 'pointer' }}
-          onClick={() => router.push(`/admin/personel/sozlesmeler/${s.id}`)}
-        >
+        <div className={styles.person}>
           <Avatar
+            className={styles.avatar}
             size={40}
             src={s.personel_foto || undefined}
-            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', flexShrink: 0 }}
           >
             {s.personel_ad.charAt(0)}
           </Avatar>
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontWeight: 600, color: '#0f172a', fontSize: 13 }}>{s.personel_ad}</div>
-            <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-              {s.sozlesme_no || '—'}
+            <div className={styles.personName}>{s.personel_ad}</div>
+            <div className={styles.personMeta}>
+              {s.sozlesme_no || 'Numarasız'}
               {s.brans_snapshot ? ` · ${s.brans_snapshot}` : ''}
+              {s.gorev_snapshot ? ` · ${s.gorev_snapshot}` : ''}
             </div>
           </div>
         </div>
@@ -282,9 +274,9 @@ export default function SozlesmelerClient() {
       dataIndex: 'sozlesme_turu',
       width: 130,
       render: (_, s) => (
-        <Tag color={turTagColor(s.sozlesme_turu)} style={{ margin: 0, borderRadius: 6 }}>
+        <span className={`${styles.pill} ${turClass(s.sozlesme_turu)}`}>
           {s.sozlesme_turu_display}
-        </Tag>
+        </span>
       ),
     },
     {
@@ -292,9 +284,9 @@ export default function SozlesmelerClient() {
       dataIndex: 'durum',
       width: 110,
       render: (_, s) => (
-        <Tag color={durumTagColor(s.durum)} style={{ margin: 0, borderRadius: 6 }}>
+        <span className={`${styles.pill} ${durumClass(s.durum)}`}>
           {DURUM_LABELS[s.durum] || s.durum_display}
-        </Tag>
+        </span>
       ),
     },
     {
@@ -303,9 +295,7 @@ export default function SozlesmelerClient() {
       width: 120,
       align: 'right',
       render: (_, s) => (
-        <span style={{ fontFamily: 'ui-monospace, monospace', fontWeight: 600, color: '#0f172a' }}>
-          {fmtPara(contractNetMaas(s))}
-        </span>
+        <span className={styles.money}>{fmtPara(contractNetMaas(s))}</span>
       ),
     },
     {
@@ -313,9 +303,9 @@ export default function SozlesmelerClient() {
       key: 'tarih',
       width: 180,
       render: (_, s) => (
-        <div style={{ fontSize: 12, color: '#475569' }}>
-          <div>{fmtTarih(s.baslangic_tarihi)}</div>
-          <div style={{ color: '#94a3b8' }}>{fmtTarih(s.bitis_tarihi)}</div>
+        <div className={styles.range}>
+          <span>{fmtTarih(s.baslangic_tarihi)}</span>
+          <span className={styles.rangeEnd}>{fmtTarih(s.bitis_tarihi)}</span>
         </div>
       ),
     },
@@ -323,20 +313,22 @@ export default function SozlesmelerClient() {
       title: 'Detay',
       key: 'meta',
       width: 140,
-      render: (_, s) => (
-        <Space size={4} wrap>
-          {(s.maas_plani?.length ?? 0) > 0 && (
-            <Tag bordered={false} style={{ background: '#eff6ff', color: '#2563eb', fontSize: 11 }}>
-              {s.maas_plani!.length} ay plan
-            </Tag>
-          )}
-          {s.ders_ucreti_aktif && (
-            <Tag bordered={false} style={{ background: '#f5f3ff', color: '#7c3aed', fontSize: 11 }}>
-              Ders ücreti
-            </Tag>
-          )}
-        </Space>
-      ),
+      render: (_, s) => {
+        const plan = s.maas_plani?.length ?? 0;
+        if (!plan && !s.ders_ucreti_aktif) {
+          return <span className={styles.personMeta}>—</span>;
+        }
+        return (
+          <div className={styles.meta}>
+            {plan > 0 && (
+              <span className={`${styles.pill} ${styles.tur_TAM_ZAMANLI}`}>{plan} aylık plan</span>
+            )}
+            {s.ders_ucreti_aktif && (
+              <span className={`${styles.pill} ${styles.tur_DERS_UCRETLI}`}>Ders ücreti</span>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: '',
@@ -345,14 +337,13 @@ export default function SozlesmelerClient() {
       fixed: 'right',
       align: 'right',
       render: (_, s) => (
-        <Space size={4}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 2 }}>
           <Tooltip title="PDF İndir">
             <Button
               type="text"
               size="small"
               icon={<DownloadOutlined />}
               onClick={() => handlePdfDownload(s.id)}
-              style={{ color: '#6366f1' }}
             />
           </Tooltip>
           <Tooltip title="Düzenle">
@@ -366,184 +357,123 @@ export default function SozlesmelerClient() {
           <Dropdown menu={actionMenu(s)} trigger={['click']} placement="bottomRight">
             <Button type="text" size="small" icon={<MoreOutlined />} />
           </Dropdown>
-        </Space>
+        </div>
       ),
     },
   ], [router]);
 
-  return (
-    <div style={{ padding: '24px 28px', maxWidth: 1400, margin: '0 auto' }}>
-      {/* Header */}
-      <div
-        style={{
-          background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)',
-          borderRadius: 16,
-          padding: '24px 28px',
-          marginBottom: 20,
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: 16,
-        }}
-      >
-        <div>
-          <Title level={3} style={{ margin: 0, color: '#fff', fontWeight: 700 }}>
-            Personel Sözleşmeleri
-          </Title>
-          <Text style={{ color: 'rgba(255,255,255,.75)', fontSize: 13 }}>
-            Sözleşme oluşturma, maaş planı ve belge yönetimi
-          </Text>
-        </div>
-        <Space wrap>
-          <Button
-            icon={<BarChartOutlined />}
-            href="/admin/personel/sozlesmeler/rapor"
-            style={{ background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.2)', color: '#fff' }}
-          >
-            Rapor
-          </Button>
-          <Button
-            icon={<AuditOutlined />}
-            href="/admin/personel/sozlesmeler/odeme-onay"
-            style={{ background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.2)', color: '#fff' }}
-          >
-            Ödeme Onay
-          </Button>
-          <Button
-            icon={<DollarOutlined />}
-            href="/admin/personel/sozlesmeler/puantaj"
-            style={{ background: 'rgba(255,255,255,.12)', border: '1px solid rgba(255,255,255,.2)', color: '#fff' }}
-          >
-            Maaş Bordrosu
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            size="large"
-            onClick={() => router.push('/admin/personel/sozlesmeler/yeni')}
-            style={{ background: '#fff', color: '#4338ca', border: 'none', fontWeight: 600, boxShadow: '0 4px 14px rgba(0,0,0,.15)' }}
-          >
-            Yeni Sözleşme
-          </Button>
-        </Space>
-      </div>
+  const yilEtiket = activeEgitimYili
+    ? `${activeEgitimYili.baslangic_yil}–${activeEgitimYili.bitis_yil}`
+    : '';
+  const konum = [activeSube?.ad, tumYillar ? 'Tüm yıllar' : yilEtiket].filter(Boolean).join(' · ');
 
-      {/* Stats */}
-      {stats && (
-        <Row gutter={[12, 12]} style={{ marginBottom: 16 }}>
-          <Col xs={12} sm={6}>
-            <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
-              <Statistic
-                title={<span style={{ fontSize: 12, color: '#64748b' }}>Toplam Sözleşme</span>}
-                value={stats.toplam}
-                prefix={<TeamOutlined style={{ color: '#6366f1' }} />}
-                valueStyle={{ fontSize: 22, fontWeight: 700, color: '#0f172a' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
-              <Statistic
-                title={<span style={{ fontSize: 12, color: '#64748b' }}>Aktif</span>}
-                value={stats.aktif}
-                prefix={<CheckCircleOutlined style={{ color: '#10b981' }} />}
-                valueStyle={{ fontSize: 22, fontWeight: 700, color: '#059669' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
-              <Statistic
-                title={<span style={{ fontSize: 12, color: '#64748b' }}>Taslak</span>}
-                value={stats.taslak}
-                prefix={<FileTextOutlined style={{ color: '#94a3b8' }} />}
-                valueStyle={{ fontSize: 22, fontWeight: 700, color: '#64748b' }}
-              />
-            </Card>
-          </Col>
-          <Col xs={12} sm={6}>
-            <Card bordered={false} style={{ borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}>
-              <Statistic
-                title={<span style={{ fontSize: 12, color: '#64748b' }}>Toplam Net</span>}
-                value={stats.toplam_brut_maas}
-                formatter={(v) => fmtPara(Number(v))}
-                prefix={<DollarOutlined style={{ color: '#f59e0b' }} />}
-                valueStyle={{ fontSize: 18, fontWeight: 700, color: '#d97706' }}
-              />
-            </Card>
-          </Col>
-        </Row>
-      )}
+  return (
+    <div className={styles.page}>
+      <header className={styles.header}>
+        <div className={styles.headerTop}>
+          <div className={styles.titleBlock}>
+            <div className={styles.titleIcon} aria-hidden>
+              <FileTextOutlined />
+            </div>
+            <div>
+              <h1 className={styles.title}>Personel Sözleşmeleri</h1>
+              <p className={styles.subtitle}>
+                {konum || 'Sözleşme, maaş planı ve belge'}
+              </p>
+            </div>
+          </div>
+          <div className={styles.actions}>
+            <button type="button" className={styles.action} onClick={() => router.push('/admin/personel/sozlesmeler/rapor')}>
+              <BarChartOutlined /> Rapor
+            </button>
+            <button type="button" className={styles.action} onClick={() => router.push('/admin/personel/sozlesmeler/odeme-onay')}>
+              <AuditOutlined /> Ödeme Onay
+            </button>
+            <button type="button" className={styles.action} onClick={() => router.push('/admin/personel/sozlesmeler/puantaj')}>
+              <DollarOutlined /> Maaş Bordrosu
+            </button>
+            <button type="button" className={`${styles.action} ${styles.actionPrimary}`} onClick={() => router.push('/admin/personel/sozlesmeler/yeni')}>
+              <PlusOutlined /> Yeni Sözleşme
+            </button>
+          </div>
+        </div>
+        <div className={styles.metrics}>
+          <button
+            type="button"
+            className={`${styles.metric} ${!durumFiltre ? styles.metricActive : ''}`}
+            onClick={() => setDurumFiltre('')}
+          >
+            <span className={styles.metricValue}>{stats?.toplam ?? '—'}</span>
+            <span className={styles.metricLabel}>Toplam sözleşme</span>
+          </button>
+          <button
+            type="button"
+            className={`${styles.metric} ${durumFiltre === 'AKTIF' ? styles.metricActive : ''}`}
+            onClick={() => setDurumFiltre(durumFiltre === 'AKTIF' ? '' : 'AKTIF')}
+          >
+            <span className={styles.metricValue}>{stats?.aktif ?? '—'}</span>
+            <span className={styles.metricLabel}>Aktif</span>
+          </button>
+          <button
+            type="button"
+            className={`${styles.metric} ${durumFiltre === 'TASLAK' ? styles.metricActive : ''}`}
+            onClick={() => setDurumFiltre(durumFiltre === 'TASLAK' ? '' : 'TASLAK')}
+          >
+            <span className={styles.metricValue}>{stats?.taslak ?? '—'}</span>
+            <span className={styles.metricLabel}>Taslak</span>
+          </button>
+          <div className={styles.metric}>
+            <span className={styles.metricValue}>{stats ? fmtPara(stats.toplam_brut_maas) : '—'}</span>
+            <span className={styles.metricLabel}>Toplam net</span>
+          </div>
+        </div>
+      </header>
 
       {loadError && (
         <Alert
+          className={styles.error}
           type="error"
           showIcon
           message={loadError}
-          style={{ marginBottom: 16, borderRadius: 10 }}
-          action={
-            <Button size="small" onClick={load}>
-              Tekrar dene
-            </Button>
-          }
+          action={<Button size="small" onClick={load}>Tekrar dene</Button>}
         />
       )}
 
-      {/* Toolbar */}
-      <Card
-        bordered={false}
-        style={{ borderRadius: 12, marginBottom: 16, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}
-        styles={{ body: { padding: '14px 16px' } }}
-      >
-        <Space wrap style={{ width: '100%' }} size={12}>
-          <Input
-            allowClear
-            prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
-            placeholder="Personel veya sözleşme no ara..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 280, borderRadius: 8 }}
-          />
-          <Select
-            allowClear
-            placeholder="Durum"
-            value={durumFiltre || undefined}
-            onChange={(v) => setDurumFiltre(v || '')}
-            style={{ width: 150 }}
-            options={helper?.sozlesme_durumlari.map((d) => ({ value: d.value, label: d.label }))}
-          />
-          <Select
-            allowClear
-            placeholder="Çalışma tipi"
-            value={turFiltre || undefined}
-            onChange={(v) => setTurFiltre(v || '')}
-            style={{ width: 170 }}
-            options={helper?.sozlesme_turleri.map((t) => ({ value: t.value, label: t.label }))}
-          />
-          <Checkbox
-            checked={tumYillar}
-            onChange={(e) => setTumYillar(e.target.checked)}
-          >
-            Tüm eğitim yılları
-          </Checkbox>
-          {activeEgitimYili && !tumYillar && (
-            <Text type="secondary" style={{ fontSize: 12 }}>
-              {activeEgitimYili.baslangic_yil}-{activeEgitimYili.bitis_yil}
-            </Text>
-          )}
-          <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-            Yenile
-          </Button>
-        </Space>
-      </Card>
+      <div className={styles.toolbar}>
+        <Input
+          className={styles.search}
+          allowClear
+          prefix={<SearchOutlined style={{ color: '#94a3b8' }} />}
+          placeholder="Personel veya sözleşme no ara"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+        <Select
+          className={styles.filter}
+          allowClear
+          placeholder="Durum"
+          value={durumFiltre || undefined}
+          onChange={(v) => setDurumFiltre(v || '')}
+          options={helper?.sozlesme_durumlari.map((d) => ({ value: d.value, label: d.label }))}
+        />
+        <Select
+          className={styles.filter}
+          allowClear
+          placeholder="Çalışma tipi"
+          value={turFiltre || undefined}
+          onChange={(v) => setTurFiltre(v || '')}
+          options={helper?.sozlesme_turleri.map((t) => ({ value: t.value, label: t.label }))}
+        />
+        <label className={styles.yearToggle}>
+          <Checkbox checked={tumYillar} onChange={(e) => setTumYillar(e.target.checked)} />
+          Tüm yıllar
+        </label>
+        <button type="button" className={styles.refresh} onClick={load}>
+          <ReloadOutlined spin={loading} /> Yenile
+        </button>
+      </div>
 
-      {/* Table */}
-      <Card
-        bordered={false}
-        style={{ borderRadius: 12, boxShadow: '0 1px 3px rgba(0,0,0,.06)' }}
-        styles={{ body: { padding: 0 } }}
-      >
+      <div className={styles.tableCard}>
         <Table
           rowKey="id"
           columns={columns}
@@ -581,7 +511,7 @@ export default function SozlesmelerClient() {
             },
           })}
         />
-      </Card>
+      </div>
 
       {/* Fesih Modal */}
       <Modal

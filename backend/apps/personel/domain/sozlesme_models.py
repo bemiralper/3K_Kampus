@@ -7,7 +7,7 @@ Varlıklar:
   3. AylikHakedis    — Aylık puantaj / hakediş hesaplaması
 """
 from django.db import models
-from django.core.validators import MinValueValidator
+from django.core.validators import MaxValueValidator, MinValueValidator
 from decimal import Decimal
 
 
@@ -154,9 +154,16 @@ class PersonelSozlesme(models.Model):
     departman_snapshot = models.CharField('Departman', max_length=200, blank=True)
 
     # ─── Çalışma düzeni ───
-    haftalik_calisma_gun_sayisi = models.PositiveSmallIntegerField(
+    haftalik_calisma_gun_sayisi = models.DecimalField(
         'Haftalık Çalışma Gün Sayısı',
-        default=5,
+        max_digits=3,
+        decimal_places=1,
+        default=Decimal('5'),
+        validators=[
+            MinValueValidator(Decimal('0.5')),
+            MaxValueValidator(Decimal('7')),
+        ],
+        help_text='Yarım gün için 0,5 adım (ör. 2,5).',
     )
     haftalik_izin_gunleri = models.JSONField(
         'Haftalık İzin Günleri',

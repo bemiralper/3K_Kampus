@@ -237,6 +237,8 @@ class HakedisRepository:
                 qs = qs.filter(durum=filters['durum'])
             if filters.get('egitim_yili_id'):
                 qs = qs.filter(sozlesme__egitim_yili_id=filters['egitim_yili_id'])
+            if filters.get('sube_id'):
+                qs = qs.filter(sozlesme__sube_id=filters['sube_id'])
         return qs
 
     def get_by_id(self, pk):
@@ -268,12 +270,17 @@ class HakedisRepository:
             return True
         return False
 
-    def bulk_create_for_month(self, kurum_id, egitim_yili_id, yil, ay):
+    def bulk_create_for_month(self, kurum_id, egitim_yili_id, yil, ay, sube_id=None):
         aktif_sozlesmeler = PersonelSozlesme.objects.filter(
             kurum_id=kurum_id,
             egitim_yili_id=egitim_yili_id,
             durum=SozlesmeDurumu.AKTIF,
-        ).prefetch_related('ders_ucretleri', 'ucret_donemleri', 'maas_plani')
+        )
+        if sube_id:
+            aktif_sozlesmeler = aktif_sozlesmeler.filter(sube_id=sube_id)
+        aktif_sozlesmeler = aktif_sozlesmeler.prefetch_related(
+            'ders_ucretleri', 'ucret_donemleri', 'maas_plani',
+        )
         created = []
         for s in aktif_sozlesmeler:
             ders_ucret_tanim = s.ders_ucretleri.first()
@@ -286,30 +293,53 @@ class HakedisRepository:
 
             existing = AylikHakedis.objects.filter(sozlesme=s, yil=yil, ay=ay).first()
             if existing:
+                h = existing
                 updated = False
-                if existing.sabit_maas != maas:
-                    existing.sabit_maas = maas
+                if h.sabit_maas != maas:
+                    h.sabit_maas = maas
                     updated = True
-                if existing.ders_basi_ucret != ders_basi_ucret:
-                    existing.ders_basi_ucret = ders_basi_ucret
+                if h.ders_basi_ucret != ders_basi_ucret:
+                    h.ders_basi_ucret = ders_basi_ucret
                     updated = True
                 if updated:
-                    existing.hesapla()
-                    existing.save()
-                    created.append(existing)
-                continue
+                    h.hesapla()
+                    h.save()
+            else:
+                h = AylikHakedis(
+                    sozlesme=s,
+                    yil=yil,
+                    ay=ay,
+                    sabit_maas=maas,
+                    ders_basi_ucret=ders_basi_ucret,
+                )
+                h.hesapla()
+                h.save()
+                updated = True
 
-            h = AylikHakedis(
-                sozlesme=s,
-                yil=yil,
-                ay=ay,
-                sabit_maas=maas,
-                ders_basi_ucret=ders_basi_ucret,
-            )
-            h.hesapla()
-            h.save()
-            created.append(h)
+            if self._apply_recorded_avans(h):
+                updated = True
+            if updated:
+                created.append(h)
         return created
+
+    def _apply_recorded_avans(self, hakedis) -> bool:
+        """İleri tarihli avans kayıtlarını, bordro satırı oluşunca nete yazar."""
+        if hakedis.durum != HakedisDurumu.HESAPLANDI:
+            return False
+        toplam = (
+            AvansKaydi.objects.filter(
+                sozlesme_id=hakedis.sozlesme_id,
+                mahsup_yil=hakedis.yil,
+                mahsup_ay=hakedis.ay,
+            ).aggregate(toplam=Sum('tutar'))['toplam']
+            or Decimal('0')
+        )
+        if toplam <= 0 or hakedis.avans == toplam:
+            return False
+        hakedis.avans = toplam
+        hakedis.hesapla()
+        hakedis.save()
+        return True
 
     def _get_donemsel_maas(self, sozlesme, yil, ay):
         baslangic = sozlesme.baslangic_tarihi
@@ -339,10 +369,12 @@ class HakedisRepository:
             return sozlesme.brut_maas
         return sozlesme.net_maas or Decimal('0.00')
 
-    def get_stats(self, kurum_id, yil, ay):
+    def get_stats(self, kurum_id, yil, ay, sube_id=None):
         qs = AylikHakedis.objects.filter(
             sozlesme__kurum_id=kurum_id, yil=yil, ay=ay,
         )
+        if sube_id:
+            qs = qs.filter(sozlesme__sube_id=sube_id)
         agg = qs.aggregate(
             toplam_brut=Sum('brut_toplam'),
             toplam_net=Sum('net_hakedis'),

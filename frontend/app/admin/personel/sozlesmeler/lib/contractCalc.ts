@@ -348,6 +348,31 @@ export const fmtTL = (n: number) => fmtTry(n, 0);
 
 export const fmtTLDec = (n: number) => fmtTry(n, 2);
 
+/** 5 → "5", 2.5 → "2,5". Boş veya geçersiz değerde "—". */
+export function formatCalismaGunu(value: number | string | null | undefined): string {
+  if (value == null || value === '') return '—';
+  const n = typeof value === 'number' ? value : Number(String(value).replace(',', '.'));
+  if (!Number.isFinite(n)) return '—';
+  const half = Math.round(n * 2) / 2;
+  if (Number.isInteger(half)) return String(half);
+  return half.toFixed(1).replace('.', ',');
+}
+
+/**
+ * Tam veya yarım gün. "2,5" ve "2.5" kabul edilir.
+ * Yarım adım değilse veya 0,5–7 dışındaysa null.
+ */
+export function parseCalismaGunu(raw: string): number | null {
+  const s = raw.trim().replace(',', '.');
+  if (!/^\d{1,2}(\.\d{1,2})?$/.test(s)) return null;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  const doubled = Math.round(n * 2);
+  if (Math.abs(n * 2 - doubled) > 0.001) return null;
+  if (doubled < 1 || doubled > 14) return null;
+  return doubled / 2;
+}
+
 export const fmtTarih = (d: string | null | undefined) => {
   if (!d) return '—';
   return new Date(d.slice(0, 10) + 'T12:00:00').toLocaleDateString('tr-TR', {

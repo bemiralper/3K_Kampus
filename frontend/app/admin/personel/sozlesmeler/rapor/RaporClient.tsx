@@ -1,232 +1,633 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { fetchYillikRapor, type YillikRapor } from '../services/api';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
+import { useKurum } from '@/lib/contexts/KurumContext';
 import { AY_ADLARI } from '../types';
+import { fetchYillikRapor, type YillikRapor, type YillikRaporAylik } from '../services/api';
+import styles from './rapor.module.css';
 
-/* ─── CSS ─── */
-const inp = 'w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10';
-const btnSecondary = 'px-4 py-2 bg-white border border-gray-200 text-gray-700 text-[13px] font-medium rounded-xl hover:bg-gray-50 transition-colors';
+type Kapsam = 'yillik' | 'donem' | 'aylar';
 
-const fmtPara = (n: number) =>
-  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+const AY_KISA: Record<number, string> = {
+  1: 'Oca', 2: 'Şub', 3: 'Mar', 4: 'Nis', 5: 'May', 6: 'Haz',
+  7: 'Tem', 8: 'Ağu', 9: 'Eyl', 10: 'Eki', 11: 'Kas', 12: 'Ara',
+};
 
-const SOZLESME_TURU_LABELS: Record<string, string> = {
-  TAM_ZAMANLI: 'Tam Zamanlı',
-  DERS_UCRETLI: 'Ders Ücretli',
+const DONEMLER = [
+  { id: '1', ad: '1. Dönem', aralik: 'Eylül – Ocak' },
+  { id: '2', ad: '2. Dönem', aralik: 'Şubat – Haziran' },
+  { id: 'yaz', ad: 'Yaz dönemi', aralik: 'Temmuz – Ağustos' },
+] as const;
+
+const PARCALAR: { key: keyof YillikRaporAylik; name: string; color: string }[] = [
+  { key: 'sabit_maas_toplam', name: 'Sabit maaş', color: '#0262a7' },
+  { key: 'ders_ucret_toplam', name: 'Ders ücreti', color: '#0d9488' },
+  { key: 'ozel_ders_toplam', name: 'Özel ders', color: '#db2777' },
+  { key: 'prim_toplam', name: 'Prim', color: '#d97706' },
+  { key: 'fazla_mesai_toplam', name: 'Fazla mesai', color: '#7c3aed' },
+  { key: 'ek_odeme_toplam', name: 'Ek ödeme', color: '#0891b2' },
+];
+
+const TUR_AD: Record<string, string> = {
+  TAM_ZAMANLI: 'Tam zamanlı',
+  DERS_UCRETLI: 'Ders ücretli',
   KARMA: 'Karma',
 };
-const DURUM_LABELS: Record<string, string> = {
+const TUR_RENK: Record<string, string> = {
+  TAM_ZAMANLI: '#0262a7',
+  DERS_UCRETLI: '#7c3aed',
+  KARMA: '#0d9488',
+};
+const DURUM_AD: Record<string, string> = {
   HESAPLANDI: 'Hesaplandı',
   ONAYLANDI: 'Onaylandı',
   ODENDI: 'Ödendi',
   IPTAL: 'İptal',
 };
+const DURUM_RENK: Record<string, string> = {
+  HESAPLANDI: '#0284c7',
+  ONAYLANDI: '#d97706',
+  ODENDI: '#0f766e',
+  IPTAL: '#e11d48',
+};
 
-/* ─── Bar (basit CSS bar chart) ─── */
-function Bar({ value, max, color }: { value: number; max: number; color: string }) {
-  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+const fmtPara = (n: number) =>
+  new Intl.NumberFormat('tr-TR', {
+    style: 'currency',
+    currency: 'TRY',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(n || 0);
+
+const fmtKompakt = (n: number) =>
+  new Intl.NumberFormat('tr-TR', { notation: 'compact', maximumFractionDigits: 1 }).format(n || 0);
+
+const fmtSayi = (n: number) =>
+  new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 0 }).format(n || 0);
+
+type AySecim = { yil: number; ay: number; key: string; kisa: string; tam: string };
+
+function egitimAylari(baslangic: number, bitis: number): AySecim[] {
+  const kayit = (yil: number, ay: number): AySecim => ({
+    yil,
+    ay,
+    key: `${yil}-${String(ay).padStart(2, '0')}`,
+    kisa: AY_KISA[ay],
+    tam: `${AY_ADLARI[ay]} ${yil}`,
+  });
+  const liste: AySecim[] = [];
+  for (let ay = 9; ay <= 12; ay += 1) liste.push(kayit(baslangic, ay));
+  for (let ay = 1; ay <= 8; ay += 1) liste.push(kayit(bitis, ay));
+  return liste;
+}
+
+function hucre(n: number, negatif = false) {
+  if (!n) return <span className={styles.muted}>—</span>;
+  return <span className={negatif ? styles.neg : undefined}>{fmtPara(n)}</span>;
+}
+
+function ChartTip({
+  active,
+  payload,
+}: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number; color?: string; payload?: YillikRaporAylik }>;
+}) {
+  if (!active || !payload?.length) return null;
+  const row = payload[0]?.payload;
   return (
-    <div className="w-full bg-gray-100 rounded-full h-5 overflow-hidden">
-      <div
-        className="h-full rounded-full transition-all duration-500 flex items-center justify-end pr-2"
-        style={{ width: `${Math.max(pct, 2)}%`, backgroundColor: color }}
-      >
-        {pct > 15 && <span className="text-[10px] text-white font-medium">{fmtPara(value)}</span>}
+    <div className={styles.tip}>
+      <div className={styles.tipTitle}>
+        {row ? `${row.ay_adi} ${row.yil}` : ''}
+        {row && row.personel_sayisi > 0 ? ` · ${row.personel_sayisi} kişi` : ''}
       </div>
+      {payload.map((p) => (
+        <div key={p.name} className={styles.tipRow}>
+          <span>{p.name}</span>
+          <strong>{fmtPara(Number(p.value || 0))}</strong>
+        </div>
+      ))}
     </div>
   );
 }
 
-/* ═══ Ana Bileşen ═══ */
+function Spark({ data, dataKey, color }: { data: YillikRaporAylik[]; dataKey: 'brut_toplam' | 'net_toplam'; color: string }) {
+  const id = `spark-${dataKey}`;
+  return (
+    <div className={styles.spark}>
+      <ResponsiveContainer width="100%" height="100%">
+        <AreaChart data={data} margin={{ top: 6, right: 0, left: 0, bottom: 0 }}>
+          <defs>
+            <linearGradient id={id} x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={color} stopOpacity={0.35} />
+              <stop offset="100%" stopColor={color} stopOpacity={0} />
+            </linearGradient>
+          </defs>
+          <Area type="monotone" dataKey={dataKey} stroke={color} strokeWidth={1.75} fill={`url(#${id})`} dot={false} />
+        </AreaChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
 export default function RaporClient() {
-  const [yil, setYil] = useState(new Date().getFullYear());
+  const router = useRouter();
+  const { activeSube, activeEgitimYili, egitimYillari, initialized } = useKurum();
+  const [yilId, setYilId] = useState<number | null>(null);
+  const [kapsam, setKapsam] = useState<Kapsam>('yillik');
+  const [donem, setDonem] = useState<'1' | '2' | 'yaz'>('1');
+  const [aylar, setAylar] = useState<string[]>([]);
   const [rapor, setRapor] = useState<YillikRapor | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (activeEgitimYili?.id) setYilId(activeEgitimYili.id);
+  }, [activeEgitimYili?.id]);
+
+  const secili = useMemo(
+    () => egitimYillari.find((y) => y.id === yilId) || activeEgitimYili,
+    [egitimYillari, yilId, activeEgitimYili],
+  );
+
+  const ayListesi = useMemo(
+    () => (secili ? egitimAylari(secili.baslangic_yil, secili.bitis_yil) : []),
+    [secili],
+  );
+
+  useEffect(() => {
+    setKapsam('yillik');
+    setDonem('1');
+    if (secili) {
+      setAylar(egitimAylari(secili.baslangic_yil, secili.bitis_yil).map((a) => a.key));
+    }
+  }, [secili?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const load = useCallback(async () => {
+    if (!initialized || !activeSube?.id || !yilId) return;
+    if (kapsam === 'aylar' && aylar.length === 0) {
+      setRapor(null);
+      setLoading(false);
+      setError('');
+      return;
+    }
     setLoading(true);
-    const res = await fetchYillikRapor(yil);
-    if (res.success && res.data) setRapor(res.data);
+    setError('');
+    try {
+      const res = await fetchYillikRapor({
+        egitim_yili_id: yilId,
+        kapsam,
+        donem: kapsam === 'donem' ? donem : undefined,
+        aylar: kapsam === 'aylar' ? aylar.join(',') : undefined,
+      });
+      if (res.success && res.data) setRapor(res.data);
+      else {
+        setRapor(null);
+        setError(res.error || 'Rapor yüklenemedi.');
+      }
+    } catch (err) {
+      setRapor(null);
+      setError(err instanceof Error ? err.message : 'Rapor yüklenemedi.');
+    }
     setLoading(false);
-  }, [yil]);
+  }, [initialized, activeSube?.id, yilId, kapsam, donem, aylar]);
 
   useEffect(() => { load(); }, [load]);
 
-  const maxBrut = rapor ? Math.max(...rapor.aylik.map(a => a.brut_toplam), 1) : 1;
+  const parcalar = useMemo(() => {
+    if (!rapor) return [];
+    return PARCALAR.filter((p) => rapor.aylik.some((a) => Number(a[p.key] || 0) > 0));
+  }, [rapor]);
+
+  const turler = useMemo(() => {
+    if (!rapor) return [];
+    return rapor.tur_dagilimi
+      .filter((t) => t.toplam_brut > 0 || t.kisi_sayisi > 0)
+      .map((t) => ({
+        ...t,
+        label: TUR_AD[t.tur] || t.tur,
+        color: TUR_RENK[t.tur] || '#64748b',
+      }));
+  }, [rapor]);
+
+  const durumlar = useMemo(() => rapor?.durum_dagilimi.filter((d) => d.sayi > 0) ?? [], [rapor]);
+  const durumMax = Math.max(...durumlar.map((d) => d.toplam), 1);
+  const turToplam = turler.reduce((s, t) => s + t.toplam_brut, 0);
+  const dolu = rapor ? rapor.aylik.some((a) => a.brut_toplam > 0 || a.net_toplam > 0) : false;
+
+  const netDelta = useMemo(() => {
+    if (!rapor) return null;
+    const doluAylar = rapor.aylik.filter((a) => a.net_toplam > 0 || a.brut_toplam > 0);
+    if (doluAylar.length < 2) return null;
+    const son = doluAylar[doluAylar.length - 1];
+    const once = doluAylar[doluAylar.length - 2];
+    if (!once.net_toplam) return null;
+    const pct = ((son.net_toplam - once.net_toplam) / once.net_toplam) * 100;
+    return { pct, ay: `${AY_KISA[once.ay]} → ${AY_KISA[son.ay]}` };
+  }, [rapor]);
+
+  const kesintiToplam = rapor
+    ? rapor.aylik.reduce((s, a) => s + a.avans_toplam + a.kesinti_toplam, 0)
+    : 0;
+
+  function chooseKapsam(next: Kapsam) {
+    setKapsam(next);
+    if (next === 'aylar' && aylar.length === 0 && ayListesi.length) {
+      setAylar(ayListesi.map((a) => a.key));
+    }
+  }
+
+  function toggleAy(key: string) {
+    setAylar((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
+  }
+
+  const kapsamYazi = rapor
+    ? [rapor.egitim_yili, rapor.donem_adi || (rapor.kapsam === 'aylar' ? `${rapor.ay_sayisi} ay` : 'Yıllık'), rapor.aralik]
+        .filter(Boolean)
+        .join(' · ')
+    : secili
+      ? `${secili.baslangic_yil}–${secili.bitis_yil}`
+      : '';
+
+  const yillar = useMemo(() => {
+    const liste = [...egitimYillari];
+    if (secili && !liste.some((y) => y.id === secili.id)) liste.unshift(secili);
+    return liste.sort((a, b) => b.baslangic_yil - a.baslangic_yil);
+  }, [egitimYillari, secili]);
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto">
-      {/* Başlık */}
-      <div className="flex items-center justify-between mb-6">
+    <div className={styles.page}>
+      <header className={styles.top}>
         <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            📈 Personel Maliyet Raporu
-          </h1>
-          <p className="text-[13px] text-gray-500 mt-1">
-            Yıllık ve aylık personel gider özetleri
-          </p>
+          <p className={styles.kicker}>{activeSube?.ad || 'Personel'}</p>
+          <h1 className={styles.title}>Maliyet raporu</h1>
+          <p className={styles.lede}>{kapsamYazi || 'Eğitim yılı personel gideri'}</p>
         </div>
-        <a href="/admin/personel/sozlesmeler" className={btnSecondary}>
-          ← Sözleşmelere Dön
-        </a>
-      </div>
+        <button type="button" className={styles.back} onClick={() => router.push('/admin/personel/sozlesmeler')}>
+          Sözleşmelere dön
+        </button>
+      </header>
 
-      {/* Yıl seçimi */}
-      <div className="flex items-end gap-4 mb-6 bg-white rounded-2xl border border-gray-100 p-4">
-        <div>
-          <label className="block text-[12px] text-gray-500 font-medium mb-1">Yıl</label>
-          <input type="number" className={inp + ' !w-28'} value={yil} onChange={e => setYil(Number(e.target.value))} />
-        </div>
-      </div>
-
-      {loading ? (
-        <div className="text-center py-12 text-gray-400">Yükleniyor...</div>
-      ) : !rapor ? (
-        <div className="text-center py-16 bg-gray-50 rounded-2xl">
-          <p className="text-4xl mb-2">📈</p>
-          <p className="text-gray-400 text-[14px]">Rapor verisi bulunamadı.</p>
-        </div>
-      ) : (
-        <>
-          {/* Genel Özet Kartları */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
-              <div className="text-[12px] text-gray-500 mb-1">💰 Yıllık Toplam Brüt</div>
-              <div className="text-2xl font-bold text-amber-600">{fmtPara(rapor.genel_brut)}</div>
-            </div>
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
-              <div className="text-[12px] text-gray-500 mb-1">💵 Yıllık Toplam Net</div>
-              <div className="text-2xl font-bold text-emerald-600">{fmtPara(rapor.genel_net)}</div>
-            </div>
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
-              <div className="text-[12px] text-gray-500 mb-1">🕐 Yıllık Toplam Ders Saati</div>
-              <div className="text-2xl font-bold text-purple-600">{rapor.genel_ders_saat.toFixed(0)}</div>
-            </div>
+      <section className={styles.filters}>
+        <div className={styles.filterRow}>
+          <select
+            className={styles.select}
+            aria-label="Eğitim yılı"
+            value={yilId ?? ''}
+            onChange={(e) => setYilId(Number(e.target.value))}
+          >
+            {yillar.map((y) => (
+              <option key={y.id} value={y.id}>
+                {y.baslangic_yil}–{y.bitis_yil}
+                {y.id === activeEgitimYili?.id ? ' · aktif dönem' : ''}
+              </option>
+            ))}
+          </select>
+          <div className={styles.modes} role="tablist" aria-label="Aralık">
+            {([
+              ['yillik', 'Yıllık'],
+              ['donem', 'Dönem'],
+              ['aylar', 'Aylar'],
+            ] as const).map(([id, ad]) => (
+              <button
+                key={id}
+                type="button"
+                className={`${styles.mode} ${kapsam === id ? styles.modeOn : ''}`}
+                onClick={() => chooseKapsam(id)}
+              >
+                {ad}
+              </button>
+            ))}
           </div>
+        </div>
 
-          {/* Aylık Kırılım — Bar Chart + Tablo */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-6">
-            <h2 className="text-[14px] font-bold text-gray-800 mb-4">📊 Aylık Brüt Maliyet</h2>
-            <div className="space-y-2">
-              {rapor.aylik.map(a => (
-                <div key={a.ay} className="flex items-center gap-3">
-                  <span className="text-[12px] text-gray-500 w-16 text-right shrink-0">{AY_ADLARI[a.ay]}</span>
-                  <div className="flex-1">
-                    <Bar value={a.brut_toplam} max={maxBrut} color="#6366f1" />
-                  </div>
-                  <span className="text-[11px] text-gray-400 w-12 text-right shrink-0">
-                    {a.personel_sayisi > 0 ? `${a.personel_sayisi} kişi` : '—'}
-                  </span>
-                </div>
+        {kapsam === 'donem' && (
+          <div className={styles.donemler}>
+            {DONEMLER.map((d) => (
+              <button
+                key={d.id}
+                type="button"
+                className={`${styles.donem} ${donem === d.id ? styles.donemOn : ''}`}
+                onClick={() => setDonem(d.id)}
+              >
+                <strong>{d.ad}</strong>
+                <span>{d.aralik}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {kapsam === 'aylar' && (
+          <div>
+            <div className={styles.monthsHead}>
+              <p>Eğitim yılı içinden görmek istediğiniz ayları seçin.</p>
+              <span>
+                <button type="button" className={styles.linkBtn} onClick={() => setAylar(ayListesi.map((a) => a.key))}>
+                  Tümü
+                </button>
+                {' · '}
+                <button type="button" className={styles.linkBtn} onClick={() => setAylar([])}>
+                  Temizle
+                </button>
+              </span>
+            </div>
+            <div className={styles.months}>
+              {ayListesi.map((a) => (
+                <button
+                  key={a.key}
+                  type="button"
+                  className={`${styles.month} ${aylar.includes(a.key) ? styles.monthOn : ''}`}
+                  onClick={() => toggleAy(a.key)}
+                  aria-pressed={aylar.includes(a.key)}
+                >
+                  {a.kisa} {String(a.yil).slice(2)}
+                </button>
               ))}
             </div>
           </div>
+        )}
+      </section>
 
-          {/* Detaylı Aylık Tablo */}
-          <div className="bg-white rounded-2xl border border-gray-100 overflow-x-auto mb-6">
-            <h2 className="text-[14px] font-bold text-gray-800 p-4 pb-0">📋 Aylık Detay Tablosu</h2>
-            <table className="w-full text-[12px] mt-3">
+      {error && <div className={styles.error}>{error}</div>}
+
+      {loading && !rapor ? (
+        <div className={styles.loading}>Rapor hazırlanıyor…</div>
+      ) : !rapor ? (
+        <div className={styles.empty}>
+          {kapsam === 'aylar' && aylar.length === 0
+            ? 'Görmek istediğiniz ayları seçin.'
+            : 'Bu aralık için rapor verisi yok.'}
+        </div>
+      ) : (
+        <div className={loading ? styles.busy : undefined}>
+          <section className={styles.kpis}>
+            <article className={styles.kpi}>
+              <div className={styles.kpiLabel}>Brüt maliyet</div>
+              <div className={styles.kpiValue}>{fmtPara(rapor.genel_brut)}</div>
+              <div className={styles.kpiHint}>{rapor.genel_kisi} kişi · {rapor.ay_sayisi} ay</div>
+              {dolu && <Spark data={rapor.aylik} dataKey="brut_toplam" color="#0262a7" />}
+            </article>
+            <article className={styles.kpi}>
+              <div className={styles.kpiLabel}>Net ödeme</div>
+              <div className={styles.kpiValue}>{fmtPara(rapor.genel_net)}</div>
+              <div className={styles.kpiHint}>
+                {netDelta ? (
+                  <span className={netDelta.pct >= 0 ? styles.up : styles.down}>
+                    {netDelta.pct >= 0 ? '+' : ''}{netDelta.pct.toFixed(0)}% {netDelta.ay}
+                  </span>
+                ) : 'Avans ve kesintiler düşülmüş'}
+              </div>
+              {dolu && <Spark data={rapor.aylik} dataKey="net_toplam" color="#0f766e" />}
+            </article>
+            <article className={styles.kpi}>
+              <div className={styles.kpiLabel}>Avans ve kesinti</div>
+              <div className={styles.kpiValue}>{fmtPara(kesintiToplam)}</div>
+              <div className={styles.kpiHint}>Brüt ile net arasındaki fark</div>
+            </article>
+            <article className={styles.kpi}>
+              <div className={styles.kpiLabel}>Ders saati</div>
+              <div className={styles.kpiValue}>{fmtSayi(rapor.genel_ders_saat)}</div>
+              <div className={styles.kpiHint}>Seçilen aralıktaki toplam saat</div>
+            </article>
+          </section>
+
+          <section className={styles.grid}>
+            <article className={styles.card}>
+              <div className={styles.cardHead}>
+                <h2 className={styles.cardTitle}>Aylık brüt ve net</h2>
+                <p className={styles.cardSub}>İki çizgi arasındaki alan kesintidir</p>
+              </div>
+              {dolu ? (
+                <>
+                  <div className={styles.legend}>
+                    <span className={styles.legendItem}><i className={styles.dot} style={{ background: '#0262a7' }} /> Brüt</span>
+                    <span className={styles.legendItem}><i className={styles.dot} style={{ background: '#0f766e' }} /> Net</span>
+                  </div>
+                  <div className={styles.chart}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={rapor.aylik} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <defs>
+                          <linearGradient id="brutFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#0262a7" stopOpacity={0.22} />
+                            <stop offset="100%" stopColor="#0262a7" stopOpacity={0.02} />
+                          </linearGradient>
+                          <linearGradient id="netFill" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor="#0f766e" stopOpacity={0.28} />
+                            <stop offset="100%" stopColor="#0f766e" stopOpacity={0.02} />
+                          </linearGradient>
+                        </defs>
+                        <CartesianGrid stroke="#eef3f8" vertical={false} />
+                        <XAxis dataKey="etiket" tick={{ fontSize: 11, fill: '#7088a4' }} axisLine={false} tickLine={false} tickMargin={8} />
+                        <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={52} tickFormatter={fmtKompakt} />
+                        <Tooltip content={<ChartTip />} />
+                        <Area type="monotone" dataKey="brut_toplam" name="Brüt" stroke="#0262a7" strokeWidth={2.25} fill="url(#brutFill)" dot={false} activeDot={{ r: 4 }} />
+                        <Area type="monotone" dataKey="net_toplam" name="Net" stroke="#0f766e" strokeWidth={2.25} fill="url(#netFill)" dot={false} activeDot={{ r: 4 }} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              ) : (
+                <div className={styles.chartEmpty}>Bu aralıkta bordro kaydı yok.</div>
+              )}
+            </article>
+
+            <article className={styles.card}>
+              <div className={styles.cardHead}>
+                <h2 className={styles.cardTitle}>Sözleşme türü</h2>
+                <p className={styles.cardSub}>Brüt pay</p>
+              </div>
+              {turler.length === 0 ? (
+                <div className={styles.chartEmpty}>Tür dağılımı yok.</div>
+              ) : (
+                <div className={styles.donutBox}>
+                  <div className={styles.donut}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={turler}
+                          dataKey="toplam_brut"
+                          nameKey="label"
+                          innerRadius="68%"
+                          outerRadius="90%"
+                          paddingAngle={3}
+                          stroke="#fff"
+                          strokeWidth={2}
+                        >
+                          {turler.map((t) => <Cell key={t.tur} fill={t.color} />)}
+                        </Pie>
+                        <Tooltip formatter={(v) => fmtPara(Number(v || 0))} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className={styles.donutCenter}>
+                      <strong>{fmtKompakt(turToplam)}</strong>
+                      <span>brüt</span>
+                    </div>
+                  </div>
+                  <ul className={styles.legendList}>
+                    {turler.map((t) => (
+                      <li key={t.tur}>
+                        <i className={styles.dot} style={{ background: t.color }} />
+                        <span>{t.label}</span>
+                        <b>{fmtPara(t.toplam_brut)}</b>
+                        <span className={styles.legendMeta}>{t.kisi_sayisi} kişi · net {fmtPara(t.toplam_net)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </article>
+          </section>
+
+          <section className={styles.grid}>
+            <article className={styles.card}>
+              <div className={styles.cardHead}>
+                <h2 className={styles.cardTitle}>Maliyetin bileşenleri</h2>
+                <p className={styles.cardSub}>Ay ay yığılmış</p>
+              </div>
+              {parcalar.length === 0 ? (
+                <div className={styles.chartEmpty}>Bileşen tutarı yok.</div>
+              ) : (
+                <>
+                  <div className={styles.legend}>
+                    {parcalar.map((p) => (
+                      <span key={p.key} className={styles.legendItem}>
+                        <i className={styles.dot} style={{ background: p.color }} /> {p.name}
+                      </span>
+                    ))}
+                  </div>
+                  <div className={styles.chart}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={rapor.aylik} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke="#eef3f8" vertical={false} />
+                        <XAxis dataKey="etiket" tick={{ fontSize: 11, fill: '#7088a4' }} axisLine={false} tickLine={false} tickMargin={8} />
+                        <YAxis tick={{ fontSize: 11, fill: '#94a3b8' }} axisLine={false} tickLine={false} width={52} tickFormatter={fmtKompakt} />
+                        <Tooltip content={<ChartTip />} />
+                        {parcalar.map((p, i) => (
+                          <Bar
+                            key={p.key}
+                            dataKey={p.key}
+                            name={p.name}
+                            stackId="maliyet"
+                            fill={p.color}
+                            maxBarSize={32}
+                            radius={i === parcalar.length - 1 ? [5, 5, 0, 0] : [0, 0, 0, 0]}
+                          />
+                        ))}
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              )}
+            </article>
+
+            <article className={styles.card}>
+              <div className={styles.cardHead}>
+                <h2 className={styles.cardTitle}>Ödeme durumu</h2>
+                <p className={styles.cardSub}>Bordro kaydı</p>
+              </div>
+              {durumlar.length === 0 ? (
+                <div className={styles.chartEmpty}>Durum dağılımı yok.</div>
+              ) : (
+                <div className={styles.statusList}>
+                  {durumlar.map((d) => (
+                    <div key={d.durum}>
+                      <div className={styles.statusTop}>
+                        <span>{DURUM_AD[d.durum] || d.durum}</span>
+                        <b>{fmtPara(d.toplam)}</b>
+                      </div>
+                      <div className={styles.track}>
+                        <div
+                          className={styles.fill}
+                          style={{
+                            width: `${Math.max(4, Math.round((d.toplam / durumMax) * 100))}%`,
+                            background: DURUM_RENK[d.durum] || '#64748b',
+                          }}
+                        />
+                      </div>
+                      <div className={styles.kpiHint}>{d.sayi} kayıt</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+          </section>
+
+          <section className={styles.tableWrap}>
+            <h2>Ay dökümü</h2>
+            <table>
               <thead>
-                <tr className="bg-gray-50 text-gray-500 text-left">
-                  <th className="px-3 py-2 font-medium">Ay</th>
-                  <th className="px-3 py-2 font-medium text-right">Kişi</th>
-                  <th className="px-3 py-2 font-medium text-right">Sabit Maaş</th>
-                  <th className="px-3 py-2 font-medium text-right">Ders Ücreti</th>
-                  <th className="px-3 py-2 font-medium text-right">Prim</th>
-                  <th className="px-3 py-2 font-medium text-right">Fazla Mesai</th>
-                  <th className="px-3 py-2 font-medium text-right">Ek Ödeme</th>
-                  <th className="px-3 py-2 font-medium text-right">Avans</th>
-                  <th className="px-3 py-2 font-medium text-right">Kesintiler</th>
-                  <th className="px-3 py-2 font-medium text-right">Brüt Toplam</th>
-                  <th className="px-3 py-2 font-medium text-right">Net Toplam</th>
+                <tr>
+                  <th>Ay</th>
+                  <th>Kişi</th>
+                  <th>Sabit</th>
+                  <th>Ders</th>
+                  <th>Özel ders</th>
+                  <th>Prim</th>
+                  <th>Mesai</th>
+                  <th>Ek</th>
+                  <th>Avans</th>
+                  <th>Kesinti</th>
+                  <th>Brüt</th>
+                  <th>Net</th>
                 </tr>
               </thead>
               <tbody>
-                {rapor.aylik.map(a => (
-                  <tr key={a.ay} className={`border-t border-gray-50 ${a.brut_toplam > 0 ? '' : 'opacity-40'}`}>
-                    <td className="px-3 py-2 font-medium text-gray-900">{a.ay_adi}</td>
-                    <td className="px-3 py-2 text-right text-gray-600">{a.personel_sayisi}</td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-700">{fmtPara(a.sabit_maas_toplam)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-700">{fmtPara(a.ders_ucret_toplam)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-700">{a.prim_toplam > 0 ? fmtPara(a.prim_toplam) : '—'}</td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-700">{a.fazla_mesai_toplam > 0 ? fmtPara(a.fazla_mesai_toplam) : '—'}</td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-700">{fmtPara(a.ek_odeme_toplam)}</td>
-                    <td className="px-3 py-2 text-right font-mono text-red-600">{a.avans_toplam > 0 ? fmtPara(a.avans_toplam) : '—'}</td>
-                    <td className="px-3 py-2 text-right font-mono text-gray-700">{fmtPara(a.kesinti_toplam)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold text-gray-900">{fmtPara(a.brut_toplam)}</td>
-                    <td className="px-3 py-2 text-right font-mono font-semibold text-emerald-700">{fmtPara(a.net_toplam)}</td>
+                {rapor.aylik.map((a) => (
+                  <tr key={`${a.yil}-${a.ay}`}>
+                    <td>{a.ay_adi} {a.yil}</td>
+                    <td>{a.personel_sayisi || '—'}</td>
+                    <td>{hucre(a.sabit_maas_toplam)}</td>
+                    <td>{hucre(a.ders_ucret_toplam)}</td>
+                    <td>{hucre(a.ozel_ders_toplam)}</td>
+                    <td>{hucre(a.prim_toplam)}</td>
+                    <td>{hucre(a.fazla_mesai_toplam)}</td>
+                    <td>{hucre(a.ek_odeme_toplam)}</td>
+                    <td>{hucre(a.avans_toplam, true)}</td>
+                    <td>{hucre(a.kesinti_toplam, true)}</td>
+                    <td>{fmtPara(a.brut_toplam)}</td>
+                    <td className={styles.net}>{fmtPara(a.net_toplam)}</td>
                   </tr>
                 ))}
               </tbody>
               <tfoot>
-                <tr className="bg-gray-50 font-semibold text-gray-700">
-                  <td className="px-3 py-2">YIL TOPLAMI</td>
-                  <td className="px-3 py-2 text-right">—</td>
-                  <td className="px-3 py-2 text-right">{fmtPara(rapor.aylik.reduce((a, m) => a + m.sabit_maas_toplam, 0))}</td>
-                  <td className="px-3 py-2 text-right">{fmtPara(rapor.aylik.reduce((a, m) => a + m.ders_ucret_toplam, 0))}</td>
-                  <td className="px-3 py-2 text-right">{fmtPara(rapor.aylik.reduce((a, m) => a + m.prim_toplam, 0))}</td>
-                  <td className="px-3 py-2 text-right">{fmtPara(rapor.aylik.reduce((a, m) => a + m.fazla_mesai_toplam, 0))}</td>
-                  <td className="px-3 py-2 text-right">{fmtPara(rapor.aylik.reduce((a, m) => a + m.ek_odeme_toplam, 0))}</td>
-                  <td className="px-3 py-2 text-right text-red-600">{fmtPara(rapor.aylik.reduce((a, m) => a + m.avans_toplam, 0))}</td>
-                  <td className="px-3 py-2 text-right">{fmtPara(rapor.aylik.reduce((a, m) => a + m.kesinti_toplam, 0))}</td>
-                  <td className="px-3 py-2 text-right">{fmtPara(rapor.genel_brut)}</td>
-                  <td className="px-3 py-2 text-right text-emerald-700">{fmtPara(rapor.genel_net)}</td>
+                <tr>
+                  <td>Toplam</td>
+                  <td>{rapor.genel_kisi}</td>
+                  <td>{fmtPara(sum(rapor, 'sabit_maas_toplam'))}</td>
+                  <td>{fmtPara(sum(rapor, 'ders_ucret_toplam'))}</td>
+                  <td>{fmtPara(sum(rapor, 'ozel_ders_toplam'))}</td>
+                  <td>{fmtPara(sum(rapor, 'prim_toplam'))}</td>
+                  <td>{fmtPara(sum(rapor, 'fazla_mesai_toplam'))}</td>
+                  <td>{fmtPara(sum(rapor, 'ek_odeme_toplam'))}</td>
+                  <td className={styles.neg}>{fmtPara(sum(rapor, 'avans_toplam'))}</td>
+                  <td>{fmtPara(sum(rapor, 'kesinti_toplam'))}</td>
+                  <td>{fmtPara(rapor.genel_brut)}</td>
+                  <td className={styles.net}>{fmtPara(rapor.genel_net)}</td>
                 </tr>
               </tfoot>
             </table>
-          </div>
-
-          {/* Tür Bazlı Dağılım */}
-          {rapor.tur_dagilimi.length > 0 && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-              <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                <h2 className="text-[14px] font-bold text-gray-800 mb-4">📂 Sözleşme Türü Dağılımı</h2>
-                <div className="space-y-3">
-                  {rapor.tur_dagilimi.map((t, i) => (
-                    <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                      <div>
-                        <span className="text-[13px] font-medium text-gray-800">{SOZLESME_TURU_LABELS[t.tur] || t.tur}</span>
-                        <span className="text-[11px] text-gray-400 ml-2">{t.kisi_sayisi} kişi</span>
-                      </div>
-                      <div className="text-right">
-                        <div className="text-[13px] font-bold text-gray-900">{fmtPara(t.toplam_brut)}</div>
-                        <div className="text-[11px] text-emerald-600">Net: {fmtPara(t.toplam_net)}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Ödeme Durumu Dağılımı */}
-              <div className="bg-white rounded-2xl border border-gray-100 p-5">
-                <h2 className="text-[14px] font-bold text-gray-800 mb-4">📊 Ödeme Durumu</h2>
-                <div className="space-y-3">
-                  {rapor.durum_dagilimi.map((d, i) => {
-                    const colors: Record<string, string> = {
-                      HESAPLANDI: 'bg-blue-100 text-blue-700',
-                      ONAYLANDI: 'bg-amber-100 text-amber-700',
-                      ODENDI: 'bg-emerald-100 text-emerald-700',
-                      IPTAL: 'bg-red-100 text-red-700',
-                    };
-                    return (
-                      <div key={i} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${colors[d.durum] || 'bg-gray-100 text-gray-600'}`}>
-                            {DURUM_LABELS[d.durum] || d.durum}
-                          </span>
-                          <span className="text-[13px] text-gray-600">{d.sayi} kayıt</span>
-                        </div>
-                        <div className="text-[13px] font-bold text-gray-900">{fmtPara(d.toplam)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          )}
-        </>
+          </section>
+        </div>
       )}
     </div>
   );
+}
+
+function sum(rapor: YillikRapor, key: keyof YillikRaporAylik) {
+  return rapor.aylik.reduce((s, a) => s + Number(a[key] || 0), 0);
 }

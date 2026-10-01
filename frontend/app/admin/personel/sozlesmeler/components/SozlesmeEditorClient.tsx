@@ -40,6 +40,8 @@ import {
   fmtTLDec,
   fmtTarih,
   fmtAySuresi,
+  formatCalismaGunu,
+  parseCalismaGunu,
 } from '../lib/contractCalc';
 import { useMaasPlaniChainFill } from '../hooks/useMaasPlaniChainFill';
 import { useSozlesmeHesap } from '../hooks/useSozlesmeHesap';
@@ -73,6 +75,44 @@ function defaultBitis(): string {
   const d = new Date();
   d.setFullYear(d.getFullYear() + 1);
   return d.toISOString().slice(0, 10);
+}
+
+function HaftalikCalismaGunField({
+  value,
+  onChange,
+}: {
+  value: number;
+  onChange: (n: number) => void;
+}) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const shown = draft ?? formatCalismaGunu(value);
+
+  return (
+    <div className="se-field">
+      <label>Haftalık Çalışma Günü</label>
+      <input
+        type="text"
+        inputMode="decimal"
+        className="se-input"
+        value={shown === '—' ? '' : shown}
+        onFocus={() => setDraft(shown === '—' ? '' : shown)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          setDraft(raw);
+          const n = parseCalismaGunu(raw);
+          if (n != null) onChange(n);
+        }}
+        onBlur={() => {
+          const n = parseCalismaGunu(draft ?? '');
+          if (n != null) onChange(n);
+          setDraft(null);
+        }}
+      />
+      <p style={{ margin: '6px 0 0', fontSize: 11, color: '#64748b' }}>
+        Yarım gün için 0,5 adım kullanın (ör. 2,5).
+      </p>
+    </div>
+  );
 }
 
 function emptyForm(): SozlesmeFormData {
@@ -1000,19 +1040,10 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
                       0 girilirse sözleşmede sigorta bilgisi yer almaz.
                     </p>
                   </div>
-                  <div className="se-field">
-                    <label>Haftalık Çalışma Günü</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={7}
-                      className="se-input"
-                      value={form.haftalik_calisma_gun_sayisi}
-                      onChange={(e) =>
-                        patchForm({ haftalik_calisma_gun_sayisi: parseInt(e.target.value, 10) || 5 })
-                      }
-                    />
-                  </div>
+                  <HaftalikCalismaGunField
+                    value={form.haftalik_calisma_gun_sayisi ?? 5}
+                    onChange={(n) => patchForm({ haftalik_calisma_gun_sayisi: n })}
+                  />
                   {!isDersUcretli && (
                     <div className="se-field">
                       <label>Net Maaş (₺)</label>

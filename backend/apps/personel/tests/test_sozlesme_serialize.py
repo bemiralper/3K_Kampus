@@ -1,10 +1,14 @@
 """Personel sözleşme serializer — görevlendirme rol alan adları."""
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 
-from apps.personel.interfaces.sozlesme_serializers import serialize_sozlesme
+from apps.personel.interfaces.sozlesme_serializers import (
+    parse_haftalik_calisma_gun,
+    serialize_sozlesme,
+)
 
 
 class SozlesmeSerializeTests(SimpleTestCase):
@@ -109,3 +113,18 @@ class SozlesmeSerializeTests(SimpleTestCase):
 
         self.assertEqual(data['is_ogretmen'], True)
         self.assertEqual(data['belge_basligi'], 'Öğretmen İş Sözleşmesi')
+
+
+class HaftalikCalismaGunParseTests(SimpleTestCase):
+    def test_half_day_accepts_dot_and_comma(self):
+        self.assertEqual(parse_haftalik_calisma_gun(2.5), Decimal('2.5'))
+        self.assertEqual(parse_haftalik_calisma_gun('2,5'), Decimal('2.5'))
+        self.assertEqual(parse_haftalik_calisma_gun('5'), Decimal('5.0'))
+
+    def test_rejects_non_half_step_and_out_of_range(self):
+        with self.assertRaises(ValueError):
+            parse_haftalik_calisma_gun('2,3')
+        with self.assertRaises(ValueError):
+            parse_haftalik_calisma_gun(8)
+        with self.assertRaises(ValueError):
+            parse_haftalik_calisma_gun(0)

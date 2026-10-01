@@ -269,7 +269,7 @@ def calc_ozet_metrikleri(
     ders_birim_ucret: Decimal | float | str = 0,
     ders_ucret_tipi: str = '',
     sgk_gun: int = 30,
-    haftalik_calisma_gun: int = 5,
+    haftalik_calisma_gun: Decimal | float | int | str = 5,
     baslangic_tarihi: date | str | None = None,
     bitis_tarihi: date | str | None = None,
 ) -> dict:
@@ -305,7 +305,7 @@ def calc_ozet_metrikleri(
         'ders_ucreti': float(ders_ucret),
         'ders_ucret_tipi': ders_ucret_tipi,
         'sgk_gun': sgk_gun,
-        'haftalik_calisma_gun': haftalik_calisma_gun,
+        'haftalik_calisma_gun': float(haftalik_calisma_gun),
         'gunluk_ucret': float(gunluk_ucret),
         'saatlik_ucret': float(saatlik_ucret),
         'tahmini_aylik_maliyet': float(tahmini_aylik),

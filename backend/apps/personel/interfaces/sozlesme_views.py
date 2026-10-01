@@ -13,9 +13,13 @@ from django.contrib.auth.decorators import login_required
 from shared.permissions import require_module_permission
 
 from django.db import transaction
-from django.db.models import Sum, Count, F
+from django.db.models import Sum, Count, F, Q
 
-from apps.personel.interfaces.sozlesme_serializers import serialize_sozlesme, parse_sozlesme_body
+from apps.personel.interfaces.sozlesme_serializers import (
+    serialize_sozlesme,
+    parse_sozlesme_body,
+    parse_haftalik_calisma_gun,
+)
 from apps.personel.application.contract_calc_service import calc_ozet_metrikleri
 from apps.personel.application.sozlesme_service import SozlesmeService, HakedisService, AvansService
 from apps.personel.domain.sozlesme_models import (
@@ -45,6 +49,27 @@ def _ctx(request):
         ey_id = e.id if e else None
 
     return kurum_id, ey_id
+
+
+def _aktif_sube_ctx(request):
+    """Bordro uçları seçili şubenin sözleşmeleriyle sınırlıdır."""
+    from apps.personel.interfaces.sube_context import mandatory_personel_context
+    ctx, err = mandatory_personel_context(request)
+    if err:
+        return None, err
+    return ctx, None
+
+
+def _reject_if_other_sube(request, hakedis):
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+    if hakedis.sozlesme.sube_id != ctx['sube_id']:
+        return JsonResponse(
+            {'success': False, 'error': 'Bu bordro seçili şubeye ait değil.'},
+            status=403,
+        )
+    return None
 
 
 def _serialize_sozlesme(s):
@@ -147,7 +172,10 @@ def api_sozlesme_list_create(request):
         return err
 
     sube_id = ctx['sube_id']
-    data = parse_sozlesme_body(body, kurum_id, ey_id)
+    try:
+        data = parse_sozlesme_body(body, kurum_id, ey_id)
+    except ValueError as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
     data['sube_id'] = sube_id
 
     personel_id = data.get('personel_id')
@@ -205,7 +233,10 @@ def api_sozlesme_detail(request, pk):
         except json.JSONDecodeError:
             return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
-        data = parse_sozlesme_body(body, kurum_id=None, ey_id=None, partial=True)
+        try:
+            data = parse_sozlesme_body(body, kurum_id=None, ey_id=None, partial=True)
+        except ValueError as e:
+            return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
         try:
             sozlesme = svc.update(pk, data)
@@ -258,7 +289,10 @@ def api_sozlesme_taslak(request, pk):
 
     body['durum'] = SozlesmeDurumu.TASLAK
     svc = SozlesmeService()
-    data = parse_sozlesme_body(body, kurum_id=None, ey_id=None, partial=True, taslak=True)
+    try:
+        data = parse_sozlesme_body(body, kurum_id=None, ey_id=None, partial=True, taslak=True)
+    except ValueError as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
     try:
         sozlesme = svc.update(pk, data)
         if not sozlesme:
@@ -278,13 +312,18 @@ def api_sozlesme_preview_hesap(request):
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
+    try:
+        haftalik_gun = parse_haftalik_calisma_gun(body.get('haftalik_calisma_gun_sayisi', 5))
+    except ValueError as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
+
     ozet = calc_ozet_metrikleri(
         maas_plani=body.get('maas_plani', []),
         mesai_saatleri=body.get('mesai_saatleri', []),
         ders_birim_ucret=body.get('ders_birim_ucret', 0),
         ders_ucret_tipi=body.get('ders_ucret_tipi', ''),
         sgk_gun=int(body.get('sgk_gun', 30)),
-        haftalik_calisma_gun=int(body.get('haftalik_calisma_gun_sayisi', 5)),
+        haftalik_calisma_gun=haftalik_gun,
         baslangic_tarihi=body.get('baslangic_tarihi'),
         bitis_tarihi=body.get('bitis_tarihi'),
     )
@@ -504,6 +543,9 @@ def api_sozlesme_helper_data(request):
 def api_hakedis_list_create(request):
     kurum_id, ey_id = _ctx(request)
     svc = HakedisService()
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
 
     if request.method == 'GET':
         yil = request.GET.get('yil')
@@ -511,6 +553,7 @@ def api_hakedis_list_create(request):
         filters = {
             'durum': request.GET.get('durum', ''),
             'egitim_yili_id': ey_id,
+            'sube_id': ctx['sube_id'],
         }
         qs = svc.list(kurum_id, int(yil) if yil else None, int(ay) if ay else None, filters)
         return JsonResponse({
@@ -557,6 +600,9 @@ def api_hakedis_detail(request, pk):
         h = svc.get(pk)
         if not h:
             return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+        blocked = _reject_if_other_sube(request, h)
+        if blocked:
+            return blocked
         return JsonResponse({'success': True, 'data': _serialize_hakedis(h)})
 
     if request.method == 'PUT':
@@ -575,12 +621,25 @@ def api_hakedis_detail(request, pk):
         if 'odeme_tarihi' in body:
             data['odeme_tarihi'] = body['odeme_tarihi'] or None
 
+        existing = svc.get(pk)
+        if not existing:
+            return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+        blocked = _reject_if_other_sube(request, existing)
+        if blocked:
+            return blocked
+
         hakedis, err = svc.update(pk, data)
         if err:
             return JsonResponse({'success': False, 'error': err}, status=400)
         return JsonResponse({'success': True, 'data': _serialize_hakedis(hakedis)})
 
     # DELETE
+    existing = svc.get(pk)
+    if not existing:
+        return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+    blocked = _reject_if_other_sube(request, existing)
+    if blocked:
+        return blocked
     ok, err = svc.delete(pk)
     if err:
         return JsonResponse({'success': False, 'error': err}, status=400)
@@ -592,6 +651,11 @@ def api_hakedis_detail(request, pk):
 @require_http_methods(['POST'])
 def api_hakedis_onayla(request, pk):
     svc = HakedisService()
+    existing = svc.get(pk)
+    if existing:
+        blocked = _reject_if_other_sube(request, existing)
+        if blocked:
+            return blocked
     hakedis, err = svc.onayla(pk)
     if err:
         return JsonResponse({'success': False, 'error': err}, status=400)
@@ -612,6 +676,11 @@ def api_hakedis_odendi(request, pk):
         return JsonResponse({'success': False, 'error': '"odeme_tarihi" zorunlu.'}, status=400)
 
     svc = HakedisService()
+    existing = svc.get(pk)
+    if existing:
+        blocked = _reject_if_other_sube(request, existing)
+        if blocked:
+            return blocked
     hakedis, err = svc.odendi_isaretle(pk, odeme_tarihi)
     if err:
         return JsonResponse({'success': False, 'error': err}, status=400)
@@ -634,8 +703,12 @@ def api_hakedis_toplu_olustur(request):
     if not (1 <= ay <= 12) or yil < 2020:
         return JsonResponse({'success': False, 'error': 'Geçersiz yıl/ay.'}, status=400)
 
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+
     svc = HakedisService()
-    created = svc.toplu_olustur(kurum_id, ey_id, yil, ay)
+    created = svc.toplu_olustur(kurum_id, ey_id, yil, ay, sube_id=ctx['sube_id'])
     return JsonResponse({
         'success': True,
         'data': {
@@ -650,12 +723,15 @@ def api_hakedis_toplu_olustur(request):
 @require_http_methods(['GET'])
 def api_hakedis_stats(request):
     kurum_id, _ = _ctx(request)
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
     yil = request.GET.get('yil')
     ay = request.GET.get('ay')
     if not yil or not ay:
         return JsonResponse({'success': False, 'error': 'yil ve ay zorunlu.'}, status=400)
     svc = HakedisService()
-    stats = svc.stats(kurum_id, int(yil), int(ay))
+    stats = svc.stats(kurum_id, int(yil), int(ay), sube_id=ctx['sube_id'])
     return JsonResponse({'success': True, 'data': stats})
 
 
@@ -667,18 +743,60 @@ def api_hakedis_stats(request):
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_rapor_yillik(request):
-    """Yıllık personel maliyet raporu — aylık bazda kırılım."""
-    kurum_id, _ = _ctx(request)
-    yil = int(request.GET.get('yil', date.today().year))
+    """Personel maliyet raporu.
 
-    qs = AylikHakedis.objects.filter(
-        sozlesme__kurum_id=kurum_id, yil=yil,
+    Eğitim yılı (Eylül–Ağustos) içinde yıllık, dönem veya seçili aylar.
+    `yil` tek başına gelirse eski takvim yılı kırılımı korunur.
+    """
+    from apps.egitim_yili.domain.models import EgitimYili
+    from apps.personel.application.rapor_donem import (
+        AY_KISA, DONEM_AD, resolve_rapor_aylari,
     )
 
-    # Aylık toplamlar
-    aylik = []
-    for m in range(1, 13):
-        ay_qs = qs.filter(ay=m)
+    kurum_id, header_ey = _ctx(request)
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+
+    ey = None
+    ey_param = request.GET.get('egitim_yili_id')
+    kapsam = (request.GET.get('kapsam') or '').strip().lower()
+    if ey_param or kapsam:
+        try:
+            ey_id = int(ey_param) if ey_param else header_ey
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'error': 'Eğitim yılı geçersiz.'}, status=400)
+        ey = EgitimYili.objects.filter(pk=ey_id).first() if ey_id else None
+        if not ey:
+            return JsonResponse({'success': False, 'error': 'Eğitim yılı bulunamadı.'}, status=404)
+        try:
+            ay_ciftleri = resolve_rapor_aylari(
+                baslangic_yil=ey.baslangic_yil,
+                bitis_yil=ey.bitis_yil,
+                kapsam=kapsam or 'yillik',
+                donem=request.GET.get('donem'),
+                aylar_param=request.GET.get('aylar'),
+            )
+        except ValueError as exc:
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+        kapsam = kapsam or 'yillik'
+    else:
+        yil = int(request.GET.get('yil', date.today().year))
+        ay_ciftleri = [(yil, m) for m in range(1, 13)]
+        kapsam = 'yillik'
+
+    qs = AylikHakedis.objects.filter(
+        sozlesme__kurum_id=kurum_id,
+        sozlesme__sube_id=ctx['sube_id'],
+    )
+    if ey:
+        qs = qs.filter(sozlesme__egitim_yili_id=ey.id)
+    ay_q = Q()
+    for yil_i, ay_i in ay_ciftleri:
+        ay_q |= Q(yil=yil_i, ay=ay_i)
+    qs = qs.filter(ay_q)
+
+    def _ay_satiri(yil_i, ay_i, ay_qs):
         agg = ay_qs.aggregate(
             brut=Sum('brut_toplam'),
             net=Sum('net_hakedis'),
@@ -688,12 +806,15 @@ def api_rapor_yillik(request):
             prim=Sum('prim'),
             fazla_mesai=Sum('fazla_mesai'),
             ek_odeme=Sum('ek_odeme'),
+            ozel_ders=Sum('ozel_ders_hakedis_toplam'),
             avans=Sum('avans'),
             kesinti=Sum('kesintiler'),
         )
-        aylik.append({
-            'ay': m,
-            'ay_adi': _ay_adi(m),
+        return {
+            'yil': yil_i,
+            'ay': ay_i,
+            'ay_adi': _ay_adi(ay_i),
+            'etiket': AY_KISA.get(ay_i, str(ay_i)),
             'personel_sayisi': ay_qs.values('sozlesme__personel_id').distinct().count(),
             'brut_toplam': float(agg['brut'] or 0),
             'net_toplam': float(agg['net'] or 0),
@@ -703,9 +824,12 @@ def api_rapor_yillik(request):
             'prim_toplam': float(agg['prim'] or 0),
             'fazla_mesai_toplam': float(agg['fazla_mesai'] or 0),
             'ek_odeme_toplam': float(agg['ek_odeme'] or 0),
+            'ozel_ders_toplam': float(agg['ozel_ders'] or 0),
             'avans_toplam': float(agg['avans'] or 0),
             'kesinti_toplam': float(agg['kesinti'] or 0),
-        })
+        }
+
+    aylik = [_ay_satiri(yil_i, ay_i, qs.filter(yil=yil_i, ay=ay_i)) for yil_i, ay_i in ay_ciftleri]
 
     # Yıl genel toplamı
     genel = qs.aggregate(
@@ -737,14 +861,32 @@ def api_rapor_yillik(request):
     for d in durum_dagilimi:
         d['toplam'] = float(d['toplam'] or 0)
 
+    donem_anahtar = (request.GET.get('donem') or '').strip().lower() if kapsam == 'donem' else ''
+    ilk = aylik[0] if aylik else None
+    son = aylik[-1] if aylik else None
+    if ilk and son and (ilk['yil'], ilk['ay']) != (son['yil'], son['ay']):
+        aralik = f"{ilk['ay_adi']} {ilk['yil']} – {son['ay_adi']} {son['yil']}"
+    elif ilk:
+        aralik = f"{ilk['ay_adi']} {ilk['yil']}"
+    else:
+        aralik = ''
+
     return JsonResponse({
         'success': True,
         'data': {
-            'yil': yil,
+            'yil': ay_ciftleri[0][0] if ay_ciftleri else date.today().year,
+            'egitim_yili_id': ey.id if ey else None,
+            'egitim_yili': ey.yil_str if ey else '',
+            'kapsam': kapsam,
+            'donem': donem_anahtar or None,
+            'donem_adi': DONEM_AD.get(donem_anahtar, ''),
+            'aralik': aralik,
+            'ay_sayisi': len(aylik),
             'aylik': aylik,
             'genel_brut': float(genel['brut'] or 0),
             'genel_net': float(genel['net'] or 0),
             'genel_ders_saat': float(genel['ders_saat'] or 0),
+            'genel_kisi': qs.values('sozlesme__personel_id').distinct().count(),
             'tur_dagilimi': tur_dagilimi,
             'durum_dagilimi': durum_dagilimi,
         },
@@ -810,20 +952,38 @@ def api_avans_list_create(request):
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+    sozlesme = PersonelSozlesme.objects.filter(pk=body.get('sozlesme_id')).first()
+    if not sozlesme or sozlesme.sube_id != ctx['sube_id']:
+        return JsonResponse(
+            {'success': False, 'error': 'Avans yalnızca seçili şubenin sözleşmesine yazılabilir.'},
+            status=400,
+        )
+
     data = {
-        'sozlesme_id': body.get('sozlesme_id'),
+        'sozlesme_id': sozlesme.id,
         'tarih': body.get('tarih'),
-        'tutar': _dec(body.get('tutar'), '0.01'),
+        'tutar': _dec(body.get('tutar'), '0'),
         'aciklama': body.get('aciklama', ''),
-        'mahsup_yil': int(body.get('mahsup_yil', 0)),
-        'mahsup_ay': int(body.get('mahsup_ay', 0)),
+        'mahsup_yil': body.get('mahsup_yil'),
+        'mahsup_ay': body.get('mahsup_ay'),
     }
     if hasattr(request, 'user') and request.user.is_authenticated:
         data['olusturan'] = request.user
 
     try:
-        avans = svc.create(data)
-        return JsonResponse({'success': True, 'data': _serialize_avans(avans)}, status=201)
+        kayitlar = svc.create_plan(data, taksit_sayisi=body.get('taksit_sayisi', 1))
+        return JsonResponse({
+            'success': True,
+            'data': {
+                'adet': len(kayitlar),
+                'kayitlar': [_serialize_avans(a) for a in kayitlar],
+            },
+        }, status=201)
+    except ValueError as e:
+        return JsonResponse({'success': False, 'error': str(e)}, status=400)
     except Exception as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
@@ -888,10 +1048,21 @@ def api_hakedis_toplu_onayla(request):
     if not ids:
         return JsonResponse({'success': False, 'error': 'ID listesi boş.'}, status=400)
 
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+    allowed = set(
+        AylikHakedis.objects.filter(pk__in=ids, sozlesme__sube_id=ctx['sube_id'])
+        .values_list('pk', flat=True)
+    )
+
     svc = HakedisService()
     ok = 0
     errors = []
     for hid in ids:
+        if int(hid) not in allowed:
+            errors.append(f'#{hid}: Bu bordro seçili şubeye ait değil.')
+            continue
         hakedis, err = svc.onayla(hid)
         if err:
             errors.append(f'#{hid}: {err}')
@@ -921,10 +1092,21 @@ def api_hakedis_toplu_odendi(request):
     if not odeme_tarihi:
         return JsonResponse({'success': False, 'error': '"odeme_tarihi" zorunlu.'}, status=400)
 
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+    allowed = set(
+        AylikHakedis.objects.filter(pk__in=ids, sozlesme__sube_id=ctx['sube_id'])
+        .values_list('pk', flat=True)
+    )
+
     svc = HakedisService()
     ok = 0
     errors = []
     for hid in ids:
+        if int(hid) not in allowed:
+            errors.append(f'#{hid}: Bu bordro seçili şubeye ait değil.')
+            continue
         hakedis, err = svc.odendi_isaretle(hid, odeme_tarihi)
         if err:
             errors.append(f'#{hid}: {err}')
@@ -1267,6 +1449,9 @@ def api_bordro_pdf_tekil(request, pk):
     ).filter(pk=pk).first()
     if not hakedis:
         return JsonResponse({'success': False, 'error': 'Hakediş bulunamadı.'}, status=404)
+    blocked = _reject_if_other_sube(request, hakedis)
+    if blocked:
+        return blocked
 
     try:
         buf = _build_bordro_pdf_single(hakedis)
@@ -1287,11 +1472,17 @@ def api_bordro_pdf_tekil(request, pk):
 def api_bordro_pdf_toplu(request):
     """Belirli ay/yıl için tüm bordroları tek PDF'de birleştir."""
     kurum_id, _ = _ctx(request)
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
     yil = int(request.GET.get('yil', date.today().year))
     ay = int(request.GET.get('ay', date.today().month))
 
     hakedisler = AylikHakedis.objects.filter(
-        sozlesme__kurum_id=kurum_id, yil=yil, ay=ay,
+        sozlesme__kurum_id=kurum_id,
+        sozlesme__sube_id=ctx['sube_id'],
+        yil=yil,
+        ay=ay,
     ).select_related('sozlesme', 'sozlesme__personel', 'sozlesme__kurum').order_by('sozlesme__personel__soyad')
 
     if not hakedisler.exists():
@@ -1388,6 +1579,8 @@ def api_bordro_pdf_toplu(request):
 
     except ImportError:
         return JsonResponse({'success': False, 'error': 'PDF kütüphanesi (reportlab) yüklü değil.'}, status=500)
+    except Exception as e:
+        return JsonResponse({'success': False, 'error': f'PDF oluşturulamadı: {e}'}, status=500)
 
     filename = f'bordro_listesi_{ay}_{yil}.pdf'
     response = HttpResponse(buf.read(), content_type='application/pdf')
@@ -1424,10 +1617,15 @@ def api_maas_gider_kaydet(request):
 
     yil, ay = int(yil), int(ay)
 
-    # Ödendi durumundaki hakedişler
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+
+    # Ödendi durumundaki hakedişler — yalnızca seçili şube
     hakedisler = AylikHakedis.objects.filter(
         sozlesme__kurum_id=kurum_id,
         sozlesme__egitim_yili_id=ey_id,
+        sozlesme__sube_id=ctx['sube_id'],
         yil=yil,
         ay=ay,
         durum=HakedisDurumu.ODENDI,

@@ -30,6 +30,7 @@ import {
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { useKurum } from '@/lib/contexts/KurumContext';
+import { formatCalismaGunu } from '@/app/admin/personel/sozlesmeler/lib/contractCalc';
 import {
   cellKey,
   deleteTemporaryAvailability,
@@ -901,7 +902,7 @@ export default function OgretmenUygunluguClient() {
                             </div>
                             <div className="ou-contract-item">
                               <label>Haftalık Çalışma Günü</label>
-                              <span>{detail.contract.haftalik_calisma_gun_sayisi} gün</span>
+                              <span>{formatCalismaGunu(detail.contract.haftalik_calisma_gun_sayisi)} gün</span>
                             </div>
                           </div>
 

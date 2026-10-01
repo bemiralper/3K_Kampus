@@ -2,7 +2,7 @@
 import hashlib
 import hmac
 
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 
 from django.conf import settings
 
@@ -98,7 +98,7 @@ def serialize_sozlesme(s):
         ders_birim_ucret=s.ders_birim_ucret,
         ders_ucret_tipi=s.ders_ucret_tipi or '',
         sgk_gun=s.sgk_gun,
-        haftalik_calisma_gun=s.haftalik_calisma_gun_sayisi,
+        haftalik_calisma_gun=float(s.haftalik_calisma_gun_sayisi),
         baslangic_tarihi=s.baslangic_tarihi,
         bitis_tarihi=s.bitis_tarihi,
     )
@@ -154,7 +154,7 @@ def serialize_sozlesme(s):
         'brut_maas': float(s.brut_maas),
         'net_maas': float(s.net_maas),
         'sgk_gun': s.sgk_gun,
-        'haftalik_calisma_gun_sayisi': s.haftalik_calisma_gun_sayisi,
+        'haftalik_calisma_gun_sayisi': float(s.haftalik_calisma_gun_sayisi),
         'haftalik_izin_gunleri': s.haftalik_izin_gunleri or [],
         'ders_ucreti_aktif': s.ders_ucreti_aktif,
         'ders_ucret_tipi': s.ders_ucret_tipi or '',
@@ -230,6 +230,26 @@ def serialize_sozlesme(s):
     }
 
 
+def parse_haftalik_calisma_gun(value, default=Decimal('5')) -> Decimal:
+    """Tam veya yarım gün. 2.5 ve '2,5' kabul edilir; adım 0,5, aralık 0,5–7."""
+    if value in (None, ''):
+        return Decimal(default)
+    raw = value.strip().replace(',', '.') if isinstance(value, str) else value
+    if raw == '':
+        return Decimal(default)
+    try:
+        n = Decimal(str(raw))
+    except (InvalidOperation, ValueError) as exc:
+        raise ValueError('Haftalık çalışma günü sayı olmalıdır (ör. 2,5).') from exc
+    n = n.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)
+    doubled = n * 2
+    if doubled != doubled.to_integral_value():
+        raise ValueError('Haftalık çalışma günü yarım gün adımlarıyla girilmelidir (ör. 2,5).')
+    if n < Decimal('0.5') or n > Decimal('7'):
+        raise ValueError('Haftalık çalışma günü 0,5 ile 7 arasında olmalıdır.')
+    return n
+
+
 def _dec(val, default='0.00'):
     try:
         return Decimal(str(val)) if val not in (None, '') else Decimal(default)
@@ -263,7 +283,10 @@ def parse_sozlesme_body(body, kurum_id, ey_id, *, taslak=False, partial=False):
         'brans_snapshot': ('brans_snapshot', body.get('brans_snapshot', '')),
         'gorev_snapshot': ('gorev_snapshot', body.get('gorev_snapshot', '')),
         'departman_snapshot': ('departman_snapshot', body.get('departman_snapshot', '')),
-        'haftalik_calisma_gun_sayisi': ('haftalik_calisma_gun_sayisi', int(body.get('haftalik_calisma_gun_sayisi', 5))),
+        'haftalik_calisma_gun_sayisi': (
+            'haftalik_calisma_gun_sayisi',
+            parse_haftalik_calisma_gun(body.get('haftalik_calisma_gun_sayisi', 5)),
+        ),
         'haftalik_izin_gunleri': ('haftalik_izin_gunleri', body.get('haftalik_izin_gunleri', [])),
         'ders_ucret_tipi': ('ders_ucret_tipi', body.get('ders_ucret_tipi', '')),
         'ders_birim_ucret': ('ders_birim_ucret', _dec(body.get('ders_birim_ucret'))),

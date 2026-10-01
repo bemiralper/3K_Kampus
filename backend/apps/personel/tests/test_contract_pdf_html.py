@@ -113,6 +113,28 @@ class ContractPdfHtmlTests(SimpleTestCase):
         self.assertIn('Ders Ücreti', html)
         self.assertIn('Saatlik', html)
 
+    def test_half_day_renders_with_turkish_comma(self):
+        mod = _load_html_module()
+        sample = {
+            'sozlesme_no': 'PS-2026-0003',
+            'dogrulama_kodu': 'HAF',
+            'personel_ad': 'Ayşe Yılmaz',
+            'sozlesme_turu': 'TAM_ZAMANLI',
+            'sozlesme_turu_display': 'Tam Zamanlı',
+            'durum_display': 'Aktif',
+            'baslangic_tarihi': '2026-09-01',
+            'bitis_tarihi': '2027-06-30',
+            'egitim_yili_display': '2026-2027',
+            'toplam_calisma_suresi_ay': 10,
+            'belge_basligi': 'Öğretmen İş Sözleşmesi',
+            'haftalik_calisma_gun_sayisi': 2.5,
+            'sgk_gun': 30,
+            'kurum': {'ad': 'Demo Kurum'},
+        }
+        html = mod.build_personel_sozlesme_html(sample)
+        self.assertIn('2,5 gün', html)
+        self.assertNotIn('2.5 gün', html)
+
     def test_logo_from_sube_media_url_with_cache_bust(self):
         from apps.finans.application.export.report_html_template import resolve_sube_banner_logo
 

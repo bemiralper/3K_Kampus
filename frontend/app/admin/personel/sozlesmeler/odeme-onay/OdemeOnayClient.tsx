@@ -6,6 +6,7 @@ import {
 } from '../services/api';
 import type { Hakedis, HakedisStats } from '../types';
 import { HAKEDIS_DURUM_COLORS, AY_ADLARI } from '../types';
+import { useKurum } from '@/lib/contexts/KurumContext';
 
 /* ─── CSS ─── */
 const inp = 'w-full px-3.5 py-2.5 bg-white border border-gray-200 rounded-xl text-[13px] text-gray-900 outline-none transition-all focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10';
@@ -22,6 +23,7 @@ const fmtTarih = (d: string | null) => {
 
 /* ═══ Ana Bileşen ═══ */
 export default function OdemeOnayClient() {
+  const { activeSube, initialized } = useKurum();
   const now = new Date();
   const [yil, setYil] = useState(now.getFullYear());
   const [ay, setAy] = useState(now.getMonth() + 1);
@@ -39,6 +41,7 @@ export default function OdemeOnayClient() {
   };
 
   const load = useCallback(async () => {
+    if (!initialized || !activeSube?.id) return;
     setLoading(true);
     setSelectedIds(new Set());
     const [hRes, sRes] = await Promise.all([
@@ -48,7 +51,7 @@ export default function OdemeOnayClient() {
     if (hRes.success && hRes.data) setHakedisler(hRes.data);
     if (sRes.success && sRes.data) setStats(sRes.data);
     setLoading(false);
-  }, [yil, ay, durumFiltre]);
+  }, [yil, ay, durumFiltre, initialized, activeSube?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -143,6 +146,7 @@ export default function OdemeOnayClient() {
             ✅ Ödeme Onay
           </h1>
           <p className="text-[13px] text-gray-500 mt-1">
+            {activeSube?.ad ? `${activeSube.ad} · ` : ''}
             Hakedişleri onaylayın ve ödeme durumunu yönetin
           </p>
         </div>

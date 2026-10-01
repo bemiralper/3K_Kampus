@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import html
 from datetime import datetime
+from decimal import Decimal
 from typing import Any
 
 from apps.personel.application.contract_calc_service import format_calisma_suresi_ay, sozlesme_belge_basligi
@@ -40,6 +41,19 @@ def _fmt_tl_dec(amount: float | int) -> str:
     whole = int(n)
     frac = int(round((n - whole) * 100))
     return f'{whole:,}'.replace(',', '.') + f',{frac:02d} ₺'
+
+
+def _fmt_gun(value) -> str:
+    """5 → 5, 2.5 → 2,5."""
+    if value in (None, ''):
+        return '—'
+    try:
+        n = Decimal(str(value).replace(',', '.'))
+    except Exception:
+        return _esc(value)
+    if n == n.to_integral_value():
+        return str(int(n))
+    return f'{n.quantize(Decimal("0.1"))}'.replace('.', ',')
 
 
 def _fmt_tarih(value: str | None) -> str:
@@ -201,7 +215,7 @@ def build_personel_sozlesme_html(data: dict) -> str:
             else '<p class="empty">Tanımlı mesai yok.</p>'
         )
 
-    haftalik_gun = data.get('haftalik_calisma_gun_sayisi') or '—'
+    haftalik_gun = _fmt_gun(data.get('haftalik_calisma_gun_sayisi'))
     fact_cells = [
         ('Çalışma tipi', tur),
         ('Durum', _esc(data.get('durum_display'))),

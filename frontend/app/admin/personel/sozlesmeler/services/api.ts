@@ -154,8 +154,10 @@ export async function fetchHakedisStats(yil: number, ay: number): Promise<ApiRes
 // ── Raporlar ──
 
 export interface YillikRaporAylik {
+  yil: number;
   ay: number;
   ay_adi: string;
+  etiket: string;
   personel_sayisi: number;
   brut_toplam: number;
   net_toplam: number;
@@ -165,22 +167,41 @@ export interface YillikRaporAylik {
   prim_toplam: number;
   fazla_mesai_toplam: number;
   ek_odeme_toplam: number;
+  ozel_ders_toplam: number;
   avans_toplam: number;
   kesinti_toplam: number;
 }
 
 export interface YillikRapor {
   yil: number;
+  egitim_yili_id: number | null;
+  egitim_yili: string;
+  kapsam: 'yillik' | 'donem' | 'aylar';
+  donem: string | null;
+  donem_adi: string;
+  aralik: string;
+  ay_sayisi: number;
   aylik: YillikRaporAylik[];
   genel_brut: number;
   genel_net: number;
   genel_ders_saat: number;
+  genel_kisi: number;
   tur_dagilimi: { tur: string; toplam_brut: number; toplam_net: number; kisi_sayisi: number }[];
   durum_dagilimi: { durum: string; sayi: number; toplam: number }[];
 }
 
-export async function fetchYillikRapor(yil: number): Promise<ApiResponse<YillikRapor>> {
-  return apiGet<YillikRapor>(`${BASE}/rapor/yillik/?yil=${yil}`);
+export async function fetchYillikRapor(params: {
+  egitim_yili_id: number;
+  kapsam: 'yillik' | 'donem' | 'aylar';
+  donem?: string;
+  aylar?: string;
+}): Promise<ApiResponse<YillikRapor>> {
+  const sp = new URLSearchParams();
+  sp.set('egitim_yili_id', String(params.egitim_yili_id));
+  sp.set('kapsam', params.kapsam);
+  if (params.kapsam === 'donem' && params.donem) sp.set('donem', params.donem);
+  if (params.kapsam === 'aylar' && params.aylar) sp.set('aylar', params.aylar);
+  return apiGet<YillikRapor>(`${BASE}/rapor/yillik/?${sp.toString()}`);
 }
 
 // ── Avanslar ──
@@ -233,6 +254,41 @@ export function getBordroPdfTekilUrl(hakedisId: number): string {
 export function getBordroPdfTopluUrl(yil: number, ay: number): string {
   const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
   return `${backendUrl}${BASE}/hakedis/pdf-toplu/?yil=${yil}&ay=${ay}`;
+}
+
+async function downloadBordroPdf(url: string, fallbackName: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const res = await fetch(resolveApiUrl(url), {
+      method: 'GET',
+      credentials: 'include',
+      headers: getContextHeaders(),
+    });
+    if (!res.ok) {
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('application/json')) {
+        const json = await res.json();
+        return { success: false, error: (json.error as string) || 'PDF oluşturulamadı.' };
+      }
+      return { success: false, error: `PDF indirilemedi (${res.status})` };
+    }
+    const blob = await res.blob();
+    if (!blob.size) {
+      return { success: false, error: 'PDF dosyası boş.' };
+    }
+    const disposition = res.headers.get('content-disposition') || '';
+    const match = disposition.match(/filename="?([^";]+)"?/);
+    await downloadPdfBlob(blob, match?.[1] || fallbackName);
+    return { success: true };
+  } catch {
+    return { success: false, error: 'Bağlantı hatası.' };
+  }
+}
+
+export function downloadBordroPdfToplu(yil: number, ay: number): Promise<{ success: boolean; error?: string }> {
+  return downloadBordroPdf(
+    `${BASE}/hakedis/pdf-toplu/?yil=${yil}&ay=${ay}`,
+    `bordro_listesi_${ay}_${yil}.pdf`,
+  );
 }
 
 // ── Finans Entegrasyonu ──

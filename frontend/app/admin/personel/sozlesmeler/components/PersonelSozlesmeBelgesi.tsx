@@ -10,6 +10,7 @@ import {
   GUN_ADLARI,
   fmtAySuresi,
   contractNetMaas,
+  formatCalismaGunu,
 } from "@/app/admin/personel/sozlesmeler/lib/contractCalc";
 
 const API_BASE = "/api/personel/api/sozlesmeler";
@@ -175,8 +176,8 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
   summaryCells.push({
     h: showSgk ? "Haftalık / SGK" : "Haftalık",
     v: showSgk
-      ? `${data.haftalik_calisma_gun_sayisi ?? "—"} gün · ${sgkGun} SGK`
-      : `${data.haftalik_calisma_gun_sayisi ?? "—"} gün`,
+      ? `${formatCalismaGunu(data.haftalik_calisma_gun_sayisi)} gün · ${sgkGun} SGK`
+      : `${formatCalismaGunu(data.haftalik_calisma_gun_sayisi)} gün`,
   });
   const summaryRows: { h: string; v: string }[][] = [];
   for (let i = 0; i < summaryCells.length; i += 2) {
@@ -470,7 +471,7 @@ export default function PersonelSozlesmeBelgesi({ sozlesmeId, printToken }: Prop
         >
           <Kv
             rows={[
-              { label: "Haftalık çalışma", value: `${data.haftalik_calisma_gun_sayisi ?? "—"} gün` },
+              { label: "Haftalık çalışma", value: `${formatCalismaGunu(data.haftalik_calisma_gun_sayisi)} gün` },
               ...(showSgk ? [{ label: "SGK gün", value: String(sgkGun) }] : []),
             ]}
           />
