@@ -450,6 +450,17 @@ export default function MaasBordrosuClient() {
         </article>
       </section>
 
+      {sayac.ODENDI > 0 && (sayac.HESAPLANDI + sayac.ONAYLANDI) > 0 && (
+        <p className={styles.payNote}>
+          Bu ay {sayac.ODENDI} kişi ödendi. Ödenmeyen {sayac.HESAPLANDI + sayac.ONAYLANDI} kişi aynı listede duruyor:{' '}
+          {hakedisler
+            .filter((h) => h.durum === 'HESAPLANDI' || h.durum === 'ONAYLANDI')
+            .map((h) => h.personel_ad)
+            .join(', ')}
+          . PDF’de ödenenler ve ödenmeyenler ayrı.
+        </p>
+      )}
+
       <div className={styles.tools}>
         <input
           className={styles.search}

@@ -1334,8 +1334,27 @@ def _bordro_header_paragraphs(labels):
 def _bordro_list_col_widths(content_cm=26.7):
     """Toplu bordro tablosu — sütun genişlikleri sayfa genişliğine orantılı."""
     from reportlab.lib.units import cm
-    fractions = [0.17, 0.07, 0.07, 0.06, 0.07, 0.06, 0.06, 0.06, 0.06, 0.06, 0.08, 0.08, 0.07]
+    fractions = [0.16, 0.07, 0.07, 0.055, 0.07, 0.055, 0.055, 0.055, 0.055, 0.055, 0.075, 0.08, 0.09]
     return [content_cm * f * cm for f in fractions]
+
+
+def _bordro_odeme_grubu(hakedis):
+    """Ödendi, ödenmedi veya iptal. Onaylı/hesaplanmış kayıt ödenmiş sayılmaz."""
+    if hakedis.durum == HakedisDurumu.ODENDI:
+        return 'odenen'
+    if hakedis.durum == HakedisDurumu.IPTAL:
+        return 'iptal'
+    return 'odenmedi'
+
+
+def _bordro_odeme_etiket(hakedis):
+    if hakedis.durum == HakedisDurumu.ODENDI:
+        if hakedis.odeme_tarihi:
+            return f'Ödendi<br/>{hakedis.odeme_tarihi.strftime("%d.%m.%Y")}'
+        return 'Ödendi'
+    if hakedis.durum == HakedisDurumu.IPTAL:
+        return 'İptal'
+    return f'Ödenmedi<br/>({hakedis.get_durum_display()})'
 
 
 def _build_bordro_pdf_single(hakedis):
@@ -1368,16 +1387,29 @@ def _build_bordro_pdf_single(hakedis):
     )
     elements.extend(header)
 
+    if hakedis.durum == HakedisDurumu.ODENDI:
+        odeme_yazi = 'Ödendi'
+    elif hakedis.durum == HakedisDurumu.IPTAL:
+        odeme_yazi = 'İptal'
+    else:
+        odeme_yazi = f'Ödenmedi ({hakedis.get_durum_display()})'
     info_data = [
         ['Personel', hakedis.sozlesme.personel.tam_ad],
         ['Sözleşme Türü', hakedis.sozlesme.get_sozlesme_turu_display()],
         ['Dönem', f'{_ay_adi(hakedis.ay)} {hakedis.yil}'],
-        ['Durum', hakedis.get_durum_display()],
+        ['Ödeme', odeme_yazi],
     ]
     if hakedis.odeme_tarihi:
         info_data.append(['Ödeme Tarihi', hakedis.odeme_tarihi.strftime('%d.%m.%Y')])
 
     elements.append(_styled_info_table(info_data))
+    if hakedis.durum not in (HakedisDurumu.ODENDI, HakedisDurumu.IPTAL):
+        uyari = ParagraphStyle(
+            'BordroOdenmediUyari', fontName='VeraBd', fontSize=10, leading=13,
+            textColor=colors.HexColor('#b45309'),
+        )
+        elements.append(Spacer(1, 3*mm))
+        elements.append(Paragraph('Bu bordro ödenmedi.', uyari))
     elements.append(Spacer(1, 8*mm))
 
     fmtp = lambda v: f'{float(v):,.2f} ₺'
@@ -1494,8 +1526,9 @@ def api_bordro_pdf_toplu(request):
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import ParagraphStyle
         from reportlab.lib.units import cm, mm
-        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer
+        from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Spacer, Paragraph
 
         _register_turkish_fonts()
 
@@ -1506,73 +1539,120 @@ def api_bordro_pdf_toplu(request):
                                 leftMargin=1.5*cm, rightMargin=1.5*cm,
                                 topMargin=1.2*cm, bottomMargin=1.5*cm)
 
+        kayitlar = list(hakedisler)
+        odenen = [h for h in kayitlar if _bordro_odeme_grubu(h) == 'odenen']
+        odenmedi = [h for h in kayitlar if _bordro_odeme_grubu(h) == 'odenmedi']
+        iptal = [h for h in kayitlar if _bordro_odeme_grubu(h) == 'iptal']
+        fmtp = lambda v: f'{float(v):,.2f}'
+
         elements = []
         header, _ = _bordro_header_flowables(
             kurum,
             'MAAŞ BORDROSU LİSTESİ',
-            f'{_ay_adi(ay)} {yil} · {hakedisler.count()} personel',
+            f'{_ay_adi(ay)} {yil} · {len(kayitlar)} personel · {len(odenen)} ödendi · {len(odenmedi)} ödenmedi',
             content_width_cm=24,
         )
         elements.extend(header)
         elements.append(Spacer(1, 3*mm))
 
-        fmtp = lambda v: f'{float(v):,.2f}'
+        ozet_style = ParagraphStyle(
+            'BordroOzet', fontName='Vera', fontSize=9, leading=13,
+            textColor=colors.HexColor('#1e3352'),
+        )
+        net_odenen = sum(float(h.net_hakedis) for h in odenen)
+        net_odenmedi = sum(float(h.net_hakedis) for h in odenmedi)
+        elements.append(Paragraph(
+            f'<b>Ödendi:</b> {len(odenen)} kişi, {fmtp(net_odenen)} ₺'
+            f'&nbsp;&nbsp;·&nbsp;&nbsp;'
+            f'<font color="#b45309"><b>Ödenmedi:</b> {len(odenmedi)} kişi, {fmtp(net_odenmedi)} ₺</font>',
+            ozet_style,
+        ))
+        elements.append(Spacer(1, 3*mm))
 
-        # Tablo başlıkları
         table_header_labels = [
             'Personel', 'Tür', 'Maaş', 'Ders Saat', 'Ders Ücret',
             'Prim', 'F.Mesai', 'Ek Ödeme', 'Avans', 'Kesinti',
-            'Brüt', 'Net', 'Durum',
+            'Brüt', 'Net', 'Ödeme',
         ]
-        data = [_bordro_header_paragraphs(table_header_labels)]
-        toplam_brut = toplam_net = 0
-        for h in hakedisler:
-            data.append([
-                h.sozlesme.personel.tam_ad,
-                h.sozlesme.get_sozlesme_turu_display()[:10],
-                fmtp(h.sabit_maas),
-                str(float(h.toplam_ders_saati)),
-                fmtp(h.ders_ucreti_toplam),
-                fmtp(h.prim) if h.prim > 0 else '-',
-                fmtp(h.fazla_mesai) if h.fazla_mesai > 0 else '-',
-                fmtp(h.ek_odeme) if h.ek_odeme > 0 else '-',
-                fmtp(h.avans) if h.avans > 0 else '-',
-                fmtp(h.kesintiler) if h.kesintiler > 0 else '-',
-                fmtp(h.brut_toplam),
-                fmtp(h.net_hakedis),
-                h.get_durum_display(),
-            ])
-            toplam_brut += float(h.brut_toplam)
-            toplam_net += float(h.net_hakedis)
-
-        # Toplam satırı
-        data.append([
-            f'TOPLAM ({hakedisler.count()} kişi)', '', '', '', '', '', '', '', '', '',
-            fmtp(toplam_brut), fmtp(toplam_net), '',
-        ])
-
         col_widths = _bordro_list_col_widths(26.7)
-        tbl = Table(data, colWidths=col_widths, repeatRows=1)
-        tbl.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), primary),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('FONTNAME', (0, 1), (-1, -1), 'Vera'),
-            ('FONTSIZE', (0, 1), (-1, -1), 7.5),
-            ('FONTNAME', (0, 0), (-1, 0), 'VeraBd'),
-            ('FONTSIZE', (0, 0), (-1, 0), 7),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
-            ('TOPPADDING', (0, 0), (-1, -1), 4),
-            ('LEFTPADDING', (0, 0), (-1, -1), 3),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
-            ('ALIGN', (2, 1), (-1, -1), 'RIGHT'),
-            ('ALIGN', (0, 1), (1, -1), 'LEFT'),
-            ('FONTNAME', (0, -1), (-1, -1), 'VeraBd'),
-            ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#ECFDF5')),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F8FAFC')]),
-        ]))
-        elements.append(tbl)
+        durum_style = {
+            'odenen': ParagraphStyle(
+                'BordroOdenen', fontName='VeraBd', fontSize=7, leading=8.5,
+                alignment=1, textColor=colors.HexColor('#047857'),
+            ),
+            'odenmedi': ParagraphStyle(
+                'BordroOdenmedi', fontName='VeraBd', fontSize=7, leading=8.5,
+                alignment=1, textColor=colors.HexColor('#b45309'),
+            ),
+            'iptal': ParagraphStyle(
+                'BordroIptal', fontName='VeraBd', fontSize=7, leading=8.5,
+                alignment=1, textColor=colors.HexColor('#b91c1c'),
+            ),
+        }
+        grup_baslik = ParagraphStyle(
+            'BordroGrup', fontName='VeraBd', fontSize=10, leading=13,
+            textColor=colors.HexColor('#12263f'), spaceBefore=2,
+        )
+
+        def ekle_grup(baslik, rows, grup):
+            if not rows:
+                return
+            elements.append(Paragraph(baslik, grup_baslik))
+            elements.append(Spacer(1, 1.5*mm))
+            data = [_bordro_header_paragraphs(table_header_labels)]
+            toplam_brut = toplam_net = 0
+            for h in rows:
+                data.append([
+                    h.sozlesme.personel.tam_ad,
+                    h.sozlesme.get_sozlesme_turu_display()[:10],
+                    fmtp(h.sabit_maas),
+                    str(float(h.toplam_ders_saati)),
+                    fmtp(h.ders_ucreti_toplam),
+                    fmtp(h.prim) if h.prim > 0 else '-',
+                    fmtp(h.fazla_mesai) if h.fazla_mesai > 0 else '-',
+                    fmtp(h.ek_odeme) if h.ek_odeme > 0 else '-',
+                    fmtp(h.avans) if h.avans > 0 else '-',
+                    fmtp(h.kesintiler) if h.kesintiler > 0 else '-',
+                    fmtp(h.brut_toplam),
+                    fmtp(h.net_hakedis),
+                    Paragraph(_bordro_odeme_etiket(h), durum_style[grup]),
+                ])
+                toplam_brut += float(h.brut_toplam)
+                toplam_net += float(h.net_hakedis)
+            data.append([
+                f'TOPLAM ({len(rows)} kişi)', '', '', '', '', '', '', '', '', '',
+                fmtp(toplam_brut), fmtp(toplam_net), '',
+            ])
+            toplam_zemin = colors.HexColor('#ECFDF5') if grup == 'odenen' else colors.HexColor('#FEF3C7')
+            if grup == 'iptal':
+                toplam_zemin = colors.HexColor('#FEE2E2')
+            tbl = Table(data, colWidths=col_widths, repeatRows=1)
+            tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), primary),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 1), (-1, -1), 'Vera'),
+                ('FONTSIZE', (0, 1), (-1, -1), 7.5),
+                ('FONTNAME', (0, 0), (-1, 0), 'VeraBd'),
+                ('FONTSIZE', (0, 0), (-1, 0), 7),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#E2E8F0')),
+                ('ALIGN', (2, 1), (11, -1), 'RIGHT'),
+                ('ALIGN', (0, 1), (1, -1), 'LEFT'),
+                ('ALIGN', (12, 1), (12, -2), 'CENTER'),
+                ('FONTNAME', (0, -1), (-1, -1), 'VeraBd'),
+                ('BACKGROUND', (0, -1), (-1, -1), toplam_zemin),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -2), [colors.white, colors.HexColor('#F8FAFC')]),
+            ]))
+            elements.append(tbl)
+            elements.append(Spacer(1, 4*mm))
+
+        ekle_grup(f'Ödenenler ({len(odenen)})', odenen, 'odenen')
+        ekle_grup(f'Ödenmeyenler ({len(odenmedi)})', odenmedi, 'odenmedi')
+        ekle_grup(f'İptal ({len(iptal)})', iptal, 'iptal')
 
         doc.build(elements)
         buf.seek(0)

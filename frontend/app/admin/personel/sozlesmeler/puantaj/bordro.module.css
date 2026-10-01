@@ -181,6 +181,17 @@
   gap: 12px;
 }
 
+.payNote {
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .kpi {
   background: #fff;
   border: 1px solid #e4ebf3;
