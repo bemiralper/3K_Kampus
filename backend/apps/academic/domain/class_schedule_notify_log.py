@@ -5,6 +5,7 @@ from django.db import models
 
 
 class ClassScheduleNotifyStatus(models.TextChoices):
+    RUNNING = 'RUNNING', 'Gönderiliyor'
     SENT = 'SENT', 'Gönderildi'
     PARTIAL = 'PARTIAL', 'Kısmi'
     SKIPPED = 'SKIPPED', 'Atlandı'

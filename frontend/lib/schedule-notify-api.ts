@@ -54,9 +54,23 @@ export type ScheduleNotifyRecipient = {
   id: number;
   name: string;
   phone: string;
-  status: 'sent' | 'failed' | 'skipped';
+  status: 'sent' | 'failed' | 'skipped' | 'pending' | 'sending';
   error: string;
   sinif_ad: string;
+};
+
+export type ScheduleNotifyProgress = {
+  batch_id: string;
+  term_id: number;
+  state: 'running' | 'done';
+  total: number;
+  done: number;
+  sent: number;
+  failed: number;
+  skipped: number;
+  label: string;
+  recipients: ScheduleNotifyRecipient[];
+  sent_at: string | null;
 };
 
 export type ScheduleNotifySendResult = {
@@ -154,11 +168,17 @@ export async function sendScheduleNotify(body: {
   include_ogrenci_ids?: number[];
   include_veli_ids?: number[];
   batch_id?: string;
-}): Promise<ScheduleNotifySendResponse> {
-  const res = await apiFetch<ScheduleNotifySendResponse>('/api/academic/schedule/notify/send/', {
+}): Promise<ScheduleNotifyProgress> {
+  const res = await apiFetch<ScheduleNotifyProgress>('/api/academic/schedule/notify/send/', {
     method: 'POST',
     body: JSON.stringify(body),
   });
+  return unwrap(res);
+}
+
+export async function fetchScheduleNotifyProgress(batchId: string): Promise<ScheduleNotifyProgress> {
+  const q = new URLSearchParams({ batch_id: batchId });
+  const res = await apiFetch<ScheduleNotifyProgress>(`/api/academic/schedule/notify/progress/?${q}`);
   return unwrap(res);
 }
 
@@ -179,8 +199,8 @@ export async function sendTeacherScheduleNotify(body: {
   exclude_teacher_ids?: number[];
   include_teacher_ids?: number[];
   batch_id?: string;
-}): Promise<TeacherScheduleNotifySendResponse> {
-  const res = await apiFetch<TeacherScheduleNotifySendResponse>(
+}): Promise<ScheduleNotifyProgress> {
+  const res = await apiFetch<ScheduleNotifyProgress>(
     '/api/academic/schedule/notify/teacher/send/',
     { method: 'POST', body: JSON.stringify(body) },
   );

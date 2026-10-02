@@ -443,9 +443,15 @@
   background: #fef2f2;
 }
 
-.gv-wa-badge.is-skipped {
+.gv-wa-badge.is-skipped,
+.gv-wa-badge.is-pending {
   color: #92400e;
   background: #fffbeb;
+}
+
+.gv-wa-badge.is-sending {
+  color: #1d4ed8;
+  background: #eff6ff;
 }
 
 .gv-wa-audience p {

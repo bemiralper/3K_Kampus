@@ -13,10 +13,16 @@ import {
 } from 'antd';
 import type { ClassLessonPlanClassroom } from '@/lib/academic-api';
 import {
+  fetchScheduleNotifyProgress,
   previewScheduleNotify,
   sendScheduleNotify,
   type ScheduleNotifyClassPreview,
+  type ScheduleNotifyProgress,
 } from '@/lib/schedule-notify-api';
+
+function planBatchKey(termId: number) {
+  return `lms-schedule-notify:plan:${termId}`;
+}
 
 const { Text } = Typography;
 
@@ -45,6 +51,8 @@ export default function ScheduleNotifyModal({
   const [preview, setPreview] = useState<ScheduleNotifyClassPreview[] | null>(null);
   const [includeUnchanged, setIncludeUnchanged] = useState<number[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [batchId, setBatchId] = useState<string | null>(null);
+  const [progress, setProgress] = useState<ScheduleNotifyProgress | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +62,11 @@ export default function ScheduleNotifyModal({
     setPreview(null);
     setIncludeUnchanged([]);
     setError(null);
-  }, [open, currentClassroomId, classrooms]);
+    const saved = termId ? window.sessionStorage.getItem(planBatchKey(termId)) : null;
+    setBatchId(saved);
+    setProgress(null);
+    setSending(Boolean(saved));
+  }, [open, currentClassroomId, classrooms, termId]);
 
   const classroomOptions = useMemo(
     () =>
@@ -98,6 +110,35 @@ export default function ScheduleNotifyModal({
     );
   };
 
+  useEffect(() => {
+    if (!open || !batchId || progress?.state === 'done') return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetchScheduleNotifyProgress(batchId);
+        if (cancelled) return;
+        setProgress(res);
+        setError(null);
+        if (res.state === 'done') setSending(false);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'İlerleme alınamadı');
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, batchId, progress?.state]);
+
+  const handleClose = () => {
+    if (progress?.state === 'done' && termId) {
+      window.sessionStorage.removeItem(planBatchKey(termId));
+    }
+    onClose();
+  };
+
   const runSend = async () => {
     if (!termId || !versionId) return;
     if (!sendVeli && !sendOgrenci) {
@@ -132,15 +173,20 @@ export default function ScheduleNotifyModal({
         force_unchanged_ids: includeUnchanged,
         send_to: sendTo,
       });
-      message.success(
-        `Kuyruğa alındı: ${res.total_veli_sent} veli, ${res.total_ogrenci_sent} öğrenci`
-        + (res.total_skipped ? ` · ${res.total_skipped} sınıf atlandı` : ''),
-      );
-      onClose();
+      window.sessionStorage.setItem(planBatchKey(termId), res.batch_id);
+      setBatchId(res.batch_id);
+      setProgress(res);
+      setSending(res.state !== 'done');
+      if (res.state === 'done') {
+        message.success(
+          `${res.sent} kişi gönderildi`
+          + (res.failed ? ` · ${res.failed} gitmedi` : '')
+          + (res.skipped ? ` · ${res.skipped} atlandı` : ''),
+        );
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Gönderim başarısız');
-    } finally {
       setSending(false);
+      setError(err instanceof Error ? err.message : 'Gönderim başarısız');
     }
   };
 
@@ -148,11 +194,15 @@ export default function ScheduleNotifyModal({
     <Modal
       title="Ders Programını Bildir"
       open={open}
-      onCancel={onClose}
+      onCancel={handleClose}
       width={640}
       destroyOnClose
-      footer={[
-        <Button key="cancel" onClick={onClose}>
+      footer={progress && progress.state === 'running' ? [
+        <Button key="close" onClick={handleClose}>
+          Kapat
+        </Button>,
+      ] : [
+        <Button key="cancel" onClick={handleClose}>
           Vazgeç
         </Button>,
         <Button key="preview" onClick={runPreview} loading={loadingPreview} disabled={!termId || !versionId}>
@@ -173,6 +223,19 @@ export default function ScheduleNotifyModal({
         <Text type="secondary">
           Seçilen sınıfların ders programı PDF olarak veli ve/veya öğrencilere WhatsApp ile gönderilir.
         </Text>
+
+        {progress ? (
+          <Alert
+            type={progress.state === 'done' ? (progress.failed ? 'warning' : 'success') : 'info'}
+            showIcon
+            message={
+              progress.state === 'running'
+                ? `${progress.label || 'Program'} gönderiliyor · ${progress.done} / ${progress.total}`
+                : `${progress.sent} gitti${progress.failed ? ` · ${progress.failed} gitmedi` : ''}${progress.skipped ? ` · ${progress.skipped} atlandı` : ''}`
+            }
+            description="Pencereyi kapatabilirsiniz. Gönderim sunucuda sürer; sonuç sınıf programı gönderim geçmişine yazılır."
+          />
+        ) : null}
 
         <div>
           <Text strong>Sınıflar</Text>

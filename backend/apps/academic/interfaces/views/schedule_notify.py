@@ -9,11 +9,12 @@ from rest_framework.response import Response
 
 from apps.academic.application.schedule_notify_service import (
     ScheduleNotifyError,
+    enqueue_class_schedules,
+    enqueue_teacher_schedules,
     list_notify_history,
     preview_classes,
     preview_teachers,
-    send_class_schedules,
-    send_teacher_schedules,
+    schedule_notify_progress,
 )
 from apps.academic.interfaces.sube_context import (
     gate_sinif_drf,
@@ -181,7 +182,7 @@ def schedule_notify_send_api(request):
         send_to = [x.strip() for x in send_to.split(',') if x.strip()]
 
     try:
-        payload = send_class_schedules(
+        payload = enqueue_class_schedules(
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
             term_id=term_id,
@@ -278,7 +279,7 @@ def teacher_schedule_notify_send_api(request):
         return Response({'error': 'En az bir öğretmen seçin.'}, status=400)
 
     try:
-        payload = send_teacher_schedules(
+        payload = enqueue_teacher_schedules(
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
             term_id=term_id,
@@ -326,3 +327,26 @@ def schedule_notify_history_api(request):
         term_id=term_id,
         target_kind=target,
     ))
+
+
+@csrf_exempt
+@api_view(['GET'])
+@authentication_classes([SessionAuthentication])
+@permission_classes([IsAuthenticated])
+def schedule_notify_progress_api(request):
+    """GET /api/academic/schedule/notify/progress/?batch_id="""
+    if not _can_notify(request.user):
+        return Response({'error': 'Bu işlem için iletişim yetkisi gerekli.'}, status=403)
+
+    ctx, err = mandatory_academic_context_drf(request)
+    if err:
+        return err
+
+    batch_id = (request.query_params.get('batch_id') or '').strip()
+    if not batch_id:
+        return Response({'error': 'batch_id zorunludur.'}, status=400)
+
+    payload = schedule_notify_progress(kurum_id=ctx['kurum_id'], batch_id=batch_id[:64])
+    if payload is None:
+        return Response({'error': 'Gönderim bulunamadı.'}, status=404)
+    return Response(payload)

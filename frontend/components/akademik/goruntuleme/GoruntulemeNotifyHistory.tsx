@@ -26,6 +26,8 @@ function statusLabel(status: string) {
   if (status === 'sent' || status === 'SENT') return 'Gitti';
   if (status === 'failed' || status === 'FAILED') return 'Gitmedi';
   if (status === 'PARTIAL') return 'Kısmi';
+  if (status === 'RUNNING' || status === 'sending') return 'Gönderiliyor';
+  if (status === 'pending') return 'Sırada';
   return 'Atlandı';
 }
 
@@ -49,23 +51,33 @@ export default function GoruntulemeNotifyHistory({ open, onClose, termId, target
   useEffect(() => {
     if (!open || !termId) return;
     let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchScheduleNotifyHistory({ term_id: termId, target })
-      .then((res) => {
-        if (!cancelled) setItems(res.items || []);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setItems([]);
-          setError(err instanceof Error ? err.message : 'Geçmiş alınamadı');
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const load = (silent: boolean) => {
+      if (!silent) {
+        setLoading(true);
+        setError(null);
+      }
+      fetchScheduleNotifyHistory({ term_id: termId, target })
+        .then((res) => {
+          if (!cancelled) setItems(res.items || []);
+        })
+        .catch((err) => {
+          if (!cancelled && !silent) {
+            setItems([]);
+            setError(err instanceof Error ? err.message : 'Geçmiş alınamadı');
+          }
+        })
+        .finally(() => {
+          if (!cancelled && !silent) setLoading(false);
+        });
+    };
+    load(false);
+    const timer = window.setInterval(() => {
+      if (cancelled) return;
+      load(true);
+    }, 2000);
     return () => {
       cancelled = true;
+      window.clearInterval(timer);
     };
   }, [open, termId, target]);
 
@@ -114,26 +126,36 @@ export default function GoruntulemeNotifyHistory({ open, onClose, termId, target
           const people = batch.items.flatMap((item) => item.recipients || []);
           const sent = people.filter((row) => row.status === 'sent').length;
           const failed = people.filter((row) => row.status === 'failed').length;
+          const running = batch.items.some((item) => item.status === 'RUNNING');
+          const finished = people.filter((row) => row.status === 'sent' || row.status === 'failed' || row.status === 'skipped').length;
           const fallback = batch.items.reduce(
             (sum, item) => sum + item.veli_count + item.ogrenci_count,
             0,
           );
+          const progressPct = people.length ? Math.round((finished / people.length) * 100) : 0;
           return (
             <section key={batch.key} className="gv-wa-history-batch">
               <div className="gv-wa-history-head">
                 <div>
-                  <strong>{formatWhen(batch.sent_at) || 'Gönderim'}</strong>
+                  <strong>{running ? 'Gönderiliyor' : (formatWhen(batch.sent_at) || 'Gönderim')}</strong>
                   <small>
                     {batch.items.map((item) => item.title).filter(Boolean).join(', ')}
                     {batch.sent_by ? ` · ${batch.sent_by}` : ''}
                   </small>
                 </div>
-                <em className={`gv-wa-badge${failed ? ' is-failed' : ' is-sent'}`}>
-                  {people.length
-                    ? `${sent} gitti${failed ? ` · ${failed} gitmedi` : ''}`
-                    : `${fallback} kişi`}
+                <em className={`gv-wa-badge${running ? ' is-sending' : failed ? ' is-failed' : ' is-sent'}`}>
+                  {running
+                    ? `${finished} / ${people.length}`
+                    : people.length
+                      ? `${sent} gitti${failed ? ` · ${failed} gitmedi` : ''}`
+                      : `${fallback} kişi`}
                 </em>
               </div>
+              {running ? (
+                <div className="gv-wa-bar" style={{ margin: '10px 14px' }} aria-hidden>
+                  <i style={{ width: `${progressPct}%` }} />
+                </div>
+              ) : null}
               <div className="gv-wa-list" style={{ border: 0, borderRadius: 0, maxHeight: 280 }}>
                 {people.length ? people.map((row, index) => (
                   <div key={`${row.kind}-${row.id}-${index}`} className="gv-wa-row is-result">

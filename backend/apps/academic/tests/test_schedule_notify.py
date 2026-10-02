@@ -290,6 +290,55 @@ class ScheduleNotifyUnitTest(TestCase):
         self.assertIn('VELI', sent_types)
         self.assertNotIn('OGRENCI', sent_types)
 
+    @patch('apps.academic.application.schedule_notify_service.dispatch_event')
+    @patch('apps.academic.application.schedule_notify_service.render_class_schedule_pdf')
+    def test_enqueue_sends_in_background_and_survives_resume(self, mock_pdf, mock_dispatch):
+        from apps.academic.application.schedule_notify_service import (
+            enqueue_class_schedules,
+            process_schedule_notify_batch,
+        )
+
+        mock_pdf.return_value = (b'%PDF-test', 'ders.pdf', 'Program')
+        mock_dispatch.return_value = SendResult(success=True)
+        queued = enqueue_class_schedules(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+            term_id=self.term.id,
+            version_id=self.version.id,
+            sinif_ids=[self.sinif.id],
+        )
+        self.assertEqual(queued['state'], 'running')
+        self.assertGreaterEqual(queued['total'], 2)
+        self.assertEqual(queued['done'], 0)
+        mock_pdf.assert_not_called()
+        mock_dispatch.assert_not_called()
+
+        log = ClassScheduleNotifyLog.objects.get(
+            batch_id=queued['batch_id'],
+            status=ClassScheduleNotifyStatus.RUNNING,
+        )
+        self.assertEqual(log.detail['recipients'][0]['status'], 'pending')
+
+        self.assertEqual(
+            process_schedule_notify_batch(queued['batch_id'], max_recipients=1),
+            1,
+        )
+        log.refresh_from_db()
+        self.assertEqual(log.status, ClassScheduleNotifyStatus.RUNNING)
+        self.assertEqual(mock_dispatch.call_count, 1)
+        statuses = [row['status'] for row in log.detail['recipients']]
+        self.assertIn('sent', statuses)
+        self.assertIn('pending', statuses)
+
+        process_schedule_notify_batch(queued['batch_id'])
+        log.refresh_from_db()
+        self.assertEqual(log.status, ClassScheduleNotifyStatus.SENT)
+        self.assertEqual(mock_dispatch.call_count, 2)
+        self.assertTrue(all(row['status'] == 'sent' for row in log.detail['recipients']))
+
+        process_schedule_notify_batch(queued['batch_id'])
+        self.assertEqual(mock_dispatch.call_count, 2)
+
 
 class ScheduleNotifyApiTest(TestCase):
     def setUp(self):
@@ -374,3 +423,66 @@ class ScheduleNotifyApiTest(TestCase):
         body = res.json()
         self.assertEqual(len(body['classes']), 1)
         self.assertTrue(body['classes'][0]['has_changes'])
+
+    @patch('apps.academic.application.schedule_notify_service.dispatch_event')
+    @patch('apps.academic.application.schedule_notify_service.render_class_schedule_pdf')
+    def test_send_api_queues_and_progress_shows_history(self, mock_pdf, mock_dispatch):
+        from apps.academic.application.schedule_notify_service import process_schedule_notify_batch
+
+        mock_pdf.return_value = (b'%PDF-test', 'ders.pdf', 'Program')
+        mock_dispatch.return_value = SendResult(success=True)
+        student = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Ali', soyad='Demir',
+            aktif_mi=True, telefon='05550001122',
+        )
+        StudentClassPlacement.objects.create(
+            academic_year=self.year, term=self.term, student=student,
+            classroom=self.sinif, is_active=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=student, ad='Veli', soyad='Demir', telefon='05550003344',
+        )
+
+        res = self.client.post(
+            '/api/academic/schedule/notify/send/',
+            data={
+                'term_id': self.term.id,
+                'version_id': self.version.id,
+                'sinif_ids': [self.sinif.id],
+                'send_to': ['veli', 'ogrenci'],
+            },
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        body = res.json()
+        self.assertEqual(body['state'], 'running')
+        self.assertGreaterEqual(body['total'], 1)
+        mock_dispatch.assert_not_called()
+
+        process_schedule_notify_batch(body['batch_id'])
+        progress = self.client.get(
+            '/api/academic/schedule/notify/progress/',
+            {'batch_id': body['batch_id']},
+            **self.headers,
+        )
+        self.assertEqual(progress.status_code, 200, progress.content)
+        done = progress.json()
+        self.assertEqual(done['state'], 'done')
+        self.assertGreaterEqual(done['sent'], 1)
+        self.assertTrue(any(row['status'] == 'sent' for row in done['recipients']))
+
+        history = self.client.get(
+            '/api/academic/schedule/notify/history/',
+            {'term_id': self.term.id, 'target': 'class'},
+            **self.headers,
+        )
+        self.assertEqual(history.status_code, 200, history.content)
+        items = history.json()['items']
+        self.assertTrue(any(item['batch_id'] == body['batch_id'] and item['recipients'] for item in items))
+        self.assertTrue(
+            ClassScheduleNotifyLog.objects.filter(
+                batch_id=body['batch_id'],
+                status=ClassScheduleNotifyStatus.SENT,
+            ).exists()
+        )

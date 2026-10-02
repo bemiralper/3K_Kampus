@@ -88,6 +88,7 @@ class Command(BaseCommand):
                 f'Kalan: {result.get("pending_left", 0)}'
             )
         )
+        self._resume_schedule_notify()
 
     def _publish_due(self, *, dry_run: bool) -> None:
         """Zamanlı kutusu açık sınav karne / cevap anahtarı gönderimlerini kuyruğa alır."""
@@ -103,3 +104,16 @@ class Command(BaseCommand):
                 f"kuyruğa alınan {result['sent']}, eksik {result['overdue']}"
                 + (' (dry-run)' if dry_run else '')
             )
+
+    def _resume_schedule_notify(self) -> None:
+        """Worker düşünce yarım kalan ders programı gönderimini kısa süre sürdürür."""
+        try:
+            from apps.academic.application.schedule_notify_service import (
+                resume_stale_schedule_notify_jobs,
+            )
+            resumed = resume_stale_schedule_notify_jobs(max_seconds=20)
+        except Exception as exc:
+            self.stderr.write(f'Ders programı gönderimi sürdürülemedi: {exc}')
+            return
+        if resumed:
+            self.stdout.write(f'Ders programı bildirimi — sürdürülen alıcı {resumed}')

@@ -7,10 +7,15 @@ import hashlib
 import html
 import logging
 import re
+import time
+import uuid
+from datetime import timedelta
 from typing import Any
 
+from django.db import close_old_connections, transaction
 from django.db.models import Prefetch
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 
 from apps.academic.domain.class_schedule_notify_log import (
     ClassScheduleNotifyLog,
@@ -699,6 +704,831 @@ def list_notify_history(
             'errors': detail.get('errors') or [],
         })
     return {'term_id': term_id, 'items': items}
+
+
+_CLAIM_STALE = timedelta(minutes=3)
+_DONE_RECIPIENT = {'sent', 'failed', 'skipped'}
+
+
+def _kick_schedule_notify(batch_id: str) -> None:
+    """PDF ve WhatsApp işini HTTP isteğinin dışında çalıştırır."""
+
+    def run() -> None:
+        close_old_connections()
+        try:
+            process_schedule_notify_batch(batch_id)
+        except Exception:
+            logger.exception('Program bildirimi arka planı başarısız batch=%s', batch_id)
+        finally:
+            close_old_connections()
+
+    import threading
+
+    threading.Thread(
+        target=run,
+        name=f'schedule-notify-{batch_id[:8]}',
+        daemon=True,
+    ).start()
+
+
+def _heartbeat_is_live(job: dict[str, Any], now=None) -> bool:
+    raw = (job or {}).get('heartbeat') or ''
+    parsed = parse_datetime(raw) if raw else None
+    if parsed is None:
+        return False
+    if timezone.is_naive(parsed):
+        parsed = timezone.make_aware(parsed, timezone.get_current_timezone())
+    return (now or timezone.now()) - parsed < _CLAIM_STALE
+
+
+def _planned_class_recipients(
+    cls_row: dict[str, Any],
+    *,
+    send_veli: bool,
+    send_ogrenci: bool,
+    include_ogrenci_ids: list[int] | None,
+    include_veli_ids: list[int] | None,
+    exclude_ogrenci_ids: list[int] | None,
+    exclude_veli_ids: list[int] | None,
+) -> list[dict[str, Any]]:
+    sinif_ad = cls_row['sinif_ad']
+    rows: list[dict[str, Any]] = []
+    if send_veli:
+        allowed = _filter_recipient_ids(
+            [v['id'] for v in cls_row.get('veliler') or [] if v.get('has_phone')],
+            include_ids=include_veli_ids,
+            exclude_ids=exclude_veli_ids,
+        )
+        for veli in cls_row.get('veliler') or []:
+            if veli.get('id') not in allowed or not veli.get('has_phone'):
+                continue
+            rows.append({
+                'kind': 'veli',
+                'id': veli['id'],
+                'name': veli.get('name') or '',
+                'phone': veli.get('phone') or '',
+                'status': 'pending',
+                'error': '',
+                'sinif_ad': sinif_ad,
+                'ogrenci_ad': veli.get('ogrenci_ad') or '',
+            })
+    if send_ogrenci:
+        allowed = _filter_recipient_ids(
+            [s['id'] for s in cls_row.get('students') or [] if s.get('has_phone')],
+            include_ids=include_ogrenci_ids,
+            exclude_ids=exclude_ogrenci_ids,
+        )
+        for student in cls_row.get('students') or []:
+            if student.get('id') not in allowed or not student.get('has_phone'):
+                continue
+            rows.append({
+                'kind': 'ogrenci',
+                'id': student['id'],
+                'name': student.get('name') or '',
+                'phone': student.get('phone') or '',
+                'status': 'pending',
+                'error': '',
+                'sinif_ad': sinif_ad,
+                'ogrenci_ad': student.get('name') or '',
+            })
+    return rows
+
+
+def _count_sent(recipients: list[dict[str, Any]]) -> tuple[int, int]:
+    veli = sum(1 for row in recipients if row.get('kind') == 'veli' and row.get('status') == 'sent')
+    ogrenci = sum(1 for row in recipients if row.get('kind') == 'ogrenci' and row.get('status') == 'sent')
+    return veli, ogrenci
+
+
+def _snapshot(logs: list[ClassScheduleNotifyLog], *, term_id: int | None = None) -> dict[str, Any]:
+    recipients: list[dict[str, Any]] = []
+    for log in logs:
+        detail = log.detail if isinstance(log.detail, dict) else {}
+        recipients.extend(detail.get('recipients') or [])
+    done = sum(1 for row in recipients if row.get('status') in _DONE_RECIPIENT)
+    sent = sum(1 for row in recipients if row.get('status') == 'sent')
+    failed = sum(1 for row in recipients if row.get('status') == 'failed')
+    skipped = sum(1 for row in recipients if row.get('status') == 'skipped')
+    label = ''
+    for row in recipients:
+        if row.get('status') in ('sending', 'pending'):
+            label = row.get('name') or row.get('sinif_ad') or ''
+            break
+    sent_veli, sent_ogrenci = _count_sent(recipients)
+    running = any(log.status == ClassScheduleNotifyStatus.RUNNING for log in logs)
+    first = logs[0] if logs else None
+    return {
+        'batch_id': first.batch_id if first else '',
+        'term_id': term_id if term_id is not None else (first.term_id if first else None),
+        'state': 'running' if running else 'done',
+        'total': len(recipients),
+        'done': done,
+        'sent': sent,
+        'failed': failed,
+        'skipped': skipped,
+        'label': label,
+        'recipients': recipients,
+        'total_veli_sent': sent_veli,
+        'total_ogrenci_sent': sent_ogrenci,
+        'total_skipped': sum(1 for log in logs if log.status == ClassScheduleNotifyStatus.SKIPPED),
+        'total_errors': failed,
+        'results': [],
+        'sent_at': first.sent_at.isoformat() if first and first.sent_at else None,
+    }
+
+
+def schedule_notify_progress(*, kurum_id: int, batch_id: str) -> dict[str, Any] | None:
+    logs = list(
+        ClassScheduleNotifyLog.objects.filter(
+            kurum_id=kurum_id,
+            batch_id=batch_id,
+        ).order_by('id')
+    )
+    if not logs:
+        return None
+    return _snapshot(logs)
+
+
+def _create_notify_job_log(
+    *,
+    kurum_id: int,
+    term_id: int,
+    batch_id: str,
+    target_kind: str,
+    title: str,
+    status: str,
+    recipients: list[dict[str, Any]],
+    errors: list[str],
+    job: dict[str, Any] | None,
+    user,
+    sinif_id: int | None = None,
+    version_id: int | None = None,
+    fingerprint: str = '',
+) -> ClassScheduleNotifyLog:
+    veli_ok, ogrenci_ok = _count_sent(recipients)
+    return ClassScheduleNotifyLog.objects.create(
+        kurum_id=kurum_id,
+        term_id=term_id,
+        schedule_version_id=version_id,
+        sinif_id=sinif_id,
+        target_kind=target_kind,
+        batch_id=batch_id[:64],
+        grid_fingerprint=fingerprint,
+        veli_count=veli_ok,
+        ogrenci_count=ogrenci_ok,
+        status=status,
+        detail={
+            'errors': errors[:50],
+            'recipients': recipients[:400],
+            'title': title,
+            'batch_id': batch_id,
+            'job': job or {},
+        },
+        sent_by=user if user and getattr(user, 'is_authenticated', False) else None,
+    )
+
+
+def enqueue_class_schedules(
+    *,
+    kurum_id: int,
+    sube_id: int,
+    term_id: int,
+    version_id: int,
+    sinif_ids: list[int],
+    force_unchanged_ids: list[int] | None = None,
+    send_to: list[str] | None = None,
+    exclude_ogrenci_ids: list[int] | None = None,
+    exclude_veli_ids: list[int] | None = None,
+    include_ogrenci_ids: list[int] | None = None,
+    include_veli_ids: list[int] | None = None,
+    batch_id: str | None = None,
+    user=None,
+) -> dict[str, Any]:
+    """Gönderimi kayda yazar ve HTTP dışında işler. Pencere kapanınca da sürer."""
+    targets = send_to or ['veli', 'ogrenci']
+    send_veli = 'veli' in targets
+    send_ogrenci = 'ogrenci' in targets
+    if not send_veli and not send_ogrenci:
+        raise ScheduleNotifyError('En az bir alıcı tipi seçin (veli/öğrenci).', field='send_to')
+
+    preview = preview_classes(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        term_id=term_id,
+        version_id=version_id,
+        sinif_ids=sinif_ids,
+    )
+    force_set = set(force_unchanged_ids or [])
+    batch_id = (batch_id or str(uuid.uuid4()))[:64]
+    if ClassScheduleNotifyLog.objects.filter(batch_id=batch_id).exists():
+        batch_id = str(uuid.uuid4())
+    now_iso = timezone.now().isoformat()
+    user_id = getattr(user, 'id', None)
+
+    with transaction.atomic():
+        for cls_row in preview['classes']:
+            sid = cls_row['sinif_id']
+            class_version_id = cls_row.get('version_id') or version_id
+            fingerprint = compute_grid_fingerprint(class_version_id, sid)
+            if cls_row['empty_grid']:
+                _create_notify_job_log(
+                    kurum_id=kurum_id,
+                    term_id=term_id,
+                    batch_id=batch_id,
+                    target_kind='class',
+                    title=cls_row['sinif_ad'],
+                    status=ClassScheduleNotifyStatus.SKIPPED,
+                    recipients=[{
+                        'kind': 'sinif',
+                        'id': sid,
+                        'name': cls_row['sinif_ad'],
+                        'phone': '',
+                        'status': 'skipped',
+                        'error': cls_row['warning'] or 'Boş program',
+                        'sinif_ad': cls_row['sinif_ad'],
+                    }],
+                    errors=[cls_row['warning'] or 'Boş program'],
+                    job=None,
+                    user=user,
+                    sinif_id=sid,
+                    version_id=class_version_id,
+                    fingerprint=fingerprint,
+                )
+                continue
+            if not cls_row['has_changes'] and sid not in force_set:
+                _create_notify_job_log(
+                    kurum_id=kurum_id,
+                    term_id=term_id,
+                    batch_id=batch_id,
+                    target_kind='class',
+                    title=cls_row['sinif_ad'],
+                    status=ClassScheduleNotifyStatus.SKIPPED,
+                    recipients=[{
+                        'kind': 'sinif',
+                        'id': sid,
+                        'name': cls_row['sinif_ad'],
+                        'phone': '',
+                        'status': 'skipped',
+                        'error': cls_row['warning'] or 'Değişiklik yok',
+                        'sinif_ad': cls_row['sinif_ad'],
+                    }],
+                    errors=[cls_row['warning'] or 'Değişiklik yok'],
+                    job=None,
+                    user=user,
+                    sinif_id=sid,
+                    version_id=class_version_id,
+                    fingerprint=fingerprint,
+                )
+                continue
+            recipients = _planned_class_recipients(
+                cls_row,
+                send_veli=send_veli,
+                send_ogrenci=send_ogrenci,
+                include_ogrenci_ids=include_ogrenci_ids,
+                include_veli_ids=include_veli_ids,
+                exclude_ogrenci_ids=exclude_ogrenci_ids,
+                exclude_veli_ids=exclude_veli_ids,
+            )
+            if not recipients:
+                _create_notify_job_log(
+                    kurum_id=kurum_id,
+                    term_id=term_id,
+                    batch_id=batch_id,
+                    target_kind='class',
+                    title=cls_row['sinif_ad'],
+                    status=ClassScheduleNotifyStatus.SKIPPED,
+                    recipients=[{
+                        'kind': 'sinif',
+                        'id': sid,
+                        'name': cls_row['sinif_ad'],
+                        'phone': '',
+                        'status': 'skipped',
+                        'error': 'Seçili alıcı yok',
+                        'sinif_ad': cls_row['sinif_ad'],
+                    }],
+                    errors=['Seçili alıcı yok'],
+                    job=None,
+                    user=user,
+                    sinif_id=sid,
+                    version_id=class_version_id,
+                    fingerprint=fingerprint,
+                )
+                continue
+            _create_notify_job_log(
+                kurum_id=kurum_id,
+                term_id=term_id,
+                batch_id=batch_id,
+                target_kind='class',
+                title=cls_row['sinif_ad'],
+                status=ClassScheduleNotifyStatus.RUNNING,
+                recipients=recipients,
+                errors=[],
+                job={
+                    'target': 'class',
+                    'kurum_id': kurum_id,
+                    'sube_id': sube_id,
+                    'term_id': term_id,
+                    'version_id': class_version_id,
+                    'sinif_id': sid,
+                    'sinif_ad': cls_row['sinif_ad'],
+                    'term_name': preview['term_name'],
+                    'user_id': user_id,
+                    'owner': 'starting',
+                    'heartbeat': now_iso,
+                },
+                user=user,
+                sinif_id=sid,
+                version_id=class_version_id,
+                fingerprint=fingerprint,
+            )
+        has_running = ClassScheduleNotifyLog.objects.filter(
+            batch_id=batch_id,
+            status=ClassScheduleNotifyStatus.RUNNING,
+        ).exists()
+        if has_running:
+            transaction.on_commit(lambda: _kick_schedule_notify(batch_id))
+
+    logs = list(ClassScheduleNotifyLog.objects.filter(batch_id=batch_id).order_by('id'))
+    return _snapshot(logs, term_id=term_id)
+
+
+def enqueue_teacher_schedules(
+    *,
+    kurum_id: int,
+    sube_id: int,
+    term_id: int,
+    teacher_ids: list[int],
+    exclude_teacher_ids: list[int] | None = None,
+    include_teacher_ids: list[int] | None = None,
+    batch_id: str | None = None,
+    user=None,
+) -> dict[str, Any]:
+    preview = preview_teachers(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        term_id=term_id,
+        teacher_ids=teacher_ids,
+    )
+    allowed = _filter_recipient_ids(
+        [row['teacher_id'] for row in preview['teachers']],
+        include_ids=include_teacher_ids,
+        exclude_ids=exclude_teacher_ids,
+    )
+    batch_id = (batch_id or str(uuid.uuid4()))[:64]
+    if ClassScheduleNotifyLog.objects.filter(batch_id=batch_id).exists():
+        batch_id = str(uuid.uuid4())
+    now_iso = timezone.now().isoformat()
+    user_id = getattr(user, 'id', None)
+
+    with transaction.atomic():
+        for row in preview['teachers']:
+            tid = row['teacher_id']
+            if tid not in allowed or row['empty_grid'] or not row['has_phone']:
+                reason = row['warning'] or (
+                    'Seçilmedi' if tid not in allowed else 'Gönderilemez'
+                )
+                _create_notify_job_log(
+                    kurum_id=kurum_id,
+                    term_id=term_id,
+                    batch_id=batch_id,
+                    target_kind='teacher',
+                    title=row['teacher_name'],
+                    status=ClassScheduleNotifyStatus.SKIPPED if tid not in allowed or row['empty_grid'] else ClassScheduleNotifyStatus.FAILED,
+                    recipients=[{
+                        'kind': 'ogretmen',
+                        'id': tid,
+                        'name': row['teacher_name'],
+                        'phone': row.get('phone') or '',
+                        'status': 'skipped' if tid not in allowed or row['empty_grid'] else 'failed',
+                        'error': reason,
+                        'sinif_ad': '',
+                    }],
+                    errors=[reason] if reason else [],
+                    job=None,
+                    user=user,
+                )
+                continue
+            _create_notify_job_log(
+                kurum_id=kurum_id,
+                term_id=term_id,
+                batch_id=batch_id,
+                target_kind='teacher',
+                title=row['teacher_name'],
+                status=ClassScheduleNotifyStatus.RUNNING,
+                recipients=[{
+                    'kind': 'ogretmen',
+                    'id': tid,
+                    'name': row['teacher_name'],
+                    'phone': row.get('phone') or '',
+                    'status': 'pending',
+                    'error': '',
+                    'sinif_ad': '',
+                }],
+                errors=[],
+                job={
+                    'target': 'teacher',
+                    'kurum_id': kurum_id,
+                    'sube_id': sube_id,
+                    'term_id': term_id,
+                    'teacher_id': tid,
+                    'teacher_name': row['teacher_name'],
+                    'term_name': preview['term_name'],
+                    'user_id': user_id,
+                    'owner': 'starting',
+                    'heartbeat': now_iso,
+                },
+                user=user,
+            )
+        has_running = ClassScheduleNotifyLog.objects.filter(
+            batch_id=batch_id,
+            status=ClassScheduleNotifyStatus.RUNNING,
+        ).exists()
+        if has_running:
+            transaction.on_commit(lambda: _kick_schedule_notify(batch_id))
+
+    logs = list(ClassScheduleNotifyLog.objects.filter(batch_id=batch_id).order_by('id'))
+    return _snapshot(logs, term_id=term_id)
+
+
+def process_schedule_notify_batch(
+    batch_id: str | None = None,
+    *,
+    max_seconds: float | None = None,
+    max_recipients: int | None = None,
+    reclaim_only_stale: bool = False,
+) -> int:
+    """RUNNING kayıtları kişi kişi işler. Dönüş: bu çağrıda tamamlanan alıcı sayısı."""
+    started = time.monotonic()
+    qs = ClassScheduleNotifyLog.objects.filter(status=ClassScheduleNotifyStatus.RUNNING)
+    if batch_id:
+        qs = qs.filter(batch_id=batch_id)
+    processed = 0
+    for log_id in list(qs.order_by('id').values_list('id', flat=True)):
+        if max_seconds is not None and time.monotonic() - started >= max_seconds:
+            break
+        if max_recipients is not None and processed >= max_recipients:
+            break
+        remaining = None
+        if max_recipients is not None:
+            remaining = max_recipients - processed
+        processed += _process_notify_log(
+            log_id,
+            deadline=(started + max_seconds) if max_seconds is not None else None,
+            max_recipients=remaining,
+            reclaim_only_stale=reclaim_only_stale,
+        )
+    return processed
+
+
+def resume_stale_schedule_notify_jobs(*, max_seconds: float = 20) -> int:
+    """Worker düşerse dakikalık kuyruk cron'u yarım kalan gönderimi sürdürür."""
+    return process_schedule_notify_batch(
+        max_seconds=max_seconds,
+        reclaim_only_stale=True,
+    )
+
+
+def _process_notify_log(
+    log_id: int,
+    *,
+    deadline: float | None,
+    max_recipients: int | None,
+    reclaim_only_stale: bool,
+) -> int:
+    owner = uuid.uuid4().hex
+    if not _claim_notify_log(log_id, owner, reclaim_only_stale=reclaim_only_stale):
+        return 0
+    try:
+        pdf_bytes, filename, base_ctx, event_key, source_ref = _prepare_notify_pdf(log_id)
+    except Exception as exc:
+        logger.exception('Program PDF üretilemedi log=%s', log_id)
+        _fail_pending(log_id, owner, str(exc) or 'PDF oluşturulamadı')
+        return 0
+
+    done = 0
+    while True:
+        if deadline is not None and time.monotonic() >= deadline:
+            _release_notify_claim(log_id, owner)
+            return done
+        if max_recipients is not None and done >= max_recipients:
+            _release_notify_claim(log_id, owner)
+            return done
+        taken = _mark_next_sending(log_id, owner)
+        if taken is None:
+            if _ready_to_finalize(log_id, owner):
+                _finalize_notify_log(log_id)
+            return done
+        index, person = taken
+        try:
+            status, error = _dispatch_planned_recipient(
+                person,
+                pdf_bytes=pdf_bytes,
+                filename=filename,
+                base_ctx=base_ctx,
+                event_key=event_key,
+                source_ref=source_ref,
+                log_id=log_id,
+            )
+        except Exception as exc:
+            logger.exception('Program alıcısı gönderilemedi log=%s', log_id)
+            status, error = 'failed', str(exc) or 'Gönderim başarısız'
+        _set_recipient_status(log_id, index, status, error, owner)
+        done += 1
+
+
+def _claim_notify_log(log_id: int, owner: str, *, reclaim_only_stale: bool) -> bool:
+    now = timezone.now()
+    with transaction.atomic():
+        log = (
+            ClassScheduleNotifyLog.objects.select_for_update(skip_locked=True)
+            .filter(pk=log_id, status=ClassScheduleNotifyStatus.RUNNING)
+            .first()
+        )
+        if log is None:
+            return False
+        detail = dict(log.detail or {})
+        job = dict(detail.get('job') or {})
+        live = _heartbeat_is_live(job, now)
+        current = job.get('owner') or ''
+        if reclaim_only_stale and live:
+            return False
+        if live and current not in ('', 'starting') and current != owner:
+            return False
+        recipients = list(detail.get('recipients') or [])
+        for row in recipients:
+            if row.get('status') == 'sending':
+                row['status'] = 'pending'
+        job['owner'] = owner
+        job['heartbeat'] = now.isoformat()
+        detail['job'] = job
+        detail['recipients'] = recipients
+        log.detail = detail
+        log.save(update_fields=['detail'])
+        return True
+
+
+def _release_notify_claim(log_id: int, owner: str) -> None:
+    with transaction.atomic():
+        log = (
+            ClassScheduleNotifyLog.objects.select_for_update(skip_locked=True)
+            .filter(pk=log_id, status=ClassScheduleNotifyStatus.RUNNING)
+            .first()
+        )
+        if log is None:
+            return
+        detail = dict(log.detail or {})
+        job = dict(detail.get('job') or {})
+        if job.get('owner') != owner:
+            return
+        recipients = list(detail.get('recipients') or [])
+        for row in recipients:
+            if row.get('status') == 'sending':
+                row['status'] = 'pending'
+        job['owner'] = ''
+        job['heartbeat'] = ''
+        detail['job'] = job
+        detail['recipients'] = recipients
+        log.detail = detail
+        log.save(update_fields=['detail'])
+
+
+def _mark_next_sending(log_id: int, owner: str) -> tuple[int, dict[str, Any]] | None:
+    now = timezone.now()
+    with transaction.atomic():
+        log = (
+            ClassScheduleNotifyLog.objects.select_for_update(skip_locked=True)
+            .filter(pk=log_id, status=ClassScheduleNotifyStatus.RUNNING)
+            .first()
+        )
+        if log is None:
+            return None
+        detail = dict(log.detail or {})
+        job = dict(detail.get('job') or {})
+        if job.get('owner') != owner:
+            return None
+        recipients = list(detail.get('recipients') or [])
+        index = next((i for i, row in enumerate(recipients) if row.get('status') == 'pending'), None)
+        if index is None:
+            return None
+        recipients[index]['status'] = 'sending'
+        job['heartbeat'] = now.isoformat()
+        detail['job'] = job
+        detail['recipients'] = recipients
+        log.detail = detail
+        log.save(update_fields=['detail'])
+        return index, dict(recipients[index])
+
+
+def _set_recipient_status(log_id: int, index: int, status: str, error: str, owner: str) -> None:
+    with transaction.atomic():
+        log = (
+            ClassScheduleNotifyLog.objects.select_for_update(skip_locked=True)
+            .filter(pk=log_id)
+            .first()
+        )
+        if log is None:
+            return
+        detail = dict(log.detail or {})
+        recipients = list(detail.get('recipients') or [])
+        if index >= len(recipients):
+            return
+        recipients[index]['status'] = status
+        recipients[index]['error'] = (error or '')[:300]
+        detail['recipients'] = recipients
+        errors = [
+            row['error'] for row in recipients
+            if row.get('status') == 'failed' and row.get('error')
+        ]
+        detail['errors'] = errors[:50]
+        job = dict(detail.get('job') or {})
+        if job.get('owner') == owner:
+            job['heartbeat'] = timezone.now().isoformat()
+            detail['job'] = job
+        log.detail = detail
+        veli_ok, ogrenci_ok = _count_sent(recipients)
+        log.veli_count = veli_ok
+        log.ogrenci_count = ogrenci_ok
+        log.save(update_fields=['detail', 'veli_count', 'ogrenci_count'])
+
+
+def _ready_to_finalize(log_id: int, owner: str) -> bool:
+    log = ClassScheduleNotifyLog.objects.filter(
+        pk=log_id,
+        status=ClassScheduleNotifyStatus.RUNNING,
+    ).first()
+    if log is None:
+        return False
+    detail = log.detail if isinstance(log.detail, dict) else {}
+    job = detail.get('job') or {}
+    if job.get('owner') != owner:
+        return False
+    recipients = detail.get('recipients') or []
+    return all(row.get('status') not in ('pending', 'sending') for row in recipients)
+
+
+def _finalize_notify_log(log_id: int) -> None:
+    with transaction.atomic():
+        log = (
+            ClassScheduleNotifyLog.objects.select_for_update(skip_locked=True)
+            .filter(pk=log_id, status=ClassScheduleNotifyStatus.RUNNING)
+            .first()
+        )
+        if log is None:
+            return
+        detail = dict(log.detail or {})
+        recipients = list(detail.get('recipients') or [])
+        if any(row.get('status') in ('pending', 'sending') for row in recipients):
+            return
+        sent = sum(1 for row in recipients if row.get('status') == 'sent')
+        failed = sum(1 for row in recipients if row.get('status') == 'failed')
+        if sent and failed:
+            status = ClassScheduleNotifyStatus.PARTIAL
+        elif sent:
+            status = ClassScheduleNotifyStatus.SENT
+        else:
+            status = ClassScheduleNotifyStatus.FAILED
+        errors = [
+            row['error'] for row in recipients
+            if row.get('status') == 'failed' and row.get('error')
+        ]
+        detail['errors'] = (errors or detail.get('errors') or [])[:50]
+        job = dict(detail.get('job') or {})
+        job['owner'] = ''
+        job['heartbeat'] = ''
+        detail['job'] = job
+        log.detail = detail
+        log.status = status
+        veli_ok, ogrenci_ok = _count_sent(recipients)
+        log.veli_count = veli_ok
+        log.ogrenci_count = ogrenci_ok
+        log.save(update_fields=['detail', 'status', 'veli_count', 'ogrenci_count'])
+
+
+def _fail_pending(log_id: int, owner: str, message: str) -> None:
+    with transaction.atomic():
+        log = (
+            ClassScheduleNotifyLog.objects.select_for_update(skip_locked=True)
+            .filter(pk=log_id, status=ClassScheduleNotifyStatus.RUNNING)
+            .first()
+        )
+        if log is None:
+            return
+        detail = dict(log.detail or {})
+        job = dict(detail.get('job') or {})
+        if job.get('owner') not in (owner, '', 'starting'):
+            return
+        recipients = list(detail.get('recipients') or [])
+        for row in recipients:
+            if row.get('status') in ('pending', 'sending'):
+                row['status'] = 'failed'
+                row['error'] = message[:300]
+        detail['recipients'] = recipients
+        detail['errors'] = [message[:300]]
+        job['owner'] = ''
+        job['heartbeat'] = ''
+        detail['job'] = job
+        log.detail = detail
+        log.status = ClassScheduleNotifyStatus.FAILED
+        log.save(update_fields=['detail', 'status'])
+
+
+def _prepare_notify_pdf(log_id: int):
+    log = ClassScheduleNotifyLog.objects.filter(pk=log_id).first()
+    if log is None:
+        raise ScheduleNotifyError('Gönderim kaydı yok.')
+    detail = log.detail if isinstance(log.detail, dict) else {}
+    job = detail.get('job') or {}
+    term = Term.objects.select_related('kurum', 'sube').filter(pk=job.get('term_id') or log.term_id).first()
+    kurum_ad = term.kurum.ad if term and term.kurum_id else ''
+    sube_ad = term.sube.ad if term and term.sube_id else ''
+    term_name = job.get('term_name') or (term.name if term else '')
+    if job.get('target') == 'teacher':
+        pdf_bytes, filename, pdf_baslik = render_teacher_schedule_pdf(
+            term_id=int(job['term_id']),
+            teacher_id=int(job['teacher_id']),
+            sube_id=int(job['sube_id']),
+        )
+        base_ctx = {
+            'ogretmen_ad': job.get('teacher_name') or '',
+            'donem': term_name,
+            'pdf_baslik': pdf_baslik,
+            'kurum_ad': kurum_ad,
+            'sube': sube_ad,
+        }
+        source_ref = f"teacher-schedule:{job['term_id']}:{job['teacher_id']}"
+        return pdf_bytes, filename, base_ctx, TEACHER_EVENT_KEY, source_ref
+
+    pdf_bytes, filename, pdf_baslik = render_class_schedule_pdf(
+        term_id=int(job['term_id']),
+        version_id=int(job['version_id']),
+        sinif_id=int(job['sinif_id']),
+        sube_id=int(job['sube_id']),
+    )
+    base_ctx = {
+        'sinif': job.get('sinif_ad') or '',
+        'donem': term_name,
+        'pdf_baslik': pdf_baslik,
+        'kurum_ad': kurum_ad,
+        'sube': sube_ad,
+    }
+    source_ref = f"schedule:{job['version_id']}:{job['sinif_id']}"
+    return pdf_bytes, filename, base_ctx, EVENT_KEY, source_ref
+
+
+def _dispatch_planned_recipient(
+    person: dict[str, Any],
+    *,
+    pdf_bytes: bytes,
+    filename: str,
+    base_ctx: dict[str, Any],
+    event_key: str,
+    source_ref: str,
+    log_id: int,
+) -> tuple[str, str]:
+    log = ClassScheduleNotifyLog.objects.filter(pk=log_id).only('id', 'detail').first()
+    job = ((log.detail if log and isinstance(log.detail, dict) else {}) or {}).get('job') or {}
+    kind = person.get('kind')
+    if kind == 'veli':
+        recipient = NotificationRecipient.veli(int(person['id']))
+        ctx = {
+            **base_ctx,
+            'ogrenci_ad': person.get('ogrenci_ad') or '',
+            'veli_ad': person.get('name') or '',
+        }
+    elif kind == 'ogrenci':
+        recipient = NotificationRecipient.ogrenci(int(person['id']))
+        ctx = {
+            **base_ctx,
+            'ogrenci_ad': person.get('name') or '',
+            'veli_ad': '',
+        }
+    elif kind == 'ogretmen':
+        recipient = NotificationRecipient.personel(int(person['id']))
+        ctx = {
+            **base_ctx,
+            'ogretmen_ad': person.get('name') or base_ctx.get('ogretmen_ad') or '',
+        }
+    else:
+        return 'failed', 'Alıcı tipi geçersiz'
+
+    result = dispatch_event(
+        int(job.get('kurum_id') or 0),
+        event_key,
+        recipient=recipient,
+        context=ctx,
+        attachment=NotificationAttachment(filename=filename, file_bytes=pdf_bytes),
+        source=MessageSource(module='akademik', ref_id=source_ref),
+        sube_id=job.get('sube_id'),
+        sent_by_user_id=job.get('user_id'),
+    )
+    if isinstance(result, SendResult) and result.success:
+        return 'sent', ''
+    err = (
+        '; '.join(result.errors)
+        if isinstance(result, SendResult) and result.errors
+        else 'Gönderim başarısız'
+    )
+    return 'failed', err
 
 
 def send_class_schedules(

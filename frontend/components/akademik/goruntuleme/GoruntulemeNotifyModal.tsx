@@ -1,17 +1,23 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Input, Modal, Spin, message } from 'antd';
 import type { ClassLessonPlanClassroom } from '@/lib/academic-api';
 import {
+  fetchScheduleNotifyProgress,
   previewScheduleNotify,
   previewTeacherScheduleNotify,
   sendScheduleNotify,
   sendTeacherScheduleNotify,
   type ScheduleNotifyClassPreview,
+  type ScheduleNotifyProgress,
   type ScheduleNotifyRecipient,
   type TeacherScheduleNotifyPreview,
 } from '@/lib/schedule-notify-api';
+
+function batchStorageKey(mode: Mode, termId: number) {
+  return `lms-schedule-notify:${mode}:${termId}`;
+}
 
 type Mode = 'class' | 'teacher';
 
@@ -56,7 +62,7 @@ export default function GoruntulemeNotifyModal({
   const [outcomes, setOutcomes] = useState<ScheduleNotifyRecipient[]>([]);
   const [progress, setProgress] = useState({ done: 0, total: 0, label: '' });
   const [resultFilter, setResultFilter] = useState<'all' | 'sent' | 'failed'>('all');
-  const stopRef = useRef(false);
+  const [batchId, setBatchId] = useState<string | null>(null);
 
   const allTeacherIds = useMemo(() => {
     if (teacherIds?.length) return teacherIds;
@@ -80,15 +86,23 @@ export default function GoruntulemeNotifyModal({
     setExcludedTeachers(new Set());
     setQuery('');
     setError(null);
-    setStep('compose');
     setOutcomes([]);
     setProgress({ done: 0, total: 0, label: '' });
     setResultFilter('all');
-    stopRef.current = false;
-  }, [open, currentClassroomId, classrooms]);
+    const saved = termId ? window.sessionStorage.getItem(batchStorageKey(mode, termId)) : null;
+    if (saved) {
+      setBatchId(saved);
+      setStep('running');
+      setSending(true);
+    } else {
+      setBatchId(null);
+      setStep('compose');
+      setSending(false);
+    }
+  }, [open, currentClassroomId, classrooms, mode, termId]);
 
   useEffect(() => {
-    if (!open || !termId) return;
+    if (!open || !termId || step !== 'compose') return;
     if (mode === 'teacher' && !allTeacherIds.length) return;
     if (mode === 'class' && !selectedClassIds.length) {
       setPreview(null);
@@ -131,7 +145,7 @@ export default function GoruntulemeNotifyModal({
     return () => {
       cancelled = true;
     };
-  }, [open, termId, mode, selectedClassIds, allTeacherIds]);
+  }, [open, termId, mode, selectedClassIds, allTeacherIds, step]);
 
   const toggleSet = (setter: (fn: (prev: Set<number>) => Set<number>) => void, id: number) => {
     setter((prev) => {
@@ -146,14 +160,64 @@ export default function GoruntulemeNotifyModal({
     setSelectedClassIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const pushOutcomes = (rows: ScheduleNotifyRecipient[]) => {
-    setOutcomes((prev) => [...prev, ...rows]);
+  const applyProgress = (res: ScheduleNotifyProgress) => {
+    setOutcomes(res.recipients || []);
+    setProgress({ done: res.done, total: res.total, label: res.label || '' });
+    if (res.state === 'done') {
+      setStep('done');
+      setSending(false);
+    } else {
+      setStep('running');
+      setSending(true);
+    }
+  };
+
+  useEffect(() => {
+    if (!open || !batchId || step !== 'running') return;
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const res = await fetchScheduleNotifyProgress(batchId);
+        if (cancelled) return;
+        applyProgress(res);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'İlerleme alınamadı');
+      }
+    };
+    tick();
+    const timer = window.setInterval(tick, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [open, batchId, step]);
+
+  const rememberBatch = (id: string) => {
+    setBatchId(id);
+    if (termId) window.sessionStorage.setItem(batchStorageKey(mode, termId), id);
+  };
+
+  const handleClose = () => {
+    if (step === 'done' && termId) {
+      window.sessionStorage.removeItem(batchStorageKey(mode, termId));
+    }
+    onClose();
+  };
+
+  const startFresh = () => {
+    if (termId) window.sessionStorage.removeItem(batchStorageKey(mode, termId));
+    setBatchId(null);
+    setStep('compose');
+    setSending(false);
+    setOutcomes([]);
+    setProgress({ done: 0, total: 0, label: '' });
+    setError(null);
   };
 
   const runSend = async () => {
     if (!termId) return;
     setError(null);
-    stopRef.current = false;
 
     if (mode === 'teacher') {
       const include = (teacherPreview || []).filter(
@@ -163,53 +227,19 @@ export default function GoruntulemeNotifyModal({
         message.warning('Gönderilecek öğretmen yok.');
         return;
       }
-      const batchId = crypto.randomUUID();
       setSending(true);
-      setStep('running');
-      setOutcomes([]);
-      setProgress({ done: 0, total: include.length, label: include[0].teacher_name });
-      let finishedTeachers = 0;
-      for (let i = 0; i < include.length; i += 1) {
-        if (stopRef.current) break;
-        const teacher = include[i];
-        setProgress({ done: i, total: include.length, label: teacher.teacher_name });
-        try {
-          const res = await sendTeacherScheduleNotify({
-            term_id: termId,
-            teacher_ids: [teacher.teacher_id],
-            include_teacher_ids: [teacher.teacher_id],
-            batch_id: batchId,
-          });
-          const row = res.results[0];
-          pushOutcomes(
-            row?.recipients?.length
-              ? row.recipients
-              : [{
-                kind: 'ogretmen',
-                id: teacher.teacher_id,
-                name: teacher.teacher_name,
-                phone: teacher.phone,
-                status: row?.status === 'sent' ? 'sent' : 'failed',
-                error: row?.errors?.[0] || '',
-                sinif_ad: '',
-              }],
-          );
-        } catch (err) {
-          pushOutcomes([{
-            kind: 'ogretmen',
-            id: teacher.teacher_id,
-            name: teacher.teacher_name,
-            phone: teacher.phone,
-            status: 'failed',
-            error: err instanceof Error ? err.message : 'Gönderim başarısız',
-            sinif_ad: '',
-          }]);
-        }
-        finishedTeachers = i + 1;
+      try {
+        const res = await sendTeacherScheduleNotify({
+          term_id: termId,
+          teacher_ids: include.map((t) => t.teacher_id),
+          include_teacher_ids: include.map((t) => t.teacher_id),
+        });
+        rememberBatch(res.batch_id);
+        applyProgress(res);
+      } catch (err) {
+        setSending(false);
+        setError(err instanceof Error ? err.message : 'Gönderim başarısız');
       }
-      setProgress({ done: finishedTeachers, total: include.length, label: '' });
-      setStep('done');
-      setSending(false);
       return;
     }
 
@@ -234,98 +264,44 @@ export default function GoruntulemeNotifyModal({
     const sendTo: Array<'veli' | 'ogrenci'> = [];
     if (sendVeli) sendTo.push('veli');
     if (sendOgrenci) sendTo.push('ogrenci');
-    const batchId = crypto.randomUUID();
-    setSending(true);
-    setStep('running');
-    setOutcomes([]);
-    setProgress({ done: 0, total: toSend.length, label: toSend[0].sinif_ad });
-    let finishedClasses = 0;
-    for (let i = 0; i < toSend.length; i += 1) {
-      if (stopRef.current) break;
-      finishedClasses = i + 1;
-      const cls = toSend[i];
-      setProgress({ done: i, total: toSend.length, label: cls.sinif_ad });
-      const includeStudents = sendOgrenci
-        ? (cls.students || []).filter((s) => s.has_phone && !excludedStudents.has(s.id)).map((s) => s.id)
-        : [];
-      const includeVeliler = sendVeli
-        ? (cls.veliler || []).filter((v) => v.has_phone && !excludedVeliler.has(v.id)).map((v) => v.id)
-        : [];
-      if ((sendOgrenci && !includeStudents.length) && (sendVeli && !includeVeliler.length)) {
-        pushOutcomes([{
-          kind: 'sinif',
-          id: cls.sinif_id,
-          name: cls.sinif_ad,
-          phone: '',
-          status: 'skipped',
-          error: 'Seçili alıcı yok',
-          sinif_ad: cls.sinif_ad,
-        }]);
-        continue;
-      }
-      if (sendOgrenci && !sendVeli && !includeStudents.length) {
-        pushOutcomes([{
-          kind: 'sinif',
-          id: cls.sinif_id,
-          name: cls.sinif_ad,
-          phone: '',
-          status: 'skipped',
-          error: 'Seçili öğrenci yok',
-          sinif_ad: cls.sinif_ad,
-        }]);
-        continue;
-      }
-      if (sendVeli && !sendOgrenci && !includeVeliler.length) {
-        pushOutcomes([{
-          kind: 'sinif',
-          id: cls.sinif_id,
-          name: cls.sinif_ad,
-          phone: '',
-          status: 'skipped',
-          error: 'Seçili veli yok',
-          sinif_ad: cls.sinif_ad,
-        }]);
-        continue;
-      }
-      try {
-        const res = await sendScheduleNotify({
-          term_id: termId,
-          sinif_ids: [cls.sinif_id],
-          force_unchanged_ids: cls.has_changes ? [] : [cls.sinif_id],
-          send_to: sendTo,
-          include_ogrenci_ids: sendOgrenci ? includeStudents : undefined,
-          include_veli_ids: sendVeli ? includeVeliler : undefined,
-          batch_id: batchId,
-        });
-        const row = res.results[0];
-        pushOutcomes(
-          row?.recipients?.length
-            ? row.recipients
-            : [{
-              kind: 'sinif',
-              id: cls.sinif_id,
-              name: cls.sinif_ad,
-              phone: '',
-              status: row?.status === 'sent' || row?.status === 'partial' ? 'sent' : 'failed',
-              error: row?.errors?.[0] || row?.reason || '',
-              sinif_ad: cls.sinif_ad,
-            }],
-        );
-      } catch (err) {
-        pushOutcomes([{
-          kind: 'sinif',
-          id: cls.sinif_id,
-          name: cls.sinif_ad,
-          phone: '',
-          status: 'failed',
-          error: err instanceof Error ? err.message : 'Gönderim başarısız',
-          sinif_ad: cls.sinif_ad,
-        }]);
-      }
+    const includeStudents = sendOgrenci
+      ? toSend.flatMap((cls) =>
+        (cls.students || []).filter((s) => s.has_phone && !excludedStudents.has(s.id)).map((s) => s.id),
+      )
+      : undefined;
+    const includeVeliler = sendVeli
+      ? toSend.flatMap((cls) =>
+        (cls.veliler || []).filter((v) => v.has_phone && !excludedVeliler.has(v.id)).map((v) => v.id),
+      )
+      : undefined;
+    if (sendOgrenci && !includeStudents?.length && sendVeli && !includeVeliler?.length) {
+      message.warning('Seçili alıcı yok.');
+      return;
     }
-    setProgress({ done: finishedClasses, total: toSend.length, label: '' });
-    setStep('done');
-    setSending(false);
+    if (sendOgrenci && !sendVeli && !includeStudents?.length) {
+      message.warning('Seçili öğrenci yok.');
+      return;
+    }
+    if (sendVeli && !sendOgrenci && !includeVeliler?.length) {
+      message.warning('Seçili veli yok.');
+      return;
+    }
+    setSending(true);
+    try {
+      const res = await sendScheduleNotify({
+        term_id: termId,
+        sinif_ids: toSend.map((c) => c.sinif_id),
+        force_unchanged_ids: toSend.filter((c) => !c.has_changes).map((c) => c.sinif_id),
+        send_to: sendTo,
+        include_ogrenci_ids: includeStudents,
+        include_veli_ids: includeVeliler,
+      });
+      rememberBatch(res.batch_id);
+      applyProgress(res);
+    } catch (err) {
+      setSending(false);
+      setError(err instanceof Error ? err.message : 'Gönderim başarısız');
+    }
   };
 
   const q = query.trim().toLocaleLowerCase('tr');
@@ -389,6 +365,8 @@ export default function GoruntulemeNotifyModal({
   const statusLabel = (status: ScheduleNotifyRecipient['status']) => {
     if (status === 'sent') return 'Gitti';
     if (status === 'failed') return 'Gitmedi';
+    if (status === 'sending') return 'Gönderiliyor';
+    if (status === 'pending') return 'Sırada';
     return 'Atlandı';
   };
 
@@ -396,22 +374,25 @@ export default function GoruntulemeNotifyModal({
     <Modal
       title={title}
       open={open}
-      onCancel={onClose}
+      onCancel={handleClose}
       width={680}
       destroyOnClose
       centered
-      maskClosable={step !== 'running'}
+      maskClosable
       footer={
         step === 'running' ? [
-          <Button key="stop" onClick={() => { stopRef.current = true; }}>
-            Kalanı durdur
+          <Button key="close" onClick={handleClose}>
+            Kapat
           </Button>,
         ] : step === 'done' ? [
-          <Button key="close" type="primary" onClick={onClose}>
+          <Button key="again" onClick={startFresh}>
+            Yeni gönderim
+          </Button>,
+          <Button key="close" type="primary" onClick={handleClose}>
             Kapat
           </Button>,
         ] : [
-          <Button key="cancel" onClick={onClose}>
+          <Button key="cancel" onClick={handleClose}>
             Vazgeç
           </Button>,
           <Button
@@ -440,6 +421,9 @@ export default function GoruntulemeNotifyModal({
             <div className="gv-wa-bar" aria-hidden>
               <i style={{ width: `${step === 'done' && progress.done >= progress.total ? 100 : progressPct}%` }} />
             </div>
+            {step === 'running' ? (
+              <span className="gv-wa-foot">Pencereyi kapatabilirsiniz. Gönderim sunucuda sürer ve geçmişe yazılır.</span>
+            ) : null}
             {step === 'done' ? (
               <div className="gv-wa-pills">
                 <button type="button" className={`gv-wa-pill${resultFilter === 'all' ? ' is-on' : ''}`} onClick={() => setResultFilter('all')}>
