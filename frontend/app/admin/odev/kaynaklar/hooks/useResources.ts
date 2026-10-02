@@ -140,7 +140,7 @@ export function useResources(opts: UseResourcesOptions = {}) {
   const [filterYayinYili, setFilterYayinYili] = useState("");
   const [filterPublisher, setFilterPublisher] = useState("");
   const [filterIcerikTamamlandi, setFilterIcerikTamamlandi] = useState("");
-  const [publishers, setPublishers] = useState([]);
+  const [publishers, setPublishers] = useState<{ id: number; ad: string }[]>([]);
 
   // ───── Selected book ─────
   const [selectedBook, setSelectedBook] = useState<ResourceBook | null>(null);

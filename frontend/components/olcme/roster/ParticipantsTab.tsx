@@ -155,7 +155,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     } finally {
       setLoading(false);
     }
-  }, [exam.id]);
+  }, [exam.id, exam.exam_sessions]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { examApi.denemeSalonlari().then(setSalonlar).catch(() => {}); }, []);
