@@ -3,6 +3,10 @@ Finans Modülü API URL Tanımları
 """
 from django.urls import path
 
+from apps.finans.interfaces.views.uyumsoft_ayar_views import (
+    UyumsoftAyarTestView,
+    UyumsoftAyarView,
+)
 from apps.finans.interfaces.views.payment_method_views import (
     OdemeYontemiListCreateView,
     OdemeYontemiDetailView,
@@ -800,4 +804,6 @@ urlpatterns = [
         CekSenetDosyaDeleteView.as_view(),
         name='cek-senet-dosya-delete',
     ),
+    path('uyumsoft-ayar/', UyumsoftAyarView.as_view(), name='uyumsoft-ayar'),
+    path('uyumsoft-ayar/test/', UyumsoftAyarTestView.as_view(), name='uyumsoft-ayar-test'),
 ]

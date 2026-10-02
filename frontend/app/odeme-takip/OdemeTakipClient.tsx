@@ -15,6 +15,7 @@ import { STATUS_CONFIRM_MESSAGES } from "@/lib/sozlesme-notlar";
 
 import SozlesmelerTab from "./tabs/SozlesmelerTab";
 import TahsilatlarTab from "./tabs/TahsilatlarTab";
+import FaturaModal from "./components/FaturaModal";
 import RaporlarTab from "./tabs/RaporlarTab";
 import TahsilatMakbuzu from "./components/TahsilatMakbuzu";
 import OdemePlani from "./components/OdemePlani";
@@ -97,6 +98,7 @@ export default function OdemeTakipClient() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleteSozlesmeId, setDeleteSozlesmeId] = useState<number | null>(null);
   const [makbuzTahsilatId, setMakbuzTahsilatId] = useState<number | null>(null);
+  const [faturaTahsilatId, setFaturaTahsilatId] = useState<number | null>(null);
   const [odemePlaniSozlesmeId, setOdemePlaniSozlesmeId] = useState<number | null>(null);
   const [sozlesmeBelgesiId, setSozlesmeBelgesiId] = useState<number | null>(null);
   const [fesihModalSozlesme, setFesihModalSozlesme] = useState<{ id: number; no: string; ogrenciAdi: string } | null>(null);
@@ -687,6 +689,7 @@ export default function OdemeTakipClient() {
           onTahsilatCancel={handleTahsilatCancelOpen}
           onDelete={handleDeleteOpen}
           onMakbuz={(id) => setMakbuzTahsilatId(id)}
+          onFatura={(id) => setFaturaTahsilatId(id)}
           onOdemePlani={(id) => setOdemePlaniSozlesmeId(id)}
           onSozlesmeBelgesi={(id) => setSozlesmeBelgesiId(id)}
           onFesihBelgesi={(id) => setFesihBelgesiSozlesmeId(id)}
@@ -705,6 +708,7 @@ export default function OdemeTakipClient() {
           tahsilatlar={tahsilatlar}
           onTahsilatCancel={handleTahsilatCancelOpen}
           onMakbuz={(id) => setMakbuzTahsilatId(id)}
+          onFatura={(id) => setFaturaTahsilatId(id)}
           onSelectSozlesme={openSozlesmeDetail}
         />
       )}
@@ -999,6 +1003,16 @@ export default function OdemeTakipClient() {
       )}
 
       {/* Makbuz Modal */}
+      {faturaTahsilatId && (
+        <FaturaModal
+          tahsilatId={faturaTahsilatId}
+          onClose={() => setFaturaTahsilatId(null)}
+          onSent={async () => {
+            await fetchTahsilatlar();
+            if (selectedSozlesme) await fetchSozlesmeDetail(selectedSozlesme.id);
+          }}
+        />
+      )}
       {makbuzTahsilatId && (
         <TahsilatMakbuzu
           tahsilatId={makbuzTahsilatId}

@@ -22,6 +22,7 @@ import {
   taksitPeriyoduLabel, tahsilatDurumLabel, gecmisIslemTuruText, islemYapanText,
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
+import { FaturaRowButton } from "../components/FaturaModal";
 import { textMatches } from "../lib/filterTahsilatlar";
 import { extractApiError } from "@/lib/api";
 import {
@@ -100,6 +101,7 @@ interface Props {
   onTahsilatCancel: (tahsilatId: number) => void;
   onDelete: (sozlesmeId: number) => void;
   onMakbuz: (tahsilatId: number) => void;
+  onFatura: (tahsilatId: number) => void;
   onOdemePlani: (sozlesmeId: number) => void;
   onSozlesmeBelgesi: (sozlesmeId: number) => void;
   onFesihBelgesi: (sozlesmeId: number) => void;
@@ -137,7 +139,7 @@ function DurumBadgeModern({ durum, map }: { durum: string; map: Record<string, {
 export default function SozlesmelerTab({
   sozlesmeler, selectedSozlesme, searchTerm, odemeYontemleri,
   setSearchTerm, onSelectSozlesme, onCloseDetail, onStatusChange, onStatusRevert,
-  onTahsilatStart, onTahsilatCancel, onDelete, onMakbuz, onOdemePlani, onSozlesmeBelgesi, onFesihBelgesi, onEdit, onKalemChanged,
+  onTahsilatStart, onTahsilatCancel, onDelete, onMakbuz, onFatura, onOdemePlani, onSozlesmeBelgesi, onFesihBelgesi, onEdit, onKalemChanged,
   onWhatsAppPlan, onWhatsAppSozlesme, onWhatsAppMakbuz,
   initialSubTab,
   initialDurum = "",
@@ -681,6 +683,7 @@ export default function SozlesmelerTab({
               sozlesme={s}
               onTahsilatCancel={onTahsilatCancel}
               onMakbuz={onMakbuz}
+              onFatura={onFatura}
               onWhatsAppMakbuz={(id) => onWhatsAppMakbuz(
                 id,
                 s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}`.trim() : undefined,
@@ -2086,11 +2089,12 @@ function OdemePlaniSubTab({
 // ─── TAHSİLATLAR SUB-TAB ───────────────────────────────────
 
 function TahsilatlarSubTab({
-  sozlesme: s, onTahsilatCancel, onMakbuz, onWhatsAppMakbuz,
+  sozlesme: s, onTahsilatCancel, onMakbuz, onFatura, onWhatsAppMakbuz,
 }: {
   sozlesme: Sozlesme;
   onTahsilatCancel: (id: number) => void;
   onMakbuz: (id: number) => void;
+  onFatura: (id: number) => void;
   onWhatsAppMakbuz: (tahsilatId: number) => void;
 }) {
   return (
@@ -2138,6 +2142,12 @@ function TahsilatlarSubTab({
                 </td>
                 <td style={{ textAlign: "center" }}>
                   <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                    {th.durum === "aktif" && th.tahsilat_turu !== "iade" && (
+                      <FaturaRowButton
+                        taslak={th.e_belge?.durum === "uyumsoft_taslak"}
+                        onClick={() => onFatura(th.id)}
+                      />
+                    )}
                     <button className="row-action-btn" onClick={() => onMakbuz(th.id)} title="Makbuz">
                       <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -2207,8 +2217,8 @@ function BelgelerSubTab({
       <h4 style={{ margin: "0 0 16px", fontSize: 14, fontWeight: 700 }}>📄 Belgeler</h4>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 16, marginBottom: 24 }}>
         {belgeler.filter(b => b.always).map((b, i) => (
-          <div key={i} className="odeme-belge-card">
-            <div onClick={b.action} style={{ cursor: "pointer" }}>
+          <div key={i} className="odeme-belge-card" onClick={b.action} role="button" tabIndex={0} onKeyDown={(e) => { if (e.key === "Enter") b.action(); }}>
+            <div>
               <div className="odeme-belge-icon">{b.icon}</div>
               <div className="odeme-belge-label">{b.label}</div>
               <div className="odeme-belge-desc">{b.desc}</div>

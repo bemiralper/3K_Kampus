@@ -531,7 +531,9 @@ class SozlesmeFesih(models.Model):
 
     def hesapla(self):
         """Tüm fesih hesaplamalarını çalıştır (Integer-Only)"""
-        self.kesinti_tutari = sum(int(k.get('tutar', 0)) for k in (self.kesintiler or []))
+        from apps.odeme_takip.application.services.fesih_service import normalize_kesintiler
+        self.kesintiler = normalize_kesintiler(self.kesintiler)
+        self.kesinti_tutari = sum(k['tutar'] for k in self.kesintiler)
         self.ceza_tutari = round(self.sozlesme_net_tutar * self.ceza_orani / 100)
         self.iade_tutari = self.toplam_odenen - self.kullanilan_tutar - self.kesinti_tutari - self.ceza_tutari
 

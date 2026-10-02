@@ -28,6 +28,7 @@ export function useDashboardLinks() {
       kasaBanka: finansHref("kasa-banka"),
       cekSenet: finansHref("cek-senet-v2"),
       gelirGiderTanimlar: finansHref("gelir-gider-v2/tanimlar"),
+      eBelge: finansHref("e-belge"),
       tahsilatRaporlar: finansHref("tahsilat-raporlar"),
       /** Vadesi gelen / tahsilat satırı için uygun hedef. */
       tahsilatAction: (row: Pick<OverviewTransaction, "kaynak" | "sozlesme_id" | "gelir_id" | "gider_id" | "cari_hesap_id">) => {

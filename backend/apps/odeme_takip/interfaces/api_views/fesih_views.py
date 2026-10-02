@@ -7,7 +7,9 @@ from rest_framework.decorators import api_view, permission_classes
 from apps.odeme_takip.permissions import ODEME_TAKIP_PERMISSIONS
 from rest_framework.response import Response
 
-from apps.odeme_takip.application.services.fesih_service import FesihService
+from apps.odeme_takip.application.services.fesih_service import (
+    FesihService, indirimsiz_tutar, kesinti_onerileri,
+)
 from apps.odeme_takip.domain.enums import FesihNedeni
 from apps.odeme_takip.interfaces.sube_context import gate_sozlesme_pk
 
@@ -24,6 +26,7 @@ def fesih_hesapla(request, pk):
         fesih_tarihi: "2025-06-15",
         kesintiler: [{"ad": "Kitap bedeli", "tutar": 500}, ...],
         ceza_orani: 10,
+        kullanilan_tutar: 12000,
     }
     """
     _, err = gate_sozlesme_pk(request, pk)
@@ -36,6 +39,7 @@ def fesih_hesapla(request, pk):
         fesih_tarihi=data.get('fesih_tarihi'),
         kesintiler=data.get('kesintiler', []),
         ceza_orani=data.get('ceza_orani', 0),
+        kullanilan_tutar=data.get('kullanilan_tutar'),
     )
 
     if error:
@@ -55,6 +59,7 @@ def fesih_onayla(request, pk):
         fesih_aciklama: "Veli isteği ile...",
         kesintiler: [{"ad": "Kitap bedeli", "tutar": 500}, ...],
         ceza_orani: 10,
+        kullanilan_tutar: 12000,
     }
     """
     _, err = gate_sozlesme_pk(request, pk)
@@ -71,6 +76,7 @@ def fesih_onayla(request, pk):
         fesih_aciklama=data.get('fesih_aciklama', ''),
         kesintiler=data.get('kesintiler', []),
         ceza_orani=data.get('ceza_orani', 0),
+        kullanilan_tutar=data.get('kullanilan_tutar'),
         user=user,
     )
 
@@ -111,6 +117,27 @@ def fesih_nedenleri(request):
     ])
 
 
+@api_view(['GET'])
+@permission_classes(ODEME_TAKIP_PERMISSIONS)
+def fesih_kesinti_onerileri(request, pk):
+    """Pakete ait kitap, yayın ve ek hizmetlerin indirimsiz bedelleri."""
+    _, err = gate_sozlesme_pk(request, pk)
+    if err:
+        return err
+    sozlesme = fesih_service.repo.get_by_id(pk)
+    if not sozlesme:
+        return Response({'error': 'Sözleşme bulunamadı'}, status=status.HTTP_404_NOT_FOUND)
+    return Response(kesinti_onerileri(sozlesme))
+
+
+def _kisi_adi(user):
+    if not user:
+        return None
+    getter = getattr(user, 'get_full_name', None)
+    full = (getter() or '').strip() if callable(getter) else ''
+    return full or getattr(user, 'username', None) or None
+
+
 def _serialize_fesih(fesih):
     """SozlesmeFesih → dict"""
     return {
@@ -126,6 +153,7 @@ def _serialize_fesih(fesih):
         'fesih_nedeni_display': fesih.get_fesih_nedeni_display(),
         'fesih_aciklama': fesih.fesih_aciklama or '',
         'sozlesme_net_tutar': int(round(float(fesih.sozlesme_net_tutar or 0))),
+        'indirimsiz_tutar': indirimsiz_tutar(fesih.sozlesme) if fesih.sozlesme_id else int(round(float(fesih.sozlesme_net_tutar or 0))),
         'toplam_odenen': int(round(float(fesih.toplam_odenen or 0))),
         'toplam_gun': fesih.toplam_gun,
         'kullanilan_gun': fesih.kullanilan_gun,
@@ -138,6 +166,6 @@ def _serialize_fesih(fesih):
         'iade_yapildi_mi': fesih.iade_yapildi_mi,
         'iade_tarihi': str(fesih.iade_tarihi) if fesih.iade_tarihi else None,
         'iptal_edilen_taksit_sayisi': fesih.iptal_edilen_taksit_sayisi,
-        'fesih_eden': fesih.fesih_eden.get_full_name() if fesih.fesih_eden else None,
+        'fesih_eden': _kisi_adi(fesih.fesih_eden),
         'created_at': fesih.created_at.isoformat() if fesih.created_at else None,
     }

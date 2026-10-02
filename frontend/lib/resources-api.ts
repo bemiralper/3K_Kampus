@@ -900,6 +900,7 @@ export type BookExportFilters = {
   sinif_seviyesi?: string;
   book_type?: string;
   yayin_yili?: string;
+  publisher?: string;
   search?: string;
 };
 
@@ -915,6 +916,7 @@ function buildBookExportParams(
   if (filters.sinif_seviyesi) params.set('sinif_seviyesi', filters.sinif_seviyesi);
   if (filters.book_type) params.set('book_type', filters.book_type);
   if (filters.yayin_yili) params.set('yayin_yili', filters.yayin_yili);
+  if (filters.publisher) params.set('publisher', filters.publisher);
   if (filters.search) params.set('search', filters.search);
   return params;
 }

@@ -11,6 +11,7 @@ import {
   fetchDersler,
   fetchSinifSeviyeleri,
   fetchBookTypes,
+  fetchPublishers,
   fetchBookStructure,
   createBookType,
   updateBookType,
@@ -137,7 +138,9 @@ export function useResources(opts: UseResourcesOptions = {}) {
   const [filterSinif, setFilterSinif] = useState("");
   const [filterBookType, setFilterBookType] = useState("");
   const [filterYayinYili, setFilterYayinYili] = useState("");
+  const [filterPublisher, setFilterPublisher] = useState("");
   const [filterIcerikTamamlandi, setFilterIcerikTamamlandi] = useState("");
+  const [publishers, setPublishers] = useState([]);
 
   // ───── Selected book ─────
   const [selectedBook, setSelectedBook] = useState<ResourceBook | null>(null);
@@ -225,6 +228,7 @@ export function useResources(opts: UseResourcesOptions = {}) {
           sinif_seviyesi: filterSinif || undefined,
           book_type: filterBookType || undefined,
           yayin_yili: filterYayinYili || undefined,
+          publisher: filterPublisher || undefined,
           icerik_tamamlandi: filterIcerikTamamlandi || undefined,
         },
         { signal: ac.signal },
@@ -243,18 +247,26 @@ export function useResources(opts: UseResourcesOptions = {}) {
     } finally {
       if (!ac.signal.aborted) setLoading(false);
     }
-  }, [filterDers, filterSinif, filterBookType, filterYayinYili, filterIcerikTamamlandi]);
+  }, [filterDers, filterSinif, filterBookType, filterYayinYili, filterPublisher, filterIcerikTamamlandi]);
 
   const fetchMetadata = useCallback(async () => {
     try {
-      const [d, s, b] = await Promise.all([
+      const [d, s, b, p] = await Promise.all([
         fetchDersler(),
         fetchSinifSeviyeleri(),
         fetchBookTypes(),
+        fetchPublishers({ aktif: "true" }),
       ]);
       if (d.success && d.data) setDersler(d.data);
       if (s.success && s.data) setSinifSeviyeleri(s.data);
       if (b.success && b.data) setBookTypes(b.data);
+      if (p.success && p.data) {
+        const raw = Array.isArray(p.data)
+          ? p.data
+          : (Array.isArray(p.data.results) ? p.data.results : []);
+        const list = [...raw].sort((a, b) => String(a.ad || "").localeCompare(String(b.ad || ""), "tr"));
+        setPublishers(list);
+      }
     } catch {
       console.error("Metadata yüklenemedi");
     }
@@ -1401,14 +1413,15 @@ export function useResources(opts: UseResourcesOptions = {}) {
 
   return {
     // Data
-    books, filteredBooks, dersler, sinifSeviyeleri, bookTypes,
+    books, filteredBooks, dersler, sinifSeviyeleri, bookTypes, publishers,
     loading, error, bookDetailError, loadingBookDetail,
     selectedBook, setSelectedBook,
     bookStructure, setBookStructure, loadingStructure,
     // Filters
     searchTerm, setSearchTerm, filterDers, setFilterDers,
     filterSinif, setFilterSinif, filterBookType, setFilterBookType,
-    filterYayinYili, setFilterYayinYili, filterIcerikTamamlandi, setFilterIcerikTamamlandi,
+    filterYayinYili, setFilterYayinYili, filterPublisher, setFilterPublisher,
+    filterIcerikTamamlandi, setFilterIcerikTamamlandi,
     // Expand
     expandedUnits, expandedTopics, toggleUnit, toggleTopic, expandAll, collapseAll,
     // Drawer

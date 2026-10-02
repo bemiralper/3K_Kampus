@@ -95,6 +95,12 @@ export const MUHASEBE_FINANS_CHILDREN: MuhasebeNavChildDef[] = [
     label: "Finansman Tanımları",
     matchPrefix: `${MUHASEBE_FINANS_BASE}/gelir-gider-v2/tanimlar`,
   },
+  {
+    id: "e-belge",
+    href: `${MUHASEBE_FINANS_BASE}/e-belge`,
+    label: "E-Belge Ayarları",
+    matchPrefix: `${MUHASEBE_FINANS_BASE}/e-belge`,
+  },
 ];
 
 const KURUM_ICON = (

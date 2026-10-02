@@ -7,6 +7,7 @@ import {
   DurumBadge,
 } from "../helpers";
 import Pagination, { paginateList } from "../components/Pagination";
+import { FaturaRowButton } from "../components/FaturaModal";
 import TahsilatExportModal from "../components/TahsilatExportModal";
 import {
   applyTahsilatFilters,
@@ -28,6 +29,7 @@ interface Props {
   tahsilatlar: TahsilatItem[];
   onTahsilatCancel: (tahsilatId: number) => void;
   onMakbuz: (tahsilatId: number) => void;
+  onFatura: (tahsilatId: number) => void;
   onSelectSozlesme?: (sozlesmeId: number) => void;
 }
 
@@ -35,6 +37,7 @@ export default function TahsilatlarTab({
   tahsilatlar: initialTahsilatlar,
   onTahsilatCancel,
   onMakbuz,
+  onFatura,
   onSelectSozlesme,
 }: Props) {
   const [showFilters, setShowFilters] = useState(false);
@@ -339,6 +342,12 @@ export default function TahsilatlarTab({
                     <td style={{ ...cellStyle, fontSize: 12, color: "#6b7280" }}>{th.referans_no || "-"}</td>
                     <td style={{ ...cellStyle, textAlign: "center" }}>
                       <div style={{ display: "flex", gap: 4, justifyContent: "center" }}>
+                        {th.durum === "aktif" && th.tahsilat_turu !== "iade" && (
+                          <FaturaRowButton
+                            taslak={th.e_belge?.durum === "uyumsoft_taslak"}
+                            onClick={() => onFatura(th.id)}
+                          />
+                        )}
                         <button
                           onClick={() => onMakbuz(th.id)}
                           title="Makbuz"

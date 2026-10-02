@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { API_BASE, apiHeaders } from "../helpers";
 import { FesihDetay } from "../types";
 
@@ -30,20 +31,28 @@ function formatDate(d: string | null): string {
 export default function FesihBelgesi({ sozlesmeId, onClose }: Props) {
   const [fesih, setFesih] = useState<FesihDetay | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hata, setHata] = useState("");
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const fetchFesih = useCallback(async () => {
     setLoading(true);
+    setHata("");
     try {
       const res = await fetch(`${API_BASE}/sozlesmeler/${sozlesmeId}/fesih/`, {
         credentials: "include",
         headers: apiHeaders(),
       });
-      if (res.ok) {
-        const data = await res.json();
+      const data = await res.json().catch(() => null);
+      if (res.ok && data && data.sozlesme_no) {
         setFesih(data);
+      } else {
+        setFesih(null);
+        setHata(data?.error || "Fesih belgesi açılamadı.");
       }
-    } catch {}
+    } catch {
+      setFesih(null);
+      setHata("Fesih belgesi açılamadı.");
+    }
     setLoading(false);
   }, [sozlesmeId]);
 
@@ -58,47 +67,37 @@ export default function FesihBelgesi({ sozlesmeId, onClose }: Props) {
     iframe.contentWindow?.print();
   };
 
-  if (loading) {
-    return (
-      <>
-        <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 3000 }} />
-        <div style={{
-          position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-          padding: 40, background: "#fff", borderRadius: 16, zIndex: 3001, textAlign: "center",
-        }}>
-          <p>Yükleniyor...</p>
-        </div>
-      </>
-    );
-  }
+  if (typeof document === "undefined") return null;
 
-  if (!fesih) {
-    return (
+  if (loading || !fesih) {
+    return createPortal(
       <>
-        <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 3000 }} />
+        <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 4000 }} />
         <div style={{
           position: "fixed", top: "50%", left: "50%", transform: "translate(-50%, -50%)",
-          padding: 40, background: "#fff", borderRadius: 16, zIndex: 3001, textAlign: "center",
+          padding: 32, background: "#fff", borderRadius: 16, zIndex: 4001, textAlign: "center",
+          width: "min(420px, calc(100vw - 24px))",
         }}>
-          <p>Fesih kaydı bulunamadı.</p>
-          <button onClick={onClose} style={{ marginTop: 16, padding: "8px 24px", borderRadius: 8, border: "none", background: KURUM_COLOR, color: "#fff", cursor: "pointer" }}>Kapat</button>
+          <p style={{ margin: 0 }}>{loading ? "Yükleniyor..." : (hata || "Fesih kaydı bulunamadı.")}</p>
+          {!loading && (
+            <button type="button" onClick={onClose} style={{ marginTop: 16, padding: "8px 24px", borderRadius: 8, border: "none", background: KURUM_COLOR, color: "#fff", cursor: "pointer" }}>Kapat</button>
+          )}
         </div>
-      </>
+      </>,
+      document.body,
     );
   }
 
   const belgeHTML = generateBelgeHTML(fesih);
 
-  return (
+  return createPortal(
     <>
-      {/* Overlay */}
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: 3000, animation: "fadeIn .2s" }} />
+      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 4000 }} />
 
-      {/* Modal */}
       <div style={{
-        position: "fixed", top: "3%", left: "50%", transform: "translateX(-50%)",
-        width: 850, maxHeight: "94vh", background: "#fff", borderRadius: 16,
-        boxShadow: "0 20px 60px rgba(0,0,0,.2)", zIndex: 3001,
+        position: "fixed", top: "3vh", left: "50%", transform: "translateX(-50%)",
+        width: "min(850px, calc(100vw - 24px))", height: "min(94vh, 960px)", background: "#fff", borderRadius: 16,
+        boxShadow: "0 20px 60px rgba(0,0,0,.2)", zIndex: 4001,
         display: "flex", flexDirection: "column", overflow: "hidden",
       }}>
         {/* Toolbar */}
@@ -106,6 +105,7 @@ export default function FesihBelgesi({ sozlesmeId, onClose }: Props) {
           <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "#991b1b" }}>📄 Fesih Belgesi</h3>
           <div style={{ display: "flex", gap: 8 }}>
             <button
+              type="button"
               onClick={handlePrint}
               style={{
                 padding: "6px 16px", borderRadius: 6, border: "none",
@@ -113,6 +113,7 @@ export default function FesihBelgesi({ sozlesmeId, onClose }: Props) {
               }}
             >🖨️ Yazdır</button>
             <button
+              type="button"
               onClick={onClose}
               style={{ border: "none", background: "none", fontSize: 20, cursor: "pointer", color: "#9ca3af" }}
             >✕</button>
@@ -120,15 +121,16 @@ export default function FesihBelgesi({ sozlesmeId, onClose }: Props) {
         </div>
 
         {/* iframe ile belge */}
-        <div style={{ flex: 1, overflow: "hidden" }}>
+        <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}>
           <iframe
             ref={iframeRef}
             srcDoc={belgeHTML}
-            style={{ width: "100%", height: "100%", border: "none", minHeight: 700 }}
+            style={{ width: "100%", height: "100%", border: "none" }}
           />
         </div>
       </div>
-    </>
+    </>,
+    document.body,
   );
 }
 
@@ -248,6 +250,10 @@ function generateBelgeHTML(fesih: FesihDetay): string {
       <h3>Mali Hesaplama</h3>
       <table class="calc">
         <tr>
+          <td>İndirimsiz (Brüt) Tutar</td>
+          <td class="right" style="font-weight:600;">${formatCurrency(fesih.indirimsiz_tutar ?? fesih.sozlesme_net_tutar)}</td>
+        </tr>
+        <tr>
           <td>Sözleşme Net Tutarı</td>
           <td class="right" style="font-weight:600;">${formatCurrency(fesih.sozlesme_net_tutar)}</td>
         </tr>
@@ -260,7 +266,7 @@ function generateBelgeHTML(fesih: FesihDetay): string {
           <td class="right">${fesih.kullanilan_gun} gün</td>
         </tr>
         <tr>
-          <td>Kullanılan Eğitim Bedeli <span style="font-size:11px;color:#6b7280;">(${fesih.kullanilan_gun}/${fesih.toplam_gun} gün oranıyla)</span></td>
+          <td>Kullanılan Eğitim Bedeli <span style="font-size:11px;color:#6b7280;">(indirimsiz tutarın gün payı; kayıtta elle değiştirilmiş olabilir)</span></td>
           <td class="right" style="font-weight:600;">${formatCurrency(fesih.kullanilan_tutar)}</td>
         </tr>
         <tr>

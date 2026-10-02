@@ -97,6 +97,10 @@ export default function KaynaklarPage() {
           <option value="">Tüm Türler</option>
           {r.bookTypes.map((bt) => <option key={bt.id} value={bt.id}>{bt.ikon || "📖"} {bt.ad}</option>)}
         </select>
+        <select className="kk-select" value={r.filterPublisher} onChange={(e) => r.setFilterPublisher(e.target.value)}>
+          <option value="">Tüm Yayın Evleri</option>
+          {r.publishers.map((p) => <option key={p.id} value={p.id}>{p.ad}</option>)}
+        </select>
         <select className="kk-select" value={r.filterYayinYili} onChange={(e) => r.setFilterYayinYili(e.target.value)}>
           <option value="">Tüm Yıllar</option>
           {yayinYillari.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -106,7 +110,7 @@ export default function KaynaklarPage() {
           <option value="true">İçerik Tamamlanan</option>
           <option value="false">İçerik Eksik</option>
         </select>
-        {(r.filterDers || r.filterSinif || r.filterBookType || r.filterYayinYili || r.filterIcerikTamamlandi) && (
+        {(r.filterDers || r.filterSinif || r.filterBookType || r.filterYayinYili || r.filterPublisher || r.filterIcerikTamamlandi) && (
           <button
             type="button"
             className="kk-btn"
@@ -116,6 +120,7 @@ export default function KaynaklarPage() {
               r.setFilterSinif("");
               r.setFilterBookType("");
               r.setFilterYayinYili("");
+              r.setFilterPublisher("");
               r.setFilterIcerikTamamlandi("");
             }}
           >
@@ -159,6 +164,7 @@ export default function KaynaklarPage() {
           sinif_seviyesi: r.filterSinif || undefined,
           book_type: r.filterBookType || undefined,
           yayin_yili: r.filterYayinYili || undefined,
+          publisher: r.filterPublisher || undefined,
           search: r.searchTerm || undefined,
         }}
       />

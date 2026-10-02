@@ -14,10 +14,11 @@ from apps.finans.domain.cari_dosya import CariDosya
 from apps.finans.domain.gelir_tahsilat import GelirTahsilat
 from apps.finans.domain.hesap_transferi import HesapTransferi
 from apps.finans.domain.mali_hesap_yetkilisi import MaliHesapYetkilisi
+from apps.finans.domain.uyumsoft_ayar import UyumsoftAyar
 
 __all__ = [
     'OdemeYontemi', 'MaliHesap', 'GiderKategorisi', 'GelirKategorisi', 'BakiyeHareketi', 'DonemBakiye',
     'CariHesap', 'CariHareket', 'GelirKaydi',
     'GiderKaydi', 'GiderTaksit', 'GiderOdeme', 'CariDosya',
-    'GelirTahsilat', 'HesapTransferi', 'MaliHesapYetkilisi',
+    'GelirTahsilat', 'HesapTransferi', 'MaliHesapYetkilisi', 'UyumsoftAyar',
 ]

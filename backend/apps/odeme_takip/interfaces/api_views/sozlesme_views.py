@@ -166,6 +166,25 @@ def _serialize_taksit(t):
     }
 
 
+def _e_belge_ozet(th):
+    from apps.finans.domain.e_belge import EBelge
+
+    try:
+        belge = th.e_belge
+    except EBelge.DoesNotExist:
+        return None
+    if belge is None:
+        return None
+    return {
+        'durum': belge.durum,
+        'belge_tipi': belge.belge_tipi,
+        'ettn': str(belge.ettn),
+        'yerel_no': belge.yerel_no,
+        'uyumsoft_no': belge.uyumsoft_no,
+        'hata_mesaji': belge.hata_mesaji or '',
+    }
+
+
 def _serialize_tahsilat(th):
     # Dağıtım detaylarını al
     dagitim_list = []
@@ -226,6 +245,7 @@ def _serialize_tahsilat(th):
         'olusturma_tarihi': str(th.created_at) if th.created_at else None,
         'dagitim': dagitim_list,
         'islem_masrafi': IslemMasrafiService.serialize_masraf(masraf),
+        'e_belge': _e_belge_ozet(th),
     }
 
 

@@ -314,6 +314,7 @@ const navItems: MenuItem[] = [
       { label: "Gider İşlemleri", href: "/finans/gider-v2" },
       { label: "Cari Hesaplar", href: "/finans/cari-hesaplar-v2" },
       { label: "Finansman Tanımları", href: "/finans/gelir-gider-v2/tanimlar" },
+      { label: "E-Belge Ayarları", href: "/finans/e-belge" },
     ],
   },
   {

@@ -5,7 +5,10 @@ Sözleşme fesih hesaplama ve uygulama
 Integer-Only: Tüm parasal hesaplamalar tam sayı aritmetiğiyle yapılır.
 Decimal KULLANILMAZ.
 """
+import re
 from datetime import date
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -21,13 +24,164 @@ from apps.odeme_takip.infrastructure.repositories.sozlesme_repository import (
 )
 
 
+def indirimsiz_tutar(sozlesme) -> int:
+    """İndirim düşülmeden önceki sözleşme bedeli (brüt)."""
+    brut = int(getattr(sozlesme, 'brut_tutar', 0) or 0)
+    if brut <= 0:
+        kalemler = getattr(sozlesme, 'kalemler', None)
+        if kalemler is not None:
+            brut = int(sum(int(k.brut_tutar or 0) for k in kalemler.all()))
+    if brut <= 0:
+        brut = int(getattr(sozlesme, 'net_tutar', 0) or 0) + int(getattr(sozlesme, 'toplam_indirim_tutari', 0) or 0)
+    return max(0, brut)
+
+
+def onerilen_kullanilan_bedel(indirimsiz: int, toplam_gun: int, kullanilan_gun: int) -> int:
+    """İndirimsiz bedelin, başlangıçtan fesih gününe kadarki payı."""
+    if toplam_gun <= 0 or indirimsiz <= 0:
+        return 0
+    return int(round(indirimsiz * kullanilan_gun / toplam_gun))
+
+
+def _manuel_tutar(value):
+    if value is None or value == '':
+        return None
+    try:
+        return max(0, int(round(float(value))))
+    except (TypeError, ValueError):
+        return None
+
+
+_MALZEME_KALEMLERI = {'yayin', 'ek_hizmet', 'ek_hizmet_satisi'}
+
+
+def kesinti_tutari_oku(value) -> int:
+    """Kesinti tutarını tam sayıya çevirir. 2.500 ve 2.500,50 kabul edilir."""
+    if value is None or isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        try:
+            return max(0, int(Decimal(str(value)).quantize(Decimal('1'), rounding=ROUND_HALF_UP)))
+        except (InvalidOperation, ValueError):
+            return 0
+    text = str(value).strip().replace('₺', '').replace('TL', '').replace(' ', '')
+    if not text:
+        return 0
+    if ',' in text and '.' in text:
+        text = text.replace('.', '').replace(',', '.')
+    elif ',' in text:
+        text = text.replace(',', '.')
+    elif re.fullmatch(r'\d{1,3}(\.\d{3})+', text):
+        text = text.replace('.', '')
+    try:
+        return max(0, int(Decimal(text).quantize(Decimal('1'), rounding=ROUND_HALF_UP)))
+    except (InvalidOperation, ValueError):
+        return 0
+
+
+def normalize_kesintiler(kesintiler):
+    """[{"ad", "tutar"}] listesini temizler. Bozuk satır hesabı düşürmez."""
+    if not isinstance(kesintiler, list):
+        return []
+    temiz = []
+    for kalem in kesintiler:
+        if not isinstance(kalem, dict):
+            continue
+        ad = str(kalem.get('ad') or '').strip()
+        tutar = kesinti_tutari_oku(kalem.get('tutar'))
+        if not ad or tutar <= 0:
+            continue
+        temiz.append({'ad': ad, 'tutar': tutar})
+    return temiz
+
+
+def kesinti_kalemlerini_birlestir(satirlar):
+    """Aynı addan ilk satır kalır. Tutar indirimsiz tam sayıdır."""
+    sonuc = []
+    gorulen = set()
+    for ad, tutar in satirlar:
+        name = str(ad or '').strip()
+        if not name:
+            continue
+        anahtar = name.casefold()
+        if anahtar in gorulen:
+            continue
+        gorulen.add(anahtar)
+        sonuc.append({'ad': name, 'tutar': max(0, int(tutar or 0))})
+    return sonuc
+
+
+def _fesih_ust_paketler(sozlesme):
+    """Sözleşmenin grup, premium ve deneme paketleri."""
+    from apps.egitim_paketleri.models import Deneme, GrupDersi, PremiumPaket
+
+    modeller = {
+        'grup_dersi': GrupDersi,
+        'premium': PremiumPaket,
+        'deneme': Deneme,
+    }
+    adaylar = []
+    if getattr(sozlesme, 'paket_id', None) and getattr(sozlesme, 'paket_turu', None):
+        adaylar.append((sozlesme.paket_turu, sozlesme.paket_id))
+    kalemler = getattr(sozlesme, 'kalemler', None)
+    if kalemler is not None:
+        for kalem in kalemler.all():
+            tur = kalem.kalem_turu or ''
+            if tur == 'paket' and sozlesme.paket_id == kalem.kalem_id:
+                tur = sozlesme.paket_turu or ''
+            if tur in modeller and kalem.kalem_id:
+                adaylar.append((tur, kalem.kalem_id))
+    gorulen = set()
+    for tur, paket_id in adaylar:
+        anahtar = (tur, paket_id)
+        if anahtar in gorulen:
+            continue
+        gorulen.add(anahtar)
+        paket = modeller[tur].objects.filter(id=paket_id).first()
+        if paket is not None:
+            yield paket
+
+
+def kesinti_onerileri(sozlesme):
+    """
+    Fesihte düşülebilecek kitap, yayın ve ek hizmetler.
+    Bedel indirimsizdir: sözleşmedeki brüt, yoksa paketin liste fiyatı.
+    """
+    satirlar = []
+    kalemler = getattr(sozlesme, 'kalemler', None)
+    if kalemler is not None:
+        for kalem in kalemler.all():
+            if (kalem.kalem_turu or '') in _MALZEME_KALEMLERI:
+                satirlar.append((kalem.kalem_adi, int(kalem.brut_tutar or 0)))
+    for paket in _fesih_ust_paketler(sozlesme):
+        yayinlar = getattr(paket, 'dahil_yayin_paketleri', None)
+        if yayinlar is not None:
+            for yayin in yayinlar.all():
+                satirlar.append((yayin.ad, int(getattr(yayin, 'brut_fiyat', 0) or 0)))
+        hizmetler = getattr(paket, 'dahil_ek_hizmetler', None)
+        if hizmetler is not None:
+            for hizmet in hizmetler.all():
+                satirlar.append((hizmet.ad, int(getattr(hizmet, 'brut_fiyat', 0) or 0)))
+    return kesinti_kalemlerini_birlestir(satirlar)
+
+
 class FesihService:
 
     def __init__(self):
         self.repo = SozlesmeRepository()
         self.gecmis_repo = SozlesmeGecmisiRepository()
 
-    def hesapla_onizleme(self, sozlesme_id, fesih_tarihi, fesih_nedeni=None, kesintiler=None, ceza_orani=0):
+    def get_fesih_detay(self, sozlesme_id):
+        """Sözleşmenin fesih kaydı. Yoksa None."""
+        return (
+            SozlesmeFesih.objects
+            .select_related('sozlesme', 'sozlesme__ogrenci', 'fesih_eden')
+            .prefetch_related('sozlesme__kalemler')
+            .filter(sozlesme_id=sozlesme_id)
+            .first()
+        )
+
+    def hesapla_onizleme(self, sozlesme_id, fesih_tarihi, fesih_nedeni=None, kesintiler=None, ceza_orani=0, kullanilan_tutar=None):
         """
         Fesih ön izleme hesabı — kayıt YAPMAZ, sadece hesaplar.
         Tüm tutarlar Integer (TL).
@@ -39,7 +193,8 @@ class FesihService:
         if sozlesme.durum != SozlesmeDurum.AKTIF:
             return None, {'error': 'Sadece aktif sözleşmeler feshedilebilir'}
 
-        net_tutar = sozlesme.net_tutar
+        net_tutar = int(sozlesme.net_tutar or 0)
+        baz_tutar = indirimsiz_tutar(sozlesme)
 
         # Toplam ödenen
         toplam_odenen = sozlesme.tahsilatlar.filter(
@@ -58,15 +213,14 @@ class FesihService:
         toplam_gun = (sozlesme.bitis_tarihi - sozlesme.baslangic_tarihi).days
         kullanilan_gun = max(0, (fesih_tarihi - sozlesme.baslangic_tarihi).days)
 
-        # Kullanılan tutar — orantısal
-        if toplam_gun > 0:
-            kullanilan_tutar = round(net_tutar * kullanilan_gun / toplam_gun)
-        else:
-            kullanilan_tutar = 0
+        # Kullanılan tutar — indirimsiz bedelin gün payı. Elle verilen tutar bunu ezer.
+        onerilen = onerilen_kullanilan_bedel(baz_tutar, toplam_gun, kullanilan_gun)
+        manuel = _manuel_tutar(kullanilan_tutar)
+        kullanilan_tutar = onerilen if manuel is None else manuel
 
-        # Kesintiler
-        kesintiler = kesintiler or []
-        kesinti_tutari = sum(int(k.get('tutar', 0)) for k in kesintiler)
+        # Kesintiler — kitap, materyal, üniforma. Tutar elle verilmiş tam sayıdır.
+        kesintiler = normalize_kesintiler(kesintiler)
+        kesinti_tutari = sum(k['tutar'] for k in kesintiler)
 
         # Ceza
         ceza_orani = int(ceza_orani)
@@ -101,6 +255,9 @@ class FesihService:
             'fesih_tarihi': str(fesih_tarihi),
             'sozlesme_net_tutar': net_tutar,
             'net_tutar': net_tutar,
+            'indirimsiz_tutar': baz_tutar,
+            'onerilen_kullanilan_tutar': onerilen,
+            'kullanilan_tutar_manuel': manuel is not None,
             'toplam_odenen': toplam_odenen,
             'toplam_gun': toplam_gun,
             'kullanilan_gun': kullanilan_gun,
@@ -118,7 +275,8 @@ class FesihService:
 
     @transaction.atomic
     def fesih_uygula(self, sozlesme_id, fesih_tarihi, fesih_nedeni,
-                     fesih_aciklama='', kesintiler=None, ceza_orani=0, user=None):
+                     fesih_aciklama='', kesintiler=None, ceza_orani=0,
+                     kullanilan_tutar=None, user=None):
         """Fesih işlemini uygula — Integer-Only, atomic transaction."""
         sozlesme = self.repo.get_by_id(sozlesme_id)
         if not sozlesme:
@@ -133,7 +291,8 @@ class FesihService:
 
         # Ön hesaplama yap
         onizleme, err = self.hesapla_onizleme(
-            sozlesme_id, fesih_tarihi, fesih_nedeni, kesintiler, ceza_orani
+            sozlesme_id, fesih_tarihi, fesih_nedeni, kesintiler, ceza_orani,
+            kullanilan_tutar=kullanilan_tutar,
         )
         if err:
             return None, err

@@ -31,3 +31,5 @@ from apps.finans.domain.finansman_tanimlari import (  # noqa: F401
     MasrafTuru,
 )
 from apps.finans.domain.finans_islem_log import FinansIslemLog  # noqa: F401
+from apps.finans.domain.uyumsoft_ayar import UyumsoftAyar  # noqa: F401
+from apps.finans.domain.e_belge import EBelge  # noqa: F401

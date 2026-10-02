@@ -31,6 +31,7 @@ export default function DashboardShortcuts() {
     { href: links.virman, label: "Virman", desc: "Transfer", tone: "purple" as Tone },
     { href: links.cekSenet, label: "Çek / Senet", desc: "Portföy", tone: "info" as Tone },
     { href: links.gelirGiderTanimlar, label: "Tanımlar", desc: "Kategori / etiket", tone: "slate" as Tone },
+    { href: links.eBelge, label: "E-Belge", desc: "Uyumsoft bağlantısı", tone: "info" as Tone },
     { href: links.tahsilatRaporlar, label: "Raporlar", desc: "Mali analiz", tone: "accent" as Tone },
   ] satisfies ShortcutDef[]).filter((i) => !i.hidden);
 

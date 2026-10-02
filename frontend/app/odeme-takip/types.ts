@@ -155,6 +155,14 @@ export interface TahsilatItem {
   aciklama: string;
   olusturma_tarihi: string | null;
   dagitim?: TahsilatDagitimItem[];
+  e_belge?: {
+    durum: string;
+    belge_tipi: string;
+    ettn: string;
+    yerel_no: string;
+    uyumsoft_no: string;
+    hata_mesaji: string;
+  } | null;
 }
 
 export interface Gecmis {
@@ -235,6 +243,8 @@ export interface FesihOnizleme {
   ogrenci_adi: string;
   fesih_tarihi: string;
   sozlesme_net_tutar: number;
+  indirimsiz_tutar?: number;
+  onerilen_kullanilan_tutar?: number;
   toplam_odenen: number;
   toplam_gun: number;
   kullanilan_gun: number;
@@ -259,6 +269,7 @@ export interface FesihDetay {
   fesih_nedeni_display: string;
   fesih_aciklama: string;
   sozlesme_net_tutar: number;
+  indirimsiz_tutar?: number;
   toplam_odenen: number;
   toplam_gun: number;
   kullanilan_gun: number;

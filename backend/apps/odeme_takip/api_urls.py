@@ -26,6 +26,11 @@ from .interfaces.api_views.taksit_views import (
     vadesi_gecenler,
     vadesi_gelecekler,
 )
+from .interfaces.api_views.fatura_views import (
+    tahsilat_fatura,
+    tahsilat_fatura_gonder,
+    tahsilat_fatura_iptal,
+)
 from .interfaces.api_views.tahsilat_views import (
     tahsilat_list,
     tahsilat_create,
@@ -47,6 +52,7 @@ from .interfaces.api_views.fesih_views import (
     fesih_onayla,
     fesih_detay,
     fesih_nedenleri,
+    fesih_kesinti_onerileri,
 )
 from .interfaces.api_views.notify_views import (
     sozlesme_notify_preview,
@@ -96,6 +102,9 @@ urlpatterns = [
     path('tahsilatlar/<int:pk>/cancel/', tahsilat_cancel, name='tahsilat-cancel'),
     path('tahsilatlar/iade/', tahsilat_iade, name='tahsilat-iade'),
     path('tahsilatlar/<int:pk>/makbuz/', tahsilat_makbuz, name='tahsilat-makbuz'),
+    path('tahsilatlar/<int:pk>/fatura/', tahsilat_fatura, name='tahsilat-fatura'),
+    path('tahsilatlar/<int:pk>/fatura/gonder/', tahsilat_fatura_gonder, name='tahsilat-fatura-gonder'),
+    path('tahsilatlar/<int:pk>/fatura/iptal/', tahsilat_fatura_iptal, name='tahsilat-fatura-iptal'),
     path('tahsilatlar/mahsup/', tahsilat_mahsup, name='tahsilat-mahsup'),
 
     path('tahsilatlar/<int:pk>/notify-preview/', tahsilat_notify_preview, name='tahsilat-notify-preview'),
@@ -117,6 +126,7 @@ urlpatterns = [
 
     # Fesih
     path('sozlesmeler/<int:pk>/fesih/hesapla/', fesih_hesapla, name='fesih-hesapla'),
+    path('sozlesmeler/<int:pk>/fesih/kesinti-onerileri/', fesih_kesinti_onerileri, name='fesih-kesinti-onerileri'),
     path('sozlesmeler/<int:pk>/fesih/onayla/', fesih_onayla, name='fesih-onayla'),
     path('sozlesmeler/<int:pk>/fesih/', fesih_detay, name='fesih-detay'),
     path('fesih-nedenleri/', fesih_nedenleri, name='fesih-nedenleri'),

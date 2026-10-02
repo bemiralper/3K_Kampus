@@ -14,7 +14,8 @@ class TahsilatRepository:
     def get_by_id(self, id):
         try:
             return Tahsilat.objects.select_related(
-                'sozlesme', 'sozlesme__ogrenci', 'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan'
+                'sozlesme', 'sozlesme__ogrenci', 'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan',
+                'e_belge',
             ).prefetch_related(
                 'dagitimlar', 'dagitimlar__taksit', 'sozlesme__ogrenci__veliler',
             ).get(id=id)
@@ -26,7 +27,7 @@ class TahsilatRepository:
             sozlesme_id=sozlesme_id
         ).select_related(
             'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan', 'iptal_eden',
-            'sozlesme__ogrenci',
+            'sozlesme__ogrenci', 'e_belge',
         ).prefetch_related(
             'dagitimlar', 'dagitimlar__taksit', 'sozlesme__ogrenci__veliler',
         ).order_by('-tahsilat_tarihi', '-created_at')
@@ -40,7 +41,7 @@ class TahsilatRepository:
 
     def get_all(self, kurum_id=None, sube_id=None, egitim_yili_id=None, filters=None):
         qs = Tahsilat.objects.select_related(
-            'sozlesme__ogrenci', 'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan'
+            'sozlesme__ogrenci', 'taksit', 'odeme_yontemi', 'mali_hesap', 'islem_yapan', 'e_belge',
         ).prefetch_related(
             'dagitimlar', 'dagitimlar__taksit', 'sozlesme__ogrenci__veliler'
         )
