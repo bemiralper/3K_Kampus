@@ -266,11 +266,13 @@ class GunSonuWhatsappService:
                 ozet_bytes,
             ),)
 
+        from apps.communication.application.bulk_dispatch import map_bulk
+
         results = []
         sent = 0
         errors: list[str] = []
 
-        for target in targets:
+        def _send_target(target: dict) -> tuple[bool, list[str]]:
             recipient_ok = True
             part_errors: list[str] = []
             for kind, rapor_ad, filename, pdf_bytes in attachments:
@@ -304,15 +306,23 @@ class GunSonuWhatsappService:
                     sent_by_user_id=sender_user_id,
                     fallback_body=MESSAGE_BODY,
                 )
-                success = bool(result and result.success)
+                success = bool(result and not isinstance(result, Exception) and result.success)
                 result_errors = (
                     list(getattr(result, 'errors', None) or [])
-                    if result else ['Gönderim başarısız']
+                    if result and not isinstance(result, Exception)
+                    else ['Gönderim başarısız']
                 )
                 if not success:
                     recipient_ok = False
                     part_errors.extend(f'{rapor_ad}: {err}' for err in result_errors)
+            return recipient_ok, part_errors
 
+        outcomes = map_bulk([lambda target=target: _send_target(target) for target in targets])
+        for target, outcome in zip(targets, outcomes):
+            if isinstance(outcome, Exception):
+                recipient_ok, part_errors = False, [str(outcome)]
+            else:
+                recipient_ok, part_errors = outcome
             results.append({
                 'recipient_id': target['id'],
                 'ad_soyad': target['ad_soyad'],

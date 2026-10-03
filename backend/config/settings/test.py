@@ -30,3 +30,5 @@ EMAIL_BACKEND = 'django.core.mail.backends.locmem.EmailBackend'
 
 # İletişim testleri: WhatsApp kimlik bilgisi yokken simüle gönderim başarılı sayılır
 COMMUNICATION_ALLOW_STUB_SEND = True
+# Test işlemi tek thread'de kalsın; paralel işçi başka bağlantıda satırı görmez.
+COMMUNICATION_QUEUE_WORKERS = 1

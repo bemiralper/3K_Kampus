@@ -171,10 +171,13 @@ def send_answer_key_notify(
         allowed = {int(x) for x in student_ids}
         participants = participants.filter(student_id__in=allowed)
     selected_veli = {int(x) for x in veli_ids} if veli_ids is not None else None
+    from apps.communication.application.bulk_dispatch import map_bulk
+
     sent = 0
     skipped = 0
     errors: list[str] = []
     message_ids: list[str] = []
+    jobs: list[tuple[str, Any]] = []
 
     for p in participants:
         student = p.student
@@ -198,7 +201,8 @@ def send_answer_key_notify(
                     continue
                 vctx = _context(exam, student, veli=veli)
                 body = _fallback_body(exam, student, for_veli=True, veli=veli)
-                result = dispatch_event(
+                label = vctx['veli_ad'] or 'Veli'
+                jobs.append((label, lambda veli=veli, vctx=vctx, body=body, student=student: dispatch_event(
                     exam.kurum_id,
                     EVENT_KEY,
                     recipient=NotificationRecipient.veli(veli.id),
@@ -211,15 +215,7 @@ def send_answer_key_notify(
                     sube_id=exam.sube_id,
                     sent_by_user_id=sent_by_user_id,
                     fallback_body=body,
-                )
-                if result and result.success:
-                    sent += 1
-                    mid = getattr(result, 'message_id', None)
-                    if mid:
-                        message_ids.append(str(mid))
-                else:
-                    skipped += 1
-                    errors.append(vctx['veli_ad'] or 'Veli')
+                )))
         if include_student:
             phone = (student.telefon or '').strip()
             if not phone:
@@ -227,7 +223,7 @@ def send_answer_key_notify(
                 errors.append(f'{ctx["ogrenci_ad"]}: Öğrenci telefonu bulunamadı')
             else:
                 body = _fallback_body(exam, student, for_veli=False)
-                result = dispatch_event(
+                jobs.append(('', lambda student=student, ctx=ctx, body=body: dispatch_event(
                     exam.kurum_id,
                     EVENT_KEY,
                     recipient=NotificationRecipient.ogrenci(student.id),
@@ -240,14 +236,18 @@ def send_answer_key_notify(
                     sube_id=exam.sube_id,
                     sent_by_user_id=sent_by_user_id,
                     fallback_body=body,
-                )
-                if result and result.success:
-                    sent += 1
-                    mid = getattr(result, 'message_id', None)
-                    if mid:
-                        message_ids.append(str(mid))
-                else:
-                    skipped += 1
+                )))
+
+    for (label, _fn), result in zip(jobs, map_bulk([fn for _label, fn in jobs])):
+        if isinstance(result, Exception) or not (result and result.success):
+            skipped += 1
+            if label:
+                errors.append(label)
+            continue
+        sent += 1
+        mid = getattr(result, 'message_id', None)
+        if mid:
+            message_ids.append(str(mid))
 
     if sent:
         from apps.communication.application.celery_dispatch import (

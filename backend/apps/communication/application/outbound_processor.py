@@ -311,26 +311,113 @@ def _media_header_error(client, message, meta_tpl) -> str:
     )
 
 
+def _event_key_for_message(message) -> str:
+    ref = (getattr(message, 'source_ref_id', None) or '').lower()
+    if ref.startswith('karne:'):
+        return 'sinav.karne'
+    if ref.startswith('cevap:'):
+        return 'sinav.cevap_anahtari'
+    return ''
+
+
+def _recipient_for_message(message) -> str:
+    from apps.communication.domain.enums import RecipientType
+
+    conversation = getattr(message, 'conversation', None)
+    contact = getattr(conversation, 'contact_type', None) or ''
+    if contact in (RecipientType.VELI, RecipientType.OGRENCI, RecipientType.PERSONEL):
+        return contact
+    ref = (getattr(message, 'source_ref_id', None) or '').lower()
+    if ':ogrenci' in ref:
+        return RecipientType.OGRENCI
+    if ':veli:' in ref:
+        return RecipientType.VELI
+    return RecipientType.OGRENCI
+
+
+def _binding_fallback(item, message) -> dict:
+    """Kuyrukta yedek şablon yoksa olayın onaylı Meta şablonunu bul."""
+    event_key = _event_key_for_message(message)
+    if not event_key:
+        return {}
+    from apps.communication.application.notification_template_resolver import resolve_binding
+
+    has_file = message.attachments.exists()
+    resolved = resolve_binding(
+        item.kurum_id, event_key, _recipient_for_message(message),
+    )
+    if not resolved.meta_usable(needs_document=has_file, needs_image=False):
+        return {}
+    meta = resolved.meta_template
+    return {
+        'template_name': meta.name,
+        'template_language': meta.language or 'tr',
+        'channel_config_id': (
+            resolved.channel_config_id
+            or str(getattr(meta, 'channel_config_id', '') or '')
+        ),
+        'template_context': {},
+    }
+
+
+def _approved_template(kurum_id, name, language, channel_config_id):
+    meta_tpl = MetaTemplateService.get_approved(
+        kurum_id,
+        name=name,
+        language=language or 'tr',
+        channel_config_id=channel_config_id or None,
+    )
+    if meta_tpl is not None:
+        return meta_tpl
+    from apps.communication.domain.enums import MetaTemplateStatus
+    from apps.communication.domain.models import WhatsAppMetaTemplate
+
+    return (
+        WhatsAppMetaTemplate.objects.filter(
+            kurum_id=kurum_id,
+            name=name,
+            status=MetaTemplateStatus.APPROVED,
+        )
+        .select_related('channel_config')
+        .first()
+    )
+
+
 def _retry_as_template(client, item, message, phone, opts) -> dict | None:
     """
     Serbest mesaj 24 saat kuralına takıldıysa aynı içeriği Meta şablonuyla gönder.
 
-    Gönderim sırasında pencerenin açık olduğunu sanıp yanılmıştık (saat kayması,
-    kaçan webhook); kuyruk kaydındaki yedek şablonla tek seferlik yeniden dener.
+    Pencere açık sanılıp Meta reddederse (131047) tek sefer şablon denenir.
+    Şablon yoksa veya PDF başlığa eklenemezse sessizce vazgeçilmez; asıl neden yazılır.
     """
     fallback = opts.get('session_fallback') or {}
+    if not isinstance(fallback, dict):
+        fallback = {}
+    if not fallback.get('template_name'):
+        fallback = _binding_fallback(item, message)
     template_name = fallback.get('template_name')
     if not template_name:
-        return None
+        return {
+            'success': False,
+            'error_code': 131047,
+            'error': (
+                '24 saatlik sohbet penceresi kapalı. Bu olay için onaylı '
+                'Meta şablonu bağlı değil; şablon olarak yeniden gönderilemedi.'
+            ),
+        }
 
-    meta_tpl = MetaTemplateService.get_approved(
+    meta_tpl = _approved_template(
         item.kurum_id,
-        name=template_name,
-        language=fallback.get('template_language') or 'tr',
-        channel_config_id=fallback.get('channel_config_id') or None,
+        template_name,
+        fallback.get('template_language') or 'tr',
+        fallback.get('channel_config_id') or None,
     )
     if meta_tpl is None:
-        return None
+        return {
+            'success': False,
+            'error_code': 132001,
+            'error': f'Onaylı Meta şablonu bulunamadı: {template_name}',
+        }
 
     context = _build_recipient_context_from_message(message)
     extra_ctx = fallback.get('template_context') or {}
@@ -345,7 +432,10 @@ def _retry_as_template(client, item, message, phone, opts) -> dict | None:
     if media_header:
         components.append(media_header)
     elif meta_template_header_type(meta_tpl) in ('DOCUMENT', 'IMAGE', 'VIDEO'):
-        return None
+        return {
+            'success': False,
+            'error': _media_header_error(client, message, meta_tpl),
+        }
 
     body_params = build_send_body_parameters(
         MetaTemplateService.ensure_variable_map(meta_tpl),
@@ -362,7 +452,7 @@ def _retry_as_template(client, item, message, phone, opts) -> dict | None:
     result = client.send_template(
         item.kurum_id,
         phone,
-        template_name=template_name,
+        template_name=meta_tpl.name,
         language_code=meta_tpl.language or fallback.get('template_language') or 'tr',
         components=components or None,
     )
@@ -652,36 +742,77 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
         return False
 
 
+def _queue_workers() -> int:
+    from apps.communication.application.bulk_dispatch import queue_workers
+    return queue_workers()
+
+
+def _item_phone(item) -> str:
+    conversation = getattr(getattr(item, 'message', None), 'conversation', None)
+    return (getattr(conversation, 'contact_phone', None) or '').strip()
+
+
+def _run_queue_item(item, *, own_connection: bool, use_gate: bool) -> bool:
+    from django.db import close_old_connections
+
+    if own_connection:
+        close_old_connections()
+    try:
+        if use_gate:
+            from apps.communication.application.bulk_dispatch import wait_send_slot
+            wait_send_slot(_item_phone(item))
+        channel = getattr(item.message.conversation, 'channel', None)
+        client = ChannelDispatcher().get_client(
+            channel,
+            channel_config=_resolve_channel_config(item),
+        )
+        return bool(process_queue_item(item, client))
+    except Exception:
+        logger.exception('Queue item crashed item=%s', item.id)
+        try:
+            OutboundQueueRepository.mark_failed(item, 'İşleme hatası (bkz. sunucu logu)')
+        except Exception:
+            logger.exception('mark_failed after crash failed item=%s', item.id)
+        return False
+    finally:
+        if own_connection:
+            close_old_connections()
+
+
 def process_pending_batch(limit: int | None = None) -> dict[str, int]:
-    """Bekleyen kuyruk kayıtlarını işler."""
+    """Bekleyen kuyruk kayıtlarını işler.
+
+    Tek işçi eski seri yolu kullanır. Birden fazla işçi Meta çağrılarını
+    yan yana yapar; hız `SendGate` ile sınırlıdır.
+    """
     batch_size = limit or int(getattr(settings, 'COMMUNICATION_QUEUE_BATCH_SIZE', 20))
-    throttle = _throttle_ms()
-    dispatcher = ChannelDispatcher()
+    workers = _queue_workers()
     OutboundQueueRepository.sweep_cancelled_items()
     pending = list(OutboundQueueRepository.get_pending_batch(limit=batch_size))
     sent = 0
     failed = 0
     touched_campaigns: set = set()
-    for idx, item in enumerate(pending):
-        if idx > 0 and throttle > 0:
-            time.sleep(throttle / 1000.0)
+    for item in pending:
         if item.campaign_id:
             touched_campaigns.add(item.campaign_id)
-        try:
-            channel = getattr(item.message.conversation, 'channel', None)
-            client = dispatcher.get_client(
-                channel,
-                channel_config=_resolve_channel_config(item),
-            )
-            ok = process_queue_item(item, client)
-        except Exception:
-            # Tek kaydın beklenmedik hatası batch'in kalanını kilitli bırakmasın (C-02)
-            logger.exception('Queue item crashed item=%s', item.id)
-            try:
-                OutboundQueueRepository.mark_failed(item, 'İşleme hatası (bkz. sunucu logu)')
-            except Exception:
-                logger.exception('mark_failed after crash failed item=%s', item.id)
-            ok = False
+
+    if workers == 1:
+        throttle = _throttle_ms()
+        outcomes = []
+        for idx, item in enumerate(pending):
+            if idx > 0 and throttle > 0:
+                time.sleep(throttle / 1000.0)
+            outcomes.append(_run_queue_item(item, own_connection=False, use_gate=False))
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=workers, thread_name_prefix='wa-send') as pool:
+            outcomes = list(pool.map(
+                lambda item: _run_queue_item(item, own_connection=True, use_gate=True),
+                pending,
+            ))
+
+    for ok in outcomes:
         if ok:
             sent += 1
         else:

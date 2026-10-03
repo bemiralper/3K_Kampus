@@ -306,8 +306,14 @@ class CommunicationService:
             send_options=send_options or None,
         )
 
+        from apps.communication.application.conversation_phone_sync import resolve_outbound_phone
+
         provider_response: dict[str, Any] = {}
         if process_immediately:
+            from apps.communication.application.bulk_dispatch import pool_active, wait_send_slot
+
+            if pool_active():
+                wait_send_slot(resolve_outbound_phone(conversation) if conversation else '')
             # client=None: conversation/campaign channel_config doğru çözülsün
             success = process_queue_item(queue_item)
             message.refresh_from_db()
@@ -348,8 +354,6 @@ class CommunicationService:
                     message_id=str(message.id),
                     errors=[message.failed_reason or 'Mesaj kuyruğa alındı ancak iletilemedi.'],
                 )
-
-        from apps.communication.application.conversation_phone_sync import resolve_outbound_phone
 
         return SendResult(
             success=True,

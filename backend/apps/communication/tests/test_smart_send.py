@@ -321,6 +321,28 @@ class SessionFallbackRetryTest(TestCase):
         # Kalıcı hata: deneme hakkı tükenir, kuyruk aynı mesajı tekrar denemez
         self.assertEqual(item.attempt_count, item.max_attempts)
         self.assertEqual(self.message.status, MessageStatus.FAILED)
+        self.assertIn('onaylı', self.message.failed_reason or '')
+
+    @patch.object(WhatsAppCloudClient, 'send_template')
+    @patch.object(WhatsAppCloudClient, 'send_text')
+    def test_language_mismatch_still_uses_approved_template(self, mock_text, mock_template):
+        self.message_tpl = WhatsAppMetaTemplate.objects.filter(
+            kurum=self.kurum, name='bilgilendirme',
+        ).first()
+        # Yukarıdaki setUp şablonu tr; dili tr_TR yapıp kuyrukta tr yazalım.
+        WhatsAppMetaTemplate.objects.filter(pk=self.message_tpl.pk).update(language='tr_TR')
+        mock_text.return_value = {'success': False, 'error': '(#131047) Re-engagement message'}
+        mock_template.return_value = {'success': True, 'messages': [{'id': 'wamid.lang'}]}
+        item = self._queue_item({
+            'session_fallback': {
+                'template_name': 'bilgilendirme',
+                'template_language': 'tr',
+                'channel_config_id': str(self.account.id),
+                'template_context': {'ogrenci_ad': 'Ali'},
+            },
+        })
+        self.assertTrue(process_queue_item(item, WhatsAppCloudClient()))
+        self.assertEqual(mock_template.call_args.kwargs['language_code'], 'tr_TR')
 
 
 class CampaignTemplateRequirementTest(TestCase):

@@ -341,10 +341,12 @@ def send_karne_notify(
                 )
 
     if sent:
-        from apps.communication.application.celery_dispatch import (
-            dispatch_outbound_queue_after_commit,
-        )
-        dispatch_outbound_queue_after_commit()
+        from apps.communication.application.bulk_dispatch import pool_active
+        if not pool_active():
+            from apps.communication.application.celery_dispatch import (
+                dispatch_outbound_queue_after_commit,
+            )
+            dispatch_outbound_queue_after_commit()
 
     return {
         'sent': sent,
@@ -395,7 +397,10 @@ def send_karne_notify_bulk(
     student_results: list[dict] = []
     message_ids: list[str] = []
     skipped_recipients: list[dict] = []
+    from apps.communication.application.bulk_dispatch import map_bulk, queue_workers
+
     allowed_veli = {int(x) for x in veli_ids} if veli_ids is not None else None
+    jobs: list[dict] = []
 
     for item in items:
         karne = item['karne']
@@ -429,35 +434,50 @@ def send_karne_notify_bulk(
                 'errors': [reason],
             })
             continue
+        jobs.append({
+            'item': item,
+            'student_name': student_name,
+            'selected': selected,
+            'send_student': send_student,
+        })
+
+    def _send_one(job: dict):
+        item = job['item']
         try:
-            result = send_karne_notify(
+            return send_karne_notify(
                 kurum_id=kurum_id,
                 exam_id=exam_id,
                 answer_id=item['answer_id'],
-                karne=karne,
+                karne=item['karne'],
                 pdf_bytes=item['pdf_bytes'],
                 filename=item['filename'],
-                veli_ids=selected,
-                include_student=send_student,
+                veli_ids=job['selected'],
+                include_student=job['send_student'],
                 sent_by_user_id=sent_by_user_id,
                 sube_id=item.get('sube_id') or sube_id,
             )
         except ValueError as exc:
+            return exc
+
+    for job, result in zip(jobs, map_bulk([lambda job=job: _send_one(job) for job in jobs])):
+        student_name = job['student_name']
+        item = job['item']
+        if isinstance(result, Exception):
             skipped += 1
-            errors.append(f'{student_name}: {exc}')
+            errors.append(f'{student_name}: {result}')
             skipped_recipients.append({
                 'contact_name': student_name,
                 'phone': '',
                 'contact_type': '',
                 'student_name': student_name,
                 'status': 'FAILED',
-                'failed_reason': str(exc),
+                'failed_reason': str(result),
             })
             student_results.append({
                 'answer_id': item['answer_id'],
                 'student_name': student_name,
                 'sent': 0,
-                'errors': [str(exc)],
+                'errors': [str(result)],
             })
             continue
         sent += result['sent']
@@ -472,6 +492,12 @@ def send_karne_notify_bulk(
             'sent': result['sent'],
             'errors': result['errors'],
         })
+
+    if sent and queue_workers() > 1:
+        from apps.communication.application.celery_dispatch import (
+            dispatch_outbound_queue_after_commit,
+        )
+        dispatch_outbound_queue_after_commit()
 
     return {
         'sent': sent,

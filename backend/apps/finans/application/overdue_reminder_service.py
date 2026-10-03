@@ -205,10 +205,13 @@ class OverdueReminderService:
             veli_selections=veli_selections,
             sube_id=sube_id,
         )
+        from apps.communication.application.bulk_dispatch import map_bulk
+
         sent = 0
         skipped = 0
         errors: list[str] = []
         results = []
+        jobs = []
 
         for item in preview['recipients']:
             taksit_ids_group = item.get('taksit_ids') or []
@@ -242,25 +245,35 @@ class OverdueReminderService:
                     results.append({**base, 'status': 'skipped', 'message': 'Hatırlatma zaten gönderildi'})
                     continue
 
-            result = dispatch_event(
+            context = item.get('context') or {
+                'veli_ad': veli_adi,
+                'ogrenci_ad': ogrenci_adi,
+            }
+            body = item['rendered_body']
+            jobs.append((base, ogrenci_adi, taksit_ids_group, lambda veli_id=veli_id, context=context, source_id=source_id, body=body: dispatch_event(
                 kurum_id,
                 'odeme.gecikme',
-                recipient=NotificationRecipient.veli(item['veli_id']),
-                context=item.get('context') or {
-                    'veli_ad': veli_adi,
-                    'ogrenci_ad': ogrenci_adi,
-                },
+                recipient=NotificationRecipient.veli(veli_id),
+                context=context,
                 source=MessageSource(module=SOURCE_ODEME, ref_id=source_id),
                 sent_by_user_id=sent_by_user_id,
-                fallback_body=item['rendered_body'],
+                fallback_body=body,
                 # Şablon eşlemesi ve WhatsApp hattı alıcının şubesine göre çözülsün
                 sube_id=sube_id,
-            )
-            if result and result.success:
+            )))
+
+        for (base, ogrenci_adi, taksit_ids_group, _fn), result in zip(
+            jobs, map_bulk([fn for _b, _o, _t, fn in jobs]),
+        ):
+            if result and not isinstance(result, Exception) and result.success:
                 sent += 1
                 results.append({**base, 'status': 'sent'})
             else:
-                err = (result.errors[0] if result and result.errors else 'Gönderilemedi')
+                err = (
+                    result.errors[0]
+                    if result and not isinstance(result, Exception) and result.errors
+                    else 'Gönderilemedi'
+                )
                 label = taksit_ids_group[0] if taksit_ids_group else '?'
                 errors.append(f'Öğrenci {ogrenci_adi} (taksit {label}): {err}')
                 skipped += 1

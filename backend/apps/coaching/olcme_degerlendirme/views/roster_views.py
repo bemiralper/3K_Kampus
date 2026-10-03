@@ -816,17 +816,20 @@ def exam_hatirlatma_send(request, exam_pk):
     event, err_resp = _notify_event_or_error(request.data.get('event_key'))
     if err_resp:
         return err_resp
+    from apps.communication.application.bulk_dispatch import map_bulk
+
     ids = _int_list(request.data.get('participant_ids'))
     include_student = bool(request.data.get('include_student'))
     selected_veli = set(_int_list(request.data.get('veli_ids')))
     sent = 0
     skipped = 0
     errors = []
+    jobs = []
+    sent_by = getattr(request.user, 'id', None)
     for row in _hatirlatma_rows(
         exam, ids, opt_in_category=event.opt_in_category, event_key=event.key,
     ):
         p = ExamParticipant.objects.select_related('student', 'room', 'exam_session').get(pk=row['participant_id'])
-        row_sent = False
         for item in row['recipients']:
             if item['recipient_type'] == 'veli':
                 if not item['veli_id'] or item['veli_id'] not in selected_veli:
@@ -840,7 +843,8 @@ def exam_hatirlatma_send(request, exam_pk):
                     skipped += 1
                     continue
                 ctx = _hatirlatma_ctx(exam, p, veli_ad=item['display_name'])
-                result = dispatch_event(
+                label = item['display_name'] or 'Veli'
+                jobs.append((p, label, lambda veli=veli, p=p, ctx=ctx: dispatch_event(
                     exam.kurum_id,
                     event.key,
                     recipient=NotificationRecipient.veli(veli.id),
@@ -850,20 +854,14 @@ def exam_hatirlatma_send(request, exam_pk):
                         ref_id=f'{event.key}:{exam.id}:{p.id}:veli:{veli.id}',
                     ),
                     sube_id=exam.sube_id,
-                    sent_by_user_id=getattr(request.user, 'id', None),
-                )
-                if result and result.success:
-                    sent += 1
-                    row_sent = True
-                else:
-                    skipped += 1
-                    errors.append(item['display_name'] or 'Veli')
+                    sent_by_user_id=sent_by,
+                )))
             elif item['recipient_type'] == 'ogrenci' and include_student:
                 if item['skip_reason']:
                     skipped += 1
                     continue
                 ctx = _hatirlatma_ctx(exam, p)
-                result = dispatch_event(
+                jobs.append((p, '', lambda p=p, ctx=ctx: dispatch_event(
                     exam.kurum_id,
                     event.key,
                     recipient=NotificationRecipient.ogrenci(p.student_id),
@@ -873,15 +871,22 @@ def exam_hatirlatma_send(request, exam_pk):
                         ref_id=f'{event.key}:{exam.id}:{p.id}:ogrenci',
                     ),
                     sube_id=exam.sube_id,
-                    sent_by_user_id=getattr(request.user, 'id', None),
-                )
-                if result and result.success:
-                    sent += 1
-                    row_sent = True
-                else:
-                    skipped += 1
-        if row_sent and event.key == HATIRLATMA_EVENT:
-            mark_seat_notified(p)
+                    sent_by_user_id=sent_by,
+                )))
+    notified: set[int] = set()
+    for (p, label, _fn), result in zip(jobs, map_bulk([fn for _p, _label, fn in jobs])):
+        if result and not isinstance(result, Exception) and result.success:
+            sent += 1
+            notified.add(p.id)
+        else:
+            skipped += 1
+            if label:
+                errors.append(label)
+    if event.key == HATIRLATMA_EVENT:
+        for p, _label, _fn in jobs:
+            if p.id in notified:
+                mark_seat_notified(p)
+                notified.discard(p.id)
     return Response({'sent': sent, 'skipped': skipped, 'errors': errors})
 
 

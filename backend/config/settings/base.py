@@ -74,6 +74,12 @@ COMMUNICATION_QUEUE_BATCH_SIZE = int(
     os.environ.get('COMMUNICATION_QUEUE_BATCH_SIZE', str(COMM_QUEUE_BATCH_SIZE))
 )
 COMMUNICATION_QUEUE_THROTTLE_MS = int(os.environ.get('COMMUNICATION_QUEUE_THROTTLE_MS', '200'))
+# Toplu gönderim. Meta varsayılan tavanı yaklaşık 80 mesaj/sn (gelen+giden).
+# Tavan süreç başınadır; 3 gunicorn işçisi × 20 = 60, gelen mesaja pay kalır.
+# Aynı numaraya 6 sn ara (131056). Tek işçi eski seri beklemeyi kullanır.
+COMMUNICATION_QUEUE_WORKERS = int(os.environ.get('COMMUNICATION_QUEUE_WORKERS', '8'))
+COMMUNICATION_QUEUE_MAX_PER_SECOND = int(os.environ.get('COMMUNICATION_QUEUE_MAX_PER_SECOND', '20'))
+COMMUNICATION_QUEUE_PAIR_GAP_SECONDS = float(os.environ.get('COMMUNICATION_QUEUE_PAIR_GAP_SECONDS', '6'))
 
 # Celery + Redis (opsiyonel — boş bırakılırsa cron/management command kullanılır)
 CELERY_BROKER_URL = os.environ.get('CELERY_BROKER_URL', '')

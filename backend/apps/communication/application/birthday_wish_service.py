@@ -213,6 +213,7 @@ def send_birthday_wishes_for_kurum(
     today = on_date or timezone.localdate()
     result = BirthdayWishRunResult(date=today.isoformat())
     media_cache: dict[int | None, list[BirthdayMediaAsset]] = {}
+    pending: list = []
 
     for kayit in _birthday_students(kurum_id, today, sube_id=sube_id):
         result.scanned += 1
@@ -300,7 +301,7 @@ def send_birthday_wishes_for_kurum(
             result.details.append(detail)
             continue
 
-        send_result = dispatch_event(
+        pending.append((log, detail, asset, lambda ogrenci=ogrenci, context=context, attachment=attachment, scope_sube=scope_sube: dispatch_event(
             kurum_id,
             EVENT_KEY,
             recipient=NotificationRecipient.ogrenci(ogrenci.id),
@@ -308,7 +309,13 @@ def send_birthday_wishes_for_kurum(
             attachment=attachment,
             source=MessageSource(module='ogrenci', ref_id=f'bday-{ogrenci.id}-{today.year}'),
             sube_id=scope_sube,
-        )
+        )))
+
+    from apps.communication.application.bulk_dispatch import map_bulk
+
+    for (log, detail, asset, _fn), send_result in zip(
+        pending, map_bulk([fn for *_meta, fn in pending]),
+    ):
         if isinstance(send_result, SendResult) and send_result.success:
             result.sent += 1
             log.status = 'sent'
@@ -319,7 +326,11 @@ def send_birthday_wishes_for_kurum(
             detail['message_id'] = send_result.message_id
         else:
             result.failed += 1
-            errors = getattr(send_result, 'errors', None) or ['Gönderim başarısız']
+            errors = (
+                list(send_result.errors)
+                if isinstance(send_result, SendResult) and send_result.errors
+                else ['Gönderim başarısız']
+            )
             # Başarısızsa logu sil — aynı gün cron/manuel tekrar deneyebilsin
             log.delete()
             detail['status'] = 'failed'

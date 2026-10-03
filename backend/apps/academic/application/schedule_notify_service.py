@@ -1654,6 +1654,9 @@ def send_class_schedules(
             exclude_ids=exclude_veli_ids,
         )
 
+        from apps.communication.application.bulk_dispatch import map_bulk
+
+        send_jobs = []
         if send_veli:
             for veli, student in recipients['veli_targets']:
                 if veli.id not in allowed_veliler:
@@ -1663,7 +1666,9 @@ def send_class_schedules(
                     'ogrenci_ad': f'{student.ad} {student.soyad}'.strip(),
                     'veli_ad': f'{veli.ad} {veli.soyad}'.strip(),
                 }
-                result = dispatch_event(
+                veli_name = f'{veli.ad} {veli.soyad}'.strip()
+                phone = effective_veli_phone(veli, student) or ''
+                send_jobs.append(('veli', veli.id, veli_name, phone, lambda veli=veli, ctx=ctx: dispatch_event(
                     kurum_id,
                     EVENT_KEY,
                     recipient=NotificationRecipient.veli(veli.id),
@@ -1672,34 +1677,7 @@ def send_class_schedules(
                     source=source,
                     sube_id=sube_id,
                     sent_by_user_id=sent_by,
-                )
-                veli_name = f'{veli.ad} {veli.soyad}'.strip()
-                if isinstance(result, SendResult) and result.success:
-                    veli_ok += 1
-                    delivered.append(_recipient_row(
-                        kind='veli',
-                        person_id=veli.id,
-                        name=veli_name,
-                        phone=effective_veli_phone(veli, student) or '',
-                        status='sent',
-                        sinif_ad=cls_row['sinif_ad'],
-                    ))
-                else:
-                    err = (
-                        '; '.join(result.errors)
-                        if isinstance(result, SendResult) and result.errors
-                        else 'Veli gönderimi başarısız'
-                    )
-                    errors.append(f'veli:{veli.id}: {err}')
-                    delivered.append(_recipient_row(
-                        kind='veli',
-                        person_id=veli.id,
-                        name=veli_name,
-                        phone=effective_veli_phone(veli, student) or '',
-                        status='failed',
-                        error=err,
-                        sinif_ad=cls_row['sinif_ad'],
-                    ))
+                )))
 
         if send_ogrenci:
             for student in recipients['students']:
@@ -1712,7 +1690,9 @@ def send_class_schedules(
                     'ogrenci_ad': f'{student.ad} {student.soyad}'.strip(),
                     'veli_ad': '',
                 }
-                result = dispatch_event(
+                student_name = f'{student.ad} {student.soyad}'.strip()
+                phone = student.telefon or ''
+                send_jobs.append(('ogrenci', student.id, student_name, phone, lambda student=student, ctx=ctx: dispatch_event(
                     kurum_id,
                     EVENT_KEY,
                     recipient=NotificationRecipient.ogrenci(student.id),
@@ -1721,34 +1701,32 @@ def send_class_schedules(
                     source=source,
                     sube_id=sube_id,
                     sent_by_user_id=sent_by,
+                )))
+
+        outcomes = map_bulk([fn for *_meta, fn in send_jobs])
+        for (kind, person_id, name, phone, _fn), result in zip(send_jobs, outcomes):
+            ok = isinstance(result, SendResult) and result.success
+            err = ''
+            if ok and kind == 'veli':
+                veli_ok += 1
+            elif ok:
+                ogrenci_ok += 1
+            else:
+                err = (
+                    '; '.join(result.errors)
+                    if isinstance(result, SendResult) and result.errors
+                    else ('Veli gönderimi başarısız' if kind == 'veli' else 'Öğrenci gönderimi başarısız')
                 )
-                student_name = f'{student.ad} {student.soyad}'.strip()
-                if isinstance(result, SendResult) and result.success:
-                    ogrenci_ok += 1
-                    delivered.append(_recipient_row(
-                        kind='ogrenci',
-                        person_id=student.id,
-                        name=student_name,
-                        phone=(student.telefon or ''),
-                        status='sent',
-                        sinif_ad=cls_row['sinif_ad'],
-                    ))
-                else:
-                    err = (
-                        '; '.join(result.errors)
-                        if isinstance(result, SendResult) and result.errors
-                        else 'Öğrenci gönderimi başarısız'
-                    )
-                    errors.append(f'ogrenci:{student.id}: {err}')
-                    delivered.append(_recipient_row(
-                        kind='ogrenci',
-                        person_id=student.id,
-                        name=student_name,
-                        phone=(student.telefon or ''),
-                        status='failed',
-                        error=err,
-                        sinif_ad=cls_row['sinif_ad'],
-                    ))
+                errors.append(f'{kind}:{person_id}: {err}')
+            delivered.append(_recipient_row(
+                kind=kind,
+                person_id=person_id,
+                name=name,
+                phone=phone,
+                status='sent' if ok else 'failed',
+                error=err,
+                sinif_ad=cls_row['sinif_ad'],
+            ))
 
         if veli_ok or ogrenci_ok:
             status = (
@@ -1978,6 +1956,7 @@ def send_teacher_schedules(
     total_skipped = 0
     total_errors = 0
     sent_by = getattr(user, 'id', None)
+    send_jobs = []
 
     for row in preview['teachers']:
         tid = row['teacher_id']
@@ -2045,7 +2024,12 @@ def send_teacher_schedules(
             ctx['kurum_ad'] = term.kurum.ad if term.kurum_id else ''
             ctx['sube'] = term.sube.ad if term.sube_id else ''
 
-        result = dispatch_event(
+        send_jobs.append((tid, row, ctx, filename, pdf_bytes))
+
+    from apps.communication.application.bulk_dispatch import map_bulk
+
+    outcomes = map_bulk([
+        lambda tid=tid, ctx=ctx, filename=filename, pdf_bytes=pdf_bytes: dispatch_event(
             kurum_id,
             TEACHER_EVENT_KEY,
             recipient=NotificationRecipient.personel(tid),
@@ -2055,6 +2039,9 @@ def send_teacher_schedules(
             sube_id=sube_id,
             sent_by_user_id=sent_by,
         )
+        for tid, _row, ctx, filename, pdf_bytes in send_jobs
+    ])
+    for (tid, row, _ctx, _filename, _pdf), result in zip(send_jobs, outcomes):
         if isinstance(result, SendResult) and result.success:
             person = _recipient_row(
                 kind='ogretmen',
