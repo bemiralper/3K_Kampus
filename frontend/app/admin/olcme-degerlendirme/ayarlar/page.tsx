@@ -191,7 +191,7 @@ export default function PuanKatsayilariPage() {
                   <label>Varsayılan yıl</label>
                   <select value={defaultYear} onChange={e => setDefaultYear(Number(e.target.value))}>
                     {data.managed_years.map(y => (
-                      <option key={y} value={y}>{y} YKS / LGS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
+                      <option key={y} value={y}>{y} YKS / LGS</option>
                     ))}
                   </select>
                 </div>
@@ -239,7 +239,7 @@ export default function PuanKatsayilariPage() {
                   marginBottom: 16, padding: '12px 14px', borderRadius: 10,
                   background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13,
                 }}>
-                  Henüz resmi değil — 2025 kopyası, düzenleyebilirsiniz.
+                  TYT katsayıları Okulvizyon 2026 karnesine göredir. Tahmini Türkiye sırası ÖSYM 2026 ham puan dağılımından okunur. AYT katsayıları 2025 tablosudur.
                 </div>
               )}
 

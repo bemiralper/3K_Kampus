@@ -28,6 +28,23 @@ class TytScoreYearTest(SimpleTestCase):
         self.assertAlmostEqual(r['puan'], 428.67, places=1)
         self.assertLess(abs(r['puan'] - 428.364), 0.4)
 
+    def test_2026_matches_okulvizyon_cap_tyt(self):
+        # ÇAP TYT 1 — Zeynep Hınıslıoğlu, karnedeki ham puan 447,183
+        nets = {
+            'Türkçe': 35.0,
+            'Sosyal Bilimler': 17.5,
+            'Temel Matematik': 34.0,
+            'Fen Bilimleri': 15.75,
+        }
+        r = calculate_tyt_score(nets, year=2026)
+        self.assertAlmostEqual(r['puan'], 447.183, places=2)
+
+    def test_2026_ranking_uses_osym_ham_distribution(self):
+        est = estimate_ranking(447.183, 'YKS_TYT', 2026)
+        self.assertEqual(est['referans_yil'], 2026)
+        self.assertGreater(est['tahmini_siralama'], 5_524)
+        self.assertLess(est['tahmini_siralama'], 17_050)
+
 
 class AytOptionalPhilosophyScoreTest(SimpleTestCase):
     def test_soz_adds_optional_philosophy_to_felsefe_grubu(self):

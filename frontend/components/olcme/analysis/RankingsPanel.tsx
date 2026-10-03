@@ -214,7 +214,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
             >
               {(years?.length ? years : [2024, 2025, 2026]).map(y => (
                 <option key={y} value={y}>
-                  {y} YKS{y === defaultYear ? ' (varsayılan)' : ''}{y === 2026 ? ' — henüz resmi değil' : ''}
+                  {y} YKS{y === defaultYear ? ' (varsayılan)' : ''}
                 </option>
               ))}
             </select>

@@ -176,7 +176,8 @@ ROLES_DATA = [
         'level': 50,
         'is_system_role': True,
         'permissions': [
-            'finans.manage', 'ogrenci.read', 'ogrenci.write', 'ogrenci.notes',
+            'finans.manage',
+            'ogrenci.read', 'ogrenci.write', 'ogrenci.delete', 'ogrenci.notes', 'ogrenci.manage',
             'personel.read', 'personel.write',
             # Akademik Operasyon — admin ile aynı tam yetki
             'sinif.manage',

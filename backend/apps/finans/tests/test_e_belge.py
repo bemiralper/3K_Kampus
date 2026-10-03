@@ -166,6 +166,38 @@ class TahsilatFaturaApiTests(TestCase):
         self.assertEqual(res.status_code, 200, res.content)
         again.assert_not_called()
 
+    def test_fatura_numarasi_tahsilat_kimliginden_degil_siradan_verilir(self):
+        ikinci = Tahsilat.objects.create(
+            sozlesme=self.sozlesme, tutar=25000,
+            tahsilat_tarihi=self.tahsilat.tahsilat_tarihi, durum=TahsilatDurum.AKTIF,
+        )
+        EBelge.objects.create(
+            tahsilat=Tahsilat.objects.create(
+                sozlesme=self.sozlesme, tutar=1000,
+                tahsilat_tarihi=self.tahsilat.tahsilat_tarihi, durum=TahsilatDurum.AKTIF,
+            ),
+            kurum=self.kurum,
+            belge_tipi='earsiv',
+            durum=EBelgeDurum.HATA,
+            yerel_no=f'LMS{self.tahsilat.tahsilat_tarihi.year}000000166',
+        )
+        payload = {'adres': 'Atatürk Cad. No 1', 'il': 'Erzurum', 'ilce': 'Yakutiye'}
+        with patch('apps.finans.application.e_belge_service.is_e_invoice_user', return_value=False), \
+             patch('apps.finans.application.e_belge_service.save_as_draft', return_value={'number': '', 'id': '1', 'scenario': 'eArchive'}):
+            ilk = self.client.post(
+                f'/odeme-takip/api/tahsilatlar/{self.tahsilat.id}/fatura/gonder/',
+                data=payload, format='json', **self.headers,
+            )
+            sonra = self.client.post(
+                f'/odeme-takip/api/tahsilatlar/{ikinci.id}/fatura/gonder/',
+                data=payload, format='json', **self.headers,
+            )
+        year = self.tahsilat.tahsilat_tarihi.year
+        self.assertEqual(ilk.status_code, 200, ilk.content)
+        self.assertEqual(sonra.status_code, 200, sonra.content)
+        self.assertEqual(ilk.json()['mevcut']['yerel_no'], f'LMS{year}000000001')
+        self.assertEqual(sonra.json()['mevcut']['yerel_no'], f'LMS{year}000000002')
+
     def test_dahil_hizmetler_ayri_kalem_olur(self):
         paket = GrupDersi.objects.create(
             ad='Eşit Ağırlık Grup Matematik Ağırlıklı', kod='EA-MAT',

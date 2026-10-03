@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timezone
 from decimal import Decimal
 
+from django.db import transaction
 from django.utils import timezone as dj_timezone
 
 from apps.communication.application.token_crypto import decrypt_access_token
@@ -92,7 +93,7 @@ def gonder(tahsilat, user, overrides: dict | None = None) -> dict:
     belge_tipi = preview['belge_tipi']
     alias = preview['alici_alias']
     belge = mevcut or EBelge(tahsilat=tahsilat, kurum_id=tahsilat.sozlesme.kurum_id, ettn=uuid.uuid4())
-    yerel_no = belge.yerel_no or _yerel_no(tahsilat)
+    yerel_no = _ayir_yerel_no(belge, tahsilat, belge_tipi)
     issue = tahsilat.tahsilat_tarihi.isoformat()
     supplier = _supplier(tahsilat, ayar)
     customer = {
@@ -358,9 +359,39 @@ def _belge(tahsilat):
         return None
 
 
-def _yerel_no(tahsilat) -> str:
+def _ayir_yerel_no(belge, tahsilat, belge_tipi) -> str:
+    """Aynı tahsilatın yeniden denemesinde numarayı korur; yenisinde sıradaki boş numarayı ayırır."""
+    if belge.yerel_no:
+        return belge.yerel_no
+    with transaction.atomic():
+        UyumsoftAyar.objects.select_for_update().get(kurum_id=tahsilat.sozlesme.kurum_id)
+        no = _sonraki_yerel_no(tahsilat)
+        belge.yerel_no = no
+        belge.belge_tipi = belge_tipi or EBelgeTipi.EARSIV
+        belge.kurum_id = tahsilat.sozlesme.kurum_id
+        belge.save()
+        return no
+
+
+def _sonraki_yerel_no(tahsilat) -> str:
+    """LMS + yıl + 9 hane. Tahsilat kimliği değil, o yılın kullanılmayan en küçük sırası."""
     year = tahsilat.tahsilat_tarihi.year
-    return f'LMS{year}{int(tahsilat.id):09d}'
+    prefix = f'LMS{year}'
+    kullanilan: set[int] = set()
+    numaralar = EBelge.objects.filter(
+        kurum_id=tahsilat.sozlesme.kurum_id,
+        yerel_no__startswith=prefix,
+    ).values_list('yerel_no', flat=True)
+    for no in numaralar:
+        suffix = str(no)[len(prefix):]
+        if suffix.isdigit():
+            kullanilan.add(int(suffix))
+    sira = 1
+    while sira in kullanilan:
+        sira += 1
+    if sira > 999_999_999:
+        raise UyumsoftError('Bu yılın fatura numarası serisi doldu.')
+    return f'{prefix}{sira:09d}'
 
 
 def _kaydet(belge, user, belge_tipi, yerel_no, alici, alias, satirlar, totals, *,

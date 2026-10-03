@@ -159,7 +159,7 @@ export default function YeniSinavPage() {
   const [siniflar, setSiniflar]                 = useState<LookupItem[]>([]);
   const [sinifSeviyeleri, setSinifSeviyeleri]   = useState<LookupItem[]>([]);
   const [denemePaketleri, setDenemePaketleri]   = useState<LookupItem[]>([]);
-  const [kurumDefaultYear, setKurumDefaultYear] = useState(2025);
+  const [kurumDefaultYear, setKurumDefaultYear] = useState(2026);
   const [managedYears, setManagedYears]         = useState<number[]>([2024, 2025, 2026]);
   const [existingNames, setExistingNames]       = useState<string[]>([]);
 
@@ -844,7 +844,7 @@ export default function YeniSinavPage() {
                   >
                     <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
                     {managedYears.map(yr => (
-                      <option key={yr} value={yr}>{yr} YKS{yr === 2026 ? ' (henüz resmi değil)' : ''}</option>
+                      <option key={yr} value={yr}>{yr} YKS</option>
                     ))}
                   </select>
                 </label>

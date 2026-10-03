@@ -236,7 +236,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   const [loadingTyt, setLoadingTyt] = useState(false);
   const [linkingTyt, setLinkingTyt] = useState(false);
   const [showTytSelect, setShowTytSelect] = useState(false);
-  const [kurumDefaultYear, setKurumDefaultYear] = useState(2025);
+  const [kurumDefaultYear, setKurumDefaultYear] = useState(2026);
   const [managedYears, setManagedYears] = useState<number[]>([2024, 2025, 2026]);
 
   const isAyt = exam.exam_type === 'YKS_AYT';
@@ -562,7 +562,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   >
                     <option value="">Kurum varsayılanı ({kurumDefaultYear})</option>
                     {managedYears.map(y => (
-                      <option key={y} value={y}>{y} YKS{y === 2026 ? ' (henüz resmi değil)' : ''}</option>
+                      <option key={y} value={y}>{y} YKS</option>
                     ))}
                   </select>
                 </div>

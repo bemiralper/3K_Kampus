@@ -37,29 +37,51 @@ def factory_coefficients(year: int, kind: str) -> dict:
     return dict(get_factory_coefficients(kind, year))
 
 
+def _same_coefficients(left: dict | None, right: dict) -> bool:
+    if not isinstance(left, dict) or set(left) != set(right):
+        return False
+    for key, value in right.items():
+        try:
+            if abs(float(left.get(key, 0)) - float(value)) > 1e-9:
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
 def ensure_kurum_defaults(kurum_id: int) -> OlcmePuanAyar:
     """Kurum ayarını ve 2024/2025/2026 setlerini oluşturur."""
     ayar, _ = OlcmePuanAyar.objects.get_or_create(
         kurum_id=kurum_id,
         defaults={'default_puan_yili': DEFAULT_PUAN_YILI},
     )
+    legacy_2026_tyt = dict(TYT_KATSAYILAR[2025])
     for year in MANAGED_PUAN_YILLARI:
         published = year != 2026
         for kind, _table in KIND_FACTORY.items():
-            OlcmeKatsayiSeti.objects.get_or_create(
+            expected = factory_coefficients(year, kind)
+            row, created = OlcmeKatsayiSeti.objects.get_or_create(
                 kurum_id=kurum_id,
                 year=year,
                 kind=kind,
                 defaults={
-                    'coefficients': factory_coefficients(year, kind),
+                    'coefficients': expected,
                     'is_published': published,
                 },
             )
+            if (
+                not created
+                and year == 2026
+                and kind == OlcmeKatsayiSeti.Kind.TYT
+                and _same_coefficients(row.coefficients, legacy_2026_tyt)
+            ):
+                row.coefficients = expected
+                row.save(update_fields=['coefficients', 'updated_at'])
     return ayar
 
 
 def reset_year_coefficients(kurum_id: int, year: int) -> list:
-    """Yılın katsayı setlerini factory tabloya (2026 → 2025 kopyası) sıfırlar."""
+    """Yılın katsayı setlerini factory tabloya sıfırlar. AYT 2026, 2025 kopyasıdır."""
     ensure_kurum_defaults(kurum_id)
     published = year != 2026
     updated = []
@@ -88,7 +110,7 @@ def resolve_puan_yili(exam, request_year=None) -> int:
     1. İstek ranking_year
     2. Sınav.puan_yili
     3. Kurum varsayılanı
-    4. 2025
+    4. 2026
     """
     if request_year:
         return int(request_year)

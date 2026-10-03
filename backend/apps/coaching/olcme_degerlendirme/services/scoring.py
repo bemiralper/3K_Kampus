@@ -23,6 +23,9 @@ TYT_KATSAYILAR = {
     2023: {'Türkçe': 2.89, 'Sosyal Bilimler': 3.02, 'Temel Matematik': 3.02, 'Fen Bilimleri': 3.06, '_base': 141.90},
     2024: {'Türkçe': 2.91, 'Sosyal Bilimler': 2.94, 'Temel Matematik': 2.93, 'Fen Bilimleri': 3.15, '_base': 144.953},
     2025: {'Türkçe': 2.83, 'Sosyal Bilimler': 2.99, 'Temel Matematik': 3.28, 'Fen Bilimleri': 2.53, '_base': 145.47},
+    # Okulvizyon ÇAP TYT 1 (2026) karnesinden tersine çözüldü. 120 net = 500.
+    # ÖSYM 2026 standart puan tablosu değil; deneme ham puanı bu katsayılarla çıkar.
+    2026: {'Türkçe': 2.9084, 'Sosyal Bilimler': 2.9367, 'Temel Matematik': 2.9255, 'Fen Bilimleri': 3.1482, '_base': 144.945},
 }
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -203,7 +206,8 @@ FACTORY_TABLES = {
 
 def get_factory_coefficients(kind: str, year: int) -> dict:
     """
-    Hardcoded ÖSYM tablosu. 2026 henüz yok — 2025 kopyası döner.
+    Hardcoded tablo. TYT 2026 Okulvizyon karnesindendir.
+    AYT 2026 satırı yoksa 2025 kopyası döner.
     """
     table = FACTORY_TABLES.get(kind, TYT_KATSAYILAR)
     lookup_year = year
@@ -611,7 +615,7 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
     """
     Geçmiş yıl verilerine göre tahmini Türkiye sıralaması.
 
-    2025 AYT/TYT tabloları ÖSYM «YKS sınav puanlarının yığınsal dağılımı»
+    2025 ve 2026 AYT/TYT tabloları ÖSYM «YKS sınav puanlarının yığınsal dağılımı»
     (ham puan, OBP'siz) dilimleridir. SAY / EA / SÖZ aynı puanda çok farklı
     sıralama üretir — yerleştirme tabloları kopyalanmamalı.
 
@@ -685,6 +689,30 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
             (140, 2_303_695),
             (120, 2_310_493),
         ],
+        # ÖSYM 2026-YKS sınav puanı (ham, OBP'siz) yığınsal dağılımı.
+        2026: [
+            (500, 5),
+            (480, 822),
+            (460, 5_524),
+            (440, 17_050),
+            (420, 37_770),
+            (400, 67_394),
+            (380, 106_404),
+            (360, 155_008),
+            (340, 218_156),
+            (320, 302_758),
+            (300, 417_935),
+            (280, 577_094),
+            (260, 787_244),
+            (240, 1_045_340),
+            (220, 1_332_391),
+            (200, 1_630_698),
+            (180, 1_914_717),
+            (160, 2_125_244),
+            (140, 2_184_873),
+            (120, 2_187_723),
+            (100, 2_187_743),
+        ],
     }
 
     # ── AYT SAY Sıralama Tabloları ───────────────────────────────────────
@@ -753,6 +781,29 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
             (140, 1_277_493),
             (120, 1_291_435),
         ],
+        2026: [
+            (500, 1),
+            (480, 1_453),
+            (460, 8_786),
+            (440, 22_370),
+            (420, 39_624),
+            (400, 58_728),
+            (380, 78_806),
+            (360, 100_553),
+            (340, 125_045),
+            (320, 153_304),
+            (300, 187_034),
+            (280, 228_643),
+            (260, 279_885),
+            (240, 344_536),
+            (220, 430_074),
+            (200, 549_793),
+            (180, 721_488),
+            (160, 923_753),
+            (140, 1_078_515),
+            (120, 1_134_006),
+            (100, 1_135_718),
+        ],
     }
 
     # ── AYT EA Sıralama Tabloları (ÖSYM 2025 ham puan yığınsal dağılımı) ─
@@ -779,6 +830,29 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
             (140, 1_474_465),
             (120, 1_494_355),
         ],
+        2026: [
+            (500, 1),
+            (480, 52),
+            (460, 307),
+            (440, 874),
+            (420, 2_097),
+            (400, 4_545),
+            (380, 9_486),
+            (360, 23_452),
+            (340, 50_608),
+            (320, 89_520),
+            (300, 140_784),
+            (280, 210_499),
+            (260, 308_127),
+            (240, 440_752),
+            (220, 615_366),
+            (200, 832_251),
+            (180, 1_069_239),
+            (160, 1_272_506),
+            (140, 1_391_240),
+            (120, 1_420_558),
+            (100, 1_421_290),
+        ],
     }
 
     # ── AYT SÖZ Sıralama Tabloları (ÖSYM 2025 ham puan yığınsal dağılımı) ─
@@ -804,6 +878,29 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
             (160, 1_070_609),
             (140, 1_155_714),
             (120, 1_173_742),
+        ],
+        2026: [
+            (500, 1),
+            (480, 10),
+            (460, 74),
+            (440, 214),
+            (420, 560),
+            (400, 1_418),
+            (380, 3_936),
+            (360, 10_259),
+            (340, 23_653),
+            (320, 47_292),
+            (300, 86_560),
+            (280, 148_959),
+            (260, 238_848),
+            (240, 360_487),
+            (220, 515_916),
+            (200, 699_304),
+            (180, 873_860),
+            (160, 998_826),
+            (140, 1_065_157),
+            (120, 1_084_720),
+            (100, 1_085_698),
         ],
     }
 

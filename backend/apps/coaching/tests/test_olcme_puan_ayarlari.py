@@ -10,6 +10,7 @@ from apps.coaching.olcme_degerlendirme.models import (
     OlcmeKatsayiSeti,
 )
 from apps.coaching.olcme_degerlendirme.services.scoring import (
+    AYT_SAY_KATSAYILAR,
     TYT_KATSAYILAR,
     calculate_tyt_score,
 )
@@ -90,7 +91,7 @@ class OlcmePuanAyarlariTest(TestCase):
         res = self.client.get(AYAR_URL, **self.headers)
         self.assertEqual(res.status_code, 200)
         body = res.json()
-        self.assertEqual(body['default_puan_yili'], 2025)
+        self.assertEqual(body['default_puan_yili'], 2026)
         self.assertEqual(body['managed_years'], [2024, 2025, 2026])
         self.assertEqual(len(body['years']), 3)
         self.assertEqual(OlcmeKatsayiSeti.objects.filter(kurum=self.kurum).count(), 18)
@@ -101,7 +102,15 @@ class OlcmePuanAyarlariTest(TestCase):
         self.assertFalse(by_year[2026]['is_published'])
         self.assertEqual(
             by_year[2026]['sets']['TYT']['coefficients'],
-            by_year[2025]['sets']['TYT']['coefficients'],
+            TYT_KATSAYILAR[2026],
+        )
+        self.assertNotEqual(
+            by_year[2026]['sets']['TYT']['coefficients']['Türkçe'],
+            by_year[2025]['sets']['TYT']['coefficients']['Türkçe'],
+        )
+        self.assertEqual(
+            by_year[2026]['sets']['AYT_SAY']['coefficients'],
+            by_year[2025]['sets']['AYT_SAY']['coefficients'],
         )
         self.assertAlmostEqual(
             by_year[2025]['sets']['TYT']['coefficients']['Türkçe'],
@@ -112,6 +121,14 @@ class OlcmePuanAyarlariTest(TestCase):
         self.assertEqual(by_year[2025]['sets']['LGS']['coefficients']['_base'], 196.604)
         self.assertEqual(by_year[2025]['sets']['LGS_7']['coefficients']['Sosyal Bilgiler'], 1.731)
         self.assertNotIn('İnkılap Tarihi', by_year[2025]['sets']['LGS_7']['coefficients'])
+
+    def test_explicit_2025_default_is_kept(self):
+        patch = self.client.patch(
+            AYAR_URL, {'default_puan_yili': 2025}, format='json', **self.headers,
+        )
+        self.assertEqual(patch.status_code, 200)
+        again = self.client.get(AYAR_URL, **self.headers)
+        self.assertEqual(again.json()['default_puan_yili'], 2025)
 
     def test_default_year_used_when_no_ranking_year(self):
         self.client.get(AYAR_URL, **self.headers)
@@ -169,7 +186,7 @@ class OlcmePuanAyarlariTest(TestCase):
         self.assertNotAlmostEqual(puan, factory_2025, places=1)
         self.assertGreater(puan, factory_2025)
 
-    def test_2026_reset_copies_2025_and_stays_unpublished(self):
+    def test_2026_reset_restores_okulvizyon_tyt_and_keeps_ayt_on_2025(self):
         self.client.get(AYAR_URL, **self.headers)
         dirty = dict(TYT_KATSAYILAR[2025])
         dirty['Türkçe'] = 99.0
@@ -184,7 +201,11 @@ class OlcmePuanAyarlariTest(TestCase):
         body = reset.json()
         self.assertFalse(body['is_published'])
         self.assertFalse(body['sets']['TYT']['is_published'])
-        self.assertEqual(body['sets']['TYT']['coefficients'], dict(TYT_KATSAYILAR[2025]))
+        self.assertEqual(body['sets']['TYT']['coefficients'], dict(TYT_KATSAYILAR[2026]))
+        self.assertEqual(
+            body['sets']['AYT_SAY']['coefficients'],
+            dict(AYT_SAY_KATSAYILAR[2025]),
+        )
         row = OlcmeKatsayiSeti.objects.get(
             kurum=self.kurum, year=2026, kind=OlcmeKatsayiSeti.Kind.TYT,
         )

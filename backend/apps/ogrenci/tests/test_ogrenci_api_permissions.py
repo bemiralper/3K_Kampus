@@ -51,6 +51,16 @@ class OgrenciApiPermissionTests(TestCase):
         res = self.client.get(f'/ogrenciler/api/{self.ogrenci.id}/', **self.headers)
         self.assertEqual(res.status_code, 200)
 
+    def test_muhasebe_can_pasife_al(self):
+        self._login_as('muhasebe')
+        res = self.client.delete(
+            f'/ogrenciler/api/{self.ogrenci.id}/delete/',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.ogrenci.refresh_from_db()
+        self.assertFalse(self.ogrenci.aktif_mi)
+
     def test_koc_can_update_name(self):
         self._login_as('koc')
         res = self.client.put(

@@ -67,7 +67,7 @@ export default function AnalysisTab({ exam }: Props) {
   const [students, setStudents] = useState<StudentAnalysis[]>([]);
   const [classes, setClasses] = useState<ClassAnalysis[]>([]);
   const [rankings, setRankings] = useState<RankingItem[]>([]);
-  const [rankingMeta, setRankingMeta] = useState<{ top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number }>({ top_10_count: 0, bottom_10_count: 0, avg_score: 0, referans_yil: 2025 });
+  const [rankingMeta, setRankingMeta] = useState<{ top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number }>({ top_10_count: 0, bottom_10_count: 0, avg_score: 0, referans_yil: 2026 });
   const [rankingSections, setRankingSections] = useState<RankingSectionInfo[]>([]);
   const [rankingSectionAvgs, setRankingSectionAvgs] = useState<Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>>({});
   const [rankingAvgNet, setRankingAvgNet] = useState<number>(0);
@@ -81,9 +81,9 @@ export default function AnalysisTab({ exam }: Props) {
   const [error, setError] = useState('');
 
   // Sıralama yılı — sınav yılı veya kurum varsayılanı
-  const [rankingYear, setRankingYear] = useState<number>(exam.puan_yili ?? 2025);
+  const [rankingYear, setRankingYear] = useState<number>(exam.puan_yili ?? 2026);
   const [managedYears, setManagedYears] = useState<number[]>([2024, 2025, 2026]);
-  const [kurumDefaultYear, setKurumDefaultYear] = useState<number>(2025);
+  const [kurumDefaultYear, setKurumDefaultYear] = useState<number>(2026);
 
   // Student detail modal
   const [selectedStudent, setSelectedStudent] = useState<StudentAnalysis | null>(null);

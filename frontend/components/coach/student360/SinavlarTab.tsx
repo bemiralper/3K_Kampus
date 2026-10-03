@@ -365,7 +365,7 @@ export default function SinavlarTab({ studentId }: SinavlarTabProps) {
         setRankingYear((cur) => cur ?? payload.default_puan_yili);
       })
       .catch(() => {
-        setRankingYear((cur) => cur ?? 2025);
+        setRankingYear((cur) => cur ?? 2026);
       });
   }, []);
 

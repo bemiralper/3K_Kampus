@@ -1713,7 +1713,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'net_trend': net_trend,
         'dogruluk_orani': dogruluk_orani,
         'toplam_bos_potansiyel': total_bos_potansiyel,
-        'referans_yil': ranking_data.get('referans_yil', 2025),
+        'referans_yil': ranking_data.get('referans_yil', 2026),
         'exam_name': exam.name,
         'exam_type': exam.exam_type,
         'exam_type_label': _exam_type_short(exam.exam_type),

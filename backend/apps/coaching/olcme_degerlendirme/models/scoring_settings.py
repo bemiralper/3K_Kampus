@@ -5,7 +5,7 @@ from django.db import models
 
 
 MANAGED_PUAN_YILLARI = (2024, 2025, 2026)
-DEFAULT_PUAN_YILI = 2025
+DEFAULT_PUAN_YILI = 2026
 
 
 class OlcmePuanAyar(models.Model):

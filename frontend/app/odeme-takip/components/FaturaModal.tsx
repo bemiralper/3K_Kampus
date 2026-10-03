@@ -486,7 +486,7 @@ export default function FaturaModal({
               {taslak && (
                 <p className="fatura-done">
                   Fatura Uyumsoft’a iletildi. Onayı portaldan verin.
-                  {data.mevcut?.uyumsoft_no ? ` Belge no: ${data.mevcut.uyumsoft_no}.` : ""}
+                  {data.mevcut?.yerel_no ? ` Fatura no: ${data.mevcut.yerel_no}.` : ""}
                 </p>
               )}
             </>
