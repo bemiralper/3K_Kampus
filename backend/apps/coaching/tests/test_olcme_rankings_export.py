@@ -86,6 +86,38 @@ class OlcmeRankingsExportAPITest(TestCase):
         self.assertEqual(len(data['rankings']), 3)
         self.assertIn('total_correct', data['rankings'][0])
 
+    def test_unmatched_answer_is_ranked_by_raw_name(self):
+        answer = StudentAnswer.objects.create(
+            session=self.session,
+            student=None,
+            raw_student_id='9090',
+            raw_student_name='Eşleşmeyen Aday',
+            total_correct=80,
+            total_wrong=0,
+            total_empty=0,
+            total_net=Decimal('80'),
+        )
+        for section in (self.turkce, self.matematik):
+            StudentSectionScore.objects.create(
+                student_answer=answer, section=section,
+                correct=40, wrong=0, empty=0, net=Decimal('40'),
+            )
+        res = self.client.get(self.url, **self.headers)
+        self.assertEqual(res.status_code, 200)
+        rankings = res.json()['rankings']
+        self.assertEqual(len(rankings), 4)
+        top = rankings[0]
+        self.assertEqual(top['student_name'], 'Eşleşmeyen Aday')
+        self.assertIsNone(top['student_id'])
+        self.assertEqual(top['kurum_ici_sira'], 1)
+
+        summary = self.client.get(
+            f'/api/coaching/olcme-degerlendirme/exams/{self.exam.id}/analysis/summary/',
+            **self.headers,
+        )
+        self.assertEqual(summary.status_code, 200)
+        self.assertEqual(summary.json()['katilim'], 3)
+
     def test_rankings_export_xlsx(self):
         from io import BytesIO
         from openpyxl import load_workbook

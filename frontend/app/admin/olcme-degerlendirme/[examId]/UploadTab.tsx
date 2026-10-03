@@ -1693,7 +1693,7 @@ export default function UploadTab({ exam }: Props) {
                 </div>
                 <div className={s.matchBannerMeta}>
                   {matchedCount} / {totalRows} eşleşti (%{matchPct})
-                  {unmatchedCount > 0 && ' — eşleşmeyen kayıtlar analiz ve karnelerde yer almaz.'}
+                  {unmatchedCount > 0 && ' — eşleşmeyen kayıtlar sıralamada ham adıyla görünür; karne için eşleştirme gerekir.'}
                 </div>
               </div>
               {unmatchedCount > 0 && (

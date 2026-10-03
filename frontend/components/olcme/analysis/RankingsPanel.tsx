@@ -365,7 +365,12 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                 <td style={{ fontWeight: 700, color: r._displaySira <= 3 ? '#f59e0b' : '#64748b', position: 'sticky', left: 0, background: '#fff', zIndex: 1 }}>
                   {r._displaySira <= 3 ? '🏅 ' : ''}{r._displaySira}
                 </td>
-                <td style={{ fontWeight: 600, whiteSpace: 'nowrap', position: 'sticky', left: 40, background: '#fff', zIndex: 1 }}>{r.student_name}</td>
+                <td style={{ fontWeight: 600, whiteSpace: 'nowrap', position: 'sticky', left: 40, background: '#fff', zIndex: 1 }}>
+                  {r.student_name}
+                  {!r.student_id && (
+                    <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#b45309' }}>eşleşmedi</span>
+                  )}
+                </td>
                 <td
                   style={{ textAlign: 'center', fontWeight: 600 }}
                   title={examType === 'YKS_AYT' ? `Tüm testler: ${r.toplam_net.toFixed(2)}` : undefined}

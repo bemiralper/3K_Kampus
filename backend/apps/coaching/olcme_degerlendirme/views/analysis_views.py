@@ -395,19 +395,36 @@ def _get_exam_or_404(request, exam_pk):
     return exam, None
 
 
-def _get_session_answers(exam, session_id=None):
+def _latest_unmatched_answer_ids(exam) -> list[int]:
+    """Eşleşmemiş optik satırları. Aynı ham kimlik birden fazla yüklemedeyse son kayıt."""
+    rows = (
+        StudentAnswer.objects
+        .filter(session__exam=exam, session__status='COMPLETED', student__isnull=True)
+        .order_by('id')
+        .values_list('id', 'raw_student_id', 'raw_student_name')
+    )
+    by_key: dict[str, int] = {}
+    for answer_id, raw_id, raw_name in rows:
+        key = (raw_id or '').strip() or (raw_name or '').strip() or f'#{answer_id}'
+        by_key[key] = answer_id
+    return list(by_key.values())
+
+
+def _get_session_answers(exam, session_id=None, *, include_unmatched=False):
     """Sınav veya belirli bir oturumdaki öğrenci cevapları.
 
-    Analiz yalnızca öğrenciyle eşleşmiş satırlar üzerinden yapılır; eşleşmemiş
-    optik satırları ortalamaları bozardı. Tüm oturumlar birlikte istendiğinde
+    Özet ve ortalamalar eşleşmiş satırlardan hesaplanır. Sıralama listesi
+    eşleşmemiş optik satırlarını da ister. Tüm oturumlar birlikte istendiğinde
     aynı öğrencinin birden fazla yüklemede yer alması durumunda yalnızca en
     güncel yükleme sayılır (aksi halde çift sayım olur).
     """
-    qs = StudentAnswer.objects.filter(
+    base = StudentAnswer.objects.filter(
         session__exam=exam,
         session__status='COMPLETED',
-        student__isnull=False,
-    ).select_related('student', 'session').prefetch_related('section_scores__section')
+    )
+    if not include_unmatched:
+        base = base.filter(student__isnull=False)
+    qs = base.select_related('student', 'session').prefetch_related('section_scores__section')
 
     if session_id:
         return qs.filter(session_id=session_id)
@@ -419,7 +436,10 @@ def _get_session_answers(exam, session_id=None):
         .annotate(latest_id=Max('id'))
         .values_list('latest_id', flat=True)
     )
-    return qs.filter(id__in=latest_ids)
+    if not include_unmatched:
+        return qs.filter(id__in=latest_ids)
+    unmatched_ids = _latest_unmatched_answer_ids(exam)
+    return qs.filter(Q(id__in=latest_ids) | Q(id__in=unmatched_ids))
 
 
 def _participant_sessions_by_student(exam, sessions) -> dict:
@@ -1842,7 +1862,7 @@ def exam_analysis_rankings(request, exam_pk):
 
     session_id = request.query_params.get('session_id')
     ranking_year = _resolve_ranking_year(request, exam)
-    answers = _get_session_answers(exam, session_id)
+    answers = _get_session_answers(exam, session_id, include_unmatched=True)
 
     if not answers.exists():
         return Response({'rankings': [], 'message': 'Sonuç yok.'})
