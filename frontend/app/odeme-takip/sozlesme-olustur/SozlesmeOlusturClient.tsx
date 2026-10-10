@@ -1594,13 +1594,14 @@ export default function SozlesmeOlusturClient() {
     const cekYontemleri = (paketData?.odeme_yontemleri || []).filter(isCekSenetYontem);
     return cekYontemleri.length === 1 ? cekYontemleri[0].id : "";
   }, [odemeTuru, paketData?.odeme_yontemleri]);
+  const defaultRowYontemId = odemeTuru === "cek_senet" ? defaultCekYontemId : (selectedOdemeYontemiId || "");
 
   const taksitPlanOptions = useMemo(
     () => ({
       preserveFrom: manuelRows,
-      defaultOdemeYontemiId: defaultCekYontemId,
+      defaultOdemeYontemiId: defaultRowYontemId,
     }),
-    [manuelRows, defaultCekYontemId],
+    [manuelRows, defaultRowYontemId],
   );
 
   const rebuildEqualPlan = useCallback(
@@ -1734,7 +1735,7 @@ export default function SozlesmeOlusturClient() {
 
     const cekSenetRowsForSubmit: ManuelTaksitRow[] = validManuelRows.map((row) => ({
       ...row,
-      odeme_yontemi_id: (row.odeme_yontemi_id || defaultCekYontemId || "") as number | "",
+      odeme_yontemi_id: (row.odeme_yontemi_id || defaultRowYontemId || "") as number | "",
     }));
 
     if (isCekSenetMode) {
@@ -1787,10 +1788,10 @@ export default function SozlesmeOlusturClient() {
         ? cekSenetRowsForSubmit.map((r) => ({
             tutar: parseFloat(r.tutar),
             vade_tarihi: r.vade_tarihi,
-            ...(isCekSenetMode && r.odeme_yontemi_id ? { odeme_yontemi_id: Number(r.odeme_yontemi_id) } : {}),
+            ...(r.odeme_yontemi_id ? { odeme_yontemi_id: Number(r.odeme_yontemi_id) } : {}),
           }))
         : undefined,
-      taksit_odeme_yontemleri: isCekSenetMode && isTaksitMode
+      taksit_odeme_yontemleri: isTaksitMode
         ? buildTaksitOdemeYontemleri(cekSenetRowsForSubmit)
         : undefined,
       ...serializeNotlarForApi(notlarJson),
@@ -2391,7 +2392,7 @@ export default function SozlesmeOlusturClient() {
               <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
                 {odemeTuru === "cek_senet"
                   ? "Her taksit satırında ödeme yöntemi seçin (çek, nakit, havale vb.)."
-                  : "Taksit sayısı girildiğinde plan otomatik oluşur. Satırları düzenlerseniz manuel plan olarak kaydedilir."}
+                  : "Taksit sayısı girildiğinde plan otomatik oluşur. Satırları düzenlerseniz manuel plan olarak kaydedilir. Bir taksiti çek veya senet seçerseniz çek/senet sayfasında görünür."}
                 {!paketData?.odeme_yontemleri?.length && (
                   <span style={{ display: "block", marginTop: 6, color: "#b45309" }}>
                     Ödeme yöntemi listesi boş — Finans → Tanımlar → Ödeme Yöntemleri&apos;nden tanım ekleyin.
@@ -2401,13 +2402,13 @@ export default function SozlesmeOlusturClient() {
 
               {/* Düzenlenebilir taksit tablosu */}
               <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 12, background: "#fafafa", border: "1px solid #e5e7eb" }}>
-                <div style={{ display: "grid", gridTemplateColumns: odemeTuru === "cek_senet" ? "40px 1fr 1fr 1fr 40px" : "40px 1fr 1fr 40px", gap: 8, fontSize: 11, fontWeight: 600, color: "#6b7280" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr minmax(140px, 1fr) 40px", gap: 8, fontSize: 11, fontWeight: 600, color: "#6b7280" }}>
                   <span>#</span><span>Tutar (₺)</span><span>Vade Tarihi</span>
-                  {odemeTuru === "cek_senet" && <span>Ödeme Yöntemi</span>}
+                  <span>Ödeme Yöntemi</span>
                   <span></span>
                 </div>
                 {manuelRows.map((row, i) => (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: odemeTuru === "cek_senet" ? "40px 1fr 1fr 1fr 40px" : "40px 1fr 1fr 40px", gap: 8, alignItems: "center" }}>
+                  <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr minmax(140px, 1fr) 40px", gap: 8, alignItems: "center" }}>
                     <span style={{ fontSize: 12, fontWeight: 700, color: "#6b7280" }}>{i + 1}</span>
                     <input type="number" min="0" step="1" value={row.tutar}
                       onChange={(e) => handleManuelTutarChange(i, e.target.value)}
@@ -2415,25 +2416,23 @@ export default function SozlesmeOlusturClient() {
                     <input type="date" value={row.vade_tarihi}
                       onChange={(e) => handleManuelDateChange(i, e.target.value)}
                       style={inputSmallStyle} />
-                    {odemeTuru === "cek_senet" && (
-                      <select
-                        value={row.odeme_yontemi_id ?? ""}
-                        onChange={(e) => {
-                          const rows = [...manuelRows];
-                          rows[i].odeme_yontemi_id = e.target.value ? Number(e.target.value) : "";
-                          setManuelRows(rows);
-                          setTaksitPlanDirty(true);
-                        }}
-                        style={inputSmallStyle}
-                      >
-                        <option value="">Seçiniz...</option>
-                        {paketData?.odeme_yontemleri?.map((oy) => (
-                          <option key={oy.id} value={oy.id}>
-                            {oy.ad}{isCekSenetYontem(oy) ? " (çek/senet)" : ""}
-                          </option>
-                        ))}
-                      </select>
-                    )}
+                    <select
+                      value={row.odeme_yontemi_id || (odemeTuru === "cek_senet" ? "" : selectedOdemeYontemiId || "")}
+                      onChange={(e) => {
+                        const rows = [...manuelRows];
+                        rows[i].odeme_yontemi_id = e.target.value ? Number(e.target.value) : "";
+                        setManuelRows(rows);
+                        setTaksitPlanDirty(true);
+                      }}
+                      style={inputSmallStyle}
+                    >
+                      <option value="">Seçiniz...</option>
+                      {paketData?.odeme_yontemleri?.map((oy) => (
+                        <option key={oy.id} value={oy.id}>
+                          {oy.ad}{isCekSenetYontem(oy) ? " (çek/senet)" : ""}
+                        </option>
+                      ))}
+                    </select>
                     <button type="button" onClick={() => {
                       if (manuelRows.length <= 1) return;
                       applyTaksitSayisi(taksitSayisi - 1);

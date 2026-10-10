@@ -385,8 +385,9 @@ export default function SinavlarTab({ studentId }: SinavlarTabProps) {
   }, [studentId, rankingYear]);
 
   useEffect(() => {
+    if (rankingYear == null) return;
     void load({ silent: hasDataRef.current });
-  }, [load]);
+  }, [load, rankingYear]);
 
   const allExams = useMemo(() => data?.exams ?? [], [data]);
 

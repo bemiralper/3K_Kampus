@@ -169,9 +169,39 @@ def _close_stale_erisim(sozlesme, *, dry_run=False) -> dict:
     return closed
 
 
+def _retain_included_denemeler(desired_paket, desired_ek, deneme_ids, sozlesme):
+    """Dahil denemenin ek hizmet satırını da açık tut.
+
+    Erişim OgrenciEkHizmet üzerinden yürür. Deneme kimliği yalnızca paket
+    kümesine yazılırsa _close_stale_erisim bu satırı pasife çeker. Grup ve
+    premium dalları denemeyi döngü sırasında eklediği için ayrıca burada
+    işlenir; döngü listenin anlık kopyası üzerinde yürür.
+    """
+    from apps.egitim_paketleri.models import Deneme, EkHizmet
+
+    ids = [i for i in deneme_ids if i]
+    if not ids:
+        return
+    denemeler = list(Deneme.objects.filter(id__in=ids))
+    if not denemeler:
+        return
+    desired_paket.update(('deneme', deneme.id) for deneme in denemeler)
+    desired_ek.update(
+        EkHizmet.objects.filter(
+            deneme_paketi_id__in=[deneme.id for deneme in denemeler],
+            sube_id=sozlesme.sube_id,
+            egitim_yili_id=sozlesme.egitim_yili_id,
+        ).values_list('id', flat=True)
+    )
+    for deneme in denemeler:
+        desired_ek.update(
+            deneme.dahil_ek_hizmetler.filter(aktif_mi=True).values_list('id', flat=True)
+        )
+
+
 def _expand_included_access(desired_paket, desired_ek, sozlesme):
     """Güncel grup/premium/deneme paketinin dahil ettiği erişimi koru."""
-    from apps.egitim_paketleri.models import Deneme, EkHizmet, GrupDersi, PremiumPaket
+    from apps.egitim_paketleri.models import GrupDersi, PremiumPaket
     from apps.ogrenci_kayit.application.services import (
         resolve_grup_dersi_inclusions,
         resolve_premium_paket_inclusions,
@@ -189,7 +219,7 @@ def _expand_included_access(desired_paket, desired_ek, sozlesme):
                 continue
             ek_ids, deneme_ids, yayin_ids = resolve_grup_dersi_inclusions(grup, **kwargs)
             desired_ek.update(ek_ids)
-            desired_paket.update(('deneme', i) for i in deneme_ids)
+            _retain_included_denemeler(desired_paket, desired_ek, deneme_ids, sozlesme)
             desired_paket.update(('yayin', i) for i in yayin_ids)
         elif tur == 'premium':
             premium = PremiumPaket.objects.filter(id=pid).first()
@@ -197,22 +227,10 @@ def _expand_included_access(desired_paket, desired_ek, sozlesme):
                 continue
             ek_ids, deneme_ids, yayin_ids = resolve_premium_paket_inclusions(premium, **kwargs)
             desired_ek.update(ek_ids)
-            desired_paket.update(('deneme', i) for i in deneme_ids)
+            _retain_included_denemeler(desired_paket, desired_ek, deneme_ids, sozlesme)
             desired_paket.update(('yayin', i) for i in yayin_ids)
         elif tur == 'deneme':
-            deneme = Deneme.objects.filter(id=pid).first()
-            if not deneme:
-                continue
-            desired_ek.update(
-                EkHizmet.objects.filter(
-                    deneme_paketi=deneme,
-                    sube_id=sozlesme.sube_id,
-                    egitim_yili_id=sozlesme.egitim_yili_id,
-                ).values_list('id', flat=True)
-            )
-            desired_ek.update(
-                deneme.dahil_ek_hizmetler.filter(aktif_mi=True).values_list('id', flat=True)
-            )
+            _retain_included_denemeler(desired_paket, desired_ek, [pid], sozlesme)
 
 
 def _ensure_ek_hizmet(sozlesme, item, result, *, dry_run):

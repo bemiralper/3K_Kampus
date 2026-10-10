@@ -440,15 +440,14 @@ class TaksitService:
             else:
                 return None, {'error': f'Geçersiz taksit yöntemi: {yontem}'}
 
-            taksitler = list(Taksit.objects.filter(sozlesme=sozlesme).order_by('taksit_no'))
             from apps.odeme_takip.domain.enums import OdemeTuru
-            if sozlesme.odeme_turu == OdemeTuru.CEK_SENET:
-                self._apply_taksit_odeme_yontemleri(
-                    sozlesme, yontem, manuel_taksitler, taksit_odeme_yontemleri,
-                )
-            else:
+            if sozlesme.odeme_turu != OdemeTuru.CEK_SENET:
                 self._apply_contract_odeme_yontemi_to_taksits(sozlesme)
+            self._apply_taksit_odeme_yontemleri(
+                sozlesme, yontem, manuel_taksitler, taksit_odeme_yontemleri,
+            )
             self._sync_cek_senet_plan(sozlesme)
+            taksitler = list(Taksit.objects.filter(sozlesme=sozlesme).order_by('taksit_no'))
             return taksitler, None
 
         except ValueError as e:
@@ -517,14 +516,18 @@ class TaksitService:
         return self._month_offset_date(baslangic, offset)
 
     def _apply_contract_odeme_yontemi_to_taksits(self, sozlesme):
-        """Peşin/taksitli sözleşmede tüm taksitlere sözleşme ödeme yöntemini uygula."""
+        """Peşin/taksitli sözleşmede yöntemi boş taksitlere sözleşme yöntemini yazar.
+
+        Satırda seçilmiş yöntem (örneğin taksitli planda tek çek) korunur.
+        """
         from apps.odeme_takip.domain.enums import OdemeTuru
         if sozlesme.odeme_turu == OdemeTuru.CEK_SENET:
             return
         if sozlesme.odeme_yontemi_id:
-            Taksit.objects.filter(sozlesme=sozlesme).update(
-                odeme_yontemi_id=sozlesme.odeme_yontemi_id,
-            )
+            Taksit.objects.filter(
+                sozlesme=sozlesme,
+                odeme_yontemi_id__isnull=True,
+            ).update(odeme_yontemi_id=sozlesme.odeme_yontemi_id)
 
     def _apply_taksit_odeme_yontemleri(
         self,
@@ -534,15 +537,25 @@ class TaksitService:
         taksit_odeme_yontemleri,
     ):
         """Plan sonrası taksit başına ödeme yöntemi ata."""
-        if yontem == 'manuel' and manuel_taksitler:
-            taksitler = list(Taksit.objects.filter(sozlesme=sozlesme).order_by('taksit_no'))
+        if manuel_taksitler and yontem in ('manuel', 'kalani_bol'):
+            taksitler = list(
+                Taksit.objects.filter(sozlesme=sozlesme).order_by('taksit_no', 'id')
+            )
+            if yontem == 'kalani_bol':
+                targets = [
+                    t for t in taksitler
+                    if t.durum not in (TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI)
+                    and not (t.odenen_tutar and t.odenen_tutar > 0)
+                ]
+            else:
+                targets = taksitler
             for i, row in enumerate(manuel_taksitler):
-                if i >= len(taksitler):
+                if i >= len(targets):
                     break
                 oy_id = row.get('odeme_yontemi_id')
                 if oy_id:
-                    taksitler[i].odeme_yontemi_id = oy_id
-                    taksitler[i].save(update_fields=['odeme_yontemi_id'])
+                    targets[i].odeme_yontemi_id = oy_id
+                    targets[i].save(update_fields=['odeme_yontemi_id'])
             return
 
         if not taksit_odeme_yontemleri:

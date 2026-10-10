@@ -244,9 +244,25 @@ class CurriculumBandAPITest(TestCase):
             name='TYT Kazanım', exam_type='YKS_TYT',
             kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
         )
+        ExamSection.objects.create(
+            exam=yks_exam, name='Matematik', order=1, question_start=1, question_end=40,
+            subject=self.mixed,
+        )
+        ExamSection.objects.create(
+            exam=yks_exam, name='Fizik', order=2, question_start=41, question_end=47,
+            subject=self.yks_fizik,
+        )
         lgs_exam = Exam.objects.create(
             name='LGS Kazanım', exam_type='LGS',
             kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+        )
+        ExamSection.objects.create(
+            exam=lgs_exam, name='Matematik', order=1, question_start=1, question_end=20,
+            subject=self.mixed,
+        )
+        ExamSection.objects.create(
+            exam=lgs_exam, name='Fen', order=2, question_start=21, question_end=40,
+            subject=self.lgs_fen,
         )
         yks = self.client.get(
             f'{EXAMS_URL}{yks_exam.id}/answer-keys/outcomes/', **self.headers,
@@ -323,6 +339,10 @@ class CurriculumBandAPITest(TestCase):
         yks_exam = Exam.objects.create(
             name='TYT Türkçe Mix', exam_type='YKS_TYT',
             kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+        )
+        ExamSection.objects.create(
+            exam=yks_exam, name='Türkçe', order=1, question_start=1, question_end=40,
+            subject=turkce,
         )
         res = self.client.get(
             f'{EXAMS_URL}{yks_exam.id}/answer-keys/outcomes/', **self.headers,

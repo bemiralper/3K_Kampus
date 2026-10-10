@@ -166,7 +166,7 @@ ROLES_DATA = [
             'egitim_tanimlari.read',
             'communication.read', 'communication.write', 'communication.bulk',
             'gorev.read', 'gorev.write',
-            'olcme.read',
+            'olcme.read', 'olcme.write',
         ],
     },
     {

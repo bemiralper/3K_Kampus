@@ -129,8 +129,14 @@ export function canManageCoachAssignment(user: User | null): boolean {
   return hasPermission(user, "ogrenci.manage");
 }
 
+/** Öğrenci portalı kullanıcısı. Personel panellerine düşmez. */
+export function isStudentUser(user: User | null): boolean {
+  return normalizeRoleCode(user?.role_code) === "ogrenci";
+}
+
 /** Giriş sonrası varsayılan ana sayfa yolu. */
 export function getDefaultHomePath(user: User | null): string {
+  if (isStudentUser(user)) return "/ogrenci";
   if (needsPortalPicker(user)) return "/portal-sec";
   const active = resolveActivePortal(user);
   if (active) return portalHomePath(active);

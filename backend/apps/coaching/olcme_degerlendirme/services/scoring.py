@@ -496,9 +496,101 @@ def _normalize_name_for_matching(name: str) -> str:
     return s.upper()
 
 
+class LinkedTytIndex:
+    """Bağlı TYT cevaplarını bir kez yükler. Kişi başı tam tablo taraması yapmaz."""
+
+    def __init__(self, exam, student_ids=None):
+        self.by_student = {}
+        self.by_tc = {}
+        self.by_name = {}
+        self.by_norm = {}
+        self.by_raw = {}
+        self.tc_of = {}
+        self._empty = True
+        if not getattr(exam, 'linked_tyt_exam_id', None):
+            return
+        tyt = getattr(exam, 'linked_tyt_exam', None)
+        if tyt is None:
+            return
+        self._empty = False
+        from ..models.result import StudentAnswer
+
+        rows = (
+            StudentAnswer.objects
+            .filter(session__exam=tyt, session__status='COMPLETED')
+            .select_related('student')
+            .prefetch_related('section_scores__section')
+            .order_by('session_id', 'raw_student_id', 'id')
+        )
+        for row in rows:
+            if row.student_id:
+                self.by_student.setdefault(row.student_id, row)
+                tc = ''
+                if row.student_id and row.student:
+                    tc = (row.student.tc_kimlik_no or '').strip()
+                if tc:
+                    self.by_tc.setdefault(tc, row)
+            name = (row.raw_student_name or '').strip()
+            if name:
+                self.by_name.setdefault(name, row)
+                norm = _normalize_name_for_matching(name)
+                if norm and len(norm) >= 4:
+                    self.by_norm.setdefault(norm, row)
+            raw = (row.raw_student_id or '').strip()
+            if is_reliable_tyt_link_code(raw):
+                self.by_raw.setdefault(raw, row)
+        if student_ids:
+            from apps.ogrenci.domain.models import Ogrenci
+            self.tc_of = {
+                ogrenci_id: (tc or '').strip()
+                for ogrenci_id, tc in Ogrenci.objects.filter(
+                    id__in=list(student_ids),
+                ).values_list('id', 'tc_kimlik_no')
+            }
+
+    def lookup(self, student_id: int = None, raw_student_name: str = None,
+               raw_student_id: str = None):
+        if self._empty:
+            return None
+        if student_id and student_id in self.by_student:
+            return self.by_student[student_id]
+        if student_id:
+            tc = self.tc_of.get(student_id)
+            if tc and tc in self.by_tc:
+                return self.by_tc[tc]
+        name = (raw_student_name or '').strip()
+        if name and name in self.by_name:
+            return self.by_name[name]
+        if name:
+            norm = _normalize_name_for_matching(name)
+            if norm and len(norm) >= 4 and norm in self.by_norm:
+                return self.by_norm[norm]
+        raw = (raw_student_id or '').strip()
+        if is_reliable_tyt_link_code(raw) and raw in self.by_raw:
+            return self.by_raw[raw]
+        return None
+
+    def nets_for(self, student_id: int = None, raw_student_name: str = None,
+                 raw_student_id: str = None) -> dict:
+        answer = self.lookup(student_id, raw_student_name, raw_student_id)
+        if not answer:
+            return {}
+        nets = {}
+        for ss in answer.section_scores.all():
+            if ss.section.is_sub_section:
+                continue
+            nets[ss.section.name] = float(ss.net) if ss.net else 0.0
+        return nets
+
+
+def build_linked_tyt_index(exam, student_ids=None) -> LinkedTytIndex:
+    return LinkedTytIndex(exam, student_ids)
+
+
 def _get_linked_tyt_answer(exam, student_id: int = None,
                            raw_student_name: str = None,
-                           raw_student_id: str = None):
+                           raw_student_id: str = None,
+                           index: LinkedTytIndex = None):
     """
     Bağlantılı TYT sınavından öğrencinin StudentAnswer kaydını döndürür.
 
@@ -507,7 +599,12 @@ def _get_linked_tyt_answer(exam, student_id: int = None,
       2. TC kimlik no (student FK varsa → tc_kimlik_no ile diğer sınavda ara)
       3. raw_student_name (ad-soyad) — önce birebir, sonra fuzzy (Türkçe normalize)
       4. raw_student_id — yalnızca TC / güvenilir okul no (0, 1, 105 gibi sıra no değil)
+
+    index verilirse bağlı TYT satırları yeniden taranmaz.
     """
+    if index is not None:
+        return index.lookup(student_id, raw_student_name, raw_student_id)
+
     if not hasattr(exam, 'linked_tyt_exam') or not exam.linked_tyt_exam:
         return None
 
@@ -597,8 +694,11 @@ def _get_linked_tyt_answer(exam, student_id: int = None,
 
 def _get_linked_tyt_nets(exam, student_id: int = None,
                          raw_student_name: str = None,
-                         raw_student_id: str = None) -> dict:
+                         raw_student_id: str = None,
+                         index: LinkedTytIndex = None) -> dict:
     """Bağlantılı TYT sınavından öğrencinin ana bölüm netlerini çeker."""
+    if index is not None:
+        return index.nets_for(student_id, raw_student_name, raw_student_id)
     tyt_answer = _get_linked_tyt_answer(exam, student_id, raw_student_name, raw_student_id)
     if not tyt_answer:
         return {}

@@ -7,7 +7,7 @@ import autoTable from 'jspdf-autotable';
 import { downloadJsPdf } from '@/lib/download-file';
 import type { PdfOrientation } from '@/app/ogrenciler/lib/ogrenciListPdfExport';
 import type { ExamParticipantRow, ExamRoomItem } from '../types';
-import { seatNumbers } from './seating';
+import { candidateSeats, formatInactiveSeats, inactiveSeatSet, seatNumbers } from './seating';
 import {
   ROSTER_KIND_TITLES,
   participantExportValue,
@@ -430,11 +430,18 @@ export async function renderRosterPdf(opts: {
     if (gi > 0) doc.addPage();
     const room = rooms.find(r => r.name === group.title);
     const seats = room ? seatNumbers(room) : [];
+    const passive = room
+      ? candidateSeats(room).filter(n => inactiveSeatSet(room.inactive_seats).has(n))
+      : [];
+    const passiveLabel = passive.length
+      ? (passive.length <= 12 ? formatInactiveSeats(passive) : `${passive.length} sıra`)
+      : '';
     const seatLabel = seats.length
       ? (room?.seat_gap
         ? `${seats[0]}’den, ara ${room.seat_gap}`
-        : `${seats[0]}–${seats[seats.length - 1]}`)
+        : `${seats[0]}–${candidateSeats(room!).at(-1)}`)
       : '';
+    const seatMeta = [seatLabel, passiveLabel ? `pasif ${passiveLabel}` : ''].filter(Boolean).join(' · ');
     const startY = drawHeader(doc, primary, logo, {
       eyebrow: ROSTER_KIND_TITLES[kind],
       examName,
@@ -442,7 +449,7 @@ export async function renderRosterPdf(opts: {
       meta: [
         examDate || '',
         `${group.items.length} öğrenci`,
-        kind === 'oturma' && seatLabel ? seatLabel : '',
+        kind === 'oturma' && seatMeta ? seatMeta : '',
       ].filter(Boolean),
     });
 

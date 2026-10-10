@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { examApi } from '../api';
 import type { DenemeSalon } from '../types';
+import { formatInactiveSeats, parseInactiveSeats } from './seating';
 import r from './roster.module.css';
 
 function SalonRow({
@@ -18,6 +19,7 @@ function SalonRow({
 }) {
   const [name, setName] = useState(salon.name);
   const [capacity, setCapacity] = useState(String(salon.capacity));
+  const [passive, setPassive] = useState(formatInactiveSeats(salon.inactive_seats));
   const [busy, setBusy] = useState<'save' | 'delete' | null>(null);
 
   const save = async () => {
@@ -28,7 +30,13 @@ function SalonRow({
     }
     setBusy('save');
     try {
-      const saved = await examApi.updateDenemeSalon(salon.id, nextName, Math.max(1, Number(capacity) || 1));
+      const saved = await examApi.updateDenemeSalon(
+        salon.id,
+        nextName,
+        Math.max(1, Number(capacity) || 1),
+        parseInactiveSeats(passive),
+      );
+      setPassive(formatInactiveSeats(saved.inactive_seats));
       onSaved(saved);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Salon güncellenemedi.');
@@ -51,22 +59,33 @@ function SalonRow({
   };
 
   return (
-    <div className={r.salonRow}>
-      <input aria-label="Salon adı" value={name} onChange={e => setName(e.target.value)} />
-      <input
-        aria-label="Kapasite"
-        type="number"
-        min={1}
-        inputMode="numeric"
-        value={capacity}
-        onChange={e => setCapacity(e.target.value)}
-      />
-      <button type="button" className={r.salonSave} disabled={busy != null} onClick={save}>
-        {busy === 'save' ? '…' : 'Güncelle'}
-      </button>
-      <button type="button" className={r.ghost} disabled={busy != null} onClick={remove}>
-        {busy === 'delete' ? '…' : 'Sil'}
-      </button>
+    <div className={r.salonCard}>
+      <div className={r.salonRow}>
+        <input aria-label="Salon adı" value={name} onChange={e => setName(e.target.value)} />
+        <input
+          aria-label="Kapasite"
+          type="number"
+          min={1}
+          inputMode="numeric"
+          value={capacity}
+          onChange={e => setCapacity(e.target.value)}
+        />
+        <button type="button" className={r.salonSave} disabled={busy != null} onClick={save}>
+          {busy === 'save' ? '…' : 'Güncelle'}
+        </button>
+        <button type="button" className={r.ghost} disabled={busy != null} onClick={remove}>
+          {busy === 'delete' ? '…' : 'Sil'}
+        </button>
+      </div>
+      <label className={r.field}>
+        <span>Pasif sıralar</span>
+        <input
+          aria-label={`${salon.name} pasif sıralar`}
+          value={passive}
+          placeholder="5, 12, 18-20"
+          onChange={e => setPassive(e.target.value)}
+        />
+      </label>
     </div>
   );
 }
@@ -84,7 +103,7 @@ export default function DenemeSalonCatalog({
   return (
     <div className={r.salonCatalog}>
       <p className={r.roomHint}>
-        Kayıtlı salonlar. Adı veya kapasiteyi değiştirip Güncelle. Sil, yalnızca bu listeyi temizler.
+        Kayıtlı salonlar. Ad, kapasite ve pasif sıraları değiştirip Güncelle. Sil, yalnızca bu listeyi temizler. Pasif sıralar salonu seçince sınava kopyalanır.
       </p>
       {salonlar.map(salon => (
         <SalonRow

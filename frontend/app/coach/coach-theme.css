@@ -1,0 +1,1101 @@
+/*
+ * Koç portalı görsel katmanı — öğrenci portalı tasarım dili.
+ * coach.css'ten sonra yüklenir; yalnızca görünümü değiştirir.
+ * Seçiciler .coach-shell ile başlar ki coach.css'teki eşdeğer kuralları ezsin.
+ */
+
+html:has(.coach-shell) {
+  --coach-primary: #0262a7;
+  --coach-primary-dark: #01518c;
+  --coach-primary-light: #2f7cf6;
+  --coach-accent: #01518c;
+  --coach-primary-soft: #e3f0fa;
+  --coach-primary-gradient: #0262a7;
+  --coach-sidebar-bg: #ffffff;
+  --coach-sidebar-text: #0f1b2d;
+  --coach-sidebar-muted: #4f5d73;
+  --coach-surface: #f5f7fb;
+  --coach-surface-elevated: #ffffff;
+  --coach-card: #ffffff;
+  --coach-border: #e3e8f0;
+  --coach-border-soft: #e3e8f0;
+  --coach-text: #0f1b2d;
+  --coach-muted: #6b7a90;
+  --coach-radius: 20px;
+  --coach-radius-sm: 14px;
+  --coach-radius-lg: 24px;
+  --coach-shadow: 0 1px 2px rgba(15, 27, 45, 0.04);
+  --coach-shadow-lg: 0 12px 32px rgba(15, 27, 45, 0.08);
+  --coach-header-h: 64px;
+  --coach-bottom-nav-h: 74px;
+  --coach-font: "Poppins", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --coach-warm: #ff6b3d;
+  --coach-warm-soft: #ffede6;
+  --coach-good: #16a36a;
+  --coach-good-soft: #e2f6ec;
+  --coach-warn: #d99100;
+  --coach-warn-soft: #fff4dc;
+  --coach-bad: #e5484d;
+  --coach-bad-soft: #fde8e8;
+}
+
+.coach-shell .student360-page,
+.coach-shell .s360w-page {
+  --s360-blue: #0262a7;
+  --s360-blue-dark: #01518c;
+  --s360-blue-soft: #e3f0fa;
+  --s360-ink: #0f1b2d;
+  --s360-muted: #6b7a90;
+  --s360-line: #e3e8f0;
+  --s360-surface: #ffffff;
+  --s360-canvas: #f5f7fb;
+}
+
+/* ───────────── Kabuk ───────────── */
+
+.coach-shell {
+  background: var(--coach-surface);
+  color: var(--coach-text);
+  font-family: var(--coach-font);
+}
+
+.coach-shell :where(button, input, select, textarea) {
+  font-family: inherit;
+}
+
+.coach-shell .coach-content {
+  padding: 24px 28px 32px;
+}
+
+@media (max-width: 767px) {
+  .coach-shell .coach-content {
+    padding: 14px 16px 24px;
+  }
+}
+
+/* ───────────── Üst çubuk ───────────── */
+
+.coach-shell .coach-topbar {
+  min-height: var(--coach-header-h);
+  padding: 12px 28px;
+  background: rgba(245, 247, 251, 0.88);
+  backdrop-filter: saturate(1.4) blur(14px);
+  -webkit-backdrop-filter: saturate(1.4) blur(14px);
+  border-bottom: 1px solid transparent;
+  box-shadow: none;
+}
+
+.coach-shell .coach-topbar-portal {
+  display: block;
+  color: var(--coach-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.coach-shell .coach-topbar-title {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  color: var(--coach-text);
+}
+
+.coach-shell .coach-topbar-menu-btn {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid var(--coach-border);
+  background: #fff;
+  color: var(--coach-text);
+  box-shadow: none;
+}
+
+.coach-shell .coach-topbar-menu-btn:hover {
+  background: var(--coach-primary-soft);
+  border-color: var(--coach-primary-soft);
+  color: var(--coach-primary);
+}
+
+.coach-shell .coach-topbar-trailing .ctx-compact-wrapper button,
+.coach-shell .coach-topbar-trailing .ctx-compact-trigger {
+  border-radius: 999px;
+  border-color: var(--coach-border);
+  background: #fff;
+  box-shadow: none;
+}
+
+@media (min-width: 992px) {
+  .coach-shell .coach-topbar-menu-btn {
+    display: none;
+  }
+}
+
+@media (max-width: 767px) {
+  .coach-shell .coach-topbar {
+    padding: 10px 14px;
+    min-height: 60px;
+  }
+
+  .coach-shell .coach-topbar-portal {
+    display: none;
+  }
+
+  .coach-shell .coach-topbar-title {
+    font-size: 19px;
+    max-width: min(46vw, 210px);
+  }
+}
+
+/* ───────────── Yan menü (masaüstü, tablet, mobil çekmece) ───────────── */
+
+.coach-shell .coach-sidebar {
+  background: var(--coach-sidebar-bg);
+  color: var(--coach-sidebar-text);
+  border-right: 1px solid var(--coach-border);
+  box-shadow: none;
+}
+
+@media (max-width: 767px) {
+  .coach-shell .coach-sidebar {
+    border-right: 0;
+    border-radius: 0 24px 24px 0;
+    box-shadow: 0 0 0 1px var(--coach-border);
+  }
+}
+
+.coach-shell .coach-sidebar-backdrop {
+  background: rgba(5, 10, 20, 0.45);
+  backdrop-filter: none;
+}
+
+.coach-shell .coach-sidebar-header {
+  border-bottom: 0;
+  padding: 18px 16px 10px;
+}
+
+.coach-shell .coach-sidebar-toggle {
+  border-radius: 50%;
+  background: var(--coach-surface);
+  color: var(--coach-muted);
+}
+
+.coach-shell .coach-sidebar-toggle:hover {
+  background: var(--coach-primary-soft);
+  color: var(--coach-primary);
+}
+
+.coach-shell .coach-nav-sidebar {
+  padding: 8px 12px 16px;
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-list {
+  gap: 2px;
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-link {
+  min-height: 42px;
+  padding: 8px 10px;
+  gap: 12px;
+  border-radius: 12px;
+  color: var(--coach-sidebar-muted);
+  font-size: 14px;
+  font-weight: 500;
+  box-shadow: none;
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-link:hover {
+  background: var(--coach-surface);
+  color: var(--coach-text);
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-link.is-active {
+  background: var(--coach-primary-soft);
+  color: var(--coach-primary);
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-active-bar {
+  display: none;
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-icon,
+.coach-shell .coach-nav-sidebar .coach-nav-link.is-active .coach-nav-icon {
+  width: 24px;
+  height: 24px;
+  border-radius: 0;
+  background: transparent;
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-icon svg {
+  width: 21px;
+  height: 21px;
+  stroke-width: 1.9;
+}
+
+.coach-shell .coach-nav-sidebar .coach-nav-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.coach-shell .coach-nav-sublink {
+  margin-top: 2px;
+  padding: 8px 10px 8px 46px;
+  border-radius: 10px;
+  color: var(--coach-muted);
+  font-size: 13.5px;
+}
+
+.coach-shell .coach-nav-sublink:hover {
+  background: var(--coach-surface);
+  color: var(--coach-text);
+}
+
+.coach-shell .coach-nav-sublink.is-active {
+  background: transparent;
+  color: var(--coach-primary);
+  font-weight: 600;
+}
+
+.coach-shell .coach-nav-badge {
+  background: var(--coach-warm);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.coach-shell .coach-nav-tooltip {
+  background: var(--coach-text);
+  border-radius: 10px;
+  box-shadow: none;
+}
+
+.coach-shell .coach-sidebar.is-collapsed .coach-nav-group:hover .coach-nav-submenu-tooltip,
+.coach-shell .coach-sidebar.is-collapsed .coach-nav-group.is-open .coach-nav-submenu-tooltip {
+  background: #fff;
+  border: 1px solid var(--coach-border);
+  border-radius: 16px;
+  box-shadow: var(--coach-shadow-lg);
+}
+
+.coach-shell .coach-nav-submenu-tooltip-title {
+  color: var(--coach-muted);
+  border-bottom-color: var(--coach-border);
+}
+
+.coach-shell .coach-nav-submenu-tooltip .coach-nav-sublink {
+  padding: 8px 14px;
+  margin: 0 6px;
+}
+
+.coach-shell .coach-nav-item.drag-over-before::before,
+.coach-shell .coach-nav-item.drag-over-after::after {
+  background: var(--coach-primary);
+}
+
+.coach-shell .coach-menu-search {
+  border-radius: 14px;
+  background: var(--coach-surface);
+  border: 1px solid var(--coach-border);
+  color: var(--coach-muted);
+}
+
+.coach-shell .coach-menu-search input {
+  color: var(--coach-text);
+}
+
+.coach-shell .coach-sidebar-footer {
+  border-top: 1px solid var(--coach-border);
+}
+
+.coach-shell .coach-sidebar-hint {
+  color: var(--coach-muted);
+}
+
+.coach-shell .coach-logout-btn {
+  border: 1px solid var(--coach-border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--coach-bad);
+  font-weight: 600;
+}
+
+.coach-shell .coach-logout-btn:hover {
+  background: var(--coach-bad-soft);
+  border-color: var(--coach-bad-soft);
+  color: var(--coach-bad);
+}
+
+/* ───────────── Mobil alt sekme çubuğu ───────────── */
+
+.coach-shell .coach-nav-bottom {
+  padding: 6px 6px calc(8px + env(safe-area-inset-bottom, 0px));
+  background: #fff;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-top: 1px solid var(--coach-border);
+  box-shadow: none;
+}
+
+.coach-shell .coach-nav-bottom .coach-nav-list {
+  gap: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.coach-shell .coach-nav-bottom .coach-nav-link {
+  min-height: 54px;
+  gap: 3px;
+  padding: 4px 2px;
+  border-radius: 12px;
+  color: var(--coach-muted);
+  font-size: 10.5px;
+  font-weight: 500;
+}
+
+.coach-shell .coach-nav-bottom .coach-nav-link.is-active,
+.coach-shell .coach-nav-bottom .coach-nav-menu-btn.is-active {
+  background: transparent;
+  box-shadow: none;
+  color: var(--coach-primary);
+  font-weight: 600;
+}
+
+.coach-shell .coach-nav-bottom .coach-nav-icon,
+.coach-shell .coach-nav-bottom .coach-nav-link.is-active .coach-nav-icon {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+}
+
+.coach-shell .coach-nav-bottom .coach-nav-icon svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 1.9;
+}
+
+.coach-shell .coach-nav-bottom .coach-nav-label {
+  font-size: 10.5px;
+  max-width: 72px;
+}
+
+.coach-shell .coach-nav-bottom-badge {
+  top: 0;
+  right: calc(50% - 22px);
+  min-width: 16px;
+  height: 16px;
+  border-width: 2px;
+  background: var(--coach-warm);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 12px;
+}
+
+/* ───────────── Sayfa başlıkları ───────────── */
+
+.coach-shell .coach-page-header h2 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.coach-shell .coach-page-header p {
+  color: var(--coach-muted);
+}
+
+.coach-shell .coach-section-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+/* ───────────── Kartlar ───────────── */
+
+.coach-shell .coach-list-card,
+.coach-shell .coach-kpi-mini,
+.coach-shell .coach-home-card,
+.coach-shell .coach-profil-panel {
+  border: 1px solid var(--coach-border);
+  border-radius: var(--coach-radius);
+  background: #fff;
+  box-shadow: none;
+}
+
+.coach-shell .coach-list-card {
+  padding: 16px;
+}
+
+.coach-shell .coach-kpi-mini {
+  border-radius: 16px;
+  padding: 14px 12px;
+}
+
+.coach-shell .coach-kpi-mini:hover {
+  transform: none;
+  box-shadow: none;
+  border-color: #cfd8e4;
+}
+
+.coach-shell .coach-kpi-mini-value {
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.coach-shell .coach-kpi-mini-label {
+  color: var(--coach-muted);
+  font-weight: 500;
+}
+
+.coach-shell .coach-empty-state h4 {
+  font-weight: 600;
+}
+
+/* ───────────── Butonlar ───────────── */
+
+.coach-shell .coach-btn {
+  min-height: 46px;
+  border-radius: 14px;
+  font-weight: 600;
+}
+
+.coach-shell .coach-btn-primary,
+.coach-shell .coach-btn-primary:hover {
+  background: var(--coach-primary);
+  color: #fff;
+  box-shadow: none;
+}
+
+.coach-shell .coach-btn-primary:hover {
+  background: var(--coach-primary-dark);
+}
+
+.coach-shell .coach-btn-secondary {
+  background: #fff;
+  color: var(--coach-text);
+  border: 1px solid var(--coach-border);
+}
+
+.coach-shell .coach-btn-secondary:hover {
+  background: var(--coach-surface);
+}
+
+.coach-shell .coach-btn-danger {
+  background: var(--coach-bad);
+  box-shadow: none;
+}
+
+.coach-shell .coach-link-btn {
+  border: 0;
+  background: var(--coach-primary-soft);
+  color: var(--coach-primary);
+}
+
+.coach-shell .coach-link-btn:hover {
+  background: #d3e7f7;
+  transform: none;
+}
+
+.coach-shell :where(.coach-content) .btn-modern,
+.coach-shell :where(.coach-content) .wizard-btn-primary {
+  box-shadow: none;
+}
+
+/* ───────────── Formlar ───────────── */
+
+.coach-shell .coach-content :where(input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]), select, textarea) {
+  border-color: var(--coach-border);
+  border-radius: 12px;
+}
+
+.coach-shell .coach-content :where(input, select, textarea):focus {
+  border-color: var(--coach-primary);
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(2, 98, 167, 0.12);
+}
+
+.coach-shell .coach-form-field label {
+  color: var(--coach-text);
+  font-weight: 500;
+}
+
+.coach-shell .coach-form-field :where(input, select, textarea) {
+  min-height: 46px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: #fff;
+}
+
+/* ───────────── Tablolar ───────────── */
+
+.coach-shell .coach-content table {
+  border-color: var(--coach-border);
+}
+
+.coach-shell .coach-content :where(thead th) {
+  color: var(--coach-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.coach-shell .coach-content :where(tbody td) {
+  border-color: var(--coach-border);
+}
+
+.coach-shell .coach-content :where(tbody tr:hover) {
+  background: #f9fbfd;
+}
+
+/* ───────────── Çekmece / modal ───────────── */
+
+.coach-drawer-overlay {
+  background: rgba(5, 10, 20, 0.45);
+}
+
+.coach-drawer {
+  border-radius: 28px 28px 0 0;
+  padding: 12px 22px 28px;
+  box-shadow: none;
+  font-family: var(--coach-font);
+}
+
+.coach-drawer::before {
+  content: "";
+  display: block;
+  width: 40px;
+  height: 5px;
+  margin: 0 auto 16px;
+  border-radius: 3px;
+  background: var(--coach-border);
+}
+
+@media (min-width: 640px) {
+  .coach-drawer {
+    border-radius: 24px;
+    padding: 22px 24px 24px;
+  }
+
+  .coach-drawer::before {
+    display: none;
+  }
+}
+
+.coach-drawer-title {
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.coach-drawer-close {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: var(--coach-surface);
+}
+
+/* ───────────── Bugün (dashboard) ───────────── */
+
+.coach-shell .coach-home-hero {
+  border-radius: 24px;
+  background: var(--coach-primary);
+  box-shadow: none;
+}
+
+.coach-shell .coach-home-hero::before {
+  content: "";
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  top: -70px;
+  right: -40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.coach-shell .coach-home-hero::after {
+  width: 150px;
+  height: 150px;
+  right: auto;
+  left: -50px;
+  bottom: -80px;
+  border: 0;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+}
+
+.coach-shell .coach-home-eyebrow {
+  color: rgba(255, 255, 255, 0.82);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.coach-shell .coach-home-hero h2 {
+  font-size: clamp(24px, 3.4vw, 34px);
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: -0.015em;
+}
+
+.coach-shell .coach-home-hero p:not(.coach-home-eyebrow) {
+  color: rgba(255, 255, 255, 0.86);
+}
+
+.coach-shell .coach-home-metric {
+  border: 0;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: none;
+}
+
+.coach-shell .coach-home-metric:hover {
+  transform: none;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.coach-shell .coach-home-metric strong {
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.coach-shell .coach-home-metric span {
+  color: rgba(255, 255, 255, 0.85);
+  font-weight: 500;
+}
+
+.coach-shell .coach-home-section-head h2,
+.coach-shell .coach-home-section-head h3 {
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.coach-shell .coach-home-section-head span,
+.coach-shell .coach-home-section-head p {
+  font-weight: 500;
+}
+
+.coach-shell .coach-home-link {
+  color: var(--coach-primary);
+  font-weight: 600;
+}
+
+.coach-shell .coach-home-action {
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.coach-shell .coach-home-action:hover {
+  transform: none;
+  border-color: #cfd8e4;
+  box-shadow: none;
+}
+
+.coach-shell .coach-home-action-icon {
+  border-radius: 14px;
+}
+
+.coach-shell .coach-home-action span {
+  font-weight: 600;
+}
+
+.coach-shell .coach-home-action small,
+.coach-shell .coach-home-person span,
+.coach-shell .coach-home-task span {
+  font-weight: 500;
+}
+
+.coach-shell .coach-home-card.is-alert {
+  border-color: var(--coach-border);
+}
+
+.coach-shell .coach-home-card.is-birthday {
+  background: #fff;
+  border-color: var(--coach-border);
+}
+
+.coach-shell .coach-home-avatar {
+  background: var(--coach-warm);
+  font-weight: 600;
+}
+
+.coach-shell .coach-home-person strong,
+.coach-shell .coach-home-task strong {
+  font-weight: 600;
+}
+
+.coach-shell .coach-home-badge {
+  font-weight: 600;
+}
+
+.coach-shell .coach-home-badge.is-high {
+  background: var(--coach-bad-soft);
+  color: #c4282d;
+}
+
+.coach-shell .coach-home-badge.is-medium {
+  background: var(--coach-warm-soft);
+  color: #c4461b;
+}
+
+.coach-shell .coach-home-badge.is-good {
+  background: var(--coach-good-soft);
+  color: #0f7a4f;
+}
+
+.coach-shell .coach-home-reminder {
+  border-radius: 16px;
+  border-color: #fde3b0;
+  background: var(--coach-warn-soft);
+}
+
+.coach-shell .coach-home-skeleton {
+  background: linear-gradient(90deg, #e9eef5 0%, #f7f9fc 46%, #e9eef5 100%);
+  background-size: 200% 100%;
+}
+
+/* ───────────── Öğrencilerim ───────────── */
+
+.coach-shell .coach-students-hero {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 16px;
+  min-height: 0;
+  padding: 24px;
+  border-radius: 24px;
+  background: var(--coach-primary);
+  box-shadow: none;
+}
+
+.coach-shell .coach-students-hero::before {
+  content: "";
+  position: absolute;
+  width: 200px;
+  height: 200px;
+  top: -70px;
+  right: -40px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+.coach-shell .coach-students-hero::after {
+  border: 0;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: none;
+  right: auto;
+  left: -60px;
+}
+
+.coach-shell .coach-students-kicker {
+  color: rgba(255, 255, 255, 0.82) !important;
+  font-size: 12px !important;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.coach-shell .coach-students-hero h2 {
+  font-size: clamp(24px, 3.4vw, 32px) !important;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+}
+
+.coach-shell .coach-students-hero-count {
+  border: 0;
+  background: rgba(255, 255, 255, 0.14);
+  backdrop-filter: none;
+}
+
+.coach-shell .coach-students-hero-count strong {
+  font-weight: 700;
+}
+
+@container (max-width: 560px) {
+  .coach-shell .coach-students-hero {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .coach-shell .coach-students-hero-count {
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    align-self: flex-start;
+  }
+}
+
+.coach-shell .coach-stat-pill {
+  border: 1px solid var(--coach-border) !important;
+  box-shadow: none !important;
+}
+
+.coach-shell .coach-stat-pill:hover {
+  transform: none;
+  border-color: #cfd8e4 !important;
+}
+
+.coach-shell .coach-stat-pill.is-active {
+  background: var(--coach-primary-soft) !important;
+  border-color: var(--coach-primary-soft) !important;
+  color: var(--coach-primary) !important;
+}
+
+.coach-shell .coach-stat-pill.is-active .coach-stat-value {
+  color: var(--coach-primary);
+}
+
+.coach-shell .coach-stat-pill.is-active .coach-stat-label {
+  color: var(--coach-primary) !important;
+}
+
+.coach-shell .coach-stat-value {
+  font-weight: 700;
+}
+
+.coach-shell .coach-students-toolbar {
+  border-color: var(--coach-border) !important;
+  border-radius: 20px !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.coach-shell .coach-students-search-wrap {
+  background: var(--coach-surface) !important;
+}
+
+.coach-shell .coach-filter-chip.is-active {
+  box-shadow: none;
+}
+
+.coach-shell .coach-student-card {
+  border-radius: 20px !important;
+  border-color: var(--coach-border) !important;
+  background: #fff !important;
+  box-shadow: none !important;
+}
+
+.coach-shell .coach-student-card:hover {
+  transform: none !important;
+  border-color: #cfd8e4 !important;
+  box-shadow: none !important;
+}
+
+/* ───────────── Doğum günleri ───────────── */
+
+.coach-shell .bday-hero {
+  background: var(--coach-warm);
+  box-shadow: none;
+}
+
+.coach-shell .bday-hero-orb {
+  background: rgba(255, 255, 255, 0.12) !important;
+  filter: none;
+}
+
+/* ───────────── Paylaşılan sayfa başlıkları (kütüphane, ödev, ölçme) ───────────── */
+
+.coach-shell .hero-header,
+.coach-shell .kk-hero,
+.coach-shell [class*="examList_header__"],
+.coach-shell [class*="examHeader_header__"],
+.coach-shell [class*="oturumGruplari_header__"],
+.coach-shell [class*="yeni_header__"] {
+  background: var(--coach-primary);
+  border: 0;
+  border-radius: 24px;
+  box-shadow: none;
+}
+
+.coach-shell .opk-hero {
+  background: var(--coach-warm) !important;
+  border: 0;
+  border-radius: 24px !important;
+  box-shadow: none;
+}
+
+.coach-shell .coach-reminder-banner {
+  background: var(--coach-warn-soft);
+  border-color: #fde3b0;
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.coach-shell .tkv-context-bar {
+  background: #fff;
+  border-color: var(--coach-border);
+  border-radius: 18px;
+  box-shadow: none;
+}
+
+.coach-shell .coach-content :is(
+  .btn-modern.btn-primary,
+  .wizard-btn-primary,
+  .wizard-step-item.active,
+  .tab-modern.active,
+  .tab-btn.active,
+  .kh-odev-btn
+) {
+  background: var(--coach-primary);
+  box-shadow: none;
+}
+
+.coach-shell .coach-content :is(.btn-modern.btn-primary, .wizard-btn-primary, .kh-odev-btn):hover {
+  background: var(--coach-primary-dark);
+}
+
+.coach-shell :is(.kutuphane-subnav-item, .coach-kutuphane-subnav-item).is-active {
+  background: var(--coach-primary);
+  box-shadow: none;
+}
+
+/* ───────────── Öğrenci 360 · Program sekmesi ───────────── */
+
+.coach-shell :is(.s360p-composer, .s360p-ledger) {
+  background: #fff;
+  color: var(--coach-text);
+  border: 1px solid var(--coach-border);
+  border-radius: 20px;
+  padding: 20px;
+}
+
+.coach-shell .s360p-kicker {
+  color: var(--coach-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.coach-shell .s360p-composer-top h2 {
+  color: var(--coach-text);
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.coach-shell .s360p-dates label {
+  color: var(--coach-muted);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.coach-shell .s360p-dates input {
+  border: 1px solid var(--coach-border);
+  border-radius: 12px;
+  background: var(--coach-surface);
+  color: var(--coach-text);
+}
+
+.coach-shell .s360p-span,
+.coach-shell .s360p-muted,
+.coach-shell .s360p-hw-head em,
+.coach-shell .s360p-hw-list button span {
+  color: var(--coach-muted);
+}
+
+.coach-shell .s360p-create {
+  min-height: 46px;
+  border-radius: 14px;
+  background: var(--coach-primary);
+  color: #fff;
+  font-weight: 600;
+}
+
+.coach-shell .s360p-hw {
+  border-top-color: var(--coach-border);
+}
+
+.coach-shell .s360p-hw-head {
+  color: var(--coach-text);
+}
+
+.coach-shell .s360p-hw-list button {
+  border: 1px solid var(--coach-border);
+  border-radius: 14px;
+  background: #fff;
+}
+
+.coach-shell .s360p-hw-list button.is-on {
+  border-color: var(--coach-primary);
+  background: var(--coach-primary-soft);
+}
+
+.coach-shell .s360p-ledger-head strong {
+  font-weight: 700;
+}
+
+.coach-shell .s360p-rows button {
+  border-color: var(--coach-border);
+  border-radius: 14px;
+}
+
+.coach-shell .s360p-rows button:hover {
+  border-color: #cfd8e4;
+}
+
+.coach-shell .s360p-meta,
+.coach-shell .s360p-empty,
+.coach-shell .s360p-done-toggle {
+  color: var(--coach-muted);
+}
+
+.coach-shell .s360p-meta i {
+  background: #c3ccd8;
+}
+
+/* ───────────── Takvim ───────────── */
+
+.coach-shell .tkv-root,
+.coach-shell .tkv-context-bar {
+  --tkv-primary: #0262a7;
+  --tkv-primary-h: #01518c;
+  --tkv-bg: #f5f7fb;
+  --tkv-border: #e3e8f0;
+  --tkv-text: #0f1b2d;
+  --tkv-text-sec: #6b7a90;
+}
+
+/* ───────────── Paylaşılan Tailwind bileşenlerinde mor/indigo → marka mavisi ───────────── */
+
+html:has(.coach-shell) :is(.bg-indigo-500, .bg-indigo-600, .bg-violet-600, .bg-purple-600) {
+  background-color: var(--coach-primary);
+}
+
+html:has(.coach-shell) :is(.hover\:bg-indigo-700, .hover\:bg-violet-700, .hover\:bg-purple-700):hover {
+  background-color: var(--coach-primary-dark);
+}
+
+html:has(.coach-shell) :is(.text-indigo-500, .text-indigo-600, .text-indigo-700, .text-violet-600, .text-purple-600) {
+  color: var(--coach-primary);
+}
+
+html:has(.coach-shell) :is(.bg-indigo-50, .bg-violet-50) {
+  background-color: var(--coach-primary-soft);
+}
+
+html:has(.coach-shell) :is(.border-indigo-500, .border-indigo-600, .focus\:border-indigo-500:focus) {
+  border-color: var(--coach-primary);
+}
+
+html:has(.coach-shell) :is(.shadow-indigo-500\/25, .shadow-indigo-500\/30, .shadow-lg.shadow-indigo-500\/25) {
+  --tw-shadow-color: transparent;
+  box-shadow: none;
+}
+
+/* ───────────── Rozetler ───────────── */
+
+.coach-shell .coach-risk-badge,
+.coach-shell .coach-badge {
+  font-weight: 600;
+}

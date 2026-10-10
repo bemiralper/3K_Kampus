@@ -815,11 +815,37 @@
 }
 
 .roomEdit {
-  display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(140px, 1fr) 88px 88px 88px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.roomFields {
+  display: flex;
+  flex-wrap: wrap;
   gap: 10px;
   align-items: end;
-  margin-bottom: 10px;
+}
+
+.roomFields .field {
+  flex: 1 1 150px;
+  min-width: 0;
+}
+
+.roomFields .field:has(input[inputmode="numeric"]) {
+  flex: 0 1 92px;
+}
+
+.roomActions {
+  display: flex;
+  gap: 8px;
+  align-items: end;
+  margin-left: auto;
+}
+
+.seatSpan {
+  width: 100%;
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
@@ -922,10 +948,9 @@
     display: none;
   }
 
-  .roomEdit {
-    grid-template-columns: 1fr 1fr 1fr 40px;
+  .roomFields .field,
+  .roomFields .field:has(input[inputmode="numeric"]) {
+    flex: 1 1 calc(50% - 10px);
   }
-  .roomEdit .field:nth-child(-n + 2) {
-    grid-column: 1 / -1;
-  }
+  .roomActions { margin-left: 0; width: 100%; justify-content: flex-end; }
 }

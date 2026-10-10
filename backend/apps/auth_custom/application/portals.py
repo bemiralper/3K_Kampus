@@ -25,8 +25,10 @@ _COACH_CODES = frozenset({'koc'})
 _MUHASEBE_CODES = frozenset({'muhasebe'})
 
 
-def portal_for_role_code(code: str | None) -> str:
+def portal_for_role_code(code: str | None) -> str | None:
     normalized = (code or '').strip().lower()
+    if normalized == 'ogrenci':
+        return None
     if normalized in _COACH_CODES:
         return PORTAL_COACH
     if normalized in _MUHASEBE_CODES:
@@ -100,6 +102,8 @@ def portal_roles(user) -> dict:
         if role is None:
             continue
         portal = portal_for_role_code(role.code)
+        if not portal:
+            continue
         chosen[portal] = _prefer_role(chosen.get(portal), role)
 
     if _has_active_coach_profile(user) and PORTAL_COACH not in chosen:

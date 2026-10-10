@@ -210,6 +210,8 @@ export interface DenemeSalon {
   id: number;
   name: string;
   capacity: number;
+  /** Bu salon seçilince sınav salonuna kopyalanan pasif sıra numaraları. */
+  inactive_seats?: number[];
 }
 
 export interface ExamRoomItem {
@@ -220,6 +222,8 @@ export interface ExamRoomItem {
   seat_start?: number;
   /** Öğrenciler arasında bırakılan boş sıra. 0 bitişik, 2 ise 1, 4, 7. */
   seat_gap?: number;
+  /** Bu numaralara öğrenci yerleştirilmez. */
+  inactive_seats?: number[];
   /** Boşsa salon her oturumda kullanılır. */
   exam_session_id?: number | null;
   /** Kayıt öncesi sihirbazda oturum sırası. */

@@ -3,6 +3,7 @@
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useState, useEffect, useCallback } from 'react';
 import { examApi, puanAyarlariApi } from '../../../../components/olcme/api';
+import { useOlcmePath } from '../../../../components/olcme/useOlcmePath';
 import {
   EXAM_TYPES,
   EXAM_STATUS,
@@ -86,6 +87,7 @@ type TabKey = typeof TABS[number]['key'];
 
 export default function ExamDetailPage() {
   const router = useRouter();
+  const { href } = useOlcmePath();
   const params = useParams();
   const searchParams = useSearchParams();
   const examId = Number(params.examId);
@@ -133,7 +135,7 @@ export default function ExamDetailPage() {
     setActionError('');
     try {
       const copy = await examApi.copy(examId);
-      router.push(`/admin/olcme-degerlendirme/${copy.id}`);
+      router.push(href(String(copy.id)));
     } catch (err) {
       setActionError(errText(err, 'Sınav kopyalanamadı.'));
     }
@@ -146,7 +148,7 @@ export default function ExamDetailPage() {
     setActionError('');
     try {
       await examApi.delete(examId);
-      router.push('/admin/olcme-degerlendirme');
+      router.push(href());
     } catch (err) {
       setActionError(errText(err, 'Sınav kaldırılamadı.'));
     }
@@ -166,7 +168,7 @@ export default function ExamDetailPage() {
       <div style={{ padding: '20px 24px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#991b1b' }}>
         <strong>Hata:</strong> {error || 'Sınav bulunamadı.'}
         <button className="btn-modern btn-secondary" style={{ marginLeft: 12 }}
-          onClick={() => router.push('/admin/olcme-degerlendirme')}>Geri Dön</button>
+          onClick={() => router.push(href())}>Geri Dön</button>
       </div>
     </div>
   );
@@ -178,7 +180,7 @@ export default function ExamDetailPage() {
 
       <ExamHeader
         exam={exam}
-        onBack={() => router.push('/admin/olcme-degerlendirme')}
+        onBack={() => router.push(href())}
         onTabChange={tab => setActiveTab(tab as TabKey)}
         onToggleLock={handleLock}
         onCopy={handleCopy}
@@ -188,7 +190,7 @@ export default function ExamDetailPage() {
       {actionError && <ErrorBar message={actionError} onClose={() => setActionError('')} />}
 
       {/* ── Tab Nav ───────────────────────────────────────────────────────── */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, overflowX: 'auto', paddingBottom: 2 }}>
+      <div className={s.detailTabs}>
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
             className={`tab-modern ${activeTab === t.key ? 'active' : ''}`}>

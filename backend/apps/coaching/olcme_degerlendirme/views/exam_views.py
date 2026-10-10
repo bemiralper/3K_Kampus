@@ -290,7 +290,11 @@ class ExamViewSet(viewsets.ModelViewSet):
     def perform_update(self, serializer):
         old_instance = self.get_object()
         old_status = old_instance.status
+        old_puan_yili = old_instance.puan_yili
         exam = serializer.save()
+        if exam.puan_yili != old_puan_yili:
+            from ..services.stored_scores import refresh_exam_scores
+            refresh_exam_scores(exam)
         self._sync_to_calendar(exam, self.request.user.id)
         try:
             from apps.coaching.application.olcme_publish import sync_dispatches_from_exam
@@ -906,6 +910,8 @@ class ExamViewSet(viewsets.ModelViewSet):
             # Bağlantıyı kaldır
             exam.linked_tyt_exam = None
             exam.save(update_fields=['linked_tyt_exam'])
+            from ..services.stored_scores import refresh_exam_scores
+            refresh_exam_scores(exam)
             return Response({
                 'message': 'TYT bağlantısı kaldırıldı.',
                 'data': ExamDetailSerializer(exam).data,
@@ -925,6 +931,8 @@ class ExamViewSet(viewsets.ModelViewSet):
 
         exam.linked_tyt_exam = tyt_exam
         exam.save(update_fields=['linked_tyt_exam'])
+        from ..services.stored_scores import refresh_exam_scores
+        refresh_exam_scores(exam)
         return Response({
             'message': f'TYT sınavı bağlandı: {tyt_exam.name}',
             'data': ExamDetailSerializer(exam).data,

@@ -323,6 +323,8 @@ def exam_participant_add(request, exam_pk):
         for room in rooms_for_session(exam, p.exam_session_id):
             if assign_participant_to_room(p, room) is None:
                 break
+    from ..services.stored_scores import refresh_exam_scores
+    refresh_exam_scores(exam)
     return Response(_participant_row(exam, p.pk), status=201)
 
 
@@ -368,6 +370,8 @@ def exam_participant_detail(request, exam_pk, participant_pk):
 
     if request.method == 'DELETE':
         p.delete()
+        from ..services.stored_scores import refresh_exam_scores
+        refresh_exam_scores(exam)
         return Response(status=204)
 
     if 'exam_session_id' in request.data:
@@ -891,7 +895,19 @@ def exam_hatirlatma_send(request, exam_pk):
 
 
 def _salon_row(row) -> dict:
-    return {'id': row.id, 'name': row.name, 'capacity': row.capacity}
+    return {
+        'id': row.id,
+        'name': row.name,
+        'capacity': row.capacity,
+        'inactive_seats': row.inactive_seats or [],
+    }
+
+
+def _salon_inactive(data, current=None) -> list:
+    from ..services.exam_roster import parse_inactive_seats
+    if 'inactive_seats' not in data:
+        return list(current or [])
+    return parse_inactive_seats(data.get('inactive_seats'))
 
 
 @api_view(['GET', 'POST'])
@@ -915,10 +931,17 @@ def deneme_salonlari(request):
         capacity = max(1, int(request.data.get('capacity') or 30))
     except (TypeError, ValueError):
         capacity = 30
+    existing = DenemeSalon.objects.filter(sube_id=ctx['sube_id'], name=name).first()
     row, _created = DenemeSalon.objects.update_or_create(
         sube_id=ctx['sube_id'],
         name=name,
-        defaults={'capacity': capacity},
+        defaults={
+            'capacity': capacity,
+            'inactive_seats': _salon_inactive(
+                request.data,
+                existing.inactive_seats if existing else [],
+            ),
+        },
     )
     return Response(_salon_row(row))
 
@@ -952,5 +975,6 @@ def deneme_salon_detail(request, salon_id):
         return Response({'error': 'Bu adla kayıtlı salon var.'}, status=400)
     row.name = name
     row.capacity = capacity
-    row.save(update_fields=['name', 'capacity'])
+    row.inactive_seats = _salon_inactive(request.data, row.inactive_seats)
+    row.save(update_fields=['name', 'capacity', 'inactive_seats'])
     return Response(_salon_row(row))

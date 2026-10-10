@@ -13,6 +13,7 @@ import { useCoachSidebarCollapse } from "@/hooks/useCoachSidebarCollapse";
 import GorevEkranMesajiOverlay from "@/components/gorev/GorevEkranMesajiOverlay";
 import { ActiveKurumBranding } from "@/components/branding/KurumLogo";
 import "./coach.css";
+import "./coach-theme.css";
 
 const PAGE_TITLES: Record<string, string> = {
   "/coach/dashboard": "Bugün",
@@ -28,6 +29,9 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/odev/kaynaklar": "Eğitim Kaynakları",
   "/coach/odev/kaynak-havuzu": "Kitap Atamaları",
   "/coach/yoklama": "Sınıf Yoklaması",
+  "/coach/olcme-degerlendirme": "Sınav Listesi",
+  "/coach/olcme-degerlendirme/yeni": "Yeni Sınav Oluştur",
+  "/coach/olcme-degerlendirme/oturum-gruplari": "Oturum grupları",
   "/coach/kutuphane": "Kütüphane",
   "/coach/gorusmeler": "Görüşmeler",
   "/coach/gorevler": "Görevler",
@@ -45,6 +49,7 @@ function resolvePageTitle(pathname: string): string {
   if (pathname.startsWith("/coach/odev/kaynak-havuzu/")) return "Kitap Atamaları · Öğrenci";
   if (pathname.startsWith("/coach/odev/kaynak-havuzu")) return "Kitap Atamaları";
   if (pathname.startsWith("/coach/odev/kaynaklar")) return "Eğitim Kaynakları";
+  if (/^\/coach\/olcme-degerlendirme\/\d+/.test(pathname)) return "Sınav";
   if (pathname.startsWith("/coach/kutuphane/")) {
     if (pathname.includes("/atamalar")) return "Kütüphane · Öğrenci Atamaları";
     if (pathname.includes("/salonlar")) return "Kütüphane · Salonlar";

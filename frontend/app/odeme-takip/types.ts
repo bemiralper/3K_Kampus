@@ -109,6 +109,7 @@ export interface Taksit {
   kalan_tutar: number;
   durum: string;
   odeme_yontemi_id?: number | null;
+  odeme_yontemi?: { id: number; ad: string; tip?: string } | null;
   // joined fields from vadesi gecenler
   sozlesme_no?: string;
   ogrenci_adi?: string;

@@ -905,6 +905,9 @@ def sync_optional_philosophy_section(exam) -> None:
     if needs_apply:
         _apply_template_ranges(exam, include)
     _reassign_subjects_and_items(exam)
+    if needs_apply:
+        from .exam_rescore import rescore_exam_results
+        rescore_exam_results(exam)
 
 
 def _reassign_subjects_and_items(exam):

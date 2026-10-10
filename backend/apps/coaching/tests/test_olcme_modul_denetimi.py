@@ -15,8 +15,8 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.coaching.olcme_degerlendirme.models import (
-    AnswerKey, AnswerKeyItem, Exam, ExamSection, ExamSessionModel,
-    MappingTemplate,
+    AnswerKey, AnswerKeyItem, Exam, ExamSection, ExamSession, ExamSessionModel,
+    MappingTemplate, StudentAnswer, StudentSectionScore,
 )
 from apps.coaching.olcme_degerlendirme.services.exam_roster import create_exam_sessions
 from apps.coaching.tests.olcme_helpers import grant_olcme_write
@@ -101,6 +101,48 @@ class AnswerKeyBulkImportTest(OlcmeModulFixture):
         self.assertEqual(
             list(key.items.values_list('question_number', flat=True)), [1],
         )
+
+    def test_cancelling_a_question_rescores_uploaded_answers(self):
+        """İptal kaydı, yüklenmiş DAT netini kendiliğinden yenilemeli."""
+        first = self._bulk([
+            {'question_number': q, 'correct_answer': 'A'}
+            for q in range(1, 11)
+        ])
+        self.assertEqual(first.status_code, 200, first.content[:400])
+
+        session = ExamSession.objects.create(exam=self.exam, status='COMPLETED')
+        # 2. soru yanlış; diğerleri doğru. İptal sonrası doğru 10 olmalı.
+        answers = {str(q): 'A' for q in range(1, 11)}
+        answers['2'] = 'C'
+        sa = StudentAnswer.objects.create(
+            session=session, raw_student_id='1', booklet='A',
+            answers=answers, total_correct=9, total_wrong=1, total_net=9,
+        )
+        StudentSectionScore.objects.create(
+            student_answer=sa, section=self.section,
+            correct=9, wrong=1, empty=0, net=9,
+        )
+
+        second = self._bulk([
+            {
+                'question_number': 2,
+                'correct_answer': 'INVALID',
+                'is_cancelled': True,
+            },
+            *[
+                {'question_number': q, 'correct_answer': 'A'}
+                for q in range(1, 11) if q != 2
+            ],
+        ])
+        self.assertEqual(second.status_code, 200, second.content[:400])
+        self.assertEqual(second.json()['rescored'], 1)
+
+        sa.refresh_from_db()
+        score = sa.section_scores.get(section=self.section)
+        self.assertEqual(score.correct, 10)
+        self.assertEqual(score.wrong, 0)
+        self.assertEqual(sa.total_correct, 10)
+        self.assertEqual(sa.comparison['2']['result'], 'cancelled')
 
 
 class AnswerKeyWritePermissionTest(OlcmeModulFixture):

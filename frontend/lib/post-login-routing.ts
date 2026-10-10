@@ -11,7 +11,7 @@
  */
 
 import type { User } from "@/lib/contexts/AuthContext";
-import { assignedPortalCodes, getDefaultHomePath, type PortalCode } from "@/lib/auth-routes";
+import { assignedPortalCodes, getDefaultHomePath, isStudentUser, type PortalCode } from "@/lib/auth-routes";
 import { activatePortal, readStoredPortal } from "@/lib/profile-api";
 import { setActiveContext } from "@/lib/api";
 import { personelAccessService } from "@/lib/personel-access-api";
@@ -92,6 +92,10 @@ async function persistSingleSube(
 /** Giriş başarılı olduktan sonra gidilecek path. */
 export async function resolvePostLoginRedirect(user: User | null): Promise<string> {
   if (!user) return "/?giris=1";
+  if (isStudentUser(user)) {
+    clearContextGate();
+    return "/ogrenci";
+  }
 
   try {
     // Önceki oturumdan kalan şube; çok şubeli kullanıcıda picker kararını bozmasın

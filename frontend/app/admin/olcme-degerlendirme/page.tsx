@@ -6,6 +6,7 @@ import { examApi, uploadApi } from '../../../components/olcme/api';
 import type { ExamListItem } from '../../../components/olcme/types';
 import { EXAM_TYPES } from '../../../components/olcme/types';
 import Icon from '../../../components/olcme/ui/Icon';
+import { useOlcmePath } from '../../../components/olcme/useOlcmePath';
 import s from './examList.module.css';
 
 /* ── Sınav aşamaları ──────────────────────────────────────────────────────── */
@@ -187,6 +188,7 @@ interface RematchResult {
 }
 
 export default function OlcmeListPage() {
+  const { href, isCoach } = useOlcmePath();
   const [exams, setExams]     = useState<ExamListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState('');
@@ -354,11 +356,13 @@ export default function OlcmeListPage() {
               <Icon name="refresh" size={15} className={rematching ? s.spin : undefined} />
               {rematching ? 'Eşleştiriliyor…' : 'Toplu Eşleştir'}
             </button>
-            <Link href="/admin/olcme-degerlendirme/kazanimlar" className={s.action}>
-              <Icon name="outcome" size={15} />
-              Kazanım Yönetimi
-            </Link>
-            <Link href="/admin/olcme-degerlendirme/yeni" className={`${s.action} ${s.actionPrimary}`}>
+            {!isCoach && (
+              <Link href="/admin/olcme-degerlendirme/kazanimlar" className={s.action}>
+                <Icon name="outcome" size={15} />
+                Kazanım Yönetimi
+              </Link>
+            )}
+            <Link href={href('yeni')} className={`${s.action} ${s.actionPrimary}`}>
               <Icon name="plus" size={16} strokeWidth={2.5} />
               Yeni Sınav
             </Link>
@@ -565,7 +569,7 @@ export default function OlcmeListPage() {
               <p className={s.emptyText}>
                 İlk sınavınızı oluşturarak başlayın. TYT/AYT/LGS (7–8) bölümleri şablondan gelir; konu tarama, kazanım ve özelde dersleri siz yazarsınız.
               </p>
-              <Link href="/admin/olcme-degerlendirme/yeni" className={`${s.rowBtn} ${s.rowBtnPrimary}`}>
+              <Link href={href('yeni')} className={`${s.rowBtn} ${s.rowBtnPrimary}`}>
                 <Icon name="plus" size={14} strokeWidth={2.5} />
                 İlk Sınavı Oluştur
               </Link>
@@ -599,11 +603,11 @@ export default function OlcmeListPage() {
                     : 0;
                   return (
                     <tr key={exam.id}>
-                      <td className={s.numCell}>{index + 1}</td>
+                      <td className={s.numCell} data-label="#">{index + 1}</td>
                       {/* Sınav adı + bağlantı rozetleri */}
-                      <td className={s.nameCell}>
+                      <td className={`${s.nameCell} ${s.cardTitle}`} data-label="Sınav">
                         <div className={s.nameRow}>
-                          <Link href={`/admin/olcme-degerlendirme/${exam.id}`} className={s.nameLink}>
+                          <Link href={href(String(exam.id))} className={s.nameLink}>
                             {exam.name}
                           </Link>
                           {exam.is_locked && (
@@ -631,13 +635,13 @@ export default function OlcmeListPage() {
                         )}
                       </td>
 
-                      <td style={{ whiteSpace: 'nowrap' }}>{exam.exam_type_display}</td>
+                      <td data-label="Tür">{exam.exam_type_display}</td>
 
-                      <td>
+                      <td data-label="Aşama">
                         <StageCell status={exam.status} statusDisplay={exam.status_display} />
                       </td>
 
-                      <td style={{ whiteSpace: 'nowrap' }}>
+                      <td data-label="Tarih">
                         {fmtDate(exam.exam_date)}
                         {exam.duration_minutes && (
                           <div className={s.subMeta}>
@@ -647,13 +651,13 @@ export default function OlcmeListPage() {
                         )}
                       </td>
 
-                      <td style={{ whiteSpace: 'nowrap' }}>
+                      <td data-label="İçerik">
                         <strong>{exam.total_questions}</strong> soru
                         <div className={s.subMeta}>{exam.section_count} bölüm</div>
                       </td>
 
                       {/* Sonuç durumu — eşleşme oranı çubukla görünür */}
-                      <td className={s.resultCell}>
+                      <td className={s.resultCell} data-label="Sonuçlar">
                         {exam.answer_count > 0 ? (
                           <>
                             <div className={s.resultTop}>
@@ -676,34 +680,34 @@ export default function OlcmeListPage() {
                         )}
                       </td>
 
-                      <td className={s.muted} style={{ maxWidth: 160, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      <td className={`${s.muted} ${s.classCell}`} data-label="Sınıflar"
                         title={exam.sinif_display || ''}>
                         {exam.sinif_display || '—'}
                       </td>
 
                       {/* İşlemler — sınavın aşamasına göre en olası adım öne çıkar */}
-                      <td>
+                      <td data-label="İşlemler">
                         <div className={s.rowActions}>
                           {exam.answer_count > 0 ? (
-                            <Link href={`/admin/olcme-degerlendirme/${exam.id}?tab=analiz`}
+                            <Link href={href(`${exam.id}?tab=analiz`)}
                               className={`${s.rowBtn} ${s.rowBtnPrimary}`}>
                               <Icon name="chart" size={13} />
                               Analiz
                             </Link>
                           ) : exam.status === 'DRAFT' ? (
-                            <Link href={`/admin/olcme-degerlendirme/${exam.id}?tab=cevap-anahtari`}
+                            <Link href={href(`${exam.id}?tab=cevap-anahtari`)}
                               className={`${s.rowBtn} ${s.rowBtnPrimary}`}>
                               <Icon name="answerKey" size={13} />
                               Cevap Anahtarı
                             </Link>
                           ) : (
-                            <Link href={`/admin/olcme-degerlendirme/${exam.id}?tab=yukle`}
+                            <Link href={href(`${exam.id}?tab=yukle`)}
                               className={`${s.rowBtn} ${s.rowBtnPrimary}`}>
                               <Icon name="upload" size={13} />
                               Sonuç Yükle
                             </Link>
                           )}
-                          <Link href={`/admin/olcme-degerlendirme/${exam.id}`} className={s.rowBtn}>
+                          <Link href={href(String(exam.id))} className={s.rowBtn}>
                             Aç
                           </Link>
                           <button

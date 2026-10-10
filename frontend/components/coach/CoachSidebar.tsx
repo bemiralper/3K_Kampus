@@ -274,7 +274,7 @@ export default function CoachSidebar({
     >
       <div className="coach-sidebar-header">
         <div className="coach-logo-container">
-          <KurumLogo variant="login" width={120} height={36} showText={false} className="coach-logo-container" />
+          <KurumLogo variant="app" width={120} height={36} showText={false} className="coach-logo-container" />
         </div>
         <button
           type="button"

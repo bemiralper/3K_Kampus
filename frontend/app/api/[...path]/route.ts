@@ -87,9 +87,10 @@ function streamProxyResponse(response: Response): Response {
   });
 }
 
-/** PDF, Excel vb. binary yanıtlar text() ile okunursa dosya bozulur (boş sayfa). */
+/** PDF, görsel, Excel vb. binary yanıtlar text() ile okunursa dosya bozulur. */
 function isBinaryResponse(contentType: string, disposition: string | null): boolean {
   const ct = contentType.toLowerCase();
+  if (ct.startsWith('image/')) return true;
   if (ct.includes('application/pdf')) return true;
   if (ct.includes('text/csv')) return true;
   if (ct.includes('spreadsheetml')) return true;

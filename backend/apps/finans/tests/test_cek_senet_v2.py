@@ -204,6 +204,79 @@ class CekSenetV2Test(TestCase):
             2,
         )
 
+    def test_taksitli_mixed_method_keeps_one_cek_in_portfolio(self):
+        """Taksitli sözleşmede tek satır çek kalır; diğer satırlar sözleşme yönteminde durur."""
+        from apps.odeme_takip.application.services.sozlesme_service import SozlesmeService
+        from apps.odeme_takip.domain.enums import OdemeTuru
+
+        Taksit.objects.filter(sozlesme=self.sozlesme).delete()
+        CekSenetDetay.objects.filter(taksit__sozlesme=self.sozlesme).delete()
+        self.sozlesme.odeme_turu = OdemeTuru.TAKSITLI
+        self.sozlesme.odeme_yontemi = self.nakit
+        self.sozlesme.net_tutar = 3000
+        self.sozlesme.taksit_sayisi = 2
+        self.sozlesme.ilk_odeme_tarihi = timezone.localdate()
+        self.sozlesme.taksit_periyodu = 'aylik'
+        self.sozlesme.save()
+
+        vade1 = timezone.localdate().isoformat()
+        vade2 = (timezone.localdate() + timedelta(days=30)).isoformat()
+        manuel = [
+            {'tutar': 1000, 'vade_tarihi': vade1, 'odeme_yontemi_id': self.nakit.id},
+            {'tutar': 2000, 'vade_tarihi': vade2, 'odeme_yontemi_id': self.cek_yontemi.id},
+        ]
+        taksitler, err = TaksitService().smart_recreate(
+            sozlesme=self.sozlesme,
+            yontem='manuel',
+            manuel_taksitler=manuel,
+        )
+        self.assertIsNone(err, err)
+        self.assertEqual(
+            [t.odeme_yontemi_id for t in taksitler],
+            [self.nakit.id, self.cek_yontemi.id],
+        )
+        detaylar = CekSenetDetay.objects.filter(
+            taksit__sozlesme=self.sozlesme,
+            durum=CekSenetDurum.BEKLIYOR,
+        )
+        self.assertEqual(detaylar.count(), 1)
+        self.assertEqual(detaylar.get().tutar, 2000)
+
+        Taksit.objects.filter(sozlesme=self.sozlesme).delete()
+        CekSenetDetay.objects.filter(taksit__sozlesme=self.sozlesme).delete()
+        SozlesmeService()._apply_taksit_plan(self.sozlesme, {
+            'taksit_yontemi': 'esit',
+            'taksit_odeme_yontemleri': [
+                {'taksit_no': 2, 'odeme_yontemi_id': self.cek_yontemi.id},
+            ],
+        })
+        rows = list(
+            Taksit.objects.filter(sozlesme=self.sozlesme).order_by('taksit_no')
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0].odeme_yontemi_id, self.nakit.id)
+        self.assertEqual(rows[1].odeme_yontemi_id, self.cek_yontemi.id)
+        self.assertEqual(
+            CekSenetDetay.objects.filter(
+                taksit__sozlesme=self.sozlesme,
+                durum=CekSenetDurum.BEKLIYOR,
+            ).count(),
+            1,
+        )
+
+        updated, update_err = TaksitService().update_taksit(
+            rows[1].id,
+            {'odeme_yontemi_id': self.nakit.id},
+        )
+        self.assertIsNone(update_err, update_err)
+        self.assertEqual(updated.odeme_yontemi_id, self.nakit.id)
+        self.assertFalse(
+            CekSenetDetay.objects.filter(
+                taksit__sozlesme=self.sozlesme,
+                durum=CekSenetDurum.BEKLIYOR,
+            ).exists()
+        )
+
     def test_cek_senet_sozlesme_auto_assigns_single_yontem(self):
         """Çek/senet sözleşmesinde yöntemsiz taksitlere tek kurum çek yöntemi atanır."""
         from apps.odeme_takip.domain.enums import OdemeTuru

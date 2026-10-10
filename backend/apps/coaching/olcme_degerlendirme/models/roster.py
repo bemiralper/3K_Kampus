@@ -58,6 +58,12 @@ class ExamRoom(models.Model):
         default=0,
         help_text='Öğrenciler arasında bırakılan boş sıra. 0 bitişik oturur, 2 ise 1, 4, 7 gider.',
     )
+    inactive_seats = models.JSONField(
+        'Pasif sıralar',
+        default=list,
+        blank=True,
+        help_text='Bu sıra numaralarına öğrenci yerleştirilmez. Örn. [5, 12, 18].',
+    )
     order = models.PositiveSmallIntegerField('Sıra', default=0)
     seating_mode = models.CharField(
         'Oturma kuralı',
@@ -75,15 +81,30 @@ class ExamRoom(models.Model):
         help_text='Boşsa salon her oturumda kullanılır. Doluysa yalnız bu oturumun öğrencileri buraya oturur.',
     )
 
+    def inactive_seat_set(self) -> set[int]:
+        raw = self.inactive_seats or []
+        if not isinstance(raw, (list, tuple)):
+            return set()
+        out: set[int] = set()
+        for item in raw:
+            try:
+                n = int(item)
+            except (TypeError, ValueError):
+                continue
+            if n >= 1:
+                out.add(n)
+        return out
+
     def seat_numbers(self) -> list[int]:
-        """Numaralı yerler start..start+kapasite-1. Ara boşluk bu numaraların arasını atlar."""
+        """Kullanılabilir sıralar. Ara boşluk ve pasif numaralar atlanır."""
         start = max(1, int(self.seat_start or 1))
         gap = max(0, int(self.seat_gap or 0))
         cap = max(0, int(self.capacity or 0))
         if cap == 0:
             return []
         end = start + cap - 1
-        return list(range(start, end + 1, gap + 1))
+        skip = self.inactive_seat_set()
+        return [n for n in range(start, end + 1, gap + 1) if n not in skip]
 
     class Meta:
         app_label = 'olcme_degerlendirme'
@@ -108,6 +129,12 @@ class DenemeSalon(models.Model):
     )
     name = models.CharField('Salon adı', max_length=100)
     capacity = models.PositiveIntegerField('Kapasite', default=30)
+    inactive_seats = models.JSONField(
+        'Pasif sıralar',
+        default=list,
+        blank=True,
+        help_text='Bu salon seçilince sınava kopyalanan pasif sıra numaraları.',
+    )
 
     class Meta:
         app_label = 'olcme_degerlendirme'

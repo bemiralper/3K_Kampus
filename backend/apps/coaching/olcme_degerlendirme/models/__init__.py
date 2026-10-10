@@ -12,7 +12,7 @@ Modeller:
 from .exam import Exam, ExamSection, ExamSessionModel
 from .answer_key import AnswerKey, AnswerKeyItem
 from .session import ExamSession
-from .result import StudentAnswer, StudentSectionScore
+from .result import StudentAnswer, StudentSectionScore, StudentStoredScore
 from .curriculum import Subject, Topic, Outcome, SubOutcome
 from .mapping_template import MappingTemplate
 from .scoring_settings import OlcmePuanAyar, OlcmeKatsayiSeti
@@ -26,7 +26,7 @@ __all__ = [
     'Exam', 'ExamSection', 'ExamSessionModel',
     'AnswerKey', 'AnswerKeyItem',
     'ExamSession',
-    'StudentAnswer', 'StudentSectionScore',
+    'StudentAnswer', 'StudentSectionScore', 'StudentStoredScore',
     'Subject', 'Topic', 'Outcome', 'SubOutcome',
     'MappingTemplate',
     'OlcmePuanAyar', 'OlcmeKatsayiSeti',

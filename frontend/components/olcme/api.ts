@@ -308,16 +308,24 @@ export const examApi = {
   denemeSalonlari: () =>
     request<DenemeSalon[]>('/api/coaching/olcme-degerlendirme/deneme-salonlari/'),
 
-  saveDenemeSalon: (name: string, capacity: number) =>
+  saveDenemeSalon: (name: string, capacity: number, inactiveSeats?: number[]) =>
     request<DenemeSalon>('/api/coaching/olcme-degerlendirme/deneme-salonlari/', {
       method: 'POST',
-      body: JSON.stringify({ name, capacity }),
+      body: JSON.stringify({
+        name,
+        capacity,
+        ...(inactiveSeats ? { inactive_seats: inactiveSeats } : {}),
+      }),
     }),
 
-  updateDenemeSalon: (id: number, name: string, capacity: number) =>
+  updateDenemeSalon: (id: number, name: string, capacity: number, inactiveSeats?: number[]) =>
     request<DenemeSalon>(`/api/coaching/olcme-degerlendirme/deneme-salonlari/${id}/`, {
       method: 'PATCH',
-      body: JSON.stringify({ name, capacity }),
+      body: JSON.stringify({
+        name,
+        capacity,
+        ...(inactiveSeats ? { inactive_seats: inactiveSeats } : {}),
+      }),
     }),
 
   deleteDenemeSalon: (id: number) =>

@@ -148,6 +148,12 @@ class SeatingCapacityTest(TestCase):
         rooms = [ExamRoom(name='A', capacity=30), ExamRoom(name='B', capacity=20)]
         self.assertIsNone(seating_capacity_error(50, rooms))
 
+    def test_inactive_seats_reduce_usable_capacity(self):
+        room = ExamRoom(name='A', capacity=10, inactive_seats=[2, 5, 9])
+        self.assertEqual(room.seat_numbers(), [1, 3, 4, 6, 7, 8, 10])
+        self.assertIsNotNone(seating_capacity_error(8, [room]))
+        self.assertIsNone(seating_capacity_error(7, [room]))
+
 
 class SeatingUniqueTest(RosterFixtureMixin, TestCase):
     def setUp(self):
@@ -214,6 +220,18 @@ class SeatingUniqueTest(RosterFixtureMixin, TestCase):
             ExamParticipant.objects.get(exam=self.exam, student=self.packaged).room_id,
             weekend.id,
         )
+
+    def test_inactive_seats_are_skipped(self):
+        ExamRoom.objects.filter(exam=self.exam).delete()
+        ExamRoom.objects.create(
+            exam=self.exam, name='A', capacity=8, inactive_seats=[2, 5], order=0,
+        )
+        result = apply_seating(self.exam, mode='sequential')
+        self.assertTrue(result['ok'], result)
+        seats = sorted(
+            ExamParticipant.objects.filter(exam=self.exam).values_list('seat_no', flat=True)
+        )
+        self.assertEqual(seats, [1, 3, 4])
 
     def test_start_and_gap_control_seat_numbers(self):
         ExamRoom.objects.filter(exam=self.exam).delete()
@@ -445,6 +463,58 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         self.assertEqual(room['seat_gap'], 2)
         saved = ExamRoom.objects.get(exam=self.exam, name='Salon A')
         self.assertEqual(saved.seat_numbers()[:3], [51, 54, 57])
+
+    def test_rooms_put_skips_inactive_seats(self):
+        seated = ExamParticipant.objects.create(
+            exam=self.exam, student=self.in_class, seat_no=2,
+        )
+        room = ExamRoom.objects.create(exam=self.exam, name='Eski', capacity=10, order=0)
+        seated.room = room
+        seated.seat_no = 2
+        seated.save(update_fields=['room', 'seat_no'])
+        res = self.client.put(
+            f'{EXAMS_URL}{self.exam.id}/rooms/',
+            {'rooms': [{
+                'id': room.id,
+                'name': 'Salon A',
+                'capacity': 10,
+                'inactive_seats': '2, 5-6',
+            }]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        body = res.json()['rooms'][0]
+        self.assertEqual(body['inactive_seats'], [2, 5, 6])
+        saved = ExamRoom.objects.get(pk=room.id)
+        self.assertEqual(saved.seat_numbers()[:4], [1, 3, 4, 7])
+        seated.refresh_from_db()
+        self.assertIsNone(seated.room_id)
+        self.assertIsNone(seated.seat_no)
+        refused = self.client.patch(
+            f'{EXAMS_URL}{self.exam.id}/participants/{seated.id}/',
+            {'room_id': room.id, 'seat_no': 2},
+            format='json', **self.headers,
+        )
+        self.assertEqual(refused.status_code, 400, refused.content[:300])
+        self.assertIn('pasif', refused.json().get('error', '').lower())
+
+    def test_deneme_salon_keeps_inactive_seats(self):
+        base = '/api/coaching/olcme-degerlendirme/deneme-salonlari/'
+        created = self.client.post(
+            base,
+            {'name': 'Pasif Salon', 'capacity': 40, 'inactive_seats': [3, 8]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(created.status_code, 200, created.content[:300])
+        self.assertEqual(created.json()['inactive_seats'], [3, 8])
+        salon_id = created.json()['id']
+        patched = self.client.patch(
+            f'{base}{salon_id}/',
+            {'name': 'Pasif Salon', 'capacity': 40, 'inactive_seats': '4, 9-10'},
+            format='json', **self.headers,
+        )
+        self.assertEqual(patched.status_code, 200, patched.content[:300])
+        self.assertEqual(patched.json()['inactive_seats'], [4, 9, 10])
 
     def test_rooms_put_warns_on_overflow(self):
         ExamParticipant.objects.create(exam=self.exam, student=self.in_class)

@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { curriculumApi, examApi, puanAyarlariApi } from '../../../../components/olcme/api';
+import { useOlcmePath } from '../../../../components/olcme/useOlcmePath';
 import {
   EXAM_TYPES,
   BOOKLET_TYPES,
@@ -36,6 +37,7 @@ import type { SeatedStudent } from '../../../../components/olcme/roster/seating'
 import { resolveCoachPhotoUrl } from '../../../../lib/coach-media';
 import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
 import DenemeSalonCatalog from '../../../../components/olcme/roster/DenemeSalonCatalog';
+import PassiveSeatsField from '../../../../components/olcme/roster/PassiveSeatsField';
 import ManualSectionsEditor, { TemplatePreview } from '../../../../components/olcme/ManualSectionsEditor';
 import {
   isManualSectionExamType,
@@ -147,6 +149,7 @@ function SeatStudentRow({ st, roomName }: { st: SeatedStudent; roomName: string 
 
 export default function YeniSinavPage() {
   const router = useRouter();
+  const { href } = useOlcmePath();
 
   const [form, setForm]             = useState<ExamCreateForm>({ ...EXAM_CREATE_FORM_DEFAULT });
   const [sessions, setSessions]     = useState<SessionCreateForm[]>([]);
@@ -193,7 +196,11 @@ export default function YeniSinavPage() {
     const name = room.name.trim();
     if (!name) return;
     try {
-      const saved = await examApi.saveDenemeSalon(name, Number(room.capacity) || 30);
+      const saved = await examApi.saveDenemeSalon(
+        name,
+        Number(room.capacity) || 30,
+        room.inactive_seats || [],
+      );
       setSalonlar(prev => [...prev.filter(s => s.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'tr')));
     } catch {
       setError('Salon kaydedilemedi.');
@@ -544,7 +551,7 @@ export default function YeniSinavPage() {
       return;
     }
 
-    router.push(`/admin/olcme-degerlendirme/${examId}`);
+    router.push(href(String(examId)));
   };
 
   const templateTotal = currentTemplate
@@ -572,7 +579,7 @@ export default function YeniSinavPage() {
         <div className={y.headerTop}>
           <div style={{ minWidth: 0 }}>
             <nav className={y.breadcrumb} aria-label="Konum">
-              <button type="button" className={y.crumbLink} onClick={() => router.push('/admin/olcme-degerlendirme')}>
+              <button type="button" className={y.crumbLink} onClick={() => router.push(href())}>
                 Sınav Yönetimi
               </button>
               <Icon name="chevronRight" size={13} />
@@ -588,7 +595,7 @@ export default function YeniSinavPage() {
               </div>
             </div>
           </div>
-          <button type="button" className={y.action} onClick={() => router.push('/admin/olcme-degerlendirme')}>
+          <button type="button" className={y.action} onClick={() => router.push(href())}>
             <Icon name="back" size={15} />
             <span className={y.actionLabel}>Listeye dön</span>
           </button>
@@ -1035,8 +1042,8 @@ export default function YeniSinavPage() {
                 <h2>Salonlar</h2>
                 <p>
                   {sessions.length > 1
-                    ? 'Her salonu bir oturuma bağla. Hafta içi öğrencileri o salona, hafta sonu öğrencileri kendi salonuna oturur.'
-                    : 'Kapasite, salondaki numaralı yer sayısıdır. 120 ve ara boşluk 1 ise öğrenciler 1, 3, 5 diye 120’ye kadar oturur.'}
+                    ? 'Her salonu bir oturuma bağla. Hafta içi öğrencileri o salona, hafta sonu öğrencileri kendi salonuna oturur. Pasif sıralara öğrenci oturmaz.'
+                    : 'Kapasite, salondaki numaralı yer sayısıdır. Pasif sıralar bu numaraların içinden çıkarılır.'}
                 </p>
               </div>
               <div className={r.stat}>
@@ -1054,6 +1061,7 @@ export default function YeniSinavPage() {
                 />
                 {rooms.map((room, i) => (
                   <div key={i} className={y.roomEdit}>
+                    <div className={y.roomFields}>
                     <label className={y.field}>
                       <span>Kayıtlı salon</span>
                       <select
@@ -1061,7 +1069,12 @@ export default function YeniSinavPage() {
                         onChange={e => {
                           const salon = salonlar.find(s => s.id === Number(e.target.value));
                           if (!salon) return;
-                          setRooms(p => p.map((item, j) => j === i ? { ...item, name: salon.name, capacity: salon.capacity } : item));
+                          setRooms(p => p.map((item, j) => j === i ? {
+                            ...item,
+                            name: salon.name,
+                            capacity: salon.capacity,
+                            inactive_seats: salon.inactive_seats || [],
+                          } : item));
                         }}
                       >
                         <option value="">Seç veya yeni yaz</option>
@@ -1112,8 +1125,16 @@ export default function YeniSinavPage() {
                       <input type="number" min={0} inputMode="numeric" value={room.seat_gap ?? 0}
                         onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, seat_gap: Math.max(0, Number(e.target.value) || 0) } : item))} />
                     </label>
-                    <button type="button" className={y.ghost} onClick={() => rememberSalon(room)}>Kaydet</button>
-                    <button type="button" className={y.danger} onClick={() => setRooms(p => p.filter((_, j) => j !== i))}>×</button>
+                    <div className={y.roomActions}>
+                      <button type="button" className={y.ghost} onClick={() => rememberSalon(room)}>Kaydet</button>
+                      <button type="button" className={y.danger} onClick={() => setRooms(p => p.filter((_, j) => j !== i))}>×</button>
+                    </div>
+                    </div>
+                    <PassiveSeatsField
+                      className={y.seatSpan}
+                      room={room}
+                      onChange={seats => setRooms(p => p.map((item, j) => j === i ? { ...item, inactive_seats: seats } : item))}
+                    />
                   </div>
                 ))}
                 <button type="button" className={y.ghost}

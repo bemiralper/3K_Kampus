@@ -45,6 +45,8 @@ def puan_ayarlari(request):
             return Response({'error': 'Puan yılı 2024, 2025 veya 2026 olmalıdır.'}, status=400)
         ayar.default_puan_yili = year
         ayar.save(update_fields=['default_puan_yili', 'updated_at'])
+        from ..services.stored_scores import refresh_kurum_scores
+        refresh_kurum_scores(kurum_id)
 
     years = [serialize_year_sets(kurum_id, y) for y in MANAGED_PUAN_YILLARI]
     return Response({
@@ -82,6 +84,8 @@ def puan_ayarlari_katsayilar(request, year):
             row = OlcmeKatsayiSeti.objects.get(kurum_id=kurum_id, year=year, kind=kind)
             row.coefficients = coef
             row.save(update_fields=['coefficients', 'updated_at'])
+        from ..services.stored_scores import refresh_kurum_scores
+        refresh_kurum_scores(kurum_id)
 
     return Response(serialize_year_sets(kurum_id, year))
 
@@ -98,4 +102,6 @@ def puan_ayarlari_reset(request, year):
     if year not in MANAGED_PUAN_YILLARI:
         return Response({'error': 'Puan yılı 2024, 2025 veya 2026 olmalıdır.'}, status=400)
     reset_year_coefficients(kurum_id, year)
+    from ..services.stored_scores import refresh_kurum_scores
+    refresh_kurum_scores(kurum_id)
     return Response(serialize_year_sets(kurum_id, year))

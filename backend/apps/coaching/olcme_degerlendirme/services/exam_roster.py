@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import random
+import re
 from collections import defaultdict
 from datetime import date, time
 from dataclasses import dataclass
@@ -282,10 +283,68 @@ def replace_auto_participants(exam, candidates: list[CandidateRec], *, keep_manu
     ]
     if stale:
         ExamParticipant.objects.filter(pk__in=stale).delete()
+    if created or stale:
+        from .stored_scores import refresh_exam_scores
+        refresh_exam_scores(exam)
     return list(
         ExamParticipant.objects.filter(exam=exam)
         .select_related('student', 'room', 'sinif_seviyesi', 'exam_session')
     )
+
+
+def parse_inactive_seats(raw) -> list[int]:
+    """5, 12, 18-20 veya [5, 12, 18] listesini tekil sıra numarasına çevirir."""
+    if raw is None or raw == '':
+        return []
+    if isinstance(raw, (list, tuple)):
+        text = ','.join('' if item is None else str(item) for item in raw)
+    else:
+        text = str(raw)
+    found: list[int] = []
+    for token in re.split(r'[,;]+', text):
+        token = token.strip()
+        if not token:
+            continue
+        span = re.fullmatch(r'(\d+)\s*[-–—]\s*(\d+)', token)
+        if span:
+            a, b = int(span.group(1)), int(span.group(2))
+            if a > b:
+                a, b = b, a
+            if a < 1:
+                a = 1
+            b = min(b, a + 500)
+            found.extend(range(a, b + 1))
+            continue
+        if token.isdigit():
+            n = int(token)
+            if n >= 1:
+                found.append(n)
+    unique = sorted(set(found))
+    return unique[:2000]
+
+
+def _inactive_for_room(raw: dict, room: ExamRoom | None) -> list[int]:
+    if isinstance(raw, dict) and 'inactive_seats' in raw:
+        return parse_inactive_seats(raw.get('inactive_seats'))
+    if room is not None:
+        return list(room.inactive_seats or [])
+    return []
+
+
+def _release_unusable_seats(exam) -> None:
+    """Pasif veya aralık dışı sırada oturan, kilitli olmayan öğrenciyi salonsuz bırakır."""
+    for room in exam.rooms.all():
+        allowed = set(room.seat_numbers())
+        stuck = ExamParticipant.objects.filter(
+            exam=exam, room=room, seat_no__isnull=False,
+        )
+        for participant in stuck:
+            if participant.seat_no in allowed or seat_is_locked(participant):
+                continue
+            participant.room = None
+            participant.seat_no = None
+            participant.desk_no = ''
+            participant.save(update_fields=['room', 'seat_no', 'desk_no', 'updated_at'])
 
 
 @transaction.atomic
@@ -322,20 +381,25 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
                 room = ExamRoom.objects.filter(exam=exam, pk=int(pk)).first()
             except (TypeError, ValueError):
                 room = None
+        inactive = _inactive_for_room(raw, room)
         if room:
             room.capacity = cap
             room.seat_start = seat_start
             room.seat_gap = seat_gap
+            room.inactive_seats = inactive
             room.exam_session_id = session_id
             room.seating_mode = mode
             room.order = i
             room.name = f'__tmp_{exam.pk}_{room.pk}'
-            room.save(update_fields=['name', 'capacity', 'seat_start', 'seat_gap', 'exam_session', 'seating_mode', 'order'])
+            room.save(update_fields=[
+                'name', 'capacity', 'seat_start', 'seat_gap', 'inactive_seats',
+                'exam_session', 'seating_mode', 'order',
+            ])
         else:
             room = ExamRoom.objects.create(
                 exam=exam, name=f'__tmp_new_{exam.pk}_{i}', capacity=cap,
-                seat_start=seat_start, seat_gap=seat_gap, exam_session_id=session_id,
-                seating_mode=mode, order=i,
+                seat_start=seat_start, seat_gap=seat_gap, inactive_seats=inactive,
+                exam_session_id=session_id, seating_mode=mode, order=i,
             )
         pending.append((room, name))
         keep_ids.append(room.pk)
@@ -365,6 +429,7 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
         ExamParticipant.objects.filter(exam=exam, room=room).exclude(
             exam_session_id=room.exam_session_id,
         ).update(room=None, seat_no=None, desk_no='')
+    _release_unusable_seats(exam)
     return list(exam.rooms.order_by('order', 'id'))
 
 
@@ -473,6 +538,8 @@ def assign_participant_to_seat(p: ExamParticipant, room: ExamRoom, seat_no) -> s
         return f'{room.name} başka oturuma bağlı.'
     allowed = room.seat_numbers()
     if seat not in allowed:
+        if seat in room.inactive_seat_set():
+            return f'{room.name} sıra {seat} pasif. Bu sıraya öğrenci yerleştirilmez.'
         if not allowed:
             return f'{room.name} için sıra tanımlı değil.'
         if (room.seat_gap or 0) > 0:
@@ -765,6 +832,8 @@ def apply_explicit_seating(exam, assignments: list[dict], exam_session=None) -> 
             seat = int(seat) if seat not in (None, '') else None
         except (TypeError, ValueError):
             seat = None
+        if room is not None and seat is not None and seat not in room.seat_numbers():
+            continue
         p.room = room
         p.seat_no = seat
         p.desk_no = str(seat) if seat else ''
@@ -804,6 +873,7 @@ def serialize_room(room: ExamRoom) -> dict:
         'capacity': room.capacity,
         'seat_start': room.seat_start or 1,
         'seat_gap': room.seat_gap or 0,
+        'inactive_seats': room.inactive_seats or [],
         'exam_session_id': room.exam_session_id,
         'seating_mode': room.seating_mode or 'shuffle',
         'order': room.order,

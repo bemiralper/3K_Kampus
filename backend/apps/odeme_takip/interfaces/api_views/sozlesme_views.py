@@ -155,6 +155,7 @@ def _serialize_indirim(i):
 
 
 def _serialize_taksit(t):
+    yontem = t.odeme_yontemi if t.odeme_yontemi_id else None
     return {
         'id': t.id,
         'taksit_no': t.taksit_no,
@@ -163,6 +164,12 @@ def _serialize_taksit(t):
         'odenen_tutar': t.odenen_tutar or 0,
         'kalan_tutar': t.kalan_tutar or 0,
         'durum': t.durum,
+        'odeme_yontemi_id': t.odeme_yontemi_id,
+        'odeme_yontemi': {
+            'id': yontem.id,
+            'ad': yontem.ad,
+            'tip': yontem.tip or '',
+        } if yontem else None,
     }
 
 

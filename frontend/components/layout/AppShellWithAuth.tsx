@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import {
   getDefaultHomePath,
+  isStudentUser,
   isCoachOnlyUser,
   isMuhasebeOnlyUser,
   assignedPortalCodes,
@@ -91,6 +92,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
   const isPrintRoute = PRINT_ROUTES.some(route => pathname.startsWith(route));
   const isCoachRoute = pathname.startsWith("/coach");
   const isMuhasebeRoute = pathname.startsWith("/muhasebe");
+  const isStudentRoute = pathname === "/ogrenci" || pathname.startsWith("/ogrenci/");
   const isPortalRoute = isCoachRoute || isMuhasebeRoute;
 
   useEffect(() => {
@@ -148,6 +150,18 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
     if (!isPublicRoute && !isAuthenticated) {
       hasRedirectedRef.current = true;
       hardReplace(isPortalRoute ? "/?giris=1" : "/");
+      return;
+    }
+
+    if (isAuthenticated && isStudentUser(user) && !isStudentRoute && !isPublicRoute) {
+      hasRedirectedRef.current = true;
+      hardReplace("/ogrenci");
+      return;
+    }
+
+    if (isAuthenticated && isStudentRoute && !isStudentUser(user)) {
+      hasRedirectedRef.current = true;
+      hardReplace(getDefaultHomePath(user));
       return;
     }
 
@@ -226,7 +240,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
         clearContextGate();
       }
     }
-  }, [isAuthenticated, isLoading, isPortalRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, user]);
+  }, [isAuthenticated, isLoading, isPortalRoute, isStudentRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, user]);
 
   // Public sayfalar (landing vb.) auth kontrolü beklenmeden gösterilir
   if (isLoading && !isPrintRoute && !isPublicRoute) {
@@ -248,6 +262,13 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
 
   // For public routes (like login), render without AppShell
   if (isPublicRoute) {
+    return <>{children}</>;
+  }
+
+  if (isStudentRoute) {
+    if (isLoading || !isAuthenticated) {
+      return <AuthLoadingSpinner />;
+    }
     return <>{children}</>;
   }
 

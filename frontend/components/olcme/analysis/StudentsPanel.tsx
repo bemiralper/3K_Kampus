@@ -172,7 +172,7 @@ export default function StudentsPanel({
         />
       )}
 
-      <div className={s.analysisTableWrap}>
+      <div className={`${s.analysisTableWrap} ${s.analysisTableCards}`}>
         <table className={s.analysisTable}>
           <thead>
             <tr>
@@ -201,39 +201,40 @@ export default function StudentsPanel({
           <tbody>
             {displayStudents.map((st, idx) => (
               <tr key={st.answer_id}>
-                <td style={{ color: '#94a3b8', fontSize: 12 }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}</td>
-                <td>
+                <td data-label="Sıra" style={{ color: '#94a3b8', fontSize: 12 }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}</td>
+                <td data-label="">
                   <div className={s.studentListWho}>
                     <StudentListPhoto foto={st.profil_foto} name={st.student_name} />
                     <span className={s.studentListName}>{st.student_name}</span>
                   </div>
                 </td>
-                <td>{st.sinif || '—'}</td>
+                <td data-label="Sınıf">{st.sinif || '—'}</td>
                 <td
+                  data-label={examType === 'YKS_AYT' ? 'Alan neti' : 'Net'}
                   style={{ textAlign: 'center', fontWeight: 700 }}
                   title={examType === 'YKS_AYT' ? `Tüm testler: ${st.toplam_net}` : undefined}
                 >
                   {st.alan_net ?? st.toplam_net}
                 </td>
-                <td style={{ textAlign: 'center', fontWeight: 600, color: '#0262a7' }}>{st.puan}</td>
+                <td data-label="Puan" style={{ textAlign: 'center', fontWeight: 600, color: '#0262a7' }}>{st.puan}</td>
                 {examType === 'YKS_AYT' && st.puan_turleri && (
                   <>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#0262a7', fontSize: 12 }} title={`Puan ${st.puan_turleri.SAY.puan}`}>
+                    <td data-label="SAY" style={{ textAlign: 'center', fontWeight: 700, color: '#0262a7', fontSize: 12 }} title={`Puan ${st.puan_turleri.SAY.puan}`}>
                       {st.puan_turleri.SAY.ayt_net.toFixed(2)}
                       <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.SAY.puan}</div>
                     </td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#7c3aed', fontSize: 12 }} title={`Puan ${st.puan_turleri.EA.puan}`}>
+                    <td data-label="EA" style={{ textAlign: 'center', fontWeight: 700, color: '#7c3aed', fontSize: 12 }} title={`Puan ${st.puan_turleri.EA.puan}`}>
                       {st.puan_turleri.EA.ayt_net.toFixed(2)}
                       <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.EA.puan}</div>
                     </td>
-                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#059669', fontSize: 12 }} title={`Puan ${st.puan_turleri.SOZ.puan}`}>
+                    <td data-label="SÖZ" style={{ textAlign: 'center', fontWeight: 700, color: '#059669', fontSize: 12 }} title={`Puan ${st.puan_turleri.SOZ.puan}`}>
                       {st.puan_turleri.SOZ.ayt_net.toFixed(2)}
                       <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.SOZ.puan}</div>
                     </td>
                   </>
                 )}
-                <td style={{ textAlign: 'center' }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}/{alanViewFilter ? displayStudents.length : st.toplam_ogrenci}</td>
-                <td style={{ textAlign: 'center', fontSize: 12 }}>
+                <td data-label="Kurum sıra" style={{ textAlign: 'center' }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}/{alanViewFilter ? displayStudents.length : st.toplam_ogrenci}</td>
+                <td data-label="Tah. TR sıra" style={{ textAlign: 'center', fontSize: 12 }}>
                   {(() => {
                     const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : (examType === 'YKS_AYT' ? 'SAY' : null);
                     const sira = ptKey && st.puan_turleri?.[ptKey as 'SAY' | 'EA' | 'SOZ']?.tahmini_siralama
@@ -242,18 +243,18 @@ export default function StudentsPanel({
                     return sira ? sira.toLocaleString('tr-TR') : '—';
                   })()}
                 </td>
-                <td style={{ textAlign: 'center' }}>
+                <td data-label="Yüzdelik" style={{ textAlign: 'center' }}>
                   <span className={`${s.percentileBadge} ${st.kurum_ici_yuzdelik >= 75 ? s.percentileHigh : st.kurum_ici_yuzdelik >= 50 ? s.percentileMid : s.percentileLow}`}>
                     %{st.kurum_ici_yuzdelik}
                   </span>
                 </td>
-                <td style={{ fontSize: 12 }}>
+                <td data-label="Güçlü" style={{ fontSize: 12 }}>
                   {st.strong_areas.map(a => a.name).join(', ') || '—'}
                 </td>
-                <td style={{ fontSize: 12, color: '#ef4444' }}>
+                <td data-label="Zayıf" style={{ fontSize: 12, color: '#ef4444' }}>
                   {st.weak_areas.map(a => a.name).join(', ') || '—'}
                 </td>
-                <td>
+                <td data-label="İşlem">
                   <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
                     <button className={s.analysisBtnSmall} onClick={() => onSelect(st)} title="Detay">
                       🔍

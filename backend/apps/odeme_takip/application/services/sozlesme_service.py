@@ -226,8 +226,6 @@ class SozlesmeService:
         """Sözleşme oluşturma/güncelleme sonrası taksit planını uygula."""
         from apps.odeme_takip.domain.enums import OdemeTuru
 
-        is_cek_senet = sozlesme.odeme_turu == OdemeTuru.CEK_SENET
-
         if sozlesme.odeme_turu == OdemeTuru.PESIN or sozlesme.net_tutar <= 0:
             self.taksit_service.recreate_plan(
                 sozlesme=sozlesme,
@@ -245,11 +243,6 @@ class SozlesmeService:
                 manuel = data.get('manuel_taksitler') or []
                 if manuel:
                     self.taksit_service.create_manual_plan(sozlesme, manuel)
-                    if is_cek_senet:
-                        self.taksit_service._apply_taksit_odeme_yontemleri(
-                            sozlesme, 'manuel', manuel,
-                            data.get('taksit_odeme_yontemleri'),
-                        )
             elif yontem == 'yuzde':
                 yuzdeler = data.get('yuzde_dagilim') or []
                 if yuzdeler:
@@ -267,24 +260,28 @@ class SozlesmeService:
                     periyot=periyot,
                     pesinat=pesinat,
                 )
-                taksit_odeme = data.get('taksit_odeme_yontemleri') or []
-                if is_cek_senet and taksit_odeme:
-                    self.taksit_service._apply_taksit_odeme_yontemleri(
-                        sozlesme, 'esit', None, taksit_odeme,
-                    )
 
-        if is_cek_senet:
-            self.taksit_service._sync_cek_senet_plan(sozlesme)
-        else:
+        self._finalize_taksit_odeme_yontemleri(sozlesme, data)
+
+    def _finalize_taksit_odeme_yontemleri(self, sozlesme, data):
+        """Boş taksitlere sözleşme yöntemini yazar, satır yöntemini onun üstüne koyar, çek/senet portföyünü senkronlar."""
+        from apps.odeme_takip.domain.enums import OdemeTuru
+
+        if sozlesme.odeme_turu != OdemeTuru.CEK_SENET:
             self.taksit_service._apply_contract_odeme_yontemi_to_taksits(sozlesme)
-            # Peşin/taksitli yollarda sync'i atla; sadece eski çek/senet detayı varsa temizle
-            from apps.odeme_takip.domain.models import Taksit
-            has_cek_detay = Taksit.objects.filter(
-                sozlesme=sozlesme,
-                cek_senet_detay__isnull=False,
-            ).exists()
-            if has_cek_detay:
-                self.taksit_service._sync_cek_senet_plan(sozlesme)
+
+        payload = data or {}
+        yontem = payload.get('taksit_yontemi') or 'esit'
+        manuel = payload.get('manuel_taksitler') or []
+        taksit_odeme = payload.get('taksit_odeme_yontemleri') or []
+        if manuel or taksit_odeme:
+            self.taksit_service._apply_taksit_odeme_yontemleri(
+                sozlesme,
+                yontem,
+                manuel if yontem in ('manuel', 'kalani_bol') else None,
+                taksit_odeme,
+            )
+        self.taksit_service._sync_cek_senet_plan(sozlesme)
 
     # ─── LIST ────────────────────────────
     def get_all(self, kurum_id=None, sube_id=None, egitim_yili_id=None, durum=None, ogrenci_id=None):
@@ -657,6 +654,7 @@ class SozlesmeService:
                 if sozlesme.taksit_sayisi != final_count:
                     sozlesme.taksit_sayisi = final_count
                     sozlesme.save(update_fields=['taksit_sayisi', 'updated_at'])
+                self._finalize_taksit_odeme_yontemleri(sozlesme, data)
             else:
                 self._apply_taksit_plan(sozlesme, data)
 

@@ -4,6 +4,7 @@ import {
   KUTUPHANE_NAV_ITEMS,
   kutuphaneHref,
 } from "@/lib/kutuphane-routes";
+import { COACH_OLCME_BASE, isCoachOlcmeListPath } from "@/lib/olcme-routes";
 
 export type CoachNavChildDef = {
   id: string;
@@ -110,6 +111,39 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
     ),
   },
   {
+    id: "olcme",
+    href: COACH_OLCME_BASE,
+    label: "Ölçme & Değerlendirme",
+    matchPrefix: COACH_OLCME_BASE,
+    children: [
+      {
+        id: "olcme-liste",
+        href: COACH_OLCME_BASE,
+        label: "Sınav Listesi",
+        matchPrefix: COACH_OLCME_BASE,
+      },
+      {
+        id: "olcme-yeni",
+        href: `${COACH_OLCME_BASE}/yeni`,
+        label: "Yeni Sınav Oluştur",
+        matchPrefix: `${COACH_OLCME_BASE}/yeni`,
+      },
+      {
+        id: "olcme-oturum",
+        href: `${COACH_OLCME_BASE}/oturum-gruplari`,
+        label: "Oturum grupları",
+        matchPrefix: `${COACH_OLCME_BASE}/oturum-gruplari`,
+      },
+    ],
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+        <rect x="9" y="3" width="6" height="4" rx="1" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l2 2 4-4" />
+      </svg>
+    ),
+  },
+  {
     id: "yoklama",
     href: "/coach/yoklama",
     label: "Sınıf Yoklaması",
@@ -202,7 +236,8 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
 
 export function isCoachNavChildActive(pathname: string, child: CoachNavChildDef): boolean {
   const prefix = child.matchPrefix || child.href;
-  if (prefix === COACH_KUTUPHANE_BASE) {
+  if (prefix === COACH_KUTUPHANE_BASE || prefix === COACH_OLCME_BASE) {
+    if (prefix === COACH_OLCME_BASE) return isCoachOlcmeListPath(pathname);
     return pathname === COACH_KUTUPHANE_BASE || pathname === `${COACH_KUTUPHANE_BASE}/`;
   }
   return pathname.startsWith(prefix);

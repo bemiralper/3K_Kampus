@@ -290,11 +290,13 @@
 
   .actions {
     width: 100%;
+    flex-wrap: wrap;
   }
 
   .action {
-    flex: 1;
+    flex: 1 1 calc(50% - 8px);
     justify-content: center;
+    min-height: 42px;
   }
 }
 

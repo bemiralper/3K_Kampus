@@ -728,6 +728,12 @@
   border-bottom: 1px solid #e2e8f0;
 }
 
+.salonCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .salonRow {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 88px auto auto;

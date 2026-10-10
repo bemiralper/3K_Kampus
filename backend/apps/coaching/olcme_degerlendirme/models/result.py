@@ -114,3 +114,32 @@ class StudentSectionScore(models.Model):
 
     def __str__(self):
         return f'{self.section.name}: {self.net} net'
+
+
+class StudentStoredScore(models.Model):
+    """Öğrencinin kayıtlı puanı ve kurum sırası.
+
+    Sıralama, karne ve koç sekmesi formülü yeniden çalıştırmaz; bu satırı okur.
+    Puanı veya sırayı değiştiren bir kayıt `refresh_exam_scores` ile satırı yazar.
+    """
+
+    student_answer = models.OneToOneField(
+        StudentAnswer,
+        on_delete=models.CASCADE,
+        related_name='stored_score',
+        verbose_name='Öğrenci Cevabı',
+    )
+    by_year = models.JSONField(
+        'Yıla göre puan',
+        default=dict,
+        help_text='2024/2025/2026 anahtarlı puan, puan türleri ve kurum sırası.',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'olcme_degerlendirme'
+        verbose_name = 'Kayıtlı Puan'
+        verbose_name_plural = 'Kayıtlı Puanlar'
+
+    def __str__(self):
+        return f'Puan #{self.student_answer_id}'

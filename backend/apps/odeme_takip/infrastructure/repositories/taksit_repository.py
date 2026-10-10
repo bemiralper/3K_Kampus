@@ -19,7 +19,7 @@ class TaksitRepository:
     def get_by_sozlesme(self, sozlesme_id):
         return Taksit.objects.filter(
             sozlesme_id=sozlesme_id
-        ).prefetch_related(
+        ).select_related('odeme_yontemi').prefetch_related(
             'tahsilatlar__odeme_yontemi'
         ).order_by('taksit_no')
 

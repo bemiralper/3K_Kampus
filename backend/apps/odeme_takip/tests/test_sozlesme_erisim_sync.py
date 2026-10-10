@@ -186,6 +186,94 @@ class SozlesmeErisimSyncTests(TestCase):
             ).exists()
         )
 
+    def test_grup_dahil_deneme_sonraki_senkronda_acik_kalir(self):
+        """Grup dersine dahil deneme, sözleşme yeniden senkronlanınca pasife düşmez.
+
+        Özel ders sonradan eklenince senkron çalışır. Deneme erişimi ek hizmet
+        satırındadır; bu satır korunmazsa öğrenci denemesi pasif görünür.
+        """
+        deneme = Deneme.objects.create(
+            ad='TYT - AYT Deneme Paketi', kod='DNM', kurum=self.kurum, sube=self.sube,
+            egitim_yili=self.ey, brut_fiyat=0,
+        )
+        grup = GrupDersi.objects.create(
+            ad='Sayısal Grup', kod='SAY2', kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+        )
+        grup.dahil_denemeler.add(deneme)
+        grup.dahil_ek_hizmetler.add(self.kocluk)
+        self.sozlesme.kalemler.all().delete()
+        self.sozlesme.paket_turu = 'grup_dersi'
+        self.sozlesme.paket_id = grup.id
+        self.sozlesme.paket_adi = 'Sayısal Grup'
+        self.sozlesme.save(update_fields=['paket_turu', 'paket_id', 'paket_adi'])
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme, kalem_turu=KalemTuru.GRUP_DERSI,
+            kalem_id=grup.id, kalem_adi='Sayısal Grup',
+            brut_tutar=240000, net_tutar=240000, kdv_dahil_tutar=240000,
+        )
+
+        sync_sozlesme_erisim(self.sozlesme)
+        aktif = OgrenciEkHizmet.objects.filter(
+            ogrenci=self.ogrenci, ek_hizmet__deneme_paketi=deneme, aktif_mi=True,
+        )
+        self.assertEqual(aktif.count(), 1)
+
+        sync_sozlesme_erisim(self.sozlesme)
+        self.assertEqual(aktif.count(), 1)
+        self.assertTrue(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet=self.kocluk, aktif_mi=True,
+            ).exists()
+        )
+
+    def test_grup_kalkinca_dahil_deneme_kapanir(self):
+        deneme = Deneme.objects.create(
+            ad='TYT Deneme 2', kod='DNM2', kurum=self.kurum, sube=self.sube,
+            egitim_yili=self.ey, brut_fiyat=0,
+        )
+        grup = GrupDersi.objects.create(
+            ad='Eski Sayısal', kod='ESK2', kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+        )
+        grup.dahil_denemeler.add(deneme)
+        self.sozlesme.kalemler.all().delete()
+        self.sozlesme.paket_turu = 'grup_dersi'
+        self.sozlesme.paket_id = grup.id
+        self.sozlesme.paket_adi = 'Eski Sayısal'
+        self.sozlesme.save(update_fields=['paket_turu', 'paket_id', 'paket_adi'])
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme, kalem_turu=KalemTuru.GRUP_DERSI,
+            kalem_id=grup.id, kalem_adi='Eski Sayısal',
+            brut_tutar=100000, net_tutar=100000, kdv_dahil_tutar=100000,
+        )
+        sync_sozlesme_erisim(self.sozlesme)
+        self.assertTrue(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet__deneme_paketi=deneme, aktif_mi=True,
+            ).exists()
+        )
+
+        self.sozlesme.kalemler.all().delete()
+        self.sozlesme.paket_turu = 'ek_hizmet'
+        self.sozlesme.paket_id = None
+        self.sozlesme.paket_adi = 'Ek Hizmetler'
+        self.sozlesme.save(update_fields=['paket_turu', 'paket_id', 'paket_adi'])
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme, kalem_turu=KalemTuru.EK_HIZMET,
+            kalem_id=self.kocluk.id, kalem_adi='Koçluk',
+            brut_tutar=400000, net_tutar=400000, kdv_dahil_tutar=400000,
+        )
+        sync_sozlesme_erisim(self.sozlesme)
+        self.assertFalse(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet__deneme_paketi=deneme, aktif_mi=True,
+            ).exists()
+        )
+        self.assertTrue(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet=self.kocluk, aktif_mi=True,
+            ).exists()
+        )
+
 
 class KalemCikarErisimKapatirTests(SozlesmeErisimSyncTests):
     """Sözleşmeden kalem çıkarılınca öğrencinin o hizmete erişimi de kapanır.

@@ -214,4 +214,7 @@ def realign_exam_if_needed(exam) -> int:
             total += realign_session(session)
         except Exception:
             logger.exception('DAT yeniden hizalama başarısız session=%s', session.pk)
+    if total:
+        from .stored_scores import refresh_exam_scores
+        refresh_exam_scores(exam)
     return total

@@ -902,6 +902,9 @@ def parse_dat(request, exam_pk, session_pk):
         exam.status = 'RESULTS_UPLOADED'
         exam.save(update_fields=['status'])
 
+    from ..services.stored_scores import refresh_exam_scores
+    refresh_exam_scores(exam)
+
     final_matched = sum(1 for r in results if r['matched_student_id'])
 
     return Response({
@@ -1029,6 +1032,8 @@ def update_student_booklet(request, exam_pk, answer_pk):
                 net=scores['net'],
             )
 
+    from ..services.stored_scores import refresh_exam_scores
+    refresh_exam_scores(exam)
     return Response(StudentAnswerSerializer(sa).data)
 
 
@@ -1087,7 +1092,10 @@ def delete_session(request, exam_pk, session_pk):
         session = ExamSession.objects.get(pk=session_pk, exam_id=exam_pk)
     except ExamSession.DoesNotExist:
         return Response({'error': 'Oturum bulunamadı.'}, status=404)
+    exam = session.exam
     session.delete()
+    from ..services.stored_scores import refresh_exam_scores
+    refresh_exam_scores(exam)
     return Response(status=204)
 
 
@@ -1208,6 +1216,8 @@ def update_student_match(request, exam_pk, answer_pk):
         sa.match_score = 0.0
         sa.match_method = ''
         sa.save(update_fields=['student', 'match_score', 'match_method'])
+        from ..services.stored_scores import refresh_exam_scores
+        refresh_exam_scores(exam)
         return Response({
             'id': sa.id,
             'matched_student_id': None,
@@ -1249,6 +1259,8 @@ def update_student_match(request, exam_pk, answer_pk):
     sa.match_score = 1.0
     sa.match_method = 'manual'
     sa.save(update_fields=['student', 'match_score', 'match_method'])
+    from ..services.stored_scores import refresh_exam_scores
+    refresh_exam_scores(exam)
 
     return Response({
         'id': sa.id,
@@ -1454,6 +1466,10 @@ def rematch_unmatched(request, exam_pk):
         session.unmatched_count = total - mc
         session.save(update_fields=['matched_count', 'unmatched_count'])
 
+    if newly_matched:
+        from ..services.stored_scores import refresh_exam_scores
+        refresh_exam_scores(exam)
+
     return Response({
         'success': True,
         'total_unmatched': len(unmatched_answers),
@@ -1582,6 +1598,9 @@ def rematch_all_exams(request):
                 session.matched_count = mc
                 session.unmatched_count = total - mc
                 session.save(update_fields=['matched_count', 'unmatched_count'])
+            if exam_matched:
+                from ..services.stored_scores import refresh_exam_scores
+                refresh_exam_scores(exam)
 
     return Response({
         'success': True,

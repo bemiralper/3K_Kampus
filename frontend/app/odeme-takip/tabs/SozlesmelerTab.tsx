@@ -1589,6 +1589,7 @@ function OdemePlaniSubTab({
   const [editingTaksitId, setEditingTaksitId] = useState<number | null>(null);
   const [editTutar, setEditTutar] = useState("");
   const [editVade, setEditVade] = useState("");
+  const [editYontem, setEditYontem] = useState("");
 
   const canEdit = s.durum === "taslak" || s.durum === "aktif";
   const isAktif = s.durum === "aktif";
@@ -1604,11 +1605,13 @@ function OdemePlaniSubTab({
   const taksitSayisiInt = parseInt(taksitSayisi, 10) || 1;
   const effectivePesinat = korunanOdeme ? 0 : pesinatTutar;
 
+  const contractYontemId = s.odeme_yontemi_id || s.odeme_yontemi?.id || "";
   const defaultCekYontemId = useMemo(() => {
     if (!isCekSenetSozlesme) return "" as number | "";
     const cekYontemleri = odemeYontemleri.filter(isCekSenetYontemTip);
     return cekYontemleri.length === 1 ? cekYontemleri[0].id : "";
   }, [isCekSenetSozlesme, odemeYontemleri]);
+  const defaultRowYontemId = isCekSenetSozlesme ? defaultCekYontemId : contractYontemId;
 
   const manuelRowsRef = useRef(manuelRows);
   manuelRowsRef.current = manuelRows;
@@ -1619,11 +1622,11 @@ function OdemePlaniSubTab({
       const safeCount = clampTaksitSayisi(count);
       const newRows = buildEqualTaksitRows(hedefTutar, effectivePesinat, safeCount, ilkOdeme, periyot, {
         preserveFrom: manuelRowsRef.current,
-        defaultOdemeYontemiId: defaultCekYontemId,
+        defaultOdemeYontemiId: defaultRowYontemId,
       });
       setManuelRows((prev) => (taksitRowsEqual(prev, newRows) ? prev : newRows));
     },
-    [hedefTutar, effectivePesinat, ilkOdeme, periyot, defaultCekYontemId],
+    [hedefTutar, effectivePesinat, ilkOdeme, periyot, defaultRowYontemId],
   );
 
   const applyTaksitSayisi = useCallback(
@@ -1700,15 +1703,19 @@ function OdemePlaniSubTab({
         body.taksitler = validRows.map(r => ({
           tutar: parseFloat(r.tutar),
           vade_tarihi: r.vade_tarihi,
-          ...(isCekSenetSozlesme && r.odeme_yontemi_id ? { odeme_yontemi_id: Number(r.odeme_yontemi_id) } : {}),
+          ...((r.odeme_yontemi_id || defaultRowYontemId)
+            ? { odeme_yontemi_id: Number(r.odeme_yontemi_id || defaultRowYontemId) }
+            : {}),
         }));
       }
 
-      if (isCekSenetSozlesme) {
-        const oyPlan = buildTaksitOdemeYontemleri(validRows);
-        if (oyPlan.length) {
-          body.taksit_odeme_yontemleri = oyPlan;
-        }
+      const oyPlan = buildTaksitOdemeYontemleri(
+        validRows.map((r) => ({
+          odeme_yontemi_id: r.odeme_yontemi_id || defaultRowYontemId || "",
+        })),
+      );
+      if (oyPlan.length) {
+        body.taksit_odeme_yontemleri = oyPlan;
       }
 
       const res = await fetch(`${API_BASE}/sozlesmeler/${s.id}/taksit-plani/`, {
@@ -1742,6 +1749,7 @@ function OdemePlaniSubTab({
         body: JSON.stringify({
           tutar: parseFloat(editTutar),
           vade_tarihi: editVade,
+          odeme_yontemi_id: editYontem ? Number(editYontem) : null,
         }),
       });
       if (res.ok) {
@@ -1754,12 +1762,17 @@ function OdemePlaniSubTab({
     } catch { alert("Bağlantı hatası"); }
   };
 
-  const yontemLabel = (id?: number | null) => {
+  const yontemLabel = (id?: number | null, ad?: string | null) => {
+    if (id) {
+      const y = odemeYontemleri.find(o => o.id === id);
+      if (y) return y.ad;
+    }
+    if (ad) return ad;
     if (!id) return "—";
-    const y = odemeYontemleri.find(o => o.id === id);
-    return y ? y.ad : `#${id}`;
+    return `#${id}`;
   };
-  const isCekSenetYontem = (id?: number | null) => {
+  const isCekSenetYontem = (id?: number | null, tip?: string | null) => {
+    if (isCekSenetYontemTip({ tip: tip || "" })) return true;
     if (!id) return false;
     const y = odemeYontemleri.find(o => o.id === id);
     return isCekSenetYontemTip(y);
@@ -1878,6 +1891,7 @@ function OdemePlaniSubTab({
 
           <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>
             Taksit sayısı girildiğinde plan otomatik oluşur. Satırları düzenlerseniz manuel plan olarak kaydedilir.
+            Bir taksiti çek veya senet seçerseniz çek/senet sayfasında görünür.
             {isCekSenetSozlesme && !cekSenetYontemVar && (
               <span style={{ display: "block", marginTop: 6, color: "#b45309" }}>
                 Çek/senet seçmek için önce Finans → Tanımlar → Ödeme Yöntemleri&apos;nden tipi Çek veya Senet olan bir yöntem tanımlayın (mali hesap gerekmez).
@@ -1886,37 +1900,35 @@ function OdemePlaniSubTab({
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 12, background: "#fafafa", border: "1px solid #e5e7eb" }}>
-            <div style={{ display: "grid", gridTemplateColumns: isCekSenetSozlesme ? "40px 1fr 1fr 1fr 40px" : "40px 1fr 1fr 40px", gap: 8, fontSize: 11, fontWeight: 600, color: "#6b7280" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr minmax(140px, 1fr) 40px", gap: 8, fontSize: 11, fontWeight: 600, color: "#6b7280" }}>
               <span>#</span><span>Tutar (₺)</span><span>Vade Tarihi</span>
-              {isCekSenetSozlesme && <span>Ödeme Yöntemi</span>}
+              <span>Ödeme Yöntemi</span>
               <span></span>
             </div>
             {manuelRows.map((row, i) => (
-              <div key={i} style={{ display: "grid", gridTemplateColumns: isCekSenetSozlesme ? "40px 1fr 1fr 1fr 40px" : "40px 1fr 1fr 40px", gap: 8, alignItems: "center" }}>
+              <div key={i} style={{ display: "grid", gridTemplateColumns: "40px 1fr 1fr minmax(140px, 1fr) 40px", gap: 8, alignItems: "center" }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: "#6b7280" }}>{i + 1}</span>
                 <input className="odeme-form-control" type="number" min="0" step="1" value={row.tutar}
                   onChange={e => handleManuelTutarChange(i, e.target.value)} placeholder="Tutar" />
                 <input className="odeme-form-control" type="date" value={row.vade_tarihi}
                   onChange={e => handleManuelDateChange(i, e.target.value)} />
-                {isCekSenetSozlesme && (
-                  <select
-                    className="odeme-form-control"
-                    value={row.odeme_yontemi_id ?? ""}
-                    onChange={(e) => {
-                      const rows = [...manuelRows];
-                      rows[i].odeme_yontemi_id = e.target.value ? Number(e.target.value) : "";
-                      setManuelRows(rows);
-                      setTaksitPlanDirty(true);
-                    }}
-                  >
-                    <option value="">Seçiniz...</option>
-                    {odemeYontemleri.map((oy) => (
-                      <option key={oy.id} value={oy.id}>
-                        {oy.ad}{isCekSenetYontemTip(oy) ? " (çek/senet)" : ""}
-                      </option>
-                    ))}
-                  </select>
-                )}
+                <select
+                  className="odeme-form-control"
+                  value={row.odeme_yontemi_id || defaultRowYontemId || ""}
+                  onChange={(e) => {
+                    const rows = [...manuelRows];
+                    rows[i].odeme_yontemi_id = e.target.value ? Number(e.target.value) : "";
+                    setManuelRows(rows);
+                    setTaksitPlanDirty(true);
+                  }}
+                >
+                  <option value="">Seçiniz...</option>
+                  {odemeYontemleri.map((oy) => (
+                    <option key={oy.id} value={oy.id}>
+                      {oy.ad}{isCekSenetYontemTip(oy) ? " (çek/senet)" : ""}
+                    </option>
+                  ))}
+                </select>
                 <button type="button" onClick={() => {
                   if (manuelRows.length <= 1) return;
                   applyTaksitSayisi(taksitSayisiInt - 1);
@@ -1973,7 +1985,7 @@ function OdemePlaniSubTab({
               <th style={{ textAlign: "right" }}>Tutar</th>
               <th style={{ textAlign: "right" }}>Ödenen</th>
               <th style={{ textAlign: "right" }}>Kalan</th>
-              {isCekSenetSozlesme && <th>Ödeme Yöntemi</th>}
+              <th>Ödeme Yöntemi</th>
               <th style={{ textAlign: "center" }}>Durum</th>
               <th style={{ textAlign: "center", width: 140 }}>İşlem</th>
             </tr>
@@ -2006,14 +2018,30 @@ function OdemePlaniSubTab({
                   </td>
                   <td style={{ textAlign: "right", color: "#059669" }}>{formatCurrency(t.odenen_tutar)}</td>
                   <td style={{ textAlign: "right", fontWeight: 600, color: t.kalan_tutar > 0 ? "#dc2626" : "#059669" }}>{formatCurrency(t.kalan_tutar)}</td>
-                  {isCekSenetSozlesme && (
-                    <td>
-                      {yontemLabel(t.odeme_yontemi_id)}
-                      {isCekSenetYontem(t.odeme_yontemi_id) && (
-                        <div style={{ fontSize: 10, color: "#64748b" }}>Portföy kaydı plan kaydında oluşur</div>
-                      )}
-                    </td>
-                  )}
+                  <td>
+                    {isEditing ? (
+                      <select
+                        className="odeme-form-control"
+                        value={editYontem}
+                        onChange={(e) => setEditYontem(e.target.value)}
+                        style={{ minWidth: 120, padding: "4px 8px" }}
+                      >
+                        <option value="">Seçiniz...</option>
+                        {odemeYontemleri.map((oy) => (
+                          <option key={oy.id} value={oy.id}>
+                            {oy.ad}{isCekSenetYontemTip(oy) ? " (çek/senet)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <>
+                        {yontemLabel(t.odeme_yontemi_id || contractYontemId || null, t.odeme_yontemi?.ad)}
+                        {isCekSenetYontem(t.odeme_yontemi_id, t.odeme_yontemi?.tip) && (
+                          <div style={{ fontSize: 10, color: "#64748b" }}>Çek/senet sayfasında görünür</div>
+                        )}
+                      </>
+                    )}
+                  </td>
                   <td style={{ textAlign: "center" }}>
                     <DurumBadgeModern durum={gecikmisMi ? "gecikti" : t.durum} map={taksitDurumLabel} />
                   </td>
@@ -2029,7 +2057,12 @@ function OdemePlaniSubTab({
                           {editable && (
                             <button
                               className="row-action-btn"
-                              onClick={() => { setEditingTaksitId(t.id); setEditTutar(String(t.tutar)); setEditVade(t.vade_tarihi || ""); }}
+                              onClick={() => {
+                                setEditingTaksitId(t.id);
+                                setEditTutar(String(t.tutar));
+                                setEditVade(t.vade_tarihi || "");
+                                setEditYontem(String(t.odeme_yontemi_id || contractYontemId || ""));
+                              }}
                               title="Düzenle"
                             >
                               <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -2037,7 +2070,7 @@ function OdemePlaniSubTab({
                               </svg>
                             </button>
                           )}
-                          {t.kalan_tutar > 0 && s.durum === "aktif" && !isCekSenetYontem(t.odeme_yontemi_id) && (
+                          {t.kalan_tutar > 0 && s.durum === "aktif" && !isCekSenetYontem(t.odeme_yontemi_id, t.odeme_yontemi?.tip) && (
                             <button
                               className="btn-modern btn-success"
                               style={{ padding: "3px 10px", fontSize: 11 }}
@@ -2073,11 +2106,11 @@ function OdemePlaniSubTab({
           </tbody>
           <tfoot>
             <tr style={{ background: "linear-gradient(135deg, #f8f9fb 0%, #f1f4f9 100%)" }}>
-              <td colSpan={3} style={{ textAlign: "right", fontWeight: 700, padding: "14px 20px" }}>Toplam:</td>
+              <td colSpan={2} style={{ textAlign: "right", fontWeight: 700, padding: "14px 20px" }}>Toplam:</td>
               <td style={{ textAlign: "right", fontWeight: 700, padding: "14px 20px" }}>{formatCurrency(taksitler.reduce((s, t) => s + t.tutar, 0))}</td>
               <td style={{ textAlign: "right", fontWeight: 700, color: "#059669", padding: "14px 20px" }}>{formatCurrency(taksitler.reduce((s, t) => s + t.odenen_tutar, 0))}</td>
               <td style={{ textAlign: "right", fontWeight: 700, color: "#dc2626", padding: "14px 20px" }}>{formatCurrency(taksitler.reduce((s, t) => s + t.kalan_tutar, 0))}</td>
-              <td colSpan={2} style={{ padding: "14px 20px" }}></td>
+              <td colSpan={3} style={{ padding: "14px 20px" }}></td>
             </tr>
           </tfoot>
         </table>

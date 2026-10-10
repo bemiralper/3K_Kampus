@@ -1,4 +1,4 @@
-"""Bölüm aralığı değişince öğrenci netlerini yeniden hesapla."""
+"""Kayıtlı öğrenci cevaplarını güncel anahtar ve bölüm aralığıyla yeniden skorla."""
 from __future__ import annotations
 
 from django.db import transaction
@@ -82,4 +82,6 @@ def rescore_exam_results(exam) -> int:
                     net=scores['net'],
                 )
         updated += 1
+    from .stored_scores import refresh_exam_scores
+    refresh_exam_scores(exam)
     return updated

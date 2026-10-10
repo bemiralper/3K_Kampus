@@ -91,9 +91,6 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
-        from ..views.curriculum_views import heal_answer_key_curriculum
-        for answer_key in self.filter_queryset(self.get_queryset()):
-            heal_answer_key_curriculum(answer_key)
         return super().list(request, *args, **kwargs)
 
     def create(self, request, *args, **kwargs):
@@ -106,9 +103,6 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         _, err = self._gate_exam(request, self.kwargs.get('exam_pk'))
         if err:
             return err
-        from ..views.curriculum_views import heal_answer_key_curriculum
-        obj = self.get_object()
-        heal_answer_key_curriculum(obj)
         return super().retrieve(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
@@ -244,10 +238,20 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             exam.status = 'ANSWER_KEY_READY'
             exam.save(update_fields=['status'])
 
+        # DAT çoktan yüklenmişse sıralama kayıtlı neti okur. Anahtar
+        # (iptal dahil) değişince o netler kendiliğinden yenilenmezdi.
+        from ..services.exam_rescore import rescore_exam_results
+        rescored = rescore_exam_results(exam)
+
+        message = f'{len(items_data)} soru başarıyla aktarıldı.'
+        if rescored:
+            message += f' {rescored} öğrencinin neti güncellendi.'
+
         return Response({
             'answer_key': result,
             'b_answer_key': b_data,
-            'message': f'{len(items_data)} soru başarıyla aktarıldı.',
+            'rescored': rescored,
+            'message': message,
         }, status=status.HTTP_200_OK)
 
     # ── KAZANIM LİSTESİ ─────────────────────────────────────────────────────
@@ -255,7 +259,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=['get'], url_path='outcomes')
     def outcomes(self, request, exam_pk=None):
         """
-        Sınav türüne göre filtrelenmiş kazanım ağacı.
+        Sınavın bölümlerine bağlı derslerin kazanım ağacı.
 
         GET .../answer-keys/outcomes/?exam_type=YKS_TYT
         → Subject → Unit → Topic → Outcome hiyerarşisi
@@ -265,7 +269,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             return err
 
         from ..services.curriculum_band import (
-            resolved_band, subject_matches_band, topic_display_name, topic_matches_band,
+            resolved_band, topic_display_name, topic_matches_band,
         )
         from ..views.curriculum_views import topic_is_bulk_dump
 
@@ -273,8 +277,11 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         linked_ids = set(
             exam.sections.exclude(subject_id=None).values_list('subject_id', flat=True)
         )
+        if not linked_ids:
+            return Response([])
         subjects = (
             Subject.objects
+            .filter(id__in=linked_ids)
             .prefetch_related(
                 Prefetch(
                     'topics',
@@ -296,8 +303,6 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
         result = []
         for subj in subjects:
-            if not subject_matches_band(subj, band) and subj.id not in linked_ids:
-                continue
             topics_data = []
             for topic in subj.topics.all():
                 if topic_is_bulk_dump(topic):
@@ -370,6 +375,13 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         if 'imported_outcome_text' in request.data:
             item.imported_outcome_text = request.data['imported_outcome_text']
         item.save()
+
+        scoring_changed = 'correct_answer' in request.data or 'is_cancelled' in request.data
+        if scoring_changed:
+            if answer_key.booklet in ('', 'A') and answer_key.is_primary:
+                rebuild_booklet_b_from_primary(answer_key.exam)
+            from ..services.exam_rescore import rescore_exam_results
+            rescore_exam_results(answer_key.exam)
 
         return Response(AnswerKeyItemSerializer(item).data)
 

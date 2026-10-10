@@ -1,0 +1,71 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.field span {
+  font-size: 11px;
+  font-weight: 650;
+  color: #64748b;
+}
+
+.field input {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.note {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #64748b;
+}
+
+.warn {
+  color: #b45309;
+}
+
+.grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.seat,
+.seatOff {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: 1px solid #dbe3ee;
+  background: #fff;
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 0;
+}
+
+.seatOff {
+  background: #f1f5f9;
+  color: #94a3b8;
+  text-decoration: line-through;
+  border-style: dashed;
+}
+
+.seat:hover,
+.seatOff:hover {
+  border-color: #0262a7;
+}

@@ -1,6 +1,58 @@
 import type { ExamRoomItem, PreviewStudent, SeatingMode } from '../types';
 
-export function seatNumbers(room: Pick<ExamRoomItem, 'capacity' | 'seat_start' | 'seat_gap'>): number[] {
+type SeatRoom = Pick<ExamRoomItem, 'capacity' | 'seat_start' | 'seat_gap' | 'inactive_seats'>;
+
+/** Aralık ve tek numaralar: "5, 12, 18-20". */
+export function parseInactiveSeats(text: string): number[] {
+  const found: number[] = [];
+  for (const raw of text.split(/[,;]+/)) {
+    const token = raw.trim();
+    if (!token) continue;
+    const range = token.match(/^(\d+)\s*[-–—]\s*(\d+)$/);
+    if (range) {
+      let a = Number(range[1]);
+      let b = Number(range[2]);
+      if (a > b) [a, b] = [b, a];
+      if (a < 1) a = 1;
+      const last = Math.min(b, a + 500);
+      for (let n = a; n <= last; n += 1) found.push(n);
+      continue;
+    }
+    if (/^\d+$/.test(token)) {
+      const n = Number(token);
+      if (n >= 1) found.push(n);
+    }
+  }
+  return [...new Set(found)].sort((a, b) => a - b).slice(0, 2000);
+}
+
+export function formatInactiveSeats(seats: number[] | undefined): string {
+  const nums = [...new Set((seats || [])
+    .map(n => Math.floor(Number(n)))
+    .filter(n => n >= 1))].sort((a, b) => a - b);
+  if (!nums.length) return '';
+  const parts: string[] = [];
+  let start = nums[0];
+  let prev = nums[0];
+  for (let i = 1; i <= nums.length; i += 1) {
+    const n = nums[i];
+    if (n === prev + 1) {
+      prev = n;
+      continue;
+    }
+    parts.push(start === prev ? String(start) : `${start}-${prev}`);
+    start = n;
+    prev = n;
+  }
+  return parts.join(', ');
+}
+
+export function inactiveSeatSet(seats: number[] | undefined): Set<number> {
+  return new Set(parseInactiveSeats(formatInactiveSeats(seats)));
+}
+
+/** Ara boşluk uygulanmış, pasifler dahil bütün numaralı yerler. */
+export function candidateSeats(room: SeatRoom): number[] {
   const cap = Math.max(0, Math.floor(Number(room.capacity) || 0));
   const start = Math.max(1, Math.floor(Number(room.seat_start) || 1));
   const gap = Math.max(0, Math.floor(Number(room.seat_gap) || 0));
@@ -9,6 +61,11 @@ export function seatNumbers(room: Pick<ExamRoomItem, 'capacity' | 'seat_start' |
   const out: number[] = [];
   for (let n = start; n <= end; n += gap + 1) out.push(n);
   return out;
+}
+
+export function seatNumbers(room: SeatRoom): number[] {
+  const skip = inactiveSeatSet(room.inactive_seats);
+  return candidateSeats(room).filter(n => !skip.has(n));
 }
 
 export type SeatedStudent = PreviewStudent & {

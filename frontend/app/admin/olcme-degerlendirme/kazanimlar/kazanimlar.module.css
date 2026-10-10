@@ -129,6 +129,21 @@
     grid-template-columns: 1fr;
   }
 }
+@media (max-width: 640px) {
+  .headerActions,
+  .searchInput,
+  .filterSelect {
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+  .searchInput,
+  .filterSelect,
+  .program,
+  .programOn {
+    min-height: 42px;
+  }
+}
 
 /* ── Sidebar ── */
 .sidebar {

@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { examApi } from '../api';
 import type { DenemeSalon, ExamDetail, ExamParticipantRow, ExamRoomItem, ExamSessionItem, ParticipantSearchHit, SeatingMode } from '../types';
 import { resolveCoachPhotoUrl } from '@/lib/coach-media';
-import { seatNumbers } from './seating';
+import { candidateSeats, seatNumbers } from './seating';
+import PassiveSeatsField from './PassiveSeatsField';
 import Icon from '../ui/Icon';
 import DenemeSalonCatalog from './DenemeSalonCatalog';
 import RosterExportModal from './RosterExportModal';
@@ -53,7 +54,8 @@ function StudentPhoto({ foto, name }: { foto?: string | null; name: string }) {
 
 type SeatLine =
   | { type: 'student'; seat: number | null; row: ExamParticipantRow }
-  | { type: 'empty'; seat: number; roomId: number };
+  | { type: 'empty'; seat: number; roomId: number }
+  | { type: 'passive'; seat: number };
 
 type RoomBlock = {
   roomId: number | null;
@@ -71,7 +73,9 @@ function buildRoomBlocks(rooms: ExamRoomItem[], visible: ExamParticipantRow[]): 
   for (const room of saved) {
     const inRoom = visible.filter(x => x.room_id === room.id);
     inRoom.forEach(x => used.add(x.id));
-    const plan = new Set(seatNumbers(room));
+    const candidates = candidateSeats(room);
+    const assignable = new Set(seatNumbers(room));
+    const plan = new Set(candidates);
     const bySeat = new Map<number, ExamParticipantRow>();
     const extras: ExamParticipantRow[] = [];
     for (const row of inRoom) {
@@ -81,8 +85,13 @@ function buildRoomBlocks(rooms: ExamRoomItem[], visible: ExamParticipantRow[]): 
     }
     const lines: SeatLine[] = [];
     let empty = 0;
-    for (const seat of seatNumbers(room)) {
+    for (const seat of candidates) {
       const row = bySeat.get(seat);
+      if (!assignable.has(seat)) {
+        if (row) lines.push({ type: 'student', seat, row });
+        else lines.push({ type: 'passive', seat });
+        continue;
+      }
       if (row) lines.push({ type: 'student', seat, row });
       else {
         lines.push({ type: 'empty', seat, roomId: room.id });
@@ -164,7 +173,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     const name = room.name.trim();
     if (!name) return;
     try {
-      const saved = await examApi.saveDenemeSalon(name, Number(room.capacity) || 30);
+      const saved = await examApi.saveDenemeSalon(name, Number(room.capacity) || 30, room.inactive_seats || []);
       setSalonlar(prev => [...prev.filter(s => s.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'tr')));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Salon kaydedilemedi.');
@@ -287,7 +296,9 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     setError('');
     try {
       const data = await examApi.saveRooms(exam.id, next);
-      setRooms(data.rooms);
+      const fresh = await examApi.participants(exam.id);
+      setRows(fresh.participants);
+      setRooms(fresh.rooms);
       setError(data.warning || '');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Salonlar kaydedilemedi.');
@@ -492,6 +503,18 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
                   <span /><span /><span>Öğrenci</span><span>Oturum</span><span>Salon</span><span>Geldi</span><span>Gelmedi</span><span />
                 </div>
                 {block.lines.map(line => {
+                  if (line.type === 'passive') {
+                    return (
+                      <div key={`p-${block.roomId}-${line.seat}`} className={p.passive}>
+                        <span className={`${p.seat} ${p.seatOff}`}>{line.seat}</span>
+                        <span className={p.photo} />
+                        <div className={p.passiveNote}>
+                          <b>Pasif sıra</b>
+                          <span>Bu numaraya öğrenci yerleştirilmez</span>
+                        </div>
+                      </div>
+                    );
+                  }
                   if (line.type === 'empty') {
                     const open = seatPick?.roomId === line.roomId && seatPick.seatNo === line.seat;
                     return (
@@ -602,7 +625,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
             {showSalon && (
               <div className={p.sideBody}>
                 <p className={p.hint}>
-                  Kapasite numaralı yer sayısıdır. Kayıtlı salonu seçince ad ve kapasite dolar. Oturum, ilk sıra ve ara boşluk bu sınava aittir.
+                  Kapasite numaralı yer sayısıdır. Pasif sıralara öğrenci oturmaz. Kayıtlı salonu seçince ad, kapasite ve pasif sıralar dolar.
                 </p>
                 <DenemeSalonCatalog salonlar={salonlar} onChange={next => { setSalonlar(next); setError(''); }} onError={setError} />
                 {rooms.map((room, i) => {
@@ -616,7 +639,12 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
                           onChange={e => {
                             const salon = salonlar.find(s => s.id === Number(e.target.value));
                             if (!salon) return;
-                            setRooms(prev => prev.map((item, j) => j === i ? { ...item, name: salon.name, capacity: salon.capacity } : item));
+                            setRooms(prev => prev.map((item, j) => j === i ? {
+                              ...item,
+                              name: salon.name,
+                              capacity: salon.capacity,
+                              inactive_seats: salon.inactive_seats || [],
+                            } : item));
                           }}
                         >
                           <option value="">Seç veya yeni yaz</option>
@@ -655,8 +683,17 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
                           <input type="number" min={0} value={room.seat_gap ?? 0} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, seat_gap: Math.max(0, Number(e.target.value) || 0) } : item))} />
                         </label>
                       </div>
+                      <PassiveSeatsField
+                        room={room}
+                        onChange={seats => setRooms(prev => prev.map((item, j) => j === i ? { ...item, inactive_seats: seats } : item))}
+                      />
                       <div className={p.roomBar}>
-                        <span className={p.occ}>{used}/{seatNumbers(room).length}</span>
+                        <span className={p.occ}>
+                          {used}/{seatNumbers(room).length}
+                          {candidateSeats(room).length - seatNumbers(room).length > 0
+                            ? ` · ${candidateSeats(room).length - seatNumbers(room).length} pasif`
+                            : ''}
+                        </span>
                         <span>
                           <button type="button" className={p.textBtn} onClick={() => rememberSalon(room)}>Listeye kaydet</button>
                           <button type="button" className={p.remove} onClick={() => setRooms(prev => prev.filter((_, j) => j !== i))}>Sil</button>

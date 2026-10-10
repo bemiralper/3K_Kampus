@@ -56,6 +56,22 @@ def _resolve_login_username(raw: str) -> str:
     except Exception:
         pass
 
+    try:
+        from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
+
+        ogrenci = Ogrenci.objects.filter(tc_kimlik_no=identifier).first()
+        if ogrenci is not None:
+            okul_no = (
+                OgrenciKayit.objects.filter(ogrenci=ogrenci, aktif_mi=True)
+                .exclude(okul_no='')
+                .values_list('okul_no', flat=True)
+                .first()
+            )
+            if okul_no and User.objects.filter(username=okul_no).exists():
+                return okul_no
+    except Exception:
+        pass
+
     return identifier
 
 
