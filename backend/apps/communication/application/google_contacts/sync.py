@@ -20,9 +20,11 @@ from apps.communication.application.google_contacts.client import (
     GooglePeopleClient,
 )
 from apps.communication.application.google_contacts.naming import (
-    class_label,
+    contact_photo_bytes,
+    enrollment_context,
     legacy_parent_desired,
     parent_desired,
+    staff_desired,
     student_desired,
 )
 from apps.communication.domain.models import (
@@ -45,6 +47,7 @@ class ContactPlan:
     ogrenci_id: int | None
     veli_id: int | None
     desired: object | None
+    personel_id: int | None = None
 
 
 def accounts_for_ogrenci(ogrenci) -> list[GoogleContactsAccount]:
@@ -69,7 +72,7 @@ def _sube_ad(ogrenci) -> str:
 
 
 def plans_for_student(ogrenci) -> list[ContactPlan]:
-    sinif_ad = class_label(ogrenci)
+    sinif_ad, kayit_yili = enrollment_context(ogrenci)
     sube_ad = _sube_ad(ogrenci)
     ogrenci_id = ogrenci.id
     if not ogrenci.aktif_mi:
@@ -83,7 +86,7 @@ def plans_for_student(ogrenci) -> list[ContactPlan]:
         GoogleContactSubject.OGRENCI,
         ogrenci_id,
         None,
-        student_desired(ogrenci, sinif_ad=sinif_ad, sube_ad=sube_ad),
+        student_desired(ogrenci, sinif_ad=sinif_ad, sube_ad=sube_ad, kayit_yili=kayit_yili),
     )]
     veliler = list(ogrenci.veliler.all())
     if veliler:
@@ -93,25 +96,25 @@ def plans_for_student(ogrenci) -> list[ContactPlan]:
                 GoogleContactSubject.VELI,
                 ogrenci_id,
                 veli.id,
-                parent_desired(veli, ogrenci, sinif_ad=sinif_ad),
+                parent_desired(veli, ogrenci, sinif_ad=sinif_ad, kayit_yili=kayit_yili),
             ))
     else:
         plans.append(ContactPlan(
             GoogleContactSubject.VELI_LEGACY,
             ogrenci_id,
             None,
-            legacy_parent_desired(ogrenci, sinif_ad=sinif_ad),
+            legacy_parent_desired(ogrenci, sinif_ad=sinif_ad, kayit_yili=kayit_yili),
         ))
     return plans
 
 
-def _plan_key(subject_type: str, ogrenci_id, veli_id) -> tuple:
-    return (subject_type, ogrenci_id or 0, veli_id or 0)
+def _plan_key(subject_type: str, ogrenci_id, veli_id, personel_id=None) -> tuple:
+    return (subject_type, ogrenci_id or 0, veli_id or 0, personel_id or 0)
 
 
 def _apply_plan(account: GoogleContactsAccount, plan: ContactPlan, existing: dict | None = None) -> str:
     """Mevcut eşlemeyi günceller. 'pending', 'delete' veya 'unchanged' döner."""
-    key = _plan_key(plan.subject_type, plan.ogrenci_id, plan.veli_id)
+    key = _plan_key(plan.subject_type, plan.ogrenci_id, plan.veli_id, plan.personel_id)
     mapping = None
     if existing is not None:
         mapping = existing.get(key)
@@ -119,6 +122,8 @@ def _apply_plan(account: GoogleContactsAccount, plan: ContactPlan, existing: dic
         lookup = {'account': account, 'subject_type': plan.subject_type}
         if plan.subject_type == GoogleContactSubject.VELI:
             lookup['veli_id'] = plan.veli_id
+        elif plan.subject_type == GoogleContactSubject.PERSONEL:
+            lookup['personel_id'] = plan.personel_id
         else:
             lookup['ogrenci_id'] = plan.ogrenci_id
         mapping = GoogleContactMapping.objects.filter(**lookup).first()
@@ -154,14 +159,15 @@ def _apply_plan(account: GoogleContactsAccount, plan: ContactPlan, existing: dic
             subject_type=plan.subject_type,
             ogrenci_id=plan.ogrenci_id,
             veli_id=plan.veli_id,
+            personel_id=plan.personel_id,
         )
         if existing is not None:
             existing[key] = mapping
     mapping.ogrenci_id = plan.ogrenci_id
     mapping.veli_id = plan.veli_id
+    mapping.personel_id = plan.personel_id
     mapping.display_name = desired.display_name[:300]
     mapping.phone_e164 = desired.phone_e164[:20]
-    mapping.content_hash = content_hash
     mapping.status = GoogleContactSyncStatus.PENDING
     mapping.last_error = ''
     mapping.save()
@@ -188,6 +194,79 @@ def enqueue_veli(veli) -> int:
     if ogrenci is None:
         return 0
     return enqueue_ogrenci(ogrenci)
+
+
+def accounts_for_personel(personel) -> list[GoogleContactsAccount]:
+    sube_ids = {personel.sube_id} if personel.sube_id else set()
+    sube_ids.update(
+        personel.gorevlendirmeler.filter(aktif_mi=True).values_list('gorev_sube_id', flat=True)
+    )
+    accounts = GoogleContactsAccount.objects.filter(
+        kurum_id=personel.kurum_id,
+        is_active=True,
+    ).exclude(refresh_token_encrypted='')
+    matched = []
+    for account in accounts:
+        if account.account_type == GoogleContactsAccountType.COACH:
+            continue
+        if account.account_type == GoogleContactsAccountType.BRANCH:
+            if account.sube_id and account.sube_id not in sube_ids:
+                continue
+        matched.append(account)
+    return matched
+
+
+def plans_for_staff(personel) -> list[ContactPlan]:
+    desired = staff_desired(personel) if personel.aktif_mi else None
+    return [ContactPlan(
+        GoogleContactSubject.PERSONEL,
+        None,
+        None,
+        desired,
+        personel_id=personel.id,
+    )]
+
+
+def enqueue_personel(personel) -> int:
+    accounts = accounts_for_personel(personel)
+    if not accounts:
+        return 0
+    changed = 0
+    for account in accounts:
+        for plan in plans_for_staff(personel):
+            if _apply_plan(account, plan) != 'unchanged':
+                changed += 1
+    if changed:
+        schedule_auto_sync(personel.kurum_id)
+    return changed
+
+
+def queue_deletes_for_personel(personel) -> None:
+    mappings = GoogleContactMapping.objects.filter(personel_id=personel.id).exclude(resource_name='')
+    pairs = [(row.account_id, row.resource_name) for row in mappings]
+    queue_remote_deletes(account_ids_and_resources=pairs)
+    if pairs:
+        schedule_auto_sync(personel.kurum_id)
+
+
+def _staff_queryset(account: GoogleContactsAccount):
+    from apps.personel.domain.models import Personel, PersonelGorevlendirme
+
+    qs = Personel.objects.filter(kurum_id=account.kurum_id).select_related('sube')
+    if account.account_type == GoogleContactsAccountType.BRANCH and account.sube_id:
+        qs = qs.filter(
+            Q(sube_id=account.sube_id)
+            | Q(gorevlendirmeler__gorev_sube_id=account.sube_id, gorevlendirmeler__aktif_mi=True)
+        ).distinct()
+    return qs.prefetch_related(
+        Prefetch(
+            'gorevlendirmeler',
+            queryset=PersonelGorevlendirme.objects.filter(aktif_mi=True).select_related(
+                'rol', 'brans', 'egitim_yili', 'gorev_sube',
+            ),
+            to_attr='aktif_gorevler',
+        ),
+    )
 
 
 def queue_remote_deletes(*, account_ids_and_resources: list[tuple[int, str]]) -> None:
@@ -234,7 +313,7 @@ def _student_queryset(account: GoogleContactsAccount):
         'veliler',
         Prefetch(
             'kayitlar',
-            queryset=OgrenciKayit.objects.filter(aktif_mi=True).select_related('sinif').order_by('-id'),
+            queryset=OgrenciKayit.objects.filter(aktif_mi=True).select_related('sinif', 'egitim_yili').order_by('-id'),
             to_attr='aktif_kayitlar',
         ),
     )
@@ -244,14 +323,21 @@ def enqueue_account(account: GoogleContactsAccount) -> int:
     if account.account_type == GoogleContactsAccountType.COACH:
         return 0
     existing = {
-        _plan_key(row.subject_type, row.ogrenci_id, row.veli_id): row
+        _plan_key(row.subject_type, row.ogrenci_id, row.veli_id, row.personel_id): row
         for row in GoogleContactMapping.objects.filter(account=account)
     }
     seen: set[tuple] = set()
     changed = 0
     for ogrenci in _student_queryset(account):
         for plan in plans_for_student(ogrenci):
-            key = _plan_key(plan.subject_type, plan.ogrenci_id, plan.veli_id)
+            key = _plan_key(plan.subject_type, plan.ogrenci_id, plan.veli_id, plan.personel_id)
+            seen.add(key)
+            result = _apply_plan(account, plan, existing)
+            if result != 'unchanged':
+                changed += 1
+    for personel in _staff_queryset(account):
+        for plan in plans_for_staff(personel):
+            key = _plan_key(plan.subject_type, plan.ogrenci_id, plan.veli_id, plan.personel_id)
             seen.add(key)
             result = _apply_plan(account, plan, existing)
             if result != 'unchanged':
@@ -299,6 +385,16 @@ def _client_for(account, client_factory):
 
 def _push_mapping(mapping: GoogleContactMapping, client) -> str:
     from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+    from apps.personel.domain.models import Personel
+
+    if mapping.subject_type == GoogleContactSubject.PERSONEL:
+        personel = (
+            Personel.objects.select_related('sube')
+            .filter(pk=mapping.personel_id)
+            .first()
+        )
+        desired = staff_desired(personel) if personel is not None and personel.aktif_mi else None
+        return _write_desired(mapping, client, desired)
 
     ogrenci = None
     veli = None
@@ -312,22 +408,24 @@ def _push_mapping(mapping: GoogleContactMapping, client) -> str:
     elif mapping.ogrenci_id:
         ogrenci = Ogrenci.objects.select_related('sube').filter(pk=mapping.ogrenci_id).first()
     if ogrenci is None:
-        if mapping.resource_name:
-            client.delete_contact(mapping.resource_name)
-        mapping.delete()
-        return 'deleted'
+        return _write_desired(mapping, client, None)
 
     desired = None
-    sinif_ad = class_label(ogrenci)
+    sinif_ad, kayit_yili = enrollment_context(ogrenci)
     if mapping.subject_type == GoogleContactSubject.OGRENCI:
         if ogrenci.aktif_mi:
-            desired = student_desired(ogrenci, sinif_ad=sinif_ad, sube_ad=_sube_ad(ogrenci))
+            desired = student_desired(
+                ogrenci, sinif_ad=sinif_ad, sube_ad=_sube_ad(ogrenci), kayit_yili=kayit_yili,
+            )
     elif mapping.subject_type == GoogleContactSubject.VELI and veli is not None and ogrenci.aktif_mi:
-        desired = parent_desired(veli, ogrenci, sinif_ad=sinif_ad)
+        desired = parent_desired(veli, ogrenci, sinif_ad=sinif_ad, kayit_yili=kayit_yili)
     elif mapping.subject_type == GoogleContactSubject.VELI_LEGACY and ogrenci.aktif_mi:
         if not ogrenci.veliler.exists():
-            desired = legacy_parent_desired(ogrenci, sinif_ad=sinif_ad)
+            desired = legacy_parent_desired(ogrenci, sinif_ad=sinif_ad, kayit_yili=kayit_yili)
+    return _write_desired(mapping, client, desired)
 
+
+def _write_desired(mapping: GoogleContactMapping, client, desired) -> str:
     if desired is None:
         if mapping.resource_name:
             client.delete_contact(mapping.resource_name)
@@ -355,6 +453,27 @@ def _push_mapping(mapping: GoogleContactMapping, client) -> str:
     resource_name = person.get('resourceName') or mapping.resource_name
     mapping.resource_name = resource_name
     mapping.etag = person.get('etag') or mapping.etag
+    mapping.save(update_fields=['resource_name', 'etag', 'updated_at'])
+    previous_had_photo = '|' in (mapping.content_hash or '')
+    photo_bytes = contact_photo_bytes(desired.photo_field) if desired.photo_digest else None
+    if photo_bytes and resource_name:
+        try:
+            photo_person = client.update_contact_photo(resource_name, photo_bytes)
+        except GoogleContactsError as exc:
+            if exc.status_code == 429:
+                raise
+            logger.warning('Google kişi fotoğrafı yazılamadı resource=%s', resource_name, exc_info=True)
+            photo_person = None
+        etag = ((photo_person or {}).get('person') or {}).get('etag')
+        if etag:
+            mapping.etag = etag
+    elif previous_had_photo and not created and resource_name and not desired.photo_digest:
+        try:
+            client.delete_contact_photo(resource_name)
+        except GoogleContactsError as exc:
+            if exc.status_code == 429:
+                raise
+            logger.warning('Google kişi fotoğrafı silinemedi resource=%s', resource_name, exc_info=True)
     mapping.display_name = desired.display_name[:300]
     mapping.phone_e164 = desired.phone_e164[:20]
     mapping.content_hash = desired.content_hash
@@ -363,10 +482,11 @@ def _push_mapping(mapping: GoogleContactMapping, client) -> str:
     mapping.last_synced_at = timezone.now()
     mapping.save()
     if created and resource_name:
-        try:
-            client.add_to_group(client.group_resource(desired.group_kind), resource_name)
-        except Exception:
-            logger.warning('Google grup etiketi eklenemedi resource=%s', resource_name, exc_info=True)
+        for kind in desired.label_kinds():
+            try:
+                client.add_to_group(client.group_resource(kind), resource_name)
+            except Exception:
+                logger.warning('Google grup etiketi eklenemedi resource=%s', resource_name, exc_info=True)
     return 'created' if created else 'updated'
 
 

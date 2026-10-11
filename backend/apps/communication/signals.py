@@ -102,3 +102,44 @@ def _enqueue_google_ogrenci(sender, instance, **kwargs):
 @receiver(pre_delete, sender='ogrenci.Ogrenci')
 def _queue_google_ogrenci_delete(sender, instance, **kwargs):
     _run_google(lambda: _google_contacts().queue_deletes_for_ogrenci(instance), 'öğrenci silme')
+
+
+@receiver(post_save, sender='ogrenci.OgrenciKayit')
+def _enqueue_google_kayit(sender, instance, **kwargs):
+    ogrenci = getattr(instance, 'ogrenci', None)
+    if ogrenci is None:
+        return
+    _run_google(lambda: _google_contacts().enqueue_ogrenci(ogrenci), 'kayıt yılı')
+
+
+@receiver(post_save, sender='personel.Personel')
+def _enqueue_google_personel(sender, instance, **kwargs):
+    _run_google(lambda: _google_contacts().enqueue_personel(instance), 'personel')
+
+
+@receiver(pre_delete, sender='personel.Personel')
+def _queue_google_personel_delete(sender, instance, **kwargs):
+    _run_google(lambda: _google_contacts().queue_deletes_for_personel(instance), 'personel silme')
+
+
+@receiver(post_save, sender='personel.PersonelGorevlendirme')
+def _enqueue_google_gorev(sender, instance, **kwargs):
+    personel = getattr(instance, 'personel', None)
+    if personel is None:
+        return
+    _run_google(lambda: _google_contacts().enqueue_personel(personel), 'görevlendirme')
+
+
+@receiver(post_delete, sender='personel.PersonelGorevlendirme')
+def _enqueue_google_gorev_delete(sender, instance, **kwargs):
+    personel_id = getattr(instance, 'personel_id', None)
+    if not personel_id:
+        return
+
+    def _refresh():
+        from apps.personel.domain.models import Personel
+        personel = Personel.objects.filter(pk=personel_id).first()
+        if personel is not None:
+            _google_contacts().enqueue_personel(personel)
+
+    _run_google(_refresh, 'görev silme')

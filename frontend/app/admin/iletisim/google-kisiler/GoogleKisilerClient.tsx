@@ -217,7 +217,7 @@ export default function GoogleKisilerClient() {
     return (
       <CommunicationPageShell
         title="Google Kişiler"
-        subtitle="Öğrenci ve veli telefonlarını kurumun Google rehberine yazar"
+        subtitle="Öğrenci, veli ve personel telefonlarını kurumun Google rehberine yazar"
         icon="👤"
         breadcrumbs={[{ label: "İletişim" }, { label: "Google Kişiler" }]}
       >
@@ -232,7 +232,7 @@ export default function GoogleKisilerClient() {
   return (
     <CommunicationPageShell
       title="Google Kişiler"
-      subtitle="Merkez Google hesabına öğrenci ve veli numaralarını isimle yazar. İleride başka hesaplar da bağlanabilir."
+      subtitle="Merkez Google hesabına öğrenci, veli ve personel numaralarını isimle yazar. Öğrenci fotoğrafı ve öğretmen branşı da karta yazılır."
       icon="👤"
       breadcrumbs={[{ label: "İletişim" }, { label: "Google Kişiler" }]}
       actions={
@@ -425,7 +425,7 @@ export default function GoogleKisilerClient() {
                   <div>
                     <strong style={{ color: "#991b1b" }}>Rehberden sil</strong>
                     <p style={{ margin: "0.25rem 0 0", color: "#7f1d1d", fontSize: "0.9rem" }}>
-                      Yalnızca bu uygulamanın eklediği öğrenci ve veli kartları silinir. Kişisel rehberinize dokunulmaz.
+                      Yalnızca bu uygulamanın eklediği öğrenci, veli ve personel kartları silinir. Kişisel rehberinize dokunulmaz.
                     </p>
                   </div>
                   {purgeAccountId !== account.id && (

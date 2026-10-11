@@ -1,11 +1,12 @@
 """Google People API istemcisi."""
 from __future__ import annotations
 
+import base64
 import logging
 
 import httpx
 
-from apps.communication.application.google_contacts.naming import GROUP_PARENTS, GROUP_STUDENTS
+from apps.communication.application.google_contacts.naming import group_name_for
 from apps.communication.application.google_contacts.oauth import GoogleOAuthError, ensure_access_token
 
 logger = logging.getLogger(__name__)
@@ -119,6 +120,25 @@ class GooglePeopleClient:
                 raise
         return updated or {}
 
+    def update_contact_photo(self, resource_name: str, photo: bytes) -> dict:
+        if not resource_name or not photo:
+            return {}
+        updated = self._request(
+            'POST',
+            f'{PEOPLE_BASE}/{resource_name}:updateContactPhoto',
+            json_body={'photoBytes': base64.b64encode(photo).decode('ascii')},
+        )
+        return updated or {}
+
+    def delete_contact_photo(self, resource_name: str) -> None:
+        if not resource_name:
+            return
+        self._request(
+            'DELETE',
+            f'{PEOPLE_BASE}/{resource_name}:deleteContactPhoto',
+            allow_not_found=True,
+        )
+
     def delete_contact(self, resource_name: str) -> None:
         if not resource_name:
             return
@@ -163,12 +183,23 @@ class GooglePeopleClient:
             logger.warning('Google grup üyeliği eklenemedi: %s', exc)
 
     def group_resource(self, kind: str) -> str:
-        field = 'student_group_resource' if kind == 'students' else 'parent_group_resource'
-        name = GROUP_STUDENTS if kind == 'students' else GROUP_PARENTS
-        current = getattr(self.account, field, '') or ''
-        if current:
-            return current
+        name = group_name_for(kind)
+        if kind == 'students' and self.account.student_group_resource:
+            return self.account.student_group_resource
+        if kind == 'parents' and self.account.parent_group_resource:
+            return self.account.parent_group_resource
+        stored = dict(self.account.group_resources or {})
+        if stored.get(kind):
+            return stored[kind]
         resource = self.ensure_group(name)
-        setattr(self.account, field, resource)
-        self.account.save(update_fields=[field, 'updated_at'])
+        stored[kind] = resource
+        self.account.group_resources = stored
+        update_fields = ['group_resources', 'updated_at']
+        if kind == 'students':
+            self.account.student_group_resource = resource
+            update_fields.append('student_group_resource')
+        elif kind == 'parents':
+            self.account.parent_group_resource = resource
+            update_fields.append('parent_group_resource')
+        self.account.save(update_fields=update_fields)
         return resource

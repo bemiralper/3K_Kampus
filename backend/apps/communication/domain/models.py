@@ -1692,6 +1692,7 @@ class GoogleContactSubject(models.TextChoices):
     OGRENCI = 'ogrenci', 'Öğrenci'
     VELI = 'veli', 'Veli'
     VELI_LEGACY = 'veli_legacy', 'Veli (eski alan)'
+    PERSONEL = 'personel', 'Personel'
 
 
 class GoogleContactSyncStatus(models.TextChoices):
@@ -1747,6 +1748,7 @@ class GoogleContactsAccount(models.Model):
     scopes = models.CharField(max_length=500, blank=True, default='')
     student_group_resource = models.CharField(max_length=160, blank=True, default='')
     parent_group_resource = models.CharField(max_length=160, blank=True, default='')
+    group_resources = models.JSONField(default=dict, blank=True)
     last_synced_at = models.DateTimeField(null=True, blank=True, verbose_name='Son senkronizasyon')
     last_sync_error = models.TextField(blank=True, default='')
     last_sync_stats = models.JSONField(default=dict, blank=True)
@@ -1808,6 +1810,13 @@ class GoogleContactMapping(models.Model):
         on_delete=models.CASCADE,
         related_name='google_contact_mappings',
     )
+    personel = models.ForeignKey(
+        'personel.Personel',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='google_contact_mappings',
+    )
     resource_name = models.CharField(max_length=160, blank=True, default='')
     etag = models.CharField(max_length=255, blank=True, default='')
     phone_e164 = models.CharField(max_length=20, blank=True, default='')
@@ -1842,6 +1851,11 @@ class GoogleContactMapping(models.Model):
                 fields=['account', 'ogrenci'],
                 condition=models.Q(subject_type=GoogleContactSubject.VELI_LEGACY),
                 name='comm_gcontact_map_leg_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['account', 'personel'],
+                condition=models.Q(subject_type=GoogleContactSubject.PERSONEL),
+                name='comm_gcontact_map_per_uniq',
             ),
         ]
         indexes = [

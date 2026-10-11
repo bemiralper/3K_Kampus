@@ -5,7 +5,11 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
-from apps.communication.application.google_contacts.naming import parent_desired, student_desired
+from apps.communication.application.google_contacts.naming import parent_desired, staff_desired, student_desired
+from apps.egitim_tanimlari.models import Brans
+from apps.egitim_yili.domain.models import EgitimYili
+from apps.personel.domain.models import Personel, PersonelGorevlendirme
+from apps.roller.models import Role
 from apps.communication.application.google_contacts.oauth import (
     build_authorization_url,
     origin_allowed,
@@ -19,7 +23,7 @@ from apps.communication.domain.models import (
     GoogleContactsAccount,
 )
 from apps.kurum.domain.models import Kurum
-from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit, OgrenciVeli
 from apps.sube.domain.models import Sube
 
 User = get_user_model()
@@ -31,6 +35,8 @@ class FakePeople:
         self.created = []
         self.updated = []
         self.deleted = []
+        self.groups = []
+        self.photos = []
         self._n = 0
 
     def create_contact(self, body):
@@ -46,7 +52,14 @@ class FakePeople:
         self.deleted.append(resource_name)
 
     def add_to_group(self, group, person):
-        return None
+        self.groups.append((group, person))
+
+    def update_contact_photo(self, resource_name, photo):
+        self.photos.append(photo)
+        return {'person': {'resourceName': resource_name, 'etag': 'e-photo'}}
+
+    def delete_contact_photo(self, resource_name):
+        self.photos.append(None)
 
     def group_resource(self, kind):
         return f'contactGroups/{kind}'
@@ -174,6 +187,99 @@ class GoogleContactsSyncTests(TestCase):
         sync_batch(kurum_id=self.kurum.id, limit=10, client_factory=self._factory)
         names = [body['names'][0]['unstructuredName'] for body in self.fake.created]
         self.assertIn('Ayşe Yılmaz [Ali Yılmaz - Anne]', names)
+
+    def test_enrollment_year_is_written_to_notes(self):
+        year, _ = EgitimYili.objects.get_or_create(
+            baslangic_yil=2025, bitis_yil=2026, defaults={'aktif_mi': True},
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=self.student,
+            egitim_yili=year,
+            kurum=self.kurum,
+            sube=self.sube,
+            aktif_mi=True,
+        )
+        desired = student_desired(self.student, sinif_ad='12-A', sube_ad='Merkez', kayit_yili='2025-2026')
+        self.assertIn('Kayıt: 2025-2026', desired.biography)
+        veli = OgrenciVeli.objects.create(
+            ogrenci=self.student,
+            veli_turu='anne',
+            ad='Fatma',
+            soyad='Yılmaz',
+            telefon='05329990000',
+        )
+        parent = parent_desired(veli, self.student, sinif_ad='12-A', kayit_yili='2025-2026')
+        self.assertIn('Kayıt: 2025-2026', parent.biography)
+
+    def test_staff_contacts_use_branch_and_role_labels(self):
+        year, _ = EgitimYili.objects.get_or_create(
+            baslangic_yil=2026, bitis_yil=2027, defaults={'aktif_mi': True},
+        )
+        if not year.aktif_mi:
+            year.aktif_mi = True
+            year.save(update_fields=['aktif_mi'])
+        teacher_role, _ = Role.objects.get_or_create(
+            code='gct_ogretmen',
+            defaults={'name': 'Öğretmen', 'level': 100, 'is_system_role': True},
+        )
+        clerk_role, _ = Role.objects.get_or_create(
+            code='gct_sekreter',
+            defaults={'name': 'Sekreter', 'level': 90, 'is_system_role': True},
+        )
+        branch = Brans.objects.create(kurum=self.kurum, sube=self.sube, ad='Matematik', kod='MAT-G')
+        teacher = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Ayşe', soyad='Demir', cep_telefon='05321110001',
+        )
+        clerk = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Mehmet', soyad='Kaya', cep_telefon='05321110002',
+        )
+        PersonelGorevlendirme.objects.create(
+            personel=teacher, egitim_yili=year, gorev_sube=self.sube, kurum=self.kurum,
+            rol=teacher_role, brans=branch, aktif_mi=True,
+        )
+        PersonelGorevlendirme.objects.create(
+            personel=clerk, egitim_yili=year, gorev_sube=self.sube, kurum=self.kurum,
+            rol=clerk_role, aktif_mi=True,
+        )
+        GoogleContactMapping.objects.filter(account=self.account).exclude(
+            subject_type=GoogleContactSubject.PERSONEL,
+        ).delete()
+        result = sync_batch(kurum_id=self.kurum.id, limit=10, client_factory=self._factory)
+        self.assertEqual(result['created'], 2)
+        names = [body['names'][0]['unstructuredName'] for body in self.fake.created]
+        bios = [body['biographies'][0]['value'] for body in self.fake.created]
+        self.assertIn('Ayşe Demir [Matematik]', names)
+        self.assertIn('Mehmet Kaya [Sekreter]', names)
+        self.assertTrue(any('Branş: Matematik' in bio for bio in bios))
+        self.assertIn('contactGroups/teachers', [group for group, _person in self.fake.groups])
+        self.assertIn('contactGroups/role:Sekreter', [group for group, _person in self.fake.groups])
+        teacher_card = staff_desired(teacher)
+        self.assertEqual(teacher_card.group_kind, 'teachers')
+        clerk.aktif_mi = False
+        clerk.save(update_fields=['aktif_mi', 'updated_at'])
+        removed = sync_batch(kurum_id=self.kurum.id, limit=10, client_factory=self._factory)
+        self.assertEqual(removed['deleted'], 1)
+        self.assertIsNone(staff_desired(Personel(ad='Boş', soyad='Telefon', aktif_mi=True, telefon='', cep_telefon='')))
+
+    def test_student_photo_is_sent_to_google(self):
+        import base64
+        from django.core.files.base import ContentFile
+
+        png = base64.b64decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='
+        )
+        self.student.profil_foto.save('ali.png', ContentFile(png), save=True)
+        GoogleContactMapping.objects.filter(account=self.account).delete()
+        enqueue_ogrenci(self.student)
+        result = sync_batch(kurum_id=self.kurum.id, limit=10, client_factory=self._factory)
+        self.assertEqual(result['created'], 1)
+        self.assertEqual(len(self.fake.photos), 1)
+        self.assertTrue(self.fake.photos[0].startswith(b'\xff\xd8'))
+        mapping = GoogleContactMapping.objects.get(
+            account=self.account, subject_type=GoogleContactSubject.OGRENCI,
+        )
+        self.assertIn('|', mapping.content_hash)
+        self.assertLessEqual(len(mapping.content_hash), 64)
 
     def test_disconnect_clears_tokens_without_purge(self):
         result = disconnect_account(self.account, purge=False)
