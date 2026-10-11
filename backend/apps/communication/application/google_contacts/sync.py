@@ -5,6 +5,8 @@ import logging
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta
+from time import monotonic
 
 from django.conf import settings
 from django.core.cache import cache
@@ -383,10 +385,13 @@ def sync_batch(
     account_id=None,
     limit: int = 25,
     enqueue: bool = False,
+    enqueue_only: bool = False,
     retry_failed: bool = False,
+    deadline_seconds: float = 12,
     client_factory=None,
 ) -> dict:
-    limit = max(1, min(int(limit or 25), 50))
+    limit = max(1, min(int(limit or 25), 40))
+    deadline = monotonic() + max(3, float(deadline_seconds or 12))
     accounts = GoogleContactsAccount.objects.filter(
         kurum_id=kurum_id,
         is_active=True,
@@ -408,12 +413,16 @@ def sync_batch(
         'failed': 0,
         'skipped': 0,
         'remaining': 0,
+        'retry_after_seconds': 0,
         'error': '',
     }
     if not accounts:
         return stats
 
     account_ids = [account.id for account in accounts]
+    if enqueue_only:
+        stats['remaining'] = _remaining_count(account_ids)
+        return stats
     clients: dict = {}
 
     def get_client(account):
@@ -432,17 +441,21 @@ def sync_batch(
         try:
             _process_removal(removal, get_client(account))
             stats['deleted'] += 1
+            stats['processed'] += 1
         except GoogleContactsError as exc:
+            if _hold_for_rate_limit(stats, exc):
+                fatal = True
+                break
             stats['failed'] += 1
+            stats['processed'] += 1
             stats['error'] = str(exc)[:300]
             removal.attempts += 1
             removal.last_error = str(exc)[:500]
             removal.save(update_fields=['attempts', 'last_error'])
             account.last_sync_error = stats['error']
             account.save(update_fields=['last_sync_error', 'updated_at'])
-            fatal = exc.status_code in (401, 403, 429)
-        stats['processed'] += 1
-        if fatal or stats['processed'] >= limit:
+            fatal = exc.status_code in (401, 403)
+        if fatal or stats['processed'] >= limit or monotonic() >= deadline:
             break
 
     room = limit - stats['processed']
@@ -466,32 +479,31 @@ def sync_batch(
             try:
                 outcome = _push_mapping(mapping, get_client(account))
                 stats[outcome] = stats.get(outcome, 0) + 1
+                stats['processed'] += 1
             except GoogleContactsError as exc:
+                if _hold_for_rate_limit(stats, exc):
+                    fatal = True
+                    break
                 stats['failed'] += 1
+                stats['processed'] += 1
                 stats['error'] = str(exc)[:300]
                 mapping.status = GoogleContactSyncStatus.FAILED
                 mapping.last_error = str(exc)[:500]
                 mapping.save(update_fields=['status', 'last_error', 'updated_at'])
                 account.last_sync_error = stats['error']
                 account.save(update_fields=['last_sync_error', 'updated_at'])
-                fatal = exc.status_code in (401, 403, 429)
-            stats['processed'] += 1
-            if fatal:
+                fatal = exc.status_code in (401, 403)
+            if fatal or monotonic() >= deadline:
                 break
 
-    remaining = GoogleContactMapping.objects.filter(
-        account_id__in=account_ids,
-        status__in=[
-            GoogleContactSyncStatus.PENDING,
-            GoogleContactSyncStatus.PENDING_DELETE,
-        ],
-    ).count() + GoogleContactRemoval.objects.filter(account_id__in=account_ids).count()
+    remaining = _remaining_count(account_ids)
     stats['remaining'] = remaining
     now = timezone.now()
     for account in accounts:
         account.last_synced_at = now
         if stats['failed'] == 0:
             account.last_sync_error = ''
+        previous = account.last_sync_stats or {}
         account.last_sync_stats = {
             'created': stats['created'],
             'updated': stats['updated'],
@@ -500,8 +512,137 @@ def sync_batch(
             'skipped': stats['skipped'],
             'remaining': remaining,
         }
+        if previous.get('draining_until'):
+            account.last_sync_stats['draining_until'] = previous['draining_until']
         account.save(update_fields=['last_synced_at', 'last_sync_error', 'last_sync_stats', 'updated_at'])
     return stats
+
+
+def _hold_for_rate_limit(stats: dict, exc: GoogleContactsError) -> bool:
+    if exc.status_code != 429:
+        return False
+    stats['error'] = str(exc)[:300]
+    stats['retry_after_seconds'] = 35
+    return True
+
+
+def _parse_stamp(value: str):
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    if timezone.is_naive(parsed):
+        return timezone.make_aware(parsed, timezone.get_current_timezone())
+    return parsed
+
+
+def drain_is_running(account: GoogleContactsAccount) -> bool:
+    until = _parse_stamp((account.last_sync_stats or {}).get('draining_until') or '')
+    return bool(until and until > timezone.now())
+
+
+def _touch_drain(account: GoogleContactsAccount, *, seconds: int = 90) -> None:
+    account.refresh_from_db(fields=['last_sync_stats'])
+    stats = dict(account.last_sync_stats or {})
+    stats['draining_until'] = (timezone.now() + timedelta(seconds=seconds)).isoformat()
+    account.last_sync_stats = stats
+    account.save(update_fields=['last_sync_stats', 'updated_at'])
+
+
+def _clear_drain(account_id) -> None:
+    account = GoogleContactsAccount.objects.filter(id=account_id).first()
+    if account is None:
+        return
+    stats = dict(account.last_sync_stats or {})
+    stats.pop('draining_until', None)
+    account.last_sync_stats = stats
+    account.save(update_fields=['last_sync_stats', 'updated_at'])
+
+
+def start_background_sync(*, kurum_id: int, account_id, retry_failed: bool = False) -> dict:
+    """Kuyruğu tarayıcıya bağlı kalmadan yazar. Google limiti için turlar arasında bekler."""
+    with transaction.atomic():
+        account = (
+            GoogleContactsAccount.objects.select_for_update()
+            .filter(kurum_id=kurum_id, id=account_id, is_active=True)
+            .exclude(refresh_token_encrypted='')
+            .first()
+        )
+        if account is None:
+            return {'started': False, 'already_running': False, 'remaining': 0, 'error': 'Bağlı hesap yok.'}
+        if drain_is_running(account):
+            return {
+                'started': False,
+                'already_running': True,
+                'remaining': _remaining_count([account.id]),
+                'error': '',
+            }
+        stats = dict(account.last_sync_stats or {})
+        stats['draining_until'] = (timezone.now() + timedelta(seconds=90)).isoformat()
+        account.last_sync_stats = stats
+        account.last_sync_error = ''
+        account.save(update_fields=['last_sync_stats', 'last_sync_error', 'updated_at'])
+        claimed_id = account.id
+
+    def _run():
+        try:
+            close_old_connections()
+            first = True
+            idle = 0
+            while True:
+                _touch_drain(GoogleContactsAccount.objects.get(id=claimed_id), seconds=300)
+                stats = sync_batch(
+                    kurum_id=kurum_id,
+                    account_id=claimed_id,
+                    limit=12,
+                    enqueue=first,
+                    retry_failed=first and retry_failed,
+                    deadline_seconds=20,
+                )
+                first = False
+                if stats.get('retry_after_seconds'):
+                    time.sleep(int(stats['retry_after_seconds']))
+                    continue
+                if stats['remaining'] <= 0:
+                    break
+                if stats['error'] and stats['processed'] == 0:
+                    break
+                if stats['processed'] == 0:
+                    idle += 1
+                    if idle >= 2:
+                        break
+                else:
+                    idle = 0
+                time.sleep(12)
+        except Exception:
+            logger.exception('Google kişiler arka plan eşitlemesi başarısız kurum=%s', kurum_id)
+        finally:
+            _clear_drain(claimed_id)
+            close_old_connections()
+
+    threading.Thread(
+        target=_run,
+        daemon=True,
+        name=f'gcontacts-drain-{claimed_id}',
+    ).start()
+    return {
+        'started': True,
+        'already_running': False,
+        'remaining': _remaining_count([claimed_id]),
+        'error': '',
+    }
+
+
+def _remaining_count(account_ids) -> int:
+    return GoogleContactMapping.objects.filter(
+        account_id__in=account_ids,
+        status__in=[
+            GoogleContactSyncStatus.PENDING,
+            GoogleContactSyncStatus.PENDING_DELETE,
+        ],
+    ).count() + GoogleContactRemoval.objects.filter(account_id__in=account_ids).count()
 
 
 def account_counts(account: GoogleContactsAccount) -> dict:

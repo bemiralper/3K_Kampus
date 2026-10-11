@@ -3219,6 +3219,7 @@ export interface GoogleContactsAccountStatus {
   is_default: boolean;
   is_active: boolean;
   connected: boolean;
+  syncing?: boolean;
   last_synced_at: string | null;
   last_sync_error: string;
   last_sync_stats: Record<string, number>;
@@ -3246,6 +3247,9 @@ export interface GoogleContactsSyncResult {
   skipped: number;
   remaining: number;
   error: string;
+  retry_after_seconds?: number;
+  started?: boolean;
+  already_running?: boolean;
   disconnected?: boolean;
 }
 
@@ -3272,7 +3276,9 @@ export function connectGoogleContacts(origin: string): Promise<{ authorization_u
 
 export function syncGoogleContacts(body: {
   enqueue?: boolean;
+  enqueue_only?: boolean;
   retry_failed?: boolean;
+  background?: boolean;
   limit?: number;
   account_id?: string;
 }): Promise<GoogleContactsSyncResult> {

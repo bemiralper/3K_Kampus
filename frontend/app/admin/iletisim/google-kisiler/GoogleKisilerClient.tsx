@@ -20,6 +20,19 @@ function formatWhen(value: string | null): string {
   return date.toLocaleString("tr-TR");
 }
 
+function queueSize(account: GoogleContactsAccountStatus | undefined): number {
+  if (!account?.counts) return 0;
+  return (account.counts.pending ?? 0) + (account.counts.pending_delete ?? 0) + (account.counts.removing ?? 0);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function purgeConfirmed(value: string): boolean {
+  return value.trim().toLocaleUpperCase("tr-TR").replace(/İ/g, "I") === "SIL";
+}
+
 export default function GoogleKisilerClient() {
   const [status, setStatus] = useState<GoogleContactsStatus | null>(null);
   const [loading, setLoading] = useState(true);
@@ -30,6 +43,8 @@ export default function GoogleKisilerClient() {
   const [redirectUri, setRedirectUri] = useState("");
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  const [purgeAccountId, setPurgeAccountId] = useState<string | null>(null);
+  const [purgeText, setPurgeText] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -61,6 +76,15 @@ export default function GoogleKisilerClient() {
     }
     load();
   }, [load]);
+
+  const anySyncing = (status?.accounts || []).some((account) => account.syncing);
+  useEffect(() => {
+    if (!anySyncing) return;
+    const timer = window.setInterval(() => {
+      load();
+    }, 4000);
+    return () => window.clearInterval(timer);
+  }, [anySyncing, load]);
 
   const copyRedirect = async () => {
     try {
@@ -107,68 +131,78 @@ export default function GoogleKisilerClient() {
     setBusy(`sync-${account.id}`);
     setError(null);
     setMessage(null);
-    let enqueue = true;
-    let retryFailed = true;
-    let remaining = 1;
-    const totals = { created: 0, updated: 0, deleted: 0, failed: 0 };
+    setProgress(`${account.email}: kuyruk sunucuda yazılıyor. Bu sayfadan çıksanız da devam eder.`);
     try {
-      while (remaining > 0) {
-        const result = await syncGoogleContacts({
-          account_id: account.id,
-          enqueue,
-          retry_failed: retryFailed,
-          limit: 25,
-        });
-        enqueue = false;
-        retryFailed = false;
-        remaining = result.remaining;
-        totals.created += result.created;
-        totals.updated += result.updated;
-        totals.deleted += result.deleted;
-        totals.failed += result.failed;
+      const result = await syncGoogleContacts({
+        account_id: account.id,
+        enqueue: true,
+        retry_failed: true,
+        background: true,
+      });
+      if (result.error && !result.started && !result.already_running) {
+        throw new Error(result.error);
+      }
+      const startedAt = Date.now();
+      let previous = queueSize(account);
+      while (Date.now() - startedAt < 25 * 60 * 1000) {
+        await sleep(4000);
+        const data = await fetchGoogleContactsStatus();
+        setStatus(data);
+        const current = data.accounts.find((item) => item.id === account.id);
+        const pending = queueSize(current);
+        const synced = current?.counts?.synced ?? 0;
         setProgress(
-          remaining > 0
-            ? `${account.email}: ${remaining} kişi kaldı`
-            : null,
+          `${account.email}: rehberde ${synced}, kuyrukta ${pending}. Sayfadan çıksanız da yazma sürer.`,
         );
-        if (result.failed && result.error && remaining > 0 && result.processed === 0) {
-          throw new Error(result.error);
+        if (current && !current.syncing && pending === 0) {
+          setMessage(`${account.email} eşitlendi. Rehberde ${synced} kişi var.`);
+          return;
         }
+        if (current && !current.syncing && pending > 0) {
+          if (current.last_sync_error) setError(current.last_sync_error);
+          setMessage(`Durdu. Rehberde ${synced}, kuyrukta ${pending}. Tekrar başlatınca kaldığı yerden sürer.`);
+          return;
+        }
+        if (pending >= previous && Date.now() - startedAt > 3 * 60 * 1000) {
+          setMessage(`Yazma sürüyor. Rehberde ${synced}, kuyrukta ${pending}.`);
+        }
+        previous = pending;
       }
-      const failNote = totals.failed ? ` ${totals.failed} kayıt yazılamadı.` : "";
-      setMessage(
-        `${account.email}: ${totals.created} eklendi, ${totals.updated} güncellendi, ${totals.deleted} silindi.${failNote}`,
-      );
-      if (totals.failed) {
-        setError("Bazı kişiler Google'a yazılamadı. Bir süre sonra yeniden eşitleyin.");
-      }
-      await load();
+      setMessage("Eşitleme uzun sürdü. Sayıları yenileyip gerekirse yeniden başlatın.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Eşitleme başarısız");
     } finally {
       setProgress(null);
       setBusy(null);
+      await load();
     }
   };
 
   const handleDisconnect = async (account: GoogleContactsAccountStatus, purge: boolean) => {
-    const question = purge
-      ? `${account.email} bağlantısı kesilsin ve bu hesaptaki kurum kişileri Google rehberinden silinsin mi?`
-      : `${account.email} bağlantısı kesilsin mi? Rehberdeki kişiler Google'da kalır.`;
-    if (!confirm(question)) return;
+    if (!purge && !confirm(`${account.email} bağlantısı kesilsin mi? Rehberdeki kişiler Google'da kalır.`)) {
+      return;
+    }
     setBusy(`off-${account.id}`);
     setError(null);
     setMessage(null);
     try {
       let result = await disconnectGoogleContacts(account.id, purge);
       while (purge && !result.disconnected && result.remaining > 0 && result.failed === 0) {
-        setProgress(`${account.email}: rehberden siliniyor, ${result.remaining} kaldı`);
+        const wait = result.retry_after_seconds || 0;
+        setProgress(
+          wait
+            ? `${account.email}: Google limiti doldu, ${wait} sn sonra silmeye devam`
+            : `${account.email}: rehberden siliniyor, ${result.remaining} kaldı`,
+        );
+        if (wait) await sleep(wait * 1000);
         result = await disconnectGoogleContacts(account.id, true);
       }
       if (purge && !result.disconnected) {
         setError(result.error || "Kişiler tamamen silinemedi. Bağlantı duruyor.");
       } else {
         setMessage(purge ? "Hesap ayrıldı ve kurum kişileri rehberden silindi." : "Hesap ayrıldı. Kişiler Google'da duruyor.");
+        setPurgeAccountId(null);
+        setPurgeText("");
       }
       await load();
     } catch (err) {
@@ -340,32 +374,122 @@ export default function GoogleKisilerClient() {
             <p style={{ color: "#b91c1c", margin: "0.75rem 0 0" }}>{account.last_sync_error}</p>
           )}
           {account.connected && (
-            <div className="comm-btn-row">
-              <button
-                type="button"
-                className="comm-btn-primary"
-                disabled={busy !== null}
-                onClick={() => handleSync(account)}
+            <>
+              {queueSize(account) >= 20 && !account.syncing && (
+                <p style={{ margin: "0.75rem 0 0", color: "#3f6212" }}>
+                  Takılmadı. Rehberde {account.counts?.synced ?? 0} kişi yazıldı, {queueSize(account)} kişi
+                  kuyrukta kaldı. Tur yarım kesilmiş; devam edince sunucu kalanını kendi yazar.
+                </p>
+              )}
+              {account.syncing && (
+                <p style={{ margin: "0.75rem 0 0", color: "#1d4ed8" }}>
+                  Eşitleniyor. Rehberde {account.counts?.synced ?? 0}, kuyrukta {queueSize(account)}.
+                  Bu sayfadan çıksanız da yazma sürer.
+                </p>
+              )}
+              <div className="comm-btn-row">
+                <button
+                  type="button"
+                  className="comm-btn-primary"
+                  disabled={busy !== null || Boolean(account.syncing)}
+                  onClick={() => handleSync(account)}
+                >
+                  {busy === `sync-${account.id}` || account.syncing
+                    ? "Eşitleniyor…"
+                    : queueSize(account) > 0
+                      ? `Eşitlemeye devam et (${queueSize(account)})`
+                      : "Tüm rehberi eşitle"}
+                </button>
+                <button
+                  type="button"
+                  className="comm-btn-secondary"
+                  disabled={busy !== null || Boolean(account.syncing)}
+                  onClick={() => handleDisconnect(account, false)}
+                >
+                  Bağlantıyı kes
+                </button>
+              </div>
+              <p style={{ margin: "0.4rem 0 0", color: "#667781", fontSize: "0.85rem" }}>
+                Bağlantıyı kesmek Google’daki kişilere dokunmaz. Yalnızca yeni kayıtların yazılması durur.
+              </p>
+              <div
+                style={{
+                  marginTop: "1rem",
+                  padding: "0.85rem 1rem",
+                  border: "1px solid #fecaca",
+                  borderRadius: "8px",
+                  background: "#fffafa",
+                }}
               >
-                {busy === `sync-${account.id}` ? "Eşitleniyor…" : "Tüm rehberi eşitle"}
-              </button>
-              <button
-                type="button"
-                className="comm-btn-secondary"
-                disabled={busy !== null}
-                onClick={() => handleDisconnect(account, false)}
-              >
-                Bağlantıyı kes
-              </button>
-              <button
-                type="button"
-                className="comm-btn-danger"
-                disabled={busy !== null}
-                onClick={() => handleDisconnect(account, true)}
-              >
-                Rehberden de sil
-              </button>
-            </div>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", flexWrap: "wrap" }}>
+                  <div>
+                    <strong style={{ color: "#991b1b" }}>Rehberden sil</strong>
+                    <p style={{ margin: "0.25rem 0 0", color: "#7f1d1d", fontSize: "0.9rem" }}>
+                      Yalnızca bu uygulamanın eklediği öğrenci ve veli kartları silinir. Kişisel rehberinize dokunulmaz.
+                    </p>
+                  </div>
+                  {purgeAccountId !== account.id && (
+                    <button
+                      type="button"
+                      className="comm-btn-danger"
+                      disabled={busy !== null || Boolean(account.syncing)}
+                      onClick={() => {
+                        setPurgeAccountId(account.id);
+                        setPurgeText("");
+                      }}
+                    >
+                      Rehberden sil…
+                    </button>
+                  )}
+                </div>
+                {purgeAccountId === account.id && (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <p style={{ margin: "0 0 0.75rem", color: "#7f1d1d" }}>
+                      Google’da yazılmış {account.counts?.synced ?? 0} kişi silinir.
+                      Henüz yazılmamış {queueSize(account)} kayıt yalnızca kuyruktan düşer.
+                      İş bitince {account.email} bağlantısı da kapanır.
+                    </p>
+                    <label style={{ display: "block", fontSize: "0.85rem", color: "#7f1d1d" }}>
+                      Onay için SİL yazın
+                      <input
+                        value={purgeText}
+                        onChange={(event) => setPurgeText(event.target.value)}
+                        autoComplete="off"
+                        style={{
+                          display: "block",
+                          marginTop: "0.35rem",
+                          padding: "0.45rem 0.6rem",
+                          border: "1px solid #fecaca",
+                          borderRadius: "6px",
+                          width: "8rem",
+                        }}
+                      />
+                    </label>
+                    <div className="comm-btn-row" style={{ marginTop: "0.75rem" }}>
+                      <button
+                        type="button"
+                        className="comm-btn-danger"
+                        disabled={busy !== null || !purgeConfirmed(purgeText)}
+                        onClick={() => handleDisconnect(account, true)}
+                      >
+                        Sil ve bağlantıyı kes
+                      </button>
+                      <button
+                        type="button"
+                        className="comm-btn-secondary"
+                        disabled={busy !== null}
+                        onClick={() => {
+                          setPurgeAccountId(null);
+                          setPurgeText("");
+                        }}
+                      >
+                        Vazgeç
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </section>
       ))}

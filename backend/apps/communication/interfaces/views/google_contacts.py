@@ -24,6 +24,8 @@ from apps.communication.application.google_contacts.oauth import (
 from apps.communication.application.google_contacts.sync import (
     account_counts,
     disconnect_account,
+    drain_is_running,
+    start_background_sync,
     sync_batch,
 )
 from apps.communication.domain.models import GoogleContactsAccount
@@ -33,6 +35,8 @@ from apps.communication.permissions import CommunicationConfigPermission
 
 
 def _account_payload(account: GoogleContactsAccount) -> dict:
+    stats = dict(account.last_sync_stats or {})
+    stats.pop('draining_until', None)
     return {
         'id': str(account.id),
         'email': account.email,
@@ -41,9 +45,10 @@ def _account_payload(account: GoogleContactsAccount) -> dict:
         'is_default': account.is_default,
         'is_active': account.is_active,
         'connected': bool(account.refresh_token_encrypted) and account.is_active,
+        'syncing': drain_is_running(account),
         'last_synced_at': account.last_synced_at.isoformat() if account.last_synced_at else None,
         'last_sync_error': account.last_sync_error,
-        'last_sync_stats': account.last_sync_stats or {},
+        'last_sync_stats': stats,
         'counts': account_counts(account),
     }
 
@@ -129,7 +134,19 @@ class GoogleContactsSyncView(CommunicationAPIView):
             return err
         account_id = request.data.get('account_id') or None
         enqueue = bool(request.data.get('enqueue'))
+        enqueue_only = bool(request.data.get('enqueue_only'))
         retry_failed = bool(request.data.get('retry_failed'))
+        if request.data.get('background'):
+            if not account_id:
+                return Response({'error': 'Hesap seçin.'}, status=status.HTTP_400_BAD_REQUEST)
+            result = start_background_sync(
+                kurum_id=kurum_id,
+                account_id=account_id,
+                retry_failed=retry_failed,
+            )
+            if result.get('error') and not result.get('already_running'):
+                return Response(result, status=status.HTTP_400_BAD_REQUEST)
+            return Response(result)
         try:
             limit = int(request.data.get('limit') or 25)
         except (TypeError, ValueError):
@@ -143,6 +160,7 @@ class GoogleContactsSyncView(CommunicationAPIView):
             account_id=account_id,
             limit=limit,
             enqueue=enqueue,
+            enqueue_only=enqueue_only,
             retry_failed=retry_failed,
         )
         return Response(result)
