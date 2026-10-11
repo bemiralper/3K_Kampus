@@ -97,6 +97,103 @@ class AnswerKeyBulkImportTest(OlcmeModulFixture):
         self.assertEqual(again.status_code, 200, again.content[:400])
         self.assertTrue(AnswerKey.objects.filter(exam=self.exam, booklet='B').exists())
 
+    def test_b_key_derives_question_match_inside_parent_test(self):
+        parent = ExamSection.objects.create(
+            exam=self.exam, name='Temel Matematik', order=1,
+            question_start=11, question_end=14,
+        )
+        ExamSection.objects.create(
+            exam=self.exam, name='Matematik', order=2,
+            question_start=11, question_end=12,
+            is_sub_section=True, parent_section=parent,
+        )
+        ExamSection.objects.create(
+            exam=self.exam, name='Geometri', order=3,
+            question_start=13, question_end=14,
+            is_sub_section=True, parent_section=parent,
+        )
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',
+            {
+                'booklet': 'A',
+                'items': [
+                    {'question_number': 11, 'correct_answer': 'A'},
+                    {'question_number': 12, 'correct_answer': 'A'},
+                    {'question_number': 13, 'correct_answer': 'B'},
+                    {'question_number': 14, 'correct_answer': 'B'},
+                ],
+                'b_items': [
+                    {'question_number': 11, 'correct_answer': 'B'},
+                    {'question_number': 12, 'correct_answer': 'A'},
+                    {'question_number': 13, 'correct_answer': 'A'},
+                    {'question_number': 14, 'correct_answer': 'B'},
+                ],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        primary = AnswerKey.primary_for(self.exam)
+        b_key = AnswerKey.objects.get(exam=self.exam, booklet='B')
+        b_letters = {
+            item.question_number: item.correct_answer
+            for item in b_key.items.all()
+        }
+        matched = list(
+            primary.items.filter(question_number__gte=11).order_by('question_number')
+        )
+        self.assertEqual(len(matched), 4)
+        self.assertTrue(all(item.b_question_number for item in matched))
+        for item in matched:
+            b_no = item.booklet_b_global()
+            self.assertEqual(b_letters[b_no], item.correct_answer)
+        # Aynı harf aynı numaradaysa yerinde kalır; kayanlar çapraz bağlanır.
+        by_q = {item.question_number: item.booklet_b_global() for item in matched}
+        self.assertEqual(by_q[14], 14)
+        self.assertEqual({by_q[11], by_q[12]}, {12, 13})
+
+    def test_explicit_b_question_number_is_kept(self):
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',
+            {
+                'booklet': 'A',
+                'items': [
+                    {'question_number': n, 'correct_answer': 'A', 'b_question_number': 11 - n}
+                    for n in range(1, 11)
+                ],
+                'b_items': [
+                    {'question_number': n, 'correct_answer': 'B'}
+                    for n in range(1, 11)
+                ],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        primary = AnswerKey.primary_for(self.exam)
+        stored = dict(primary.items.values_list('question_number', 'b_question_number'))
+        self.assertEqual(stored[1], 10)
+        self.assertEqual(stored[10], 1)
+
+    def test_b_booklet_scores_with_b_key_not_the_position_map(self):
+        from apps.coaching.olcme_degerlendirme.views.result_views import _score_answers
+
+        correct_a = {
+            n: {'answer': 'A', 'is_cancelled': False, 'section_id': self.section.id}
+            for n in range(1, 11)
+        }
+        correct_b = {
+            n: {'answer': 'B', 'is_cancelled': False, 'section_id': self.section.id}
+            for n in range(1, 11)
+        }
+        identity = {n: n for n in range(1, 11)}
+        _, comparison, _, totals = _score_answers(
+            'B' * 10, 12, 'B',
+            correct_a, identity, correct_b,
+            [self.section], 4, [],
+        )
+        self.assertEqual(totals[0], 10)
+        self.assertEqual(comparison['1']['correct'], 'B')
+        self.assertEqual(comparison['1']['result'], 'correct')
+
     def test_partial_save_keeps_outcome_only_rows(self):
         first = self._bulk([
             {'question_number': 1, 'correct_answer': 'A'},

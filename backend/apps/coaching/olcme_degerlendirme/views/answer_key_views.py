@@ -254,8 +254,15 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
                 if explicit_b_items and booklet in ('', 'A'):
                     replace_booklet_b_answers(exam, explicit_b_items)
+                    # Numara elle girilmediyse eşleşme B anahtarının şıklarından kurulur.
+                    if not b_items:
+                        from ..services.booklet_align import align_b_question_numbers
+                        align_b_question_numbers(exam, overwrite=True)
                 elif b_items and booklet in ('', 'A'):
                     rebuild_booklet_b_from_primary(exam)
+                elif booklet in ('', 'A'):
+                    from ..services.booklet_align import align_b_question_numbers
+                    align_b_question_numbers(exam)
         except Exception as e:
             logger.exception('bulk_import transaction error')
             return Response(

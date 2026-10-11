@@ -359,11 +359,6 @@ def _score_answers(answers_raw, total_questions, booklet,
         sub_sections = []
 
     is_b = (booklet == 'B')
-    use_b_to_a = is_b and b_to_a_map
-    use_b_direct = (
-        is_b and not b_to_a_map
-        and correct_map_b and len(correct_map_b) >= total_questions
-    )
 
     answers_dict = {}
     comparison_dict = {}
@@ -381,12 +376,17 @@ def _score_answers(answers_raw, total_questions, booklet,
         else:
             answers_dict[str(q_no)] = given
 
-        # Doğru cevabı bul
-        if use_b_to_a:
-            a_q_no = b_to_a_map.get(q_no)
-            correct_info = correct_map_a.get(a_q_no) if a_q_no else None
-        elif use_b_direct:
-            correct_info = correct_map_b.get(q_no)
+        # B kitapçığında doğru harf, o sorunun B anahtarıdır. Eşleme
+        # yalnızca B anahtarında olmayan sorularda A harfine düşer.
+        if is_b:
+            b_info = correct_map_b.get(q_no) if correct_map_b else None
+            if b_info and b_info.get('answer'):
+                correct_info = b_info
+            elif b_to_a_map:
+                a_q_no = b_to_a_map.get(q_no)
+                correct_info = correct_map_a.get(a_q_no) if a_q_no else None
+            else:
+                correct_info = correct_map_a.get(q_no)
         else:
             correct_info = correct_map_a.get(q_no)
 
@@ -536,6 +536,10 @@ def parse_dat(request, exam_pk, session_pk):
         return Response({'error': 'Cevap anahtarı bulunamadı. Önce cevap anahtarını girin.'}, status=400)
 
     # ── Cevap anahtarı haritaları ────────────────────────────────────────────
+    from ..services.booklet_align import align_b_question_numbers, forget_prefetched_items
+    align_b_question_numbers(exam)
+    forget_prefetched_items(answer_key)
+
     correct_map_a = {}
     # b_question_number ana bölüm (test) bazlı relative numaradır.
     # Alt bölüm item'ları için parent bölümün offset'ini kullanmalıyız.
@@ -581,25 +585,8 @@ def parse_dat(request, exam_pk, session_pk):
                 'section_id': item.section_id,
             }
 
-    # Geriye dönük uyumluluk: b_to_a_map yoksa section bazlı oluştur
-    if not b_to_a_map and correct_map_b:
-        a_by_section: dict[int, list] = {}
-        b_by_section: dict[int, list] = {}
-        for q, info in sorted(correct_map_a.items()):
-            a_by_section.setdefault(info['section_id'], []).append(q)
-        for q, info in sorted(correct_map_b.items()):
-            b_by_section.setdefault(info['section_id'], []).append(q)
-        for sec_id, a_qs in a_by_section.items():
-            b_qs = b_by_section.get(sec_id, [])
-            for i, a_q in enumerate(a_qs):
-                if i < len(b_qs):
-                    b_to_a_map[b_qs[i]] = a_q
-
-    # B kitapçığı desteği var mı?
-    has_b_support = bool(b_to_a_map) or (len(correct_map_b) >= sum(
-        sec.question_end - sec.question_start + 1
-        for sec in exam.sections.filter(is_sub_section=False)
-    ))
+    # B anahtarı, seçmeli soru boşluğu yüzünden bölüm toplamından kısa olabilir.
+    has_b_support = bool(b_to_a_map) or bool(correct_map_b)
 
     # ── Bölümler & Mapping ───────────────────────────────────────────────────
     # Sıralama question_start'a göre: cevap dizisi global soru numarasıyla
@@ -948,6 +935,9 @@ def update_student_booklet(request, exam_pk, answer_pk):
 
     # Cevap haritalarını yeniden oluştur
     # b_question_number ana bölüm (test) bazlı relative numaradır.
+    from ..services.booklet_align import align_b_question_numbers
+    align_b_question_numbers(exam)
+
     parent_offset = {
         sec.id: sec.question_start
         for sec in exam.sections.filter(is_sub_section=False)

@@ -50,6 +50,10 @@ def _correct_maps(exam):
     if not answer_key:
         return None
 
+    from .booklet_align import align_b_question_numbers, forget_prefetched_items
+    align_b_question_numbers(exam)
+    forget_prefetched_items(answer_key)
+
     correct_map_a = {}
     parent_offset = {
         sec.id: sec.question_start

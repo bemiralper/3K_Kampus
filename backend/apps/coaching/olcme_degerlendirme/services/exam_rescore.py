@@ -19,6 +19,9 @@ def rescore_exam_results(exam) -> int:
     if not answer_key:
         return 0
 
+    from .booklet_align import align_b_question_numbers
+    align_b_question_numbers(exam)
+
     correct_map_a = {}
     b_to_a_map = {}
     for item in answer_key.items.select_related('section', 'section__parent_section').all():
