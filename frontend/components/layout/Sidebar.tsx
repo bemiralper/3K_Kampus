@@ -333,6 +333,7 @@ const navItems: MenuItem[] = [
       { label: "Bildirim Şablonları", href: "/admin/iletisim/bildirim-sablonlari" },
       { label: "Doğum Günü Görselleri", href: "/admin/iletisim/dogum-gunu" },
       { label: "WhatsApp Hesapları", href: "/admin/iletisim/whatsapp-hesaplari" },
+      { label: "Google Kişiler", href: "/admin/iletisim/google-kisiler" },
       { label: "Yönlendirme Kuralları", href: "/admin/iletisim/yonlendirme" },
     ],
   },

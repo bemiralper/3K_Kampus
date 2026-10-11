@@ -21,6 +21,14 @@ from apps.communication.interfaces.views.campaigns import (
     CampaignDeliveriesView,
     CampaignRetryFailedView,
 )
+from apps.communication.interfaces.views.google_contacts import (
+    GoogleContactsCallbackView,
+    GoogleContactsConnectView,
+    GoogleContactsCredentialsView,
+    GoogleContactsDisconnectView,
+    GoogleContactsStatusView,
+    GoogleContactsSyncView,
+)
 from apps.communication.interfaces.views.accounts import (
     WhatsAppAccessibleAccountsView,
     WhatsAppAccountDetailView,
@@ -140,6 +148,24 @@ from apps.communication.interfaces.views.template_categories import (
 app_name = 'communication'
 
 urlpatterns = [
+    path('google-contacts/', GoogleContactsStatusView.as_view(), name='google-contacts-status'),
+    path('google-contacts/connect/', GoogleContactsConnectView.as_view(), name='google-contacts-connect'),
+    path(
+        'google-contacts/credentials/',
+        GoogleContactsCredentialsView.as_view(),
+        name='google-contacts-credentials',
+    ),
+    path('google-contacts/sync/', GoogleContactsSyncView.as_view(), name='google-contacts-sync'),
+    path(
+        'google-contacts/accounts/<uuid:account_id>/disconnect/',
+        GoogleContactsDisconnectView.as_view(),
+        name='google-contacts-disconnect',
+    ),
+    path(
+        'google-contacts/oauth/callback/',
+        GoogleContactsCallbackView.as_view(),
+        name='google-contacts-callback',
+    ),
     path('config/whatsapp/', WhatsAppConfigView.as_view(), name='whatsapp-config'),
     path('config/whatsapp/test/', WhatsAppConfigTestView.as_view(), name='whatsapp-config-test'),
     path('config/whatsapp/templates/', WhatsAppMetaTemplatesView.as_view(), name='whatsapp-meta-templates'),

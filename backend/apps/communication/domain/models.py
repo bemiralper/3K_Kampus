@@ -1680,3 +1680,218 @@ class SavedAudience(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class GoogleContactsAccountType(models.TextChoices):
+    CENTRAL = 'central', 'Merkez'
+    COACH = 'coach', 'Koç'
+    BRANCH = 'branch', 'Şube'
+
+
+class GoogleContactSubject(models.TextChoices):
+    OGRENCI = 'ogrenci', 'Öğrenci'
+    VELI = 'veli', 'Veli'
+    VELI_LEGACY = 'veli_legacy', 'Veli (eski alan)'
+
+
+class GoogleContactSyncStatus(models.TextChoices):
+    PENDING = 'pending', 'Bekliyor'
+    SYNCED = 'synced', 'Güncel'
+    FAILED = 'failed', 'Hatalı'
+    PENDING_DELETE = 'pending_delete', 'Silinecek'
+
+
+class GoogleContactsAccount(models.Model):
+    """Kurumun Google Kişiler hesabı.
+
+    Şimdilik merkez hesap kullanılır. account_type / sube / user alanları
+    ileride koç veya şube hesabı bağlamak için durur; kişi eşlemesi hesaba göredir.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='google_contacts_accounts',
+        verbose_name='Kurum',
+    )
+    email = models.EmailField(verbose_name='Google hesabı')
+    google_sub = models.CharField(max_length=64, blank=True, default='', verbose_name='Google kullanıcı no')
+    account_type = models.CharField(
+        max_length=20,
+        choices=GoogleContactsAccountType.choices,
+        default=GoogleContactsAccountType.CENTRAL,
+        verbose_name='Hesap türü',
+    )
+    is_default = models.BooleanField(default=False, verbose_name='Varsayılan')
+    is_active = models.BooleanField(default=True, verbose_name='Aktif')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='google_contacts_accounts',
+        verbose_name='Koç kullanıcısı',
+    )
+    sube = models.ForeignKey(
+        'sube.Sube',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='google_contacts_accounts',
+        verbose_name='Şube',
+    )
+    access_token_encrypted = models.TextField(blank=True, default='')
+    refresh_token_encrypted = models.TextField(blank=True, default='')
+    token_expires_at = models.DateTimeField(null=True, blank=True)
+    scopes = models.CharField(max_length=500, blank=True, default='')
+    student_group_resource = models.CharField(max_length=160, blank=True, default='')
+    parent_group_resource = models.CharField(max_length=160, blank=True, default='')
+    last_synced_at = models.DateTimeField(null=True, blank=True, verbose_name='Son senkronizasyon')
+    last_sync_error = models.TextField(blank=True, default='')
+    last_sync_stats = models.JSONField(default=dict, blank=True)
+    connected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='google_contacts_connected',
+        verbose_name='Bağlayan',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_google_contacts_account'
+        verbose_name = 'Google Kişiler Hesabı'
+        verbose_name_plural = 'Google Kişiler Hesapları'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['kurum', 'email'],
+                name='comm_gcontact_acct_email_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['kurum', 'is_active'], name='comm_gcontact_acct_act_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.email} ({self.kurum_id})'
+
+
+class GoogleContactMapping(models.Model):
+    """Öğrenci/veli ile Google kişi kaydının eşlemesi. Güncelleme mükerrer açmaz."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.ForeignKey(
+        GoogleContactsAccount,
+        on_delete=models.CASCADE,
+        related_name='mappings',
+    )
+    kurum = models.ForeignKey(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='google_contact_mappings',
+    )
+    subject_type = models.CharField(max_length=20, choices=GoogleContactSubject.choices)
+    ogrenci = models.ForeignKey(
+        'ogrenci.Ogrenci',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='google_contact_mappings',
+    )
+    veli = models.ForeignKey(
+        'ogrenci.OgrenciVeli',
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='google_contact_mappings',
+    )
+    resource_name = models.CharField(max_length=160, blank=True, default='')
+    etag = models.CharField(max_length=255, blank=True, default='')
+    phone_e164 = models.CharField(max_length=20, blank=True, default='')
+    display_name = models.CharField(max_length=300, blank=True, default='')
+    content_hash = models.CharField(max_length=64, blank=True, default='')
+    status = models.CharField(
+        max_length=20,
+        choices=GoogleContactSyncStatus.choices,
+        default=GoogleContactSyncStatus.PENDING,
+    )
+    last_error = models.TextField(blank=True, default='')
+    last_synced_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_google_contact_mapping'
+        verbose_name = 'Google Kişi Eşlemesi'
+        verbose_name_plural = 'Google Kişi Eşlemeleri'
+        constraints = [
+            models.UniqueConstraint(
+                fields=['account', 'ogrenci'],
+                condition=models.Q(subject_type=GoogleContactSubject.OGRENCI),
+                name='comm_gcontact_map_ogr_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['account', 'veli'],
+                condition=models.Q(subject_type=GoogleContactSubject.VELI),
+                name='comm_gcontact_map_veli_uniq',
+            ),
+            models.UniqueConstraint(
+                fields=['account', 'ogrenci'],
+                condition=models.Q(subject_type=GoogleContactSubject.VELI_LEGACY),
+                name='comm_gcontact_map_leg_uniq',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['account', 'status'], name='comm_gcontact_map_status_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.subject_type} {self.display_name or self.pk}'
+
+
+class GoogleContactRemoval(models.Model):
+    """Kayıt silindikten sonra Google tarafındaki kişiyi kaldırmak için kuyruk."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    account = models.ForeignKey(
+        GoogleContactsAccount,
+        on_delete=models.CASCADE,
+        related_name='removals',
+    )
+    resource_name = models.CharField(max_length=160)
+    attempts = models.PositiveSmallIntegerField(default=0)
+    last_error = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'comm_google_contact_removal'
+        verbose_name = 'Google Kişi Silme'
+        verbose_name_plural = 'Google Kişi Silmeleri'
+        indexes = [
+            models.Index(fields=['account', 'created_at'], name='comm_gcontact_rm_acct_idx'),
+        ]
+
+
+class GoogleContactsAppCredential(models.Model):
+    """Kurumun Google Cloud OAuth istemcisi. Sır şifreli tutulur."""
+
+    kurum = models.OneToOneField(
+        'kurum.Kurum',
+        on_delete=models.CASCADE,
+        related_name='google_contacts_app',
+        verbose_name='Kurum',
+    )
+    client_id = models.CharField(max_length=255, blank=True, default='')
+    client_secret_encrypted = models.TextField(blank=True, default='')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'comm_google_contacts_app'
+        verbose_name = 'Google Kişiler İstemcisi'
+        verbose_name_plural = 'Google Kişiler İstemcileri'
+
+    def __str__(self):
+        return f'{self.kurum_id} {self.client_id}'

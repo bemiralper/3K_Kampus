@@ -143,6 +143,14 @@ COMMUNICATION_ATTACHMENT_MAX_BYTES = int(
     os.environ.get('COMMUNICATION_ATTACHMENT_MAX_BYTES', str(16 * 1024 * 1024)),
 )
 COMMUNICATION_TOKEN_ENCRYPTION_KEY = os.environ.get('COMMUNICATION_TOKEN_ENCRYPTION_KEY', '')
+# Google Kişiler — People API. Boşsa entegrasyon kapalıdır; kurum ayarlarından bağlanır.
+GOOGLE_CONTACTS_CLIENT_ID = os.environ.get('GOOGLE_CONTACTS_CLIENT_ID', '')
+GOOGLE_CONTACTS_CLIENT_SECRET = os.environ.get('GOOGLE_CONTACTS_CLIENT_SECRET', '')
+# Doluysa OAuth dönüş adresi budur (Google Cloud ile birebir aynı olmalı).
+GOOGLE_CONTACTS_REDIRECT_URI = os.environ.get('GOOGLE_CONTACTS_REDIRECT_URI', '')
+GOOGLE_CONTACTS_AUTO_SYNC = os.environ.get(
+    'GOOGLE_CONTACTS_AUTO_SYNC', 'True',
+).lower() in ('1', 'true', 'yes', 'on')
 COMMUNICATION_MEDIA_STORAGE = os.environ.get('COMMUNICATION_MEDIA_STORAGE', 'local')
 COMMUNICATION_MEDIA_PUBLIC_BASE_URL = os.environ.get('COMMUNICATION_MEDIA_PUBLIC_BASE_URL', '')
 SITE_URL = os.environ.get('SITE_URL', '')

@@ -25,4 +25,8 @@ from apps.communication.domain.models import (  # noqa: F401
     SavedAudience,
     CommunicationLog,
     RawWebhookEvent,
+    GoogleContactMapping,
+    GoogleContactRemoval,
+    GoogleContactsAccount,
+    GoogleContactsAppCredential,
 )

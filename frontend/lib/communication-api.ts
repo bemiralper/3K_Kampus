@@ -3202,3 +3202,94 @@ export async function fetchConversationContext(
   const qs = kurumId ? `?kurum_id=${kurumId}` : '';
   return request(`/conversations/${conversationId}/context/${qs}`);
 }
+
+export interface GoogleContactCounts {
+  synced: number;
+  pending: number;
+  failed: number;
+  pending_delete: number;
+  removing: number;
+}
+
+export interface GoogleContactsAccountStatus {
+  id: string;
+  email: string;
+  account_type: string;
+  account_type_label: string;
+  is_default: boolean;
+  is_active: boolean;
+  connected: boolean;
+  last_synced_at: string | null;
+  last_sync_error: string;
+  last_sync_stats: Record<string, number>;
+  counts: GoogleContactCounts;
+}
+
+export interface GoogleContactsStatus {
+  oauth_configured: boolean;
+  missing_settings: string[];
+  credential_source?: 'database' | 'environment' | 'none' | string;
+  client_id?: string;
+  has_client_secret?: boolean;
+  redirect_path: string;
+  redirect_uri_override: string;
+  accounts: GoogleContactsAccountStatus[];
+}
+
+export interface GoogleContactsSyncResult {
+  enqueued: number;
+  processed: number;
+  created: number;
+  updated: number;
+  deleted: number;
+  failed: number;
+  skipped: number;
+  remaining: number;
+  error: string;
+  disconnected?: boolean;
+}
+
+export function fetchGoogleContactsStatus(): Promise<GoogleContactsStatus> {
+  return request<GoogleContactsStatus>('/google-contacts/');
+}
+
+export function saveGoogleContactsCredentials(body: {
+  client_id: string;
+  client_secret?: string;
+}): Promise<{ oauth_configured: boolean; client_id: string; has_client_secret: boolean }> {
+  return request('/google-contacts/credentials/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export function connectGoogleContacts(origin: string): Promise<{ authorization_url: string }> {
+  return request('/google-contacts/connect/', {
+    method: 'POST',
+    body: JSON.stringify({ origin }),
+  });
+}
+
+export function syncGoogleContacts(body: {
+  enqueue?: boolean;
+  retry_failed?: boolean;
+  limit?: number;
+  account_id?: string;
+}): Promise<GoogleContactsSyncResult> {
+  return request('/google-contacts/sync/', {
+    method: 'POST',
+    body: JSON.stringify(body),
+    timeoutMs: 60_000,
+  });
+}
+
+export function disconnectGoogleContacts(
+  accountId: string,
+  purge = false,
+): Promise<GoogleContactsSyncResult & { account: GoogleContactsAccountStatus }> {
+  return request(`/google-contacts/accounts/${accountId}/disconnect/`, {
+    method: 'POST',
+    body: JSON.stringify({ purge, limit: 25 }),
+    timeoutMs: 60_000,
+  });
+}
