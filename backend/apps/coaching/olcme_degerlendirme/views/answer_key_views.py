@@ -77,6 +77,44 @@ def rebuild_booklet_b_from_primary(exam) -> int:
     return len(unique)
 
 
+def replace_booklet_b_answers(exam, rows) -> int:
+    """Yapıştırılan B kitapçığı cevaplarını ayrı anahtar olarak kaydeder."""
+    section_map = AnswerKeyViewSet._build_section_map(exam)
+    b_key, _ = AnswerKey.objects.get_or_create(
+        exam=exam, booklet='B', defaults={'is_primary': False},
+    )
+    if b_key.is_primary:
+        b_key.is_primary = False
+        b_key.save(update_fields=['is_primary'])
+    b_key.items.all().delete()
+
+    created = 0
+    seen: set[int] = set()
+    for row in rows:
+        q_num = row['question_number']
+        if q_num in seen:
+            continue
+        answer = (row.get('correct_answer') or '').strip()
+        if not answer:
+            continue
+        section = AnswerKeyViewSet._find_section(section_map, q_num, fallback_last=False)
+        if section is None:
+            continue
+        seen.add(q_num)
+        AnswerKeyItem.objects.create(
+            answer_key=b_key,
+            section=section,
+            question_number=q_num,
+            correct_answer=answer,
+            is_cancelled=bool(row.get('is_cancelled')) or answer == 'INVALID',
+        )
+        created += 1
+    if created == 0:
+        b_key.delete()
+        return 0
+    return created
+
+
 class AnswerKeyViewSet(viewsets.ModelViewSet):
     """Sınav cevap anahtarı yönetimi."""
 
@@ -146,6 +184,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
         booklet = ser.validated_data.get('booklet', '')
         items_data = ser.validated_data['items']
+        explicit_b_items = ser.validated_data.get('b_items') or []
 
         # Soru numarası → bölüm eşlemesi
         section_map = self._build_section_map(exam)
@@ -213,7 +252,9 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                 if stale_ids:
                     AnswerKeyItem.objects.filter(id__in=stale_ids).delete()
 
-                if b_items and booklet in ('', 'A'):
+                if explicit_b_items and booklet in ('', 'A'):
+                    replace_booklet_b_answers(exam, explicit_b_items)
+                elif b_items and booklet in ('', 'A'):
                     rebuild_booklet_b_from_primary(exam)
         except Exception as e:
             logger.exception('bulk_import transaction error')
@@ -228,7 +269,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
         # B kitapçığı varsa onu da ekle
         b_data = None
-        if b_items and booklet in ('', 'A'):
+        if (explicit_b_items or b_items) and booklet in ('', 'A'):
             b_key_obj = AnswerKey.objects.filter(exam=exam, booklet='B').first()
             if b_key_obj:
                 b_data = AnswerKeySerializer(b_key_obj).data

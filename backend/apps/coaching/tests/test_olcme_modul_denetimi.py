@@ -70,6 +70,33 @@ class AnswerKeyBulkImportTest(OlcmeModulFixture):
             format='json', **self.headers,
         )
 
+    def test_explicit_b_answers_are_stored_separately(self):
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',
+            {
+                'booklet': 'A',
+                'items': [
+                    {'question_number': n, 'correct_answer': 'A'}
+                    for n in range(1, 11)
+                ],
+                'b_items': [
+                    {'question_number': n, 'correct_answer': 'B'}
+                    for n in range(1, 11)
+                ],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        b_key = AnswerKey.objects.get(exam=self.exam, booklet='B')
+        self.assertFalse(b_key.is_primary)
+        self.assertEqual(
+            list(b_key.items.order_by('question_number').values_list('correct_answer', flat=True)),
+            ['B'] * 10,
+        )
+        again = self._bulk([{'question_number': 1, 'correct_answer': 'C'}])
+        self.assertEqual(again.status_code, 200, again.content[:400])
+        self.assertTrue(AnswerKey.objects.filter(exam=self.exam, booklet='B').exists())
+
     def test_partial_save_keeps_outcome_only_rows(self):
         first = self._bulk([
             {'question_number': 1, 'correct_answer': 'A'},

@@ -145,7 +145,7 @@ def exam_answer_key_pdf(request, exam_pk):
     )
 
     if request.method == 'GET':
-        from apps.coaching.olcme_degerlendirme.models import AnswerKeyItem
+        from apps.coaching.olcme_degerlendirme.models import AnswerKey, AnswerKeyItem
 
         download = request.query_params.get('download') == '1'
         has_uploaded = bool(exam.answer_key_pdf)
@@ -165,6 +165,18 @@ def exam_answer_key_pdf(request, exam_pk):
         )
         booklet = (request.query_params.get('booklet') or '').strip().upper()
         booklets = [booklet] if booklet in ('A', 'B', 'C', 'D') else None
+        if booklets:
+            have = {
+                (value or '').strip().upper()
+                for value in AnswerKey.objects.filter(exam=exam).values_list('booklet', flat=True)
+            }
+            missing = [letter for letter in booklets if letter not in have]
+            if missing:
+                letter = missing[0]
+                return Response(
+                    {'error': f'{letter} kitapçığı cevap anahtarı kayıtlı değil.'},
+                    status=400,
+                )
         force_generated = (
             request.query_params.get('source') == 'generated'
             or copies != 1

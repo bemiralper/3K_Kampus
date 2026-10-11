@@ -13,6 +13,14 @@ import type {
 import k from './answer-key.module.css';
 import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
 import {
+  AUDITED_CHOICES,
+  auditBookletChoiceCounts,
+  formatChoiceAuditMessage,
+  normalizePastedAnswer,
+  parsePastedAnswers,
+  type BookletChoiceAudit,
+} from '../../../../components/olcme/booklet-choice-audit';
+import {
   filterTopicsByQuery,
   findOutcomeByText,
   flattenSubjectOutcomes,
@@ -40,11 +48,7 @@ interface GridRow {
 }
 
 function normalizeAnswer(val: string): AnswerChoice {
-  const upper = val.toUpperCase().trim();
-  if (['A', 'B', 'C', 'D', 'E'].includes(upper)) return upper as AnswerChoice;
-  if (upper === 'İPTAL' || upper === 'IPTAL' || upper === 'X' || upper === 'INVALID') return 'INVALID';
-  if (upper === 'BOŞ' || upper === 'BOS' || upper === 'EMPTY' || upper === '-') return 'EMPTY';
-  return '' as AnswerChoice;
+  return normalizePastedAnswer(val) as AnswerChoice;
 }
 
 function outcomesForRow(subjects: SubjectItem[], sections: ExamDetail['sections'], sectionId: number): OutcomeItem[] {
@@ -81,6 +85,7 @@ export default function AnswerKeyTab({ exam }: Props) {
   /* Textarea içerikleri */
   const [answerText, setAnswerText]     = useState('');
   const [bBookletText, setBBookletText] = useState('');
+  const [bAnswerText, setBAnswerText]   = useState('');
   const [outcomeText, setOutcomeText]   = useState('');
 
   /* Kazanım ağacı */
@@ -194,22 +199,20 @@ export default function AnswerKeyTab({ exam }: Props) {
     if (!raw) { setMsg('Cevap alanı boş.'); return; }
 
     const grid = buildEmptyGrid();
+    const parsed = parsePastedAnswers(raw);
     const lines = raw.split(/\n/).map(l => l.trim()).filter(Boolean);
+    const sideBySide = lines.length === 1 && lines[0].length > 1 && !lines[0].includes('\t');
 
-    if (lines.length === 1 && lines[0].length > 1 && !lines[0].includes('\t')) {
-      // Tek satır yan yana: ABCDEABC…
-      const chars = lines[0].split('');
-      for (let i = 0; i < chars.length && i < grid.length; i++) {
-        const a = normalizeAnswer(chars[i]);
+    if (sideBySide) {
+      for (let i = 0; i < parsed.length && i < grid.length; i++) {
+        const a = parsed[i] as AnswerChoice;
         grid[i] = { ...grid[i], correct_answer: a, is_cancelled: a === 'INVALID' };
       }
-      setMsg(`✅ ${Math.min(chars.length, grid.length)} cevap okundu (yan yana format).`);
+      setMsg(`✅ ${Math.min(parsed.length, grid.length)} cevap okundu (yan yana format).`);
     } else {
-      // Alt alta satırlar
       let filled = 0;
-      for (let i = 0; i < lines.length && i < grid.length; i++) {
-        const val = lines[i].split('\t')[0]; // tab varsa ilk sütunu al
-        const a = normalizeAnswer(val);
+      for (let i = 0; i < parsed.length && i < grid.length; i++) {
+        const a = parsed[i] as AnswerChoice;
         if (a) {
           grid[i] = { ...grid[i], correct_answer: a, is_cancelled: a === 'INVALID' };
           filled++;
@@ -225,38 +228,45 @@ export default function AnswerKeyTab({ exam }: Props) {
   /** Adım 2 — B kitapçığı soru numaralarını parse et */
   const applyBBooklet = useCallback(() => {
     const raw = bBookletText.trim();
-    if (!raw) { setStep('outcomes'); return; }
-
-    // Farklı formatları destekle:
-    // 1) Her satırda bir numara: "3\n1\n5\n2\n4"
-    // 2) Tek satırda tab/boşluk ile: "3\t1\t5\t2\t4"
-    // 3) Karışık — tab ve newline karışımı
-    // Tüm whitespace'leri ayraç olarak kullan
-    const numbers: number[] = [];
-    const tokens = raw.split(/[\n\t\r, ]+/).map(t => t.trim()).filter(Boolean);
-    for (const token of tokens) {
-      const num = parseInt(token, 10);
-      if (!isNaN(num) && num > 0) {
-        numbers.push(num);
-      }
-    }
-
     const newRows = [...rows];
     let applied = 0;
-    for (let i = 0; i < numbers.length && i < newRows.length; i++) {
-      newRows[i] = { ...newRows[i], b_question_number: numbers[i] };
-      applied++;
+    if (raw) {
+      // Satır, tab, virgül veya boşlukla ayrılmış soru numaraları.
+      const tokens = raw.split(/[\n\t\r, ]+/).map(t => t.trim()).filter(Boolean);
+      const numbers: number[] = [];
+      for (const token of tokens) {
+        const num = parseInt(token, 10);
+        if (!isNaN(num) && num > 0) numbers.push(num);
+      }
+      for (let i = 0; i < numbers.length && i < newRows.length; i++) {
+        newRows[i] = { ...newRows[i], b_question_number: numbers[i] };
+        applied++;
+      }
+      setRows(newRows);
     }
-    setRows(newRows);
+
+    const audit = bAnswerText.trim()
+      ? auditBookletChoiceCounts(
+          exam.sections,
+          new Map(newRows.map(row => [row.question_number, row.correct_answer])),
+          parsePastedAnswers(bAnswerText),
+        )
+      : null;
+    if (audit && !audit.ok) {
+      setMsg(formatChoiceAuditMessage(audit));
+      return;
+    }
 
     const missing = newRows.length - applied;
-    if (missing > 0 && applied > 0) {
-      setMsg(`✅ ${applied} B kitapçığı soru numarası eşlendi · ⚠️ ${missing} soru için B numarası girilmedi (toplam ${newRows.length} soru).`);
-    } else {
-      setMsg(`✅ ${applied} B kitapçığı soru numarası eşlendi.`);
-    }
+    const mapped = !bBookletText.trim()
+      ? ''
+      : missing > 0 && applied > 0
+        ? `✅ ${applied} B soru numarası eşlendi · ⚠️ ${missing} soru eşlenmedi.`
+        : `✅ ${applied} B soru numarası eşlendi.`;
+    const checked = audit?.ok ? formatChoiceAuditMessage(audit) : '';
+    setMsg([mapped, checked].filter(Boolean).join(' ') || 'B kitapçığı adımı geçildi.');
     setStep('outcomes');
-  }, [bBookletText, rows]);
+  }, [bBookletText, bAnswerText, rows, exam.sections]);
 
   /** Adım 3 — Kazanım metinlerini parse et ve eşleştir */
   const applyOutcomes = useCallback(() => {
@@ -342,10 +352,24 @@ export default function AnswerKeyTab({ exam }: Props) {
     setOutcomeModal(null);
   };
 
+  const bChoiceAudit = useMemo<BookletChoiceAudit | null>(() => {
+    if (!hasB || !bAnswerText.trim()) return null;
+    return auditBookletChoiceCounts(
+      exam.sections,
+      new Map(rows.map(row => [row.question_number, row.correct_answer])),
+      parsePastedAnswers(bAnswerText),
+    );
+  }, [hasB, bAnswerText, rows, exam.sections]);
+
   /** Toplu kaydet */
   const handleSave = async () => {
     const answered = rows.filter(r => r.correct_answer && r.correct_answer !== ('' as AnswerChoice));
     if (answered.length === 0) { setMsg('En az bir sorunun cevabını girin.'); return; }
+    if (bChoiceAudit && !bChoiceAudit.ok) {
+      setMsg(formatChoiceAuditMessage(bChoiceAudit));
+      setStep('b_booklet');
+      return;
+    }
 
     // Cevabı boş ama kazanımı işaretlenmiş satırlar da gönderilir; aksi
     // hâlde sunucu tarafında o satırların kazanım bağı kayboluyordu.
@@ -370,9 +394,22 @@ export default function AnswerKeyTab({ exam }: Props) {
         b_question_number: r.b_question_number,
       }));
 
+      const bItems = hasB && bAnswerText.trim()
+        ? parsePastedAnswers(bAnswerText).flatMap((answer, index) => {
+            const row = rows[index];
+            if (!row || !answer) return [];
+            return [{
+              question_number: row.question_number,
+              correct_answer: answer as AnswerChoice,
+              is_cancelled: answer === 'INVALID',
+            }];
+          })
+        : undefined;
+
       const result = await answerKeyApi.bulkImport(exam.id, {
         booklet: hasB ? 'A' : '',
         items,
+        ...(bItems && bItems.length > 0 ? { b_items: bItems } : {}),
       });
 
       setMsg(`✅ ${result.message}`);
@@ -400,6 +437,7 @@ export default function AnswerKeyTab({ exam }: Props) {
       setStep('answers');
       setAnswerText('');
       setBBookletText('');
+      setBAnswerText('');
       setOutcomeText('');
       setMsg('Cevap anahtarı silindi.');
       setAnswerKeys([]);
@@ -412,11 +450,16 @@ export default function AnswerKeyTab({ exam }: Props) {
   /* ═════════════════════════════════════════════════════════════════════════ */
 
   const bookletOptions = useMemo(() => {
-    const letters = [...new Set(
-      answerKeys.map(k => (k.booklet || '').trim().toUpperCase()).filter(Boolean),
-    )];
-    return letters.sort();
-  }, [answerKeys]);
+    const fromKeys = answerKeys
+      .map(item => (item.booklet || '').trim().toUpperCase())
+      .filter(Boolean);
+    const fromType = exam.booklet_type === 'ABCD'
+      ? ['A', 'B', 'C', 'D']
+      : exam.booklet_type === 'AB'
+        ? ['A', 'B']
+        : [];
+    return [...new Set([...fromType, ...fromKeys])].sort();
+  }, [answerKeys, exam.booklet_type]);
 
   const downloadPdf = async (source?: 'uploaded' | 'generated') => {
     setPdfBusy(source || 'generated');
@@ -453,7 +496,7 @@ export default function AnswerKeyTab({ exam }: Props) {
 
   const stepLabels: { key: Step; label: string; short: string; hint: string }[] = [
     { key: 'answers', label: 'Cevaplar', short: 'Cevap', hint: 'Yapıştır' },
-    ...(hasB ? [{ key: 'b_booklet' as Step, label: 'B kitapçığı', short: 'B', hint: 'Eşle' }] : []),
+    ...(hasB ? [{ key: 'b_booklet' as Step, label: 'B kitapçığı', short: 'B', hint: 'Eşle ve denetle' }] : []),
     { key: 'outcomes', label: 'Kazanımlar', short: 'Kazanım', hint: 'İsteğe bağlı' },
     { key: 'preview', label: 'Önizleme', short: 'Önizle', hint: 'Kaydet' },
   ];
@@ -566,21 +609,52 @@ export default function AnswerKeyTab({ exam }: Props) {
 
       {step === 'b_booklet' && hasB && (
         <section className={k.panel}>
-          <h3>B kitapçığı soru numaraları</h3>
-          <p className={k.hint}>A kitapçığındaki her sorunun B kitapçığındaki karşılığını alt alta yapıştırın. Bu adım isteğe bağlı.</p>
+          <h3>B kitapçığı</h3>
+          <p className={k.hint}>Soru numarası eşlemesi ve B kitapçığının kendi cevap anahtarı ayrı girilir. İkisi de isteğe bağlıdır.</p>
+
+          <h4 className={k.subhead}>Soru numarası eşleştirme</h4>
+          <p className={k.hint}>A kitapçığındaki her sorunun B kitapçığındaki karşılığını alt alta yapıştırın.</p>
           <textarea
             className={k.area}
             value={bBookletText}
             onChange={e => setBBookletText(e.target.value)}
             placeholder={'3\n1\n5\n2\n4'}
-            rows={6}
+            rows={5}
             autoFocus
           />
+
+          <h4 className={k.subhead}>B kitapçığı cevap anahtarı</h4>
+          <p className={k.hint}>
+            Cevapları A kitapçığıyla aynı sırada yapıştırın. Sistem Türkçe, sosyal ve fen testlerini bir bütün,
+            matematik ile geometriyi ayrı sayar. Türkçede 10 tane B varsa B kitapçığında da 10 tane B olmalıdır.
+          </p>
+          <textarea
+            className={k.area}
+            value={bAnswerText}
+            onChange={e => setBAnswerText(e.target.value)}
+            placeholder={'ABCDEABCDE\nveya her satıra bir şık'}
+            rows={5}
+          />
+          {bChoiceAudit && <ChoiceAuditPanel audit={bChoiceAudit} />}
+
           <div className={k.bar}>
             <button type="button" className={k.btn} onClick={() => setStep('answers')}>Geri</button>
             <div className={k.actions}>
-              <button type="button" className={k.btn} onClick={() => { setBBookletText(''); setStep('outcomes'); }}>Atla</button>
-              <button type="button" className={k.btnPrimary} onClick={applyBBooklet}>İleri</button>
+              <button
+                type="button"
+                className={k.btn}
+                onClick={() => { setBBookletText(''); setBAnswerText(''); setStep('outcomes'); }}
+              >
+                Atla
+              </button>
+              <button
+                type="button"
+                className={k.btnPrimary}
+                onClick={applyBBooklet}
+                disabled={Boolean(bChoiceAudit && !bChoiceAudit.ok)}
+              >
+                İleri
+              </button>
             </div>
           </div>
         </section>
@@ -622,7 +696,7 @@ export default function AnswerKeyTab({ exam }: Props) {
           <div className={k.tools}>
             <div>
               <h3>Önizleme</h3>
-              <p>{filledCount}/{totalQuestions} cevap{outcomeCount > 0 ? ` · ${outcomeCount} kazanım` : ''}{hasB && bCount > 0 ? ` · ${bCount} B eşleme` : ''}</p>
+              <p>{filledCount}/{totalQuestions} cevap{outcomeCount > 0 ? ` · ${outcomeCount} kazanım` : ''}{hasB && bCount > 0 ? ` · ${bCount} B eşleme` : ''}{bChoiceAudit ? (bChoiceAudit.ok ? ' · şık dağılımı uyumlu' : ' · şık dağılımı uyuşmuyor') : ''}</p>
             </div>
             <div className={k.actions}>
               {!hasExistingData && (
@@ -631,11 +705,18 @@ export default function AnswerKeyTab({ exam }: Props) {
               {hasExistingData && (
                 <button type="button" className={k.btnDanger} onClick={handleReset}>Sıfırla</button>
               )}
-              <button type="button" className={k.btnPrimary} onClick={handleSave} disabled={saving || filledCount === 0}>
+              <button type="button" className={k.btnPrimary} onClick={handleSave} disabled={saving || filledCount === 0 || Boolean(bChoiceAudit && !bChoiceAudit.ok)}>
                 {saving ? 'Kaydediliyor…' : 'Kaydet'}
               </button>
             </div>
           </div>
+
+          {bChoiceAudit && (
+            <section className={k.panel}>
+              <h3>B kitapçığı şık denetimi</h3>
+              <ChoiceAuditPanel audit={bChoiceAudit} />
+            </section>
+          )}
 
           <section className={k.panel}>
             {rows.map((row, idx) => {
@@ -688,6 +769,44 @@ export default function AnswerKeyTab({ exam }: Props) {
           <button type="button" className={k.jump} aria-label="Aşağı" onClick={() => scrollPage('bottom')}>↓</button>
         </div>
       )}
+    </div>
+  );
+}
+
+function ChoiceAuditPanel({ audit }: { audit: BookletChoiceAudit }) {
+  return (
+    <div className={k.audit}>
+      <p className={audit.ok ? k.auditNoteOk : k.auditNoteBad}>
+        {audit.ok
+          ? 'Her testte şık sayıları A kitapçığıyla aynı.'
+          : (audit.lengthNote || 'Şık sayıları uyuşmuyor. Kırmızı şıklar A ve B kitapçığında farklı.')}
+      </p>
+      {audit.tests.map(test => (
+        <div key={`${test.name}-${test.start}`} className={test.ok ? k.auditOk : k.auditBad}>
+          <b>
+            {test.name}
+            <span>{test.questionCount} soru · {test.ok ? 'Uyumlu' : 'Uyuşmuyor'}</span>
+          </b>
+          <div className={k.chips}>
+            {AUDITED_CHOICES.filter(choice => choice !== 'INVALID' || test.a[choice] > 0 || test.b[choice] > 0).map(choice => {
+              const left = test.a[choice];
+              const right = test.b[choice];
+              const bad = left !== right;
+              const label = choice === 'INVALID' ? 'İptal' : choice;
+              return (
+                <span key={choice} className={bad ? k.chipBad : k.chip}>
+                  {label} {bad ? `${left}≠${right}` : left}
+                </span>
+              );
+            })}
+          </div>
+          {!test.ok && (test.aFilled !== test.questionCount || test.bFilled !== test.questionCount) && (
+            <p className={k.diffLine}>
+              Cevap sayısı: A kitapçığı {test.aFilled}, B kitapçığı {test.bFilled}, soru {test.questionCount}
+            </p>
+          )}
+        </div>
+      ))}
     </div>
   );
 }

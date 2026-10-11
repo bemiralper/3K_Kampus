@@ -415,6 +415,7 @@ export interface BulkAnswerKeyRow {
 export interface BulkAnswerKeyPayload {
   booklet: string;
   items: BulkAnswerKeyRow[];
+  b_items?: BulkAnswerKeyRow[];
 }
 
 export interface SubOutcomeItem {
