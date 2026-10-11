@@ -604,6 +604,52 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()['students'], [])
 
+    def test_yoklama_send_appears_in_bulk_history(self):
+        from unittest.mock import patch
+
+        from apps.communication.application.communication_service import SendResult
+        from apps.communication.domain.enums import MessageDirection, RecipientType
+        from apps.communication.domain.models import Conversation, Message, OutboundCampaign
+
+        p = self._seed_hatirlatma_participant()
+        p.attendance = ExamParticipant.Attendance.ABSENT
+        p.save(update_fields=['attendance'])
+        self.in_class.telefon = '5551112233'
+        self.in_class.save(update_fields=['telefon'])
+
+        def fake_dispatch(*_args, **_kwargs):
+            conv = Conversation.objects.create(
+                kurum=self.kurum, sube=self.sube, channel='WHATSAPP',
+                contact_phone='905551112233', contact_type=RecipientType.OGRENCI,
+                ogrenci=self.in_class,
+            )
+            msg = Message.objects.create(
+                conversation=conv, direction=MessageDirection.OUTBOUND,
+                body='Sınava katılmadınız.', status='SENT',
+            )
+            return SendResult(success=True, message_id=str(msg.id))
+
+        with patch(
+            'apps.communication.application.notification_dispatcher.dispatch_event',
+            side_effect=fake_dispatch,
+        ):
+            res = self.client.post(
+                f'{EXAMS_URL}{self.exam.id}/hatirlatma/send/',
+                {
+                    'participant_ids': [p.id],
+                    'include_student': True,
+                    'veli_ids': [],
+                    'event_key': 'sinav.yoklama',
+                },
+                format='json', **self.headers,
+            )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.assertEqual(res.json()['sent'], 1)
+        campaign = OutboundCampaign.objects.get(kurum=self.kurum)
+        self.assertEqual(campaign.title, 'Sınav yoklama — API Sınav')
+        self.assertEqual(campaign.messages.count(), 1)
+        self.assertIn(self.in_class.id, campaign.recipient_filter_json['included_ogrenci_ids'])
+
     def test_new_participant_defaults_present(self):
         res = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/participants/add/',

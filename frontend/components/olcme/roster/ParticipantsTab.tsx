@@ -115,6 +115,28 @@ function buildRoomBlocks(rooms: ExamRoomItem[], visible: ExamParticipantRow[]): 
   return blocks;
 }
 
+function foldTr(value: string) {
+  return value
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'ı')
+    .toLocaleLowerCase('tr-TR')
+    .replace(/ı/g, 'i');
+}
+
+function attendanceQueryMatches(row: ExamParticipantRow, query: string) {
+  const tokens = foldTr(query).split(/\s+/).filter(Boolean);
+  if (!tokens.length) return true;
+  const hay = foldTr([
+    row.full_name,
+    row.okul_no,
+    row.sinif,
+    row.sinif_seviyesi,
+    row.room_name,
+    row.seat_no != null ? String(row.seat_no) : '',
+  ].filter(Boolean).join(' '));
+  return tokens.every(token => hay.includes(token));
+}
+
 function otherSessionLabel(hit: ParticipantSearchHit) {
   const other = hit.other_session;
   if (!other) return '';
@@ -134,6 +156,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [q, setQ] = useState('');
+  const [findQ, setFindQ] = useState('');
   const [hits, setHits] = useState<ParticipantSearchHit[]>([]);
   const [seatPick, setSeatPick] = useState<{ roomId: number; seatNo: number } | null>(null);
   const [seatQ, setSeatQ] = useState('');
@@ -383,6 +406,19 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   };
 
   const roomBlocks = useMemo(() => buildRoomBlocks(roomsForView, visible), [roomsForView, visible]);
+  const shownBlocks = useMemo(() => {
+    const query = findQ.trim();
+    if (!query) return roomBlocks;
+    return roomBlocks
+      .map(block => ({
+        ...block,
+        lines: block.lines.filter(line => line.type === 'student' && attendanceQueryMatches(line.row, query)),
+      }))
+      .filter(block => block.lines.length > 0);
+  }, [roomBlocks, findQ]);
+  const findCount = findQ.trim()
+    ? shownBlocks.reduce((n, block) => n + block.lines.length, 0)
+    : 0;
   const emptySeats = roomBlocks.reduce((n, b) => n + b.empty, 0);
 
   if (loading) {
@@ -443,11 +479,26 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
               <div>
                 <h3>Öğrenciler</h3>
                 <p>
-                  {emptySeats
-                    ? `${emptySeats} boş sıra var.`
-                    : 'Salonu listeden seç. Mesaj giden sıra kilitli kalır.'}
+                  {findQ.trim()
+                    ? `${findCount} öğrenci listeleniyor. Geldi veya Gelmedi’yi satırdan işaretleyin.`
+                    : emptySeats
+                      ? `${emptySeats} boş sıra var.`
+                      : 'Salonu listeden seç. Mesaj giden sıra kilitli kalır.'}
                 </p>
               </div>
+            </div>
+            <div className={p.findRow}>
+              <div className={p.search}>
+                <input
+                  placeholder="Yoklamada isim ara…"
+                  value={findQ}
+                  onChange={e => setFindQ(e.target.value)}
+                  aria-label="Yoklamada isim ara"
+                />
+              </div>
+              {findQ.trim() && (
+                <button type="button" className={p.textBtn} onClick={() => setFindQ('')}>Temizle</button>
+              )}
             </div>
             <div className={p.search}>
               <input placeholder="Öğrenci ara ve ekle…" value={q} onChange={e => search(e.target.value)} />
@@ -488,11 +539,17 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
           <div className={p.list}>
             {roomBlocks.length === 0 ? (
               <div className={p.blank}><b>Liste boş</b>Salon ekleyin veya öğrenci arayın.</div>
-            ) : roomBlocks.map(block => (
+            ) : findQ.trim() && shownBlocks.length === 0 ? (
+              <div className={p.blank}><b>Eşleşme yok</b>Ad, soyad, numara veya salonla tekrar deneyin.</div>
+            ) : shownBlocks.map(block => (
               <div key={block.roomId ?? 'none'} className={p.block}>
                 <div className={p.blockHead}>
                   <strong>{block.roomName}</strong>
-                  <span>{block.filled} öğrenci{block.empty ? ` · ${block.empty} boş` : ''}</span>
+                  <span>
+                    {findQ.trim()
+                      ? `${block.lines.length} eşleşme`
+                      : `${block.filled} öğrenci${block.empty ? ` · ${block.empty} boş` : ''}`}
+                  </span>
                   {block.roomId === null && unassigned > 0 && (
                     <button type="button" className={p.textBtn} disabled={busy === 'fill'} onClick={() => seat(true)}>
                       Boş sıralara yerleştir

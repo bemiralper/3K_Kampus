@@ -848,7 +848,7 @@ def exam_hatirlatma_send(request, exam_pk):
                     continue
                 ctx = _hatirlatma_ctx(exam, p, veli_ad=item['display_name'])
                 label = item['display_name'] or 'Veli'
-                jobs.append((p, label, lambda veli=veli, p=p, ctx=ctx: dispatch_event(
+                jobs.append((p, label, 'veli', veli.id, lambda veli=veli, p=p, ctx=ctx: dispatch_event(
                     exam.kurum_id,
                     event.key,
                     recipient=NotificationRecipient.veli(veli.id),
@@ -865,7 +865,7 @@ def exam_hatirlatma_send(request, exam_pk):
                     skipped += 1
                     continue
                 ctx = _hatirlatma_ctx(exam, p)
-                jobs.append((p, '', lambda p=p, ctx=ctx: dispatch_event(
+                jobs.append((p, '', 'ogrenci', p.student_id, lambda p=p, ctx=ctx: dispatch_event(
                     exam.kurum_id,
                     event.key,
                     recipient=NotificationRecipient.ogrenci(p.student_id),
@@ -878,7 +878,13 @@ def exam_hatirlatma_send(request, exam_pk):
                     sent_by_user_id=sent_by,
                 )))
     notified: set[int] = set()
-    for (p, label, _fn), result in zip(jobs, map_bulk([fn for _p, _label, fn in jobs])):
+    linked: list[tuple[str, str, int]] = []
+    for (p, label, kind, person_id, _fn), result in zip(
+        jobs, map_bulk([fn for _p, _label, _kind, _pid, fn in jobs]),
+    ):
+        message_id = getattr(result, 'message_id', None)
+        if message_id and not isinstance(result, Exception):
+            linked.append((str(message_id), kind, person_id))
         if result and not isinstance(result, Exception) and result.success:
             sent += 1
             notified.add(p.id)
@@ -886,12 +892,62 @@ def exam_hatirlatma_send(request, exam_pk):
             skipped += 1
             if label:
                 errors.append(label)
+    if event.key == 'sinav.yoklama':
+        _record_sinav_yoklama_campaign(exam, request.user, linked)
     if event.key == HATIRLATMA_EVENT:
-        for p, _label, _fn in jobs:
+        for p, _label, _kind, _pid, _fn in jobs:
             if p.id in notified:
                 mark_seat_notified(p)
                 notified.discard(p.id)
     return Response({'sent': sent, 'skipped': skipped, 'errors': errors})
+
+
+def _record_sinav_yoklama_campaign(exam, user, linked: list[tuple[str, str, int]]) -> None:
+    """Gönderilen yoklama mesajlarını toplu gönderim geçmişine bir kampanya olarak yazar."""
+    if not linked:
+        return
+    from apps.communication.application.campaign_service import CampaignStatsService
+    from apps.communication.domain.enums import CampaignStatus, Channel
+    from apps.communication.domain.models import Message, OutboundCampaign, OutboundQueueItem
+
+    message_ids = [message_id for message_id, _kind, _pid in linked]
+    messages = list(
+        Message.objects.filter(id__in=message_ids).select_related('conversation')
+    )
+    if not messages:
+        return
+    veli_ids = sorted({pid for _mid, kind, pid in linked if kind == 'veli'})
+    ogrenci_ids = sorted({pid for _mid, kind, pid in linked if kind == 'ogrenci'})
+    channel_config_id = next(
+        (
+            msg.conversation.channel_config_id
+            for msg in messages
+            if msg.conversation_id and msg.conversation.channel_config_id
+        ),
+        None,
+    )
+    body = next((msg.body for msg in messages if (msg.body or '').strip()), '')
+    campaign = OutboundCampaign.objects.create(
+        kurum_id=exam.kurum_id,
+        sube_id=exam.sube_id,
+        channel=Channel.WHATSAPP,
+        channel_config_id=channel_config_id,
+        created_by=user if getattr(user, 'is_authenticated', False) else None,
+        title=f'Sınav yoklama — {exam.name}'[:200],
+        body_template=body,
+        status=CampaignStatus.QUEUED,
+        total_recipients=len(messages),
+        materialized_count=len(messages),
+        recipient_filter_json={
+            'included_veli_ids': veli_ids,
+            'included_ogrenci_ids': ogrenci_ids,
+            'origin': 'sinav.yoklama',
+            'exam_id': exam.id,
+        },
+    )
+    Message.objects.filter(id__in=message_ids).update(campaign=campaign)
+    OutboundQueueItem.objects.filter(message_id__in=message_ids).update(campaign=campaign)
+    CampaignStatsService.refresh_campaign_stats(campaign.id)
 
 
 def _salon_row(row) -> dict:

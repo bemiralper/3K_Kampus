@@ -106,6 +106,13 @@
   color: #64748b;
 }
 
+.findRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.findRow .search { flex: 1; }
+
 .search { position: relative; flex: 1; min-width: 0; }
 .search input,
 .field input,
@@ -482,6 +489,7 @@
   .stat { padding: 6px 4px; }
   .stat b { font-size: 15px; }
   .stat span { font-size: 10px; }
+  .findRow { flex-direction: column; align-items: stretch; }
   .full { display: none; }
   .short { display: inline; }
   .act, .actPrimary { flex: 1 1 calc(50% - 6px); justify-content: center; font-size: 11.5px; padding: 8px 6px; }

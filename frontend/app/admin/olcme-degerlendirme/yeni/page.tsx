@@ -36,7 +36,6 @@ import { groupSeated, previewSeating, seatNumbers } from '../../../../components
 import type { SeatedStudent } from '../../../../components/olcme/roster/seating';
 import { resolveCoachPhotoUrl } from '../../../../lib/coach-media';
 import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
-import DenemeSalonCatalog from '../../../../components/olcme/roster/DenemeSalonCatalog';
 import PassiveSeatsField from '../../../../components/olcme/roster/PassiveSeatsField';
 import ManualSectionsEditor, { TemplatePreview } from '../../../../components/olcme/ManualSectionsEditor';
 import {
@@ -175,6 +174,7 @@ export default function YeniSinavPage() {
   const [removedAutoIds, setRemovedAutoIds] = useState<number[]>([]);
   const [manuals, setManuals] = useState<PreviewStudent[]>([]);
   const [rooms, setRooms] = useState<ExamRoomItem[]>([{ name: 'Salon 1', capacity: 30, seat_start: 1, seat_gap: 0, order: 0 }]);
+  const [roomDetail, setRoomDetail] = useState<number | null>(null);
   const [salonlar, setSalonlar] = useState<DenemeSalon[]>([]);
   const [seatingMode, setSeatingMode] = useState<SeatingMode>('shuffle');
   const [seatingTick, setSeatingTick] = useState(0);
@@ -192,19 +192,25 @@ export default function YeniSinavPage() {
     }).catch(() => {});
   }, []);
 
-  const rememberSalon = async (room: ExamRoomItem) => {
-    const name = room.name.trim();
-    if (!name) return;
-    try {
-      const saved = await examApi.saveDenemeSalon(
-        name,
-        Number(room.capacity) || 30,
-        room.inactive_seats || [],
-      );
-      setSalonlar(prev => [...prev.filter(s => s.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'tr')));
-    } catch {
-      setError('Salon kaydedilemedi.');
-    }
+  const applySavedSalon = (salon: DenemeSalon) => {
+    setRooms(prev => {
+      if (prev.some(item => item.name.trim() === salon.name)) return prev;
+      const untouched = prev.length === 1
+        && prev[0].name === 'Salon 1'
+        && prev[0].capacity === 30
+        && !(prev[0].inactive_seats || []).length
+        && (prev[0].seat_start ?? 1) === 1
+        && (prev[0].seat_gap ?? 0) === 0;
+      const next: ExamRoomItem = {
+        name: salon.name,
+        capacity: salon.capacity,
+        inactive_seats: salon.inactive_seats || [],
+        seat_start: 1,
+        seat_gap: 0,
+        order: untouched ? 0 : prev.length,
+      };
+      return untouched ? [next] : [...prev, next];
+    });
   };
 
   useEffect(() => {
@@ -418,9 +424,12 @@ export default function YeniSinavPage() {
     return dates[0] ?? '';
   }, [sessions]);
 
+  const previewReq = useRef(0);
   const loadPreview = useCallback(async () => {
+    const req = ++previewReq.current;
     if (!form.sinif_ids.length && !form.sinif_seviyesi_ids.length && !form.deneme_paketi_ids.length) {
       setPreview([]);
+      setPreviewLoading(false);
       return;
     }
     setPreviewLoading(true);
@@ -430,16 +439,20 @@ export default function YeniSinavPage() {
         sinif_seviyesi_ids: form.sinif_seviyesi_ids,
         deneme_paketi_ids: form.deneme_paketi_ids,
       });
+      if (req !== previewReq.current) return;
       setPreview(data.students);
     } catch {
+      if (req !== previewReq.current) return;
       setPreview([]);
     } finally {
-      setPreviewLoading(false);
+      if (req === previewReq.current) setPreviewLoading(false);
     }
   }, [form.sinif_ids, form.sinif_seviyesi_ids, form.deneme_paketi_ids]);
 
   useEffect(() => {
-    if (step >= 3) loadPreview();
+    if (step < 2) return;
+    const timer = window.setTimeout(() => { loadPreview(); }, 200);
+    return () => window.clearTimeout(timer);
   }, [step, loadPreview]);
 
   const roster = useMemo(() => {
@@ -962,15 +975,20 @@ export default function YeniSinavPage() {
               <div className={r.heroCopy}>
                 <h2>Kimler girecek?</h2>
                 <p>
-                  Sınıf, seviye ve deneme paketini dilediğiniz gibi birleştirin.
-                  Aynı öğrenci bir kez gelir. Seviye + paket birlikte seçilirse kesişim alınır;
-                  konu tarama için yalnız sınıf yeter.
+                  {form.sinif_ids.length || form.sinif_seviyesi_ids.length || form.deneme_paketi_ids.length
+                    ? (previewLoading
+                      ? 'Seçilen kitle sayılıyor…'
+                      : `Bu seçim ${roster.length} kişiyi kapsıyor. Aynı öğrenci bir kez sayılır.`)
+                    : 'Sınıf, seviye veya paket seçin. Toplam kişi sayısı burada görünür.'}
                 </p>
               </div>
-              <div className={r.stats}>
-                <div className={r.stat}><span className={r.statValue}>{form.sinif_ids.length}</span><span className={r.statLabel}>Sınıf</span></div>
-                <div className={r.stat}><span className={r.statValue}>{form.sinif_seviyesi_ids.length}</span><span className={r.statLabel}>Seviye</span></div>
-                <div className={r.stat}><span className={r.statValue}>{form.deneme_paketi_ids.length}</span><span className={r.statLabel}>Paket</span></div>
+              <div className={r.stat} aria-live="polite">
+                <span className={r.statValue}>
+                  {!(form.sinif_ids.length || form.sinif_seviyesi_ids.length || form.deneme_paketi_ids.length)
+                    ? '—'
+                    : previewLoading ? '…' : roster.length}
+                </span>
+                <span className={r.statLabel}>kişi</span>
               </div>
             </div>
             <AudiencePicker
@@ -1040,58 +1058,77 @@ export default function YeniSinavPage() {
             <div className={r.hero}>
               <div className={r.heroCopy}>
                 <h2>Salonlar</h2>
-                <p>
-                  {sessions.length > 1
-                    ? 'Her salonu bir oturuma bağla. Hafta içi öğrencileri o salona, hafta sonu öğrencileri kendi salonuna oturur. Pasif sıralara öğrenci oturmaz.'
-                    : 'Kapasite, salondaki numaralı yer sayısıdır. Pasif sıralar bu numaraların içinden çıkarılır.'}
-                </p>
-              </div>
-              <div className={r.stat}>
-                <span className={r.statValue}>{totalCap}</span>
-                <span className={r.statLabel}>kişilik</span>
+                <p>{roster.length} kişi için {totalCap} yer. Ad ve kapasite yeterli.</p>
               </div>
             </div>
             {capError && <div className={`${y.notice} ${y.noticeError}`}>{capError}</div>}
-            <section className={r.card}>
-              <div className={r.cardBody}>
-                <DenemeSalonCatalog
-                  salonlar={salonlar}
-                  onChange={next => { setSalonlar(next); setError(''); }}
-                  onError={setError}
-                />
-                {rooms.map((room, i) => (
-                  <div key={i} className={y.roomEdit}>
-                    <div className={y.roomFields}>
-                    <label className={y.field}>
-                      <span>Kayıtlı salon</span>
-                      <select
-                        value={salonlar.find(s => s.name === room.name)?.id ?? ''}
-                        onChange={e => {
-                          const salon = salonlar.find(s => s.id === Number(e.target.value));
-                          if (!salon) return;
-                          setRooms(p => p.map((item, j) => j === i ? {
-                            ...item,
-                            name: salon.name,
-                            capacity: salon.capacity,
-                            inactive_seats: salon.inactive_seats || [],
-                          } : item));
+            {salonlar.length > 0 && (
+              <div className={y.salonChips}>
+                {salonlar.map(salon => {
+                  const added = rooms.some(item => item.name.trim() === salon.name);
+                  const places = seatNumbers({
+                    capacity: salon.capacity,
+                    seat_start: 1,
+                    seat_gap: 0,
+                    inactive_seats: salon.inactive_seats || [],
+                  }).length;
+                  return (
+                    <button
+                      key={salon.id}
+                      type="button"
+                      className={added ? y.salonChipOn : y.salonChip}
+                      aria-pressed={added}
+                      onClick={() => applySavedSalon(salon)}
+                    >
+                      {salon.name} · {places}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <div className={y.roomList}>
+              {rooms.map((room, i) => {
+                const open = roomDetail === i;
+                const passiveN = (room.inactive_seats || []).length;
+                const tuned = passiveN > 0 || (room.seat_start ?? 1) !== 1 || (room.seat_gap ?? 0) !== 0;
+                return (
+                  <div key={i} className={y.roomBlock}>
+                    <div className={open ? y.roomLineOpen : y.roomLine}>
+                      <input
+                        className={y.roomName}
+                        aria-label={`Salon ${i + 1} adı`}
+                        value={room.name}
+                        placeholder="Salon adı"
+                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, name: e.target.value } : item))}
+                      />
+                      <label className={y.roomCapField}>
+                        <span>Kapasite</span>
+                        <input
+                          type="number"
+                          min={1}
+                          inputMode="numeric"
+                          aria-label={`Salon ${i + 1} kapasitesi`}
+                          value={room.capacity}
+                          onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, capacity: Number(e.target.value) || 1 } : item))}
+                        />
+                      </label>
+                      <button
+                        type="button"
+                        className={y.roomX}
+                        aria-label={`${room.name || 'Salon'} kaldır`}
+                        onClick={() => {
+                          setRooms(p => p.filter((_, j) => j !== i));
+                          setRoomDetail(current => (
+                            current == null ? null : current === i ? null : current > i ? current - 1 : current
+                          ));
                         }}
                       >
-                        <option value="">Seç veya yeni yaz</option>
-                        {salonlar.map(s => (
-                          <option key={s.id} value={s.id}>{s.name} · {s.capacity}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label className={y.field}>
-                      <span>Salon adı</span>
-                      <input value={room.name}
-                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, name: e.target.value } : item))} />
-                    </label>
-                    {sessions.length > 1 && (
-                      <label className={y.field}>
-                        <span>Oturum</span>
+                        ×
+                      </button>
+                      {sessions.length > 1 && (
                         <select
+                          className={y.roomSession}
+                          aria-label={`Salon ${i + 1} oturumu`}
                           value={room.session_index ?? ''}
                           onChange={e => setRooms(p => p.map((item, j) => j === i ? {
                             ...item,
@@ -1102,47 +1139,50 @@ export default function YeniSinavPage() {
                           {sessions.map((sess, si) => (
                             <option key={si} value={si}>
                               {sess.name || `${si + 1}. oturum`}
-                              {SCHEDULE_PREFERENCES.find(p => p.value === sess.schedule_preference)?.label
-                                ? ` · ${SCHEDULE_PREFERENCES.find(p => p.value === sess.schedule_preference)?.label}`
-                                : ''}
                             </option>
                           ))}
                         </select>
-                      </label>
+                      )}
+                      <button
+                        type="button"
+                        className={open ? y.roomQuietOn : y.roomQuiet}
+                        aria-expanded={open}
+                        onClick={() => setRoomDetail(open ? null : i)}
+                      >
+                        {passiveN ? `${passiveN} pasif` : tuned ? 'Sıra ayarı' : 'Pasif sıra'}
+                      </button>
+                    </div>
+                    {open && (
+                      <div className={y.roomMore}>
+                        <div className={y.roomNums}>
+                          <label className={y.field}>
+                            <span>İlk sıra</span>
+                            <input type="number" min={1} inputMode="numeric" value={room.seat_start ?? 1}
+                              onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, seat_start: Math.max(1, Number(e.target.value) || 1) } : item))} />
+                          </label>
+                          <label className={y.field}>
+                            <span>Ara boşluk</span>
+                            <input type="number" min={0} inputMode="numeric" value={room.seat_gap ?? 0}
+                              onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, seat_gap: Math.max(0, Number(e.target.value) || 0) } : item))} />
+                          </label>
+                        </div>
+                        <PassiveSeatsField
+                          room={room}
+                          onChange={seats => setRooms(p => p.map((item, j) => j === i ? { ...item, inactive_seats: seats } : item))}
+                        />
+                      </div>
                     )}
-                    <label className={y.field}>
-                      <span>Kapasite</span>
-                      <input type="number" min={1} inputMode="numeric" value={room.capacity}
-                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, capacity: Number(e.target.value) || 1 } : item))} />
-                    </label>
-                    <label className={y.field}>
-                      <span>İlk sıra</span>
-                      <input type="number" min={1} inputMode="numeric" value={room.seat_start ?? 1}
-                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, seat_start: Math.max(1, Number(e.target.value) || 1) } : item))} />
-                    </label>
-                    <label className={y.field}>
-                      <span>Ara boşluk</span>
-                      <input type="number" min={0} inputMode="numeric" value={room.seat_gap ?? 0}
-                        onChange={e => setRooms(p => p.map((item, j) => j === i ? { ...item, seat_gap: Math.max(0, Number(e.target.value) || 0) } : item))} />
-                    </label>
-                    <div className={y.roomActions}>
-                      <button type="button" className={y.ghost} onClick={() => rememberSalon(room)}>Kaydet</button>
-                      <button type="button" className={y.danger} onClick={() => setRooms(p => p.filter((_, j) => j !== i))}>×</button>
-                    </div>
-                    </div>
-                    <PassiveSeatsField
-                      className={y.seatSpan}
-                      room={room}
-                      onChange={seats => setRooms(p => p.map((item, j) => j === i ? { ...item, inactive_seats: seats } : item))}
-                    />
                   </div>
-                ))}
-                <button type="button" className={y.ghost}
-                  onClick={() => setRooms(p => [...p, { name: `Salon ${p.length + 1}`, capacity: 30, seat_start: 1, seat_gap: 0, order: p.length }])}>
-                  <Icon name="plus" size={14} /> Salon ekle
-                </button>
-              </div>
-            </section>
+                );
+              })}
+              <button
+                type="button"
+                className={y.addRoom}
+                onClick={() => setRooms(p => [...p, { name: `Salon ${p.length + 1}`, capacity: 30, seat_start: 1, seat_gap: 0, order: p.length }])}
+              >
+                <Icon name="plus" size={14} /> Salon ekle
+              </button>
+            </div>
           </div>
         )}
 
