@@ -328,6 +328,7 @@ def enqueue_account(account: GoogleContactsAccount) -> int:
     }
     seen: set[tuple] = set()
     changed = 0
+    scanned = 0
     for ogrenci in _student_queryset(account):
         for plan in plans_for_student(ogrenci):
             key = _plan_key(plan.subject_type, plan.ogrenci_id, plan.veli_id, plan.personel_id)
@@ -335,6 +336,9 @@ def enqueue_account(account: GoogleContactsAccount) -> int:
             result = _apply_plan(account, plan, existing)
             if result != 'unchanged':
                 changed += 1
+        scanned += 1
+        if scanned % 40 == 0 and drain_is_running(account):
+            _touch_drain(account, seconds=300)
     for personel in _staff_queryset(account):
         for plan in plans_for_staff(personel):
             key = _plan_key(plan.subject_type, plan.ogrenci_id, plan.veli_id, plan.personel_id)
@@ -511,7 +515,6 @@ def sync_batch(
     client_factory=None,
 ) -> dict:
     limit = max(1, min(int(limit or 25), 40))
-    deadline = monotonic() + max(3, float(deadline_seconds or 12))
     accounts = GoogleContactsAccount.objects.filter(
         kurum_id=kurum_id,
         is_active=True,
@@ -523,6 +526,7 @@ def sync_batch(
     if enqueue:
         for account in accounts:
             enqueued += enqueue_account(account)
+    deadline = monotonic() + max(3, float(deadline_seconds or 12))
 
     stats = {
         'enqueued': enqueued,
@@ -623,6 +627,7 @@ def sync_batch(
         account.last_synced_at = now
         if stats['failed'] == 0:
             account.last_sync_error = ''
+        account.refresh_from_db(fields=['last_sync_stats'])
         previous = account.last_sync_stats or {}
         account.last_sync_stats = {
             'created': stats['created'],
@@ -709,19 +714,40 @@ def start_background_sync(*, kurum_id: int, account_id, retry_failed: bool = Fal
     def _run():
         try:
             close_old_connections()
-            first = True
+            need_enqueue = True
             idle = 0
             while True:
                 _touch_drain(GoogleContactsAccount.objects.get(id=claimed_id), seconds=300)
-                stats = sync_batch(
-                    kurum_id=kurum_id,
-                    account_id=claimed_id,
-                    limit=12,
-                    enqueue=first,
-                    retry_failed=first and retry_failed,
-                    deadline_seconds=20,
-                )
-                first = False
+                if need_enqueue:
+                    # Bekleyen kartlar, tüm listenin taranması bitmeden yazılsın.
+                    stats = sync_batch(
+                        kurum_id=kurum_id,
+                        account_id=claimed_id,
+                        limit=12,
+                        enqueue=False,
+                        retry_failed=retry_failed,
+                        deadline_seconds=20,
+                    )
+                    if stats.get('retry_after_seconds'):
+                        time.sleep(int(stats['retry_after_seconds']))
+                        continue
+                    need_enqueue = False
+                    stats = sync_batch(
+                        kurum_id=kurum_id,
+                        account_id=claimed_id,
+                        limit=12,
+                        enqueue=True,
+                        retry_failed=retry_failed,
+                        deadline_seconds=20,
+                    )
+                else:
+                    stats = sync_batch(
+                        kurum_id=kurum_id,
+                        account_id=claimed_id,
+                        limit=12,
+                        enqueue=False,
+                        deadline_seconds=20,
+                    )
                 if stats.get('retry_after_seconds'):
                     time.sleep(int(stats['retry_after_seconds']))
                     continue

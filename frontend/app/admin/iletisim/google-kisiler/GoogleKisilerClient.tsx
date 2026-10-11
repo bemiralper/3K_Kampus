@@ -144,6 +144,7 @@ export default function GoogleKisilerClient() {
       }
       const startedAt = Date.now();
       let previous = queueSize(account);
+      let quietPolls = 0;
       while (Date.now() - startedAt < 25 * 60 * 1000) {
         await sleep(4000);
         const data = await fetchGoogleContactsStatus();
@@ -152,17 +153,22 @@ export default function GoogleKisilerClient() {
         const pending = queueSize(current);
         const synced = current?.counts?.synced ?? 0;
         setProgress(
-          `${account.email}: rehberde ${synced}, kuyrukta ${pending}. Sayfadan çıksanız da yazma sürer.`,
+          pending === previous
+            ? `${account.email}: liste taranıyor. Rehberde ${synced}, kuyrukta ${pending}.`
+            : `${account.email}: rehberde ${synced}, kuyrukta ${pending}. Sayfadan çıksanız da yazma sürer.`,
         );
         if (current && !current.syncing && pending === 0) {
           setMessage(`${account.email} eşitlendi. Rehberde ${synced} kişi var.`);
           return;
         }
         if (current && !current.syncing && pending > 0) {
+          quietPolls += 1;
+          if (quietPolls < 3) continue;
           if (current.last_sync_error) setError(current.last_sync_error);
           setMessage(`Durdu. Rehberde ${synced}, kuyrukta ${pending}. Tekrar başlatınca kaldığı yerden sürer.`);
           return;
         }
+        quietPolls = 0;
         if (pending >= previous && Date.now() - startedAt > 3 * 60 * 1000) {
           setMessage(`Yazma sürüyor. Rehberde ${synced}, kuyrukta ${pending}.`);
         }
