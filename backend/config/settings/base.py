@@ -340,6 +340,10 @@ SISTEM_YONETIMI = {
 # Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
+# Upload limits — OMR taramaları ve yedekler için büyük gövdeye izin ver
+DATA_UPLOAD_MAX_MEMORY_SIZE = 600 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
+
 # Session configuration
 SESSION_ENGINE = 'django.contrib.sessions.backends.db'
 SESSION_COOKIE_AGE = 86400 * 7  # 7 days

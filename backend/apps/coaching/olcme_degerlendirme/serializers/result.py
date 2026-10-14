@@ -12,7 +12,7 @@ class ExamSessionListSerializer(serializers.ModelSerializer):
     class Meta:
         model = ExamSession
         fields = [
-            'id', 'exam', 'original_filename', 'status', 'status_display',
+            'id', 'exam', 'source_type', 'original_filename', 'status', 'status_display',
             'total_rows', 'matched_count', 'unmatched_count', 'error_count',
             'field_mappings', 'student_id_field',
             'created_at', 'updated_at',

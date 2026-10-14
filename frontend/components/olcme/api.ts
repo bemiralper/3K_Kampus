@@ -48,6 +48,8 @@ import type {
   PuanAyarlari,
   PuanYilSeti,
   KatsayiKind,
+  OptikFormDetay,
+  OptikFormOzet,
   ExamPublishStatus,
   ExamPublishPreview,
   ExamPublishDispatch,
@@ -1382,4 +1384,68 @@ export const oturumAyarlariApi = {
       `${OTURUM_AYAR_BASE}/ogrenciler/`,
       { method: 'PATCH', body: JSON.stringify({ ogrenci_id: ogrenciId, preference }) },
     ),
+};
+
+const OPTIK_BASE = '/api/coaching/olcme-degerlendirme/optik-formlar';
+
+async function downloadOptik(url: string, init: RequestInit, fallback: string) {
+  const res = await fetch(url, {
+    ...init,
+    credentials: 'include',
+    headers: { ...getContextHeaders(), ...(init.headers || {}) },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error || 'PDF indirilemedi.');
+  }
+  const blob = await res.blob();
+  const name = filenameFromDisposition(res.headers.get('content-disposition'), fallback);
+  await downloadPdfBlob(blob, name);
+}
+
+export const optikFormApi = {
+  list: () => request<OptikFormOzet[]>(`${OPTIK_BASE}/`),
+
+  detail: (id: number) => request<OptikFormDetay>(`${OPTIK_BASE}/${id}/`),
+
+  create: async (ad: string, pdf: File, preset: string) => {
+    const form = new FormData();
+    form.append('ad', ad);
+    form.append('pdf', pdf);
+    if (preset) form.append('preset', preset);
+    const res = await fetch(`${OPTIK_BASE}/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: getContextHeaders(),
+      body: form,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error((err as { error?: string })?.error || 'Form kaydedilemedi.');
+    }
+    return res.json() as Promise<OptikFormDetay>;
+  },
+
+  update: (id: number, data: Partial<OptikFormDetay> & { preset?: string }) =>
+    request<OptikFormDetay>(`${OPTIK_BASE}/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  saveAlanlar: (id: number, alanlar: OptikFormDetay['alanlar']) =>
+    request<OptikFormDetay>(`${OPTIK_BASE}/${id}/alanlar/`, {
+      method: 'PUT',
+      body: JSON.stringify({ alanlar }),
+    }),
+
+  remove: (id: number) => request<void>(`${OPTIK_BASE}/${id}/`, { method: 'DELETE' }),
+
+  preview: (id: number) => downloadOptik(`${OPTIK_BASE}/${id}/onizleme/`, { method: 'POST' }, 'optik-onizleme.pdf'),
+
+  yazdir: (examId: number, formId: number, participantIds: number[]) =>
+    downloadOptik(`${BASE}/${examId}/optik-yazdir/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ form_id: formId, participant_ids: participantIds }),
+    }, 'optik.pdf'),
 };

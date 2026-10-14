@@ -16,6 +16,10 @@ def _session_upload_path(instance, filename):
 class ExamSession(models.Model):
     """DAT dosyası yükleme ve işleme oturumu."""
 
+    class SourceType(models.TextChoices):
+        DAT = 'DAT', 'DAT'
+        OMR = 'OMR', 'Optik Tarama'
+
     class Status(models.TextChoices):
         PENDING    = 'PENDING',    'Bekliyor'
         PROCESSING = 'PROCESSING', 'İşleniyor'
@@ -27,6 +31,12 @@ class ExamSession(models.Model):
         on_delete=models.CASCADE,
         related_name='sessions',
         verbose_name='Sınav',
+    )
+    source_type = models.CharField(
+        'Kaynak türü',
+        max_length=3,
+        choices=SourceType.choices,
+        default=SourceType.DAT,
     )
     dat_file = models.FileField(
         'DAT Dosyası', upload_to=_session_upload_path,

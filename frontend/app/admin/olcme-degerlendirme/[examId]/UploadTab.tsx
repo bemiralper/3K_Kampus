@@ -14,6 +14,7 @@ import type {
 } from '../../../../components/olcme/types';
 import Icon from '../../../../components/olcme/ui/Icon';
 import type { IconName } from '../../../../components/olcme/ui/Icon';
+import OmrUploadPanel from './OmrUploadPanel';
 import s from '../olcme.module.css';
 
 /* ── Renkler ──────────────────────────────────────────────────────────────── */
@@ -278,6 +279,7 @@ export default function UploadTab({ exam }: Props) {
   const [uploading, setUploading]       = useState(false);
   const [parsing, setParsing]           = useState(false);
   const [error, setError]               = useState('');
+  const [sourceMode, setSourceMode]     = useState<'dat' | 'omr'>('dat');
 
   // Upload
   const [uploadResp, setUploadResp]     = useState<DATUploadResponse | null>(null);
@@ -1179,6 +1181,16 @@ export default function UploadTab({ exam }: Props) {
 
   return (
     <div>
+      <div style={{ marginBottom: 18, display: 'flex', gap: 8 }}>
+        <button type="button" className="btn-modern" aria-pressed={sourceMode === 'dat'} onClick={() => setSourceMode('dat')}>
+          DAT dosyası
+        </button>
+        <button type="button" className="btn-modern" aria-pressed={sourceMode === 'omr'} onClick={() => setSourceMode('omr')}>
+          Optik tarama
+        </button>
+      </div>
+      {sourceMode === 'omr' ? <OmrUploadPanel examId={exam.id} /> : (
+      <>
       {/* ── Sihirbaz adımları ────────────────────────────────────────────── */}
       <ol className={s.uploadStepper}>
         {STEPS.map((st, i) => {
@@ -1287,7 +1299,7 @@ export default function UploadTab({ exam }: Props) {
                           <Icon name="document" size={16} />
                         </span>
                         <span className={s.prevSessionText}>
-                          <span className={s.prevSessionName}>{ses.original_filename}</span>
+                          <span className={s.prevSessionName}>{ses.source_type === 'OMR' ? 'Optik Tarama · ' : ''}{ses.original_filename}</span>
                           <span className={s.prevSessionMeta}>
                             {ses.total_rows} satır
                             {ses.matched_count > 0 && <> · <span style={{ color: '#16a34a' }}>{ses.matched_count} eşleşen</span></>}
@@ -2159,6 +2171,8 @@ export default function UploadTab({ exam }: Props) {
             İptal
           </button>
         </div>
+      )}
+      </>
       )}
     </div>
   );

@@ -9,6 +9,7 @@ import PassiveSeatsField from './PassiveSeatsField';
 import Icon from '../ui/Icon';
 import DenemeSalonCatalog from './DenemeSalonCatalog';
 import RosterExportModal from './RosterExportModal';
+import OptikYazdirModal from './OptikYazdirModal';
 import SinavRosterNotifyModal from './SinavRosterNotifyModal';
 import p from './participants.module.css';
 
@@ -166,6 +167,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   const [busy, setBusy] = useState('');
   const [salonOpen, setSalonOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [optikOpen, setOptikOpen] = useState(false);
   const [waOpen, setWaOpen] = useState(false);
   const [waEvent, setWaEvent] = useState<'sinav.hatirlatma' | 'sinav.yoklama'>('sinav.hatirlatma');
   const [waPreview, setWaPreview] = useState<Awaited<ReturnType<typeof examApi.hatirlatmaPreview>> | null>(null);
@@ -519,6 +521,11 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
                 <span className={p.full}>Dışa aktar</span>
                 <span className={p.short}>Aktar</span>
               </button>
+              <button type="button" className={p.act} onClick={() => setOptikOpen(true)} disabled={visible.length === 0}>
+                <Icon name="document" size={14} />
+                <span className={p.full}>Optik yazdır</span>
+                <span className={p.short}>Optik</span>
+              </button>
               <button type="button" className={p.actPrimary} onClick={() => openWa('sinav.hatirlatma')} disabled={busy === 'wa' || visible.length === 0}>
                 <span className={p.full}>Sınav bilgisi</span>
                 <span className={p.short}>Bilgi</span>
@@ -796,6 +803,14 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
 
       {exportOpen && (
         <RosterExportModal exam={exam} rows={visible} rooms={rooms} onClose={() => setExportOpen(false)} />
+      )}
+      {optikOpen && (
+        <OptikYazdirModal
+          examId={exam.id}
+          participantIds={selected.length ? selected : visible.map(row => row.id)}
+          selectionLabel={selected.length ? `Seçilen ${selected.length} öğrenci` : `Listedeki ${visible.length} öğrenci`}
+          onClose={() => setOptikOpen(false)}
+        />
       )}
       {waOpen && waPreview && (
         <SinavRosterNotifyModal

@@ -76,8 +76,7 @@ def _soyad_close(a: str, b: str) -> bool:
 def _token_name_match(dat_name: str, student_name: str) -> tuple[float, str] | None:
     """
     İsim eşleşmesi: soyad aynı (veya 1 harf OCR), ad token'larından en az biri ortak.
-    SequenceMatcher ile tüm string'i kıyaslamak '6 → Zeynep Ergün' gibi
-    alakasız isimleri yakalar; onu kullanmayız.
+    Bitişik kodlanmış isimleri ('BERRAKKOTANOGLU') ve tam eşleşmeleri de yakalar.
     """
     dat = _name_tokens(dat_name)
     stu = _name_tokens(student_name)
@@ -85,6 +84,13 @@ def _token_name_match(dat_name: str, student_name: str) -> tuple[float, str] | N
         return None
     if dat == stu:
         return 1.0, 'name_exact'
+    joined_dat = ''.join(dat)
+    joined_stu = ''.join(stu)
+    if joined_dat == joined_stu:
+        return 1.0, 'name_exact'
+    if len(joined_dat) >= 5 and len(joined_stu) >= 5:
+        if joined_dat.startswith(joined_stu) or joined_stu.startswith(joined_dat):
+            return 0.95, 'name'
     if len(dat) < 2 or len(stu) < 2:
         return None
     if not _soyad_close(dat[-1], stu[-1]):
@@ -173,9 +179,17 @@ def _build_student_pool(kurum_id, sube_id):
     by_tc: dict = {}
     by_okul_no: dict = {}
     olist = []
-    for ogr in qs.only('id', 'ad', 'soyad', 'tc_kimlik_no'):
+    for ogr in qs.only('id', 'ad', 'soyad', 'tc_kimlik_no', 'telefon'):
         if ogr.tc_kimlik_no:
             by_tc[ogr.tc_kimlik_no.strip()] = ogr
+        # Optik formda TC kutusuna cep telefonu kodlayan öğrencileri de yakala
+        tel = ''.join(c for c in (ogr.telefon or '') if c.isdigit())
+        if tel:
+            by_tc[tel] = ogr
+            if tel.startswith('0') and len(tel) == 11:
+                by_tc[tel[1:]] = ogr
+            elif len(tel) == 10:
+                by_tc['0' + tel] = ogr
         olist.append(ogr)
 
     ogr_by_pk = {o.pk: o for o in olist}

@@ -56,6 +56,24 @@ from .views.scoring_settings_views import (
 from .views.oturum_ayar_views import (
     oturum_ayarlari_seviyeler, oturum_ayarlari_ogrenciler,
 )
+from .views.optik_form_views import (
+    optik_form_list, optik_form_detail, optik_form_alanlar, optik_form_onizleme,
+    exam_optik_yazdir,
+)
+from .views.optik_daire_views import (
+    optik_daire_list, optik_daire_detail, optik_daire_belge, optik_daire_kopyala,
+    optik_daire_layout,
+    optik_daire_sayfa, optik_daire_algila, optik_daire_fmt, optik_daire_onizleme, optik_daire_test_baski,
+    optik_daire_veri_kaynaklari, exam_optik_daire_yazdir, optik_daire_tarama_kalibrasyon,
+    optik_yazici_profilleri, optik_yazici_profili_detail,
+)
+from .views.omr_views import (
+    omr_jobs, omr_job_detail, omr_process, omr_page_review, omr_confirm, omr_page_image,
+)
+from .views.optik_okuma_views import (
+    optik_okuma_oturumlar, optik_okuma_detay, optik_okuma_isle,
+    optik_okuma_sayfa, optik_okuma_gorsel, optik_okuma_incele, optik_okuma_dogrula,
+)
 from .views.curriculum_views import (
     subject_list, subject_detail,
     topic_list, topic_detail,
@@ -110,6 +128,43 @@ urlpatterns = [
     path('puan-ayarlari/katsayilar/<int:year>/reset/', puan_ayarlari_reset, name='olcme-puan-katsayilar-reset'),
     path('oturum-ayarlari/seviyeler/', oturum_ayarlari_seviyeler, name='olcme-oturum-seviyeler'),
     path('oturum-ayarlari/ogrenciler/', oturum_ayarlari_ogrenciler, name='olcme-oturum-ogrenciler'),
+    path('optik-formlar/', optik_form_list, name='optik-form-list'),
+    path('optik-formlar/<int:form_pk>/', optik_form_detail, name='optik-form-detail'),
+    path('optik-formlar/<int:form_pk>/alanlar/', optik_form_alanlar, name='optik-form-alanlar'),
+    path('optik-formlar/<int:form_pk>/onizleme/', optik_form_onizleme, name='optik-form-onizleme'),
+    path('exams/<int:exam_pk>/optik-yazdir/', exam_optik_yazdir, name='exam-optik-yazdir'),
+    path('optik-daire-sablonlar/veri-kaynaklari/', optik_daire_veri_kaynaklari, name='optik-daire-kaynaklar'),
+    path('optik-yazici-profilleri/', optik_yazici_profilleri, name='optik-yazici-profilleri'),
+    path('optik-yazici-profilleri/<int:profil_pk>/', optik_yazici_profili_detail, name='optik-yazici-profili-detail'),
+    path('optik-daire-sablonlar/', optik_daire_list, name='optik-daire-list'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/', optik_daire_detail, name='optik-daire-detail'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/belge/', optik_daire_belge, name='optik-daire-belge'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/layout/', optik_daire_layout, name='optik-daire-layout'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/kopyala/', optik_daire_kopyala, name='optik-daire-kopyala'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/sayfa/', optik_daire_sayfa, name='optik-daire-sayfa'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/algila/', optik_daire_algila, name='optik-daire-algila'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/fmt/', optik_daire_fmt, name='optik-daire-fmt'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/onizleme/', optik_daire_onizleme, name='optik-daire-onizleme'),
+    path('optik-daire-sablonlar/<int:sablon_pk>/test-baski/', optik_daire_test_baski, name='optik-daire-test'),
+    path(
+        'optik-daire-sablonlar/<int:sablon_pk>/tarama-kalibrasyon/',
+        optik_daire_tarama_kalibrasyon,
+        name='optik-daire-tarama-kalibrasyon',
+    ),
+    path('exams/<int:exam_pk>/optik-daire-yazdir/', exam_optik_daire_yazdir, name='exam-optik-daire-yazdir'),
+    path('exams/<int:exam_pk>/omr/', omr_jobs, name='omr-jobs'),
+    path('exams/<int:exam_pk>/omr/<int:job_pk>/', omr_job_detail, name='omr-job-detail'),
+    path('exams/<int:exam_pk>/omr/<int:job_pk>/process/', omr_process, name='omr-process'),
+    path('exams/<int:exam_pk>/omr/<int:job_pk>/confirm/', omr_confirm, name='omr-confirm'),
+    path('exams/<int:exam_pk>/omr/<int:job_pk>/pages/<int:page_pk>/', omr_page_review, name='omr-page-review'),
+    path('omr/pages/<int:page_pk>/image/', omr_page_image, name='omr-page-image'),
+    path('optik-okuma/', optik_okuma_oturumlar, name='optik-okuma'),
+    path('optik-okuma/<int:oturum_pk>/', optik_okuma_detay, name='optik-okuma-detay'),
+    path('optik-okuma/<int:oturum_pk>/isle/', optik_okuma_isle, name='optik-okuma-isle'),
+    path('optik-okuma/sayfalar/<int:sayfa_pk>/', optik_okuma_sayfa, name='optik-okuma-sayfa'),
+    path('optik-okuma/sayfalar/<int:sayfa_pk>/gorsel/', optik_okuma_gorsel, name='optik-okuma-gorsel'),
+    path('optik-okuma/sayfalar/<int:sayfa_pk>/incele/', optik_okuma_incele, name='optik-okuma-incele'),
+    path('optik-okuma/sayfalar/<int:sayfa_pk>/dogrula/', optik_okuma_dogrula, name='optik-okuma-dogrula'),
 
     path('exams/<int:exam_pk>/audience/', exam_audience, name='exam-audience'),
     path('exams/<int:exam_pk>/participants/', exam_participants, name='exam-participants'),

@@ -21,6 +21,10 @@ from .roster import (
     OlcmeSeviyeOturumAyar, OlcmeOgrenciOturumTercihi, ScheduleGroup,
 )
 from .publish import ExamScheduledDispatch
+from .optik_form import OptikForm, OptikFormAlani
+from .optik_daire_sablon import OptikDaireSablon
+from .omr import OptikYaziciProfili, OmrTaramaOturumu, OmrTaramaDosyasi, OmrTaramaSayfasi
+from .optik_okuma import OptikOkumaOturumu, OptikOkumaKaynak, OptikOkumaSayfa
 
 __all__ = [
     'Exam', 'ExamSection', 'ExamSessionModel',
@@ -33,4 +37,8 @@ __all__ = [
     'ExamAudience', 'ExamRoom', 'ExamParticipant',
     'OlcmeSeviyeOturumAyar', 'OlcmeOgrenciOturumTercihi', 'ScheduleGroup',
     'ExamScheduledDispatch',
+    'OptikForm', 'OptikFormAlani',
+    'OptikDaireSablon',
+    'OptikYaziciProfili', 'OmrTaramaOturumu', 'OmrTaramaDosyasi', 'OmrTaramaSayfasi',
+    'OptikOkumaOturumu', 'OptikOkumaKaynak', 'OptikOkumaSayfa',
 ]

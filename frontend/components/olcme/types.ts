@@ -562,6 +562,7 @@ export interface DATParseResponse {
 export interface DATSessionItem {
   id: number;
   exam: number;
+  source_type?: 'DAT' | 'OMR';
   original_filename: string;
   status: string;
   status_display: string;
@@ -1202,4 +1203,43 @@ export interface PuanAyarlari {
   default_puan_yili: number;
   managed_years: number[];
   years: PuanYilSeti[];
+}
+
+export interface OptikFormAlani {
+  id?: number;
+  kod: string;
+  etiket: string;
+  tur: 'metin' | 'balon';
+  x_mm: number;
+  y_mm: number;
+  genislik_mm: number;
+  yukseklik_mm: number;
+  punto: number;
+  sablon: string;
+  karakter_kumesi: string;
+  sutun_sayisi: number;
+  aktif: boolean;
+  sira: number;
+}
+
+export interface OptikFormOzet {
+  id: number;
+  ad: string;
+  preset_kod: string;
+  pdf_adi: string;
+  aktif: boolean;
+  alan_sayisi: number;
+  sayfa_genislik_mm: number;
+  sayfa_yukseklik_mm: number;
+  sol_bas_mm: number;
+  ust_bas_mm: number;
+  sol_pay_mm: number;
+  sag_pay_mm: number;
+  ust_pay_mm: number;
+  alt_pay_mm: number;
+  balon_cap_mm: number;
+}
+
+export interface OptikFormDetay extends OptikFormOzet {
+  alanlar: OptikFormAlani[];
 }
