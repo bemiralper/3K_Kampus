@@ -4,14 +4,13 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
 import { websiteAdminApi, cleanWebsiteFormPayload, resolveMediaUrl } from '@/lib/website-api';
 import { WEBSITE_IMAGE_GUIDELINES } from '@/lib/website-image-guidelines';
-import { sinavTurColor } from '@/lib/landing-theme';
+import { sinavTurBadge, sinavTurColor, sinavTurLabel } from '@/lib/landing-theme';
+import { SINAV_TABS, defaultTurForTab, filterSinavByTab, sinavTabById, type SinavTabId } from '@/lib/sinav-takvim';
 import WamModal from './WamModal';
 import { WamInput, WamSelect, WamTextarea } from './WamField';
 
 const MONTH_NAMES = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
-
-type SinavTab = 'lgs' | 'yks';
 
 type SinavCalendarAdminProps = {
   sinavlar: SinavTakvim[];
@@ -41,11 +40,6 @@ const EMPTY_FORM: FormState = {
   aciklama: '',
 };
 
-function filterByTab(list: SinavTakvim[], tab: SinavTab) {
-  if (tab === 'lgs') return list.filter(s => s.tur === 'LGS');
-  return list.filter(s => s.tur === 'TYT' || s.tur === 'AYT');
-}
-
 function formSnapshot(form: FormState, pendingImage: File | null) {
   return JSON.stringify({ ...form, _pendingImage: pendingImage?.name ?? '' });
 }
@@ -65,7 +59,7 @@ function examToForm(exam: SinavTakvim): FormState {
 
 export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: SinavCalendarAdminProps) {
   const today = new Date();
-  const [tab, setTab] = useState<SinavTab>('yks');
+  const [tab, setTab] = useState<SinavTabId>('yks');
   const [month, setMonth] = useState(today.getMonth());
   const [year, setYear] = useState(today.getFullYear());
   const [editId, setEditId] = useState<number | null>(null);
@@ -75,7 +69,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   const [pendingImage, setPendingImage] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showUnsaved, setShowUnsaved] = useState(false);
-  const [pendingTab, setPendingTab] = useState<SinavTab | null>(null);
+  const [pendingTab, setPendingTab] = useState<SinavTabId | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const baselineRef = useRef('');
 
@@ -87,9 +81,15 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     setYear(now.getFullYear());
   }, [tab]);
 
-  const filtered = useMemo(() => filterByTab(sinavlar, tab), [sinavlar, tab]);
-  const lgsCount = useMemo(() => sinavlar.filter(s => s.tur === 'LGS').length, [sinavlar]);
-  const yksCount = useMemo(() => sinavlar.filter(s => s.tur === 'TYT' || s.tur === 'AYT').length, [sinavlar]);
+  const filtered = useMemo(() => filterSinavByTab(sinavlar, tab), [sinavlar, tab]);
+  const activeTab = sinavTabById(tab);
+  const counts = useMemo(() => {
+    const map: Record<SinavTabId, number> = { yks: 0, sinif11: 0, lgs: 0, sinif7: 0 };
+    SINAV_TABS.forEach(item => {
+      map[item.id] = filterSinavByTab(sinavlar, item.id).length;
+    });
+    return map;
+  }, [sinavlar]);
 
   useEffect(() => {
     if (!pendingImage) {
@@ -127,8 +127,6 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   for (let i = 0; i < startOffset; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  const defaultTurForTab = (t: SinavTab) => (t === 'lgs' ? 'LGS' : 'TYT');
-
   const openCreate = (dateKey: string) => {
     const nextForm: FormState = { ...EMPTY_FORM, tur: defaultTurForTab(tab), tarih: dateKey };
     setEditId(0);
@@ -165,7 +163,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     closeForm();
   };
 
-  const requestTabChange = (next: SinavTab) => {
+  const requestTabChange = (next: SinavTabId) => {
     if (next === tab) return;
     if (modalOpen && isDirty()) {
       setPendingTab(next);
@@ -244,9 +242,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   const displayImage = previewUrl || resolveMediaUrl(editingExam?.gorsel_url) || null;
   const g = WEBSITE_IMAGE_GUIDELINES.sinav;
 
-  const turOptions = tab === 'lgs'
-    ? [{ value: 'LGS', label: 'LGS' }]
-    : [{ value: 'TYT', label: 'TYT' }, { value: 'AYT', label: 'AYT' }];
+  const turOptions = activeTab.types;
 
   const prevMonth = () => {
     if (month === 0) { setMonth(11); setYear(y => y - 1); }
@@ -265,7 +261,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
           <rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" />
         </svg>
         <div>
-          <strong>LGS ve YKS takvimlerini ayrı yönetin</strong>
+          <strong>YKS, 11. sınıf, LGS ve 7. sınıf takvimlerini ayrı yönetin</strong>
           Sekme seçin, boş bir güne tıklayın ve sınav bilgilerini kaydedin.
           Görsel yalnızca ana sayfadaki sınav detay penceresinde görünür (1200×675 px, 16:9).
         </div>
@@ -273,10 +269,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
 
       {/* Tab menü */}
       <div className="wam-sinav-tabs">
-        {([
-          { id: 'yks' as const, label: 'YKS', hint: 'TYT & AYT', count: yksCount },
-          { id: 'lgs' as const, label: 'LGS', hint: 'Liseye Geçiş', count: lgsCount },
-        ]).map(t => (
+        {SINAV_TABS.map(t => (
           <button
             key={t.id}
             type="button"
@@ -285,7 +278,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
           >
             <span className="wam-sinav-tab-label">{t.label}</span>
             <span className="wam-sinav-tab-hint">{t.hint}</span>
-            {t.count > 0 && <span className="wam-sinav-tab-count">{t.count}</span>}
+            {counts[t.id] > 0 && <span className="wam-sinav-tab-count">{counts[t.id]}</span>}
           </button>
         ))}
       </div>
@@ -296,7 +289,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
           <div style={{ textAlign: 'center' }}>
             <h4 style={{ margin: 0 }}>{MONTH_NAMES[month]} {year}</h4>
             <p style={{ margin: '2px 0 0', fontSize: 12, color: '#94a3b8' }}>
-              {tab === 'lgs' ? 'LGS' : 'YKS (TYT / AYT)'}
+              {activeTab.calendarLabel}
             </p>
           </div>
           <button type="button" className="wam-btn wam-btn-ghost wam-btn-sm" onClick={nextMonth}>→</button>
@@ -325,13 +318,13 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
                     setEditId(null);
                   } else openCreate(dateKey);
                 }}
-                title={exams.length ? exams.map(e => `${e.baslik} (${e.tur})`).join(', ') : `${tab === 'lgs' ? 'LGS' : 'YKS'} sınavı ekle`}
+                title={exams.length ? exams.map(e => `${e.baslik} (${sinavTurLabel(e.tur)})`).join(', ') : activeTab.addTitle}
               >
                 <span className="wam-cal-day-num">{day}</span>
                 {primary ? (
                   <>
                     <span className="wam-cal-day-badge" style={{ background: sinavTurColor(primary.tur) }}>
-                      {primary.tur}
+                      {sinavTurBadge(primary.tur)}
                     </span>
                     <span className="wam-cal-day-title">{primary.baslik}</span>
                   </>
@@ -348,7 +341,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
       {filtered.length > 0 && (
         <div className="wam-exam-list" style={{ marginTop: '1.25rem' }}>
           <h5 className="wam-exam-list-title">
-            {tab === 'lgs' ? 'LGS Sınavları' : 'YKS Sınavları'} ({filtered.length})
+            {activeTab.listTitle} ({filtered.length})
           </h5>
           <div className="wam-cards-grid">
             {filtered.map(exam => (
@@ -362,11 +355,11 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={resolveMediaUrl(exam.gorsel_url) || ''} alt="" className="wam-item-thumb" />
                 ) : (
-                  <span className="wam-exam-list-badge" style={{ background: sinavTurColor(exam.tur) }}>{exam.tur}</span>
+                  <span className="wam-exam-list-badge" style={{ background: sinavTurColor(exam.tur) }}>{sinavTurBadge(exam.tur)}</span>
                 )}
                 <span className="wam-exam-list-text">
                   <strong>{exam.baslik}</strong>
-                  <small>{exam.tarih} · {exam.tur}{exam.kapsam === 'turkiye_geneli' ? ' · TR Geneli' : ''}</small>
+                  <small>{exam.tarih} · {sinavTurLabel(exam.tur)}{exam.kapsam === 'turkiye_geneli' ? ' · TR Geneli' : ''}</small>
                 </span>
               </button>
             ))}
@@ -376,7 +369,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
 
       {filtered.length === 0 && (
         <p className="wam-field-hint" style={{ marginTop: '1rem', textAlign: 'center' }}>
-          {tab === 'lgs' ? 'Henüz LGS sınavı yok. Takvimden bir güne tıklayarak ekleyin.' : 'Henüz YKS sınavı yok. Takvimden bir güne tıklayarak ekleyin.'}
+          {activeTab.emptyAdmin}
         </p>
       )}
 
@@ -391,7 +384,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
           {dayExams.map(exam => (
             <button key={exam.id} type="button" className="wam-exam-list-item" onClick={() => openEdit(exam)}>
               {exam.gorsel_url && /* eslint-disable-next-line @next/next/no-img-element */ <img src={exam.gorsel_url} alt="" className="wam-item-thumb" />}
-              <span>{exam.baslik} · {exam.tur}</span>
+              <span>{exam.baslik} · {sinavTurLabel(exam.tur)}</span>
             </button>
           ))}
         </div>
@@ -399,7 +392,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
 
       <WamModal
         open={modalOpen}
-        title={editId === 0 ? `Yeni ${tab === 'lgs' ? 'LGS' : 'YKS'} Sınavı` : 'Sınavı Düzenle'}
+        title={editId === 0 ? `Yeni ${activeTab.createTitle} Sınavı` : 'Sınavı Düzenle'}
         subtitle={
           form.tarih
             ? `${form.tarih}${form.saat ? ` · ${form.saat}${form.saat_bitis ? `–${form.saat_bitis}` : ''}` : ''}`

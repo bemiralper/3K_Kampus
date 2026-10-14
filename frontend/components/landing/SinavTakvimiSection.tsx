@@ -2,29 +2,18 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
-import { LANDING_COLORS, sinavTurColor } from '@/lib/landing-theme';
+import { LANDING_COLORS, sinavTurBadge, sinavTurColor } from '@/lib/landing-theme';
+import { SINAV_TABS, filterSinavByTab, sinavTabById, type SinavTabId } from '@/lib/sinav-takvim';
 import MonthCalendarGrid from './MonthCalendarGrid';
 import SinavDetailModal from './SinavDetailModal';
-
-type SinavTab = 'lgs' | 'yks';
 
 type SinavTakvimiSectionProps = {
   sinavlar: SinavTakvim[];
 };
 
-const TABS: { id: SinavTab; label: string; hint: string }[] = [
-  { id: 'yks', label: 'YKS', hint: 'TYT & AYT' },
-  { id: 'lgs', label: 'LGS', hint: 'Liseye Geçiş' },
-];
-
 function isInMonth(tarih: string, year: number, month: number) {
   const [y, m] = tarih.split('-').map(Number);
   return y === year && m === month + 1;
-}
-
-function filterByTab(list: SinavTakvim[], tab: SinavTab) {
-  if (tab === 'lgs') return list.filter(s => s.tur === 'LGS');
-  return list.filter(s => s.tur === 'TYT' || s.tur === 'AYT');
 }
 
 function buildByDate(list: SinavTakvim[]) {
@@ -42,7 +31,7 @@ function currentMonthYear() {
 }
 
 export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionProps) {
-  const [tab, setTab] = useState<SinavTab>('yks');
+  const [tab, setTab] = useState<SinavTabId>('yks');
   const [{ month, year }, setCalendar] = useState(currentMonthYear);
   const [selected, setSelected] = useState<SinavTakvim | null>(null);
   const [dayPicker, setDayPicker] = useState<SinavTakvim[] | null>(null);
@@ -56,17 +45,17 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
     [sinavlar, year, month],
   );
 
-  const filtered = useMemo(() => filterByTab(examsInMonth, tab), [examsInMonth, tab]);
+  const filtered = useMemo(() => filterSinavByTab(examsInMonth, tab), [examsInMonth, tab]);
   const byDate = useMemo(() => buildByDate(filtered), [filtered]);
+  const activeTab = sinavTabById(tab);
 
-  const lgsCount = useMemo(
-    () => examsInMonth.filter(s => s.tur === 'LGS').length,
-    [examsInMonth],
-  );
-  const yksCount = useMemo(
-    () => examsInMonth.filter(s => s.tur === 'TYT' || s.tur === 'AYT').length,
-    [examsInMonth],
-  );
+  const counts = useMemo(() => {
+    const map: Record<SinavTabId, number> = { yks: 0, sinif11: 0, lgs: 0, sinif7: 0 };
+    SINAV_TABS.forEach(item => {
+      map[item.id] = filterSinavByTab(examsInMonth, item.id).length;
+    });
+    return map;
+  }, [examsInMonth]);
 
   const prevMonth = () => {
     setCalendar(c => {
@@ -87,9 +76,7 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
   const monthNames = ['Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran', 'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'];
   const isCurrentMonth = month === new Date().getMonth() && year === new Date().getFullYear();
 
-  const legendItems = tab === 'lgs'
-    ? [{ tur: 'LGS' as const, label: 'LGS' }]
-    : [{ tur: 'TYT' as const, label: 'TYT' }, { tur: 'AYT' as const, label: 'AYT' }];
+  const legendItems = activeTab.types;
 
   const handleDayClick = (_dateKey: string, exams: SinavTakvim[]) => {
     if (exams.length === 1) setSelected(exams[0]);
@@ -101,12 +88,12 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
       <div className="mx-auto max-w-7xl px-4 lg:px-8">
         <div className="mb-8 text-center">
           <h2 className="text-3xl font-bold tracking-tight" style={{ color: LANDING_COLORS.navy }}>Sınav Takvimi</h2>
-          <p className="mt-2 text-slate-500">LGS ve YKS sınav tarihlerini ayrı takvimlerde inceleyin</p>
+          <p className="mt-2 text-slate-500">YKS, 11. sınıf, LGS ve 7. sınıf sınav tarihlerini ayrı takvimlerde inceleyin</p>
         </div>
 
         <div className="mb-6 flex flex-wrap items-center justify-center gap-2">
-          {TABS.map(t => {
-            const count = t.id === 'lgs' ? lgsCount : yksCount;
+          {SINAV_TABS.map(t => {
+            const count = counts[t.id];
             const active = tab === t.id;
             return (
               <button
@@ -125,9 +112,9 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
         </div>
 
         <div className="mb-6 flex flex-wrap items-center justify-center gap-4">
-          {legendItems.map(({ tur, label }) => (
-            <span key={tur} className="flex items-center gap-2 text-sm text-slate-600">
-              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: sinavTurColor(tur) }} />
+          {legendItems.map(({ value, label }) => (
+            <span key={value} className="flex items-center gap-2 text-sm text-slate-600">
+              <span className="h-3 w-3 rounded-full" style={{ backgroundColor: sinavTurColor(value) }} />
               {label}
             </span>
           ))}
@@ -140,7 +127,7 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
             </button>
             <div className="text-center">
               <h3 className="font-semibold text-slate-900">{monthNames[month]} {year}</h3>
-              <p className="text-xs text-slate-400">{tab === 'lgs' ? 'LGS Takvimi' : 'YKS Takvimi'}</p>
+              <p className="text-xs text-slate-400">{activeTab.calendarLabel}</p>
             </div>
             <div className="flex items-center gap-1">
               {!isCurrentMonth && (
@@ -162,9 +149,7 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
 
           {filtered.length === 0 && (
             <p className="mt-6 text-center text-sm text-slate-400">
-              {tab === 'lgs'
-                ? `${monthNames[month]} ${year} ayında LGS sınavı bulunmuyor.`
-                : `${monthNames[month]} ${year} ayında YKS (TYT/AYT) sınavı bulunmuyor.`}
+              {monthNames[month]} {year} ayında {activeTab.emptyMonth}
             </p>
           )}
         </div>
@@ -189,7 +174,7 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
                     className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
                     style={{ backgroundColor: sinavTurColor(exam.tur) }}
                   >
-                    {exam.tur}
+                    {sinavTurBadge(exam.tur)}
                   </span>
                   <span className="min-w-0">
                     <strong className="block truncate text-sm text-slate-900">{exam.baslik}</strong>

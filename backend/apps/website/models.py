@@ -225,6 +225,8 @@ class SinavTakvim(models.Model):
         ('LGS', 'LGS'),
         ('TYT', 'TYT'),
         ('AYT', 'AYT'),
+        ('S11', '11. Sınıf'),
+        ('S7', '7. Sınıf'),
     ]
     KAPSAM_CHOICES = [
         ('turkiye_geneli', 'Türkiye Geneli'),

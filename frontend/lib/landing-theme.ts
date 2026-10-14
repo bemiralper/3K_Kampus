@@ -6,6 +6,8 @@ export const LANDING_COLORS = {
   lgs: '#0262a7',
   tyt: '#f97316',
   ayt: '#dc2626',
+  sinif11: '#7c3aed',
+  sinif7: '#0f766e',
   white: '#ffffff',
   gray50: '#f8fafc',
   gray100: '#f1f5f9',
@@ -43,7 +45,27 @@ export function sinavTurColor(tur: string): string {
     case 'LGS': return LANDING_COLORS.lgs;
     case 'TYT': return LANDING_COLORS.tyt;
     case 'AYT': return LANDING_COLORS.ayt;
+    case 'S11': return LANDING_COLORS.sinif11;
+    case 'S7': return LANDING_COLORS.sinif7;
     default: return LANDING_COLORS.accent;
+  }
+}
+
+/** Takvim hücresindeki kısa rozet. */
+export function sinavTurBadge(tur: string): string {
+  switch (tur) {
+    case 'S11': return '11.S';
+    case 'S7': return '7.S';
+    default: return tur;
+  }
+}
+
+/** Detay penceresi ve listelerdeki tam ad. */
+export function sinavTurLabel(tur: string): string {
+  switch (tur) {
+    case 'S11': return '11. Sınıf';
+    case 'S7': return '7. Sınıf';
+    default: return tur;
   }
 }
 

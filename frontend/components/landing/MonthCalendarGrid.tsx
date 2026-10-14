@@ -1,7 +1,7 @@
 'use client';
 
 import type { SinavTakvim } from '@/lib/website-api';
-import { sinavTurColor } from '@/lib/landing-theme';
+import { sinavTurBadge, sinavTurColor } from '@/lib/landing-theme';
 
 type MonthCalendarGridProps = {
   year: number;
@@ -74,10 +74,10 @@ export default function MonthCalendarGrid({ year, month, byDate, onDayClick }: M
               {hasExam && primary && (
                 <div className="flex min-h-0 flex-1 flex-col gap-0.5 px-1.5 pb-1.5">
                   <span
-                    className="inline-flex w-fit rounded px-1.5 py-0.5 text-[9px] font-bold text-white"
+                    className="inline-flex w-fit whitespace-nowrap rounded px-1.5 py-0.5 text-[9px] font-bold text-white"
                     style={{ backgroundColor: color }}
                   >
-                    {primary.tur}
+                    {sinavTurBadge(primary.tur)}
                   </span>
 
                   <p

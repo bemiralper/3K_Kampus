@@ -3,7 +3,7 @@
 import type { SinavTakvim } from '@/lib/website-api';
 import { resolveMediaUrl } from '@/lib/website-api';
 import { formatDateTRLong } from '@/lib/format-date';
-import { LANDING_COLORS, sinavTurColor } from '@/lib/landing-theme';
+import { LANDING_COLORS, sinavTurColor, sinavTurLabel } from '@/lib/landing-theme';
 
 function formatSinavSaatAraligi(sinav: SinavTakvim): string | null {
   const { saat, saat_bitis: bitis } = sinav;
@@ -58,7 +58,7 @@ export default function SinavDetailModal({ sinav, onClose }: SinavDetailModalPro
                 className="rounded-2xl px-6 py-3 text-2xl font-bold text-white shadow-lg"
                 style={{ backgroundColor: color }}
               >
-                {sinav.tur}
+                {sinavTurLabel(sinav.tur)}
               </span>
             </div>
           )}
@@ -81,7 +81,7 @@ export default function SinavDetailModal({ sinav, onClose }: SinavDetailModalPro
               className="rounded-full px-3 py-1 text-xs font-bold text-white shadow-md"
               style={{ backgroundColor: color }}
             >
-              {sinav.tur}
+              {sinavTurLabel(sinav.tur)}
             </span>
             {isTurkiyeGeneli && (
               <span className="rounded-full bg-white/95 px-3 py-1 text-xs font-bold text-[#0262a7] shadow-md backdrop-blur">
