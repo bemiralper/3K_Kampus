@@ -16,7 +16,7 @@ class KurumAdmin(admin.ModelAdmin):
             'fields': ('ad', 'kod', 'aktif_mi')
         }),
         ('İletişim', {
-            'fields': ('telefon_sabit', 'telefon_cep', 'yetkili_ad_soyad', 'adres')
+            'fields': ('telefon_sabit', 'telefon_cep', 'yetkili_ad_soyad', 'adres', 'il', 'ilce')
         }),
         ('Mali Bilgiler', {
             'fields': ('vergi_no', 'vergi_dairesi')

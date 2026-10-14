@@ -43,6 +43,8 @@ class Kurum(models.Model):
     
     # Adres
     adres = models.TextField('Adres', blank=True)
+    il = models.CharField('İl', max_length=100, blank=True, default='')
+    ilce = models.CharField('İlçe', max_length=100, blank=True, default='')
     
     # Durum
     aktif_mi = models.BooleanField('Aktif', default=True)

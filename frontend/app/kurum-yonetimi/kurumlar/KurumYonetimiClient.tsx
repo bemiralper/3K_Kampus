@@ -27,6 +27,8 @@ interface Kurum {
   vergi_no?: string;
   vergi_dairesi?: string;
   adres?: string;
+  il?: string;
+  ilce?: string;
   sube_count?: number;
   gorunen_ad?: string;
   slogan?: string;
@@ -141,6 +143,8 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
     vergi_no: "",
     vergi_dairesi: "",
     adres: "",
+    il: "",
+    ilce: "",
     aktif_mi: true,
   });
 
@@ -202,6 +206,8 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
       vergi_no: "",
       vergi_dairesi: "",
       adres: "",
+      il: "",
+      ilce: "",
       aktif_mi: true,
     });
     setSubeForm({ ...DEFAULT_SUBE_FORM });
@@ -264,6 +270,8 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
         vergi_no: item.vergi_no || "",
         vergi_dairesi: item.vergi_dairesi || "",
         adres: item.adres || "",
+        il: item.il || "",
+        ilce: item.ilce || "",
         aktif_mi: item.aktif_mi ?? true,
       });
       setBrandingForm({
@@ -1376,6 +1384,28 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
                           value={kurumForm.vergi_dairesi}
                           onChange={(e) => setKurumForm({ ...kurumForm, vergi_dairesi: e.target.value })}
                           placeholder="Vergi dairesi"
+                        />
+                      </div>
+                    </div>
+                    <div className="form-row">
+                      <div className="form-group">
+                        <label>İl</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={kurumForm.il}
+                          onChange={(e) => setKurumForm({ ...kurumForm, il: e.target.value })}
+                          placeholder="Kurumun ili"
+                        />
+                      </div>
+                      <div className="form-group">
+                        <label>İlçe</label>
+                        <input
+                          type="text"
+                          className="form-control"
+                          value={kurumForm.ilce}
+                          onChange={(e) => setKurumForm({ ...kurumForm, ilce: e.target.value })}
+                          placeholder="Kurumun ilçesi"
                         />
                       </div>
                     </div>

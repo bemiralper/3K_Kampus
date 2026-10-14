@@ -225,6 +225,8 @@ def api_kurum_list_create(request):
                 vergi_no=data.get('vergi_no', ''),
                 vergi_dairesi=data.get('vergi_dairesi', ''),
                 adres=data.get('adres', ''),
+                il=data.get('il', ''),
+                ilce=data.get('ilce', ''),
                 aktif_mi=data.get('aktif_mi', True)
             )
             apply_branding_fields(kurum, data)
@@ -264,6 +266,8 @@ def api_kurum_detail(request, pk):
             'vergi_no': kurum.vergi_no or '',
             'vergi_dairesi': kurum.vergi_dairesi or '',
             'adres': kurum.adres or '',
+            'il': kurum.il or '',
+            'ilce': kurum.ilce or '',
             'aktif_mi': kurum.aktif_mi,
             **serialize_kurum_branding(kurum, request),
         }
@@ -280,6 +284,8 @@ def api_kurum_detail(request, pk):
             kurum.vergi_no = data.get('vergi_no', '')
             kurum.vergi_dairesi = data.get('vergi_dairesi', '')
             kurum.adres = data.get('adres', '')
+            kurum.il = data.get('il', '')
+            kurum.ilce = data.get('ilce', '')
             kurum.aktif_mi = data.get('aktif_mi', True)
             apply_branding_fields(kurum, data)
             kurum.save()
@@ -535,6 +541,8 @@ def legacy_kurum_tanimlar_api(request):
                     'vergi_no': kurum.vergi_no or '',
                     'vergi_dairesi': kurum.vergi_dairesi or '',
                     'adres': kurum.adres or '',
+                    'il': kurum.il or '',
+                    'ilce': kurum.ilce or '',
                     'aktif_mi': kurum.aktif_mi,
                     'created_at': kurum.created_at.isoformat() if kurum.created_at else '',
                 }
