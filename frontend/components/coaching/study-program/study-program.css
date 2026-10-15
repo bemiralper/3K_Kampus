@@ -273,6 +273,138 @@
   background: #fee2e2;
 }
 
+.sps-distribute {
+  margin-bottom: 12px;
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.sps-distribute-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.sps-distribute-head h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 750;
+  letter-spacing: -0.01em;
+}
+
+.sps-distribute-head p {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--sp-muted);
+}
+
+.sps-distribute-close {
+  flex-shrink: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sp-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 4px 2px;
+}
+
+.sps-distribute-close:hover { color: var(--sp-ink); }
+
+.sps-distribute-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.sps-hw-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.sps-hw-pick {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--sp-line);
+  background: var(--sp-canvas);
+  color: var(--sp-ink-2);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 680;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sps-hw-pick span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sps-hw-pick.is-on {
+  border-color: var(--sp-accent);
+  background: var(--sp-accent-soft);
+  color: #1e3a8a;
+  box-shadow: inset 0 0 0 1px var(--sp-accent);
+}
+
+.sps-distribute-empty {
+  flex: 1 1 240px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--sp-canvas);
+  color: var(--sp-muted);
+  font-size: 0.8rem;
+  line-height: 1.45;
+}
+
+.sps-metric {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 12px;
+  background: var(--sp-canvas);
+  border: 1px solid var(--sp-line);
+}
+
+.sps-metric button {
+  border: 0;
+  background: transparent;
+  border-radius: 9px;
+  padding: 7px 12px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 720;
+  color: var(--sp-muted);
+  cursor: pointer;
+}
+
+.sps-metric button.is-on {
+  background: #fff;
+  color: var(--sp-ink);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.sps-distribute-go {
+  margin-left: auto;
+}
+
 /* ----- Haftalık Koç Notu Şeridi ----- */
 .sps-note-bar {
   display: flex;

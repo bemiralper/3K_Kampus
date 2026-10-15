@@ -8,6 +8,7 @@ import { stripCompletionTitleSuffix } from '@/components/odev/odevCompletionHelp
 
 export interface StudyProgramDocumentProps {
   program: WeeklyProgram;
+  onEditBlock?: (block: ProgramBlock) => void;
 }
 
 function formatDateRangeTR(start: string, end: string): string {
@@ -85,7 +86,13 @@ function focusByLesson(days: ProgramDay[]): FocusLessonRow[] {
     .map(({ lesson, topics }) => ({ lesson, topics }));
 }
 
-function WorkRow({ block }: { block: ProgramBlock }) {
+function WorkRow({
+  block,
+  onEdit,
+}: {
+  block: ProgramBlock;
+  onEdit?: (block: ProgramBlock) => void;
+}) {
   // Zayıf konu seçilebilir tür değil — PDF'te çalışma türü olarak Soru Çözümü göster
   const typeKey: BlockType =
     block.block_type === 'ZAYIF_KONU' ? 'SORU_COZUMU' : (block.block_type as BlockType);
@@ -223,12 +230,33 @@ function WorkRow({ block }: { block: ProgramBlock }) {
           {qty}
         </div>
       )}
+      {onEdit && (
+        <button
+          type="button"
+          data-pdf-hide=""
+          onClick={() => onEdit(block)}
+          style={{
+            flexShrink: 0,
+            height: 26,
+            padding: '0 8px',
+            borderRadius: 6,
+            border: '1px solid #bfdbfe',
+            background: '#eff6ff',
+            color: '#1d4ed8',
+            fontSize: 11,
+            fontWeight: 700,
+            cursor: 'pointer',
+          }}
+        >
+          Düzenle
+        </button>
+      )}
     </div>
   );
 }
 
 const StudyProgramDocument = forwardRef<HTMLDivElement, StudyProgramDocumentProps>(
-  function StudyProgramDocument({ program }, ref) {
+  function StudyProgramDocument({ program, onEditBlock }, ref) {
     const headerLogoUrl = '/img/beyaz-logo.png';
     const footerLogoUrl = '/img/3k-logo.png';
     const currentYear = new Date().getFullYear();
@@ -673,7 +701,7 @@ const StudyProgramDocument = forwardRef<HTMLDivElement, StudyProgramDocumentProp
                 }}
               >
                 {ordered.length > 0 ? (
-                  ordered.map((b) => <WorkRow key={b.id} block={b} />)
+                  ordered.map((b) => <WorkRow key={b.id} block={b} onEdit={onEditBlock} />)
                 ) : (
                   <div
                     style={{

@@ -63,7 +63,7 @@ export default function BlockEditModal({ block, onSave, onClose }: Props) {
         position: 'fixed',
         inset: 0,
         backgroundColor: 'rgba(15, 23, 42, 0.45)',
-        zIndex: 1100,
+        zIndex: 4000,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',

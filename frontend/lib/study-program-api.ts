@@ -3,7 +3,8 @@
  * Çalışma Programı modülü için API fonksiyonları
  */
 
-import { apiGet, apiPost, apiPostForm, apiFetch, apiDelete, ApiResponse } from './api';
+import { apiGet, apiPost, apiPostForm, apiFetch, apiDelete, ApiResponse, getContextHeaders, resolveApiUrl } from './api';
+import { downloadPdfBlob } from './download-file';
 
 // ═══════════════════════════════════════
 // TYPES
@@ -280,6 +281,30 @@ export async function fetchPrograms(params?: {
  */
 export async function fetchProgram(id: number): Promise<ApiResponse<WeeklyProgram>> {
   return apiGet(`${BASE}/programs/${id}/`);
+}
+
+/** Sunucunun ürettiği PDF dosyasını indirir. Yazdırma penceresi açılmaz. */
+export async function downloadStudyProgramPdf(programId: number, fallbackName: string): Promise<void> {
+  const res = await fetch(resolveApiUrl(`${BASE}/programs/${programId}/plan-pdf/?download=1`), {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  if (!res.ok) {
+    let message = 'PDF indirilemedi';
+    try {
+      const data = await res.json();
+      if (data?.error) message = String(data.error);
+    } catch {
+      /* yanıt dosya değil */
+    }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+  const plain = /filename="([^"]+)"/.exec(cd);
+  const filename = star?.[1] ? decodeURIComponent(star[1]) : (plain?.[1] || fallbackName);
+  await downloadPdfBlob(blob, filename);
 }
 
 /**

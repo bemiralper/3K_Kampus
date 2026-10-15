@@ -115,7 +115,31 @@ export default function DayBlockCard({
 
       <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
         {onEdit && !block.is_completed && (
-          <IconBtn title="Düzenle" onClick={() => onEdit(block)}>✎</IconBtn>
+          <button
+            type="button"
+            draggable={false}
+            onDragStart={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+            }}
+            onClick={(e) => {
+              e.stopPropagation();
+              onEdit(block);
+            }}
+            style={{
+              height: 24,
+              padding: '0 8px',
+              borderRadius: 6,
+              border: '1px solid #bfdbfe',
+              background: '#eff6ff',
+              color: '#1d4ed8',
+              fontSize: 11,
+              fontWeight: 700,
+              cursor: 'pointer',
+            }}
+          >
+            Düzenle
+          </button>
         )}
         {onSplit && block.question_count > 1 && !block.is_completed && (
           <IconBtn title="Böl" onClick={() => onSplit(block)}>✂</IconBtn>

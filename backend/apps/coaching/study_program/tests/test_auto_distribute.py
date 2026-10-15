@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta
 from django.contrib.auth import get_user_model
 from django.test import TestCase
 from django.utils import timezone
+from rest_framework.test import APIClient
 
 from apps.coaching.assignment_manual.models import (
     AssignmentLesson,
@@ -153,3 +154,29 @@ class AutoDistributeEqualTest(TestCase):
         self.assertEqual(sorted(b.question_count for b in blocks), [20, 20, 50, 50])
         topics = {b.topic_name for b in blocks}
         self.assertEqual(topics, {'Konu A', 'Konu B'})
+
+    def test_reset_response_does_not_keep_deleted_blocks(self):
+        day = self.program.days.order_by('day_date').first()
+        ProgramBlock.objects.create(
+            day=day,
+            source_assignment=self.assignment,
+            topic_name='Doğruda Açı',
+            title='Doğruda Açı',
+            question_count=7,
+        )
+        client = APIClient()
+        client.force_authenticate(user=self.coach)
+        client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
+        response = client.post(f'/api/coaching/study-program/programs/{self.program.id}/reset/')
+        self.assertEqual(response.status_code, 200, response.content)
+        payload = response.json()
+        self.assertEqual(payload['deleted'], 1)
+        self.assertEqual(payload['program']['total_block_count'], 0)
+        returned_blocks = [
+            block
+            for day_row in payload['program']['days']
+            for block in day_row['blocks']
+        ]
+        self.assertEqual(returned_blocks, [])
+        self.assertFalse(ProgramBlock.objects.filter(day__program=self.program).exists())

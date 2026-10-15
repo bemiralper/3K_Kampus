@@ -1,7 +1,8 @@
 'use client';
 
 import React, { useRef, useState, useCallback, useEffect } from 'react';
-import type { WeeklyProgram } from '@/lib/study-program-api';
+import type { ProgramBlock, WeeklyProgram } from '@/lib/study-program-api';
+import { downloadStudyProgramPdf } from '@/lib/study-program-api';
 import { useVectorPrint } from '@/lib/useVectorPrint';
 import StudyProgramDocument from './StudyProgramDocument';
 import StudyProgramNotifySendModal from './StudyProgramNotifySendModal';
@@ -9,13 +10,24 @@ import StudyProgramNotifySendModal from './StudyProgramNotifySendModal';
 interface StudyProgramPrintPreviewProps {
   program: WeeklyProgram;
   onClose: () => void;
+  onEditBlock: (block: ProgramBlock) => void;
+  onSaveNote: (note: string) => Promise<boolean>;
 }
 
-export default function StudyProgramPrintPreview({ program, onClose }: StudyProgramPrintPreviewProps) {
+export default function StudyProgramPrintPreview({
+  program,
+  onClose,
+  onEditBlock,
+  onSaveNote,
+}: StudyProgramPrintPreviewProps) {
   const printRef = useRef<HTMLDivElement>(null);
-  const [pdfBusy, setPdfBusy] = useState(false);
+  const [printBusy, setPrintBusy] = useState(false);
+  const [downloadBusy, setDownloadBusy] = useState(false);
+  const [note, setNote] = useState(program.coach_note || '');
+  const [noteSaving, setNoteSaving] = useState(false);
   const [showNotify, setShowNotify] = useState(false);
   const [sendToast, setSendToast] = useState<string | null>(null);
+  const noteDirty = note !== (program.coach_note || '');
 
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
@@ -32,14 +44,55 @@ export default function StudyProgramPrintPreview({ program, onClose }: StudyProg
     externalRef: printRef as React.RefObject<HTMLDivElement>,
   });
 
-  const handlePDF = useCallback(async () => {
-    setPdfBusy(true);
+  useEffect(() => {
+    setNote(program.coach_note || '');
+  }, [program.id]);
+
+  const savedNote = program.coach_note || '';
+  const previewProgram = note === savedNote ? program : { ...program, coach_note: note };
+
+  const persistNote = useCallback(async () => {
+    if (note === savedNote) return true;
+    return onSaveNote(note);
+  }, [note, onSaveNote, savedNote]);
+
+  const handlePrint = useCallback(async () => {
+    setPrintBusy(true);
     try {
       await printVector();
     } finally {
-      setPdfBusy(false);
+      setPrintBusy(false);
     }
   }, [printVector]);
+
+  const handleDownload = useCallback(async () => {
+    setDownloadBusy(true);
+    setSendToast(null);
+    try {
+      const saved = await persistNote();
+      if (!saved) throw new Error('Koç notu kaydedilemedi');
+      const safeName = (program.student_name || 'ogrenci').replace(/\s+/g, '-');
+      await downloadStudyProgramPdf(program.id, `calisma-programi-${safeName}.pdf`);
+      setSendToast('PDF indirildi');
+      setTimeout(() => setSendToast(null), 3000);
+    } catch (err) {
+      setSendToast(err instanceof Error ? err.message : 'PDF indirilemedi');
+      setTimeout(() => setSendToast(null), 4000);
+    } finally {
+      setDownloadBusy(false);
+    }
+  }, [persistNote, program.id, program.student_name]);
+
+  const handleSave = useCallback(async () => {
+    setNoteSaving(true);
+    try {
+      const ok = await onSaveNote(note);
+      setSendToast(ok ? (noteDirty ? 'Program kaydedildi' : 'Program zaten kayıtlı') : 'Kaydedilemedi');
+      setTimeout(() => setSendToast(null), 3000);
+    } finally {
+      setNoteSaving(false);
+    }
+  }, [note, noteDirty, onSaveNote]);
 
   return (
     <div
@@ -80,52 +133,80 @@ export default function StudyProgramPrintPreview({ program, onClose }: StudyProg
           }}
         >
           <h3 style={{ fontSize: 15, fontWeight: 600, margin: 0, color: '#172b4c' }}>
-            Yazdırma Önizleme
+            Program önizleme
           </h3>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               type="button"
-              onClick={handlePDF}
-              disabled={pdfBusy}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 6,
-                padding: '8px 18px',
-                borderRadius: 8,
-                border: 'none',
-                background: pdfBusy ? '#93c5fd' : '#0061a6',
-                color: '#fff',
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: pdfBusy ? 'not-allowed' : 'pointer',
-              }}
-            >
-              {pdfBusy ? '⏳ Hazırlanıyor...' : '🖨️ PDF Önizle'}
-            </button>
-            <button
-              type="button"
-              onClick={handlePDF}
-              disabled={pdfBusy}
+              onClick={handleSave}
+              disabled={noteSaving}
               style={{
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
                 padding: '8px 16px',
                 borderRadius: 8,
-                border: '1px solid #0061a6',
-                background: '#fff',
-                color: '#0061a6',
+                border: 'none',
+                background: noteSaving ? '#94a3b8' : '#0f172a',
+                color: '#fff',
                 fontSize: 12,
                 fontWeight: 600,
-                cursor: pdfBusy ? 'not-allowed' : 'pointer',
+                cursor: noteSaving ? 'not-allowed' : 'pointer',
               }}
             >
-              ⬇️ İndir
+              {noteSaving ? 'Kaydediliyor…' : 'Kaydet'}
             </button>
             <button
               type="button"
-              onClick={() => setShowNotify(true)}
+              onClick={handlePrint}
+              disabled={printBusy}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                borderRadius: 8,
+                border: '1px solid #cbd5e1',
+                background: '#fff',
+                color: '#334155',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: printBusy ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {printBusy ? 'Hazırlanıyor…' : '🖨️ Yazdır'}
+            </button>
+            <button
+              type="button"
+              onClick={handleDownload}
+              disabled={downloadBusy}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                padding: '8px 16px',
+                borderRadius: 8,
+                border: 'none',
+                background: downloadBusy ? '#93c5fd' : '#0061a6',
+                color: '#fff',
+                fontSize: 12,
+                fontWeight: 600,
+                cursor: downloadBusy ? 'not-allowed' : 'pointer',
+              }}
+            >
+              {downloadBusy ? 'İndiriliyor…' : 'İndir'}
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const saved = await persistNote();
+                if (!saved) {
+                  setSendToast('Koç notu kaydedilemedi');
+                  setTimeout(() => setSendToast(null), 3000);
+                  return;
+                }
+                setShowNotify(true);
+              }}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -161,13 +242,42 @@ export default function StudyProgramPrintPreview({ program, onClose }: StudyProg
           </div>
         </div>
 
-        <StudyProgramDocument ref={printRef} program={program} />
+        <div style={{
+          display: 'flex',
+          gap: 8,
+          alignItems: 'center',
+          padding: '10px 24px',
+          borderBottom: '1px solid #e4e9f2',
+          background: '#f8fafc',
+        }}>
+          <label htmlFor="preview-week-note" style={{ fontSize: 12, fontWeight: 700, color: '#334155', flexShrink: 0 }}>
+            Koç notu
+          </label>
+          <input
+            id="preview-week-note"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="PDF ve WhatsApp belgesinde görünen haftalık not"
+            style={{
+              flex: 1,
+              minWidth: 0,
+              height: 34,
+              padding: '0 10px',
+              borderRadius: 8,
+              border: '1px solid #e2e8f0',
+              fontSize: 13,
+            }}
+          />
+        </div>
+
+        <StudyProgramDocument ref={printRef} program={previewProgram} onEditBlock={onEditBlock} />
       </div>
 
       {sendToast && (
         <div style={{
           position: 'fixed', bottom: 24, right: 24, zIndex: 4000,
-          background: '#059669', color: '#fff', padding: '10px 16px',
+          background: /indirilemedi|Kaydedilemedi/i.test(sendToast) ? '#b45309' : '#059669',
+          color: '#fff', padding: '10px 16px',
           borderRadius: 8, fontSize: 13, fontWeight: 600,
         }}>
           {sendToast}

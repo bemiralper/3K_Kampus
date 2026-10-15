@@ -208,13 +208,11 @@ export function buildVectorPrintHtml(
   } = options;
 
   let innerHtml: string;
-  if (skipExpand) {
-    innerHtml = el.innerHTML;
-  } else {
-    const restoreScroll = expandScrollAreas(el, scrollSelector);
-    innerHtml = el.innerHTML;
-    restoreScroll();
-  }
+  const restoreScroll = skipExpand ? null : expandScrollAreas(el, scrollSelector);
+  const clone = el.cloneNode(true) as HTMLElement;
+  restoreScroll?.();
+  clone.querySelectorAll("[data-pdf-hide]").forEach((node) => node.remove());
+  innerHtml = clone.innerHTML;
 
   if (!innerHtml.trim()) {
     throw new Error("Rapor içeriği boş — sayfayı yenileyip tekrar deneyin.");

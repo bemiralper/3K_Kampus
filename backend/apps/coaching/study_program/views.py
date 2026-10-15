@@ -2,6 +2,7 @@
 Çalışma Programı - Views (DRF ViewSets)
 """
 import json
+from urllib.parse import quote
 
 from django.core.exceptions import ValidationError
 from django.http import HttpResponse
@@ -212,13 +213,21 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
     def reset_program(self, request, pk=None):
         """Programdaki tüm blokları sil — en başa dön."""
         program = self.get_object()
-        count = ProgramBlock.objects.filter(day__program=program).delete()[0]
+        program_id = program.pk
+        block_qs = ProgramBlock.objects.filter(day__program_id=program_id)
+        deleted = block_qs.count()
+        block_qs.delete()
+        # get_queryset günleri bloklarla birlikte prefetch eder. Silinen kartlar
+        # o önbellekte kalırsa yanıt eski blokları döndürür; ekran ikinci
+        # sıfırlamaya kadar dolu görünür.
+        program = WeeklyProgram.objects.get(pk=program_id)
         for day in program.days.all():
             day.refresh_stats()
         program.refresh_stats()
+        program = self.get_queryset().get(pk=program_id)
         detail_ser = WeeklyProgramDetailSerializer(program, context={'request': request})
         return Response({
-            'deleted': count,
+            'deleted': deleted,
             'program': detail_ser.data,
         })
 
@@ -278,7 +287,12 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
             return Response({'success': False, 'error': f'PDF oluşturulamadı: {exc}'}, status=400)
 
         response = HttpResponse(pdf_bytes, content_type='application/pdf')
-        response['Content-Disposition'] = f'inline; filename="{filename}"'
+        disposition = 'attachment' if request.query_params.get('download') == '1' else 'inline'
+        ascii_name = filename.encode('ascii', 'ignore').decode() or 'calisma-programi.pdf'
+        quoted = quote(filename)
+        response['Content-Disposition'] = (
+            f'{disposition}; filename="{ascii_name}"; filename*=UTF-8\'\'{quoted}'
+        )
         return response
 
     # ── GET /programs/{id}/notify-preview/ ──

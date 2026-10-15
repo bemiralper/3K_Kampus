@@ -473,6 +473,17 @@ export default function StudyProgramEditor({
 
   useEffect(() => { loadHomeworkPool(); }, [loadHomeworkPool]);
 
+  // Havuz panele geç gelince seçim boş kalmasın; Dağıt o yüzden kilitli duruyordu.
+  useEffect(() => {
+    if (!distributeOpen) return;
+    if (currentHomeworks.length === 0) {
+      if (distributeHomeworkId !== null) setDistributeHomeworkId(null);
+      return;
+    }
+    const stillThere = currentHomeworks.some((hw) => hw.id === distributeHomeworkId);
+    if (!stillThere) setDistributeHomeworkId(currentHomeworks[0].id);
+  }, [distributeOpen, currentHomeworks, distributeHomeworkId]);
+
   /* ═══════════════════════════════════════════════════════
      AKSİYONLAR
      ═══════════════════════════════════════════════════════ */
@@ -1413,63 +1424,74 @@ export default function StudyProgramEditor({
           )}
 
           {distributeOpen && (
-            <div style={{
-              marginBottom: 10, padding: '12px 14px', borderRadius: 12,
-              background: '#fff', border: '1px solid #e2e8f0',
-            }}>
-              <div style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 4 }}>
-                Her konuyu 7 günün her birine böl
-              </div>
-              <div style={{ fontSize: 12, color: '#64748b', marginBottom: 10 }}>
-                47 soruluk bir konu yedi güne kendi içinde bölünür. Haftanın toplamından gün doldurulmaz. Kontrol günü de pay alır.
-              </div>
-              {currentHomeworks.length === 0 ? (
-                <div style={{ fontSize: 13, color: '#b45309' }}>Bu haftayla kesişen ödev yok.</div>
-              ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 10 }}>
-                  {currentHomeworks.map((hw) => (
-                    <label key={hw.id} style={{ display: 'flex', gap: 8, alignItems: 'center', fontSize: 13, color: '#0f172a' }}>
-                      <input
-                        type="radio"
-                        name="distribute-hw"
-                        checked={distributeHomeworkId === hw.id}
-                        onChange={() => setDistributeHomeworkId(hw.id)}
-                      />
-                      {stripCompletionTitleSuffix(hw.title) || 'Ödev'}
-                    </label>
-                  ))}
+            <section className="sps-distribute" aria-label="Ödev dağıtımı">
+              <div className="sps-distribute-head">
+                <div>
+                  <h3>Ödevleri 7 güne böl</h3>
+                  <p>
+                    Her konu kendi soru veya test sayısına göre günlere yazılır.
+                    47 soru yedi güne bölünür; kontrol günü de pay alır.
+                  </p>
                 </div>
-              )}
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 10 }}>
                 <button
                   type="button"
-                  className={`sps-btn${distributeMetric === 'question' ? ' sps-btn-dark' : ''}`}
-                  onClick={() => setDistributeMetric('question')}
+                  className="sps-distribute-close"
+                  onClick={() => setDistributeOpen(false)}
                 >
-                  Soru sayısına göre
-                </button>
-                <button
-                  type="button"
-                  className={`sps-btn${distributeMetric === 'test' ? ' sps-btn-dark' : ''}`}
-                  onClick={() => setDistributeMetric('test')}
-                >
-                  Test sayısına göre
+                  Kapat
                 </button>
               </div>
-              <div style={{ display: 'flex', gap: 8 }}>
+              <div className="sps-distribute-body">
+                {currentHomeworks.length === 0 ? (
+                  <div className="sps-distribute-empty">
+                    Bu haftanın ödevi takvime yazılmış. Yeni bir ödev bu aralığa denk gelince burada seçilir.
+                  </div>
+                ) : (
+                  <div className="sps-hw-picks" role="radiogroup" aria-label="Dağıtılacak ödev">
+                    {currentHomeworks.map((hw) => {
+                      const selected = distributeHomeworkId === hw.id;
+                      const title = stripCompletionTitleSuffix(hw.title) || 'Ödev';
+                      return (
+                        <button
+                          key={hw.id}
+                          type="button"
+                          role="radio"
+                          aria-checked={selected}
+                          className={`sps-hw-pick${selected ? ' is-on' : ''}`}
+                          onClick={() => setDistributeHomeworkId(hw.id)}
+                        >
+                          <span>{title}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="sps-metric" role="group" aria-label="Dağıtım ölçüsü">
+                  <button
+                    type="button"
+                    className={distributeMetric === 'question' ? 'is-on' : ''}
+                    onClick={() => setDistributeMetric('question')}
+                  >
+                    Soru sayısı
+                  </button>
+                  <button
+                    type="button"
+                    className={distributeMetric === 'test' ? 'is-on' : ''}
+                    onClick={() => setDistributeMetric('test')}
+                  >
+                    Test sayısı
+                  </button>
+                </div>
                 <button
                   type="button"
-                  className="sps-btn sps-btn-primary"
+                  className="sps-btn sps-btn-primary sps-distribute-go"
                   disabled={distributeSaving || !distributeHomeworkId}
                   onClick={() => { void handleConfirmDistribute(); }}
                 >
                   {distributeSaving ? 'Dağıtılıyor…' : 'Dağıt'}
                 </button>
-                <button type="button" className="sps-btn" onClick={() => setDistributeOpen(false)}>
-                  Vazgeç
-                </button>
               </div>
-            </div>
+            </section>
           )}
 
           {/* Haftalık koç notu — tek satır kompakt bar */}
@@ -1877,6 +1899,17 @@ export default function StudyProgramEditor({
         <StudyProgramPrintPreview
           program={program}
           onClose={() => setShowPrintPreview(false)}
+          onEditBlock={(block) => setEditingBlock(block)}
+          onSaveNote={async (nextNote) => {
+            if (nextNote === (program.coach_note || '')) return true;
+            const res = await updateProgram(program.id, { coach_note: nextNote });
+            if (res.success && res.data) {
+              setProgram(res.data);
+              setWeekCoachNote(res.data.coach_note || '');
+              return true;
+            }
+            return false;
+          }}
         />
       )}
 
