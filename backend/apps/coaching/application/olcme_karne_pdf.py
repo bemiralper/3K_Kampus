@@ -1061,6 +1061,7 @@ def _ranking_table(ctx: _Ctx, data: dict):
             right_body.append([
                 Paragraph(label, name),
                 Paragraph(_fmt(info.get('ayt_net'), 2), td),
+                Paragraph(_rank_num(info.get('net_kurum_ici_sira')), td),
                 Paragraph(_fmt(info.get('puan'), 2), td),
                 Paragraph(_rank_num(info.get('kurum_ici_sira')), td),
                 Paragraph(_rank_num(info.get('sinif_ici_sira')) if has_class else '—', td),
@@ -1070,7 +1071,7 @@ def _ranking_table(ctx: _Ctx, data: dict):
 
         gap = 8
         left_mins = [38, 46, 34, 32, 52]
-        right_mins = [24, 38, 46, 34, 32, 54]
+        right_mins = [22, 32, 28, 40, 32, 28, 46]
         share = ctx.page_w - gap
         left_w = share * sum(left_mins) / (sum(left_mins) + sum(right_mins))
         right_w = share - left_w
@@ -1085,7 +1086,7 @@ def _ranking_table(ctx: _Ctx, data: dict):
             widths=_fit(left_mins, left_w),
         )
         right = _rank_panel(
-            ctx, 'AYT', ['Tür', 'Net', 'Puan', 'Kurum', 'Sınıf', 'Türkiye'],
+            ctx, 'AYT', ['Tür', 'Net', 'Net sıra', 'Puan', 'Puan sıra', 'Sınıf', 'Türkiye'],
             right_body, right_foot, right_w, highlight=highlight,
             widths=_fit(right_mins, right_w),
         )
@@ -1167,7 +1168,8 @@ def _performance_table(ctx: _Ctx, data: dict):
             seen_tyt = True
             group_rows.append(len(rows))
             empty = [Paragraph('', td)] * 10
-            rows.append([Paragraph('TYT (bağlı sınav)', ctx.s('tdName')), *empty])
+            tyt_title = (data.get('linked_tyt_exam_name') or '').strip() or 'TYT'
+            rows.append([Paragraph(tyt_title, ctx.s('tdName')), *empty])
 
         if is_main:
             main_rows.append(len(rows))

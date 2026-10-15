@@ -323,6 +323,7 @@ export default function StudentDetailModal({
         avg: detail.puan_turleri_avgs?.[pt] ?? detail.kurum_avg_puan ?? 0,
         tahmini: detail.puan_turleri![pt].tahmini_siralama ?? null,
         kurumSira: detail.puan_turleri![pt].kurum_ici_sira ?? null,
+        netSira: detail.puan_turleri![pt].net_kurum_ici_sira ?? null,
         sinifSira: detail.puan_turleri![pt].sinif_ici_sira ?? null,
       }));
     }
@@ -334,6 +335,7 @@ export default function StudentDetailModal({
       avg: detail.kurum_avg_puan ?? 0,
       tahmini: detail.tahmini_siralama,
       kurumSira: detail.kurum_ici_sira,
+      netSira: null as number | null,
       sinifSira: null as number | null,
     }];
   })();
@@ -462,7 +464,11 @@ export default function StudentDetailModal({
                           <tr>
                             <th style={{ textAlign: 'left' }}>Tür</th>
                             <th>Net</th>
-                            <th>Puan</th><th>Kurum</th><th>Sınıf</th><th>Türkiye</th>
+                            <th title="Kurum içinde bu puan türünün AYT netine göre sıra">Net sıra</th>
+                            <th>Puan</th>
+                            <th title="Kurum içinde bu puan türünün puanına göre sıra">Puan sıra</th>
+                            <th>Sınıf</th>
+                            <th>Türkiye</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -470,6 +476,7 @@ export default function StudentDetailModal({
                             <tr key={row.key} className={row.key === alanPt ? s.karneAlanRow : undefined}>
                               <td className={s.karneLeft}>{row.label}</td>
                               <td>{row.net != null ? fmt(row.net, 2) : '—'}</td>
+                              <td>{row.netSira ? fmtInt(row.netSira) : '—'}</td>
                               <td>{fmt(row.puan, 2)}</td>
                               <td>{row.kurumSira ? fmtInt(row.kurumSira) : '—'}</td>
                               <td>{hasClass && row.sinifSira ? fmtInt(row.sinifSira) : '—'}</td>
@@ -563,7 +570,7 @@ export default function StudentDetailModal({
                           return (
                             <Fragment key={`tyt-${sd.section_id}`}>
                               <tr className={s.karneMainRow}>
-                                <td className={s.karneLeft} colSpan={11}>TYT (bağlı sınav)</td>
+                                <td className={s.karneLeft} colSpan={11}>{detail.linked_tyt_exam_name || 'TYT'}</td>
                               </tr>
                               {row}
                             </Fragment>

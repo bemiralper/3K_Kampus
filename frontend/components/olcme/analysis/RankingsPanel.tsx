@@ -36,6 +36,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
   const [showSubSections, setShowSubSections] = useState(true);
   const [showPdfModal, setShowPdfModal] = useState(false);
   const [alanViewFilter, setAlanViewFilter] = useState<string | null>(null);
+  const [listOrder, setListOrder] = useState<'puan' | 'net'>('puan');
   const [exporting, setExporting] = useState<'xlsx' | 'csv' | null>(null);
 
   const handleTableExport = async (format: 'xlsx' | 'csv') => {
@@ -53,29 +54,26 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
 
   if (!rankings.length) return <div className={s.analysisEmpty}>Sıralama verisi yok.</div>;
 
-  // Alan bazlı view filtresi
-  // Alan filtresi seçilince o alana ait öğrencileri filtrele VE ilgili PT puanına göre sırala
+  const orderValue = (r: RankingItem) => {
+    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : null;
+    if (listOrder === 'net') {
+      if (ptKey) return r.puan_turleri?.[ptKey]?.ayt_net ?? r.alan_net ?? r.toplam_net;
+      return r.alan_net ?? r.toplam_net;
+    }
+    if (ptKey) return r.puan_turleri?.[ptKey]?.puan ?? r.puan;
+    if (examType === 'YKS_AYT') return r.puan_turleri?.SAY?.puan ?? r.puan;
+    return r.puan;
+  };
+
+  // Alan filtresi o alandaki öğrencileri bırakır. Sıra, seçilen ölçüye göre 1'den yazılır.
   const displayRankings = (() => {
-    let list = alanViewFilter
+    const list = alanViewFilter
       ? rankings.filter(r => r.alan === alanViewFilter)
       : [...rankings];
-
-    // Alan filtresi aktifken ilgili PT puanına göre sırala
-    if (alanViewFilter) {
-      const ptKey = ALAN_TO_PT[alanViewFilter]; // SAYISAL→SAY, ESIT_AGIRLIK→EA, SOZEL→SOZ
-      if (ptKey) {
-        list.sort((a, b) => {
-          const pa = a.puan_turleri?.[ptKey]?.puan ?? a.puan;
-          const pb = b.puan_turleri?.[ptKey]?.puan ?? b.puan;
-          return pb - pa;
-        });
-      }
-    }
-
-    // Sıra numarasını yeniden ata (alan filtresi aktifken 1'den başlar)
+    list.sort((a, b) => orderValue(b) - orderValue(a));
     return list.map((r, idx) => ({
       ...r,
-      _displaySira: alanViewFilter ? idx + 1 : r.kurum_ici_sira,
+      _displaySira: idx + 1,
     }));
   })();
 
@@ -179,6 +177,21 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
       <div className={s.analysisPanelHeader}>
         <h3 className={s.analysisPanelTitle}>Sıralama ve Yüzdelik Dilim</h3>
         <div className={s.analysisToolbar}>
+          <div className={s.analysisField}>
+            <label style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>Sırala:</label>
+            <select
+              className={s.analysisSelect}
+              value={listOrder}
+              onChange={e => setListOrder(e.target.value === 'net' ? 'net' : 'puan')}
+              style={{ fontSize: 11 }}
+              title={examType === 'YKS_AYT'
+                ? 'Alan seçilmezse puan sıralaması sayısal puana, net sıralaması öğrencinin kendi alan netine göredir. Alan seçilince o puan türü kullanılır.'
+                : 'Listeyi puana veya nete göre dizer.'}
+            >
+              <option value="puan">Puan sıralı</option>
+              <option value="net">Net sıralı</option>
+            </select>
+          </div>
           {/* Alan Filtresi */}
           <div className={s.analysisField}>
             <label style={{ fontSize: 11, color: '#64748b', whiteSpace: 'nowrap' }}>Alan:</label>
@@ -446,17 +459,23 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                 </td>
                 <td style={{ textAlign: 'center', fontSize: 11 }}>
                   {(() => {
-                    // Alan filtresi aktifse o alana ait tahmini sıralamayı göster
-                    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : (examType === 'YKS_AYT' ? 'SAY' : null);
+                    const ptKey = alanViewFilter
+                      ? ALAN_TO_PT[alanViewFilter]
+                      : (examType === 'YKS_AYT' ? (ALAN_TO_PT[r.alan || ''] || 'SAY') : null);
                     const sira = ptKey && r.puan_turleri?.[ptKey]?.tahmini_siralama
                       ? r.puan_turleri[ptKey].tahmini_siralama
                       : r.tahmini_siralama;
-                    return sira ? sira.toLocaleString('tr-TR') : '—';
+                    const tag = ptKey === 'SOZ' ? 'SÖZ' : ptKey;
+                    return sira
+                      ? <>{sira.toLocaleString('tr-TR')}{tag && !alanViewFilter ? <span style={{ color: '#94a3b8' }}> {tag}</span> : null}</>
+                      : '—';
                   })()}
                 </td>
                 <td style={{ textAlign: 'center' }}>
                   {(() => {
-                    const ptKey = alanViewFilter ? ALAN_TO_PT[alanViewFilter] : (examType === 'YKS_AYT' ? 'SAY' : null);
+                    const ptKey = alanViewFilter
+                      ? ALAN_TO_PT[alanViewFilter]
+                      : (examType === 'YKS_AYT' ? (ALAN_TO_PT[r.alan || ''] || 'SAY') : null);
                     const yd = ptKey && r.puan_turleri?.[ptKey]?.yuzdelik_dilim != null
                       ? r.puan_turleri[ptKey].yuzdelik_dilim
                       : r.yuzdelik_dilim;

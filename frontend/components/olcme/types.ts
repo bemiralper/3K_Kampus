@@ -795,11 +795,12 @@ export interface StudentDetailResponse {
   puan: number;
   ham_puan: number;
   puan_turleri: {
-    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
-    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
-    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; sinif_ici_sira?: number };
+    SAY: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; net_kurum_ici_sira?: number; sinif_ici_sira?: number };
+    EA: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; net_kurum_ici_sira?: number; sinif_ici_sira?: number };
+    SOZ: { puan: number; ham_puan: number; ayt_net: number; tyt_net: number; tahmini_siralama?: number | null; yuzdelik_dilim?: number | null; kurum_ici_sira?: number; net_kurum_ici_sira?: number; sinif_ici_sira?: number };
   } | null;
   alan_puan_turu?: 'SAY' | 'EA' | 'SOZ' | null;
+  linked_tyt_exam_name?: string | null;
   tyt_siralama?: {
     net?: number | null;
     puan: number;

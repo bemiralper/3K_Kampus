@@ -1479,7 +1479,9 @@ def build_exam_payload_context(exam, ranking_year) -> dict:
     blocks = blocks_for_answers(exam, all_answers, ranking_year)
     kurum_scores: list = []
     pt_score_lists: dict[str, list] = {'SAY': [], 'EA': [], 'SOZ': []}
+    pt_net_lists: dict[str, list] = {'SAY': [], 'EA': [], 'SOZ': []}
     answer_pt_puan: dict[int, dict] = {}
+    answer_pt_net: dict[int, dict] = {}
     for other in all_answers:
         block = blocks.get(other.id) or {}
         if is_ayt:
@@ -1488,8 +1490,12 @@ def build_exam_payload_context(exam, ranking_year) -> dict:
             answer_pt_puan[other.id] = {
                 pt: float((pts.get(pt) or {}).get('puan') or 0) for pt in pt_score_lists
             }
+            answer_pt_net[other.id] = {
+                pt: round(float((pts.get(pt) or {}).get('ayt_net') or 0), 2) for pt in pt_net_lists
+            }
             for pt in pt_score_lists:
                 pt_score_lists[pt].append(answer_pt_puan[other.id][pt])
+                pt_net_lists[pt].append(answer_pt_net[other.id][pt])
         else:
             kurum_scores.append(float(block.get('puan') or 0))
 
@@ -1508,7 +1514,9 @@ def build_exam_payload_context(exam, ranking_year) -> dict:
         'sinif_members': sinif_members,
         'kurum_scores': kurum_scores,
         'pt_score_lists': pt_score_lists,
+        'pt_net_lists': pt_net_lists,
         'answer_pt_puan': answer_pt_puan,
+        'answer_pt_net': answer_pt_net,
         'exam_sessions': exam_sessions,
         'participant_sessions': _participant_sessions_by_student(exam, exam_sessions),
         'difficulty_index': build_difficulty_index(all_answers, exam),
@@ -1698,10 +1706,15 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
             )
             sorted_pt = sorted(pt_score_lists.get(pt) or [], reverse=True)
             my_pt = d['puan']
+            sorted_nets = sorted(ctx.get('pt_net_lists', {}).get(pt) or [], reverse=True)
+            my_net = round(float(d.get('ayt_net') or 0), 2)
             puan_turleri_detail[pt]['tahmini_siralama'] = pt_est.get('tahmini_siralama')
             puan_turleri_detail[pt]['yuzdelik_dilim'] = pt_est.get('yuzdelik_dilim')
             puan_turleri_detail[pt]['kurum_ici_sira'] = (
                 sorted_pt.index(my_pt) + 1 if my_pt in sorted_pt else 0
+            )
+            puan_turleri_detail[pt]['net_kurum_ici_sira'] = (
+                sorted_nets.index(my_net) + 1 if my_net in sorted_nets else 0
             )
         pt_map = ctx.get('answer_pt_puan') or {}
         classmates = []
@@ -1763,6 +1776,9 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'dogruluk_orani': dogruluk_orani,
         'toplam_bos_potansiyel': total_bos_potansiyel,
         'referans_yil': ranking_data.get('referans_yil', 2026),
+        'linked_tyt_exam_name': (
+            exam.linked_tyt_exam.name if getattr(exam, 'linked_tyt_exam_id', None) else ''
+        ),
         'exam_name': exam.name,
         'exam_type': exam.exam_type,
         'exam_type_label': _exam_type_short(exam.exam_type),
