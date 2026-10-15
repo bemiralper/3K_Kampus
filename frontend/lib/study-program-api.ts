@@ -216,6 +216,7 @@ export interface HomeworkPoolItem {
   topic_name: string;
   resource_name: string;
   question_count: number;
+  test_count?: number;
   assigned_date?: string | null;
   due_date: string | null;
   coach_name?: string | null;
@@ -318,9 +319,14 @@ export async function deleteProgram(id: number): Promise<ApiResponse<void>> {
 /**
  * Dengeli dağıt
  */
-export async function autoDistribute(programId: number, assignmentIds?: number[]): Promise<ApiResponse<{ distributed: number }>> {
+export async function autoDistribute(
+  programId: number,
+  assignmentIds?: number[],
+  metric: 'question' | 'test' = 'question',
+): Promise<ApiResponse<{ distributed: number; detail?: string; study_days?: number; per_day?: number[] }>> {
   return apiPost(`${BASE}/programs/${programId}/auto-distribute/`, {
     assignment_ids: assignmentIds || [],
+    metric,
   });
 }
 
@@ -461,7 +467,10 @@ export async function reorderBlocks(items: Array<{
 /**
  * Bloğu başka güne taşı
  */
-export async function moveBlock(blockId: number, dayId: number): Promise<ApiResponse<ProgramBlock>> {
+export async function moveBlock(
+  blockId: number,
+  dayId: number,
+): Promise<ApiResponse<{ merged: boolean; block: ProgramBlock }>> {
   return apiPost(`${BASE}/blocks/${blockId}/move/`, { day_id: dayId });
 }
 

@@ -92,7 +92,10 @@ export default function WeeklySummaryCard({ summary, loading }: Props) {
                     opacity: 0.8,
                   }} />
                   <span style={{ fontSize: '9px', color: '#6b7280' }}>
-                    {d.weekday.slice(0, 3)}
+                    {({
+                      Pazartesi: 'Pzt', Salı: 'Sal', Çarşamba: 'Çar', Perşembe: 'Per',
+                      Cuma: 'Cum', Cumartesi: 'Cts', Pazar: 'Paz',
+                    } as Record<string, string>)[d.weekday] || d.weekday}
                   </span>
                 </div>
               );

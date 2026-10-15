@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import html
-from datetime import timedelta
 
 from .models import WeeklyProgram
 
@@ -22,13 +21,10 @@ def build_study_program_html(program: WeeklyProgram) -> str:
     if program.coach_id:
         coach_name = program.coach.get_full_name() if program.coach else ''
 
-    study_end = program.week_end - timedelta(days=1) if program.week_end else program.week_end
-    if study_end and program.week_start and study_end < program.week_start:
-        study_end = program.week_start
-    range_label = f'{_fmt_date(program.week_start)} – {_fmt_date(study_end)}'
+    range_label = f'{_fmt_date(program.week_start)} – {_fmt_date(program.week_end)}'
 
     days = list(program.days.order_by('day_date').prefetch_related('blocks__lesson'))
-    study_days = [d for d in days if d.day_date != program.week_end]
+    study_days = days
 
     day_sections: list[str] = []
     for day in study_days:
@@ -62,10 +58,11 @@ def build_study_program_html(program: WeeklyProgram) -> str:
             '<div style="padding:8px;color:#94a3b8;font-size:11px">Dinlenme / serbest çalışma</div>'
         )
         wd = WEEKDAYS_TR[day.weekday] if 0 <= day.weekday < 7 else 'Gün'
+        control_mark = ' · Kontrol' if day.day_date == program.week_end else ''
         day_sections.append(
             f'<div style="margin-bottom:12px;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">'
             f'<div style="background:#0061a6;color:#fff;padding:8px 12px;font-weight:600;font-size:12px">'
-            f'{html.escape(wd)} · {_fmt_date(day.day_date)}'
+            f'{html.escape(wd)} · {_fmt_date(day.day_date)}{control_mark}'
             f'</div>'
             f'<div style="padding:8px">{body}{note_html}</div></div>'
         )

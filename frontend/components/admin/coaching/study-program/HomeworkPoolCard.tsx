@@ -2,12 +2,16 @@
 
 import React from 'react';
 import { type HomeworkPoolItem, PRIORITY_META } from '@/lib/study-program-api';
+import { splitSuggestion } from '@/components/coaching/study-program/programDateUtils';
 import { lessonAccent } from './blockDisplay';
 
 interface Props {
   item: HomeworkPoolItem;
   onDragStart: (e: React.DragEvent, item: HomeworkPoolItem) => void;
   onSplit?: (item: HomeworkPoolItem) => void;
+  /** Mobil/tablette seçili güne tek dokunuşla ekle */
+  onQuickAdd?: (item: HomeworkPoolItem) => void;
+  quickAddLabel?: string;
   /** Ders grubu altında gösteriliyorsa ders adını kartta tekrarlama */
   hideLessonName?: boolean;
 }
@@ -16,11 +20,14 @@ export default function HomeworkPoolCard({
   item,
   onDragStart,
   onSplit,
+  onQuickAdd,
+  quickAddLabel,
   hideLessonName = false,
 }: Props) {
   const accent = lessonAccent(item.lesson_name);
   const pri = PRIORITY_META[item.priority as keyof typeof PRIORITY_META];
   const topic = item.topic_name?.trim();
+  const hint = splitSuggestion(item.question_count || 0, item.test_count || 0);
 
   return (
     <div
@@ -113,39 +120,61 @@ export default function HomeworkPoolCard({
         >
           <span style={{ fontSize: 12, fontWeight: 700, color: '#334155' }}>
             {item.question_count || 0} soru
+            {(item.test_count || 0) > 0 ? ` · ${item.test_count} test` : ''}
           </span>
           {pri && (
             <span style={{ fontSize: 10, fontWeight: 600, color: pri.color }}>
               {pri.label}
             </span>
           )}
+          {hint && (
+            <span style={{ fontSize: 10, fontWeight: 700, color: '#c2410c' }}>
+              {hint}
+            </span>
+          )}
         </div>
       </div>
 
-      {onSplit && item.question_count > 1 && (
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            onSplit(item);
-          }}
-          title="Günlere böl"
-          style={{
-            flexShrink: 0,
-            padding: '6px 8px',
-            borderRadius: 8,
-            border: '1px solid #e2e8f0',
-            background: '#f8fafc',
-            color: '#475569',
-            fontSize: 11,
-            fontWeight: 600,
-            cursor: 'pointer',
-          }}
-        >
-          Böl
-        </button>
-      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flexShrink: 0 }}>
+        {onQuickAdd && (
+          <button
+            type="button"
+            className="sps-quick-add-btn"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onQuickAdd(item);
+            }}
+            title={quickAddLabel ? `${quickAddLabel} gününe ekle` : 'Seçili güne ekle'}
+          >
+            + {quickAddLabel || 'Ekle'}
+          </button>
+        )}
+        {onSplit && item.question_count > 1 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              e.preventDefault();
+              onSplit(item);
+            }}
+            title="Günlere böl"
+            style={{
+              flexShrink: 0,
+              padding: '6px 8px',
+              borderRadius: 8,
+              border: '1px solid #e2e8f0',
+              background: '#f8fafc',
+              color: '#475569',
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Böl
+          </button>
+        )}
+      </div>
     </div>
   );
 }

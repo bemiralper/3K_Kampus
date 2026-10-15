@@ -20,6 +20,34 @@ export function inclusiveDayCount(start: string, end: string): number {
   return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
 }
 
+/** Haftalık program: 6 çalışma günü + son gün kontrol */
+export const PROGRAM_DAY_COUNT = 7;
+export const STUDY_DAY_COUNT = 6;
+/** Tek güne rahat sığan soru. Üstü bölme önerisi üretir. */
+export const SOFT_DAY_QUESTION_CAP = 80;
+
+export function isSevenDayRange(start: string, end: string): boolean {
+  return Boolean(start && end && inclusiveDayCount(start, end) === PROGRAM_DAY_COUNT);
+}
+
+/** İlk çalışma gününden 7 günlük aralık (son gün kontrol). */
+export function rangeFromStart(start: string): { start: string; end: string } {
+  if (!start) return { start: '', end: '' };
+  return {
+    start,
+    end: formatDateLocal(addDays(new Date(`${start}T12:00:00`), PROGRAM_DAY_COUNT - 1)),
+  };
+}
+
+/** Kontrol gününden geriye 7 günlük aralık. */
+export function rangeFromEnd(end: string): { start: string; end: string } {
+  if (!end) return { start: '', end: '' };
+  return {
+    start: formatDateLocal(addDays(new Date(`${end}T12:00:00`), -(PROGRAM_DAY_COUNT - 1))),
+    end,
+  };
+}
+
 /**
  * ISO / datetime → date input (YYYY-MM-DD).
  * Ödev due_date çoğu zaman …T23:59 — takvim günü için YYYY-MM-DD öneki.
@@ -41,13 +69,11 @@ export type HomeworkDateSource = {
 /**
  * Ödevden program tarih aralığı.
  *
- * Kural:
- * - Ödev Pzt verildi → kontrol = haftaya Pzt (+7)
- * - Program ertesi gün başlar (Salı)
- * - Kontrol = aralığın son günü
+ * Hafta 7 gündür ve son gün kontroldür. Ödevin verildiği gün
+ * oturum günüdür; programa girmez.
  *
- * Örn. Verilme 4 Ağu Pzt, kontrol 11 Ağu Pzt
- *   → program 5 Ağu Salı … 11 Ağu Pzt (son gün kontrol)
+ * Örn. Verilme 15 Eki Per, kontrol 22 Eki Per
+ *   → program 16 Eki Cum … 22 Eki Per (6 çalışma + kontrol)
  */
 export function datesFromHomework(hw: HomeworkDateSource): { start: string; end: string } {
   const assigned = toDateInputValue(hw.assigned_date);
@@ -55,24 +81,37 @@ export function datesFromHomework(hw: HomeworkDateSource): { start: string; end:
 
   let end = due;
   if (!end && assigned) {
-    // Kontrol: verilmeden tam 1 hafta sonra (aynı hafta günü)
     end = formatDateLocal(addDays(new Date(`${assigned}T12:00:00`), 7));
   }
+  if (!end) return { start: '', end: '' };
+  return rangeFromEnd(end);
+}
 
-  let start = '';
-  if (assigned) {
-    // Program, ödev verilen günün ERTESİ başlar
-    start = formatDateLocal(addDays(new Date(`${assigned}T12:00:00`), 1));
-  } else if (end) {
-    // Sadece kontrol biliniyor → 6 gün önce ilk çalışma (kontrol hariç 6 gün + kontrol = 7)
-    start = formatDateLocal(addDays(new Date(`${end}T12:00:00`), -6));
+/** Ödev tarihleri bu program haftasıyla kesişiyor mu? */
+export function homeworkOverlapsWeek(
+  hw: HomeworkDateSource,
+  weekStart: string,
+  weekEnd: string,
+): boolean {
+  const assigned = toDateInputValue(hw.assigned_date);
+  const due = toDateInputValue(hw.due_date);
+  const start = assigned || due;
+  const end = due || assigned;
+  if (!start || !end || !weekStart || !weekEnd) return false;
+  return start <= weekEnd && end >= weekStart;
+}
+
+/** Büyük konuyu kaç güne bölmek gerektiğini söyler. */
+export function splitSuggestion(questionCount: number, testCount = 0): string | null {
+  if (questionCount > SOFT_DAY_QUESTION_CAP) {
+    const days = Math.min(PROGRAM_DAY_COUNT, Math.ceil(questionCount / SOFT_DAY_QUESTION_CAP));
+    const per = Math.ceil(questionCount / days);
+    return `${days} güne bölününce günde yaklaşık ${per} soru`;
   }
-
-  if (start && end && start > end) {
-    start = formatDateLocal(addDays(new Date(`${end}T12:00:00`), -6));
+  if (testCount > PROGRAM_DAY_COUNT) {
+    return `${testCount} test 7 güne eşit yayılır`;
   }
-
-  return { start, end };
+  return null;
 }
 
 /** Kontrol günü = aralığın son günü (week_end) */

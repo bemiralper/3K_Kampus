@@ -3,9 +3,10 @@
 import React, { useEffect, useState } from 'react';
 import {
   type ProgramDay, type ProgramBlock, type HomeworkPoolItem,
-  LOAD_LEVEL_META, WEEKDAY_FULL,
+  LOAD_LEVEL_META, WEEKDAY_LABELS,
 } from '@/lib/study-program-api';
 import DayBlockCard from './DayBlockCard';
+import { getStudyDrag, setStudyDrag } from '@/components/coaching/study-program/studyProgramDrag';
 
 interface Props {
   day: ProgramDay;
@@ -42,24 +43,35 @@ export default function DayColumn({
   const pct = day.completion_percent;
   const hasNote = Boolean(day.coach_note?.trim());
 
-  const handleDragOver = (e: React.DragEvent) => {
-    if (isControlDay) return;
+  const allowDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
     setDragOver(true);
   };
-  const handleDragLeave = () => setDragOver(false);
+  const handleDragLeave = (e: React.DragEvent) => {
+    const next = e.relatedTarget as Node | null;
+    if (next && e.currentTarget.contains(next)) return;
+    setDragOver(false);
+  };
+
+  const applyDrop = () => {
+    const payload = getStudyDrag();
+    setStudyDrag(null);
+    setDragOver(false);
+    setReorderDragIdx(null);
+    setReorderOverIdx(null);
+    if (!payload) return;
+    if (payload.kind === 'homework') {
+      onDropHomework(day.id, payload.item);
+      return;
+    }
+    if (payload.fromDayId === day.id) return;
+    onDropBlock(day.id, payload.block);
+  };
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
-    setDragOver(false);
-    if (isControlDay) return;
-    const hwData = e.dataTransfer.getData('homework-pool-item');
-    const blockData = e.dataTransfer.getData('program-block');
-    if (hwData) {
-      onDropHomework(day.id, JSON.parse(hwData));
-    } else if (blockData) {
-      onDropBlock(day.id, JSON.parse(blockData));
-    }
+    applyDrop();
   };
 
   const energyIcon = day.feedback?.energy_level === 'YUKSEK' ? '🟢'
@@ -67,7 +79,7 @@ export default function DayColumn({
 
   return (
     <div
-      onDragOver={handleDragOver}
+      onDragOver={allowDrop}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       style={{
@@ -91,7 +103,7 @@ export default function DayColumn({
       <div style={{ padding: '10px 10px 8px', borderBottom: '1px solid #e8eef5' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
           <span style={{ fontWeight: 800, fontSize: 13, color: isControlDay ? '#b45309' : '#0f172a' }}>
-            {WEEKDAY_FULL[day.weekday]?.slice(0, 3)}
+            {WEEKDAY_LABELS[day.weekday] || 'Gün'}
           </span>
           <span style={{ fontSize: 11, color: '#64748b', fontWeight: 500 }}>
             {new Date(`${day.day_date}T12:00:00`).toLocaleDateString('tr-TR', { day: 'numeric', month: 'short' })}
@@ -115,6 +127,11 @@ export default function DayColumn({
           <span style={{ color: load.color, fontWeight: 700 }}>%{pct}</span>
           <span>{day.total_block_count} içerik</span>
         </div>
+        {day.total_question_count > 80 && (
+          <div style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: '#c2410c' }}>
+            80 sorunun üstü — bölmeyi düşünün
+          </div>
+        )}
 
         {day.load_level === 'ASIRI' && (
           <div style={{
@@ -151,7 +168,7 @@ export default function DayColumn({
             border: isControlDay ? 'none' : '1px dashed #e2e8f0',
             borderRadius: 8,
           }}>
-            {isControlDay ? 'Ödev kontrolü' : 'İçerik bırakın'}
+            İçerik bırakın
           </div>
         ) : (
           [...day.blocks].sort((a, b) => a.order - b.order).map((b, idx) => (
@@ -159,31 +176,49 @@ export default function DayColumn({
               key={b.id}
               draggable
               onDragStart={(e) => {
-                e.dataTransfer.setData('reorder-block', JSON.stringify({ blockId: b.id, fromIdx: idx }));
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(b.id));
+                setStudyDrag({ kind: 'block', block: b, fromDayId: day.id, fromIdx: idx });
                 onDragBlockStart(e, b);
                 setReorderDragIdx(idx);
               }}
-              onDragEnd={() => { setReorderDragIdx(null); setReorderOverIdx(null); }}
+              onDragEnd={() => {
+                setReorderDragIdx(null);
+                setReorderOverIdx(null);
+              }}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                e.dataTransfer.dropEffect = 'move';
+                setDragOver(true);
                 setReorderOverIdx(idx);
               }}
               onDrop={(e) => {
+                e.preventDefault();
                 e.stopPropagation();
-                const reorderData = e.dataTransfer.getData('reorder-block');
-                if (reorderData && onReorderBlocks) {
-                  const { fromIdx } = JSON.parse(reorderData);
-                  if (fromIdx !== idx) {
-                    const sorted = [...day.blocks].sort((a2, b2) => a2.order - b2.order);
-                    const ids = sorted.map((bl) => bl.id);
-                    const [moved] = ids.splice(fromIdx, 1);
+                const payload = getStudyDrag();
+                setStudyDrag(null);
+                setDragOver(false);
+                setReorderDragIdx(null);
+                setReorderOverIdx(null);
+                if (!payload) return;
+                if (payload.kind === 'homework') {
+                  onDropHomework(day.id, payload.item);
+                  return;
+                }
+                if (payload.fromDayId !== day.id) {
+                  onDropBlock(day.id, payload.block);
+                  return;
+                }
+                if (payload.fromIdx !== idx && onReorderBlocks) {
+                  const sorted = [...day.blocks].sort((a2, b2) => a2.order - b2.order);
+                  const ids = sorted.map((bl) => bl.id);
+                  const [moved] = ids.splice(payload.fromIdx, 1);
+                  if (moved != null) {
                     ids.splice(idx, 0, moved);
                     onReorderBlocks(day.id, ids);
                   }
                 }
-                setReorderDragIdx(null);
-                setReorderOverIdx(null);
               }}
               style={{
                 opacity: reorderDragIdx === idx ? 0.4 : 1,

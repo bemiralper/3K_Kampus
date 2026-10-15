@@ -4,10 +4,6 @@ import { forwardRef, useMemo } from 'react';
 import type { WeeklyProgram, ProgramBlock, ProgramDay, BlockType, GoalType } from '@/lib/study-program-api';
 import { BLOCK_TYPE_META, GOAL_TYPE_META, WEEKDAY_FULL } from '@/lib/study-program-api';
 import { MetaCol } from '@/components/odev/odevPdfMeta';
-import {
-  excludeControlDay,
-  studyRangeEnd,
-} from '@/components/coaching/study-program/programDateUtils';
 import { stripCompletionTitleSuffix } from '@/components/odev/odevCompletionHelpers';
 
 export interface StudyProgramDocumentProps {
@@ -238,11 +234,9 @@ const StudyProgramDocument = forwardRef<HTMLDivElement, StudyProgramDocumentProp
     const currentYear = new Date().getFullYear();
     const docRef = `ÇPP-${program.id}-${Date.now().toString(36).toUpperCase().slice(-5)}`;
 
-    // PDF: sadece çalışma günleri (kontrol = aralığın son günü, kart olarak basılmaz)
     const sortedDays = useMemo(() => {
-      const sorted = [...(program.days || [])].sort((a, b) => a.day_date.localeCompare(b.day_date));
-      return excludeControlDay(sorted, program.week_end);
-    }, [program.days, program.week_end]);
+      return [...(program.days || [])].sort((a, b) => a.day_date.localeCompare(b.day_date));
+    }, [program.days]);
 
     const homeworkTitles = useMemo(() => {
       const seen = new Set<string>();
@@ -263,11 +257,7 @@ const StudyProgramDocument = forwardRef<HTMLDivElement, StudyProgramDocumentProp
     const allBlocks = sortedDays.flatMap((d) => d.blocks);
     const totalQuestions = allBlocks.reduce((s, b) => s + (b.question_count || 0), 0);
     const totalWork = allBlocks.length;
-    const studyEnd = studyRangeEnd(program.week_end);
-    const rangeLabel = formatDateRangeTR(
-      program.week_start,
-      studyEnd && studyEnd >= program.week_start ? studyEnd : program.week_end,
-    );
+    const rangeLabel = formatDateRangeTR(program.week_start, program.week_end);
     const controlLabel = program.week_end ? formatDayShortTR(program.week_end) : '';
     const focuses = focusByLesson(sortedDays);
     const coachName = program.coach_name || '—';

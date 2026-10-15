@@ -145,6 +145,11 @@ function IconBtn({
     <button
       type="button"
       title={title}
+      draggable={false}
+      onDragStart={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       onClick={(e) => {
         e.stopPropagation();
         onClick();

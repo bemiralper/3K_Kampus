@@ -3,7 +3,8 @@
 
 Dengeli Dağıtım motoru, rozet hesaplama, haftalık özet, tarih aralığı senkronu.
 """
-from datetime import date, timedelta
+import re
+from datetime import date, datetime, timedelta
 
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
@@ -18,6 +19,11 @@ from .models import (
 # ────────────────────────────────────────
 # 0) Tarih aralığı senkronu
 # ────────────────────────────────────────
+
+def _drop_prefetch(instance, relation: str) -> None:
+    cache = getattr(instance, '_prefetched_objects_cache', None)
+    if cache is not None:
+        cache.pop(relation, None)
 
 def sync_program_date_range(
     program: WeeklyProgram,
@@ -35,8 +41,13 @@ def sync_program_date_range(
     """
     if week_end < week_start:
         raise ValidationError({'week_end': 'Bitiş tarihi başlangıçtan önce olamaz.'})
-    if (week_end - week_start).days > 30:
-        raise ValidationError({'week_end': 'Program süresi en fazla 30 gün olabilir.'})
+    if (week_end - week_start).days != 6:
+        raise ValidationError({
+            'week_end': (
+                'Haftalık program 7 gün olmalıdır. '
+                'Son gün kontrol günüdür; ödevin verildiği gün aralığa girmez.'
+            ),
+        })
 
     conflict = (
         WeeklyProgram.objects.filter(
@@ -92,6 +103,7 @@ def sync_program_date_range(
         program.week_start = week_start
         program.week_end = week_end
         program.save(update_fields=['week_start', 'week_end', 'updated_at'])
+        _drop_prefetch(program, 'days')
         program.refresh_stats()
 
     return {
@@ -106,87 +118,322 @@ def sync_program_date_range(
 # 1) Dengeli Dağıtım
 # ────────────────────────────────────────
 
-def auto_distribute(program: WeeklyProgram, assignment_ids: list[int] | None = None):
-    """
-    Atanmamış ödevleri / verilen assignment_id'leri haftanın günlerine
-    soru sayısına göre dengeli biçimde dağıtır.
+TEST_TASK_TYPES = ('SOLVE_TEST', 'SOLVE_PDF', 'SOLVE_EXAM')
 
-    Strateji: en az sorusu olan güne at — greedy balancing.
+
+def _as_date(value):
+    if not value:
+        return None
+    if isinstance(value, datetime):
+        if timezone.is_aware(value):
+            return timezone.localtime(value).date()
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def _assignment_overlaps_week(assignment, week_start: date, week_end: date) -> bool:
+    assigned = _as_date(assignment.assigned_date)
+    due = _as_date(assignment.due_date)
+    start = assigned or due
+    end = due or assigned
+    if not start or not end:
+        return False
+    return start <= week_end and end >= week_start
+
+
+def _program_days(program: WeeklyProgram) -> list[ProgramDay]:
+    """Haftanın 7 günü. Son gün kontrol günüdür ve dağıtıma dahildir."""
+    return list(program.days.order_by('day_date'))
+
+
+def _split_amounts(total: int, parts: int) -> list[int]:
+    if parts <= 0:
+        return []
+    total = max(0, int(total))
+    base, rem = divmod(total, parts)
+    return [base + (1 if i < rem else 0) for i in range(parts)]
+
+
+def _is_test_task(task) -> bool:
+    if (task.question_count or 0) > 0:
+        return True
+    return task.task_type in TEST_TASK_TYPES
+
+
+def auto_distribute(
+    program: WeeklyProgram,
+    assignment_ids: list[int] | None = None,
+    metric: str = 'question',
+):
+    """
+    Seçilen ödevin her konusunu haftanın her gününe kendi ölçütüyle böler.
+
+    Haftanın toplam sorusundan gün doldurulmaz. 47 soruluk bir konu 7 güne
+    kendi içinde bölünür. Kontrol günü de pay alır.
+
+    metric:
+      question — konunun soru sayısı günlere eşit
+      test — konunun testleri bütün kalır, günlere eşit sayıda düşer
     """
     from apps.coaching.assignment_manual.models import ManualAssignment, AssignmentTask
 
-    days = list(program.days.order_by('day_date'))
-    if not days:
-        return {'distributed': 0, 'error': 'Programda gün yok.'}
+    if metric not in ('question', 'test'):
+        return {'distributed': 0, 'detail': 'Ölçüt soru veya test olmalıdır.'}
 
-    already_mapped = set(
+    days = _program_days(program)
+    if not days:
+        return {'distributed': 0, 'detail': 'Dağıtılacak gün yok.'}
+
+    if (program.week_end - program.week_start).days != 6:
+        return {
+            'distributed': 0,
+            'detail': 'Haftalık program 7 gün olmalıdır. Önce tarihi 7 güne getirin.',
+        }
+
+    qs = ManualAssignment.objects.filter(
+        student=program.student,
+        is_active=True,
+        status__in=['ASSIGNED', 'IN_PROGRESS', 'DRAFT', 'OVERDUE'],
+    )
+    if assignment_ids:
+        qs = qs.filter(id__in=assignment_ids)
+    assignments = [
+        a for a in qs.prefetch_related('lessons__lesson', 'lessons__resource_book', 'lessons__tasks')
+        if _assignment_overlaps_week(a, program.week_start, program.week_end)
+    ]
+    if not assignments:
+        return {'distributed': 0, 'detail': 'Bu haftayla kesişen ödev yok.'}
+
+    planned_rows = (
         ProgramBlock.objects.filter(
             day__program=program,
             source_assignment__isnull=False,
-        ).values_list('source_assignment_id', flat=True)
+        )
+        .values('source_assignment_id', 'source_lesson_id')
+        .annotate(planned_q=models.Sum('question_count'))
     )
+    planned_q = {
+        (row['source_assignment_id'], row['source_lesson_id']): row['planned_q'] or 0
+        for row in planned_rows
+    }
 
-    # Dağıtılacak ödevleri belirle
-    if assignment_ids:
-        assignments = ManualAssignment.objects.filter(
-            id__in=assignment_ids,
-            student=program.student,
-            is_active=True,
-        ).exclude(id__in=already_mapped)
+    units = []
+    for asgn in assignments:
+        lessons = list(asgn.lessons.all())
+        if not lessons:
+            total_q = AssignmentTask.objects.filter(
+                lesson_block__assignment=asgn,
+            ).aggregate(s=models.Sum('question_count'))['s'] or 0
+            key = (asgn.id, None)
+            if key in planned_q and (total_q <= 0 or planned_q[key] >= total_q):
+                continue
+            remaining = max(0, total_q - planned_q.get(key, 0))
+            units.append({
+                'assignment': asgn,
+                'lesson': None,
+                'remaining': remaining,
+                'tests': [],
+                'planned': key in planned_q,
+            })
+            continue
+        for lesson in lessons:
+            tasks = list(lesson.tasks.all())
+            total_q = sum((t.question_count or 0) for t in tasks)
+            key = (asgn.id, lesson.id)
+            already = planned_q.get(key, 0)
+            if key in planned_q and (total_q <= 0 or already >= total_q):
+                continue
+            remaining = max(0, total_q - already) if total_q else 0
+            tests = [t for t in tasks if _is_test_task(t)]
+            units.append({
+                'assignment': asgn,
+                'lesson': lesson,
+                'remaining': remaining,
+                'tests': tests,
+                'planned': key in planned_q,
+            })
+
+    if not units:
+        return {'distributed': 0, 'detail': 'Bu ödevin konuları zaten takvimde.'}
+
+    # Her konu kendi içinde günlere bölünür. Gün → [(unit, question_count, task)]
+    day_chunks: dict[int, list] = {d.id: [] for d in days}
+    n_days = len(days)
+
+    if metric == 'test':
+        placed_any = False
+        for unit in units:
+            if unit['planned']:
+                continue
+            atoms = []
+            if unit['tests']:
+                atoms = [(unit, task.question_count or 0, task) for task in unit['tests']]
+            else:
+                atoms = [(unit, unit['remaining'], None)]
+            counts = _split_amounts(len(atoms), n_days)
+            cursor = 0
+            for day, count in zip(days, counts):
+                for item in atoms[cursor:cursor + count]:
+                    day_chunks[day.id].append(item)
+                    placed_any = True
+                cursor += count
+        if not placed_any:
+            return {'distributed': 0, 'detail': 'Test olarak dağıtılacak yeni konu yok.'}
     else:
-        assignments = ManualAssignment.objects.filter(
-            student=program.student,
-            status__in=['ASSIGNED', 'IN_PROGRESS', 'OVERDUE'],
-            is_active=True,
-        ).exclude(id__in=already_mapped)
+        for unit in units:
+            left = unit['remaining']
+            if left <= 0:
+                if not unit['planned']:
+                    day_chunks[days[0].id].append((unit, 0, None))
+                continue
+            for day, amount in zip(days, _split_amounts(left, n_days)):
+                if amount > 0:
+                    day_chunks[day.id].append((unit, amount, None))
 
-    if not assignments.exists():
-        return {'distributed': 0}
-
-    day_loads: dict[int, int] = {}
-    for d in days:
-        day_loads[d.id] = d.total_question_count
+    # Aynı konunun kaç güne düştüğünü say (başlık 1/n)
+    span_count: dict[tuple, int] = {}
+    for chunks in day_chunks.values():
+        seen = set()
+        for unit, _q, _task in chunks:
+            key = (unit['assignment'].id, unit['lesson'].id if unit['lesson'] else None)
+            if key in seen:
+                continue
+            seen.add(key)
+            span_count[key] = span_count.get(key, 0) + 1
+    span_seen: dict[tuple, int] = {}
 
     created_count = 0
+    with transaction.atomic():
+        for day in days:
+            _drop_prefetch(day, 'blocks')
+            # Aynı dersin aynı gündeki testlerini tek blokta birleştir
+            grouped: dict[tuple, dict] = {}
+            order_keys = []
+            for unit, q, task in day_chunks[day.id]:
+                key = (unit['assignment'].id, unit['lesson'].id if unit['lesson'] else None)
+                if key not in grouped:
+                    grouped[key] = {'unit': unit, 'q': 0, 'tasks': []}
+                    order_keys.append(key)
+                grouped[key]['q'] += q
+                if task is not None:
+                    grouped[key]['tasks'].append(task)
+            for key in order_keys:
+                bucket = grouped[key]
+                unit = bucket['unit']
+                lesson = unit['lesson']
+                asgn = unit['assignment']
+                parts = span_count.get(key, 1)
+                span_seen[key] = span_seen.get(key, 0) + 1
+                part_no = span_seen[key]
+                lesson_obj = lesson.lesson if lesson else None
+                topic = (lesson.topic_name if lesson else '') or ''
+                resource = ''
+                if lesson and lesson.resource_book_id and lesson.resource_book:
+                    resource = lesson.resource_book.ad or ''
+                base = topic or (lesson_obj.ad if lesson_obj else '') or asgn.title
+                title = f'{base} ({part_no}/{parts})' if parts > 1 else base
+                tasks = bucket['tasks']
+                ProgramBlock.objects.create(
+                    day=day,
+                    source_assignment=asgn,
+                    source_lesson=lesson,
+                    source_task=tasks[0] if len(tasks) == 1 else None,
+                    lesson=lesson_obj,
+                    title=title,
+                    topic_name=topic,
+                    resource_name=resource,
+                    block_type=BlockType.SORU_COZUMU,
+                    question_count=bucket['q'],
+                    priority=asgn.priority,
+                    order=day.blocks.count(),
+                    color=_lesson_color(lesson_obj),
+                )
+                created_count += 1
+            _drop_prefetch(day, 'blocks')
+            day.refresh_stats()
+        _drop_prefetch(program, 'days')
+        program.refresh_stats()
 
-    for asgn in assignments:
-        target_day_id = min(day_loads, key=day_loads.get)  # type: ignore
-        target_day = next(d for d in days if d.id == target_day_id)
+    per_day = [
+        sum(q for _u, q, _t in day_chunks[d.id])
+        for d in days
+    ]
+    return {
+        'distributed': created_count,
+        'metric': metric,
+        'study_days': len(days),
+        'per_day': per_day,
+    }
 
-        first_lesson = asgn.lessons.first()
-        lesson_obj = first_lesson.lesson if first_lesson else None
-        topic = first_lesson.topic_name if first_lesson else ''
-        resource = first_lesson.resource_book.ad if first_lesson and first_lesson.resource_book else ''
 
-        q_count = AssignmentTask.objects.filter(
-            lesson_block__assignment=asgn
-        ).aggregate(s=models.Sum('question_count'))['s'] or 0
+_PART_SUFFIX = re.compile(r'\s*\(\d+/\d+\)\s*$')
 
-        # PDF/kart: ders adı önde; ödev hafta başlığı tekrarlanmasın
-        block_title = (lesson_obj.ad if lesson_obj else '') or asgn.title
-        ProgramBlock.objects.create(
-            day=target_day,
-            source_assignment=asgn,
-            source_lesson=first_lesson,
-            lesson=lesson_obj,
-            title=block_title,
-            topic_name=topic,
-            resource_name=resource,
-            block_type=BlockType.SORU_COZUMU,
-            question_count=q_count,
-            priority=asgn.priority,
-            order=target_day.blocks.count(),
-            color=_lesson_color(lesson_obj),
+
+def _block_match_key(block: ProgramBlock):
+    """Aynı ödev parçası: ders bloğu, yoksa ödev + konu."""
+    if block.source_lesson_id:
+        return ('lesson', block.source_lesson_id)
+    if block.source_assignment_id:
+        return (
+            'topic',
+            block.source_assignment_id,
+            block.lesson_id,
+            (block.topic_name or '').strip(),
         )
+    return None
 
-        day_loads[target_day_id] += q_count
-        created_count += 1
 
-    for d in days:
-        d.refresh_stats()
-    program.refresh_stats()
+def _plain_title(block: ProgramBlock) -> str:
+    topic = (block.topic_name or '').strip()
+    if topic:
+        return topic
+    return _PART_SUFFIX.sub('', block.title or '').strip() or (block.title or '')
 
-    return {'distributed': created_count}
+
+def move_block(block: ProgramBlock, new_day: ProgramDay) -> dict:
+    """
+    Bloğu başka güne taşır. Hedef günde aynı ödev varsa soru sayıları birleşir.
+    """
+    old_day = block.day
+    if old_day.program_id != new_day.program_id:
+        raise ValidationError('Blok yalnızca kendi programının gününe taşınır.')
+    if old_day.id == new_day.id:
+        return {'merged': False, 'block': block}
+
+    key = _block_match_key(block)
+    target = None
+    if key is not None:
+        for sibling in new_day.blocks.exclude(pk=block.pk):
+            if _block_match_key(sibling) == key:
+                target = sibling
+                break
+
+    with transaction.atomic():
+        if target is not None:
+            target.question_count = (target.question_count or 0) + (block.question_count or 0)
+            extra = block.estimated_duration_minutes or 0
+            if extra:
+                target.estimated_duration_minutes = (target.estimated_duration_minutes or 0) + extra
+            target.title = _plain_title(target)
+            target.save()
+            block.delete()
+            result = target
+            merged = True
+        else:
+            block.day = new_day
+            block.order = new_day.blocks.count()
+            block.save(update_fields=['day_id', 'order', 'updated_at'])
+            result = block
+            merged = False
+        _drop_prefetch(old_day, 'blocks')
+        _drop_prefetch(new_day, 'blocks')
+        old_day.refresh_stats()
+        new_day.refresh_stats()
+        new_day.program.refresh_stats()
+
+    return {'merged': merged, 'block': result}
 
 
 def redistribute_existing_blocks(program: WeeklyProgram):
@@ -194,7 +441,7 @@ def redistribute_existing_blocks(program: WeeklyProgram):
     Programdaki mevcut blokları günlere yeniden dengeli dağıtır.
     Soru sayısına göre greedy balancing — en az sorusu olan güne atar.
     """
-    days = list(program.days.order_by('day_date'))
+    days = _program_days(program)
     all_blocks = list(
         ProgramBlock.objects.filter(day__program=program).order_by('-question_count')
     )
@@ -214,7 +461,9 @@ def redistribute_existing_blocks(program: WeeklyProgram):
         block.save(update_fields=['day_id', 'order', 'updated_at'])
         day_loads[target_day_id] += block.question_count or 0
 
-    for d in days:
+    _drop_prefetch(program, 'days')
+    for d in program.days.all():
+        _drop_prefetch(d, 'blocks')
         d.refresh_stats()
     program.refresh_stats()
 
@@ -345,12 +594,10 @@ def weekly_summary(program: WeeklyProgram) -> dict:
     """
     Otomatik üretilen haftalık özet kartı verisi.
     Frontend'de hafta sonunda gösterilir.
-    Ödev kontrol günü (week_end) özetten hariç tutulur.
+    Kontrol günü de özetin içindedir; o güne yazılan program görünür.
     """
-    from datetime import timedelta
-
     days = program.days.order_by('day_date')
-    study_days = [d for d in days if d.day_date != program.week_end]
+    study_days = list(days)
     day_data = []
     best_day = None
     worst_day = None
@@ -382,15 +629,11 @@ def weekly_summary(program: WeeklyProgram) -> dict:
         else:
             streak = 0
 
-    study_end = program.week_end - timedelta(days=1) if program.week_end else program.week_end
-    if study_end and program.week_start and study_end < program.week_start:
-        study_end = program.week_start
-
     return {
         'program_id': program.id,
         'student_id': program.student_id,
         'week_start': str(program.week_start),
-        'week_end': str(study_end) if study_end else str(program.week_end),
+        'week_end': str(program.week_end),
         'total_questions': program.total_question_count,
         'total_blocks': program.total_block_count,
         'completion_percent': program.completion_percent,

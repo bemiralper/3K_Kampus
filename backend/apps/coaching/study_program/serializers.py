@@ -232,9 +232,13 @@ class WeeklyProgramCreateSerializer(serializers.ModelSerializer):
         if we:
             if we < ws:
                 raise serializers.ValidationError({'week_end': 'Bitiş tarihi başlangıçtan önce olamaz.'})
-            delta = (we - ws).days
-            if delta > 30:
-                raise serializers.ValidationError({'week_end': 'Program süresi en fazla 30 gün olabilir.'})
+            if (we - ws).days != 6:
+                raise serializers.ValidationError({
+                    'week_end': (
+                        'Haftalık program 7 gün olmalıdır. '
+                        'Son gün kontrol günüdür; ödevin verildiği gün aralığa girmez.'
+                    ),
+                })
         else:
             # week_start = ilk çalışma günü → kontrol = +6 (örn. Salı…Pzt)
             data['week_end'] = ws + timedelta(days=6)
@@ -325,6 +329,7 @@ class HomeworkPoolItemSerializer(serializers.Serializer):
     is_planned     = serializers.BooleanField(help_text='Bu ödev programa atanmış mı?')
     lesson_id      = serializers.IntegerField(allow_null=True, required=False)
     ders_id        = serializers.IntegerField(allow_null=True, required=False)
+    test_count     = serializers.IntegerField(required=False, default=0)
 
 
 # ─────────────────────────
@@ -332,9 +337,10 @@ class HomeworkPoolItemSerializer(serializers.Serializer):
 # ─────────────────────────
 
 class AutoDistributeRequestSerializer(serializers.Serializer):
-    """'Dengeli Dağıt' özelliği için request body."""
+    """Seçilen ödevi çalışma günlerine eşit dağıtmak için request body."""
     program_id     = serializers.IntegerField()
     assignment_ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=True)
+    metric         = serializers.ChoiceField(choices=['question', 'test'], default='question', required=False)
 
 
 class SplitBlockRequestSerializer(serializers.Serializer):

@@ -36,48 +36,63 @@ class SyncProgramDateRangeTest(TestCase):
             d = self.week_start + timedelta(days=i)
             ProgramDay.objects.create(program=self.program, day_date=d, weekday=d.weekday())
 
-    def test_extend_range_creates_days_in_order(self):
-        new_end = date(2026, 3, 10)
-        result = sync_program_date_range(self.program, self.week_start, new_end)
+    def test_non_seven_day_range_rejected(self):
+        with self.assertRaises(ValidationError):
+            sync_program_date_range(self.program, self.week_start, date(2026, 3, 10))
+        self.program.refresh_from_db()
+        self.assertEqual(self.program.week_end, self.week_end)
+        self.assertEqual(self.program.days.count(), 7)
+
+    def test_shift_keeps_seven_days(self):
+        new_start = date(2026, 3, 9)
+        new_end = date(2026, 3, 15)
+        result = sync_program_date_range(self.program, new_start, new_end)
         self.program.refresh_from_db()
         days = list(self.program.days.order_by('day_date').values_list('day_date', flat=True))
-        self.assertEqual(self.program.week_end, new_end)
-        self.assertEqual(len(days), 9)
-        self.assertEqual(days[0], self.week_start)
+        self.assertEqual(days[0], new_start)
         self.assertEqual(days[-1], new_end)
-        self.assertEqual(result['created_days'], 2)
-
-    def test_shrink_empty_days_ok(self):
-        new_end = date(2026, 3, 5)
-        sync_program_date_range(self.program, self.week_start, new_end)
-        self.program.refresh_from_db()
-        self.assertEqual(self.program.days.count(), 4)
-        self.assertEqual(self.program.week_end, new_end)
+        self.assertEqual(len(days), 7)
+        self.assertEqual(result['day_count'], 7)
 
     def test_shrink_with_blocks_requires_force(self):
         last = self.program.days.get(day_date=self.week_end)
         ProgramBlock.objects.create(day=last, title='Blok', question_count=10)
+        new_start = date(2026, 3, 1)
+        new_end = date(2026, 3, 7)
         with self.assertRaises(ValidationError):
-            sync_program_date_range(self.program, self.week_start, date(2026, 3, 5))
+            sync_program_date_range(self.program, new_start, new_end)
         sync_program_date_range(
-            self.program, self.week_start, date(2026, 3, 5), force_remove_blocks=True,
+            self.program, new_start, new_end, force_remove_blocks=True,
         )
         self.program.refresh_from_db()
-        self.assertEqual(self.program.days.count(), 4)
+        self.assertEqual(self.program.days.count(), 7)
         self.assertFalse(ProgramBlock.objects.filter(day__program=self.program).exists())
 
-    def test_patch_api_updates_range(self):
+    def test_patch_api_rejects_non_seven_days(self):
         client = APIClient()
         client.force_authenticate(user=self.coach)
         client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
-        new_end = '2026-03-12'
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
         res = client.patch(
             f'/api/coaching/study-program/programs/{self.program.id}/',
-            {'week_end': new_end},
+            {'week_end': '2026-03-12'},
+            format='json',
+        )
+        self.assertEqual(res.status_code, 400)
+
+    def test_patch_api_shifts_seven_day_window(self):
+        client = APIClient()
+        client.force_authenticate(user=self.coach)
+        client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
+        res = client.patch(
+            f'/api/coaching/study-program/programs/{self.program.id}/',
+            {'week_start': '2026-03-09', 'week_end': '2026-03-15'},
             format='json',
         )
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(res.data['week_end'], new_end)
+        self.assertEqual(res.data['week_start'], '2026-03-09')
+        self.assertEqual(res.data['week_end'], '2026-03-15')
         day_dates = [d['day_date'] for d in res.data['days']]
         self.assertEqual(day_dates, sorted(day_dates))
-        self.assertEqual(len(day_dates), 11)
+        self.assertEqual(len(day_dates), 7)

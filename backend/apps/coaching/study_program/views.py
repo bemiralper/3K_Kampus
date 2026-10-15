@@ -3,6 +3,7 @@
 """
 import json
 
+from django.core.exceptions import ValidationError
 from django.http import HttpResponse
 from django.db import models
 from django.shortcuts import get_object_or_404
@@ -229,11 +230,13 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
         ser = AutoDistributeRequestSerializer(data={
             'program_id': program.id,
             'assignment_ids': request.data.get('assignment_ids', []),
+            'metric': request.data.get('metric') or 'question',
         })
         ser.is_valid(raise_exception=True)
         result = services.auto_distribute(
             program,
             assignment_ids=ser.validated_data.get('assignment_ids') or None,
+            metric=ser.validated_data.get('metric') or 'question',
         )
         return Response(result, status=status.HTTP_200_OK)
 
@@ -542,6 +545,16 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
             return False, remaining if has_blocks else total_q
 
         from apps.coaching.assignment_manual.title_utils import strip_completion_title_suffix
+        from django.db.models import Q
+
+        test_filter = Q(question_count__gt=0) | Q(task_type__in=['SOLVE_TEST', 'SOLVE_PDF', 'SOLVE_EXAM'])
+
+        def _task_stats(task_qs):
+            agg = task_qs.aggregate(
+                q=models.Sum('question_count'),
+                tests=models.Count('id', filter=test_filter),
+            )
+            return agg['q'] or 0, agg['tests'] or 0
 
         items = []
         for a in qs:
@@ -549,9 +562,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
             lessons = list(a.lessons.all())
             if not lessons:
                 # Dersi olmayan ödev → yine de göster
-                q_count = AssignmentTask.objects.filter(
-                    lesson_block__assignment=a
-                ).aggregate(s=models.Sum('question_count'))['s'] or 0
+                q_count, test_count = _task_stats(AssignmentTask.objects.filter(lesson_block__assignment=a))
                 is_planned, display_q = _pool_planned_state(a.id, None, q_count)
                 items.append({
                     'id': a.id,
@@ -564,6 +575,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                     'topic_name': '',
                     'resource_name': '',
                     'question_count': display_q,
+                    'test_count': test_count,
                     'assigned_date': a.assigned_date,
                     'due_date': a.due_date,
                     'coach_name': a.coach.get_full_name() if a.coach else None,
@@ -573,9 +585,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                 })
             else:
                 for lesson in lessons:
-                    l_q_count = AssignmentTask.objects.filter(
-                        lesson_block=lesson
-                    ).aggregate(s=models.Sum('question_count'))['s'] or 0
+                    l_q_count, test_count = _task_stats(AssignmentTask.objects.filter(lesson_block=lesson))
                     is_planned, display_q = _pool_planned_state(a.id, lesson.id, l_q_count)
                     items.append({
                         'id': a.id,
@@ -588,6 +598,7 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
                         'topic_name': lesson.topic_name or '',
                         'resource_name': lesson.resource_book.ad if lesson.resource_book else '',
                         'question_count': display_q,
+                        'test_count': test_count,
                         'assigned_date': a.assigned_date,
                         'due_date': a.due_date,
                         'coach_name': a.coach.get_full_name() if a.coach else None,
@@ -818,18 +829,16 @@ class ProgramBlockViewSet(viewsets.ModelViewSet):
         if not new_day_id:
             return Response({'error': 'day_id gerekli.'}, status=status.HTTP_400_BAD_REQUEST)
 
-        old_day = block.day
         new_day = get_object_or_404(ProgramDay, id=new_day_id)
+        try:
+            result = services.move_block(block, new_day)
+        except ValidationError as exc:
+            return Response({'error': exc.messages[0]}, status=status.HTTP_400_BAD_REQUEST)
 
-        block.day = new_day
-        block.order = new_day.blocks.count()
-        block.save(update_fields=['day_id', 'order', 'updated_at'])
-
-        old_day.refresh_stats()
-        new_day.refresh_stats()
-        old_day.program.refresh_stats()
-
-        return Response(ProgramBlockSerializer(block).data)
+        return Response({
+            'merged': result['merged'],
+            'block': ProgramBlockSerializer(result['block']).data,
+        })
 
 
 # ═══════════════════════════════════════

@@ -1,34 +1,336 @@
-/* Çalışma programı — responsive board (admin + koç) */
+/* ==========================================================================
+   Çalışma Programı Stüdyosu — 2026 Modern Responsive Tasarım
+   Telefon (390px) · Tablet (834px) · PC (1440px+)
+   ========================================================================== */
 
 .sp-root {
+  --sp-ink: #0f172a;
+  --sp-ink-2: #334155;
+  --sp-muted: #64748b;
+  --sp-line: #e2e8f0;
+  --sp-line-soft: #f1f5f9;
+  --sp-surface: #ffffff;
+  --sp-canvas: #f8fafc;
+  --sp-accent: #2563eb;
+  --sp-accent-dark: #1d4ed8;
+  --sp-accent-soft: #eff6ff;
+  --sp-ok: #059669;
+  --sp-ok-soft: #ecfdf5;
+  --sp-warn: #d97706;
+  --sp-warn-soft: #fffbeb;
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+  color: var(--sp-ink);
+  container-type: inline-size;
+  container-name: sps;
 }
 
-.sp-board-split {
+.sp-root * {
+  box-sizing: border-box;
+}
+
+/* ----- Üst Stüdyo Çubuğu (Koç + Öğrenci + Tarih) ----- */
+.sps-top {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: 18px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.sps-brand {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.sps-brand-icon {
+  width: 38px;
+  height: 38px;
+  border-radius: 11px;
+  background: #0f172a;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sps-brand h1 {
+  margin: 0;
+  font-size: 1.06rem;
+  font-weight: 780;
+  letter-spacing: -0.02em;
+  color: var(--sp-ink);
+}
+
+.sps-brand p {
+  margin: 2px 0 0;
+  font-size: 0.75rem;
+  color: var(--sp-muted);
+}
+
+.sps-pickers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 360px;
+  justify-content: flex-end;
+}
+
+.sps-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 10px 0 12px;
+  background: var(--sp-canvas);
+  border: 1px solid var(--sp-line);
+  border-radius: 12px;
+  min-width: 190px;
+}
+
+.sps-field:focus-within {
+  background: var(--sp-surface);
+  border-color: var(--sp-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.sps-field-tag {
+  font-size: 0.68rem;
+  font-weight: 760;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--sp-muted);
+  white-space: nowrap;
+}
+
+.sps-field select,
+.sps-field input[type="date"] {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 660;
+  color: var(--sp-ink);
+  outline: none;
+  padding: 6px 0;
+}
+
+/* ----- Komut & Metrik Şeridi ----- */
+.sps-command {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--sp-surface);
+  border: 1px solid var(--sp-line);
+  border-radius: 16px;
+}
+
+.sps-range-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.sps-date-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 10px;
+  background: var(--sp-canvas);
+  border: 1px solid var(--sp-line);
+  border-radius: 10px;
+  font-size: 0.76rem;
+  color: var(--sp-muted);
+}
+
+.sps-date-pill input[type="date"] {
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 680;
+  color: var(--sp-ink);
+  outline: none;
+}
+
+.sps-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.sps-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--sp-canvas);
+  border: 1px solid var(--sp-line);
+  font-size: 0.75rem;
+  color: var(--sp-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sps-stat strong {
+  font-size: 0.84rem;
+  font-weight: 780;
+  color: var(--sp-ink);
+}
+
+.sps-stat.is-ok {
+  background: var(--sp-ok-soft);
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+.sps-stat.is-ok strong { color: var(--sp-ok); }
+
+.sps-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+}
+
+.sps-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid var(--sp-line);
+  background: var(--sp-surface);
+  color: var(--sp-ink-2);
+  font: inherit;
+  font-size: 0.79rem;
+  font-weight: 680;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.sps-btn:hover:not(:disabled) {
+  background: var(--sp-canvas);
+  border-color: #cbd5e1;
+}
+
+.sps-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sps-btn-primary {
+  background: var(--sp-accent);
+  border-color: var(--sp-accent);
+  color: #fff;
+}
+
+.sps-btn-primary:hover:not(:disabled) {
+  background: var(--sp-accent-dark);
+  border-color: var(--sp-accent-dark);
+}
+
+.sps-btn-dark {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.sps-btn-dark:hover:not(:disabled) {
+  background: #1e293b;
+  border-color: #1e293b;
+}
+
+.sps-btn-danger {
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.sps-btn-danger:hover:not(:disabled) {
+  background: #fee2e2;
+}
+
+/* ----- Haftalık Koç Notu Şeridi ----- */
+.sps-note-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 14px;
+}
+
+.sps-note-bar label {
+  font-size: 0.74rem;
+  font-weight: 760;
+  color: #92400e;
+  white-space: nowrap;
+}
+
+.sps-note-bar input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid #fcd34d;
+  background: #fffef7;
+  border-radius: 9px;
+  padding: 7px 11px;
+  font: inherit;
+  font-size: 0.82rem;
+  color: #78350f;
+  outline: none;
+}
+
+/* ----- Ana İki Bölmeli Çalışma Tahtası ----- */
+.sp-board-split {
+  display: grid;
+  grid-template-columns: 290px minmax(0, 1fr);
   gap: 14px;
-  align-items: flex-start;
+  align-items: start;
 }
 
 .sp-pool-panel {
-  width: 300px;
-  min-width: 280px;
-  flex-shrink: 0;
-  background-color: #fff;
-  border-radius: 14px;
-  border: 1px solid #e2e8f0;
+  background-color: var(--sp-surface);
+  border-radius: 18px;
+  border: 1px solid var(--sp-line);
   overflow: hidden;
-  max-height: calc(100vh - 240px);
+  max-height: calc(100dvh - 180px);
+  position: sticky;
+  top: 12px;
   display: flex;
   flex-direction: column;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
 }
 
 .sp-calendar-panel {
-  flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
 .sp-day-grid-scroll {
@@ -39,10 +341,19 @@
 
 .sp-day-grid {
   display: grid;
-  gap: 8px;
-  /* PC: ferah sütunlar; dar ekranda CSS override */
-  grid-template-columns: repeat(var(--sp-day-count, 7), minmax(160px, 1fr));
+  gap: 10px;
+  grid-template-columns: repeat(var(--sp-day-count, 7), minmax(156px, 1fr));
   min-width: 0;
+}
+
+.sp-day-grid > div {
+  display: flex;
+  min-width: 0;
+}
+
+.sps-day-tab.is-drop {
+  outline: 2px solid #2563eb;
+  outline-offset: 1px;
 }
 
 .sp-plan-summary-grid {
@@ -51,61 +362,207 @@
   grid-template-columns: repeat(var(--sp-summary-count, 1), minmax(0, 1fr));
 }
 
-/* Telefon: havuz üstte, takvim yatay kaydırılır */
-@media (max-width: 991px) {
+/* ----- Mobil / Tablet Gün Seçici Şerit + Tek Gün Gündemi ----- */
+.sps-mobile-switcher {
+  display: none;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sps-mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--sp-line-soft);
+  gap: 4px;
+}
+
+.sps-mode-tabs button {
+  min-height: 36px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 740;
+  color: var(--sp-muted);
+  cursor: pointer;
+}
+
+.sps-mode-tabs button.is-on {
+  background: var(--sp-surface);
+  color: var(--sp-ink);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.sps-day-ribbon {
+  display: none;
+  grid-template-columns: repeat(var(--sp-day-count, 7), minmax(52px, 1fr));
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+}
+
+.sps-day-ribbon::-webkit-scrollbar { display: none; }
+
+.sps-day-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 13px;
+  border: 1px solid var(--sp-line);
+  background: var(--sp-surface);
+  color: var(--sp-ink-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.sps-day-tab.is-control {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
+.sps-day-tab.is-active {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #fff;
+}
+
+.sps-day-tab span {
+  font-size: 0.66rem;
+  font-weight: 720;
+  text-transform: uppercase;
+  opacity: 0.8;
+}
+
+.sps-day-tab strong {
+  font-size: 0.92rem;
+  font-weight: 780;
+  font-variant-numeric: tabular-nums;
+}
+
+.sps-day-tab em {
+  font-style: normal;
+  font-size: 0.65rem;
+  font-weight: 740;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.07);
+}
+
+.sps-day-tab.is-active em {
+  background: rgba(255, 255, 255, 0.22);
+}
+
+/* Havuz kartından aktif güne tek dokunuşla ekleme düğmesi (mobil/tablet) */
+.sps-quick-add-btn {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 11px;
+  font-weight: 740;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ==========================================================================
+   Kırılımlar — Container Queries
+   ========================================================================== */
+
+/* Tablet: Havuz solda daralır, sağda seçili gün odaklanır veya kaydırılır */
+@container sps (max-width: 1100px) {
   .sp-board-split {
+    grid-template-columns: 260px minmax(0, 1fr);
+  }
+  .sps-day-ribbon {
+    display: grid;
+  }
+  .sps-quick-add-btn {
+    display: inline-flex;
+  }
+  /* Tablette 7 sütunu yan yana sıkıştırmak yerine seçili günü tam genişlik göster */
+  .sp-day-grid.is-focused-day {
+    grid-template-columns: 1fr;
+  }
+  .sp-day-grid.is-focused-day > [data-day-active="false"] {
+    display: none;
+  }
+}
+
+/* Telefon & Dar Ekran: Sekmeli Takvim / Havuz + Tek Gün Görünümü */
+@container sps (max-width: 760px) {
+  .sps-top {
+    padding: 12px;
+    border-radius: 15px;
+  }
+  .sps-brand p { display: none; }
+  .sps-pickers {
+    width: 100%;
     flex-direction: column;
+    align-items: stretch;
+  }
+  .sps-field {
+    width: 100%;
+  }
+
+  .sps-command {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+  .sps-range-group {
+    width: 100%;
+  }
+  .sps-date-pill {
+    flex: 1 1 130px;
+  }
+  .sps-actions {
+    width: 100%;
+    overflow-x: auto;
+    flex-wrap: nowrap;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .sps-actions::-webkit-scrollbar { display: none; }
+
+  .sps-note-bar {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 6px;
+  }
+
+  .sps-mobile-switcher {
+    display: flex;
+  }
+
+  .sp-board-split {
+    grid-template-columns: 1fr;
   }
 
   .sp-pool-panel {
-    width: 100%;
-    min-width: 0;
-    max-height: min(42vh, 320px);
+    position: static;
+    max-height: none;
   }
 
-  .sp-calendar-panel {
-    width: 100%;
+  /* Mobilde sekme moduna göre panel göster/gizle */
+  .sp-board-split[data-mobile-pane="takvim"] .sp-pool-panel {
+    display: none;
+  }
+  .sp-board-split[data-mobile-pane="havuz"] .sp-calendar-panel {
+    display: none;
   }
 
-  .sp-day-grid {
-    grid-template-columns: repeat(var(--sp-day-count, 7), minmax(150px, 160px));
-    width: max-content;
-    min-width: 100%;
-  }
-
-  .sp-plan-summary-grid {
-    grid-template-columns: repeat(var(--sp-summary-count, 1), minmax(100px, 1fr));
-    overflow-x: auto;
-  }
-}
-
-/* Koç tableti: 72px rail + 280px havuz yan yana sığmaz — 1280’e kadar dikey */
-@media (max-width: 1279px) {
-  .sp-coach-root .sp-board-split {
-    flex-direction: column;
-  }
-
-  .sp-coach-root .sp-pool-panel {
-    width: 100%;
-    min-width: 0;
-    max-height: min(42vh, 320px);
-  }
-
-  .sp-coach-root .sp-day-grid {
-    grid-template-columns: repeat(var(--sp-day-count, 7), minmax(150px, 160px));
-    width: max-content;
-    min-width: 100%;
-  }
-}
-
-@media (min-width: 1280px) {
-  .sp-coach-root .sp-day-grid {
-    grid-template-columns: repeat(var(--sp-day-count, 7), minmax(168px, 1fr));
-  }
-
-  .sp-coach-root .sp-pool-panel {
-    width: 300px;
-    min-width: 280px;
-    max-height: calc(100vh - 200px);
+  .sp-plan-summary-grid,
+  .sps-plan-summary-box {
+    display: none;
   }
 }

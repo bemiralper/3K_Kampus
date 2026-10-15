@@ -3,10 +3,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StudyProgramEditor from '@/components/coaching/study-program/StudyProgramEditor';
 import {
-  addDays,
   datesFromHomework,
-  formatDateLocal,
   inclusiveDayCount,
+  isSevenDayRange,
+  rangeFromEnd,
+  rangeFromStart,
   studyRangeEnd,
 } from '@/components/coaching/study-program/programDateUtils';
 import { stripCompletionTitleSuffix } from '@/components/odev/odevCompletionHelpers';
@@ -173,7 +174,7 @@ export default function ProgramTab({
     [programs]
   );
 
-  const canCreate = Boolean(weekStart && weekEnd && weekEnd >= weekStart && !saving);
+  const canCreate = Boolean(weekStart && weekEnd && isSevenDayRange(weekStart, weekEnd) && !saving);
   const studyDays =
     weekStart && weekEnd ? Math.max(0, inclusiveDayCount(weekStart, studyRangeEnd(weekEnd))) : 0;
 
@@ -208,12 +209,10 @@ export default function ProgramTab({
                 type="date"
                 value={weekStart}
                 onChange={(e) => {
-                  const next = e.target.value;
-                  setWeekStart(next);
+                  const next = rangeFromStart(e.target.value);
+                  setWeekStart(next.start);
+                  setWeekEnd(next.end);
                   setSourceHomeworkId(null);
-                  if (next && (!weekEnd || next > weekEnd)) {
-                    setWeekEnd(formatDateLocal(addDays(new Date(`${next}T12:00:00`), 6)));
-                  }
                 }}
               />
             </label>
@@ -224,7 +223,9 @@ export default function ProgramTab({
                 value={weekEnd}
                 min={weekStart || undefined}
                 onChange={(e) => {
-                  setWeekEnd(e.target.value);
+                  const next = rangeFromEnd(e.target.value);
+                  setWeekStart(next.start);
+                  setWeekEnd(next.end);
                   setSourceHomeworkId(null);
                 }}
               />
