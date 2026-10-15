@@ -24,7 +24,7 @@ from apps.communication.application.template_media_header import (
     strip_header_components,
 )
 from apps.communication.application.variable_resolver import build_recipient_context_from_conversation
-from apps.communication.domain.enums import CampaignStatus, MessageStatus, MessageType
+from apps.communication.domain.enums import CampaignStatus, Channel, MessageStatus, MessageType
 from apps.communication.infrastructure.channels.base import BaseChannelClient
 from apps.communication.infrastructure.channels.dispatcher import ChannelDispatcher
 from apps.communication.infrastructure.media_storage import (
@@ -342,11 +342,25 @@ def _binding_fallback(item, message) -> dict:
         return {}
     from apps.communication.application.notification_template_resolver import resolve_binding
 
-    has_file = message.attachments.exists()
+    attachment = message.attachments.first()
+    is_image = bool(attachment and (attachment.mime_type or '').startswith('image/'))
+    needs_document = bool(attachment) and not is_image
+    conversation = getattr(message, 'conversation', None)
+    sube_id = None
+    channel_config_id = None
+    if conversation is not None:
+        channel_config_id = getattr(conversation, 'channel_config_id', None) or None
+        ogrenci = getattr(conversation, 'ogrenci', None)
+        if ogrenci is not None:
+            sube_id = getattr(ogrenci, 'sube_id', None)
     resolved = resolve_binding(
-        item.kurum_id, event_key, _recipient_for_message(message),
+        item.kurum_id,
+        event_key,
+        _recipient_for_message(message),
+        sube_id=sube_id,
+        channel_config_id=str(channel_config_id) if channel_config_id else None,
     )
-    if not resolved.meta_usable(needs_document=has_file, needs_image=False):
+    if not resolved.meta_usable(needs_document=needs_document, needs_image=is_image):
         return {}
     meta = resolved.meta_template
     return {
@@ -381,6 +395,35 @@ def _approved_template(kurum_id, name, language, channel_config_id):
         .select_related('channel_config')
         .first()
     )
+
+
+def _closed_window_fallback(item, message, phone, opts) -> dict | None:
+    """
+    Bu numaranın penceresi kapalıysa ve onaylı şablon varsa serbest gönderimi atla.
+
+    Şablon yoksa None döner; mevcut serbest deneme + Meta 131047 yedeği sürer.
+    """
+    if message.message_type == MessageType.TEMPLATE or opts.get('template_name'):
+        return None
+    conversation = getattr(message, 'conversation', None)
+    channel = getattr(conversation, 'channel', None) or Channel.WHATSAPP
+    if channel != Channel.WHATSAPP:
+        return None
+    from apps.communication.application.session_window import (
+        enforcement_enabled,
+        window_for_recipient,
+    )
+
+    if not enforcement_enabled():
+        return None
+    if window_for_recipient(item.kurum_id, phone=phone, channel=channel).is_open:
+        return None
+    fallback = opts.get('session_fallback') or {}
+    if not isinstance(fallback, dict) or not fallback.get('template_name'):
+        fallback = _binding_fallback(item, message)
+    if not isinstance(fallback, dict) or not fallback.get('template_name'):
+        return None
+    return fallback
 
 
 def _retry_as_template(client, item, message, phone, opts) -> dict | None:
@@ -536,7 +579,13 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
         if opts.get('template_components_json'):
             extra_components.extend(opts['template_components_json'])
 
-        if message.message_type == MessageType.IMAGE:
+        forced = _closed_window_fallback(item, message, phone, opts)
+        if forced:
+            merged = dict(opts)
+            merged['session_fallback'] = forced
+            _start_provider_call(item)
+            result = _retry_as_template(client, item, message, phone, merged)
+        elif message.message_type == MessageType.IMAGE:
             attachment = message.attachments.first()
             if attachment and attachment.file:
                 _start_provider_call(item)

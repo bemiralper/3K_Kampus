@@ -1241,7 +1241,7 @@ class OutboundQueueRepository:
         send_options: dict | None = None,
     ) -> OutboundQueueItem:
         options = send_options or {}
-        if options.get('template_name'):
+        if options.get('template_name') or options.get('session_fallback'):
             message.send_options = options
             message.save(update_fields=['send_options', 'updated_at'])
         return OutboundQueueItem.objects.create(

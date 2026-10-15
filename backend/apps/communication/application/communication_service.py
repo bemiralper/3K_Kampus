@@ -67,6 +67,22 @@ class SendResult:
     session: dict[str, Any] = field(default_factory=dict)
 
 
+def _promote_session_fallback(content: MessageContent) -> bool:
+    """Pencere kapalıysa serbest mesajı, hazırdaki onaylı şablona çevir."""
+    fallback = content.session_fallback if isinstance(content.session_fallback, dict) else {}
+    template_name = (fallback.get('template_name') or '').strip()
+    if not template_name:
+        return False
+    content.template_name = template_name
+    content.template_language = fallback.get('template_language') or content.template_language or 'tr'
+    if not content.channel_config_id:
+        content.channel_config_id = fallback.get('channel_config_id') or ''
+    extra = fallback.get('template_context') or {}
+    if isinstance(extra, dict) and extra:
+        content.template_context = {**(content.template_context or {}), **extra}
+    return True
+
+
 class CommunicationService:
     """Kanal-bağımsız mesaj gönderim facade."""
 
@@ -199,10 +215,8 @@ class CommunicationService:
         elif content.attachment_path and message_type == MessageType.TEXT:
             message_type = MessageType.DOCUMENT
 
-        # 24 saat kuralı: şablonsuz mesajlar yalnızca pencere açıkken iletilebilir.
-        # Meta'ya boşuna istek atıp kuyruğu yakmamak için burada durdurulur.
-        # Pencere Meta tarafında numaraya bağlıdır; aynı numaraya ait tüm thread'ler
-        # taranır, yoksa aynı kişi için açılmış ikinci bir sohbet yanlış engellenir.
+        # 24 saat kuralı: şablonsuz mesaj yalnızca bu numaranın penceresi açıkken gider.
+        # Pencere kapalıysa ve yedek şablon varsa serbest metin denenmez, şablon gider.
         if message_type != MessageType.TEMPLATE and channel == Channel.WHATSAPP:
             from apps.communication.application.session_window import (
                 enforcement_enabled,
@@ -218,12 +232,15 @@ class CommunicationService:
                 channel=channel,
             )
             if not session.is_open and enforcement_enabled():
-                return SendResult(
-                    success=False,
-                    errors=[session.notice],
-                    session_expired=True,
-                    session=session.as_dict(),
-                )
+                if _promote_session_fallback(content):
+                    message_type = MessageType.TEMPLATE
+                else:
+                    return SendResult(
+                        success=False,
+                        errors=[session.notice],
+                        session_expired=True,
+                        session=session.as_dict(),
+                    )
 
         reply_to = None
         if content.reply_to_message_id:

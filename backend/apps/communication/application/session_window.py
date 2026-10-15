@@ -1,10 +1,10 @@
 """
 WhatsApp 24 saatlik müşteri hizmetleri penceresi.
 
-Meta, kişinin son mesajından itibaren 24 saat boyunca serbest metin gönderilmesine
-izin verir; pencere kapalıyken yalnızca onaylı şablon iletilebilir (hata 131047).
-Pencerenin durumu bu modülde tek yerden hesaplanır; gönderim yolları (sohbet,
-olay bazlı bildirim, toplu gönderim) kararlarını buradan alır.
+Meta, o numaranın son mesajından itibaren 24 saat boyunca serbest metin
+gönderilmesine izin verir; pencere kapalıyken yalnızca onaylı şablon iletilebilir
+(hata 131047). Pencere bu modülde tek yerden, gönderilecek telefon numarasına
+göre hesaplanır. Veli sohbeti öğrencinin penceresini açmaz.
 """
 from __future__ import annotations
 
@@ -12,7 +12,6 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from django.conf import settings
-from django.db.models import Q
 from django.utils import timezone
 
 from apps.communication.domain.enums import Channel
@@ -213,34 +212,29 @@ def window_for_recipient(
     channel: str = Channel.WHATSAPP,
 ) -> SessionWindow:
     """
-    Alıcının en güncel sohbetine göre pencere durumu.
+    Gönderilecek numaranın penceresi.
 
-    Aynı kişiye ait birden çok thread olabilir (telefon + veli/öğrenci eşleşmesi);
-    en son gelen müşteri mesajı esas alınır.
+    Meta pencereyi telefon numarasına bağlar. Veli az önce yazdı diye öğrencinin
+    numarası açık sayılmaz. Aynı numaradaki birden çok sohbetten en son gelen
+    müşteri mesajı esas alınır. veli/öğrenci/personel kimliği yalnızca numara
+    verilmediğinde telefonu bulmak için kullanılır.
     """
     if channel and channel != Channel.WHATSAPP:
         return SessionWindow(state=STATE_NOT_APPLICABLE, channel=channel)
 
     from apps.communication.domain.models import Conversation
+    from apps.communication.infrastructure.repository import _conversation_phone_q
 
     resolved_phone = phone or _recipient_phone(
         kurum_id, veli_id=veli_id, ogrenci_id=ogrenci_id, personel_id=personel_id,
     )
-    match = Q()
-    if resolved_phone:
-        normalized = _normalize_quiet(resolved_phone)
-        if normalized:
-            match |= Q(contact_phone=normalized)
-    if veli_id:
-        match |= Q(veli_id=veli_id)
-    if ogrenci_id:
-        match |= Q(ogrenci_id=ogrenci_id)
-    if not match:
+    normalized = _normalize_quiet(resolved_phone) if resolved_phone else ''
+    if not normalized:
         return SessionWindow(channel=channel)
 
     conversation = (
         Conversation.objects.filter(kurum_id=kurum_id, channel=channel)
-        .filter(match)
+        .filter(_conversation_phone_q(normalized))
         .exclude(last_customer_message_at__isnull=True)
         .order_by('-last_customer_message_at')
         .only('id', 'channel', 'last_customer_message_at')

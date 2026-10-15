@@ -88,6 +88,37 @@ class SessionWindowTest(TestCase):
         window = window_from_timestamp(None, channel=Channel.SMS)
         self.assertTrue(window.is_open)
 
+    def test_parent_inbound_does_not_open_student_phone(self):
+        """Veli sohbeti açık diye öğrencinin numarası serbest mesaja açılmaz."""
+        sube = Sube.objects.create(kurum=self.kurum, ad='Merkez', kod='WINM')
+        student = Ogrenci.objects.create(
+            kurum=self.kurum, sube=sube, ad='Elanur', soyad='Yalçın',
+            telefon='05321110022', aktif_mi=True,
+        )
+        Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905551110099',
+            ogrenci=student,
+            contact_type=RecipientType.VELI,
+            last_customer_message_at=timezone.now(),
+        )
+        window = window_for_recipient(self.kurum.id, ogrenci_id=student.id)
+        self.assertFalse(window.is_open)
+
+        Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905321110022',
+            ogrenci=student,
+            contact_type=RecipientType.OGRENCI,
+            last_customer_message_at=timezone.now() - timedelta(minutes=5),
+        )
+        window = window_for_recipient(
+            self.kurum.id, phone='05321110022', ogrenci_id=student.id,
+        )
+        self.assertTrue(window.is_open)
+
     def test_recipient_window_uses_most_recent_thread(self):
         """Aynı numaraya ait ikinci bir sohbet açıksa kişi engellenmemeli."""
         Conversation.objects.create(
@@ -230,6 +261,33 @@ class FreeformFailFastTest(TestCase):
         result = self._send_text('05551234567')
         self.assertTrue(result.success)
 
+    @patch(
+        'apps.communication.application.communication_service.process_queue_item',
+        return_value=True,
+    )
+    def test_closed_window_promotes_fallback_to_template(self, proc):
+        result = CommunicationService().send(
+            self.kurum.id,
+            recipients=RecipientQuery(phone='05551234567'),
+            content=MessageContent(
+                text='Karne ektedir',
+                message_type=MessageType.DOCUMENT,
+                session_fallback={
+                    'template_name': 'sinav_karne_ogrenci',
+                    'template_language': 'tr',
+                    'template_context': {'ogrenci_ad': 'Ali'},
+                },
+            ),
+            source=MessageSource(module='sinav', ref_id='karne:1:2:ogrenci'),
+            process_immediately=True,
+        )
+        self.assertTrue(result.success, result.errors)
+        proc.assert_called_once()
+        message = Message.objects.get(id=result.message_id)
+        self.assertEqual(message.message_type, MessageType.TEMPLATE)
+        self.assertEqual(message.send_options.get('template_name'), 'sinav_karne_ogrenci')
+        self.assertEqual(message.send_options.get('template_context', {}).get('ogrenci_ad'), 'Ali')
+
     def test_closed_window_blocks_freeform(self):
         open_session_window(self.kurum.id, '05551234567')
         close_session_window(self.kurum.id, '05551234567')
@@ -291,6 +349,26 @@ class SessionFallbackRetryTest(TestCase):
             next_attempt_at=timezone.now(),
             send_options=send_options or {},
         )
+
+    @patch.object(WhatsAppCloudClient, 'send_document')
+    @patch.object(WhatsAppCloudClient, 'send_template')
+    def test_closed_window_document_skips_freeform(self, mock_template, mock_document):
+        mock_template.return_value = {'success': True, 'messages': [{'id': 'wamid.doc'}]}
+        self.message.message_type = MessageType.DOCUMENT
+        self.message.save(update_fields=['message_type', 'updated_at'])
+        item = self._queue_item({
+            'session_fallback': {
+                'template_name': 'bilgilendirme',
+                'template_language': 'tr',
+                'channel_config_id': str(self.account.id),
+                'template_context': {'ogrenci_ad': 'Ali'},
+            },
+        })
+        self.assertTrue(process_queue_item(item, WhatsAppCloudClient()))
+        mock_document.assert_not_called()
+        self.assertEqual(mock_template.call_args.kwargs['template_name'], 'bilgilendirme')
+        self.message.refresh_from_db()
+        self.assertEqual(self.message.message_type, MessageType.TEMPLATE)
 
     @patch.object(WhatsAppCloudClient, 'send_template')
     @patch.object(WhatsAppCloudClient, 'send_text')
