@@ -528,6 +528,9 @@ def dispatch_event(
     attachment = attachment or NotificationAttachment()
     source = source or MessageSource(module=event.module, ref_id='')
 
+    channel_config_id = _preferred_channel_config_id(
+        event, kurum_id, sube_id=sube_id, sent_by_user_id=sent_by_user_id,
+    )
     session = window_for_recipient(
         kurum_id,
         phone=recipient.phone,
@@ -535,9 +538,7 @@ def dispatch_event(
         ogrenci_id=recipient.ogrenci_id,
         personel_id=recipient.personel_id,
         channel=channel,
-    )
-    channel_config_id = _preferred_channel_config_id(
-        event, kurum_id, sube_id=sube_id, sent_by_user_id=sent_by_user_id,
+        channel_config_id=channel_config_id,
     )
     resolved = resolve_binding(
         kurum_id, event_key, recipient.recipient_type,

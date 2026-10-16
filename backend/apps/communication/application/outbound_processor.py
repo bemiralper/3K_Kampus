@@ -399,7 +399,8 @@ def _approved_template(kurum_id, name, language, channel_config_id):
 
 def _closed_window_fallback(item, message, phone, opts) -> dict | None:
     """
-    Bu numaranın penceresi kapalıysa ve onaylı şablon varsa serbest gönderimi atla.
+    Bu numaranın, mesajın çıkacağı hattaki penceresi kapalıysa ve onaylı şablon
+    varsa serbest gönderimi atla. Başka hattaki yazışma bu hattı açmaz.
 
     Şablon yoksa None döner; mevcut serbest deneme + Meta 131047 yedeği sürer.
     """
@@ -416,7 +417,10 @@ def _closed_window_fallback(item, message, phone, opts) -> dict | None:
 
     if not enforcement_enabled():
         return None
-    if window_for_recipient(item.kurum_id, phone=phone, channel=channel).is_open:
+    line_id = getattr(conversation, 'channel_config_id', None)
+    if window_for_recipient(
+        item.kurum_id, phone=phone, channel=channel, channel_config_id=line_id,
+    ).is_open:
         return None
     fallback = opts.get('session_fallback') or {}
     if not isinstance(fallback, dict) or not fallback.get('template_name'):

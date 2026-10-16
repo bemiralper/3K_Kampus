@@ -119,6 +119,39 @@ class SessionWindowTest(TestCase):
         )
         self.assertTrue(window.is_open)
 
+    def test_other_whatsapp_line_does_not_open_this_line(self):
+        """Muhasebe hattına yazmak Koçluk hattının 24 saatini açmaz."""
+        accounting = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum, channel=Channel.WHATSAPP, name='Muhasebe',
+            phone_number_id='pn-muh', is_active=True,
+        )
+        coaching = CommunicationChannelConfig.objects.create(
+            kurum=self.kurum, channel=Channel.WHATSAPP, name='Koçluk',
+            phone_number_id='pn-koc', is_active=True,
+        )
+        Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905551110088',
+            channel_config=accounting,
+            last_customer_message_at=timezone.now(),
+        )
+        Conversation.objects.create(
+            kurum=self.kurum,
+            channel=Channel.WHATSAPP,
+            contact_phone='+905551110088',
+            channel_config=coaching,
+            last_customer_message_at=timezone.now() - timedelta(days=20),
+        )
+        coaching_window = window_for_recipient(
+            self.kurum.id, phone='05551110088', channel_config_id=coaching.id,
+        )
+        accounting_window = window_for_recipient(
+            self.kurum.id, phone='05551110088', channel_config_id=accounting.id,
+        )
+        self.assertFalse(coaching_window.is_open)
+        self.assertTrue(accounting_window.is_open)
+
     def test_recipient_window_uses_most_recent_thread(self):
         """Aynı numaraya ait ikinci bir sohbet açıksa kişi engellenmemeli."""
         Conversation.objects.create(

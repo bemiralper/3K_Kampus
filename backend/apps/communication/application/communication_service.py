@@ -215,7 +215,8 @@ class CommunicationService:
         elif content.attachment_path and message_type == MessageType.TEXT:
             message_type = MessageType.DOCUMENT
 
-        # 24 saat kuralı: şablonsuz mesaj yalnızca bu numaranın penceresi açıkken gider.
+        # 24 saat kuralı: şablonsuz mesaj yalnızca bu numaranın, bu hattaki
+        # penceresi açıkken gider. Başka hattaki yazışma bu hattı açmaz.
         # Pencere kapalıysa ve yedek şablon varsa serbest metin denenmez, şablon gider.
         if message_type != MessageType.TEMPLATE and channel == Channel.WHATSAPP:
             from apps.communication.application.session_window import (
@@ -223,6 +224,7 @@ class CommunicationService:
                 window_for_recipient,
             )
 
+            line_id = conversation.channel_config_id or content.channel_config_id or None
             session = window_for_recipient(
                 kurum_id,
                 phone=e164,
@@ -230,6 +232,7 @@ class CommunicationService:
                 ogrenci_id=conversation.ogrenci_id or recipients.ogrenci_id,
                 personel_id=recipients.personel_id,
                 channel=channel,
+                channel_config_id=line_id,
             )
             if not session.is_open and enforcement_enabled():
                 if _promote_session_fallback(content):

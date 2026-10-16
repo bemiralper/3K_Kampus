@@ -3,8 +3,9 @@ WhatsApp 24 saatlik müşteri hizmetleri penceresi.
 
 Meta, o numaranın son mesajından itibaren 24 saat boyunca serbest metin
 gönderilmesine izin verir; pencere kapalıyken yalnızca onaylı şablon iletilebilir
-(hata 131047). Pencere bu modülde tek yerden, gönderilecek telefon numarasına
-göre hesaplanır. Veli sohbeti öğrencinin penceresini açmaz.
+(hata 131047). Pencere bu modülde tek yerden, gönderilecek telefon numarası ve
+mesajın çıkacağı WhatsApp hattı için hesaplanır. Muhasebe hattındaki yazışma
+Koçluk hattını açmaz. Veli sohbeti öğrencinin penceresini açmaz.
 """
 from __future__ import annotations
 
@@ -210,13 +211,15 @@ def window_for_recipient(
     ogrenci_id: int | None = None,
     personel_id: int | None = None,
     channel: str = Channel.WHATSAPP,
+    channel_config_id=None,
 ) -> SessionWindow:
     """
-    Gönderilecek numaranın penceresi.
+    Gönderilecek numaranın, mesajın çıkacağı hattaki penceresi.
 
-    Meta pencereyi telefon numarasına bağlar. Veli az önce yazdı diye öğrencinin
-    numarası açık sayılmaz. Aynı numaradaki birden çok sohbetten en son gelen
-    müşteri mesajı esas alınır. veli/öğrenci/personel kimliği yalnızca numara
+    Meta pencereyi telefon numarası ve işletme hattı çiftine bağlar. Muhasebe
+    hattına yazılmış olmak Koçluk hattını açmaz. Veli sohbeti öğrencinin
+    numarasını açmaz. Aynı hattaki birden çok sohbetten en son gelen müşteri
+    mesajı esas alınır. veli/öğrenci/personel kimliği yalnızca numara
     verilmediğinde telefonu bulmak için kullanılır.
     """
     if channel and channel != Channel.WHATSAPP:
@@ -232,11 +235,15 @@ def window_for_recipient(
     if not normalized:
         return SessionWindow(channel=channel)
 
-    conversation = (
+    threads = (
         Conversation.objects.filter(kurum_id=kurum_id, channel=channel)
         .filter(_conversation_phone_q(normalized))
         .exclude(last_customer_message_at__isnull=True)
-        .order_by('-last_customer_message_at')
+    )
+    if channel_config_id:
+        threads = threads.filter(channel_config_id=channel_config_id)
+    conversation = (
+        threads.order_by('-last_customer_message_at')
         .only('id', 'channel', 'last_customer_message_at')
         .first()
     )
