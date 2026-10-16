@@ -1142,3 +1142,71 @@ export async function runPredictiveCycle(options?: {
   return apiPost('/api/coaching/predictive/run-cycle/', options || {});
 }
 
+export interface HaftalikProgramItem {
+  kind: 'odev' | 'gorusme';
+  kind_label: string;
+  time: string | null;
+  student: string;
+  title: string;
+  detail: string;
+  status: string;
+  status_label: string;
+}
+
+export interface HaftalikProgramDay {
+  date: string;
+  name: string;
+  short_name: string;
+  day: number;
+  items: HaftalikProgramItem[];
+}
+
+export interface HaftalikProgram {
+  can_pick_coach: boolean;
+  coaches: { id: number; name: string }[];
+  coach_id: number | null;
+  coach_name: string;
+  week_start: string;
+  week_end: string;
+  week_label: string;
+  days: HaftalikProgramDay[];
+  counts: { odev: number; gorusme: number };
+}
+
+export async function fetchHaftalikProgram(params?: {
+  week?: string;
+  coachId?: number | null;
+}): Promise<ApiResponse<HaftalikProgram>> {
+  const search = new URLSearchParams();
+  if (params?.week) search.set('week', params.week);
+  if (params?.coachId) search.set('coach_id', String(params.coachId));
+  const query = search.toString();
+  return apiGet(`/api/coaching/haftalik-program/${query ? `?${query}` : ''}`);
+}
+
+export async function downloadHaftalikProgramPdf(params: {
+  week: string;
+  coachId?: number | null;
+}): Promise<void> {
+  const search = new URLSearchParams({ week: params.week });
+  if (params.coachId) search.set('coach_id', String(params.coachId));
+  const res = await fetch(
+    resolveApiUrl(`/api/coaching/haftalik-program/pdf/?${search}`),
+    { credentials: 'include', headers: getContextHeaders() },
+  );
+  if (!res.ok) {
+    let message = 'PDF indirilemedi.';
+    try {
+      const data = await res.json();
+      if (data?.error) message = String(data.error);
+    } catch {
+      /* yanıt dosya değil */
+    }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const plain = /filename="([^"]+)"/.exec(cd);
+  await downloadPdfBlob(blob, plain?.[1] || 'haftalik-program.pdf');
+}
+

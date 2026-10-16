@@ -502,6 +502,7 @@ def _retry_as_template(client, item, message, phone, opts) -> dict | None:
         template_name=meta_tpl.name,
         language_code=meta_tpl.language or fallback.get('template_language') or 'tr',
         components=components or None,
+        context_message_id=_reply_context_id(message),
     )
     if result.get('success'):
         MetaTemplateService.increment_usage(meta_tpl)
@@ -722,6 +723,7 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 template_name=template_name,
                 language_code=lang,
                 components=components or None,
+                context_message_id=_reply_context_id(message),
             )
         elif message.message_type == MessageType.TEMPLATE and message.attachments.exists():
             result = {

@@ -11,7 +11,7 @@ from apps.coaching.assignment_manual.models import (
     ManualAssignment,
 )
 from apps.coaching.study_program.models import ProgramBlock, ProgramDay, WeeklyProgram
-from apps.coaching.study_program.services import auto_distribute, move_block
+from apps.coaching.study_program.services import auto_distribute, move_block, sync_program_date_range
 from apps.egitim_tanimlari.models import Ders
 from apps.kurum.domain.models import Kurum
 from apps.ogrenci.domain.models import Ogrenci
@@ -113,6 +113,19 @@ class AutoDistributeEqualTest(TestCase):
             self.assertEqual(block.topic_name, 'Doğruda Açı')
             counts.append(block.question_count)
         self.assertEqual(counts, [7, 7, 7, 7, 7, 6, 6])
+        self.assertEqual(sum(counts), 47)
+
+    def test_eight_days_include_the_assignment_day_and_the_control_day(self):
+        sync_program_date_range(self.program, date(2026, 10, 15), self.week_end)
+        self._lesson('Doğruda Açı', 47, order=0)
+        result = auto_distribute(self.program, assignment_ids=[self.assignment.id], metric='question')
+        self.assertEqual(result['study_days'], 8)
+        self.assertEqual(result['distributed'], 8)
+        days = list(self.program.days.order_by('day_date'))
+        self.assertEqual(days[0].day_date, date(2026, 10, 15))
+        self.assertEqual(days[-1].day_date, self.week_end)
+        counts = [day.blocks.get().question_count for day in days]
+        self.assertEqual(counts, [6, 6, 6, 6, 6, 6, 6, 5])
         self.assertEqual(sum(counts), 47)
 
     def test_move_merges_same_topic_on_target_day(self):

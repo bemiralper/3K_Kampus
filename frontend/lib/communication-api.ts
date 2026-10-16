@@ -1064,6 +1064,7 @@ export async function sendConversationTemplate(
   conversationId: string,
   templateId: string,
   variables: Record<string, string>,
+  replyToMessageId?: string | null,
 ): Promise<MessageItem> {
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   return request(`/conversations/${conversationId}/template-messages/`, {
@@ -1072,6 +1073,7 @@ export async function sendConversationTemplate(
       template_id: templateId,
       variables,
       kurum_id: kurumId,
+      reply_to_message_id: replyToMessageId || undefined,
     }),
   });
 }

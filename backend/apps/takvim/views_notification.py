@@ -61,7 +61,17 @@ def serialize_notification(n):
         'read_at': n.read_at.isoformat() if n.read_at else None,
         'created_at': n.created_at.isoformat() if n.created_at else None,
         'alici_tip': n.alici_tip,
+        'sube_id': n.sube_id,
+        'sube_ad': n.sube_ad or '',
     }
+
+
+def serialize_notifications(notifications):
+    from apps.takvim.application.notification_sube import annotate_notification_subes
+
+    rows = list(notifications)
+    annotate_notification_subes(rows)
+    return [serialize_notification(n) for n in rows]
 
 
 def serialize_log(log):
@@ -97,13 +107,16 @@ def api_notification_list(request):
 
     unread_only = request.GET.get('unread_only') == 'true'
     limit = min(int(request.GET.get('limit', 50)), 100)
+    kaynak = request.GET.get('kaynak') or 'diger'
+    if kaynak not in ('diger', 'gorev', 'hepsi'):
+        kaynak = 'diger'
 
     service = AppNotificationService()
-    notifications = service.get_notifications(user_id, kurum_id, unread_only, limit)
+    notifications = service.get_notifications(user_id, kurum_id, unread_only, limit, kaynak=kaynak)
 
     return JsonResponse({
         'success': True,
-        'data': [serialize_notification(n) for n in notifications],
+        'data': serialize_notifications(notifications),
     })
 
 
@@ -124,7 +137,7 @@ def api_notification_summary(request):
         'success': True,
         'data': {
             'unread_count': summary['unread_count'],
-            'recent': [serialize_notification(n) for n in summary['recent']],
+            'recent': serialize_notifications(summary['recent']),
         },
     })
 
@@ -146,13 +159,13 @@ def api_notification_screen(request):
     except Exception:
         pass
 
-    limit = min(int(request.GET.get('limit', 5)), 10)
+    limit = min(int(request.GET.get('limit', 20)), 40)
     service = AppNotificationService()
     notifications = service.get_screen_messages(user_id, kurum_id, limit)
 
     return JsonResponse({
         'success': True,
-        'data': [serialize_notification(n) for n in notifications],
+        'data': serialize_notifications(notifications),
     })
 
 
@@ -169,6 +182,34 @@ def api_notification_mark_screen_shown(request, pk):
     service = AppNotificationService()
     service.mark_ekran_gosterildi(pk)
     return JsonResponse({'success': True, 'message': 'Ekran mesajı kapatıldı'})
+
+
+@csrf_exempt
+def api_notification_dismiss_screen_all(request):
+    """Bekleyen ekran mesajlarının tümünü (veya verilen id'leri) kapat."""
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    kurum_id, user_id, err = _require_user_and_kurum(request)
+    if err:
+        return err
+
+    ids = None
+    if request.body:
+        try:
+            payload = json.loads(request.body.decode() or '{}')
+        except json.JSONDecodeError:
+            payload = {}
+        raw = payload.get('ids') if isinstance(payload, dict) else None
+        if isinstance(raw, list):
+            ids = [str(item) for item in raw if item]
+
+    from apps.takvim.infrastructure.repository import AppNotificationRepository
+
+    updated = AppNotificationRepository.mark_ekran_gosterildi_many(
+        user_id, kurum_id, ids,
+    )
+    return JsonResponse({'success': True, 'updated': updated})
 
 
 @csrf_exempt

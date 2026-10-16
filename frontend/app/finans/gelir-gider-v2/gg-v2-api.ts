@@ -94,8 +94,11 @@ export const ggService = {
     return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/onay-kaldir/`, { method: "POST" });
   },
 
-  iptal(modul: GGModul, id: number): Promise<GGListItem> {
-    return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/iptal/`, { method: "POST" });
+  iptal(modul: GGModul, id: number, force = false): Promise<GGListItem> {
+    return request<GGListItem>(`/${modul}/v2/kayitlar/${id}/iptal/`, {
+      method: "POST",
+      body: JSON.stringify(force ? { force: true } : {}),
+    });
   },
 
   // ─── Gider ödeme (mevcut v1 uçları) ───────────────────────────

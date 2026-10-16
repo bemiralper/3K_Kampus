@@ -84,7 +84,9 @@ class GorevAssignmentServiceTest(TestCase):
 
         notif = AppNotification.objects.get(user_id=self.coach_user.id, kurum_id=self.kurum.id)
         self.assertTrue(notif.ekran_mesaji)
-        self.assertIn('Toplantı notunu oku', notif.baslik)
+        self.assertEqual(notif.baslik, 'Görev: Yapılacak İş — Toplantı notunu oku')
+        self.assertEqual(notif.mesaj, '')
+        self.assertEqual(notif.url, f'/coach/gorevler/{gorev.id}')
 
     def test_create_user_task_appears_in_bugun_list(self):
         gorev = self.service.create_gorev(self.kurum.id, {
@@ -132,3 +134,76 @@ class GorevAssignmentServiceTest(TestCase):
         self.assertFalse(
             GorevAtama.objects.filter(gorev__baslik__icontains='Deneme').exists(),
         )
+
+    def _open_task(self, baslik='Geri dönüş'):
+        return self.service.create_gorev(self.kurum.id, {
+            'gorev_tipi_id': str(self.tip.id),
+            'baslik': baslik,
+            'son_tarih': timezone.now() + timedelta(days=1),
+            'hedef_tipi': HedefTipi.KULLANICI,
+            'hedef_user_ids': [self.coach_user.id],
+        }, olusturan_id=self.admin_user.id)
+
+    def test_assignee_feedback_reaches_only_the_sender(self):
+        gorev = self._open_task()
+        atama = GorevAtama.objects.get(gorev=gorev)
+        self.service.update_atama(atama, {}, user_id=self.coach_user.id)
+        self.assertFalse(
+            AppNotification.objects.filter(baslik__startswith='Geri bildirim:').exists(),
+        )
+
+        atama.refresh_from_db()
+        self.service.update_atama(atama, {'notlar': 'Aradım, açmadı.'}, user_id=self.coach_user.id)
+        note = AppNotification.objects.get(baslik__startswith='Geri bildirim:')
+        self.assertEqual(note.user_id, self.admin_user.id)
+        self.assertFalse(note.ekran_mesaji)
+        self.assertIn('Aradım, açmadı.', note.mesaj)
+        self.assertEqual(note.url, f'/admin/gorevler/{gorev.id}')
+
+        atama.refresh_from_db()
+        self.service.update_atama(atama, {'notlar': 'Aradım, açmadı.'}, user_id=self.coach_user.id)
+        self.assertEqual(AppNotification.objects.filter(baslik__startswith='Geri bildirim:').count(), 1)
+
+    def test_completing_with_a_note_does_not_send_a_second_feedback(self):
+        gorev = self._open_task('Kapanış')
+        atama = GorevAtama.objects.get(gorev=gorev)
+        self.service.update_atama(
+            atama,
+            {'durum': 'TAMAMLANDI', 'notlar': 'Bitti'},
+            user_id=self.coach_user.id,
+        )
+        self.assertFalse(AppNotification.objects.filter(baslik__startswith='Geri bildirim:').exists())
+        done = AppNotification.objects.get(user_id=self.admin_user.id, baslik__startswith='Görev Tamamlandı:')
+        self.assertIn('Bitti', done.mesaj)
+
+    def test_personal_reminder_is_set_by_assignee_and_sent_once(self):
+        from apps.gorev.application.personal_reminder import send_due_personal_reminders
+
+        gorev = self._open_task('Hatırlatılacak')
+        atama = GorevAtama.objects.get(gorev=gorev)
+        when = timezone.now() + timedelta(hours=2)
+        self.service.update_atama(atama, {'kisisel_hatirlatma_at': when}, user_id=self.coach_user.id)
+        atama.refresh_from_db()
+        self.assertEqual(atama.kisisel_hatirlatma_at, when)
+        self.assertIsNone(atama.kisisel_hatirlatma_gonderildi_at)
+
+        with self.assertRaises(ValueError):
+            self.service.update_atama(
+                atama,
+                {'kisisel_hatirlatma_at': when + timedelta(hours=1)},
+                user_id=self.admin_user.id,
+            )
+        with self.assertRaises(ValueError):
+            self.service.update_atama(
+                atama,
+                {'kisisel_hatirlatma_at': timezone.now() - timedelta(minutes=5)},
+                user_id=self.coach_user.id,
+            )
+
+        self.assertEqual(send_due_personal_reminders(timezone.now()), 0)
+        self.assertEqual(send_due_personal_reminders(when + timedelta(minutes=1)), 1)
+        note = AppNotification.objects.get(user_id=self.coach_user.id, baslik__startswith='Hatırlatma:')
+        self.assertIn('Yapılacak İş — Hatırlatılacak', note.baslik)
+        self.assertEqual(note.url, f'/coach/gorevler/{gorev.id}')
+        self.assertFalse(note.ekran_mesaji)
+        self.assertEqual(send_due_personal_reminders(when + timedelta(minutes=2)), 0)

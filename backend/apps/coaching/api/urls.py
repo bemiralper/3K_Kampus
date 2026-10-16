@@ -23,6 +23,10 @@ from apps.coaching.api.risk_report_views import (
     CoachRiskReportDetailView,
     CoachRiskReportListView,
 )
+from apps.coaching.api.haftalik_program_views import (
+    HaftalikProgramPdfView,
+    HaftalikProgramView,
+)
 from apps.coaching.api.gorusme_views import (
     GorusmeListCreateView,
     GorusmeDetailView,
@@ -71,6 +75,9 @@ urlpatterns = [
     path('attendance-thresholds/', AttendanceThresholdView.as_view(), name='coach-attendance-thresholds'),
     path('intelligence/', include('apps.coaching.intelligence.api.urls')),
     path('predictive/', include('apps.coaching.predictive.api.urls')),
+
+    path('haftalik-program/', HaftalikProgramView.as_view(), name='coach-haftalik-program'),
+    path('haftalik-program/pdf/', HaftalikProgramPdfView.as_view(), name='coach-haftalik-program-pdf'),
 
     # ─── Görüşme Yönetimi ────────────────────────────────────
     path('gorusmeler/', GorusmeListCreateView.as_view(), name='gorusme-list-create'),

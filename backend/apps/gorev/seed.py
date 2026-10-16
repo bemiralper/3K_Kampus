@@ -14,7 +14,6 @@ DEFAULT_GOREV_TIPLERI = [
     {'kod': 'OGRENCI_GORUSME', 'ad': 'Öğrenci Görüşmesi', 'renk': '#3B82F6', 'ikon': '🎓', 'sira': 10},
     {'kod': 'HAFTALIK_GORUSME', 'ad': 'Haftalık Görüşme', 'renk': '#6366F1', 'ikon': '📅', 'sira': 11},
     {'kod': 'VELI_GORUSME', 'ad': 'Veli Görüşmesi', 'renk': '#8B5CF6', 'ikon': '👨‍👩‍👧', 'sira': 12},
-    {'kod': 'DENEME_ANALIZ', 'ad': 'Deneme Analizi', 'renk': '#10B981', 'ikon': '📊', 'sira': 13},
     {'kod': 'ODEV_KONTROL', 'ad': 'Ödev Kontrolü', 'renk': '#F59E0B', 'ikon': '📝', 'sira': 14},
     {'kod': 'KAYNAK_ICERIK', 'ad': 'Kaynak İçeriği Tamamlama', 'renk': '#EF4444', 'ikon': '📚', 'sira': 15},
     # Muhasebe otomatik türleri
@@ -32,8 +31,13 @@ DEFAULT_GOREV_TIPLERI = [
 ]
 
 
+REMOVED_GOREV_TIPLERI = ('DENEME_ANALIZ',)
+
+
 def seed_gorev_tipleri(kurum_id: int):
     from apps.gorev.domain.models import GorevTipi
+
+    GorevTipi.objects.filter(kurum_id=kurum_id, kod__in=REMOVED_GOREV_TIPLERI).update(is_active=False)
 
     created = []
     for tip_data in DEFAULT_GOREV_TIPLERI:

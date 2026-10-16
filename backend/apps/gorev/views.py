@@ -1,8 +1,9 @@
 """Görev modülü — API view'ları."""
 import json
 from datetime import datetime
+from urllib.parse import quote
 
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
@@ -163,6 +164,67 @@ def api_gorev_detail(request, pk):
     return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
 
+@require_gorev_api
+def api_gorev_pdf(request, pk):
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    kurum_id = _get_kurum_id(request)
+    if not kurum_id:
+        return JsonResponse({'success': False, 'error': 'Kurum seçilmedi'}, status=400)
+
+    gorev = GorevService().get_gorev(kurum_id, pk)
+    if not gorev:
+        return JsonResponse({'success': False, 'error': 'Görev bulunamadı'}, status=404)
+
+    user_id = _get_user_id(request)
+    role_code = _get_role_code(request)
+    if not _can_view_all_gorevler(request, role_code):
+        if not gorev.atamalar.filter(atanan_user_id=user_id).exists():
+            return JsonResponse({'success': False, 'error': 'Yetkisiz'}, status=403)
+
+    from apps.gorev.application.pdf_export import build_gorev_pdf_html
+    from apps.communication.application.html_to_pdf import render_html_to_pdf
+
+    try:
+        pdf_bytes = render_html_to_pdf(build_gorev_pdf_html(gorev, kurum_id))
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': f'PDF oluşturulamadı: {exc}'}, status=500)
+
+    stem = ''.join(ch if ch.isalnum() or ch in ' ._-' else '_' for ch in (gorev.baslik or 'gorev'))
+    stem = stem.strip(' ._')[:80] or 'gorev'
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f"attachment; filename*=UTF-8''{quote(stem + '.pdf')}"
+    return response
+
+
+@csrf_exempt
+@require_gorev_api
+def api_gorev_bulk_delete(request):
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+
+    kurum_id = _get_kurum_id(request)
+    user_id = _get_user_id(request)
+    if not kurum_id or not user_id:
+        return JsonResponse({'success': False, 'error': 'Yetkisiz'}, status=400)
+    if not _can_view_all_gorevler(request, _get_role_code(request)):
+        return JsonResponse({'success': False, 'error': 'Yetkisiz'}, status=403)
+
+    try:
+        payload = json.loads(request.body or '{}')
+    except json.JSONDecodeError:
+        return JsonResponse({'success': False, 'error': 'Geçersiz istek'}, status=400)
+    ids = payload.get('ids') if isinstance(payload, dict) else None
+    if not isinstance(ids, list) or not ids:
+        return JsonResponse({'success': False, 'error': 'Silinecek görev seçilmedi'}, status=400)
+    if len(ids) > 200:
+        return JsonResponse({'success': False, 'error': 'Bir seferde en fazla 200 görev silinebilir'}, status=400)
+
+    deleted = GorevService().delete_gorevler(kurum_id, ids, user_id)
+    return JsonResponse({'success': True, 'data': {'deleted': deleted}})
+
+
 @csrf_exempt
 @require_gorev_api
 def api_atama_list(request):
@@ -270,6 +332,8 @@ def api_atama_detail(request, pk):
     if request.method in ('PUT', 'PATCH'):
         try:
             data = json.loads(request.body)
+            if 'kisisel_hatirlatma_at' in data:
+                data['kisisel_hatirlatma_at'] = _parse_datetime(data.get('kisisel_hatirlatma_at'))
             service = GorevService()
             atama = service.update_atama(atama, data, user_id)
             return JsonResponse({'success': True, 'data': serialize_atama(atama, include_gorev=True)})

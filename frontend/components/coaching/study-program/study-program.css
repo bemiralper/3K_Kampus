@@ -149,6 +149,36 @@
   gap: 8px;
 }
 
+.sps-length,
+.s360p-length {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 10px;
+  background: var(--sp-canvas, #f8fafc);
+  border: 1px solid var(--sp-line, #e2e8f0);
+}
+
+.sps-length button,
+.s360p-length button {
+  border: 0;
+  background: transparent;
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: var(--sp-muted);
+}
+
+.sps-length button.is-on,
+.s360p-length button.is-on {
+  background: #111827;
+  color: #fff;
+}
+
 .sps-date-pill {
   display: inline-flex;
   align-items: center;
@@ -465,16 +495,51 @@
   gap: 12px;
 }
 
+.sp-week-scroll,
 .sp-day-grid-scroll {
   overflow-x: auto;
+  overscroll-behavior-x: contain;
   -webkit-overflow-scrolling: touch;
-  padding-bottom: 4px;
+  cursor: grab;
+  padding-bottom: 8px;
+  touch-action: pan-x;
+}
+
+.sp-week-scroll.is-panning,
+.sp-day-grid-scroll.is-panning {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.sp-week-scroll button,
+.sp-week-scroll a,
+.sp-week-scroll input,
+.sp-week-scroll textarea,
+.sp-week-scroll select,
+.sp-day-grid-scroll button,
+.sp-day-grid-scroll a,
+.sp-day-grid-scroll input,
+.sp-day-grid-scroll textarea,
+.sp-day-grid-scroll select {
+  cursor: pointer;
+}
+
+.sp-week-scroll [draggable='true'],
+.sp-day-grid-scroll [draggable='true'] {
+  cursor: grab;
+}
+
+.sp-week-track {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: max(100%, calc(var(--sp-day-count, 7) * 248px));
 }
 
 .sp-day-grid {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(var(--sp-day-count, 7), minmax(156px, 1fr));
+  grid-template-columns: repeat(var(--sp-day-count, 7), minmax(220px, 1fr));
   min-width: 0;
 }
 
@@ -490,8 +555,14 @@
 
 .sp-plan-summary-grid {
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(var(--sp-summary-count, 1), minmax(0, 1fr));
+  gap: 10px;
+  grid-template-columns: repeat(var(--sp-day-count, 7), minmax(220px, 1fr));
+}
+
+.sps-plan-kicker {
+  position: sticky;
+  left: 0;
+  width: fit-content;
 }
 
 /* ----- Mobil / Tablet Gün Seçici Şerit + Tek Gün Gündemi ----- */
@@ -621,6 +692,9 @@
   }
   .sps-quick-add-btn {
     display: inline-flex;
+  }
+  .sp-week-track.is-focused {
+    width: 100%;
   }
   /* Tablette 7 sütunu yan yana sıkıştırmak yerine seçili günü tam genişlik göster */
   .sp-day-grid.is-focused-day {

@@ -37,6 +37,46 @@ from apps.communication.interfaces.views._context import resolve_kurum_and_sube
 from apps.communication.interfaces.views.messages import _load_conversation_for_messages
 
 
+def _latest_inbound_reply_id(conversation) -> str:
+    """Cevap bekleyen sohbette şablon, son gelen mesajın alıntısı olsun."""
+    from apps.communication.domain.enums import MessageDirection
+    from apps.communication.domain.models import Message
+
+    message_id = (
+        Message.objects.filter(
+            conversation=conversation,
+            direction=MessageDirection.INBOUND,
+        )
+        .exclude(provider_message_id='')
+        .order_by('-created_at')
+        .values_list('id', flat=True)
+        .first()
+    )
+    return str(message_id) if message_id else ''
+
+
+def _confirm_template_counts_as_reply(conversation, user) -> None:
+    """Şablon gittikten sonra sohbet hâlâ cevapsızsa yanıt damgasını yeniden yaz.
+
+    Serbest metin gibi: first_unanswered temizlenir, durum REPLIED olur,
+    okunmamış sayaç sıfırlanır. Kampanya ve sistem şablonları bu yoldan geçmez.
+    """
+    from apps.communication.application.conversation_router import ConversationRouter
+    from apps.communication.domain.enums import ConversationStatus
+    from apps.communication.infrastructure.repository import ConversationRepository
+
+    conversation.refresh_from_db()
+    if conversation.status == ConversationStatus.ARCHIVED:
+        return
+    if conversation.first_unanswered_at or conversation.status != ConversationStatus.REPLIED:
+        ConversationRouter.apply_after_outbound(
+            conversation,
+            actor=user,
+            source_module='conversation_template',
+        )
+    ConversationRepository.mark_read(conversation)
+
+
 def _list_personal_chat_templates(kurum_id: int, channel_config_id=None):
     """
     Sohbet «Şablon seç» listesi — yalnızca PERSONAL kapsamı (ALL sistem şablonları değil).
@@ -207,6 +247,9 @@ class ConversationTemplateSendView(CommunicationAPIView):
                 {'error': 'variables bir nesne olmalıdır.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        reply_to_message_id = str(request.data.get('reply_to_message_id') or '').strip()
+        if not reply_to_message_id and conversation.first_unanswered_at:
+            reply_to_message_id = _latest_inbound_reply_id(conversation)
         context = {
             **build_recipient_context_from_conversation(
                 conversation, sender_user=request.user,
@@ -228,12 +271,15 @@ class ConversationTemplateSendView(CommunicationAPIView):
                 template_language=template.language or 'tr',
                 channel_config_id=str(template.channel_config_id),
                 template_context=context,
+                reply_to_message_id=reply_to_message_id or None,
             ),
-            source=MessageSource(module='manual', ref_id=str(conversation_id)),
+            source=MessageSource(module='conversation_template', ref_id=str(conversation_id)),
             sender_user_id=request.user.id,
         )
         if not result.success:
             return Response({'error': result.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        _confirm_template_counts_as_reply(conversation, request.user)
 
         from apps.communication.domain.models import Message
 

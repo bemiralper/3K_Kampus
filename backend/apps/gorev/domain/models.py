@@ -1,3 +1,4 @@
+import os
 import uuid
 
 from django.db import models
@@ -146,6 +147,12 @@ class GorevAtama(models.Model):
     son_hatirlatma_at = models.DateTimeField(
         null=True, blank=True, verbose_name='Son Hatırlatma Bildirimi',
     )
+    kisisel_hatirlatma_at = models.DateTimeField(
+        null=True, blank=True, verbose_name='Kişisel Hatırlatma',
+    )
+    kisisel_hatirlatma_gonderildi_at = models.DateTimeField(
+        null=True, blank=True, verbose_name='Kişisel Hatırlatma Gönderildi',
+    )
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -163,6 +170,7 @@ class GorevAtama(models.Model):
         ]
         indexes = [
             models.Index(fields=['atanan_user_id', 'durum'], name='idx_gorev_atama_user_durum'),
+            models.Index(fields=['kisisel_hatirlatma_at'], name='idx_gorev_atama_hatirlat'),
         ]
 
     def __str__(self):
@@ -182,6 +190,50 @@ class GorevAtama(models.Model):
         if self.durum in (GorevDurum.TAMAMLANDI, GorevDurum.TAMAMLANMADI, GorevDurum.IPTAL):
             return False
         return self.gecikme_gun > 0
+
+
+def gorev_dosya_upload_to(instance, filename):
+    ext = os.path.splitext(filename or '')[1].lower()[:10]
+    return f'gorev/dosyalar/{instance.kurum_id}/{instance.id}{ext}'
+
+
+class GorevDosya(models.Model):
+    """Görev açıklamasına eklenen görsel veya belge. Erişim API üzerinden yetkiye bağlıdır."""
+
+    TUR_GORSEL = 'gorsel'
+    TUR_DOSYA = 'dosya'
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum_id = models.IntegerField(verbose_name='Kurum ID')
+    gorev = models.ForeignKey(
+        Gorev,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='dosyalar',
+        verbose_name='Görev',
+    )
+    yukleyen_id = models.IntegerField(verbose_name='Yükleyen')
+    dosya = models.FileField(upload_to=gorev_dosya_upload_to, verbose_name='Dosya')
+    orijinal_ad = models.CharField(max_length=255, verbose_name='Özgün ad')
+    icerik_turu = models.CharField(max_length=120, verbose_name='İçerik türü')
+    boyut = models.PositiveIntegerField(verbose_name='Boyut (bayt)')
+    tur = models.CharField(max_length=10, verbose_name='Tür')
+    sha256 = models.CharField(max_length=64, blank=True, default='', verbose_name='SHA-256')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'gorev_dosya'
+        ordering = ['created_at']
+        verbose_name = 'Görev Dosyası'
+        verbose_name_plural = 'Görev Dosyaları'
+        indexes = [
+            models.Index(fields=['kurum_id', 'yukleyen_id'], name='idx_gorev_dosya_yukleyen'),
+            models.Index(fields=['kurum_id', 'sha256'], name='idx_gorev_dosya_sha'),
+        ]
+
+    def __str__(self):
+        return self.orijinal_ad
 
 
 class GorevTekrarSablonu(models.Model):

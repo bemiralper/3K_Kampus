@@ -132,17 +132,31 @@ function odenenOf(row: GGListItem) {
   return Number(row.odenen_toplam || row.tahsil_edilen || 0);
 }
 
-function canIptal(row: GGListItem, isSuper: boolean) {
+function canReverseFinans(user: { is_superuser?: boolean; permissions?: string[]; role_code?: string | null } | null) {
+  if (!user) return false;
+  if (user.is_superuser) return true;
+  const code = user.role_code || "";
+  if (code === "kurum_yoneticisi" || code === "muhasebe") return true;
+  return (user.permissions || []).some((p) => p === "finans.manage" || p === "finans.delete");
+}
+
+function canIptal(row: GGListItem, canReverse: boolean) {
   if (row.durum === "iptal") return false;
-  return Boolean(row.iptal_edilebilir_mi) || isSuper;
+  return Boolean(row.iptal_edilebilir_mi) || canReverse;
 }
 
 function canOnayKaldir(row: GGListItem, isSuper: boolean) {
   return isSuper && row.durum === "onaylandi" && odenenOf(row) === 0;
 }
 
-function canSil(row: GGListItem, isSuper: boolean) {
-  return isSuper || Boolean(row.durum?.includes("taslak"));
+function canSil(row: GGListItem, canReverse: boolean) {
+  if (row.durum === "iptal") return canReverse;
+  return canReverse || Boolean(row.durum?.includes("taslak"));
+}
+
+function canEditRow(row: GGListItem, canReverse: boolean) {
+  if (row.durum === "iptal") return false;
+  return Boolean(row.duzenlenebilir_mi) || canReverse;
 }
 
 export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
@@ -154,6 +168,7 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
   const { message, modal } = AntApp.useApp();
   const { user } = useAuth();
   const isSuper = Boolean(user?.is_superuser);
+  const canReverse = canReverseFinans(user);
   const { activeKurum, activeSube } = useKurum();
   const { homeHref } = useFinansPath();
   const screens = Grid.useBreakpoint();
@@ -324,7 +339,7 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
       cancelText: "Vazgeç",
       onOk: async () => {
         try {
-          await ggService.iptal(modul, row.id);
+          await ggService.iptal(modul, row.id, paid);
           message.success("Kayıt iptal edildi.");
           reload();
         } catch (e) {
@@ -527,7 +542,7 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
               </Tooltip>
             )}
             <Tooltip title="Düzenle">
-              <Button size="small" type="text" icon={<EditOutlined />} disabled={!r.duzenlenebilir_mi} onClick={() => openEdit(r)} />
+              <Button size="small" type="text" icon={<EditOutlined />} disabled={!canEditRow(r, canReverse)} onClick={() => openEdit(r)} />
             </Tooltip>
             {r.duzenlenebilir_mi && r.durum.includes("taslak") && (
               <Tooltip title="Onayla">
@@ -539,12 +554,12 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
                 <Button size="small" type="text" icon={<UndoOutlined />} onClick={() => onOnayKaldir(r)} />
               </Tooltip>
             )}
-            {canIptal(r, isSuper) && (
+            {canIptal(r, canReverse) && (
               <Tooltip title="İptal">
                 <Button size="small" type="text" danger icon={<StopOutlined />} onClick={() => onIptal(r)} />
               </Tooltip>
             )}
-            {canSil(r, isSuper) && (
+            {canSil(r, canReverse) && (
               <Popconfirm
                 title={r.durum.includes("taslak") ? "Kayıt silinsin mi?" : "Onaylı kayıt iptal edilip silinsin mi? Bağlı ödemeler geri alınır."}
                 okText="Sil"
@@ -560,7 +575,7 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
     ];
     return all.filter((c) => c.key === "belge" || c.key === "islemler" || visibleCols.includes(c.key as string));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfg, visibleCols, screens.md, isSuper]);
+  }, [cfg, visibleCols, screens.md, isSuper, canReverse]);
 
   const colMenu: MenuProps["items"] = columnDefs(cfg)
     .filter((c) => c.key !== "islemler" && c.key !== "belge")
@@ -810,32 +825,40 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
                           </Button>,
                         ]
                       : []),
-                    <Button
-                      key="edit"
-                      type="text"
-                      size="small"
-                      icon={<EditOutlined />}
-                      onClick={(e) => { e.stopPropagation(); openEdit(r); }}
-                    >
-                      Düzenle
-                    </Button>,
-                    <Popconfirm
-                      key="delete"
-                      title="Kayıt silinsin mi?"
-                      okText="Sil"
-                      cancelText="Vazgeç"
-                      onConfirm={() => onDelete(r)}
-                    >
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        Sil
-                      </Button>
-                    </Popconfirm>,
+                    ...(canEditRow(r, canReverse)
+                      ? [
+                          <Button
+                            key="edit"
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            onClick={(e) => { e.stopPropagation(); openEdit(r); }}
+                          >
+                            Düzenle
+                          </Button>,
+                        ]
+                      : []),
+                    ...(canSil(r, canReverse)
+                      ? [
+                          <Popconfirm
+                            key="delete"
+                            title="Kayıt silinsin mi? Ödeme varsa kasa ve cari hareket geri alınır."
+                            okText="Sil"
+                            cancelText="Vazgeç"
+                            onConfirm={() => onDelete(r)}
+                          >
+                            <Button
+                              type="text"
+                              size="small"
+                              danger
+                              icon={<DeleteOutlined />}
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              Sil
+                            </Button>
+                          </Popconfirm>,
+                        ]
+                      : []),
                   ]}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, gap: 10 }}>
@@ -921,14 +944,16 @@ export default function GelirGiderListClient({ modul }: { modul: GGModul }) {
               {modul === "gelir" && ctxMenu.row.tahsil_edilebilir_mi && (
                 <Button type="text" block style={{ textAlign: "left", color: "#16a34a" }} icon={<DollarOutlined />} onClick={() => { openOdeme(ctxMenu.row); setCtxMenu(null); }}>Tahsil et</Button>
               )}
-              <Button type="text" block style={{ textAlign: "left" }} icon={<EditOutlined />} onClick={() => { openEdit(ctxMenu.row); setCtxMenu(null); }}>Düzenle</Button>
+              {canEditRow(ctxMenu.row, canReverse) && (
+                <Button type="text" block style={{ textAlign: "left" }} icon={<EditOutlined />} onClick={() => { openEdit(ctxMenu.row); setCtxMenu(null); }}>Düzenle</Button>
+              )}
               {canOnayKaldir(ctxMenu.row, isSuper) && (
                 <Button type="text" block style={{ textAlign: "left" }} icon={<UndoOutlined />} onClick={() => { onOnayKaldir(ctxMenu.row); setCtxMenu(null); }}>Onayı Kaldır</Button>
               )}
-              {canIptal(ctxMenu.row, isSuper) && (
+              {canIptal(ctxMenu.row, canReverse) && (
                 <Button type="text" block danger style={{ textAlign: "left" }} icon={<StopOutlined />} onClick={() => { onIptal(ctxMenu.row); setCtxMenu(null); }}>İptal Et</Button>
               )}
-              {canSil(ctxMenu.row, isSuper) && (
+              {canSil(ctxMenu.row, canReverse) && (
                 <Button type="text" block danger style={{ textAlign: "left" }} icon={<DeleteOutlined />} onClick={() => { onDelete(ctxMenu.row); setCtxMenu(null); }}>Sil</Button>
               )}
             </Space>

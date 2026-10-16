@@ -34,6 +34,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/olcme-degerlendirme/yeni": "Yeni Sınav Oluştur",
   "/coach/olcme-degerlendirme/oturum-gruplari": "Oturum grupları",
   "/coach/kutuphane": "Kütüphane",
+  "/coach/haftalik-program": "Haftalık Program",
   "/coach/gorusmeler": "Görüşmeler",
   "/coach/gorevler": "Görevler",
   "/coach/takvim": "Takvim",
@@ -44,6 +45,7 @@ const PAGE_TITLES: Record<string, string> = {
 };
 
 function resolvePageTitle(pathname: string): string {
+  if (/^\/coach\/gorevler\/[^/]+/.test(pathname)) return "Görev";
   if (pathname.startsWith("/coach/ogrenciler/")) return "Öğrenci Profili";
   if (pathname.startsWith("/coach/odev/kontrol/") && pathname.endsWith("/rapor")) return "Ödev Sonuç Raporu";
   if (pathname.startsWith("/coach/odev/kontrol/")) return "Ödev Detayı";

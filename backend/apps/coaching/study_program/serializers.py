@@ -230,15 +230,14 @@ class WeeklyProgramCreateSerializer(serializers.ModelSerializer):
         we = data.get('week_end')
 
         if we:
-            if we < ws:
-                raise serializers.ValidationError({'week_end': 'Bitiş tarihi başlangıçtan önce olamaz.'})
-            if (we - ws).days != 6:
-                raise serializers.ValidationError({
-                    'week_end': (
-                        'Haftalık program 7 gün olmalıdır. '
-                        'Son gün kontrol günüdür; ödevin verildiği gün aralığa girmez.'
-                    ),
-                })
+            from .services import validate_program_length
+            from django.core.exceptions import ValidationError as DjangoValidationError
+
+            try:
+                validate_program_length(ws, we)
+            except DjangoValidationError as exc:
+                detail = getattr(exc, 'message_dict', None) or {'week_end': exc.messages}
+                raise serializers.ValidationError(detail)
         else:
             # week_start = ilk çalışma günü → kontrol = +6 (örn. Salı…Pzt)
             data['week_end'] = ws + timedelta(days=6)

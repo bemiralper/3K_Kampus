@@ -121,7 +121,9 @@ class GiderService:
         if not gider:
             return None, {'genel': 'Gider kaydı bulunamadı.'}
 
-        if not gider.duzenlenebilir_mi:
+        if gider.durum == GiderDurum.IPTAL:
+            return None, {'genel': 'İptal edilmiş gider düzenlenemez.'}
+        if not gider.duzenlenebilir_mi and (gider.odenen_toplam or Decimal('0')) <= 0:
             return None, {'genel': f'Bu gider kaydı düzenlenemez (durum: {gider.get_durum_display()}).'}
 
         errors = self._validate_update(data)
@@ -149,14 +151,45 @@ class GiderService:
                 girilen, kdv_orani, kdv_mod,
             )
 
+        paid = (gider.odenen_toplam or Decimal('0')) > 0
+        new_net = data.get('net_tutar', gider.net_tutar)
+        if paid and Decimal(new_net) < gider.odenen_toplam:
+            return None, {
+                'genel': (
+                    f'Yeni tutar ({new_net} ₺) yapılmış ödemeden '
+                    f'({gider.odenen_toplam} ₺) küçük olamaz. Önce ödemeyi iptal edin.'
+                ),
+            }
+
         if taksit_plani:
             net_kontrol = data.get('net_tutar', gider.net_tutar)
             err = self._validate_taksit_plani(taksit_plani, net_kontrol)
             if err:
                 return None, err
+            if paid:
+                err = self._paid_plan_drop_error(gider, taksit_plani)
+                if err:
+                    return None, err
             data['taksit_plani_json'] = taksit_plani
 
         gider = self.gider_repo.update(gider, data)
+
+        posted = {GiderDurum.ONAYLANDI, GiderDurum.KISMI_ODENDI, GiderDurum.ODENDI}
+        if paid and old_durum in posted:
+            if taksit_plani:
+                err = self._rewrite_paid_taksit_plan(gider, taksit_plani)
+                if err:
+                    return None, err
+            elif gider.net_tutar != old_net:
+                self._resize_taksit_to_net(gider)
+            self._sync_posted_cari(
+                gider,
+                old_cari_id=old_cari_id,
+                old_net=old_net,
+                old_fatura_tarihi=old_fatura_tarihi,
+                islem_yapan=data.get('islem_yapan'),
+            )
+            return self.durum_guncelle(gider), None
 
         if old_durum == GiderDurum.ONAYLANDI and gider.odenen_toplam == Decimal('0'):
             cari_changed = gider.cari_hesap_id != old_cari_id
@@ -380,6 +413,135 @@ class GiderService:
         gider = self.gider_repo.soft_delete(gider)
         return gider, None
 
+    def _sync_posted_cari(self, gider, *, old_cari_id, old_net, old_fatura_tarihi, islem_yapan):
+        cari_changed = gider.cari_hesap_id != old_cari_id
+        amount_changed = gider.net_tutar != old_net
+        date_changed = gider.fatura_tarihi != old_fatura_tarihi
+        if not (cari_changed or amount_changed or date_changed):
+            return
+        self.cari_hareket_service.hareket_olustur(
+            cari_hesap_id=old_cari_id,
+            kurum_id=gider.kurum_id,
+            tutar=old_net,
+            yon=CariHareketYonu.BORC,
+            islem_turu=CariHareketTuru.IADE,
+            islem_tarihi=old_fatura_tarihi,
+            sube_id=gider.sube_id,
+            egitim_yili_id=gider.egitim_yili_id,
+            kaynak_tip='GiderKaydi',
+            kaynak_id=gider.pk,
+            aciklama=f'Gider düzeltme (ters): {gider.fatura_no or "Belgesiz"}',
+            belge_no=gider.fatura_no,
+            islem_yapan=islem_yapan,
+        )
+        self.cari_hareket_service.hareket_olustur(
+            cari_hesap_id=gider.cari_hesap_id,
+            kurum_id=gider.kurum_id,
+            tutar=gider.net_tutar,
+            yon=CariHareketYonu.ALACAK,
+            islem_turu=CariHareketTuru.ALIS,
+            islem_tarihi=gider.fatura_tarihi,
+            sube_id=gider.sube_id,
+            egitim_yili_id=gider.egitim_yili_id,
+            kaynak_tip='GiderKaydi',
+            kaynak_id=gider.pk,
+            aciklama=f'Gider düzeltme: {gider.fatura_no or "Belgesiz"} — {gider.net_tutar} ₺',
+            belge_no=gider.fatura_no,
+            islem_yapan=islem_yapan,
+        )
+
+    def _open_taksitler(self, gider):
+        return [
+            t for t in self.taksit_repo.get_by_gider(gider.pk)
+            if t.durum != GiderTaksitDurum.IPTAL
+        ]
+
+    def _paid_plan_drop_error(self, gider, taksit_plani):
+        from apps.finans.constants.gider_types import OdemeDurum
+
+        existing = sorted(self._open_taksitler(gider), key=lambda row: (row.taksit_no, row.id))
+        for taksit in existing[len(taksit_plani):]:
+            if taksit.odemeler.filter(durum=OdemeDurum.TAMAMLANDI).exists():
+                return {
+                    'genel': (
+                        'Ödemesi olan taksit plandan çıkarılamaz. '
+                        'Önce o ödemeyi iptal edin.'
+                    ),
+                }
+        return None
+
+    def _rewrite_paid_taksit_plan(self, gider, taksit_plani):
+        """Ödemeli giderde taksit yüzlerini yerinde günceller; nakit kaydı silinmez."""
+        from datetime import datetime
+
+        from apps.finans.application.gider_odeme_durumu import resolve_taksit_durum_values
+        from apps.finans.domain.gider_taksit import GiderTaksit
+
+        existing = sorted(self._open_taksitler(gider), key=lambda row: (row.taksit_no, row.id))
+        for index, taksit in enumerate(existing):
+            taksit.taksit_no = 1000 + index
+            taksit.save(update_fields=['taksit_no', 'updated_at'])
+
+        kept = []
+        for index, item in enumerate(taksit_plani):
+            vade = item['vade_tarihi']
+            if isinstance(vade, str):
+                vade = datetime.strptime(vade[:10], '%Y-%m-%d').date()
+            tutar = Decimal(str(item['tutar']))
+            if index < len(existing):
+                taksit = existing[index]
+                taksit.taksit_no = index + 1
+                taksit.vade_tarihi = vade
+                taksit.tutar = tutar
+                taksit.aciklama = (item.get('aciklama') or taksit.aciklama or '')[:255]
+                if item.get('odeme_yontemi_id'):
+                    taksit.odeme_yontemi_id = item.get('odeme_yontemi_id')
+                taksit.durum = resolve_taksit_durum_values(
+                    vade, tutar, taksit.odenen_tutar or Decimal('0'),
+                )
+                taksit.save()
+                kept.append(taksit)
+            else:
+                kept.append(GiderTaksit.objects.create(
+                    gider_kaydi=gider,
+                    taksit_no=index + 1,
+                    vade_tarihi=vade,
+                    tutar=tutar,
+                    odenen_tutar=Decimal('0.00'),
+                    aciklama=(item.get('aciklama') or '')[:255],
+                    odeme_yontemi_id=item.get('odeme_yontemi_id') or None,
+                    durum=resolve_taksit_durum_values(vade, tutar, Decimal('0.00')),
+                ))
+
+        extra_ids = [t.id for t in existing[len(taksit_plani):]]
+        if extra_ids:
+            GiderTaksit.objects.filter(id__in=extra_ids).delete()
+        if gider.taksit_sayisi != len(kept):
+            gider.taksit_sayisi = len(kept)
+            gider.save(update_fields=['taksit_sayisi', 'updated_at'])
+        return None
+
+    def _resize_taksit_to_net(self, gider):
+        """Net tutar değişince farkı sondan taksit yüzlerine yazar."""
+        taksitler = sorted(self._open_taksitler(gider), key=lambda row: (row.taksit_no, row.id))
+        if not taksitler:
+            return
+        delta = gider.net_tutar - sum((t.tutar or Decimal('0')) for t in taksitler)
+        if delta == 0:
+            return
+        for taksit in reversed(taksitler):
+            if delta == 0:
+                break
+            if delta > 0:
+                taksit.tutar = taksit.tutar + delta
+                delta = Decimal('0')
+            else:
+                room = taksit.tutar
+                take = min(room, -delta)
+                taksit.tutar = room - take
+                delta += take
+            taksit.save(update_fields=['tutar', 'updated_at'])
+
     def durum_guncelle(self, gider):
         """
         Ödeme yapıldıktan sonra giderin durumunu otomatik günceller.
@@ -446,14 +608,26 @@ class GiderService:
             return
 
         pool = unlinked_total
-        for t in sorted(taksitler, key=lambda row: (row.taksit_no, row.id)):
-            base = linked.get(t.pk, Decimal('0'))
+        carry = Decimal('0')
+        ordered = sorted(taksitler, key=lambda row: (row.taksit_no, row.id))
+        for t in ordered:
+            base = linked.get(t.pk, Decimal('0')) + carry
+            carry = Decimal('0')
+            if base > t.tutar:
+                applied = t.tutar
+                carry = base - t.tutar
+            else:
+                applied = base
             extra = Decimal('0')
-            room = t.tutar - base
+            room = t.tutar - applied
             if room > 0 and pool > 0:
                 extra = min(room, pool)
                 pool -= extra
-            self._yaz_taksit_odeme(t, base + extra, son if extra or base else None)
+            written = applied + extra
+            self._yaz_taksit_odeme(t, written, son if written > 0 else None)
+        if (carry > 0 or pool > 0) and ordered:
+            last = ordered[-1]
+            self._yaz_taksit_odeme(last, last.odenen_tutar + carry + pool, son)
 
     @staticmethod
     def _yaz_taksit_odeme(taksit, odenen, son_odeme):

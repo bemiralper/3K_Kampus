@@ -95,12 +95,14 @@ class GelirService:
 
     @transaction.atomic
     def update(self, gelir_id: int, data: dict):
-        """Gelir kaydını günceller (taslak veya tahsilatsız onaylı)."""
+        """Gelir kaydını günceller. Tahsilatı olan kayıt da düzenlenir; tutar tahsilatın altına inemez."""
         gelir = self.gelir_repo.get_by_id(gelir_id)
         if not gelir:
             return None, {'genel': 'Gelir kaydı bulunamadı.'}
 
-        if not gelir.duzenlenebilir_mi:
+        if gelir.durum == GelirDurum.IPTAL:
+            return None, {'genel': 'İptal edilmiş gelir düzenlenemez.'}
+        if not gelir.duzenlenebilir_mi and (gelir.tahsil_edilen or Decimal('0')) <= 0:
             return None, {'genel': f'Bu gelir kaydı düzenlenemez (durum: {gelir.durum}).'}
 
         merged = {
@@ -130,9 +132,19 @@ class GelirService:
                 girilen, kdv_orani, kdv_mod,
             )
 
+        new_net = data.get('net_tutar', gelir.net_tutar)
+        if (gelir.tahsil_edilen or Decimal('0')) > new_net:
+            return None, {
+                'genel': (
+                    f'Yeni tutar ({new_net} ₺) alınmış tahsilattan '
+                    f'({gelir.tahsil_edilen} ₺) küçük olamaz. Önce tahsilatı iptal edin.'
+                ),
+            }
+
         gelir = self.gelir_repo.update(gelir, data)
 
-        if old_durum == GelirDurum.ONAYLANDI and gelir.tahsil_edilen == Decimal('0'):
+        posted = {GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL, GelirDurum.TAHSIL_EDILDI}
+        if old_durum in posted:
             cari_changed = gelir.cari_hesap_id != old_cari_id
             amount_changed = gelir.net_tutar != old_net
             date_changed = gelir.fatura_tarihi != old_fatura_tarihi
@@ -168,6 +180,15 @@ class GelirService:
                     belge_no=gelir.fatura_no,
                     islem_yapan=islem_yapan,
                 )
+
+            if gelir.tahsil_edilen >= gelir.net_tutar and gelir.tahsil_edilen > 0:
+                yeni_durum = GelirDurum.TAHSIL_EDILDI
+            elif gelir.tahsil_edilen > 0:
+                yeni_durum = GelirDurum.KISMI_TAHSIL
+            else:
+                yeni_durum = GelirDurum.ONAYLANDI
+            if gelir.durum != yeni_durum:
+                gelir = self.gelir_repo.update(gelir, {'durum': yeni_durum})
 
         return gelir, None
 

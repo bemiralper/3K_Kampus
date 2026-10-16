@@ -8,6 +8,7 @@ import {
   YAPILMA_LABELS, ONCELIK_LABELS, formatGorevTarih,
   type GorevAtama, type Gorev,
 } from '@/lib/gorev-api';
+import GorevAciklamaView from '@/components/gorev/GorevAciklamaView';
 
 type Props = {
   atama: GorevAtama;
@@ -61,7 +62,7 @@ export default function GorevAdminDetailDrawer({ atama, onClose, onUpdated }: Pr
         </div>
 
         <h3>{g.baslik}</h3>
-        {g.aciklama && <p className="gorev-drawer-desc">{g.aciklama}</p>}
+        <GorevAciklamaView value={g.aciklama} />
 
         <p className="gorev-drawer-meta">
           Son tarih: {formatGorevTarih(g.son_tarih, g.tum_gun)}

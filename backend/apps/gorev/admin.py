@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from apps.gorev.domain.models import Gorev, GorevAtama, GorevTipi, GorevTekrarSablonu
+from apps.gorev.domain.models import Gorev, GorevAtama, GorevDosya, GorevTipi, GorevTekrarSablonu
 
 
 @admin.register(GorevTipi)
@@ -19,6 +19,13 @@ class GorevAdmin(admin.ModelAdmin):
     list_display = ('baslik', 'oncelik', 'son_tarih', 'hedef_tipi', 'kurum_id')
     list_filter = ('oncelik', 'hedef_tipi', 'is_deleted')
     inlines = [GorevAtamaInline]
+
+
+@admin.register(GorevDosya)
+class GorevDosyaAdmin(admin.ModelAdmin):
+    list_display = ('orijinal_ad', 'tur', 'boyut', 'kurum_id', 'yukleyen_id', 'created_at')
+    list_filter = ('tur',)
+    search_fields = ('orijinal_ad',)
 
 
 @admin.register(GorevAtama)

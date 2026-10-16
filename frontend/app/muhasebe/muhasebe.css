@@ -209,6 +209,11 @@
   overflow: hidden;
 }
 
+.muhasebe-content:has(.gorev-page),
+.muhasebe-content:has(.gorev-record-page) {
+  max-width: none;
+}
+
 .muhasebe-content:has(.comm-page--inbox) {
   display: flex;
   flex-direction: column;

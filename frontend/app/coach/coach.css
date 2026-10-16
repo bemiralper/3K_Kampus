@@ -5882,6 +5882,11 @@
   max-width: 1400px;
 }
 
+/* Görevler — sidebar sonrası kalan genişliği kullan */
+.coach-content:has(.coach-gorevler-page) {
+  max-width: none;
+}
+
 /* Çalışma programı — PC’de admin gibi geniş; dar ekranda scroll */
 .coach-content:has(.sp-coach-root) {
   max-width: none;
@@ -10243,11 +10248,39 @@
   color: #fff;
 }
 
+.s360p-length {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 16px;
+  padding: 2px;
+  border-radius: 8px;
+  background: #0b1220;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.s360p-length button {
+  border: 0;
+  background: transparent;
+  min-height: 32px;
+  padding: 0 12px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  color: #94a3b8;
+}
+
+.s360p-length button.is-on {
+  background: #f8fafc;
+  color: #0b1220;
+}
+
 .s360p-dates {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
-  margin-top: 18px;
+  margin-top: 12px;
 }
 
 .s360p-dates label {

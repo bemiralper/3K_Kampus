@@ -341,6 +341,10 @@ class AppNotification(models.Model):
         verbose_name='İlişkili Hatırlatma',
     )
 
+    # Şube — bildirim kurum genelinde düşer; satırda hangi şube olduğu görünür.
+    sube_id = models.IntegerField(null=True, blank=True, verbose_name='Şube ID')
+    sube_ad = models.CharField(max_length=120, blank=True, default='', verbose_name='Şube')
+
     # Durum
     ekran_mesaji = models.BooleanField(
         default=False,

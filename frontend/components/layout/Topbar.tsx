@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import NotificationBell from "@/components/notification/NotificationBell";
+import GorevNotificationButton from "@/components/gorev/GorevNotificationButton";
 import ContextSelector from "@/components/layout/ContextSelector";
 import UserAccountDropdown from "@/components/profile/UserAccountDropdown";
 import {
@@ -1063,6 +1064,7 @@ export default function Topbar({
           </div>
 
           <NotificationBell />
+          <GorevNotificationButton />
 
           <button className="topbar-icon-btn admin-topbar-hide-mobile" type="button" aria-label="Mesajlar">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

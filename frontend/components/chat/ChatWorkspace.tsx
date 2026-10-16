@@ -951,9 +951,19 @@ export function ChatWorkspace({
                 : selected?.contact_type
             : undefined
         }
+        replyToId={replyTo?.id}
         onClose={() => setTemplateOpen(false)}
         onSent={() => {
           showToast("Şablon gönderildi.");
+          if (selected) {
+            applyConversation({
+              ...selected,
+              awaiting_reply: false,
+              status: selected.status === "ARCHIVED" ? "ARCHIVED" : "REPLIED",
+              first_unanswered_at: null,
+            });
+          }
+          setReplyTo(null);
           void thread.refreshTail();
           void list.reload({ silent: true });
         }}

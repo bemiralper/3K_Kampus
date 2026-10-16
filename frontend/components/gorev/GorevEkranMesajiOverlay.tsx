@@ -5,12 +5,14 @@ import { usePathname, useRouter } from 'next/navigation';
 import { resolveInboxPortal, rewriteConversationInboxUrl } from '@/lib/communication-api';
 import { coachBirthdayHref, isBirthdayNotificationUrl } from '@/lib/coach-birthdays';
 import {
+  dismissAllScreenNotifications,
   fetchScreenNotifications,
   markScreenNotificationShown,
   type AppNotification,
 } from '@/lib/takvim-api';
 import { playNotificationSound } from '@/lib/notification-sound';
 import { useKurum } from '@/lib/contexts/KurumContext';
+import { isGorevNotification } from '@/lib/gorev-notifications';
 import '@/components/gorev/gorev.css';
 
 const SESSION_SOUND_KEY = 'gorev-ekran-sound-played';
@@ -24,12 +26,21 @@ function notificationTarget(url: string, pathname: string): string {
   return rewritten;
 }
 
+function rowKind(baslik: string): 'bilgi' | 'gorev' {
+  return /bilgilendirme:/i.test(baslik) ? 'bilgi' : 'gorev';
+}
+
+function rowTitle(baslik: string): string {
+  return baslik.replace(/^(Yeni )?(Bilgilendirme|Görev):\s*/i, '');
+}
+
 function actionLabel(url: string): string {
-  if (isBirthdayNotificationUrl(url)) return 'Doğum Günleri';
-  if (url.includes('/gorev')) return 'Göreve Git';
-  if (url.includes('/coach/ogrenciler/')) return 'Öğrenciye Git';
+  if (isBirthdayNotificationUrl(url)) return 'Doğum günleri';
+  if (url.includes('/gorev')) return 'Göreve git';
+  if (url.includes('/coach/ogrenciler/')) return 'Öğrenciye git';
   if (url.includes('/coach/ogrenciler')) return 'Öğrencilerim';
-  return 'Detaya Git';
+  if (url.includes('sohbet')) return 'Sohbete git';
+  return 'Aç';
 }
 
 export default function GorevEkranMesajiOverlay() {
@@ -37,8 +48,8 @@ export default function GorevEkranMesajiOverlay() {
   const pathname = usePathname() || '';
   const { loading: kurumLoading, activeKurum } = useKurum();
   const [queue, setQueue] = useState<AppNotification[]>([]);
-  const [current, setCurrent] = useState<AppNotification | null>(null);
   const shownIdsRef = useRef<Set<string>>(new Set());
+  const busyRef = useRef(false);
 
   useEffect(() => {
     if (kurumLoading || !activeKurum) return;
@@ -47,7 +58,7 @@ export default function GorevEkranMesajiOverlay() {
     let attempt = 0;
 
     const load = async () => {
-      const res = await fetchScreenNotifications(10);
+      const res = await fetchScreenNotifications(40);
       if (cancelled) return;
 
       if (res.success && res.data?.length) {
@@ -60,7 +71,6 @@ export default function GorevEkranMesajiOverlay() {
             }
             return merged;
           });
-          setCurrent(prev => prev ?? fresh[0]);
           if (!sessionStorage.getItem(SESSION_SOUND_KEY)) {
             playNotificationSound();
             sessionStorage.setItem(SESSION_SOUND_KEY, '1');
@@ -90,57 +100,128 @@ export default function GorevEkranMesajiOverlay() {
     };
   }, [kurumLoading, activeKurum]);
 
-  const dismiss = async (goToTask = false) => {
-    if (!current) return;
-    const url = current.url;
-    shownIdsRef.current.add(current.id);
-    await markScreenNotificationShown(current.id);
-    const remaining = queue.filter(n => n.id !== current.id);
-    setQueue(remaining);
-    if (goToTask && url) {
-      setCurrent(remaining[0] ?? null);
-      router.push(notificationTarget(url, pathname));
-      return;
+  const dismissOne = async (item: AppNotification, open: boolean) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    shownIdsRef.current.add(item.id);
+    setQueue(prev => prev.filter(n => n.id !== item.id));
+    try {
+      await markScreenNotificationShown(item.id);
+    } finally {
+      busyRef.current = false;
     }
-    setCurrent(remaining[0] ?? null);
+    if (open && item.url) {
+      router.push(notificationTarget(item.url, pathname));
+    }
   };
 
-  if (!current) return null;
+  const dismissGroup = async (items: AppNotification[]) => {
+    if (busyRef.current || items.length === 0) return;
+    busyRef.current = true;
+    const ids = items.map(n => n.id);
+    ids.forEach(id => shownIdsRef.current.add(id));
+    setQueue(prev => prev.filter(n => !ids.includes(n.id)));
+    try {
+      await dismissAllScreenNotifications(ids);
+    } finally {
+      busyRef.current = false;
+    }
+  };
+
+  if (queue.length === 0) return null;
+
+  const gorevQueue = queue.filter(isGorevNotification);
+  const otherQueue = queue.filter(item => !isGorevNotification(item));
 
   return (
-    <div
-      className="gorev-ekran-backdrop"
-      role="alertdialog"
-      aria-modal="true"
-      aria-labelledby="gorev-ekran-title"
-      onClick={(e) => {
-        if (e.target === e.currentTarget) void dismiss(false);
-      }}
-    >
-      <div className="gorev-ekran-modal" style={{ borderTopColor: current.renk || '#3b82f6' }}>
-        <div className="gorev-ekran-icon" style={{ background: current.renk || '#3b82f6' }}>
-          {current.ikon || '📋'}
+    <>
+      {gorevQueue.length > 0 && (
+        <div className="gorev-yeni-backdrop" role="dialog" aria-modal="true" aria-labelledby="gorev-yeni-title">
+          <div className="gorev-yeni-panel">
+            <div className="gorev-yeni-head">
+              <h2 id="gorev-yeni-title">
+                {gorevQueue.every(item => rowKind(item.baslik) === 'bilgi')
+                  ? 'Yeni bilgilendirmeler'
+                  : gorevQueue.some(item => rowKind(item.baslik) === 'bilgi')
+                    ? 'Yeni gönderiler'
+                    : 'Yeni görevler'}
+              </h2>
+              <button type="button" className="gorev-ekran-close" aria-label="Kapat" onClick={() => void dismissGroup(gorevQueue)}>
+                ×
+              </button>
+            </div>
+            <ul className="gorev-yeni-list">
+              {gorevQueue.map(item => (
+                <li key={item.id}>
+                  <button type="button" className="gorev-yeni-row" onClick={() => void dismissOne(item, true)}>
+                    <span className="gorev-yeni-icon" aria-hidden>{item.ikon || '📋'}</span>
+                    <span className="gorev-yeni-copy">
+                      <span className={`gorev-kind ${rowKind(item.baslik) === 'bilgi' ? 'gorev-kind--info' : 'gorev-kind--task'}`}>
+                        {rowKind(item.baslik) === 'bilgi' ? 'Bilgilendirme' : 'Görev'}
+                      </span>
+                      <strong>{rowTitle(item.baslik)}</strong>
+                      {item.sube_ad ? <small>{item.sube_ad}</small> : null}
+                    </span>
+                    <span className="gorev-yeni-go">{rowKind(item.baslik) === 'bilgi' ? 'Aç' : 'Göreve git'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
         </div>
-        <h2 id="gorev-ekran-title" className="gorev-ekran-title">{current.baslik}</h2>
-        <p className="gorev-ekran-mesaj">{current.mesaj}</p>
-        {queue.length > 1 && (
-          <p className="gorev-ekran-count">+{queue.length - 1} bildirim daha</p>
-        )}
-        <div className="gorev-ekran-actions">
-          <button
-            type="button"
-            className={current.url ? 'gorev-btn gorev-btn-ghost' : 'gorev-btn gorev-btn-primary'}
-            onClick={() => dismiss(false)}
-          >
-            {current.url ? 'Kapat' : 'Tamam'}
-          </button>
-          {current.url && (
-            <button type="button" className="gorev-btn gorev-btn-primary" onClick={() => dismiss(true)}>
-              {actionLabel(current.url)}
-            </button>
-          )}
+      )}
+      {otherQueue.length > 0 && (
+        <div
+          className="gorev-ekran-backdrop"
+          role="alertdialog"
+          aria-modal="true"
+          aria-labelledby="gorev-ekran-title"
+        >
+          <div className="gorev-ekran-modal gorev-ekran-modal--stack">
+            <div className="gorev-ekran-stack-head">
+              <h2 id="gorev-ekran-title" className="gorev-ekran-title">
+                {otherQueue.length === 1 ? 'Ekran mesajı' : `${otherQueue.length} ekran mesajı`}
+              </h2>
+              <button type="button" className="gorev-ekran-close" aria-label="Kapat" onClick={() => void dismissGroup(otherQueue)}>
+                ×
+              </button>
+            </div>
+            <ul className="gorev-ekran-list">
+              {otherQueue.map(item => (
+                <li key={item.id} className="gorev-ekran-item">
+                  <span
+                    className="gorev-ekran-item-icon"
+                    style={{ background: item.renk || '#3b82f6' }}
+                    aria-hidden
+                  >
+                    {item.ikon || '📋'}
+                  </span>
+                  <div className="gorev-ekran-item-body">
+                    <strong>{item.baslik}</strong>
+                    {item.sube_ad ? <span className="gorev-ekran-item-sube">{item.sube_ad}</span> : null}
+                    {item.mesaj ? <p>{item.mesaj}</p> : null}
+                  </div>
+                  <div className="gorev-ekran-item-actions">
+                    {item.url ? (
+                      <button type="button" className="gorev-btn gorev-btn-primary" onClick={() => dismissOne(item, true)}>
+                        {actionLabel(item.url)}
+                      </button>
+                    ) : null}
+                    <button type="button" className="gorev-btn gorev-btn-ghost" onClick={() => dismissOne(item, false)}>
+                      Kapat
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            <div className="gorev-ekran-actions">
+              <button type="button" className="gorev-btn gorev-btn-primary" onClick={() => void dismissGroup(otherQueue)}>
+                {otherQueue.length === 1 ? 'Kapat' : 'Tümünü kapat'}
+              </button>
+            </div>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </>
   );
 }

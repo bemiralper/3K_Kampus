@@ -29,6 +29,7 @@ const INCOMPLETE_ACTION: GorevAction = { id: 'not_complete', label: 'Tamamlanama
 
 export function getGorevActions(tipKod: string | undefined, hasAksiyonUrl: boolean): GorevAction[] {
   const kod = tipKod || '';
+  if (kod === 'BILGILENDIRME') return [];
 
   if (GORUSME_TIPLERI.has(kod)) {
     return [

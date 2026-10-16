@@ -131,6 +131,8 @@ export interface AppNotification {
   read_at: string | null;
   created_at: string;
   alici_tip: RecipientType;
+  sube_id?: number | null;
+  sube_ad?: string;
 }
 
 export interface NotificationSummary {
@@ -346,10 +348,15 @@ export const RECIPIENT_TYPE_LABELS: Record<RecipientType, string> = {
    BİLDİRİMLER (kullanıcı tarafı)
    ════════════════════════════════════════════ */
 
-export async function fetchNotifications(unreadOnly = false, limit = 50): Promise<ApiResponse<AppNotification[]>> {
+export async function fetchNotifications(
+  unreadOnly = false,
+  limit = 50,
+  kaynak: 'diger' | 'gorev' | 'hepsi' = 'diger',
+): Promise<ApiResponse<AppNotification[]>> {
   const params = new URLSearchParams();
   if (unreadOnly) params.set('unread_only', 'true');
   if (limit !== 50) params.set('limit', String(limit));
+  if (kaynak !== 'diger') params.set('kaynak', kaynak);
   const qs = params.toString();
   return apiGet<AppNotification[]>(`${BASE}/bildirimler/${qs ? '?' + qs : ''}`);
 }
@@ -364,6 +371,10 @@ export async function fetchScreenNotifications(limit = 5): Promise<ApiResponse<A
 
 export async function markScreenNotificationShown(id: string): Promise<ApiResponse<void>> {
   return apiPost<void>(`${BASE}/bildirimler/${id}/ekran-gosterildi/`, {});
+}
+
+export async function dismissAllScreenNotifications(ids?: string[]): Promise<ApiResponse<{ updated: number }>> {
+  return apiPost<{ updated: number }>(`${BASE}/bildirimler/ekran/tumunu-kapat/`, ids ? { ids } : {});
 }
 
 export async function markNotificationRead(id: string): Promise<ApiResponse<void>> {

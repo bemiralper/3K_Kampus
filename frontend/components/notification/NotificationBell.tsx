@@ -17,6 +17,7 @@ import {
   rewriteConversationInboxUrl,
 } from '@/lib/communication-api';
 import { coachBirthdayHref, isBirthdayNotificationUrl } from '@/lib/coach-birthdays';
+import { isGorevNotification } from '@/lib/gorev-notifications';
 import {
   playNotificationSound,
   unlockNotificationAudio,
@@ -97,7 +98,8 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     }));
     const waUnread = wa?.unread_conversations ?? wa?.unread_count ?? 0;
 
-    const baseRecent = res.success && res.data ? (res.data.recent || []) : [];
+    const baseRecent = (res.success && res.data ? (res.data.recent || []) : [])
+      .filter((n) => !isGorevNotification(n));
     // Aynı sohbet için hem WA kartı hem AppNotification varsa tek satır göster
     const waUrls = new Set(waItems.map((n) => n.url).filter(Boolean));
     const filteredBase = baseRecent
@@ -441,8 +443,14 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
                     }}>
                       {n.mesaj}
                     </div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4 }}>
-                      {timeAgo(n.created_at)}
+                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span>{timeAgo(n.created_at)}</span>
+                      {n.sube_ad ? (
+                        <span style={{
+                          padding: '1px 6px', borderRadius: 999, background: '#eef2ff',
+                          color: '#4338ca', fontWeight: 700,
+                        }}>{n.sube_ad}</span>
+                      ) : null}
                     </div>
                   </div>
 

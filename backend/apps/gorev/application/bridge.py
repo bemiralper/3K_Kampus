@@ -5,6 +5,7 @@ from datetime import timedelta
 from django.db import transaction
 from django.utils import timezone
 
+from apps.gorev.application.html_content import plain_excerpt
 from apps.gorev.domain.models import Gorev, GorevAtama
 from apps.gorev.domain.enums import GorevDurum
 from apps.takvim.application.integration_service import CalendarIntegrationService
@@ -54,7 +55,7 @@ class GorevCalendarBridge:
             baslangic=gorev.son_tarih,
             bitis=bitis,
             user_id=user_id or gorev.olusturan_id or atama.atanan_user_id,
-            aciklama=gorev.aciklama,
+            aciklama=plain_excerpt(gorev.aciklama, limit=500),
             tum_gun=gorev.tum_gun,
             ogretmen_id=atama.atanan_user_id,
             renk=gorev.gorev_renk,

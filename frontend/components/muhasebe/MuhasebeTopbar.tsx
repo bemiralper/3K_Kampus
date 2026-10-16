@@ -2,6 +2,7 @@
 
 import type { User } from "@/lib/contexts/AuthContext";
 import NotificationBell from "@/components/notification/NotificationBell";
+import GorevNotificationButton from "@/components/gorev/GorevNotificationButton";
 import ContextSelector from "@/components/layout/ContextSelector";
 import AdminPortalReturn from "@/components/profile/AdminPortalReturn";
 import UserAccountDropdown from "@/components/profile/UserAccountDropdown";
@@ -43,6 +44,7 @@ export default function MuhasebeTopbar({
         <AdminPortalReturn variant="compact" />
         <ContextSelector />
         <NotificationBell />
+        <GorevNotificationButton />
         <UserAccountDropdown
           user={user}
           profileHref="/muhasebe/profil"

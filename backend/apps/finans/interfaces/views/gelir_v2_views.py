@@ -132,6 +132,7 @@ class GelirV2DetailView(APIView):
         _, errors = GelirCommandService().soft_delete(
             pk, islem_yapan=request.user if request.user.is_authenticated else None,
             ip_adresi=get_client_ip(request),
+            force=True,
         )
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)
@@ -157,7 +158,11 @@ class GelirV2IptalView(APIView):
         gelir, err = _gate(request, pk)
         if err:
             return err
-        force = bool(getattr(request.user, 'is_superuser', False) and request.data.get('force'))
+        from shared.permissions import user_has_any_permission
+        can_reverse = user_has_any_permission(
+            request.user, 'finans.manage', 'finans.delete',
+        )
+        force = bool(can_reverse and request.data.get('force'))
         gelir, errors = GelirCommandService().iptal_et(
             pk, islem_yapan=request.user if request.user.is_authenticated else None,
             ip_adresi=get_client_ip(request),

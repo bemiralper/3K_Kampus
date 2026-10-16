@@ -20,6 +20,7 @@ interface Props {
    * sunucunun `preferred_audience` tahmininden önce gelir; yanlış `contact_type`'a karşı.
    */
   contactType?: string | null;
+  replyToId?: string | null;
   onClose: () => void;
   onSent: () => void;
 }
@@ -91,7 +92,7 @@ function renderPreview(body: string, values: Record<string, string>): string {
  * Değişkenler sunucudan gelen sohbet bağlamıyla önceden doldurulur; kullanıcı
  * göndermeden önce gerçek metni ve varsa medya başlığını görür.
  */
-export function ChatTemplateSheet({ open, conversationId, contactType, onClose, onSent }: Props) {
+export function ChatTemplateSheet({ open, conversationId, contactType, replyToId, onClose, onSent }: Props) {
   const [templates, setTemplates] = useState<WhatsAppMetaTemplateItem[]>([]);
   const [context, setContext] = useState<Record<string, string>>({});
   const [session, setSession] = useState<ConversationSessionInfo | null>(null);
@@ -173,7 +174,7 @@ export function ChatTemplateSheet({ open, conversationId, contactType, onClose, 
     setSending(true);
     setSendError(null);
     try {
-      await sendConversationTemplate(conversationId, selected.id, values);
+      await sendConversationTemplate(conversationId, selected.id, values, replyToId);
       onSent();
       onClose();
     } catch (err) {

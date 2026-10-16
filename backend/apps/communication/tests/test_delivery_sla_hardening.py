@@ -54,6 +54,29 @@ class OutboundReplySemanticsTest(TestCase):
         self.assertIsNone(self.conv.first_unanswered_at)
         self.assertEqual(self.conv.status, ConversationStatus.REPLIED)
 
+    @override_settings(COMMUNICATION_TICKET_ROUTING=True)
+    def test_chat_template_counts_as_reply(self):
+        with patch(
+            'apps.communication.application.communication_service.process_queue_item',
+            return_value=True,
+        ):
+            result = CommunicationService().send(
+                self.kurum.id,
+                recipients=RecipientQuery(
+                    conversation_id=str(self.conv.id),
+                    phone=self.conv.contact_phone,
+                ),
+                content=MessageContent(
+                    text='Merhaba, size dönüş yapıyorum.',
+                    template_name='sohbet_kocluk_veli',
+                ),
+                source=MessageSource(module='conversation_template', ref_id=str(self.conv.id)),
+            )
+        self.assertTrue(result.success, result.errors)
+        self.conv.refresh_from_db()
+        self.assertIsNone(self.conv.first_unanswered_at)
+        self.assertEqual(self.conv.status, ConversationStatus.REPLIED)
+
     @override_settings(COMMUNICATION_SYSTEM_MESSAGES_COUNT_AS_REPLY=True)
     def test_legacy_flag_restores_old_behaviour(self):
         ConversationRouter.apply_after_outbound(self.conv, source_module='odeme')

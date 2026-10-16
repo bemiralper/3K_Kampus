@@ -2,6 +2,7 @@
 
 import type { User } from "@/lib/contexts/AuthContext";
 import NotificationBell from "@/components/notification/NotificationBell";
+import GorevNotificationButton from "@/components/gorev/GorevNotificationButton";
 import ContextSelector from "@/components/layout/ContextSelector";
 import AdminPortalReturn from "@/components/profile/AdminPortalReturn";
 import UserAccountDropdown from "@/components/profile/UserAccountDropdown";
@@ -56,6 +57,7 @@ export default function CoachTopbar({
         </span>
         <span className="coach-topbar-context"><ContextSelector /></span>
         <span className="coach-topbar-notifications"><NotificationBell /></span>
+        <span className="coach-topbar-notifications"><GorevNotificationButton /></span>
         <span className="coach-topbar-account"><UserAccountDropdown
             user={user}
             profileHref="/coach/profil"

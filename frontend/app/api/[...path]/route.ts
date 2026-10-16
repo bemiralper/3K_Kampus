@@ -95,6 +95,9 @@ function isBinaryResponse(contentType: string, disposition: string | null): bool
   if (ct.includes('text/csv')) return true;
   if (ct.includes('spreadsheetml')) return true;
   if (ct.includes('application/vnd.ms-excel')) return true;
+  if (ct.includes('officedocument')) return true;
+  if (ct.includes('application/msword')) return true;
+  if (ct.includes('application/vnd.ms-powerpoint')) return true;
   if (ct.includes('application/octet-stream')) return true;
   if (ct.includes('application/gzip') || ct.includes('application/x-gzip')) return true;
   if (ct.includes('application/zip') || ct.includes('application/x-tar')) return true;

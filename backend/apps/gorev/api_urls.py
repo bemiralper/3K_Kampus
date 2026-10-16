@@ -1,10 +1,15 @@
 from django.urls import path
 
-from . import views
+from . import file_views, views
 
 urlpatterns = [
+    path('dosyalar/', file_views.api_gorev_dosya_collection, name='gorev_dosya_collection'),
+    path('dosyalar/disardan/', file_views.api_gorev_dosya_remote, name='gorev_dosya_remote'),
+    path('dosyalar/<uuid:pk>/', file_views.api_gorev_dosya_detail, name='gorev_dosya_detail'),
     path('gorevler/', views.api_gorev_list_create, name='gorev_list_create'),
+    path('gorevler/toplu-sil/', views.api_gorev_bulk_delete, name='gorev_bulk_delete'),
     path('gorevler/<uuid:pk>/', views.api_gorev_detail, name='gorev_detail'),
+    path('gorevler/<uuid:pk>/pdf/', views.api_gorev_pdf, name='gorev_pdf'),
     path('atamalar/', views.api_atama_list, name='atama_list'),
     path('atamalar/filtre-secenekleri/', views.api_atama_filter_options, name='atama_filter_options'),
     path('atamalar/<uuid:pk>/', views.api_atama_detail, name='atama_detail'),

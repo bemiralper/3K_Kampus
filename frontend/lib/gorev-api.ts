@@ -2,7 +2,7 @@
  * Görev Modülü — API Client
  * Backend: /gorev/api/
  */
-import { apiGet, apiPost, apiPut, apiDelete, type ApiResponse } from './api';
+import { apiGet, apiPost, apiPut, apiDelete, getContextHeaders, resolveApiUrl, type ApiResponse } from './api';
 
 const BASE = '/gorev/api';
 
@@ -34,6 +34,8 @@ export interface GorevAtama {
   gorusuldu: boolean;
   gecikme_gun: number;
   gecikti_mi: boolean;
+  kisisel_hatirlatma_at?: string | null;
+  kisisel_hatirlatma_gonderildi?: boolean;
   gorev?: Gorev;
 }
 
@@ -104,6 +106,10 @@ export const YAPILMA_LABELS: Record<GorevDurum, string> = {
   IPTAL: 'İptal',
 };
 
+export function isBilgilendirme(tip?: { kod?: string } | null): boolean {
+  return tip?.kod === 'BILGILENDIRME';
+}
+
 export const HEDEF_LABELS: Record<HedefTipi, string> = {
   KULLANICI: 'Kişi',
   ROL: 'Rol / Grup',
@@ -120,6 +126,34 @@ export async function fetchGorevDetail(id: string) {
   return apiGet<Gorev>(`${BASE}/gorevler/${id}/`);
 }
 
+export async function downloadGorevPdf(id: string, filename: string): Promise<void> {
+  const res = await fetch(resolveApiUrl(`${BASE}/gorevler/${id}/pdf/`), {
+    credentials: 'include',
+    headers: getContextHeaders(),
+  });
+  const type = res.headers.get('content-type') || '';
+  if (!res.ok || type.includes('application/json')) {
+    let message = 'PDF indirilemedi.';
+    try {
+      const data = await res.json();
+      if (data && typeof data.error === 'string' && data.error) message = data.error;
+    } catch {
+      /* yanıt JSON değilse genel mesaj kalır */
+    }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const safe = filename.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'gorev';
+  link.href = url;
+  link.download = safe.toLowerCase().endsWith('.pdf') ? safe : `${safe}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 export async function createGorev(data: Partial<Gorev> & { baslik: string; son_tarih: string; gorev_tipi_id?: string }) {
   return apiPost<Gorev>(`${BASE}/gorevler/`, data);
 }
@@ -130,6 +164,10 @@ export async function updateGorev(id: string, data: Partial<Gorev>) {
 
 export async function deleteGorev(id: string) {
   return apiDelete(`${BASE}/gorevler/${id}/`);
+}
+
+export async function deleteGorevler(ids: string[]) {
+  return apiPost<{ deleted: number }>(`${BASE}/gorevler/toplu-sil/`, { ids });
 }
 
 export async function fetchAtamalar(params?: Record<string, string>) {
@@ -272,4 +310,52 @@ export function formatGorevTarih(iso: string, tumGun = false): string {
   return d.toLocaleString('tr-TR', {
     day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit',
   });
+}
+
+export interface GorevDosya {
+  id: string;
+  url: string;
+  orijinal_ad: string;
+  boyut: number;
+  icerik_turu: string;
+  tur: 'gorsel' | 'dosya';
+}
+
+export function importGorevImageFromUrl(url: string) {
+  return apiPost<GorevDosya>(`${BASE}/dosyalar/disardan/`, { url });
+}
+
+export function uploadGorevDosya(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<ApiResponse<GorevDosya>> {
+  return new Promise(resolve => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', resolveApiUrl('/gorev/api/dosyalar/'));
+    xhr.withCredentials = true;
+    const headers = getContextHeaders();
+    Object.entries(headers).forEach(([key, headerValue]) => xhr.setRequestHeader(key, headerValue));
+    xhr.upload.onprogress = event => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      try {
+        const body = JSON.parse(xhr.responseText || '{}') as ApiResponse<GorevDosya>;
+        if (xhr.status >= 200 && xhr.status < 300 && body.success) resolve(body);
+        else resolve({ success: false, error: body.error || 'Dosya yüklenemedi' });
+      } catch {
+        resolve({ success: false, error: 'Dosya yüklenemedi' });
+      }
+    };
+    xhr.onerror = () => resolve({ success: false, error: 'Ağ hatası. Yükleme tamamlanamadı.' });
+    const form = new FormData();
+    form.append('dosya', file);
+    xhr.send(form);
+  });
+}
+
+export async function deleteGorevDosya(id: string) {
+  return apiDelete(`${BASE}/dosyalar/${id}/`);
 }

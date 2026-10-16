@@ -25,6 +25,23 @@ def _drop_prefetch(instance, relation: str) -> None:
     if cache is not None:
         cache.pop(relation, None)
 
+
+# 7 gün varsayılan. 8 gün, programın yapıldığı günü de kapsar; kontrol yerinde kalır.
+PROGRAM_LENGTHS = (7, 8)
+
+
+def validate_program_length(week_start: date, week_end: date) -> None:
+    if week_end < week_start:
+        raise ValidationError({'week_end': 'Bitiş tarihi başlangıçtan önce olamaz.'})
+    if (week_end - week_start).days + 1 not in PROGRAM_LENGTHS:
+        raise ValidationError({
+            'week_end': (
+                'Haftalık program 7 veya 8 gün olmalıdır. '
+                'Son gün kontrol günüdür. 8 gün, programın yapıldığı günü de kapsar.'
+            ),
+        })
+
+
 def sync_program_date_range(
     program: WeeklyProgram,
     week_start: date,
@@ -37,17 +54,10 @@ def sync_program_date_range(
 
     - Yeni günler eklenir
     - Aralık dışı boş günler silinir
+    - Aralık 7 veya 8 gündür. Son gün kontrol günüdür.
     - Blok içeren günler aralık dışına düşerse force yoksa ValidationError
     """
-    if week_end < week_start:
-        raise ValidationError({'week_end': 'Bitiş tarihi başlangıçtan önce olamaz.'})
-    if (week_end - week_start).days != 6:
-        raise ValidationError({
-            'week_end': (
-                'Haftalık program 7 gün olmalıdır. '
-                'Son gün kontrol günüdür; ödevin verildiği gün aralığa girmez.'
-            ),
-        })
+    validate_program_length(week_start, week_end)
 
     conflict = (
         WeeklyProgram.objects.filter(
@@ -186,10 +196,10 @@ def auto_distribute(
     if not days:
         return {'distributed': 0, 'detail': 'Dağıtılacak gün yok.'}
 
-    if (program.week_end - program.week_start).days != 6:
+    if (program.week_end - program.week_start).days + 1 not in PROGRAM_LENGTHS:
         return {
             'distributed': 0,
-            'detail': 'Haftalık program 7 gün olmalıdır. Önce tarihi 7 güne getirin.',
+            'detail': 'Haftalık program 7 veya 8 gün olmalıdır. Önce tarihi düzeltin.',
         }
 
     qs = ManualAssignment.objects.filter(

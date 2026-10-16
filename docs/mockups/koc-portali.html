@@ -1,0 +1,1324 @@
+<!DOCTYPE html>
+<html lang="tr" data-theme="light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Koç Portalı — Taslak</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #e9eef6;
+    --page: #f5f7fb;
+    --surface: #ffffff;
+    --surface-2: #f0f4fa;
+    --text: #0f1b2d;
+    --muted: #6b7a90;
+    --line: #e3e8f0;
+    --brand: #0262a7;
+    --brand-2: #01518c;
+    --brand-soft: #e3f0fa;
+    --accent: #ff6b3d;
+    --accent-soft: #ffede6;
+    --good: #16a36a;
+    --good-soft: #e2f6ec;
+    --warn: #d99100;
+    --warn-soft: #fff4dc;
+    --bad: #e5484d;
+    --bad-soft: #fde8e8;
+    --violet: #7c5cff;
+    --violet-soft: #efeaff;
+    --teal: #0fa3a3;
+    --teal-soft: #dff5f5;
+  }
+  [data-theme="dark"] {
+    --bg: #05080f;
+    --page: #0b1220;
+    --surface: #131c2e;
+    --surface-2: #1b2740;
+    --text: #eaf0f8;
+    --muted: #8a9ab3;
+    --line: #24324d;
+    --brand: #3b9be6;
+    --brand-2: #2a86d1;
+    --brand-soft: #13304a;
+    --accent: #ff8257;
+    --accent-soft: #3a2219;
+    --good: #34c285;
+    --good-soft: #133325;
+    --warn: #f0b429;
+    --warn-soft: #3a2d10;
+    --bad: #ff6b6f;
+    --bad-soft: #3a1618;
+    --violet: #9b82ff;
+    --violet-soft: #251d45;
+    --teal: #33c2c2;
+    --teal-soft: #0f3333;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: "Poppins", system-ui, sans-serif; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased; }
+  button { font: inherit; color: inherit; background: none; border: 0; cursor: pointer; }
+  input, select, textarea { font: inherit; color: inherit; }
+  .ic { width: 22px; height: 22px; flex: 0 0 auto; }
+
+  /* ── Sahne ve cihaz önizleme ── */
+  .stage { display: flex; justify-content: center; align-items: flex-start; min-height: 100%; }
+  body.framed .stage { padding: 18px 20px 84px; }
+  .app { position: relative; container: app / inline-size; width: 100%; height: 100dvh; background: var(--page); overflow: hidden; transition: width .35s ease; }
+  body.framed .app { height: calc(100dvh - 102px); border-radius: 28px; border: 1px solid var(--line); box-shadow: 0 30px 80px rgba(15,27,45,.16); }
+  body.framed .app[data-dev="phone"] { width: 390px; max-height: 844px; border-radius: 44px; border: 10px solid #0f1b2d; }
+  body.framed .app[data-dev="tablet"] { width: 820px; max-height: 1180px; border-radius: 32px; border: 10px solid #0f1b2d; }
+  .devbar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 100; display: none; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: #0f1b2d; color: #fff; box-shadow: 0 12px 30px rgba(0,0,0,.25); font-size: 13px; }
+  body.framed .devbar { display: flex; }
+  .devbar span { padding: 0 12px 0 14px; opacity: .7; }
+  .devbar button { padding: 8px 16px; border-radius: 999px; color: #fff; opacity: .75; font-weight: 500; }
+  .devbar button.on { background: #fff; color: #0f1b2d; opacity: 1; }
+
+  /* ── Kabuk ── */
+  .shell { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; height: 100%; }
+  .rail, .ctx { display: none; }
+  .main { grid-row: 1; overflow-y: auto; container: main / inline-size; scrollbar-width: thin; }
+  .page { padding: 14px 18px 28px; margin: 0 auto; max-width: 1180px; }
+  .screen { display: none; animation: fade .22s ease; }
+  .screen.active { display: block; }
+  @keyframes fade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+  .tabbar { grid-row: 2; display: flex; justify-content: space-around; align-items: center; height: 74px; padding-bottom: env(safe-area-inset-bottom, 0); background: var(--surface); border-top: 1px solid var(--line); }
+  .tab { display: flex; flex-direction: column; align-items: center; gap: 3px; width: 64px; font-size: 10.5px; color: var(--muted); position: relative; }
+  .tab .ic { width: 24px; height: 24px; }
+  .tab.on { color: var(--brand); font-weight: 600; }
+  .tab .dot { position: absolute; top: -2px; right: 14px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; border: 2px solid var(--surface); box-sizing: content-box; }
+
+  .rail { grid-row: 1; flex-direction: column; align-items: center; gap: 4px; padding: 18px 0 16px; background: var(--surface); border-right: 1px solid var(--line); overflow-y: auto; scrollbar-width: none; }
+  .rail .logo { width: 46px; height: 46px; border-radius: 15px; background: var(--brand); color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 15px; margin-bottom: 14px; }
+  .rail-item { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 76px; padding: 6px 0; font-size: 10.5px; color: var(--muted); position: relative; }
+  .rail-item .box { width: 46px; height: 38px; border-radius: 13px; display: grid; place-items: center; transition: background .15s; }
+  .rail-item:hover .box { background: var(--surface-2); }
+  .rail-item.on { color: var(--brand); font-weight: 600; }
+  .rail-item.on .box { background: var(--brand-soft); }
+  .rail-item .dot { position: absolute; top: 4px; right: 14px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 10px; font-weight: 600; line-height: 16px; border: 2px solid var(--surface); box-sizing: content-box; }
+  .rail .spacer { flex: 1; min-height: 12px; }
+  .rail .me { width: 42px; height: 42px; border-radius: 50%; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; display: grid; place-items: center; margin-top: 8px; }
+
+  .ctx { grid-row: 1; overflow-y: auto; background: var(--surface); border-left: 1px solid var(--line); padding: 24px 22px; scrollbar-width: thin; }
+  .ctx-sec { display: none; }
+  .ctx-sec.on { display: block; animation: fade .22s ease; }
+  .ctx h5 { font-size: 15px; font-weight: 600; margin: 22px 0 10px; display: flex; justify-content: space-between; align-items: baseline; }
+  .ctx h5:first-child { margin-top: 0; }
+  .ctx h5 a { font-size: 12.5px; color: var(--brand); font-weight: 500; cursor: pointer; }
+
+  @container app (min-width: 768px) {
+    .shell { grid-template-columns: 92px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); }
+    .rail { display: flex; }
+    .tabbar { display: none; }
+    .page { padding: 26px 32px 40px; }
+    .only-phone { display: none !important; }
+  }
+  @container app (min-width: 1200px) {
+    .shell { grid-template-columns: 92px minmax(0, 1fr) 340px; }
+    .ctx { display: block; }
+    .page { padding: 30px 40px 44px; }
+    .no-ctx-wide { display: none !important; }
+  }
+
+  /* ── Ortak parçalar ── */
+  .ph { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; margin: 4px 0 18px; }
+  .ph small { display: block; color: var(--muted); font-size: 13px; margin-bottom: 2px; }
+  .ph h1 { font-size: 24px; font-weight: 700; letter-spacing: -.01em; line-height: 1.2; }
+  .ph .acts { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  .icon-btn { width: 42px; height: 42px; border-radius: 50%; background: var(--surface); border: 1px solid var(--line); display: grid; place-items: center; position: relative; }
+  .icon-btn .ic { width: 20px; height: 20px; }
+  .icon-btn .badge { position: absolute; top: 7px; right: 8px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 2px solid var(--surface); }
+  .avatar { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 600; font-size: 14px; flex-shrink: 0; }
+  .avatar.sm { width: 36px; height: 36px; font-size: 12.5px; }
+  .avatar.lg { width: 72px; height: 72px; font-size: 24px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 16px; }
+  .card.click { cursor: pointer; transition: border-color .15s; }
+  .card.click:hover { border-color: #c9d4e2; }
+  .sec { display: flex; justify-content: space-between; align-items: baseline; margin: 24px 0 10px; }
+  .sec h4 { font-size: 17px; font-weight: 600; }
+  .sec a, .link { font-size: 13px; color: var(--brand); font-weight: 500; cursor: pointer; }
+  .muted { color: var(--muted); }
+  .row { display: flex; align-items: center; gap: 12px; }
+  .grow { flex: 1; min-width: 0; }
+  .ell { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .pill.good { background: var(--good-soft); color: var(--good); }
+  .pill.bad { background: var(--bad-soft); color: var(--bad); }
+  .pill.warn { background: var(--warn-soft); color: var(--warn); }
+  .pill.accent { background: var(--accent-soft); color: var(--accent); }
+  .pill.brand { background: var(--brand-soft); color: var(--brand); }
+  .pill.gray { background: var(--surface-2); color: var(--muted); }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 46px; padding: 0 18px; border-radius: 14px; background: var(--brand); color: #fff; font-weight: 600; font-size: 14px; white-space: nowrap; }
+  .btn:hover { background: var(--brand-2); }
+  .btn .ic { width: 18px; height: 18px; }
+  .btn.sec2 { background: var(--surface); color: var(--text); border: 1px solid var(--line); }
+  .btn.sec2:hover { background: var(--surface-2); }
+  .btn.soft { background: var(--brand-soft); color: var(--brand); }
+  .btn.accent { background: var(--accent); }
+  .btn.sm { height: 36px; padding: 0 13px; font-size: 13px; border-radius: 11px; }
+  .btn.block { width: 100%; }
+  .chips { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; margin: 0 -18px 14px; padding: 0 18px; }
+  @container app (min-width: 768px) { .chips { margin: 0 0 16px; padding: 0; flex-wrap: wrap; } }
+  .chip { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 14px; border-radius: 999px; background: var(--surface); border: 1px solid var(--line); font-size: 13px; font-weight: 500; white-space: nowrap; color: var(--muted); }
+  .chip b { font-weight: 600; font-size: 11.5px; background: var(--surface-2); color: var(--muted); border-radius: 999px; padding: 1px 7px; }
+  .chip.on { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .chip.on b { background: rgba(255,255,255,.22); color: #fff; }
+  .seg { display: flex; background: var(--surface-2); border-radius: 14px; padding: 4px; gap: 4px; margin-bottom: 16px; }
+  .seg button { flex: 1; height: 38px; border-radius: 11px; font-size: 13.5px; font-weight: 500; color: var(--muted); white-space: nowrap; padding: 0 10px; }
+  .seg button.on { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(15,27,45,.08); }
+  .search { display: flex; align-items: center; gap: 10px; height: 48px; padding: 0 16px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); margin-bottom: 14px; color: var(--muted); }
+  .search input { flex: 1; border: 0; outline: 0; background: transparent; font-size: 14px; color: var(--text); min-width: 0; }
+  .bar { height: 8px; border-radius: 4px; background: var(--surface-2); overflow: hidden; }
+  .bar i { display: block; height: 100%; border-radius: 4px; background: var(--brand); }
+  .empty { text-align: center; padding: 34px 16px; color: var(--muted); font-size: 14px; }
+  .grid2 { display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr); }
+  .grid3 { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  @container main (min-width: 640px) { .grid2 { grid-template-columns: repeat(2, minmax(0, 1fr)); } .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @container main (min-width: 640px) { .grid3.wide4 { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  .stat .n { font-size: 24px; font-weight: 700; line-height: 1.15; }
+  .stat .t { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .stat .d { font-size: 12px; font-weight: 600; margin-top: 6px; }
+  .up { color: var(--good); } .down { color: var(--bad); }
+  .list > * + * { border-top: 1px solid var(--line); }
+  .li { display: flex; align-items: center; gap: 12px; padding: 12px 2px; cursor: pointer; }
+  .li strong { display: block; font-size: 14px; font-weight: 600; }
+  .li span.s { display: block; font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+  .chev { width: 18px; height: 18px; color: var(--muted); }
+
+  /* ── Bugün ── */
+  .hero { position: relative; overflow: hidden; background: var(--brand); color: #fff; border-radius: 24px; padding: 22px; }
+  .hero::before, .hero::after { content: ""; position: absolute; border-radius: 50%; background: rgba(255,255,255,.08); }
+  .hero::before { width: 220px; height: 220px; right: -60px; top: -80px; }
+  .hero::after { width: 130px; height: 130px; right: 70px; bottom: -80px; }
+  .hero > * { position: relative; z-index: 1; }
+  .hero .lbl { font-size: 13px; opacity: .88; }
+  .hero .big { font-size: 40px; font-weight: 700; line-height: 1.1; margin-top: 4px; }
+  .hero .big span { font-size: 16px; font-weight: 500; opacity: .9; margin-left: 6px; }
+  .hero .chips2 { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .hero .chips2 button { background: rgba(255,255,255,.16); color: #fff; padding: 7px 12px; border-radius: 999px; font-size: 12.5px; font-weight: 500; }
+  .hero .chips2 button:hover { background: rgba(255,255,255,.26); }
+  .hero .cta { position: absolute; right: 18px; top: 18px; background: var(--accent); color: #fff; font-size: 12px; font-weight: 600; padding: 7px 12px; border-radius: 999px; }
+  .qa { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 16px; }
+  .qa button { display: flex; flex-direction: column; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; text-align: center; line-height: 1.25; }
+  .qa .q { width: 56px; height: 56px; border-radius: 18px; display: grid; place-items: center; }
+  .qa .q .ic { width: 24px; height: 24px; }
+  @container main (min-width: 640px) {
+    .qa { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .qa button { flex-direction: row; justify-content: flex-start; gap: 12px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 12px; text-align: left; font-size: 13.5px; font-weight: 600; }
+    .qa .q { width: 44px; height: 44px; border-radius: 14px; }
+  }
+  .bg-brand { background: var(--brand-soft); color: var(--brand); }
+  .bg-accent { background: var(--accent-soft); color: var(--accent); }
+  .bg-good { background: var(--good-soft); color: var(--good); }
+  .bg-violet { background: var(--violet-soft); color: var(--violet); }
+  .bg-warn { background: var(--warn-soft); color: var(--warn); }
+  .bg-teal { background: var(--teal-soft); color: var(--teal); }
+  .bg-bad { background: var(--bad-soft); color: var(--bad); }
+  .today-grid { display: grid; gap: 0 20px; grid-template-columns: minmax(0, 1fr); }
+  @container main (min-width: 760px) { .today-grid { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); } }
+  .tl { display: flex; flex-direction: column; gap: 10px; }
+  .tl-item { display: flex; gap: 12px; align-items: stretch; cursor: pointer; }
+  .tl-time { width: 44px; font-size: 12.5px; color: var(--muted); padding-top: 14px; flex-shrink: 0; }
+  .tl-card { flex: 1; min-width: 0; background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--c, var(--brand)); border-radius: 16px; padding: 12px 14px; }
+  .tl-card strong { font-size: 14px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .tl-card span { font-size: 12.5px; color: var(--muted); }
+  .tl-item.done .tl-card { opacity: .55; }
+  .tl-item.now .tl-card { background: var(--brand-soft); border-color: transparent; border-left-color: var(--brand); }
+  .now-tag { font-size: 11px; font-weight: 600; color: var(--accent); }
+  .att { display: flex; gap: 12px; align-items: center; padding: 12px 0; cursor: pointer; }
+  .att + .att { border-top: 1px solid var(--line); }
+  .att .why { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 5px; }
+  .bday { display: flex; align-items: center; gap: 12px; background: var(--accent-soft); border-radius: 20px; padding: 14px 16px; }
+  .bday .gift { width: 44px; height: 44px; border-radius: 14px; background: var(--accent); color: #fff; display: grid; place-items: center; }
+
+  /* ── Öğrenciler ── */
+  .stu { display: flex; gap: 12px; align-items: flex-start; }
+  .stu .top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+  .stu strong { font-size: 15px; font-weight: 600; }
+  .stu .cls { font-size: 12.5px; color: var(--muted); margin-top: 1px; }
+  .sig { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 12px; }
+  .sig div { background: var(--surface-2); border-radius: 12px; padding: 8px 10px; }
+  .sig b { display: block; font-size: 14px; font-weight: 600; }
+  .sig span { font-size: 11px; color: var(--muted); }
+  .stu-acts { display: flex; gap: 6px; margin-top: 12px; }
+  .stu-acts button { flex: 1; height: 36px; border-radius: 11px; background: var(--surface-2); font-size: 12.5px; font-weight: 500; display: flex; align-items: center; justify-content: center; gap: 6px; }
+  .stu-acts button:hover { background: var(--brand-soft); color: var(--brand); }
+  .stu-acts .ic { width: 16px; height: 16px; }
+  .pin { color: var(--accent); }
+
+  /* ── Öğrenci 360 ── */
+  .back { display: inline-flex; align-items: center; gap: 4px; color: var(--brand); font-size: 14.5px; font-weight: 500; margin: 2px 0 12px; }
+  .back .ic { width: 20px; height: 20px; }
+  .prof { display: flex; gap: 16px; align-items: center; }
+  .prof h2 { font-size: 21px; font-weight: 700; line-height: 1.2; }
+  .prof .meta { font-size: 13px; color: var(--muted); margin-top: 3px; }
+  .prof .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .prof-acts { display: flex; gap: 8px; margin-top: 16px; }
+  .prof-acts .btn { flex: 1; padding: 0 12px; }
+  .prof-acts .btn.ico { flex: 0 0 46px; width: 46px; padding: 0; }
+  .prof-acts .dd-wrap { flex: 0 0 auto; }
+  .me-card { flex-wrap: wrap; }
+  @container main (max-width: 560px) { .me-card .dd-wrap, .me-card .dd-wrap > .btn { width: 100%; justify-content: space-between; } .me-card .dd-wrap .dd { left: 0; right: 0; } }
+  @container main (min-width: 760px) {
+    .prof-wrap { display: flex; justify-content: space-between; align-items: center; gap: 20px; }
+    .prof-acts { margin-top: 0; }
+    .prof-acts .btn { flex: 0 0 auto; }
+  }
+  .tabs { display: flex; gap: 4px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); margin: 18px 0 16px; }
+  .tabs button { padding: 10px 14px; font-size: 14px; font-weight: 500; color: var(--muted); border-bottom: 2.5px solid transparent; white-space: nowrap; margin-bottom: -1px; }
+  .tabs button.on { color: var(--brand); border-bottom-color: var(--brand); font-weight: 600; }
+  .tab-pane { display: none; }
+  .tab-pane.on { display: block; animation: fade .2s ease; }
+  .todo { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); }
+  .todo + .todo { margin-top: 8px; }
+  .todo .q { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; }
+  .todo .q .ic { width: 20px; height: 20px; }
+  .chart { width: 100%; height: 170px; display: block; }
+  .s360-grid { display: grid; gap: 16px; grid-template-columns: minmax(0, 1fr); }
+  @container main (min-width: 820px) { .s360-grid { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); } }
+  .hw { padding: 14px 0; }
+  .hw + .hw { border-top: 1px solid var(--line); }
+  .hw .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+  .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+  .week .d { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 8px 6px; min-height: 120px; }
+  .week .d h6 { font-size: 11.5px; font-weight: 600; color: var(--muted); text-align: center; margin-bottom: 6px; }
+  .week .d.today { border-color: var(--brand); }
+  .week .d.today h6 { color: var(--brand); }
+  .task { font-size: 11px; line-height: 1.3; padding: 5px 6px; border-radius: 8px; margin-bottom: 4px; display: flex; gap: 4px; }
+  .task.ok { text-decoration: line-through; opacity: .6; }
+  @container main (max-width: 560px) { .week { grid-template-columns: minmax(0, 1fr); } .week .d { min-height: 0; display: flex; gap: 10px; align-items: flex-start; } .week .d h6 { width: 48px; text-align: left; margin: 4px 0 0; } .week .d .tasks { flex: 1; } }
+  .meet { display: flex; gap: 12px; padding: 12px 0; }
+  .meet + .meet { border-top: 1px solid var(--line); }
+  .meet .q { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; }
+  .heat { display: grid; grid-template-columns: repeat(10, minmax(0, 1fr)); gap: 5px; }
+  .heat i { aspect-ratio: 1; border-radius: 6px; background: var(--good-soft); }
+  .heat i.y { background: var(--bad); } .heat i.z { background: var(--warn); } .heat i.w { background: var(--surface-2); }
+
+  /* ── Ödev / Sınav ── */
+  .asg .top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .asg strong { font-size: 15px; font-weight: 600; }
+  .asg .meta { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .asg .prog { display: flex; align-items: center; gap: 10px; margin: 12px 0; font-size: 12.5px; color: var(--muted); }
+  .asg .prog .bar { flex: 1; }
+  .callout { display: flex; gap: 12px; align-items: center; border-radius: 20px; padding: 14px 16px; }
+  .callout .q { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; flex-shrink: 0; color: #fff; }
+  .pkg .cover { height: 84px; border-radius: 14px; margin-bottom: 12px; display: grid; place-items: center; color: #fff; }
+  .pkg .cover .ic { width: 30px; height: 30px; }
+  .book { display: flex; gap: 12px; align-items: center; }
+  .book .cv { width: 48px; height: 64px; border-radius: 8px; flex-shrink: 0; color: #fff; font-size: 10px; font-weight: 600; display: grid; place-items: center; text-align: center; padding: 4px; line-height: 1.15; }
+  .exam .top { display: flex; justify-content: space-between; gap: 10px; }
+  .exam .nums { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+  .exam .nums div { background: var(--surface-2); border-radius: 12px; padding: 8px 10px; }
+  .exam .nums b { display: block; font-size: 15px; font-weight: 600; }
+  .exam .nums span { font-size: 11px; color: var(--muted); }
+
+  /* ── Takvim ── */
+  .days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; margin-bottom: 16px; }
+  .days button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 0; border-radius: 16px; background: var(--surface); border: 1px solid var(--line); font-size: 11.5px; color: var(--muted); position: relative; }
+  .days button b { font-size: 17px; font-weight: 600; color: var(--text); }
+  .days button.on { background: var(--brand); border-color: var(--brand); color: rgba(255,255,255,.85); }
+  .days button.on b { color: #fff; }
+  .days button .ev { position: absolute; bottom: 5px; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+  .days button.on .ev { background: #fff; }
+  .board { display: none; }
+  @container main (min-width: 820px) {
+    .board { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; }
+    .cal-phone { display: none; }
+  }
+  .board .col { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 8px; min-height: 420px; }
+  .board .col.today { border-color: var(--brand); box-shadow: inset 0 3px 0 var(--brand); }
+  .board .col h6 { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .board .col h6 b { color: var(--text); }
+  .ev-card { border-radius: 12px; padding: 8px 9px; margin-bottom: 6px; font-size: 11.5px; line-height: 1.3; cursor: pointer; }
+  .ev-card b { display: block; font-size: 12px; font-weight: 600; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin-bottom: 14px; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+
+  /* ── Sohbet ── */
+  .chat-split { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .chat-conv { display: none; }
+  .chat-split.open .chat-list { display: none; }
+  .chat-split.open .chat-conv { display: flex; }
+  @container main (min-width: 760px) {
+    .chat-split { grid-template-columns: 320px minmax(0, 1fr); height: calc(100dvh - 190px); min-height: 460px; }
+    body.framed .chat-split { height: calc(100dvh - 300px); }
+    .chat-split .chat-list { display: block !important; overflow-y: auto; }
+    .chat-split .chat-conv { display: flex !important; }
+    .chat-conv .back { display: none; }
+  }
+  .ci { display: flex; gap: 12px; padding: 12px; border-radius: 16px; cursor: pointer; align-items: flex-start; }
+  .ci:hover { background: var(--surface-2); }
+  .ci.on { background: var(--brand-soft); }
+  .ci strong { font-size: 14px; font-weight: 600; }
+  .ci .msg { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .ci .tm { font-size: 11px; color: var(--muted); }
+  .ci .un { min-width: 20px; height: 20px; border-radius: 999px; background: var(--accent); color: #fff; font-size: 11px; font-weight: 600; display: grid; place-items: center; margin-top: 6px; margin-left: auto; padding: 0 6px; }
+  .chat-conv { flex-direction: column; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; min-height: 520px; }
+  .conv-head { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
+  .conv-head .back { margin: 0; }
+  .msgs { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 8px; background: var(--page); }
+  .bub { max-width: 78%; padding: 10px 14px; border-radius: 18px; font-size: 13.5px; line-height: 1.45; }
+  .bub.in { background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 6px; align-self: flex-start; }
+  .bub.out { background: var(--brand); color: #fff; border-bottom-right-radius: 6px; align-self: flex-end; }
+  .bub small { display: block; font-size: 10.5px; opacity: .65; margin-top: 4px; text-align: right; }
+  .day-sep { align-self: center; font-size: 11.5px; color: var(--muted); background: var(--surface-2); padding: 4px 10px; border-radius: 999px; }
+  .composer { display: flex; gap: 8px; padding: 12px; border-top: 1px solid var(--line); align-items: center; }
+  .composer input { flex: 1; height: 44px; border-radius: 999px; border: 1px solid var(--line); background: var(--page); padding: 0 16px; outline: 0; min-width: 0; }
+  .composer .send { width: 44px; height: 44px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; }
+  .composer .send .ic { width: 18px; height: 18px; }
+
+  /* ── Menü ── */
+  .me-card { display: flex; align-items: center; gap: 14px; }
+  .mgrp h6 { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .02em; margin: 22px 0 10px; }
+  .mgrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  @container main (min-width: 640px) { .mgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+  @container main (min-width: 980px) { .mgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); } }
+  .mi { display: flex; flex-direction: column; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 14px 6px; font-size: 12px; font-weight: 500; text-align: center; line-height: 1.25; }
+  .mi:hover { border-color: #c9d4e2; }
+  .mi .q { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; }
+  .switch { width: 46px; height: 28px; border-radius: 999px; background: var(--line); position: relative; flex-shrink: 0; transition: background .2s; }
+  .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+  .switch.on { background: var(--brand); }
+  .switch.on::after { transform: translateX(18px); }
+
+  /* ── Yoklama ── */
+  .yk { display: flex; align-items: center; gap: 12px; padding: 10px 0; }
+  .yk + .yk { border-top: 1px solid var(--line); }
+  .yk-seg { display: flex; background: var(--surface-2); border-radius: 12px; padding: 3px; gap: 3px; }
+  .yk-seg button { height: 32px; padding: 0 10px; border-radius: 9px; font-size: 12px; font-weight: 500; color: var(--muted); }
+  .yk-seg button.on[data-v="var"] { background: var(--good); color: #fff; }
+  .yk-seg button.on[data-v="yok"] { background: var(--bad); color: #fff; }
+  .yk-seg button.on[data-v="izin"] { background: var(--warn); color: #fff; }
+  .sticky-foot { position: sticky; bottom: 0; padding: 12px 0 4px; background: linear-gradient(transparent, var(--page) 30%); }
+
+  /* ── Açılır menü ── */
+  .dd-wrap { position: relative; }
+  .dd { position: absolute; right: 0; top: calc(100% + 6px); min-width: 210px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 6px; box-shadow: 0 16px 40px rgba(15,27,45,.14); z-index: 30; display: none; }
+  .dd.on { display: block; animation: fade .15s ease; }
+  .dd button { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border-radius: 10px; font-size: 13.5px; text-align: left; }
+  .dd button:hover { background: var(--surface-2); }
+  .dd button .ic { width: 18px; height: 18px; color: var(--muted); }
+  .dd button.danger { color: var(--bad); }
+  .dd button.danger .ic { color: var(--bad); }
+  .dd hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; }
+
+  /* ── Modal / alt sayfa ── */
+  .overlay { position: absolute; inset: 0; z-index: 50; background: rgba(5,10,20,.45); display: none; align-items: flex-end; justify-content: center; }
+  .overlay.on { display: flex; animation: fade .15s ease; }
+  .sheet { display: none; width: 100%; max-height: 90%; overflow-y: auto; background: var(--surface); border-radius: 28px 28px 0 0; padding: 10px 20px 24px; }
+  .sheet.on { display: block; animation: up .25s ease; }
+  @keyframes up { from { transform: translateY(40px); opacity: .5; } to { transform: none; opacity: 1; } }
+  .grab { width: 40px; height: 5px; border-radius: 3px; background: var(--line); margin: 0 auto 14px; }
+  .sh-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .sh-head h3 { font-size: 19px; font-weight: 700; }
+  .sh-head p { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .x { width: 38px; height: 38px; border-radius: 50%; background: var(--surface-2); display: grid; place-items: center; flex-shrink: 0; }
+  .x .ic { width: 18px; height: 18px; }
+  @container app (min-width: 768px) {
+    .overlay { align-items: center; padding: 24px; }
+    .sheet { width: 560px; max-height: 86%; border-radius: 24px; padding: 22px 24px 24px; }
+    .sheet.wide { width: 720px; }
+    .grab { display: none; }
+  }
+  .f { margin-bottom: 14px; }
+  .f label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 6px; }
+  .f input, .f select, .f textarea { width: 100%; height: 48px; border-radius: 14px; border: 1px solid var(--line); background: var(--page); padding: 0 14px; font-size: 14px; outline: 0; }
+  .f textarea { height: 96px; padding: 12px 14px; resize: vertical; }
+  .f input:focus, .f select:focus, .f textarea:focus { border-color: var(--brand); box-shadow: 0 0 0 3px rgba(2,98,167,.12); }
+  .f2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .opts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .opt { height: 40px; padding: 0 14px; border-radius: 12px; border: 1px solid var(--line); background: var(--page); font-size: 13px; font-weight: 500; display: inline-flex; align-items: center; gap: 6px; }
+  .opt.on { border-color: var(--brand); background: var(--brand-soft); color: var(--brand); font-weight: 600; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-radius: 14px; background: var(--page); margin-bottom: 14px; font-size: 13.5px; }
+  .sh-foot { display: flex; gap: 10px; margin-top: 18px; }
+  .sh-foot .btn { flex: 1; }
+  .steps { display: flex; gap: 6px; margin-bottom: 18px; }
+  .steps i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
+  .steps i.on { background: var(--brand); }
+  .pick { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line); margin-bottom: 8px; cursor: pointer; }
+  .pick.on { border-color: var(--brand); background: var(--brand-soft); }
+  .pick .box { width: 22px; height: 22px; border-radius: 7px; border: 2px solid var(--line); display: grid; place-items: center; flex-shrink: 0; }
+  .pick.on .box { background: var(--brand); border-color: var(--brand); color: #fff; }
+  .pick .box .ic { width: 14px; height: 14px; }
+  .kt { display: flex; align-items: center; gap: 10px; padding: 10px 0; }
+  .kt + .kt { border-top: 1px solid var(--line); }
+  .kt-seg { display: flex; gap: 4px; }
+  .kt-seg button { width: 36px; height: 34px; border-radius: 10px; background: var(--surface-2); display: grid; place-items: center; color: var(--muted); }
+  .kt-seg button .ic { width: 16px; height: 16px; }
+  .kt-seg button.on.ok { background: var(--good); color: #fff; }
+  .kt-seg button.on.half { background: var(--warn); color: #fff; }
+  .kt-seg button.on.no { background: var(--bad); color: #fff; }
+  .notif { display: flex; gap: 12px; padding: 12px 0; }
+  .notif + .notif { border-top: 1px solid var(--line); }
+  .notif .q { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; flex-shrink: 0; }
+  .notif.unread strong::after { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-left: 6px; vertical-align: 2px; }
+  .sr { display: flex; align-items: center; gap: 12px; padding: 10px 8px; border-radius: 12px; cursor: pointer; }
+  .sr:hover { background: var(--surface-2); }
+  .sr-h { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 14px 0 4px 8px; }
+
+  .toast { position: absolute; left: 50%; bottom: 92px; transform: translate(-50%, 20px); background: var(--text); color: var(--page); padding: 12px 18px; border-radius: 14px; font-size: 13.5px; font-weight: 500; opacity: 0; pointer-events: none; transition: all .25s; z-index: 60; display: flex; gap: 8px; align-items: center; white-space: nowrap; }
+  .toast.on { opacity: 1; transform: translate(-50%, 0); }
+  .toast .ic { width: 18px; height: 18px; color: var(--good); }
+  @container app (min-width: 768px) { .toast { bottom: 28px; } }
+
+  /* bağlam paneli */
+  .mcal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 2px; text-align: center; font-size: 12px; }
+  .mcal b { font-size: 11px; color: var(--muted); font-weight: 500; padding: 4px 0; }
+  .mcal span { padding: 7px 0; border-radius: 10px; position: relative; }
+  .mcal span.o { color: var(--line); }
+  .mcal span.t { background: var(--brand); color: #fff; font-weight: 600; }
+  .mcal span.e::after { content: ""; position: absolute; bottom: 2px; left: 50%; width: 4px; height: 4px; margin-left: -2px; border-radius: 50%; background: var(--accent); }
+  .donut { display: flex; gap: 16px; align-items: center; }
+  .donut svg { width: 110px; height: 110px; flex-shrink: 0; }
+  .lg { font-size: 12.5px; display: flex; flex-direction: column; gap: 6px; }
+  .lg i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; }
+</style>
+</head>
+<body>
+<div class="stage">
+<div class="app" id="app" data-dev="pc">
+<div class="shell">
+
+  <!-- İkon menü (tablet / PC) -->
+  <aside class="rail">
+    <div class="logo">3K</div>
+    <button class="rail-item" data-go="bugun"><span class="box"><i data-ic="home"></i></span>Bugün</button>
+    <button class="rail-item" data-go="ogrenciler"><span class="box"><i data-ic="users"></i></span>Öğrenciler</button>
+    <button class="rail-item" data-go="odev"><span class="box"><i data-ic="clip"></i></span>Ödevler</button>
+    <button class="rail-item" data-go="sinavlar"><span class="box"><i data-ic="chart"></i></span>Sınavlar</button>
+    <button class="rail-item" data-go="takvim"><span class="box"><i data-ic="cal"></i></span>Takvim</button>
+    <button class="rail-item" data-go="sohbet"><span class="box"><i data-ic="chat"></i></span>Sohbet<span class="dot">4</span></button>
+    <button class="rail-item" data-go="yoklama"><span class="box"><i data-ic="ucheck"></i></span>Yoklama</button>
+    <button class="rail-item" data-go="menu"><span class="box"><i data-ic="grid"></i></span>Menü</button>
+    <div class="spacer"></div>
+    <button class="rail-item" onclick="toggleTheme()"><span class="box"><i data-ic="moon"></i></span>Tema</button>
+    <button class="me" onclick="go('menu')" title="Banu Demir Kaya">BK</button>
+  </aside>
+
+  <main class="main" id="main"><div class="page">
+
+    <!-- ═════════ BUGÜN ═════════ -->
+    <section class="screen" id="s-bugun">
+      <div class="ph">
+        <div><small>Cuma, 9 Ekim</small><h1>Günaydın, Banu</h1></div>
+        <div class="acts">
+          <button class="icon-btn" onclick="openSheet('arama')" title="Ara"><i data-ic="search"></i></button>
+          <button class="icon-btn" onclick="openSheet('bildirim')" title="Bildirimler"><i data-ic="bell"></i><span class="badge"></span></button>
+        </div>
+      </div>
+
+      <div class="hero">
+        <div class="lbl">Bugünkü odak</div>
+        <div class="big">12<span>öğrenci seni bekliyor</span></div>
+        <div class="chips2">
+          <button onclick="go('takvim')">3 görüşme</button>
+          <button onclick="go('odev')">7 geciken ödev</button>
+          <button onclick="openSheet('kontrol')">2 kontrol günü</button>
+          <button onclick="go('yoklama')">1 yoklama</button>
+        </div>
+        <button class="cta" onclick="go('ogrenciler'); setFilter('risk')">Riskli 4 →</button>
+      </div>
+
+      <div class="qa">
+        <button onclick="openSheet('gorusme')"><span class="q bg-brand"><i data-ic="meet"></i></span>Görüşme ekle</button>
+        <button onclick="openSheet('odev')"><span class="q bg-accent"><i data-ic="clip"></i></span>Ödev ver</button>
+        <button onclick="go('yoklama')"><span class="q bg-good"><i data-ic="ucheck"></i></span>Yoklama al</button>
+        <button onclick="openSheet('mesaj')"><span class="q bg-violet"><i data-ic="mega"></i></span>Toplu mesaj</button>
+      </div>
+
+      <div class="today-grid">
+        <div>
+          <div class="sec"><h4>Bugünün akışı</h4><a onclick="go('takvim')">Takvim</a></div>
+          <div class="tl" id="agenda"></div>
+        </div>
+        <div>
+          <div class="sec"><h4>Dikkat isteyenler</h4><a onclick="go('ogrenciler'); setFilter('risk')">Tümü</a></div>
+          <div class="card" style="padding:4px 16px" id="attention"></div>
+          <div class="sec"><h4>Kutlamalar</h4></div>
+          <div class="bday">
+            <div class="gift"><i data-ic="gift"></i></div>
+            <div class="grow"><strong style="font-size:14px">Fatmanur Dölek</strong><div class="muted" style="font-size:12.5px">Bugün 17 yaşına giriyor · 11 / LOCA 1</div></div>
+            <button class="btn sm accent" onclick="toast('Kutlama mesajı sıraya alındı')">Kutla</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ ÖĞRENCİLER ═════════ -->
+    <section class="screen" id="s-ogrenciler">
+      <div class="ph">
+        <div><small>40 aktif öğrenci</small><h1>Öğrencilerim</h1></div>
+        <div class="acts">
+          <div class="dd-wrap">
+            <button class="icon-btn" onclick="toggleDd('dd-export', event)" title="Dışa aktar"><i data-ic="download"></i></button>
+            <div class="dd" id="dd-export">
+              <button onclick="toast('CSV hazırlanıyor')"><i data-ic="download"></i>CSV olarak indir</button>
+              <button onclick="toast('Excel hazırlanıyor')"><i data-ic="download"></i>Excel olarak indir</button>
+              <hr />
+              <button onclick="toast('Toplu seçim açıldı')"><i data-ic="check"></i>Toplu seç</button>
+            </div>
+          </div>
+          <button class="btn sm" onclick="openSheet('gorusme')"><i data-ic="plus"></i><span>Görüşme</span></button>
+        </div>
+      </div>
+      <div class="grid3 wide4" style="margin-bottom:16px">
+        <div class="card stat"><div class="n">64,2</div><div class="t">Ortalama net</div><div class="d up">↑ 2,4 son deneme</div></div>
+        <div class="card stat"><div class="n">%71</div><div class="t">Ödev tamamlama</div><div class="d down">↓ %4 bu hafta</div></div>
+        <div class="card stat"><div class="n">5</div><div class="t">Bu hafta görüşme</div><div class="d muted">Hedef 8</div></div>
+        <div class="card stat"><div class="n">%94</div><div class="t">Devam oranı</div><div class="d up">↑ %1</div></div>
+      </div>
+      <div class="search"><i data-ic="search"></i><input id="stuQ" placeholder="Ad, sınıf veya okul no ara" oninput="renderStudents()" /></div>
+      <div class="chips" id="stuChips"></div>
+      <div class="grid2" id="stuList"></div>
+    </section>
+
+    <!-- ═════════ ÖĞRENCİ 360 ═════════ -->
+    <section class="screen" id="s-s360">
+      <button class="back" onclick="go('ogrenciler')"><i data-ic="chevL"></i>Öğrenciler</button>
+      <div class="card" style="padding:18px">
+        <div class="prof-wrap">
+          <div class="prof">
+            <div class="avatar lg" id="p-av">AP</div>
+            <div class="grow">
+              <h2 id="p-name">Ahmet Oğuz Polat</h2>
+              <div class="meta" id="p-meta">Mezun · Sayısal · No 00099</div>
+              <div class="pills" id="p-pills"></div>
+            </div>
+          </div>
+          <div class="prof-acts">
+            <button class="btn" onclick="openSheet('gorusme')"><i data-ic="meet"></i>Görüşme</button>
+            <button class="btn sec2" onclick="openSheet('odev')"><i data-ic="clip"></i>Ödev ver</button>
+            <button class="btn sec2 ico" onclick="go('sohbet')" title="Mesaj"><i data-ic="chat"></i></button>
+            <div class="dd-wrap">
+              <button class="btn sec2 ico" onclick="toggleDd('dd-stu', event)" title="Diğer"><i data-ic="more"></i></button>
+              <div class="dd" id="dd-stu">
+                <button onclick="toast('Öğrenci sabitlendi')"><i data-ic="pin"></i>Sabitle</button>
+                <button onclick="toast('Veli aranıyor…')"><i data-ic="phone"></i>Veliyi ara</button>
+                <button onclick="go('takvim')"><i data-ic="cal"></i>Takvimde gör</button>
+                <hr />
+                <button class="danger" onclick="toast('Risk bildirimi oluşturuldu')"><i data-ic="alert"></i>Risk bildir</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tabs" id="s360tabs">
+        <button class="on" data-t="ozet">Özet</button>
+        <button data-t="odevler">Ödevler</button>
+        <button data-t="sinav">Sınavlar</button>
+        <button data-t="program">Program</button>
+        <button data-t="gorusme">Görüşmeler</button>
+        <button data-t="devam">Devam</button>
+      </div>
+
+      <div class="tab-pane on" data-p="ozet">
+        <div class="grid3 wide4">
+          <div class="card stat"><div class="n" id="p-net">78,5</div><div class="t">Son net</div><div class="d up" id="p-netd">↑ 5,0</div></div>
+          <div class="card stat"><div class="n" id="p-odev">%71</div><div class="t">Ödev tamamlama</div><div class="d muted">Son 4 hafta</div></div>
+          <div class="card stat"><div class="n">%94</div><div class="t">Devam</div><div class="d muted">2 devamsızlık</div></div>
+          <div class="card stat"><div class="n" id="p-last" style="font-size:18px;padding:3px 0">Henüz yok</div><div class="t">Son görüşme</div><div class="d"><a class="link" onclick="openSheet('gorusme')">Planla →</a></div></div>
+        </div>
+        <div class="s360-grid" style="margin-top:16px">
+          <div>
+            <div class="sec" style="margin-top:4px"><h4>Bugün ne yapmalıyım?</h4></div>
+            <div class="todo"><span class="q bg-bad"><i data-ic="clip"></i></span><div class="grow"><strong style="font-size:14px">1 geciken ödev</strong><div class="muted" style="font-size:12.5px">Eylül 4. Hafta · Biyoloji-1</div></div><button class="btn sm soft" onclick="openSheet('kontrol')">Kontrol et</button></div>
+            <div class="todo"><span class="q bg-warn"><i data-ic="alert"></i></span><div class="grow"><strong style="font-size:14px">Risk seviyesi: Orta</strong><div class="muted" style="font-size:12.5px">Net dalgalanması ve geciken ödev</div></div><button class="btn sm soft" onclick="openSheet('gorusme')">Görüş</button></div>
+            <div class="todo"><span class="q bg-brand"><i data-ic="cal"></i></span><div class="grow"><strong style="font-size:14px">Bu hafta program yok</strong><div class="muted" style="font-size:12.5px">Haftalık çalışma programı oluştur</div></div><button class="btn sm soft" onclick="s360Tab('program')">Oluştur</button></div>
+          </div>
+          <div>
+            <div class="sec" style="margin-top:4px"><h4>Net gelişimi</h4><span class="muted" style="font-size:12.5px">Son 6 deneme</span></div>
+            <div class="card"><svg class="chart" id="netChart" viewBox="0 0 320 170" preserveAspectRatio="none"></svg></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="tab-pane" data-p="odevler">
+        <div class="chips" style="margin-bottom:8px"><button class="chip on">Tümü <b>6</b></button><button class="chip">Geciken <b>1</b></button><button class="chip">Açık <b>2</b></button><button class="chip">Tamamlanan <b>3</b></button></div>
+        <div class="card" style="padding:4px 16px">
+          <div class="hw"><div class="top"><div><strong style="font-size:14px">Eylül 4. Hafta Ödevi</strong><div class="muted" style="font-size:12.5px">Biyoloji-1 · Son gün 1 Eki</div></div><span class="pill bad">Gecikti</span></div><div class="bar"><i style="width:40%;background:var(--bad)"></i></div></div>
+          <div class="hw"><div class="top"><div><strong style="font-size:14px">Ekim 1. Hafta — TYT Matematik</strong><div class="muted" style="font-size:12.5px">3D Yayınları · Son gün 11 Eki</div></div><span class="pill brand">Açık</span></div><div class="bar"><i style="width:65%"></i></div></div>
+          <div class="hw"><div class="top"><div><strong style="font-size:14px">Paragraf 40 soru</strong><div class="muted" style="font-size:12.5px">Türkçe · Son gün 12 Eki</div></div><span class="pill brand">Açık</span></div><div class="bar"><i style="width:20%"></i></div></div>
+          <div class="hw"><div class="top"><div><strong style="font-size:14px">Fizik — Kuvvet ve Hareket</strong><div class="muted" style="font-size:12.5px">Tamamlandı · 28 Eyl</div></div><span class="pill good">Tamam</span></div><div class="bar"><i style="width:100%;background:var(--good)"></i></div></div>
+        </div>
+      </div>
+
+      <div class="tab-pane" data-p="sinav">
+        <div class="card" style="padding:4px 16px" id="stuExams"></div>
+      </div>
+
+      <div class="tab-pane" data-p="program">
+        <div class="row" style="justify-content:space-between;margin-bottom:12px">
+          <div><strong style="font-size:15px">5 – 11 Ekim haftası</strong><div class="muted" style="font-size:12.5px">14 görevden 6'sı tamamlandı</div></div>
+          <button class="btn sm" onclick="toast('Yeni hafta programı oluşturuldu')"><i data-ic="plus"></i>Yeni hafta</button>
+        </div>
+        <div class="week" id="weekPlan"></div>
+      </div>
+
+      <div class="tab-pane" data-p="gorusme">
+        <div class="card" style="padding:4px 16px">
+          <div class="meet"><span class="q bg-brand"><i data-ic="meet"></i></span><div class="grow"><strong style="font-size:14px">Öğrenci görüşmesi · Yüz yüze</strong><div class="muted" style="font-size:12.5px">18 Eylül · 25 dk · Hedef belirleme</div><p style="font-size:13px;margin-top:6px">TYT matematikte günlük 40 soru hedefi koyuldu. Deneme analizini birlikte yapacağız.</p></div></div>
+          <div class="meet"><span class="q bg-violet"><i data-ic="phone"></i></span><div class="grow"><strong style="font-size:14px">Veli görüşmesi · Telefon</strong><div class="muted" style="font-size:12.5px">2 Eylül · 10 dk</div><p style="font-size:13px;margin-top:6px">Veli, evde çalışma düzeninin oturduğunu belirtti.</p></div></div>
+        </div>
+        <button class="btn block" style="margin-top:12px" onclick="openSheet('gorusme')"><i data-ic="plus"></i>Yeni görüşme</button>
+      </div>
+
+      <div class="tab-pane" data-p="devam">
+        <div class="grid3" style="margin-bottom:14px">
+          <div class="card stat"><div class="n">38</div><div class="t">Katıldı</div></div>
+          <div class="card stat"><div class="n" style="color:var(--bad)">2</div><div class="t">Gelmedi</div></div>
+          <div class="card stat"><div class="n" style="color:var(--warn)">1</div><div class="t">İzinli</div></div>
+        </div>
+        <div class="card"><div class="muted" style="font-size:12.5px;margin-bottom:10px">Son 40 etüt</div><div class="heat" id="heat"></div></div>
+      </div>
+    </section>
+
+    <!-- ═════════ ÖDEVLER ═════════ -->
+    <section class="screen" id="s-odev">
+      <div class="ph">
+        <div><small>Ödev ve içerik</small><h1>Ödevler</h1></div>
+        <div class="acts"><button class="btn sm" onclick="openSheet('odev')"><i data-ic="plus"></i>Ödev ver</button></div>
+      </div>
+      <div class="seg" id="odevSeg"><button class="on" data-v="kontrol">Kontrol</button><button data-v="paket">Paketler</button><button data-v="kaynak">Kaynaklar</button></div>
+
+      <div data-ov="kontrol">
+        <div class="callout bg-accent" style="margin-bottom:16px">
+          <span class="q" style="background:var(--accent)"><i data-ic="clock"></i></span>
+          <div class="grow"><strong style="font-size:14.5px;color:var(--text)">Bugün 2 kontrol günü</strong><div style="font-size:12.5px;color:var(--muted)">32 öğrencinin ödevi kontrol bekliyor</div></div>
+          <button class="btn sm accent" onclick="openSheet('kontrol')">Başla</button>
+        </div>
+        <div class="chips"><button class="chip on">Bugün <b>2</b></button><button class="chip">Açık <b>6</b></button><button class="chip">Geciken <b>7</b></button><button class="chip">Tamamlanan <b>14</b></button></div>
+        <div class="grid2" id="asgList"></div>
+      </div>
+
+      <div data-ov="paket" style="display:none">
+        <div class="grid3">
+          <div class="card pkg click" onclick="openSheet('odev')"><div class="cover" style="background:var(--brand)"><i data-ic="box"></i></div><strong style="font-size:14px">TYT Matematik Haftalık</strong><div class="muted" style="font-size:12.5px">6 içerik · 240 soru</div></div>
+          <div class="card pkg click" onclick="openSheet('odev')"><div class="cover" style="background:var(--violet)"><i data-ic="box"></i></div><strong style="font-size:14px">Paragraf Rutini</strong><div class="muted" style="font-size:12.5px">5 içerik · 200 soru</div></div>
+          <div class="card pkg click" onclick="openSheet('odev')"><div class="cover" style="background:var(--teal)"><i data-ic="box"></i></div><strong style="font-size:14px">AYT Fizik Tekrar</strong><div class="muted" style="font-size:12.5px">4 içerik · 120 soru</div></div>
+          <div class="card pkg click" onclick="toast('Yeni paket taslağı oluşturuldu')" style="border-style:dashed;display:grid;place-items:center;text-align:center;min-height:170px"><div><div class="q bg-brand" style="width:48px;height:48px;border-radius:16px;display:grid;place-items:center;margin:0 auto 8px"><i data-ic="plus"></i></div><strong style="font-size:14px">Yeni paket</strong></div></div>
+        </div>
+      </div>
+
+      <div data-ov="kaynak" style="display:none">
+        <div class="search"><i data-ic="search"></i><input placeholder="Kitap, ünite veya konu ara" /></div>
+        <div class="card" style="padding:4px 16px">
+          <div class="li book"><span class="cv" style="background:#2f7cf6">3D TYT Mat</span><div class="grow"><strong>3D TYT Matematik Soru Bankası</strong><span class="s">Matematik · 24 ünite · 1.840 soru</span></div><button class="btn sm soft" onclick="openSheet('odev')">Ödev ver</button></div>
+          <div class="li book"><span class="cv" style="background:#7c5cff">Limit Paragraf</span><div class="grow"><strong>Limit Paragraf Kampı</strong><span class="s">Türkçe · 30 deneme</span></div><button class="btn sm soft" onclick="openSheet('odev')">Ödev ver</button></div>
+          <div class="li book"><span class="cv" style="background:#16a36a">Palme Biyoloji</span><div class="grow"><strong>Palme AYT Biyoloji</strong><span class="s">Biyoloji · 18 ünite · 1.120 soru</span></div><button class="btn sm soft" onclick="openSheet('odev')">Ödev ver</button></div>
+          <div class="li book"><span class="cv" style="background:#e8a100">Karekök Fizik</span><div class="grow"><strong>Karekök AYT Fizik</strong><span class="s">Fizik · 20 ünite · 1.460 soru</span></div><button class="btn sm soft" onclick="openSheet('odev')">Ödev ver</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ SINAVLAR ═════════ -->
+    <section class="screen" id="s-sinavlar">
+      <div class="ph">
+        <div><small>Ölçme ve değerlendirme</small><h1>Sınavlar</h1></div>
+        <div class="acts"><button class="btn sm" onclick="toast('Yeni sınav sihirbazı açılır')"><i data-ic="plus"></i>Yeni sınav</button></div>
+      </div>
+      <div class="chips"><button class="chip on">Tümü <b>9</b></button><button class="chip">Taslak <b>2</b></button><button class="chip">Cevap anahtarı <b>1</b></button><button class="chip">Sonuç yüklendi <b>4</b></button><button class="chip">Tamamlandı <b>2</b></button></div>
+      <div class="grid2" id="examList"></div>
+    </section>
+
+    <!-- ═════════ TAKVİM ═════════ -->
+    <section class="screen" id="s-takvim">
+      <div class="ph">
+        <div><small>5 – 11 Ekim 2026</small><h1>Takvim</h1></div>
+        <div class="acts"><button class="icon-btn" title="Önceki"><i data-ic="chevL"></i></button><button class="icon-btn" title="Sonraki"><i data-ic="chevR"></i></button><button class="btn sm" onclick="openSheet('gorusme')"><i data-ic="plus"></i><span>Ekle</span></button></div>
+      </div>
+      <div class="legend"><span><i style="background:var(--brand)"></i>Görüşme</span><span><i style="background:var(--accent)"></i>Ödev kontrol</span><span><i style="background:var(--good)"></i>Yoklama</span><span><i style="background:var(--violet)"></i>Sınav</span></div>
+      <div class="cal-phone">
+        <div class="days" id="days"></div>
+        <div class="tl" id="dayAgenda"></div>
+      </div>
+      <div class="board" id="board"></div>
+    </section>
+
+    <!-- ═════════ SOHBET ═════════ -->
+    <section class="screen" id="s-sohbet">
+      <div class="ph">
+        <div><small>WhatsApp ve uygulama mesajları</small><h1>Sohbetler</h1></div>
+        <div class="acts"><button class="icon-btn" onclick="openSheet('mesaj')" title="Toplu mesaj"><i data-ic="mega"></i></button></div>
+      </div>
+      <div class="chat-split" id="chatSplit">
+        <div class="chat-list">
+          <div class="search"><i data-ic="search"></i><input placeholder="İsim veya mesaj ara" /></div>
+          <div class="chips"><button class="chip on">Tümü</button><button class="chip">Okunmamış <b>4</b></button><button class="chip">Cevap bekleyen <b>2</b></button></div>
+          <div id="chatList"></div>
+        </div>
+        <div class="chat-conv">
+          <div class="conv-head">
+            <button class="back" onclick="closeConv()"><i data-ic="chevL"></i></button>
+            <div class="avatar sm" id="cv-av" style="background:#2f7cf6">MÇ</div>
+            <div class="grow"><strong style="font-size:14.5px" id="cv-name">Muhammed Esad Çınar</strong><div class="muted" style="font-size:12px" id="cv-sub">Veli · Ahmet Oğuz Polat</div></div>
+            <button class="icon-btn" title="Ara" onclick="toast('Aranıyor…')"><i data-ic="phone"></i></button>
+          </div>
+          <div class="msgs">
+            <span class="day-sep">Dün</span>
+            <div class="bub out">Değerli velimiz, 24.09.2026 tarihinde yapılan TYT Deneme 6 sonucunda Ahmet 78,5 net yaptı. Bir önceki denemeye göre 5 net artış var.<small>17:42 ✓✓</small></div>
+            <div class="bub in">Çok teşekkür ederiz hocam, evde de çalışmalarını takip ediyoruz.<small>18:05</small></div>
+            <span class="day-sep">Bugün</span>
+            <div class="bub in">Hocam bu hafta görüşme için uygun bir saatiniz var mı?<small>09:12</small></div>
+          </div>
+          <div class="composer">
+            <button class="icon-btn" title="Şablon" onclick="toast('Hazır şablonlar')"><i data-ic="plus"></i></button>
+            <input placeholder="Mesaj yaz" id="msgIn" onkeydown="if(event.key==='Enter')sendMsg()" />
+            <button class="send" onclick="sendMsg()"><i data-ic="send"></i></button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═════════ YOKLAMA ═════════ -->
+    <section class="screen" id="s-yoklama">
+      <div class="ph">
+        <div><small>Etüt 2 · 13:40 – 14:20</small><h1>Sınıf yoklaması</h1></div>
+        <div class="acts"><span class="pill brand" id="ykCount">10 / 10 var</span></div>
+      </div>
+      <div class="chips"><button class="chip on">12 EA / LOCA 5</button><button class="chip">11 / LOCA 1</button><button class="chip">12 SAY / LOCA 3</button><button class="chip">Etüt 3</button></div>
+      <div class="card" style="padding:4px 16px" id="ykList"></div>
+      <div class="sticky-foot"><button class="btn block" onclick="toast('Yoklama kaydedildi · veliler bilgilendirildi')"><i data-ic="check"></i>Yoklamayı kaydet</button></div>
+    </section>
+
+    <!-- ═════════ MENÜ ═════════ -->
+    <section class="screen" id="s-menu">
+      <div class="card me-card">
+        <div class="avatar lg" style="background:var(--accent)">BK</div>
+        <div class="grow"><h2 style="font-size:19px;font-weight:700">Banu Demir Kaya</h2><div class="muted" style="font-size:13px">Koç · banu.dml.b@gmail.com</div></div>
+        <div class="dd-wrap">
+          <button class="btn sm sec2" onclick="toggleDd('dd-kurum', event)"><span class="ell" style="max-width:150px">3K Kampüs · 2026-27</span><i data-ic="chevD"></i></button>
+          <div class="dd" id="dd-kurum">
+            <button onclick="toast('3K Kampüs seçildi')"><i data-ic="check"></i>3K Kampüs · Merkez</button>
+            <button onclick="toast('Şube değiştirildi')"><i data-ic="lib"></i>3K Kampüs · Anadolu</button>
+            <hr />
+            <button onclick="toast('Dönem: 2026-2027')"><i data-ic="cal"></i>Dönem: 2026-2027</button>
+          </div>
+        </div>
+      </div>
+      <div class="mgrp"><h6>ÖĞRENCİ TAKİBİ</h6><div class="mgrid">
+        <button class="mi" onclick="go('ogrenciler')"><span class="q bg-brand"><i data-ic="users"></i></span>Öğrencilerim</button>
+        <button class="mi" onclick="go('yoklama')"><span class="q bg-good"><i data-ic="ucheck"></i></span>Sınıf yoklaması</button>
+        <button class="mi" onclick="openSheet('gorusme')"><span class="q bg-violet"><i data-ic="meet"></i></span>Görüşmeler</button>
+        <button class="mi" onclick="soon('Görevler')"><span class="q bg-warn"><i data-ic="list"></i></span>Görevler</button>
+        <button class="mi" onclick="soon('Doğum günleri')"><span class="q bg-accent"><i data-ic="gift"></i></span>Doğum günleri</button>
+        <button class="mi" onclick="go('takvim')"><span class="q bg-teal"><i data-ic="cal"></i></span>Takvim</button>
+      </div></div>
+      <div class="mgrp"><h6>ÖDEV VE İÇERİK</h6><div class="mgrid">
+        <button class="mi" onclick="go('odev')"><span class="q bg-accent"><i data-ic="clip"></i></span>Ödev kontrol</button>
+        <button class="mi" onclick="go('odev'); odevSeg('paket')"><span class="q bg-brand"><i data-ic="box"></i></span>Ödev paketleri</button>
+        <button class="mi" onclick="go('odev'); odevSeg('kaynak')"><span class="q bg-good"><i data-ic="book"></i></span>Eğitim kaynakları</button>
+        <button class="mi" onclick="soon('Kitap atamaları')"><span class="q bg-violet"><i data-ic="book"></i></span>Kitap atamaları</button>
+        <button class="mi" onclick="soon('Çalışma programı')"><span class="q bg-teal"><i data-ic="cal"></i></span>Çalışma programı</button>
+        <button class="mi" onclick="go('sinavlar')"><span class="q bg-warn"><i data-ic="chart"></i></span>Sınavlar</button>
+      </div></div>
+      <div class="mgrp"><h6>KÜTÜPHANE</h6><div class="mgrid">
+        <button class="mi" onclick="soon('Kütüphane')"><span class="q bg-brand"><i data-ic="lib"></i></span>Genel bakış</button>
+        <button class="mi" onclick="soon('Salonlar')"><span class="q bg-teal"><i data-ic="lib"></i></span>Salonlar</button>
+        <button class="mi" onclick="soon('Dolaplar')"><span class="q bg-violet"><i data-ic="box"></i></span>Dolaplar</button>
+        <button class="mi" onclick="soon('Atamalar')"><span class="q bg-good"><i data-ic="users"></i></span>Masa atamaları</button>
+        <button class="mi" onclick="soon('İzinler')"><span class="q bg-warn"><i data-ic="clock"></i></span>İzinler</button>
+        <button class="mi" onclick="soon('Kütüphane analitiği')"><span class="q bg-accent"><i data-ic="report"></i></span>Analitik</button>
+      </div></div>
+      <div class="mgrp"><h6>İLETİŞİM VE RAPOR</h6><div class="mgrid">
+        <button class="mi" onclick="openSheet('mesaj')"><span class="q bg-violet"><i data-ic="mega"></i></span>Toplu gönder</button>
+        <button class="mi" onclick="soon('Gönderim geçmişi')"><span class="q bg-brand"><i data-ic="clock"></i></span>Gönderim geçmişi</button>
+        <button class="mi" onclick="soon('Bildirim şablonları')"><span class="q bg-teal"><i data-ic="bell"></i></span>Bildirim şablonları</button>
+        <button class="mi" onclick="soon('Raporlar')"><span class="q bg-good"><i data-ic="report"></i></span>Raporlar</button>
+        <button class="mi" onclick="soon('Profil')"><span class="q bg-warn"><i data-ic="user"></i></span>Profilim</button>
+        <button class="mi" onclick="soon('İstatistikler')"><span class="q bg-accent"><i data-ic="chart"></i></span>İstatistikler</button>
+      </div></div>
+      <div class="card" style="margin-top:22px;padding:4px 16px">
+        <div class="li" onclick="toggleTheme()"><span class="q bg-brand" style="width:38px;height:38px;border-radius:12px;display:grid;place-items:center"><i data-ic="moon"></i></span><div class="grow"><strong>Karanlık tema</strong></div><span class="switch" id="themeSw"></span></div>
+        <div class="li" onclick="toast('Oturum kapatıldı')"><span class="q bg-bad" style="width:38px;height:38px;border-radius:12px;display:grid;place-items:center"><i data-ic="logout"></i></span><div class="grow"><strong style="color:var(--bad)">Çıkış yap</strong></div></div>
+      </div>
+    </section>
+
+  </div></main>
+
+  <!-- ═════════ Bağlam paneli (PC) ═════════ -->
+  <aside class="ctx" id="ctx">
+    <div class="ctx-sec" data-c="bugun">
+      <h5>Ekim 2026 <a onclick="go('takvim')">Takvim</a></h5>
+      <div class="mcal" id="mcal"></div>
+      <h5>Okunmamış mesajlar <a onclick="go('sohbet')">Tümü</a></h5>
+      <div id="ctxChats"></div>
+      <h5>Son ziyaret edilenler</h5>
+      <div id="ctxRecent"></div>
+    </div>
+    <div class="ctx-sec" data-c="ogrenciler">
+      <h5>Risk dağılımı</h5>
+      <div class="donut">
+        <svg viewBox="0 0 42 42"><circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--surface-2)" stroke-width="6"/><circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--bad)" stroke-width="6" stroke-dasharray="10 90" stroke-dashoffset="25"/><circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--warn)" stroke-width="6" stroke-dasharray="25 75" stroke-dashoffset="15"/><circle cx="21" cy="21" r="15.9" fill="none" stroke="var(--good)" stroke-width="6" stroke-dasharray="65 35" stroke-dashoffset="-10"/></svg>
+        <div class="lg"><span><i style="background:var(--bad)"></i>Yüksek · 4</span><span><i style="background:var(--warn)"></i>Orta · 10</span><span><i style="background:var(--good)"></i>Düşük · 26</span></div>
+      </div>
+      <h5>Görüşme bekleyenler <a onclick="setFilter('meet')">Tümü</a></h5>
+      <div id="ctxMeet"></div>
+      <h5>Takip hatırlatması</h5>
+      <div class="callout bg-warn" style="padding:12px 14px"><div style="font-size:12.5px;color:var(--text)">35 öğrenci 7+ gündür ödev almadı. <a class="link" onclick="openSheet('odev')">Ödev ver →</a></div></div>
+    </div>
+    <div class="ctx-sec" data-c="s360">
+      <h5>Veli bilgisi</h5>
+      <div class="card" style="padding:14px"><div class="row"><div class="avatar sm" style="background:var(--violet)">MÇ</div><div class="grow"><strong style="font-size:13.5px">Muhammed Esad Çınar</strong><div class="muted" style="font-size:12px">Baba · 0545 282 76 83</div></div></div><div class="row" style="margin-top:12px;gap:8px"><button class="btn sm soft grow" onclick="toast('Aranıyor…')"><i data-ic="phone"></i>Ara</button><button class="btn sm soft grow" onclick="go('sohbet')"><i data-ic="chat"></i>Mesaj</button></div></div>
+      <h5>Hızlı not</h5>
+      <div class="f"><textarea placeholder="Bu öğrenci hakkında not al…"></textarea></div>
+      <button class="btn sm block" onclick="toast('Not kaydedildi')">Kaydet</button>
+      <h5>Etiketler</h5>
+      <div class="opts"><span class="pill brand">Sayısal</span><span class="pill accent">Mezun</span><span class="pill gray">Hafta içi</span><span class="pill good">Burslu</span></div>
+    </div>
+    <div class="ctx-sec" data-c="odev">
+      <h5>Bu hafta</h5>
+      <div class="grid3" style="grid-template-columns:1fr 1fr"><div class="card stat" style="padding:12px"><div class="n">184</div><div class="t">Verilen</div></div><div class="card stat" style="padding:12px"><div class="n">147</div><div class="t">Tamamlanan</div></div></div>
+      <h5>Ödev almayanlar <a>Tümü</a></h5>
+      <div id="ctxNoHw"></div>
+    </div>
+    <div class="ctx-sec" data-c="sinavlar">
+      <h5>Son deneme · TYT 6</h5>
+      <div class="card"><div class="lg" style="gap:10px" id="ctxSubj"></div></div>
+      <h5>En çok yükselenler</h5>
+      <div id="ctxTop"></div>
+    </div>
+    <div class="ctx-sec" data-c="genel">
+      <h5>Yaklaşanlar</h5>
+      <div class="list" id="ctxUp"></div>
+    </div>
+    <div class="ctx-sec" data-c="sohbet">
+      <h5>Öğrenci</h5>
+      <div class="card click" style="padding:14px" onclick="openStudent(0)"><div class="row"><div class="avatar" style="background:#2f7cf6">AP</div><div class="grow"><strong style="font-size:14px">Ahmet Oğuz Polat</strong><div class="muted" style="font-size:12px">Mezun · Sayısal</div></div><i data-ic="chevR" class="chev"></i></div><div class="sig"><div><b>78,5</b><span>Son net</span></div><div><b>%71</b><span>Ödev</span></div><div><b>1</b><span>Geciken</span></div></div></div>
+      <h5>Hazır şablonlar</h5>
+      <div class="list" style="font-size:13px">
+        <div class="li" onclick="fillMsg('Merhaba, bu hafta görüşme için Perşembe 15:00 uygun mu?')"><div class="grow">Görüşme daveti</div><i data-ic="chevR" class="chev"></i></div>
+        <div class="li" onclick="fillMsg('Ödevini henüz teslim etmedin, bugün tamamlamanı bekliyorum.')"><div class="grow">Ödev hatırlatma</div><i data-ic="chevR" class="chev"></i></div>
+        <div class="li" onclick="fillMsg('Deneme sonucun harika, tebrikler!')"><div class="grow">Tebrik</div><i data-ic="chevR" class="chev"></i></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═════════ Alt sekme çubuğu (telefon) ═════════ -->
+  <nav class="tabbar">
+    <button class="tab" data-go="bugun"><i data-ic="home"></i>Bugün</button>
+    <button class="tab" data-go="ogrenciler"><i data-ic="users"></i>Öğrenciler</button>
+    <button class="tab" data-go="odev"><i data-ic="clip"></i>Ödevler</button>
+    <button class="tab" data-go="sohbet"><i data-ic="chat"></i>Sohbet<span class="dot">4</span></button>
+    <button class="tab" data-go="menu"><i data-ic="grid"></i>Menü</button>
+  </nav>
+
+  <!-- ═════════ Pencereler ═════════ -->
+  <div class="overlay" id="overlay" onclick="if(event.target===this)closeSheet()">
+
+    <div class="sheet" id="sh-gorusme">
+      <div class="grab"></div>
+      <div class="sh-head"><div><h3>Görüşme ekle</h3><p>Görüşmeyi planla veya kaydet</p></div><button class="x" onclick="closeSheet()"><i data-ic="x"></i></button></div>
+      <div class="f"><label>Öğrenci</label><select><option>Ahmet Oğuz Polat</option><option>Bengisu Cellat</option><option>Muhammed Zahit Söylemez</option></select></div>
+      <div class="f"><label>Görüşme türü</label><div class="opts" data-single><button class="opt on">Öğrenci</button><button class="opt">Veli</button><button class="opt">Öğrenci + veli</button></div></div>
+      <div class="f"><label>Yöntem</label><div class="opts" data-single><button class="opt on">Yüz yüze</button><button class="opt">Telefon</button><button class="opt">Online</button></div></div>
+      <div class="f2"><div class="f"><label>Tarih</label><input type="date" value="2026-10-09" /></div><div class="f"><label>Saat</label><input type="time" value="15:00" /></div></div>
+      <div class="f"><label>Konu</label><input placeholder="Örn. Deneme analizi" /></div>
+      <div class="f"><label>Not</label><textarea placeholder="Görüşme notları"></textarea></div>
+      <div class="toggle-row"><span>Veliye WhatsApp hatırlatması gönder</span><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+      <div class="sh-foot"><button class="btn sec2" onclick="closeSheet()">Vazgeç</button><button class="btn" onclick="closeSheet();toast('Görüşme kaydedildi')">Kaydet</button></div>
+    </div>
+
+    <div class="sheet wide" id="sh-odev">
+      <div class="grab"></div>
+      <div class="sh-head"><div><h3>Ödev ver</h3><p id="odevStepLbl">1 / 3 · Öğrenci seç</p></div><button class="x" onclick="closeSheet()"><i data-ic="x"></i></button></div>
+      <div class="steps"><i class="on"></i><i></i><i></i></div>
+      <div data-step="1">
+        <div class="search" style="background:var(--page)"><i data-ic="search"></i><input placeholder="Öğrenci veya sınıf ara" /></div>
+        <div id="pickStu"></div>
+      </div>
+      <div data-step="2" style="display:none">
+        <div class="f"><label>Kaynak</label><select><option>3D TYT Matematik Soru Bankası</option><option>Limit Paragraf Kampı</option><option>Palme AYT Biyoloji</option></select></div>
+        <div class="f"><label>Üniteler</label><div class="opts" data-multi><button class="opt on">Temel kavramlar</button><button class="opt on">Sayı basamakları</button><button class="opt">Bölünebilme</button><button class="opt">Rasyonel sayılar</button><button class="opt">Problemler</button></div></div>
+        <div class="f"><label>Soru sayısı</label><input value="120" /></div>
+      </div>
+      <div data-step="3" style="display:none">
+        <div class="f2"><div class="f"><label>Başlangıç</label><input type="date" value="2026-10-09" /></div><div class="f"><label>Kontrol günü</label><input type="date" value="2026-10-16" /></div></div>
+        <div class="toggle-row"><span>Öğrenciye bildirim gönder</span><span class="switch on" onclick="this.classList.toggle('on')"></span></div>
+        <div class="toggle-row"><span>Veliye WhatsApp bilgisi gönder</span><span class="switch" onclick="this.classList.toggle('on')"></span></div>
+        <div class="callout bg-brand"><div style="font-size:13px;color:var(--text)"><b id="odevSum">2 öğrenciye</b> 3D TYT Matematik'ten 120 soru verilecek. Kontrol günü 16 Ekim.</div></div>
+      </div>
+      <div class="sh-foot"><button class="btn sec2" id="odevBack" onclick="odevStep(-1)">Vazgeç</button><button class="btn" id="odevNext" onclick="odevStep(1)">Devam</button></div>
+    </div>
+
+    <div class="sheet wide" id="sh-kontrol">
+      <div class="grab"></div>
+      <div class="sh-head"><div><h3>Ödev kontrol</h3><p>Eylül 4. Hafta · Biyoloji-1 · 12 EA / LOCA 5</p></div><button class="x" onclick="closeSheet()"><i data-ic="x"></i></button></div>
+      <div class="row" style="margin-bottom:10px;font-size:12.5px;color:var(--muted);justify-content:space-between"><span>Yaptı · Yarım · Yapmadı</span><a class="link" onclick="allDone()">Hepsini “yaptı” yap</a></div>
+      <div id="ktList"></div>
+      <div class="sh-foot"><button class="btn sec2" onclick="closeSheet()">Kapat</button><button class="btn" onclick="closeSheet();toast('Kontrol kaydedildi')">Kaydet</button></div>
+    </div>
+
+    <div class="sheet" id="sh-sinav">
+      <div class="grab"></div>
+      <div class="sh-head"><div><h3 id="sxTitle">TYT Deneme 6</h3><p id="sxSub">25 Eylül 2026 · 38 katılımcı</p></div><button class="x" onclick="closeSheet()"><i data-ic="x"></i></button></div>
+      <div class="grid3" style="grid-template-columns:repeat(3,1fr);margin-bottom:16px"><div class="card stat" style="padding:12px"><div class="n">64,2</div><div class="t">Ort. net</div></div><div class="card stat" style="padding:12px"><div class="n">96,5</div><div class="t">En yüksek</div></div><div class="card stat" style="padding:12px"><div class="n">38/40</div><div class="t">Katılım</div></div></div>
+      <div class="lg" style="gap:12px" id="sxSubj"></div>
+      <div class="sh-foot"><button class="btn sec2" onclick="toast('Karne PDF hazırlanıyor')"><i data-ic="download"></i>Karne</button><button class="btn" onclick="closeSheet();openSheet('mesaj')"><i data-ic="mega"></i>Velilere gönder</button></div>
+    </div>
+
+    <div class="sheet" id="sh-bildirim">
+      <div class="grab"></div>
+      <div class="sh-head"><div><h3>Bildirimler</h3><p>6 okunmamış</p></div><button class="x" onclick="closeSheet()"><i data-ic="x"></i></button></div>
+      <div class="notif unread"><span class="q bg-accent"><i data-ic="gift"></i></span><div class="grow"><strong style="font-size:13.5px">Bugün doğum günü: Fatmanur Dölek</strong><div class="muted" style="font-size:12.5px">11 / LOCA 1 · 17 yaşında</div></div></div>
+      <div class="notif unread"><span class="q bg-bad"><i data-ic="alert"></i></span><div class="grow"><strong style="font-size:13.5px">Bengisu Cellat risk seviyesi yükseldi</strong><div class="muted" style="font-size:12.5px">3 geciken ödev · 21 gündür görüşme yok</div></div></div>
+      <div class="notif unread"><span class="q bg-brand"><i data-ic="chat"></i></span><div class="grow"><strong style="font-size:13.5px">Gülçin Ergün mesaj gönderdi</strong><div class="muted" style="font-size:12.5px">“Hocam deneme saatini öğrenebilir miyiz?”</div></div></div>
+      <div class="notif"><span class="q bg-good"><i data-ic="chart"></i></span><div class="grow"><strong style="font-size:13.5px">TYT Deneme 6 sonuçları yüklendi</strong><div class="muted" style="font-size:12.5px">Dün 16:20</div></div></div>
+      <button class="btn block soft" style="margin-top:12px" onclick="closeSheet();toast('Tümü okundu')">Tümünü okundu yap</button>
+    </div>
+
+    <div class="sheet" id="sh-arama">
+      <div class="grab"></div>
+      <div class="search" style="background:var(--page)"><i data-ic="search"></i><input id="qIn" placeholder="Öğrenci, sayfa veya işlem ara" oninput="renderSearch()" /><button class="x" style="width:30px;height:30px" onclick="closeSheet()"><i data-ic="x"></i></button></div>
+      <div id="qRes"></div>
+    </div>
+
+    <div class="sheet" id="sh-mesaj">
+      <div class="grab"></div>
+      <div class="sh-head"><div><h3>Toplu mesaj</h3><p>WhatsApp üzerinden gönderilir</p></div><button class="x" onclick="closeSheet()"><i data-ic="x"></i></button></div>
+      <div class="f"><label>Kime</label><div class="opts" data-single><button class="opt on">Öğrenciler</button><button class="opt">Veliler</button><button class="opt">İkisi</button></div></div>
+      <div class="f"><label>Hedef kitle</label><select><option>Tüm öğrencilerim (40)</option><option>Riskli öğrenciler (4)</option><option>Geciken ödevi olanlar (35)</option><option>12 EA / LOCA 5 (14)</option></select></div>
+      <div class="f"><label>Mesaj</label><textarea>Merhaba, bu hafta Cumartesi 09:30'da TYT Deneme 7 yapılacaktır. Lütfen 15 dk önce salonda olun.</textarea></div>
+      <div class="sh-foot"><button class="btn sec2" onclick="closeSheet()">Vazgeç</button><button class="btn" onclick="closeSheet();toast('40 kişiye gönderim sıraya alındı')"><i data-ic="send"></i>Gönder</button></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"><i data-ic="check"></i><span></span></div>
+</div>
+</div>
+</div>
+
+<div class="devbar" id="devbar">
+  <span>Koç portalı · taslak</span>
+  <button data-dev="phone">Telefon</button>
+  <button data-dev="tablet">Tablet</button>
+  <button data-dev="pc" class="on">PC</button>
+</div>
+
+<script>
+const I = {
+  home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
+  users: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>',
+  clip: '<rect x="8" y="2" width="8" height="4" rx="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="m9 14 2 2 4-4"/>',
+  chart: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 5-6"/>',
+  cal: '<rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/>',
+  chat: '<path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>',
+  grid: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
+  bell: '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  chevR: '<path d="m9 18 6-6-6-6"/>', chevL: '<path d="m15 18-6-6 6-6"/>', chevD: '<path d="m6 9 6 6 6-6"/>',
+  phone: '<path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/>',
+  send: '<path d="m22 2-7 20-4-9-9-4z"/><path d="M22 2 11 13"/>',
+  meet: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>', x: '<path d="M18 6 6 18M6 6l12 12"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4M12 17h.01"/>',
+  gift: '<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M19 12v7a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-7"/><path d="M7.5 8a2.5 2.5 0 0 1 0-5C10 3 12 8 12 8s2-5 4.5-5a2.5 2.5 0 0 1 0 5"/>',
+  book: '<path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/>',
+  lib: '<path d="M3 21h18M5 21V8l7-5 7 5v13M9 21v-6h6v6"/>',
+  mega: '<path d="m3 11 18-5v12L3 14v-3z"/><path d="M11.6 16.8a3 3 0 1 1-5.8-1.6"/>',
+  report: '<path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="5" width="3" height="12"/>',
+  user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
+  logout: '<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/>',
+  moon: '<path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9z"/>',
+  list: '<path d="m3 17 2 2 4-4M3 7l2 2 4-4M13 6h8M13 12h8M13 18h8"/>',
+  pin: '<path d="M12 17v5M8 2h8M9 2v6l-3 5h12l-3-5V2"/>',
+  more: '<circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/>',
+  download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  ucheck: '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="m16 11 2 2 4-4"/>',
+  box: '<path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><path d="M3.27 6.96 12 12.01l8.73-5.05M12 22.08V12"/>',
+  half: '<path d="M5 12h14"/>',
+};
+const ic = (n, cls = '') => `<svg class="ic ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">${I[n] || ''}</svg>`;
+const hydrate = (root = document) => root.querySelectorAll('i[data-ic]').forEach(el => { el.outerHTML = ic(el.dataset.ic, el.className); });
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+const ini = n => n.split(' ').filter(Boolean).map(w => w[0]).slice(0, 2).join('').toLocaleUpperCase('tr-TR');
+const fmt = n => n.toLocaleString('tr-TR', { minimumFractionDigits: 1, maximumFractionDigits: 2 });
+
+const STUDENTS = [
+  { n: 'Ahmet Oğuz Polat', c: 'Mezun · Sayısal', no: '00099', risk: 'Orta', late: 1, net: 78.5, d: 5, odev: 71, last: 'Henüz yok', col: '#2f7cf6', pin: true, meet: true },
+  { n: 'Bengisu Cellat', c: 'M-EA (SAY) / LOCA 2', no: '00045', risk: 'Yüksek', late: 3, net: 52.25, d: -6, odev: 48, last: '21 gün önce', col: '#7c5cff', meet: true },
+  { n: 'Muhammed Zahit Söylemez', c: '12 EA / LOCA 5 (K)', no: '00112', risk: 'Orta', late: 1, net: 61, d: 2, odev: 66, last: '8 gün önce', col: '#0fa3a3' },
+  { n: 'Ahmet Yusuf Tabay', c: '12 SAY / LOCA 3', no: '00087', risk: 'Yüksek', late: 2, net: 57.75, d: -1.5, odev: 58, last: '14 gün önce', col: '#e8a100', meet: true },
+  { n: 'Fatmanur Dölek', c: '11 / LOCA 1', no: '00131', risk: 'Düşük', late: 0, net: 69, d: 3.25, odev: 92, last: '3 gün önce', col: '#ff6b3d', pin: true },
+  { n: 'Gülse Yılmaz', c: '12 SAY / LOCA 3', no: '00064', risk: 'Düşük', late: 0, net: 83.5, d: 1, odev: 95, last: '5 gün önce', col: '#16a36a' },
+  { n: 'Melike Yılmaz', c: '12 EA / LOCA 6', no: '00078', risk: 'Düşük', late: 0, net: 72, d: 4, odev: 88, last: '2 gün önce', col: '#e5484d' },
+  { n: 'Eylül Ravza Çiçek', c: '11 / LOCA 2', no: '00140', risk: 'Orta', late: 2, net: 48.5, d: -3, odev: 60, last: '15 gün önce', col: '#7c5cff' },
+  { n: 'Sevcan Solak', c: '12 SAY / LOCA 4', no: '00093', risk: 'Düşük', late: 0, net: 76.25, d: 0.5, odev: 90, last: '6 gün önce', col: '#2f7cf6' },
+  { n: 'İsa Çiçek', c: '10 / LOCA 1', no: '00152', risk: 'Düşük', late: 1, net: 41, d: 2, odev: 77, last: '9 gün önce', col: '#0fa3a3' },
+];
+const RISK_PILL = { 'Yüksek': 'bad', 'Orta': 'warn', 'Düşük': 'good' };
+const FILTERS = [
+  { id: 'all', l: 'Tümü', f: () => true },
+  { id: 'risk', l: 'Riskli', f: s => s.risk !== 'Düşük' },
+  { id: 'late', l: 'Geciken ödev', f: s => s.late > 0 },
+  { id: 'meet', l: 'Görüşme bekleyen', f: s => s.meet },
+  { id: 'pin', l: 'Sabitlenen', f: s => s.pin },
+];
+let filter = 'all';
+
+const AGENDA = [
+  { t: '09:00', h: 'Görüşme · Bengisu Cellat', s: 'Veli görüşmesi · Telefon · 15 dk', c: 'var(--brand)', done: true },
+  { t: '11:00', h: 'Ödev kontrol · 12 EA / LOCA 5', s: 'Eylül 4. Hafta · 14 öğrenci', c: 'var(--accent)', done: true, sheet: 'kontrol' },
+  { t: '13:40', h: 'Yoklama · Etüt 2', s: '10 öğrenci · Salon B', c: 'var(--good)', now: true, go: 'yoklama' },
+  { t: '15:00', h: 'Görüşme · Ahmet Oğuz Polat', s: 'Deneme analizi · Yüz yüze', c: 'var(--brand)', stu: 0 },
+  { t: '16:30', h: 'Ödev kontrol · 11 / LOCA 1', s: 'Paragraf rutini · 18 öğrenci', c: 'var(--accent)', sheet: 'kontrol' },
+];
+const WEEK = [
+  { d: 'Pzt', n: 5, ev: [['var(--brand)', '10:00', 'Görüşme · Gülse Y.'], ['var(--accent)', '14:00', 'Kontrol · LOCA 3']] },
+  { d: 'Sal', n: 6, ev: [['var(--good)', '13:40', 'Yoklama · Etüt 2']] },
+  { d: 'Çar', n: 7, ev: [['var(--brand)', '11:30', 'Görüşme · Melike Y.'], ['var(--brand)', '15:00', 'Veli · Sevcan S.']] },
+  { d: 'Per', n: 8, ev: [['var(--accent)', '09:30', 'Kontrol · LOCA 5'], ['var(--good)', '13:40', 'Yoklama · Etüt 2']] },
+  { d: 'Cum', n: 9, today: true, ev: AGENDA.map(a => [a.c, a.t, a.h]) },
+  { d: 'Cmt', n: 10, ev: [['var(--violet)', '09:30', 'TYT Deneme 7']] },
+  { d: 'Paz', n: 11, ev: [] },
+];
+const CHATS = [
+  { n: 'Muhammed Esad Çınar', sub: 'Veli · Ahmet Oğuz Polat', m: 'Hocam bu hafta görüşme için uygun bir saatiniz var mı?', t: '09:12', un: 1, col: '#2f7cf6' },
+  { n: 'Gülçin Ergün', sub: 'Veli · Zeynep Ergün', m: 'Hocam deneme saatini öğrenebilir miyiz?', t: '08:47', un: 2, col: '#7c5cff' },
+  { n: 'Sevcan Solak', sub: 'Öğrenci', m: 'Paragraf ödevini bitirdim, kontrol eder misiniz?', t: 'Dün', un: 1, col: '#0fa3a3' },
+  { n: 'Gülse Yılmaz', sub: 'Öğrenci', m: 'Teşekkürler hocam 🙏', t: 'Dün', un: 0, col: '#16a36a' },
+  { n: 'Melike Yılmaz', sub: 'Öğrenci', m: 'Değerli öğrencimiz, 24.09.2026 tarihinde yapılan…', t: 'Pzt', un: 0, col: '#e5484d' },
+  { n: 'Eylül Ravza Çiçek', sub: 'Veli · Eylül R. Çiçek', m: 'Bu hafta gelemeyecek, raporlu.', t: 'Pzt', un: 0, col: '#e8a100' },
+];
+const ASG = [
+  { t: 'Eylül 4. Hafta Ödevi', s: 'Biyoloji-1 · 12 EA / LOCA 5', due: 'Kontrol bugün', done: 9, tot: 14, late: 3, pill: ['accent', 'Bugün'] },
+  { t: 'Paragraf Rutini · Hafta 3', s: 'Türkçe · 11 / LOCA 1', due: 'Kontrol bugün', done: 4, tot: 18, late: 2, pill: ['accent', 'Bugün'] },
+  { t: 'TYT Matematik · Ekim 1', s: 'Matematik · 12 SAY / LOCA 3', due: 'Son gün 11 Eki', done: 11, tot: 16, late: 0, pill: ['brand', 'Açık'] },
+  { t: 'AYT Fizik · Kuvvet', s: 'Fizik · 12 SAY / LOCA 4', due: '28 Eyl', done: 12, tot: 12, late: 0, pill: ['good', 'Tamamlandı'] },
+];
+const EXAMS = [
+  { t: 'TYT Deneme 6', d: '25 Eylül 2026', st: ['good', 'Sonuç yüklendi'], kat: '38/40', avg: '64,2', top: '96,5' },
+  { t: 'Ulti AYT Deneme Sınavı', d: '27 Eylül 2026', st: ['brand', 'Tamamlandı'], kat: '35/40', avg: '41,8', top: '72,0' },
+  { t: 'TYT Deneme 7', d: '10 Ekim 2026 · 09:30', st: ['warn', 'Cevap anahtarı'], kat: '—', avg: '—', top: '—' },
+  { t: 'Bilgi Sarmal Maarif İlk Asama', d: '18 Ekim 2026', st: ['gray', 'Taslak'], kat: '—', avg: '—', top: '—' },
+];
+const SUBJ = [['Türkçe', 28.5, 40, 'var(--violet)'], ['Matematik', 19.25, 40, 'var(--brand)'], ['Fen', 9.5, 20, 'var(--good)'], ['Sosyal', 11, 20, 'var(--warn)']];
+const NETS = [62.5, 66, 64.25, 70.75, 73.5, 78.5];
+const LABELS = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6'];
+const PAGES = [['Bugün', 'bugun', 'home'], ['Öğrencilerim', 'ogrenciler', 'users'], ['Ödevler', 'odev', 'clip'], ['Sınavlar', 'sinavlar', 'chart'], ['Takvim', 'takvim', 'cal'], ['Sohbetler', 'sohbet', 'chat'], ['Sınıf yoklaması', 'yoklama', 'ucheck'], ['Menü', 'menu', 'grid']];
+
+const NAV = { bugun: 'bugun', ogrenciler: 'ogrenciler', s360: 'ogrenciler', odev: 'odev', sinavlar: 'sinavlar', takvim: 'takvim', sohbet: 'sohbet', yoklama: 'yoklama', menu: 'menu' };
+const CTX = { bugun: 'bugun', ogrenciler: 'ogrenciler', s360: 's360', odev: 'odev', sinavlar: 'sinavlar', sohbet: 'sohbet' };
+let current = 'bugun';
+
+function go(id) {
+  current = id;
+  closeDd();
+  $$('.screen').forEach(s => s.classList.toggle('active', s.id === 's-' + id));
+  const nav = NAV[id];
+  $$('.rail-item[data-go]').forEach(b => b.classList.toggle('on', b.dataset.go === nav));
+  const tabs = $$('.tab[data-go]');
+  const inTabs = tabs.some(t => t.dataset.go === nav);
+  tabs.forEach(t => t.classList.toggle('on', t.dataset.go === (inTabs ? nav : 'menu')));
+  const c = CTX[id] || 'genel';
+  $$('.ctx-sec').forEach(s => s.classList.toggle('on', s.dataset.c === c));
+  $('#main').scrollTop = 0;
+  if (location.hash !== '#' + id) history.replaceState(null, '', '#' + id);
+}
+
+function setFilter(id) { filter = id; renderStudents(); if (current !== 'ogrenciler') go('ogrenciler'); }
+
+function stuCard(s, i) {
+  return `<div class="card click" onclick="openStudent(${i})">
+    <div class="stu"><div class="avatar" style="background:${s.col}">${ini(s.n)}</div>
+      <div class="grow"><div class="top"><div class="grow"><strong class="ell" style="display:block">${s.pin ? ic('pin', 'pin') + ' ' : ''}${s.n}</strong><div class="cls">${s.c} · No ${s.no}</div></div><span class="pill ${RISK_PILL[s.risk]}">${s.risk}</span></div></div></div>
+    <div class="sig"><div><b>${fmt(s.net)}</b><span class="${s.d >= 0 ? 'up' : 'down'}">${s.d >= 0 ? '↑' : '↓'} ${fmt(Math.abs(s.d))} net</span></div><div><b>%${s.odev}</b><span>Ödev${s.late ? ' · <em style="color:var(--bad);font-style:normal">' + s.late + ' gecikmiş</em>' : ''}</span></div><div><b style="font-size:12.5px;padding:2px 0">${s.last}</b><span>Son görüşme</span></div></div>
+    <div class="stu-acts" onclick="event.stopPropagation()"><button onclick="openSheet('gorusme')">${ic('meet')}Görüşme</button><button onclick="openSheet('odev')">${ic('clip')}Ödev</button><button onclick="go('sohbet')">${ic('chat')}Mesaj</button></div>
+  </div>`;
+}
+
+function renderStudents() {
+  const q = ($('#stuQ').value || '').toLocaleLowerCase('tr-TR');
+  $('#stuChips').innerHTML = FILTERS.map(f => `<button class="chip ${filter === f.id ? 'on' : ''}" onclick="setFilter('${f.id}')">${f.l} <b>${STUDENTS.filter(f.f).length}</b></button>`).join('');
+  const fn = FILTERS.find(f => f.id === filter).f;
+  const list = STUDENTS.map((s, i) => [s, i]).filter(([s]) => fn(s) && (s.n + s.c + s.no).toLocaleLowerCase('tr-TR').includes(q));
+  $('#stuList').innerHTML = list.length ? list.map(([s, i]) => stuCard(s, i)).join('') : '<div class="empty card">Bu filtrede öğrenci yok</div>';
+}
+
+function openStudent(i) {
+  const s = STUDENTS[i];
+  $('#p-av').textContent = ini(s.n); $('#p-av').style.background = s.col;
+  $('#p-name').textContent = s.n;
+  $('#p-meta').textContent = `${s.c} · No ${s.no}`;
+  $('#p-pills').innerHTML = `<span class="pill ${RISK_PILL[s.risk]}">Risk: ${s.risk}</span>${s.late ? `<span class="pill bad">${s.late} geciken ödev</span>` : '<span class="pill good">Ödevler güncel</span>'}${s.pin ? '<span class="pill accent">Sabitlendi</span>' : ''}`;
+  $('#p-net').textContent = fmt(s.net);
+  $('#p-netd').textContent = `${s.d >= 0 ? '↑' : '↓'} ${fmt(Math.abs(s.d))}`; $('#p-netd').className = 'd ' + (s.d >= 0 ? 'up' : 'down');
+  $('#p-odev').textContent = '%' + s.odev;
+  $('#p-last').textContent = s.last;
+  s360Tab('ozet');
+  go('s360');
+}
+
+function s360Tab(t) {
+  $$('#s360tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  $$('#s-s360 .tab-pane').forEach(p => p.classList.toggle('on', p.dataset.p === t));
+}
+
+function odevSeg(v) {
+  $$('#odevSeg button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  $$('[data-ov]').forEach(p => p.style.display = p.dataset.ov === v ? '' : 'none');
+}
+
+function chart() {
+  const W = 320, H = 170, P = 26, max = 90, min = 50;
+  const x = i => P + i * (W - P * 1.6) / (NETS.length - 1);
+  const y = v => H - 22 - (v - min) / (max - min) * (H - 40);
+  let g = '';
+  [50, 60, 70, 80, 90].forEach(v => { g += `<line x1="${P}" x2="${W - 8}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)" stroke-width="1"/><text x="2" y="${y(v) + 4}" font-size="10" fill="var(--muted)">${v}</text>`; });
+  const pts = NETS.map((v, i) => `${x(i)},${y(v)}`).join(' ');
+  g += `<polygon points="${x(0)},${H - 22} ${pts} ${x(NETS.length - 1)},${H - 22}" fill="var(--brand-soft)" opacity=".7"/>`;
+  g += `<polyline points="${pts}" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round"/>`;
+  NETS.forEach((v, i) => { g += `<circle cx="${x(i)}" cy="${y(v)}" r="${i === NETS.length - 1 ? 5 : 3.5}" fill="${i === NETS.length - 1 ? 'var(--accent)' : 'var(--surface)'}" stroke="${i === NETS.length - 1 ? 'var(--accent)' : 'var(--brand)'}" stroke-width="2"/><text x="${x(i)}" y="${H - 5}" font-size="10" fill="var(--muted)" text-anchor="middle">${LABELS[i]}</text>`; });
+  $('#netChart').innerHTML = g;
+}
+
+function renderAll() {
+  $('#agenda').innerHTML = AGENDA.map(a => `<div class="tl-item ${a.done ? 'done' : ''} ${a.now ? 'now' : ''}" onclick="${a.sheet ? `openSheet('${a.sheet}')` : a.go ? `go('${a.go}')` : a.stu !== undefined ? `openStudent(${a.stu})` : `openSheet('gorusme')`}"><div class="tl-time">${a.t}</div><div class="tl-card" style="--c:${a.c}"><strong>${a.h}${a.now ? '<span class="now-tag">● Şu an</span>' : ''}</strong><span>${a.s}</span></div></div>`).join('');
+
+  const att = [[1, ['bad', '3 geciken ödev'], ['bad', 'Net ↓ 6']], [3, ['warn', '14 gündür görüşme yok'], ['bad', '2 geciken ödev']], [7, ['bad', 'Net ↓ 3'], ['warn', '2 geciken ödev']], [0, ['warn', 'Hiç görüşme yok']]];
+  $('#attention').innerHTML = att.map(([i, ...why]) => { const s = STUDENTS[i]; return `<div class="att" onclick="openStudent(${i})"><div class="avatar" style="background:${s.col}">${ini(s.n)}</div><div class="grow"><strong style="font-size:14px" class="ell">${s.n}</strong><div class="why">${why.map(w => `<span class="pill ${w[0]}">${w[1]}</span>`).join('')}</div></div><button class="icon-btn" onclick="event.stopPropagation();openSheet('gorusme')" title="Görüşme"><i data-ic="meet"></i></button></div>`; }).join('');
+
+  $('#asgList').innerHTML = ASG.map(a => `<div class="card asg"><div class="top"><div class="grow"><strong>${a.t}</strong><div class="meta">${a.s}</div></div><span class="pill ${a.pill[0]}">${a.pill[1]}</span></div><div class="prog"><div class="bar"><i style="width:${a.done / a.tot * 100}%;${a.done === a.tot ? 'background:var(--good)' : ''}"></i></div><span>${a.done}/${a.tot}</span></div><div class="row" style="justify-content:space-between"><span class="muted" style="font-size:12.5px">${a.due}${a.late ? ` · <span style="color:var(--bad)">${a.late} gecikmiş</span>` : ''}</span><button class="btn sm ${a.done === a.tot ? 'sec2' : ''}" onclick="openSheet('kontrol')">${a.done === a.tot ? 'Rapor' : 'Kontrol et'}</button></div></div>`).join('');
+
+  $('#examList').innerHTML = EXAMS.map((e, i) => `<div class="card exam click" onclick="openExam(${i})"><div class="top"><div class="grow"><strong style="font-size:15px">${e.t}</strong><div class="muted" style="font-size:12.5px">${e.d}</div></div><span class="pill ${e.st[0]}">${e.st[1]}</span></div><div class="nums"><div><b>${e.kat}</b><span>Katılım</span></div><div><b>${e.avg}</b><span>Ort. net</span></div><div><b>${e.top}</b><span>En yüksek</span></div></div></div>`).join('');
+
+  $('#stuExams').innerHTML = [['TYT Deneme 6', '25 Eyl', 78.5, 'Kurum 14. / 186'], ['TYT Deneme 5', '11 Eyl', 73.5, 'Kurum 22. / 180'], ['Ulti AYT Deneme', '27 Eyl', 41.75, 'Kurum 31. / 120'], ['TYT Deneme 4', '28 Ağu', 70.75, 'Kurum 25. / 175']].map(e => `<div class="li"><span class="q bg-brand" style="width:40px;height:40px;border-radius:12px;display:grid;place-items:center">${ic('chart')}</span><div class="grow"><strong>${e[0]}</strong><span class="s">${e[1]} · ${e[3]}</span></div><b style="font-size:16px">${fmt(e[2])}</b></div>`).join('');
+
+  const plan = [['Pzt', [['Mat 40 soru', 1], ['Paragraf 20', 1]]], ['Sal', [['Fizik konu', 1], ['Mat 40 soru', 1]]], ['Çar', [['Biyoloji test', 1], ['Paragraf 20', 0]]], ['Per', [['Mat 40 soru', 1], ['Kimya tekrar', 0]]], ['Cum', [['Deneme analizi', 0], ['Paragraf 20', 0]]], ['Cmt', [['TYT Deneme 7', 0]]], ['Paz', [['Haftalık tekrar', 0], ['Dinlen', 0]]]];
+  const cls = ['bg-brand', 'bg-violet', 'bg-good', 'bg-accent', 'bg-teal'];
+  $('#weekPlan').innerHTML = plan.map(([d, ts], i) => `<div class="d ${d === 'Cum' ? 'today' : ''}"><h6>${d}</h6><div class="tasks">${ts.map((t, j) => `<div class="task ${cls[(i + j) % 5]} ${t[1] ? 'ok' : ''}">${t[1] ? '✓ ' : ''}${t[0]}</div>`).join('')}</div></div>`).join('');
+
+  const hp = 'xxxxxxxyxxxxxxxxxzxxxxxxxxxyxxxxxxxxxwww';
+  $('#heat').innerHTML = [...hp].map(c => `<i class="${c}"></i>`).join('');
+
+  $('#days').innerHTML = WEEK.map((w, i) => `<button class="${w.today ? 'on' : ''}" onclick="pickDay(${i})"><span>${w.d}</span><b>${w.n}</b>${w.ev.length ? '<i class="ev"></i>' : ''}</button>`).join('');
+  pickDay(4);
+  $('#board').innerHTML = WEEK.map(w => `<div class="col ${w.today ? 'today' : ''}"><h6><span>${w.d}</span><b>${w.n}</b></h6>${w.ev.map(e => `<div class="ev-card" style="background:color-mix(in srgb, ${e[0]} 14%, var(--surface));border-left:3px solid ${e[0]}" onclick="openSheet('gorusme')"><b>${e[1]}</b>${e[2]}</div>`).join('') || '<div class="muted" style="font-size:11.5px;text-align:center;padding-top:20px">Boş</div>'}</div>`).join('');
+
+  $('#chatList').innerHTML = CHATS.map((c, i) => `<div class="ci ${i === 0 ? 'on' : ''}" onclick="openConv(${i})"><div class="avatar" style="background:${c.col}">${ini(c.n)}</div><div class="grow"><div class="row" style="gap:6px"><strong class="grow ell">${c.n}</strong><span class="tm">${c.t}</span></div><div class="row" style="gap:6px"><div class="grow"><span class="pill gray" style="font-size:10.5px;padding:1px 7px;margin-top:3px">${c.sub}</span><div class="msg ell">${c.m}</div></div>${c.un ? `<span class="un">${c.un}</span>` : ''}</div></div></div>`).join('');
+
+  const yk = STUDENTS.slice(0, 10);
+  $('#ykList').innerHTML = yk.map((s, i) => `<div class="yk"><div class="avatar sm" style="background:${s.col}">${ini(s.n)}</div><div class="grow"><strong style="font-size:13.5px" class="ell">${s.n}</strong><div class="muted" style="font-size:11.5px">No ${s.no}</div></div><div class="yk-seg" data-i="${i}"><button data-v="var" class="on">Var</button><button data-v="yok">Yok</button><button data-v="izin">İzinli</button></div></div>`).join('');
+
+  $('#pickStu').innerHTML = STUDENTS.slice(0, 6).map((s, i) => `<div class="pick ${i < 2 ? 'on' : ''}" onclick="this.classList.toggle('on');updOdevSum()"><span class="box">${ic('check')}</span><div class="avatar sm" style="background:${s.col}">${ini(s.n)}</div><div class="grow"><strong style="font-size:13.5px">${s.n}</strong><div class="muted" style="font-size:12px">${s.c}</div></div></div>`).join('');
+
+  $('#ktList').innerHTML = STUDENTS.slice(0, 8).map((s, i) => `<div class="kt"><div class="avatar sm" style="background:${s.col}">${ini(s.n)}</div><div class="grow"><strong style="font-size:13.5px" class="ell">${s.n}</strong><div class="muted" style="font-size:11.5px">${i % 3 === 1 ? '28/40 soru' : '40/40 soru'}</div></div><div class="kt-seg"><button class="ok ${i % 3 !== 1 && i !== 5 ? 'on' : ''}">${ic('check')}</button><button class="half ${i % 3 === 1 ? 'on' : ''}">${ic('half')}</button><button class="no ${i === 5 ? 'on' : ''}">${ic('x')}</button></div></div>`).join('');
+
+  const mc = []; ['Pt', 'Sa', 'Ça', 'Pe', 'Cu', 'Ct', 'Pz'].forEach(d => mc.push(`<b>${d}</b>`));
+  for (let i = 0; i < 3; i++) mc.push(`<span class="o">${28 + i}</span>`);
+  for (let d = 1; d <= 31; d++) mc.push(`<span class="${d === 9 ? 't' : ''} ${[5, 7, 8, 10, 16, 18, 23].includes(d) ? 'e' : ''}">${d}</span>`);
+  $('#mcal').innerHTML = mc.join('');
+  $('#ctxChats').innerHTML = CHATS.slice(0, 3).map((c, i) => `<div class="ci" onclick="go('sohbet');openConv(${i})"><div class="avatar sm" style="background:${c.col}">${ini(c.n)}</div><div class="grow"><strong style="font-size:13px" class="ell">${c.n}</strong><div class="msg ell">${c.m}</div></div>${c.un ? `<span class="un">${c.un}</span>` : ''}</div>`).join('');
+  const mini = i => { const s = STUDENTS[i]; return `<div class="ci" onclick="openStudent(${i})"><div class="avatar sm" style="background:${s.col}">${ini(s.n)}</div><div class="grow"><strong style="font-size:13px" class="ell">${s.n}</strong><div class="msg">${s.c}</div></div></div>`; };
+  $('#ctxRecent').innerHTML = [0, 5, 2].map(mini).join('');
+  $('#ctxMeet').innerHTML = STUDENTS.map((s, i) => [s, i]).filter(([s]) => s.meet).map(([, i]) => mini(i)).join('');
+  $('#ctxNoHw').innerHTML = [3, 7, 9].map(mini).join('');
+  $('#ctxTop').innerHTML = [0, 6, 4].map(mini).join('');
+  const subjHtml = SUBJ.map(s => `<div><div class="row" style="justify-content:space-between;font-size:12.5px;margin-bottom:4px"><span>${s[0]}</span><b>${fmt(s[1])} / ${s[2]}</b></div><div class="bar"><i style="width:${s[1] / s[2] * 100}%;background:${s[3]}"></i></div></div>`).join('');
+  $('#ctxSubj').innerHTML = subjHtml; $('#sxSubj').innerHTML = subjHtml;
+  $('#ctxUp').innerHTML = [['TYT Deneme 7', 'Cumartesi 09:30', 'violet', 'chart'], ['Kontrol · 11 / LOCA 1', 'Bugün 16:30', 'accent', 'clip'], ['Görüşme · Ahmet O. Polat', 'Bugün 15:00', 'brand', 'meet']].map(u => `<div class="li"><span class="q bg-${u[2]}" style="width:38px;height:38px;border-radius:12px;display:grid;place-items:center">${ic(u[3])}</span><div class="grow"><strong style="font-size:13px">${u[0]}</strong><span class="s">${u[1]}</span></div></div>`).join('');
+
+  renderStudents();
+  chart();
+  hydrate();
+}
+
+function pickDay(i) {
+  $$('#days button').forEach((b, j) => b.classList.toggle('on', i === j));
+  const w = WEEK[i];
+  $('#dayAgenda').innerHTML = w.ev.length ? w.ev.map(e => `<div class="tl-item" onclick="openSheet('gorusme')"><div class="tl-time">${e[1]}</div><div class="tl-card" style="--c:${e[0]}"><strong>${e[2]}</strong></div></div>`).join('') : '<div class="empty card">Bu gün için plan yok</div>';
+}
+
+function openConv(i) {
+  const c = CHATS[i];
+  $$('#chatList .ci').forEach((el, j) => el.classList.toggle('on', i === j));
+  $('#cv-av').textContent = ini(c.n); $('#cv-av').style.background = c.col;
+  $('#cv-name').textContent = c.n; $('#cv-sub').textContent = c.sub;
+  $('#chatSplit').classList.add('open');
+}
+function closeConv() { $('#chatSplit').classList.remove('open'); }
+function sendMsg() {
+  const v = $('#msgIn').value.trim(); if (!v) return;
+  const b = document.createElement('div'); b.className = 'bub out'; b.innerHTML = `${v.replace(/</g, '&lt;')}<small>şimdi ✓</small>`;
+  $('.msgs').appendChild(b); $('.msgs').scrollTop = 1e6; $('#msgIn').value = '';
+}
+function fillMsg(t) { $('#msgIn').value = t; $('#msgIn').focus(); }
+
+function openExam(i) { const e = EXAMS[i]; $('#sxTitle').textContent = e.t; $('#sxSub').textContent = `${e.d} · ${e.kat} katılım`; openSheet('sinav'); }
+
+let step = 1;
+function updOdevSum() { $('#odevSum').textContent = $$('#pickStu .pick.on').length + ' öğrenciye'; }
+function odevStep(d) {
+  if (d < 0 && step === 1) return closeSheet();
+  if (d > 0 && step === 3) { closeSheet(); toast($('#odevSum').textContent.replace('ye', 'ye ödev verildi')); return; }
+  step += d;
+  $$('#sh-odev [data-step]').forEach(p => p.style.display = +p.dataset.step === step ? '' : 'none');
+  $$('#sh-odev .steps i').forEach((s, j) => s.classList.toggle('on', j < step));
+  $('#odevStepLbl').textContent = `${step} / 3 · ${['Öğrenci seç', 'Kaynak ve içerik', 'Tarih ve bildirim'][step - 1]}`;
+  $('#odevBack').textContent = step === 1 ? 'Vazgeç' : 'Geri';
+  $('#odevNext').textContent = step === 3 ? 'Ödevi ver' : 'Devam';
+  updOdevSum();
+}
+
+function openSheet(id) {
+  closeDd();
+  $$('.sheet').forEach(s => s.classList.toggle('on', s.id === 'sh-' + id));
+  $('#overlay').classList.add('on');
+  if (id === 'odev') { step = 2; odevStep(-1); }
+  if (id === 'arama') { $('#qIn').value = ''; renderSearch(); setTimeout(() => $('#qIn').focus(), 50); }
+}
+function closeSheet() { $('#overlay').classList.remove('on'); $$('.sheet').forEach(s => s.classList.remove('on')); }
+
+function renderSearch() {
+  const q = $('#qIn').value.toLocaleLowerCase('tr-TR');
+  const st = STUDENTS.map((s, i) => [s, i]).filter(([s]) => s.n.toLocaleLowerCase('tr-TR').includes(q)).slice(0, 5);
+  const pg = PAGES.filter(p => p[0].toLocaleLowerCase('tr-TR').includes(q));
+  $('#qRes').innerHTML = (st.length ? '<div class="sr-h">ÖĞRENCİLER</div>' + st.map(([s, i]) => `<div class="sr" onclick="closeSheet();openStudent(${i})"><div class="avatar sm" style="background:${s.col}">${ini(s.n)}</div><div class="grow"><strong style="font-size:13.5px">${s.n}</strong><div class="muted" style="font-size:12px">${s.c}</div></div></div>`).join('') : '')
+    + (pg.length ? '<div class="sr-h">SAYFALAR</div>' + pg.map(p => `<div class="sr" onclick="closeSheet();go('${p[1]}')"><span class="q bg-brand" style="width:36px;height:36px;border-radius:11px;display:grid;place-items:center">${ic(p[2])}</span><strong style="font-size:13.5px">${p[0]}</strong></div>`).join('') : '')
+    || '<div class="empty">Sonuç yok</div>';
+}
+
+function toggleDd(id, e) { e.stopPropagation(); const el = $('#' + id); const was = el.classList.contains('on'); closeDd(); if (!was) el.classList.add('on'); }
+function closeDd() { $$('.dd.on').forEach(d => d.classList.remove('on')); }
+document.addEventListener('click', closeDd);
+
+let tT;
+function toast(t) { const el = $('#toast'); el.querySelector('span').textContent = t; el.classList.add('on'); clearTimeout(tT); tT = setTimeout(() => el.classList.remove('on'), 2200); }
+function soon(name) { toast(`${name} da aynı tasarımla yeniden yapılacak`); }
+function allDone() { $$('#ktList .kt-seg').forEach(s => s.querySelectorAll('button').forEach(b => b.classList.toggle('on', b.classList.contains('ok')))); }
+function toggleTheme() {
+  const d = document.documentElement; const dark = d.dataset.theme !== 'dark';
+  d.dataset.theme = dark ? 'dark' : 'light'; $('#themeSw').classList.toggle('on', dark);
+}
+
+document.addEventListener('click', e => {
+  const g = e.target.closest('[data-go]'); if (g) go(g.dataset.go);
+  const t = e.target.closest('#s360tabs button'); if (t) s360Tab(t.dataset.t);
+  const o = e.target.closest('#odevSeg button'); if (o) odevSeg(o.dataset.v);
+  const opt = e.target.closest('.opts .opt');
+  if (opt) { const box = opt.parentElement; if (box.hasAttribute('data-single')) box.querySelectorAll('.opt').forEach(x => x.classList.toggle('on', x === opt)); else opt.classList.toggle('on'); }
+  const ch = e.target.closest('.chips .chip');
+  if (ch && !ch.closest('#stuChips')) ch.parentElement.querySelectorAll('.chip').forEach(x => x.classList.toggle('on', x === ch));
+  const yk = e.target.closest('.yk-seg button');
+  if (yk) { yk.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === yk)); const n = $$('.yk-seg button.on[data-v="var"]').length; $('#ykCount').textContent = `${n} / 10 var`; }
+  const kt = e.target.closest('.kt-seg button');
+  if (kt) kt.parentElement.querySelectorAll('button').forEach(x => x.classList.toggle('on', x === kt));
+  const dv = e.target.closest('.devbar button');
+  if (dv) { $('#app').dataset.dev = dv.dataset.dev; $$('.devbar button').forEach(b => b.classList.toggle('on', b === dv)); }
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeSheet(); closeDd(); } if ((e.metaKey || e.ctrlKey) && e.key === 'k') { e.preventDefault(); openSheet('arama'); } });
+
+if (window.innerWidth >= 900 && !new URLSearchParams(location.search).has('oturum')) document.body.classList.add('framed');
+const initDev = new URLSearchParams(location.search).get('cihaz');
+if (initDev) { $('#app').dataset.dev = initDev; $$('.devbar button').forEach(b => b.classList.toggle('on', b.dataset.dev === initDev)); }
+renderAll();
+go((location.hash || '#bugun').slice(1) in NAV ? location.hash.slice(1) || 'bugun' : 'bugun');
+</script>
+</body>
+</html>

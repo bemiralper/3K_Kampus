@@ -37,17 +37,21 @@ import { useUnsavedChangesGuard } from '@/lib/hooks/useUnsavedChangesGuard';
 import UnsavedChangesModal from '@/components/UnsavedChangesModal';
 import { lessonAccent, primaryBlockLabel } from '@/components/admin/coaching/study-program/blockDisplay';
 import { stripCompletionTitleSuffix } from '@/components/odev/odevCompletionHelpers';
+import ProgramLengthSwitch from '@/components/coaching/study-program/ProgramLengthSwitch';
 import {
   datesFromHomework,
   formatDateLocal as formatDate,
   homeworkOverlapsWeek,
   inclusiveDayCount,
+  isAllowedProgramRange,
   isControlDay,
-  isSevenDayRange,
+  programLengthOf,
+  PROGRAM_DAY_COUNT,
   rangeFromEnd,
   rangeFromStart,
   studyRangeEnd,
   toDateInputValue,
+  type ProgramLength,
 } from '@/components/coaching/study-program/programDateUtils';
 import { getStudyDrag, setStudyDrag } from '@/components/coaching/study-program/studyProgramDrag';
 import '@/components/coaching/study-program/study-program.css';
@@ -129,6 +133,7 @@ export default function StudyProgramEditor({
   // Yeni program oluşturma alanları
   const [newWeekStart, setNewWeekStart] = useState('');
   const [newWeekEnd, setNewWeekEnd] = useState('');
+  const [createLength, setCreateLength] = useState<ProgramLength>(PROGRAM_DAY_COUNT);
   const [dateSourceHomeworkId, setDateSourceHomeworkId] = useState<number | null>(null);
 
   // Aktif program tarih aralığı düzenleme
@@ -246,6 +251,39 @@ export default function StudyProgramEditor({
   const [mobilePane, setMobilePane] = useState<'takvim' | 'havuz'>('takvim');
   const [focusedDayId, setFocusedDayId] = useState<number | null>(null);
   const [compactDayMode, setCompactDayMode] = useState(true);
+  const weekPan = useRef<{ pointerId: number; x: number; left: number; moved: boolean } | null>(null);
+  const weekPanMoved = useRef(false);
+
+  const onWeekPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse' || e.button !== 0) return;
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    if (target.closest('button, a, input, textarea, select, label, [draggable="true"]')) return;
+    const el = e.currentTarget;
+    if (el.scrollWidth <= el.clientWidth + 1) return;
+    weekPan.current = { pointerId: e.pointerId, x: e.clientX, left: el.scrollLeft, moved: false };
+  };
+
+  const onWeekPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = weekPan.current;
+    if (!pan || pan.pointerId !== e.pointerId) return;
+    const dx = e.clientX - pan.x;
+    if (!pan.moved && Math.abs(dx) < 5) return;
+    if (!pan.moved) {
+      pan.moved = true;
+      weekPanMoved.current = true;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      e.currentTarget.classList.add('is-panning');
+    }
+    e.currentTarget.scrollLeft = pan.left - dx;
+  };
+
+  const endWeekPan = (e: React.PointerEvent<HTMLDivElement>) => {
+    const pan = weekPan.current;
+    if (!pan || pan.pointerId !== e.pointerId) return;
+    weekPan.current = null;
+    e.currentTarget.classList.remove('is-panning');
+  };
 
   // Ödev bölme modalı
   const [splitModalOpen, setSplitModalOpen] = useState(false);
@@ -356,6 +394,9 @@ export default function StudyProgramEditor({
   useEffect(() => {
     if (initialWeekStart) setNewWeekStart(initialWeekStart);
     if (initialWeekEnd) setNewWeekEnd(initialWeekEnd);
+    if (initialWeekStart && initialWeekEnd) {
+      setCreateLength(programLengthOf(initialWeekStart, initialWeekEnd));
+    }
     if (initialHomeworkId) setDateSourceHomeworkId(initialHomeworkId);
   }, [initialWeekStart, initialWeekEnd, initialHomeworkId]);
 
@@ -488,16 +529,43 @@ export default function StudyProgramEditor({
      AKSİYONLAR
      ═══════════════════════════════════════════════════════ */
 
+  const applyCreateLength = (length: ProgramLength) => {
+    setCreateLength(length);
+    if (newWeekEnd) {
+      const next = rangeFromEnd(newWeekEnd, length);
+      setNewWeekStart(next.start);
+      setNewWeekEnd(next.end);
+      return;
+    }
+    if (newWeekStart) {
+      const next = rangeFromStart(newWeekStart, length);
+      setNewWeekStart(next.start);
+      setNewWeekEnd(next.end);
+    }
+  };
+
+  const applyEditLength = (length: ProgramLength) => {
+    const anchor = editWeekEnd || program?.week_end || '';
+    if (!anchor) return;
+    const next = rangeFromEnd(anchor, length);
+    setEditWeekStart(next.start);
+    setEditWeekEnd(next.end);
+  };
+
   const applyHomeworkDates = useCallback((hw: HomeworkPoolItem) => {
-    const { start, end } = datesFromHomework(hw);
+    const { start, end } = datesFromHomework(hw, createLength);
     if (start) setNewWeekStart(start);
     if (end) setNewWeekEnd(end);
     setDateSourceHomeworkId(hw.id);
-  }, []);
+  }, [createLength]);
 
   // Yeni hafta oluştur
   const handleCreateWeek = async () => {
     if (!selectedStudent || !newWeekStart || !newWeekEnd) return;
+    if (!isAllowedProgramRange(newWeekStart, newWeekEnd)) {
+      showToast('Program 7 veya 8 gün olmalıdır. Son gün kontrol günüdür.', 'error');
+      return;
+    }
     setLoading(true);
     try {
       const res = await createProgram({
@@ -531,6 +599,10 @@ export default function StudyProgramEditor({
     if (!program || !editWeekStart || !editWeekEnd) return;
     if (editWeekEnd < editWeekStart) {
       showToast('Bitiş tarihi başlangıçtan önce olamaz', 'error');
+      return;
+    }
+    if (!isAllowedProgramRange(editWeekStart, editWeekEnd)) {
+      showToast('Program 7 veya 8 gün olmalıdır. Son gün kontrol günüdür.', 'error');
       return;
     }
     setRangeSaving(true);
@@ -597,8 +669,8 @@ export default function StudyProgramEditor({
 
   const openDistribute = () => {
     if (!program || isExpired) return;
-    if (!isSevenDayRange(program.week_start, program.week_end)) {
-      showToast('Önce programı 7 güne getirin. Son gün kontrol günüdür.', 'error');
+    if (!isAllowedProgramRange(program.week_start, program.week_end)) {
+      showToast('Program 7 veya 8 gün olmalıdır. Son gün kontrol günüdür.', 'error');
       return;
     }
     const first = currentHomeworks[0];
@@ -1038,7 +1110,7 @@ export default function StudyProgramEditor({
                   const selected = dateSourceHomeworkId === hw.id;
                   const assigned = toDateInputValue(hw.assigned_date);
                   const due = toDateInputValue(hw.due_date);
-                  const { start: rangeStart, end: rangeEnd } = datesFromHomework(hw);
+                  const { start: rangeStart, end: rangeEnd } = datesFromHomework(hw, createLength);
                   const studyEnd = rangeEnd ? studyRangeEnd(rangeEnd) : '';
                   const studyDays =
                     rangeStart && studyEnd ? inclusiveDayCount(rangeStart, studyEnd) : 0;
@@ -1068,7 +1140,7 @@ export default function StudyProgramEditor({
                       {rangeStart && rangeEnd && (
                         <div style={{ fontSize: 11, color: '#1d4ed8', marginTop: 6, fontWeight: 600 }}>
                           Program: {formatDateShortTR(rangeStart)} – {formatDateShortTR(rangeEnd)}
-                          {' '}· 7 gün, son gün kontrol
+                          {' '}· {inclusiveDayCount(rangeStart, rangeEnd)} gün, son gün kontrol
                           {studyDays > 0 ? ` · ${studyDays} çalışma` : ''}
                         </div>
                       )}
@@ -1092,10 +1164,13 @@ export default function StudyProgramEditor({
               <div>
                 <div style={{ fontSize: '16px', fontWeight: 700, color: '#111827' }}>Yeni Program Oluştur</div>
                 <div style={{ fontSize: '12px', color: '#6b7280' }}>
-                  Ödeve tıklayın veya bir tarihi seçin. Aralık her zaman 7 gündür; son gün kontrol, verilme günü dışarıda kalır.
+                  Varsayılan 7 gündür; verilme günü dışarıda kalır. 8 gün, programın yapıldığı günü de alır ve kontrol tarihini yerinde bırakır.
                   {dateSourceHomeworkId ? ' Ödevden dolduruldu.' : ''}
                 </div>
               </div>
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <ProgramLengthSwitch value={createLength} onChange={applyCreateLength} />
             </div>
             <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-end', flexWrap: 'wrap' }}>
               <div>
@@ -1106,7 +1181,7 @@ export default function StudyProgramEditor({
                   type="date"
                   value={newWeekStart}
                   onChange={(e) => {
-                    const next = rangeFromStart(e.target.value);
+                    const next = rangeFromStart(e.target.value, createLength);
                     setNewWeekStart(next.start);
                     setNewWeekEnd(next.end);
                     setDateSourceHomeworkId(null);
@@ -1125,7 +1200,7 @@ export default function StudyProgramEditor({
                   type="date"
                   value={newWeekEnd}
                   onChange={(e) => {
-                    const next = rangeFromEnd(e.target.value);
+                    const next = rangeFromEnd(e.target.value, createLength);
                     setNewWeekStart(next.start);
                     setNewWeekEnd(next.end);
                     setDateSourceHomeworkId(null);
@@ -1323,13 +1398,17 @@ export default function StudyProgramEditor({
               >
                 ← Programlar
               </button>
+              <ProgramLengthSwitch
+                value={programLengthOf(editWeekStart, editWeekEnd)}
+                onChange={applyEditLength}
+              />
               <label className="sps-date-pill">
                 <span>Başlangıç</span>
                 <input
                   type="date"
                   value={editWeekStart}
                   onChange={(e) => {
-                    const next = rangeFromStart(e.target.value);
+                    const next = rangeFromStart(e.target.value, programLengthOf(editWeekStart, editWeekEnd));
                     setEditWeekStart(next.start);
                     setEditWeekEnd(next.end);
                   }}
@@ -1341,7 +1420,7 @@ export default function StudyProgramEditor({
                   type="date"
                   value={editWeekEnd}
                   onChange={(e) => {
-                    const next = rangeFromEnd(e.target.value);
+                    const next = rangeFromEnd(e.target.value, programLengthOf(editWeekStart, editWeekEnd));
                     setEditWeekStart(next.start);
                     setEditWeekEnd(next.end);
                   }}
@@ -1402,7 +1481,7 @@ export default function StudyProgramEditor({
             </div>
           </div>
 
-          {program && !isSevenDayRange(program.week_start, program.week_end) && (
+          {program && !isAllowedProgramRange(program.week_start, program.week_end) && (
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
               marginBottom: 10, padding: '10px 12px', borderRadius: 12,
@@ -1427,10 +1506,10 @@ export default function StudyProgramEditor({
             <section className="sps-distribute" aria-label="Ödev dağıtımı">
               <div className="sps-distribute-head">
                 <div>
-                  <h3>Ödevleri 7 güne böl</h3>
+                  <h3>Ödevleri {inclusiveDayCount(program.week_start, program.week_end)} güne böl</h3>
                   <p>
                     Her konu kendi soru veya test sayısına göre günlere yazılır.
-                    47 soru yedi güne bölünür; kontrol günü de pay alır.
+                    Kontrol günü de pay alır.
                   </p>
                 </div>
                 <button
@@ -1697,15 +1776,31 @@ export default function StudyProgramEditor({
               className="sp-calendar-panel"
               style={{ ...(isExpired ? { opacity: 0.7, pointerEvents: 'none' as const } : {}) }}
             >
+              <div
+                className="sp-week-scroll"
+                onPointerDown={onWeekPointerDown}
+                onPointerMove={onWeekPointerMove}
+                onPointerUp={endWeekPan}
+                onPointerCancel={endWeekPan}
+                onClickCapture={(e) => {
+                  if (!weekPanMoved.current) return;
+                  weekPanMoved.current = false;
+                  e.preventDefault();
+                  e.stopPropagation();
+                }}
+              >
+              <div
+                className={`sp-week-track${compactDayMode ? ' is-focused' : ''}`}
+                style={{ ['--sp-day-count' as string]: Math.max(sortedDays.length, 1) }}
+              >
               {/* Gün–ders özeti (yalnızca geniş ekranda) */}
               <div className="sps-plan-summary-box" style={{
-                marginBottom: 10,
                 padding: '10px 12px',
                 background: '#fff',
                 borderRadius: 12,
                 border: '1px solid #e2e8f0',
               }}>
-                <div style={{
+                <div className="sps-plan-kicker" style={{
                   fontSize: 10,
                   fontWeight: 800,
                   letterSpacing: '0.05em',
@@ -1715,12 +1810,7 @@ export default function StudyProgramEditor({
                 }}>
                   Plan özeti
                 </div>
-                <div
-                  className="sp-plan-summary-grid"
-                  style={{
-                    ['--sp-summary-count' as string]: Math.max(dayLessonSummary.length, 1),
-                  }}
-                >
+                <div className="sp-plan-summary-grid">
                   {dayLessonSummary.map((row) => (
                     <div
                       key={row.date}
@@ -1767,7 +1857,7 @@ export default function StudyProgramEditor({
                 </div>
               </div>
 
-              {/* Tablet & Telefon: 7 Günlük Seçici Şerit */}
+              {/* Tablet & Telefon: gün seçici şerit */}
               <div
                 className="sps-day-ribbon"
                 role="tablist"
@@ -1817,7 +1907,8 @@ export default function StudyProgramEditor({
               <div
                 className="sp-day-grid-scroll"
                 onDragOver={(e) => {
-                  const el = e.currentTarget;
+                  const el = e.currentTarget.closest('.sp-week-scroll');
+                  if (!(el instanceof HTMLElement)) return;
                   const rect = el.getBoundingClientRect();
                   const edge = 56;
                   if (e.clientX < rect.left + edge) el.scrollLeft -= 16;
@@ -1834,7 +1925,6 @@ export default function StudyProgramEditor({
                     <div
                       key={day.id}
                       data-day-active={day.id === activeDayObj?.id ? 'true' : 'false'}
-                      style={{ minWidth: 0 }}
                     >
                       <DayColumn
                         day={day}
@@ -1854,6 +1944,8 @@ export default function StudyProgramEditor({
                     </div>
                   ))}
                 </div>
+              </div>
+              </div>
               </div>
             </div>
           </div>

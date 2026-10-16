@@ -65,6 +65,28 @@ class TaksitService:
         ).order_by('taksit_no')
 
     # ─── TAKSİT PLANI OLUŞTUR ────────────
+    def _preview_equal_rows(self, sozlesme, taksit_sayisi, ilk_odeme_tarihi, periyot='aylik', pesinat=0):
+        """Eşit plan satırlarını kaydetmeden üretir."""
+        if isinstance(ilk_odeme_tarihi, str):
+            from datetime import date as _date
+            ilk_odeme_tarihi = _date.fromisoformat(ilk_odeme_tarihi[:10])
+
+        net = int(sozlesme.net_tutar)
+        pesinat = int(pesinat or 0)
+        rows = []
+        if pesinat > 0:
+            rows.append({'tutar': pesinat, 'vade_tarihi': ilk_odeme_tarihi})
+            net -= pesinat
+        count = self._installment_count_for_equal_plan(taksit_sayisi, pesinat)
+        for i, tutar in enumerate(self._split_equal_amounts(max(net, 0), count)):
+            rows.append({
+                'tutar': tutar,
+                'vade_tarihi': self._hesapla_vade(
+                    ilk_odeme_tarihi, i, periyot, has_pesinat=(pesinat > 0),
+                ),
+            })
+        return rows
+
     def create_plan(self, sozlesme, taksit_sayisi, ilk_odeme_tarihi, periyot='aylik', pesinat=0):
         """
         Taksit planı oluştur — Integer-Only.
@@ -142,18 +164,19 @@ class TaksitService:
             )
 
     def apply_plan_preserving_paid(self, sozlesme, taksitler):
-        """Ödemesi olan taksitleri silmeden, kullanıcının planını yazar.
+        """Ödemesi olan sözleşmede kullanıcının taksit planını yazar.
 
-        Planın başındaki satırlar ödenmiş taksit tutarlarıyla aynı kalmalıdır.
-        Sonraki satırlar bekleyen taksitlerin yerine geçer.
+        Kasa tahsilatı silinmez. Taksit yüzü ödenenin altına inerse fazla tutar
+        sonraki taksitlere yazılır. Örnek: 25.000 ₺ tahsil, yeni taksit 15.000 ₺
+        ise 15.000 ₺ bu taksitte kalır, 10.000 ₺ sonraki taksite geçer.
         """
+        from collections import defaultdict
         from datetime import date as date_cls
 
-        from django.db.models import Q
         from django.db.models.deletion import ProtectedError
 
-        from apps.odeme_takip.domain.enums import TahsilatDurum
-        from apps.odeme_takip.domain.models import Tahsilat
+        from apps.odeme_takip.domain.enums import TahsilatDurum, TahsilatTuru
+        from apps.odeme_takip.domain.models import Tahsilat, TahsilatDagitim
 
         rows = []
         for raw in taksitler or []:
@@ -176,64 +199,139 @@ class TaksitService:
                 f'Taksit toplamı ({toplam} TL) sözleşme net tutarıyla ({net} TL) uyuşmuyor'
             )
 
-        linked_ids = Tahsilat.objects.filter(
-            sozlesme=sozlesme,
-            taksit__isnull=False,
-        ).exclude(
-            durum=TahsilatDurum.IPTAL_EDILDI,
-        ).values_list('taksit_id', flat=True)
-
-        locked_qs = Taksit.objects.filter(sozlesme=sozlesme).filter(
-            Q(id__in=linked_ids)
-            | Q(durum__in=[TaksitDurum.ODENDI, TaksitDurum.KISMI_ODENDI])
-            | Q(odenen_tutar__gt=0)
-        ).order_by('taksit_no', 'id')
-        locked = []
-        seen = set()
-        for taksit in locked_qs:
-            if taksit.id in seen:
+        existing = list(
+            Taksit.objects.filter(sozlesme=sozlesme).order_by('taksit_no', 'id')
+        )
+        slices_by_index = {}
+        for index, taksit in enumerate(existing):
+            dags = list(
+                TahsilatDagitim.objects.filter(
+                    taksit=taksit,
+                    tahsilat__durum=TahsilatDurum.AKTIF,
+                ).exclude(
+                    tahsilat__tahsilat_turu=TahsilatTuru.IADE,
+                ).order_by('id')
+            )
+            if dags:
+                slices_by_index[index] = [(d.tahsilat_id, int(d.tutar)) for d in dags]
                 continue
-            seen.add(taksit.id)
-            locked.append(taksit)
+            legacy = Tahsilat.objects.filter(
+                taksit=taksit,
+                durum=TahsilatDurum.AKTIF,
+            ).exclude(
+                tahsilat_turu=TahsilatTuru.IADE,
+            ).order_by('id')
+            slices_by_index[index] = [(th.id, int(th.tutar)) for th in legacy]
 
-        if len(rows) < len(locked):
+        assignments = [[] for _ in rows]
+        carry = []
+        for index, row in enumerate(rows):
+            bucket = carry + slices_by_index.get(index, [])
+            carry = []
+            room = int(row['tutar'])
+            for tahsilat_id, amount in bucket:
+                amount = int(amount)
+                if amount <= 0:
+                    continue
+                if room <= 0:
+                    carry.append((tahsilat_id, amount))
+                    continue
+                take = min(room, amount)
+                assignments[index].append((tahsilat_id, take))
+                room -= take
+                if amount > take:
+                    carry.append((tahsilat_id, amount - take))
+
+        extra = []
+        for index, slices in slices_by_index.items():
+            if index >= len(rows):
+                extra.extend(slices)
+        for tahsilat_id, amount in extra:
+            left = int(amount)
+            for index in range(len(rows) - 1, -1, -1):
+                if left <= 0:
+                    break
+                used = sum(part for _, part in assignments[index])
+                room = int(rows[index]['tutar']) - used
+                if room <= 0:
+                    continue
+                take = min(room, left)
+                assignments[index].append((tahsilat_id, take))
+                left -= take
+            if left > 0:
+                carry.append((tahsilat_id, left))
+
+        fazla = sum(int(amount) for _, amount in carry)
+        if fazla > 0:
             raise ValueError(
-                'Ödenmiş taksitler plandan çıkarılamaz. '
-                f'Plan en az {len(locked)} satır olmalı ve ödenen tutarlar başta aynen kalmalı.'
+                f'Alınan ödeme yeni taksit planına sığmıyor ({fazla} TL fazla). '
+                'Taksit tutarlarını artırın veya fazla tahsilatı iptal edin.'
             )
 
-        for index, taksit in enumerate(locked):
-            row = rows[index]
-            if row['tutar'] != int(taksit.tutar):
-                raise ValueError(
-                    f'Ödenmiş {taksit.taksit_no}. taksit ({int(taksit.tutar)} TL) değiştirilemez. '
-                    'Bu tutar planın başında aynı kalmalı; kalan borcu sonraki satırlarda bölün.'
-                )
-            if taksit.vade_tarihi != row['vade_tarihi']:
+        TahsilatDagitim.objects.filter(tahsilat__sozlesme=sozlesme).delete()
+        Tahsilat.objects.filter(sozlesme=sozlesme).update(taksit=None)
+
+        for index, taksit in enumerate(existing):
+            taksit.taksit_no = 1000 + index
+            taksit.save(update_fields=['taksit_no', 'updated_at'])
+
+        kept = []
+        for index, row in enumerate(rows):
+            if index < len(existing):
+                taksit = existing[index]
+                taksit.taksit_no = index + 1
+                taksit.tutar = row['tutar']
                 taksit.vade_tarihi = row['vade_tarihi']
-                taksit.save(update_fields=['vade_tarihi', 'updated_at'])
+                taksit.odenen_tutar = 0
+                taksit.kalan_tutar = row['tutar']
+                taksit.durum = TaksitDurum.BEKLEMEDE
+                taksit.odeme_tarihi = None
+                if row['odeme_yontemi_id']:
+                    taksit.odeme_yontemi_id = row['odeme_yontemi_id']
+                taksit.save()
+                kept.append(taksit)
+            else:
+                kept.append(Taksit.objects.create(
+                    sozlesme=sozlesme,
+                    taksit_no=index + 1,
+                    vade_tarihi=row['vade_tarihi'],
+                    tutar=row['tutar'],
+                    odenen_tutar=0,
+                    kalan_tutar=row['tutar'],
+                    durum=TaksitDurum.BEKLEMEDE,
+                    odeme_yontemi_id=row['odeme_yontemi_id'] or None,
+                ))
 
-        try:
-            Taksit.objects.filter(sozlesme=sozlesme).exclude(
-                id__in=[taksit.id for taksit in locked],
-            ).delete()
-        except ProtectedError as exc:
-            raise ValueError(
-                'Ödemesi olan bir taksit silinemedi. Ödenmiş satırlar planın başında aynen durmalı.'
-            ) from exc
+        extra_ids = [taksit.id for taksit in existing[len(rows):]]
+        if extra_ids:
+            try:
+                Taksit.objects.filter(id__in=extra_ids).delete()
+            except ProtectedError as exc:
+                raise ValueError(
+                    'Ödemesi olan bir taksit silinemedi. Fazla tahsilat sonraki taksitlere yazılamadı.'
+                ) from exc
 
-        son_no = locked[-1].taksit_no if locked else 0
-        for offset, row in enumerate(rows[len(locked):]):
-            Taksit.objects.create(
-                sozlesme=sozlesme,
-                taksit_no=son_no + 1 + offset,
-                vade_tarihi=row['vade_tarihi'],
-                tutar=row['tutar'],
-                odenen_tutar=0,
-                kalan_tutar=row['tutar'],
-                durum=TaksitDurum.BEKLEMEDE,
-                odeme_yontemi_id=row['odeme_yontemi_id'] or None,
-            )
+        first_taksit = {}
+        for index, taksit in enumerate(kept):
+            merged = defaultdict(int)
+            for tahsilat_id, amount in assignments[index]:
+                merged[tahsilat_id] += int(amount)
+            for tahsilat_id, amount in merged.items():
+                if amount <= 0:
+                    continue
+                TahsilatDagitim.objects.create(
+                    tahsilat_id=tahsilat_id,
+                    taksit=taksit,
+                    tutar=amount,
+                )
+                first_taksit.setdefault(tahsilat_id, taksit)
+
+        for tahsilat_id, taksit in first_taksit.items():
+            Tahsilat.objects.filter(id=tahsilat_id).update(taksit=taksit)
+
+        for taksit in kept:
+            taksit.bakiye_guncelle()
+            taksit.save()
 
     # ─── YÜZDE BAZLI TAKSİT PLANI ────────
     def create_percentage_plan(self, sozlesme, yuzde_listesi, tarih_listesi):
@@ -405,17 +503,32 @@ class TaksitService:
             ilk_tarih = ilk_odeme_tarihi or sozlesme.ilk_odeme_tarihi or sozlesme.baslangic_tarihi
 
             if yontem == 'esit':
-                self.recreate_plan(
-                    sozlesme=sozlesme,
-                    taksit_sayisi=taksit_sayisi or sozlesme.taksit_sayisi,
-                    ilk_odeme_tarihi=ilk_tarih,
-                    periyot=periyot or sozlesme.taksit_periyodu,
-                    pesinat=pesinat,
-                )
+                if self._payment_locked_taksits(sozlesme):
+                    self.apply_plan_preserving_paid(
+                        sozlesme,
+                        self._preview_equal_rows(
+                            sozlesme,
+                            taksit_sayisi or sozlesme.taksit_sayisi,
+                            ilk_tarih,
+                            periyot or sozlesme.taksit_periyodu,
+                            pesinat,
+                        ),
+                    )
+                else:
+                    self.recreate_plan(
+                        sozlesme=sozlesme,
+                        taksit_sayisi=taksit_sayisi or sozlesme.taksit_sayisi,
+                        ilk_odeme_tarihi=ilk_tarih,
+                        periyot=periyot or sozlesme.taksit_periyodu,
+                        pesinat=pesinat,
+                    )
             elif yontem == 'manuel':
                 if not manuel_taksitler:
                     return None, {'error': 'Manuel taksit listesi boş'}
-                self.create_manual_plan(sozlesme, manuel_taksitler)
+                if self._payment_locked_taksits(sozlesme):
+                    self.apply_plan_preserving_paid(sozlesme, manuel_taksitler)
+                else:
+                    self.create_manual_plan(sozlesme, manuel_taksitler)
             elif yontem == 'yuzde':
                 if not yuzde_listesi:
                     return None, {'error': 'Yüzde listesi boş'}

@@ -230,9 +230,9 @@ export default function SozlesmeDuzenlemeDrawer({ sozlesmeId, onClose, onSaved }
                     🔒 Tahsil Edilmiş Taksitler Korunacak
                   </div>
                   <div style={{ fontSize: 12, color: "#78350f", lineHeight: 1.7 }}>
-                    <strong>{odenmisTaksitSayisi}</strong> taksit daha önce tahsil edilmiş ({formatCurrency(toplamOdenmis)}).
-                    Bu taksitler değiştirilemez. Tutar veya taksit sayısı değişikliklerinde
-                    kalan bakiye ({formatCurrency(kalanBakiye)}) ödenmemiş taksitlere eşit dağıtılacaktır.
+                    <strong>{odenmisTaksitSayisi}</strong> taksitte {formatCurrency(toplamOdenmis)} tahsilat var.
+                    Alınan para silinmez. Taksit tutarını ödenenin altına indirirseniz fark sonraki taksitlere yazılır.
+                    Kalan bakiye {formatCurrency(kalanBakiye)}.
                   </div>
                 </div>
               )}

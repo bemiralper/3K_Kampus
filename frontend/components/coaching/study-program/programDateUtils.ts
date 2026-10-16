@@ -20,30 +20,53 @@ export function inclusiveDayCount(start: string, end: string): number {
   return Math.round((e.getTime() - s.getTime()) / 86400000) + 1;
 }
 
-/** Haftalık program: 6 çalışma günü + son gün kontrol */
+/** Haftalık program: varsayılan 7 gün, son gün kontrol. */
 export const PROGRAM_DAY_COUNT = 7;
+/** Programın yapıldığı günü de kapsayan uzunluk. Kontrol tarihi yerinde kalır. */
+export const PROGRAM_DAY_COUNT_LONG = 8;
+export type ProgramLength = typeof PROGRAM_DAY_COUNT | typeof PROGRAM_DAY_COUNT_LONG;
 export const STUDY_DAY_COUNT = 6;
 /** Tek güne rahat sığan soru. Üstü bölme önerisi üretir. */
 export const SOFT_DAY_QUESTION_CAP = 80;
+
+export function isProgramLength(value: number): value is ProgramLength {
+  return value === PROGRAM_DAY_COUNT || value === PROGRAM_DAY_COUNT_LONG;
+}
 
 export function isSevenDayRange(start: string, end: string): boolean {
   return Boolean(start && end && inclusiveDayCount(start, end) === PROGRAM_DAY_COUNT);
 }
 
-/** İlk çalışma gününden 7 günlük aralık (son gün kontrol). */
-export function rangeFromStart(start: string): { start: string; end: string } {
+export function isAllowedProgramRange(start: string, end: string): boolean {
+  return isProgramLength(inclusiveDayCount(start, end));
+}
+
+export function programLengthOf(start: string, end: string): ProgramLength {
+  return inclusiveDayCount(start, end) === PROGRAM_DAY_COUNT_LONG
+    ? PROGRAM_DAY_COUNT_LONG
+    : PROGRAM_DAY_COUNT;
+}
+
+/** İlk günden 7 veya 8 günlük aralık (son gün kontrol). */
+export function rangeFromStart(
+  start: string,
+  length: ProgramLength = PROGRAM_DAY_COUNT,
+): { start: string; end: string } {
   if (!start) return { start: '', end: '' };
   return {
     start,
-    end: formatDateLocal(addDays(new Date(`${start}T12:00:00`), PROGRAM_DAY_COUNT - 1)),
+    end: formatDateLocal(addDays(new Date(`${start}T12:00:00`), length - 1)),
   };
 }
 
-/** Kontrol gününden geriye 7 günlük aralık. */
-export function rangeFromEnd(end: string): { start: string; end: string } {
+/** Kontrol günü sabit; 7 günde bir gün önce, 8 günde program günü de dahil. */
+export function rangeFromEnd(
+  end: string,
+  length: ProgramLength = PROGRAM_DAY_COUNT,
+): { start: string; end: string } {
   if (!end) return { start: '', end: '' };
   return {
-    start: formatDateLocal(addDays(new Date(`${end}T12:00:00`), -(PROGRAM_DAY_COUNT - 1))),
+    start: formatDateLocal(addDays(new Date(`${end}T12:00:00`), -(length - 1))),
     end,
   };
 }
@@ -69,22 +92,27 @@ export type HomeworkDateSource = {
 /**
  * Ödevden program tarih aralığı.
  *
- * Hafta 7 gündür ve son gün kontroldür. Ödevin verildiği gün
- * oturum günüdür; programa girmez.
+ * Varsayılan 7 gündür ve son gün kontroldür. Ödevin verildiği gün
+ * oturum günüdür; 7 günlük programa girmez.
+ * 8 gün seçilirse kontrol yerinde kalır, verilme günü aralığın başına eklenir.
  *
  * Örn. Verilme 15 Eki Per, kontrol 22 Eki Per
- *   → program 16 Eki Cum … 22 Eki Per (6 çalışma + kontrol)
+ *   → 7 gün: 16 Eki Cum … 22 Eki Per
+ *   → 8 gün: 15 Eki Per … 22 Eki Per
  */
-export function datesFromHomework(hw: HomeworkDateSource): { start: string; end: string } {
+export function datesFromHomework(
+  hw: HomeworkDateSource,
+  length: ProgramLength = PROGRAM_DAY_COUNT,
+): { start: string; end: string } {
   const assigned = toDateInputValue(hw.assigned_date);
   const due = toDateInputValue(hw.due_date);
 
   let end = due;
   if (!end && assigned) {
-    end = formatDateLocal(addDays(new Date(`${assigned}T12:00:00`), 7));
+    end = formatDateLocal(addDays(new Date(`${assigned}T12:00:00`), PROGRAM_DAY_COUNT));
   }
   if (!end) return { start: '', end: '' };
-  return rangeFromEnd(end);
+  return rangeFromEnd(end, length);
 }
 
 /** Ödev tarihleri bu program haftasıyla kesişiyor mu? */
@@ -108,8 +136,8 @@ export function splitSuggestion(questionCount: number, testCount = 0): string | 
     const per = Math.ceil(questionCount / days);
     return `${days} güne bölününce günde yaklaşık ${per} soru`;
   }
-  if (testCount > PROGRAM_DAY_COUNT) {
-    return `${testCount} test 7 güne eşit yayılır`;
+  if (testCount > PROGRAM_DAY_COUNT_LONG) {
+    return `${testCount} test günlere eşit yayılır`;
   }
   return null;
 }

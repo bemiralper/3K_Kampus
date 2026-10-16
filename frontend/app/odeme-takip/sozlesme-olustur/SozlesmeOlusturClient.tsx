@@ -1145,6 +1145,7 @@ export default function SozlesmeOlusturClient() {
   // Edit Mode: Mevcut sözleşme verilerini yükle
   // ═════════════════════════════════════════
   const [editLoaded, setEditLoaded] = useState(false);
+  const [editOdenenToplam, setEditOdenenToplam] = useState(0);
   useEffect(() => {
     if (!isEditMode || editLoaded) return;
     const loadEditData = async () => {
@@ -1176,6 +1177,12 @@ export default function SozlesmeOlusturClient() {
         setNotlarJson(parseNotlarJson(sz.notlar_json, sz.notlar));
         if (sz.odeme_yontemi_id) setSelectedOdemeYontemiId(sz.odeme_yontemi_id);
         if (sz.veli_id) setSelectedVeliId(sz.veli_id);
+
+        const odenenToplam = (sz.taksitler || []).reduce(
+          (sum: number, t: { odenen_tutar?: number }) => sum + (Number(t.odenen_tutar) || 0),
+          0,
+        );
+        setEditOdenenToplam(odenenToplam);
 
         if (sz.taksitler?.length) {
           const loadedRows: ManuelTaksitRow[] = sz.taksitler.map(
@@ -1782,9 +1789,9 @@ export default function SozlesmeOlusturClient() {
       taksit_sayisi: odemeTuru === "pesin" ? 1 : taksitSayisi,
       ilk_odeme_tarihi: ilkOdemeTarihi,
       taksit_periyodu: taksitPeriyodu,
-      taksit_yontemi: isTaksitMode ? (isEqualPlan ? "esit" : "manuel") : undefined,
+      taksit_yontemi: isTaksitMode ? ((isEditMode || !isEqualPlan) ? "manuel" : "esit") : undefined,
       pesinat: pesinatVal > 0 ? pesinatVal : undefined,
-      manuel_taksitler: isTaksitMode && !isEqualPlan
+      manuel_taksitler: isTaksitMode && (isEditMode || !isEqualPlan)
         ? cekSenetRowsForSubmit.map((r) => ({
             tutar: parseFloat(r.tutar),
             vade_tarihi: r.vade_tarihi,
@@ -2317,6 +2324,13 @@ export default function SozlesmeOlusturClient() {
           {odemeTuruTaksitPlaniMi(odemeTuru) && toplamlar.net > 0 && (
             <div style={cardStyle}>
               <h3 style={cardTitleStyle}>{odemeTuru === "cek_senet" ? "📄 Çek / Senet Planı" : "📅 Taksit Planı Oluşturucu"}</h3>
+              {isEditMode && editOdenenToplam > 0 && (
+                <div style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "#fffbeb", border: "1px solid #fde68a", fontSize: 13, color: "#78350f", lineHeight: 1.6 }}>
+                  Bu sözleşmede {formatCurrency(editOdenenToplam)} tahsilat var. Taksit tutarını ödenenin altına indirirseniz
+                  fark sonraki taksitlere yazılır. Örnek: 25.000 ₺ tahsil edilip taksit 15.000 ₺ yapılırsa 15.000 ₺ bu taksitte kalır,
+                  10.000 ₺ bir sonraki taksitten düşülür. Alınan para silinmez.
+                </div>
+              )}
 
               {/* Finans Özeti Kartları */}
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 20 }}>

@@ -61,6 +61,11 @@ class Command(BaseCommand):
         processor = ReminderProcessor()
         stats = processor.process_pending()
 
+        from apps.gorev.application.personal_reminder import send_due_personal_reminders
+        personal = send_due_personal_reminders(now)
+        if personal:
+            self.stdout.write(f'Görev kişisel hatırlatma: {personal}')
+
         self.stdout.write(
             self.style.SUCCESS(
                 f"✅ İşlem tamamlandı — "

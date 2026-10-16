@@ -8,6 +8,8 @@ from django.db.models import Q
 from django.utils import timezone
 from collections import defaultdict
 
+from apps.gorev.application.files import sync_gorev_dosyalari
+from apps.gorev.application.html_content import prepare_aciklama
 from apps.gorev.domain.models import Gorev, GorevAtama, GorevTipi
 from apps.gorev.domain.enums import GorevDurum, HedefTipi
 from apps.gorev.application.bridge import GorevCalendarBridge
@@ -17,6 +19,16 @@ from apps.roller.models import Role, UserRole
 from apps.personel.domain.models import Personel, PersonelGorevlendirme
 
 logger = logging.getLogger('gorev.service')
+
+
+def _aware_datetime(value):
+    if value in (None, ''):
+        return None
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace('Z', '+00:00'))
+    if timezone.is_naive(value):
+        return timezone.make_aware(value, timezone.get_current_timezone())
+    return value
 
 
 class GorevTipiService:
@@ -165,7 +177,7 @@ class GorevService:
             donem_id=data.get('donem_id'),
             gorev_tipi_id=gorev_tipi_id,
             baslik=data['baslik'],
-            aciklama=data.get('aciklama', ''),
+            aciklama=prepare_aciklama(data.get('aciklama', '')),
             oncelik=data.get('oncelik', 'NORMAL'),
             son_tarih=data['son_tarih'],
             tahmini_sure_dk=data.get('tahmini_sure_dk', 30),
@@ -183,6 +195,8 @@ class GorevService:
 
         for uid in user_ids:
             GorevAtama.objects.create(gorev=gorev, atanan_user_id=uid)
+
+        sync_gorev_dosyalari(gorev, olusturan_id, data.get('dosya_ids'))
 
         try:
             from apps.takvim.application.service import EventTypeService
@@ -269,7 +283,7 @@ class GorevService:
                 durum__in=[GorevDurum.BEKLIYOR, GorevDurum.BASLADI, GorevDurum.DEVAM_EDIYOR],
             )
 
-        return qs.order_by('gorev__son_tarih')
+        return qs.order_by('-gorev__created_at', '-created_at')
 
     def get_gorev(self, kurum_id: int, gorev_id) -> Optional[Gorev]:
         try:
@@ -284,9 +298,12 @@ class GorevService:
         for field in ('baslik', 'aciklama', 'oncelik', 'son_tarih', 'tahmini_sure_dk',
                       'tum_gun', 'aksiyon_url', 'gorev_tipi_id', 'ekran_mesaji'):
             if field in data:
-                setattr(gorev, field, data[field])
+                value = prepare_aciklama(data[field]) if field == 'aciklama' else data[field]
+                setattr(gorev, field, value)
         gorev.updated_by = user_id
         gorev.save()
+        if 'aciklama' in data or 'dosya_ids' in data:
+            sync_gorev_dosyalari(gorev, user_id, data.get('dosya_ids'))
         if 'son_tarih' in data:
             GorevAtama.objects.filter(gorev=gorev).update(
                 gecikme_bildirildi_at=None,
@@ -303,10 +320,21 @@ class GorevService:
         gorev.updated_by = user_id
         gorev.save()
 
+    def delete_gorevler(self, kurum_id: int, ids, user_id: int) -> int:
+        deleted = 0
+        for pk in ids:
+            gorev = self.get_gorev(kurum_id, pk)
+            if not gorev:
+                continue
+            self.delete_gorev(gorev, user_id)
+            deleted += 1
+        return deleted
+
     @transaction.atomic
     def update_atama(self, atama: GorevAtama, data: dict, user_id: int) -> GorevAtama:
         now = timezone.now()
         prev_durum = atama.durum
+        prev_notlar = atama.notlar or ''
 
         if not atama.ilk_acilma_at:
             atama.ilk_acilma_at = now
@@ -329,13 +357,30 @@ class GorevService:
                 atama.durum = GorevDurum.TAMAMLANDI
                 atama.tamamlanma_at = now
 
+        if 'kisisel_hatirlatma_at' in data:
+            if user_id != atama.atanan_user_id:
+                raise ValueError('Hatırlatmayı yalnız size atanan görevde ayarlayabilirsiniz.')
+            when = _aware_datetime(data.get('kisisel_hatirlatma_at'))
+            if when is None:
+                atama.kisisel_hatirlatma_at = None
+                atama.kisisel_hatirlatma_gonderildi_at = None
+            else:
+                if when <= now:
+                    raise ValueError('Hatırlatma zamanı ileri bir tarih ve saat olmalı.')
+                if atama.kisisel_hatirlatma_at != when:
+                    atama.kisisel_hatirlatma_gonderildi_at = None
+                atama.kisisel_hatirlatma_at = when
+
         atama.save()
         self.bridge.sync_atama(atama, user_id)
 
-        if prev_durum not in (GorevDurum.TAMAMLANDI, GorevDurum.TAMAMLANMADI) and atama.durum in (
+        closed = prev_durum not in (GorevDurum.TAMAMLANDI, GorevDurum.TAMAMLANMADI) and atama.durum in (
             GorevDurum.TAMAMLANDI, GorevDurum.TAMAMLANMADI,
-        ):
+        )
+        if closed:
             self.notifier.notify_admins_atama_completed(atama.gorev, atama, user_id)
+        elif 'notlar' in data and (atama.notlar or '') != prev_notlar and (atama.notlar or '').strip():
+            self.notifier.notify_sender_feedback(atama.gorev, atama, user_id)
 
         return atama
 

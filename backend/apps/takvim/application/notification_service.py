@@ -193,6 +193,8 @@ class NotificationDispatcher:
             ikon = event.event_type.ikon if event.event_type_id else '🔔'
             renk = event.etkinlik_renk
 
+            from apps.takvim.application.notification_sube import sube_fields
+
             self.app_repo.create({
                 'kurum_id': event.kurum_id,
                 'user_id': user_id,
@@ -204,6 +206,7 @@ class NotificationDispatcher:
                 'url': f'/admin/takvim/genel?event={event.id}',
                 'event': event,
                 'reminder': reminder,
+                **sube_fields(getattr(event, 'sube_id', None)),
             })
             return True
         except Exception as e:
@@ -451,11 +454,14 @@ class AppNotificationService:
         self.repo = AppNotificationRepository()
 
     def get_notifications(self, user_id: int, kurum_id: int,
-                          unread_only: bool = False, limit: int = 50) -> list:
-        return list(self.repo.get_by_user(user_id, kurum_id, unread_only, limit))
+                          unread_only: bool = False, limit: int = 50,
+                          kaynak: str = 'diger') -> list:
+        return list(self.repo.get_by_user(
+            user_id, kurum_id, unread_only, limit, kaynak=kaynak,
+        ))
 
-    def get_unread_count(self, user_id: int, kurum_id: int) -> int:
-        return self.repo.get_unread_count(user_id, kurum_id)
+    def get_unread_count(self, user_id: int, kurum_id: int, kaynak: str = 'diger') -> int:
+        return self.repo.get_unread_count(user_id, kurum_id, kaynak=kaynak)
 
     def mark_as_read(self, notification_id):
         self.repo.mark_as_read(notification_id)
@@ -465,8 +471,10 @@ class AppNotificationService:
 
     def get_summary(self, user_id: int, kurum_id: int) -> dict:
         """Bildirim özeti — header badge için (yalnızca okunmamışlar)"""
-        count = self.repo.get_unread_count(user_id, kurum_id)
-        recent = list(self.repo.get_by_user(user_id, kurum_id, unread_only=True, limit=10))
+        count = self.repo.get_unread_count(user_id, kurum_id, kaynak='diger')
+        recent = list(self.repo.get_by_user(
+            user_id, kurum_id, unread_only=True, limit=10, kaynak='diger',
+        ))
         return {
             'unread_count': count,
             'recent': recent,

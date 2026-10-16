@@ -281,6 +281,7 @@ class WhatsAppCloudClient(BaseChannelClient):
         template_name: str,
         language_code: str = 'tr',
         components: list | None = None,
+        context_message_id: str | None = None,
     ) -> dict[str, Any]:
         to = to_e164.lstrip('+')
         template_payload: dict[str, Any] = {
@@ -297,7 +298,9 @@ class WhatsAppCloudClient(BaseChannelClient):
             'type': 'template',
             'template': template_payload,
         }
-        return self._post_message(kurum_id, payload)
+        return self._post_message(
+            kurum_id, self._apply_context(payload, context_message_id),
+        )
 
     def send_image(
         self,

@@ -80,6 +80,8 @@ def serialize_atama(a: GorevAtama, include_gorev=False, atanan_ad=None):
         'gorusuldu': a.gorusuldu,
         'gecikme_gun': a.gecikme_gun,
         'gecikti_mi': a.gecikti_mi,
+        'kisisel_hatirlatma_at': a.kisisel_hatirlatma_at.isoformat() if a.kisisel_hatirlatma_at else None,
+        'kisisel_hatirlatma_gonderildi': bool(a.kisisel_hatirlatma_gonderildi_at),
         'created_at': a.created_at.isoformat() if a.created_at else None,
     }
     if atanan_ad:

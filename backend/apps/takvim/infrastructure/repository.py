@@ -338,8 +338,21 @@ class ReminderSettingRepository:
         setting.delete()
 
 
+def _gorev_notification_q() -> Q:
+    return Q(url__contains='/gorevler')
+
+
 class AppNotificationRepository:
     """Uygulama içi bildirim veri erişim katmanı"""
+
+    @staticmethod
+    def _apply_kaynak(qs: QuerySet, kaynak: str) -> QuerySet:
+        gorev_q = _gorev_notification_q()
+        if kaynak == 'gorev':
+            return qs.filter(gorev_q)
+        if kaynak == 'hepsi':
+            return qs
+        return qs.exclude(gorev_q)
 
     @staticmethod
     def get_screen_messages(user_id: int, kurum_id: int, limit: int = 10) -> QuerySet:
@@ -348,7 +361,7 @@ class AppNotificationRepository:
             kurum_id=kurum_id,
             ekran_mesaji=True,
             ekran_gosterildi=False,
-        ).order_by('-created_at')[:limit]
+        ).select_related('event').order_by('-created_at')[:limit]
 
     @staticmethod
     def mark_ekran_gosterildi(notification_id):
@@ -357,20 +370,34 @@ class AppNotificationRepository:
         ).update(ekran_gosterildi=True)
 
     @staticmethod
+    def mark_ekran_gosterildi_many(user_id: int, kurum_id: int, ids=None) -> int:
+        qs = AppNotification.objects.filter(
+            user_id=user_id,
+            kurum_id=kurum_id,
+            ekran_mesaji=True,
+            ekran_gosterildi=False,
+        )
+        if ids:
+            qs = qs.filter(id__in=list(ids))
+        return qs.update(ekran_gosterildi=True)
+
+    @staticmethod
     def get_by_user(user_id: int, kurum_id: int, unread_only: bool = False,
-                    limit: int = 50) -> QuerySet:
+                    limit: int = 50, kaynak: str = 'diger') -> QuerySet:
         qs = AppNotification.objects.filter(
             user_id=user_id, kurum_id=kurum_id,
         ).select_related('event')
+        qs = AppNotificationRepository._apply_kaynak(qs, kaynak)
         if unread_only:
             qs = qs.filter(is_read=False)
         return qs[:limit]
 
     @staticmethod
-    def get_unread_count(user_id: int, kurum_id: int) -> int:
-        return AppNotification.objects.filter(
+    def get_unread_count(user_id: int, kurum_id: int, kaynak: str = 'diger') -> int:
+        qs = AppNotification.objects.filter(
             user_id=user_id, kurum_id=kurum_id, is_read=False,
-        ).count()
+        )
+        return AppNotificationRepository._apply_kaynak(qs, kaynak).count()
 
     @staticmethod
     def get_by_id(notification_id) -> Optional[AppNotification]:
@@ -407,9 +434,12 @@ class AppNotificationRepository:
 
     @staticmethod
     def mark_all_as_read(user_id: int, kurum_id: int):
-        AppNotification.objects.filter(
+        qs = AppNotification.objects.filter(
             user_id=user_id, kurum_id=kurum_id, is_read=False,
-        ).update(is_read=True, read_at=timezone.now())
+        )
+        AppNotificationRepository._apply_kaynak(qs, 'diger').update(
+            is_read=True, read_at=timezone.now(),
+        )
 
     @staticmethod
     def delete_old(days: int = 90):

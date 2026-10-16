@@ -93,7 +93,8 @@ class PaidPlanPreserveTests(TestCase):
         updated.refresh_from_db()
         self.assertEqual(updated.taksit_sayisi, 3)
 
-    def test_odenmis_tutar_degistirilemez(self):
+    def test_odenmis_tutar_sonraki_taksite_taser(self):
+        """15.000 ödenmiş taksit 10.000 olunca 5.000 sonraki taksite yazılır."""
         updated, err = self.service.update(self.sozlesme.id, {
             'taksit_yontemi': 'manuel',
             'taksit_sayisi': 2,
@@ -102,10 +103,62 @@ class PaidPlanPreserveTests(TestCase):
                 {'tutar': 80000, 'vade_tarihi': '2026-11-15'},
             ],
         })
+        self.assertIsNone(err)
+        self.assertIsNotNone(updated)
+        rows = list(Taksit.objects.filter(sozlesme=self.sozlesme).order_by('taksit_no'))
+        self.assertEqual(rows[0].id, self.paid.id)
+        self.assertEqual(
+            [(t.taksit_no, t.tutar, t.odenen_tutar, t.durum) for t in rows],
+            [
+                (1, 10000, 10000, TaksitDurum.ODENDI),
+                (2, 80000, 5000, TaksitDurum.KISMI_ODENDI),
+            ],
+        )
+        tahsilat = Tahsilat.objects.get(sozlesme=self.sozlesme)
+        self.assertEqual(tahsilat.tutar, 15000)
+        self.assertEqual(tahsilat.durum, TahsilatDurum.AKTIF)
+
+    def test_fazla_odeme_bir_sonraki_taksitten_duser(self):
+        """25.000 tahsil, taksit 15.000 olunca 10.000 sonraki taksite geçer."""
+        self.paid.tutar = 25000
+        self.paid.odenen_tutar = 25000
+        self.paid.kalan_tutar = 0
+        self.paid.save(update_fields=['tutar', 'odenen_tutar', 'kalan_tutar'])
+        Tahsilat.objects.filter(sozlesme=self.sozlesme).update(tutar=25000)
+        self.sozlesme.net_tutar = 40000
+        self.sozlesme.save(update_fields=['net_tutar'])
+
+        updated, err = self.service.update(self.sozlesme.id, {
+            'taksit_yontemi': 'manuel',
+            'taksit_sayisi': 2,
+            'manuel_taksitler': [
+                {'tutar': 15000, 'vade_tarihi': '2026-10-01'},
+                {'tutar': 25000, 'vade_tarihi': '2026-11-15'},
+            ],
+        })
+        self.assertIsNone(err, err)
+        rows = list(Taksit.objects.filter(sozlesme=self.sozlesme).order_by('taksit_no'))
+        self.assertEqual(
+            [(t.tutar, t.odenen_tutar, t.kalan_tutar, t.durum) for t in rows],
+            [
+                (15000, 15000, 0, TaksitDurum.ODENDI),
+                (25000, 10000, 15000, TaksitDurum.KISMI_ODENDI),
+            ],
+        )
+
+    def test_tahsilat_plandan_buyukse_reddedilir(self):
+        self.sozlesme.net_tutar = 10000
+        self.sozlesme.save(update_fields=['net_tutar'])
+        updated, err = self.service.update(self.sozlesme.id, {
+            'taksit_yontemi': 'manuel',
+            'taksit_sayisi': 1,
+            'manuel_taksitler': [
+                {'tutar': 10000, 'vade_tarihi': '2026-10-01'},
+            ],
+        })
         self.assertIsNone(updated)
-        self.assertIn('15000', err['error'])
+        self.assertIn('sığmıyor', err['error'])
         self.assertTrue(Taksit.objects.filter(id=self.paid.id, tutar=15000).exists())
-        self.assertEqual(Taksit.objects.filter(sozlesme=self.sozlesme).count(), 2)
 
     def test_odeme_plani_kalan_satirlari_yazar(self):
         taksitler, err = TaksitService().smart_recreate(

@@ -43,6 +43,16 @@ class SyncProgramDateRangeTest(TestCase):
         self.assertEqual(self.program.week_end, self.week_end)
         self.assertEqual(self.program.days.count(), 7)
 
+    def test_eight_day_range_keeps_control_and_adds_the_front_day(self):
+        new_start = date(2026, 3, 1)
+        result = sync_program_date_range(self.program, new_start, self.week_end)
+        self.program.refresh_from_db()
+        days = list(self.program.days.order_by('day_date').values_list('day_date', flat=True))
+        self.assertEqual(days[0], new_start)
+        self.assertEqual(days[-1], self.week_end)
+        self.assertEqual(len(days), 8)
+        self.assertEqual(result['day_count'], 8)
+
     def test_shift_keeps_seven_days(self):
         new_start = date(2026, 3, 9)
         new_end = date(2026, 3, 15)

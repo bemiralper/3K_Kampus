@@ -109,15 +109,10 @@ def taksit_plani_olustur(request, sozlesme_id):
 
     # Sözleşmeyi de güncelle
     update_fields = {}
-    if yontem == 'kalani_bol' and isinstance(result, list):
+    if isinstance(result, list):
         update_fields['taksit_sayisi'] = len(result)
     elif yontem != 'manuel':
         update_fields['taksit_sayisi'] = taksit_sayisi
-    else:
-        update_fields['taksit_sayisi'] = len(manuel_taksitler) + len(
-            [t for t in (result if isinstance(result, list) else [])
-             if hasattr(t, 'durum') and t.durum == 'odendi']
-        )
     if ilk_odeme_tarihi:
         update_fields['ilk_odeme_tarihi'] = ilk_odeme_tarihi
     if periyot:

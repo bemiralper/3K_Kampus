@@ -209,8 +209,14 @@ def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
     if not user_ids:
         return 0
 
+    from apps.takvim.application.notification_sube import (
+        conversation_sube_id,
+        sube_fields,
+    )
+
     name = resolve_conversation_display_name(conversation, allow_live_lookup=True)
     body = (preview or conversation.last_message_preview or 'Yeni mesaj')[:200]
+    branch = sube_fields(conversation_sube_id(conversation))
     repo = AppNotificationRepository()
     created = 0
 
@@ -242,6 +248,7 @@ def notify_inbound_whatsapp(conversation, *, preview: str = '') -> int:
                 'renk': '#25D366',
                 'url': url,
                 'ekran_mesaji': False,
+                **branch,
             })
             created += 1
         except Exception:
@@ -291,7 +298,13 @@ def notify_sla_breach(conversation, *, sla_minutes: int) -> int:
     if not user_ids:
         return 0
 
+    from apps.takvim.application.notification_sube import (
+        conversation_sube_id,
+        sube_fields,
+    )
+
     name = resolve_conversation_display_name(conversation, allow_live_lookup=True)
+    branch = sube_fields(conversation_sube_id(conversation))
     repo = AppNotificationRepository()
     users_by_id = _load_users(user_ids)
     created = 0
@@ -317,6 +330,7 @@ def notify_sla_breach(conversation, *, sla_minutes: int) -> int:
                 'renk': '#dc2626',
                 'url': url,
                 'ekran_mesaji': True,
+                **branch,
             })
             created += 1
         except Exception:

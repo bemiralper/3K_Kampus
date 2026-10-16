@@ -10,7 +10,9 @@ import {
   type GorevAtama,
   type GorevDurum,
 } from '@/lib/gorev-api';
+import GorevAciklamaView from '@/components/gorev/GorevAciklamaView';
 import { getGorevActions, type GorevActionId } from '@/lib/gorev-actions';
+import GorevSelfReminder from '@/components/gorev/GorevSelfReminder';
 
 type Props = {
   atama: GorevAtama;
@@ -55,7 +57,7 @@ export default function GorevDetailDrawer({ atama, onClose, onUpdated }: Props) 
         </div>
 
         <h3>{g.baslik}</h3>
-        {g.aciklama && <p className="gorev-drawer-desc">{g.aciklama}</p>}
+        <GorevAciklamaView value={g.aciklama} />
 
         <p className="gorev-drawer-meta">
           Son tarih: {formatGorevTarih(g.son_tarih, g.tum_gun)}
@@ -64,6 +66,8 @@ export default function GorevDetailDrawer({ atama, onClose, onUpdated }: Props) 
         </p>
 
         {atama.gecikti_mi && <p className="gorev-drawer-late">Gecikmiş görev</p>}
+
+        <GorevSelfReminder atama={atama} />
 
         {!isDone && (
           <textarea

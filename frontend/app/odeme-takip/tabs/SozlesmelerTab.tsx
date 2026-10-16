@@ -1600,7 +1600,7 @@ function OdemePlaniSubTab({
   const toplamOdenmis = odenmisTaksitler.reduce((sum, t) => sum + t.odenen_tutar, 0);
   const pesinatTutar = parseFloat(pesinat) || 0;
   const kalanTutar = s.net_tutar - (isAktif ? toplamOdenmis : pesinatTutar);
-  const hedefTutar = isAktif && odenmisTaksitler.length > 0 ? kalanTutar : s.net_tutar;
+  const hedefTutar = s.net_tutar;
   const korunanOdeme = isAktif && odenmisTaksitler.length > 0;
   const taksitSayisiInt = parseInt(taksitSayisi, 10) || 1;
   const effectivePesinat = korunanOdeme ? 0 : pesinatTutar;
@@ -1681,9 +1681,7 @@ function OdemePlaniSubTab({
     }
 
     let yontem: string;
-    if (korunanOdeme) {
-      yontem = "kalani_bol";
-    } else if (isEqualPlan) {
+    if (isEqualPlan) {
       yontem = "esit";
     } else {
       yontem = "manuel";
@@ -1807,7 +1805,18 @@ function OdemePlaniSubTab({
             <button
               className={`btn-modern ${showCreator ? "" : "btn-primary"}`}
               style={showCreator ? { background: "#dc2626", color: "#fff" } : {}}
-              onClick={() => setShowCreator(!showCreator)}
+              onClick={() => {
+                if (!showCreator && taksitler.length > 0) {
+                  setManuelRows(taksitler.map((t) => ({
+                    tutar: String(t.tutar),
+                    vade_tarihi: (t.vade_tarihi || "").slice(0, 10),
+                    ...(t.odeme_yontemi_id ? { odeme_yontemi_id: t.odeme_yontemi_id } : {}),
+                  })));
+                  setTaksitSayisi(String(taksitler.length));
+                  setTaksitPlanDirty(korunanOdeme);
+                }
+                setShowCreator(!showCreator);
+              }}
             >
               {showCreator ? "✕ Kapat" : "🔧 Taksit Planı Oluştur"}
             </button>
@@ -1830,17 +1839,19 @@ function OdemePlaniSubTab({
           {korunanOdeme && (
             <div className="odeme-warning" style={{ marginBottom: 16, padding: 12, borderRadius: 8, background: "#fffbeb", border: "1px solid #fde68a" }}>
               <div className="odeme-warning-title" style={{ fontWeight: 700, color: "#92400e" }}>
-                🔒 {odenmisTaksitler.length} taksit ödenmiş ({formatCurrency(toplamOdenmis)}) — korunacak
+                {odenmisTaksitler.length} taksitte {formatCurrency(toplamOdenmis)} tahsilat var
               </div>
               <div className="odeme-warning-text" style={{ fontSize: 13, color: "#78350f", marginTop: 4 }}>
-                Ödenmiş taksit yerinde kalır. Aşağıdaki satırlar yalnızca kalan {formatCurrency(kalanTutar)} içindir; tutar ve vadeyi değiştirebilirsiniz.
+                Alınan para silinmez. Taksit tutarını ödenenin altına indirirseniz fark sonraki taksitlere yazılır.
+                Örnek: 25.000 ₺ tahsil edilip taksit 15.000 ₺ yapılırsa 15.000 ₺ bu taksitte kalır, 10.000 ₺ sonraki taksitten düşülür.
+                Kalan borç: {formatCurrency(kalanTutar)}.
               </div>
             </div>
           )}
 
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, marginBottom: 16 }}>
             {[
-              { label: korunanOdeme ? "Kalan Tutar" : "Net Sözleşme", value: formatCurrency(hedefTutar), color: "var(--primary)" },
+              { label: "Net Sözleşme", value: formatCurrency(hedefTutar), color: "var(--primary)" },
               { label: "Peşinat", value: !korunanOdeme && pesinatTutar > 0 ? formatCurrency(pesinatTutar) : "-", color: "#059669" },
               { label: "Taksitlenecek", value: formatCurrency(Math.max(0, hedefTutar - effectivePesinat)), color: "#d97706" },
             ].map((c, i) => (

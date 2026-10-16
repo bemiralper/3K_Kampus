@@ -2,13 +2,15 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import StudyProgramEditor from '@/components/coaching/study-program/StudyProgramEditor';
+import ProgramLengthSwitch from '@/components/coaching/study-program/ProgramLengthSwitch';
 import {
   datesFromHomework,
   inclusiveDayCount,
-  isSevenDayRange,
+  isAllowedProgramRange,
+  PROGRAM_DAY_COUNT,
   rangeFromEnd,
   rangeFromStart,
-  studyRangeEnd,
+  type ProgramLength,
 } from '@/components/coaching/study-program/programDateUtils';
 import { stripCompletionTitleSuffix } from '@/components/odev/odevCompletionHelpers';
 import {
@@ -72,6 +74,11 @@ export default function ProgramTab({
   const [error, setError] = useState<string | null>(null);
   const [weekStart, setWeekStart] = useState(initialWeekStart || '');
   const [weekEnd, setWeekEnd] = useState(initialWeekEnd || '');
+  const [weekLength, setWeekLength] = useState<ProgramLength>(
+    initialWeekStart && initialWeekEnd && inclusiveDayCount(initialWeekStart, initialWeekEnd) === 8
+      ? 8
+      : PROGRAM_DAY_COUNT,
+  );
   const [sourceHomeworkId, setSourceHomeworkId] = useState<number | null>(
     initialHomeworkId ?? null
   );
@@ -127,8 +134,23 @@ export default function ProgramTab({
     void loadPrograms();
   };
 
+  const applyLength = (length: ProgramLength) => {
+    setWeekLength(length);
+    if (weekEnd) {
+      const next = rangeFromEnd(weekEnd, length);
+      setWeekStart(next.start);
+      setWeekEnd(next.end);
+      return;
+    }
+    if (weekStart) {
+      const next = rangeFromStart(weekStart, length);
+      setWeekStart(next.start);
+      setWeekEnd(next.end);
+    }
+  };
+
   const applyHomework = (hw: HomeworkPoolItem) => {
-    const { start, end } = datesFromHomework(hw);
+    const { start, end } = datesFromHomework(hw, weekLength);
     if (start) setWeekStart(start);
     if (end) setWeekEnd(end);
     setSourceHomeworkId(hw.id);
@@ -174,9 +196,8 @@ export default function ProgramTab({
     [programs]
   );
 
-  const canCreate = Boolean(weekStart && weekEnd && isSevenDayRange(weekStart, weekEnd) && !saving);
-  const studyDays =
-    weekStart && weekEnd ? Math.max(0, inclusiveDayCount(weekStart, studyRangeEnd(weekEnd))) : 0;
+  const canCreate = Boolean(weekStart && weekEnd && isAllowedProgramRange(weekStart, weekEnd) && !saving);
+  const spanDays = weekStart && weekEnd ? inclusiveDayCount(weekStart, weekEnd) : 0;
 
   if (editingId) {
     return (
@@ -202,6 +223,12 @@ export default function ProgramTab({
             <h2>Tarih seç, programı aç</h2>
           </div>
 
+          <ProgramLengthSwitch
+            className="s360p-length"
+            value={weekLength}
+            onChange={applyLength}
+          />
+
           <div className="s360p-dates">
             <label>
               İlk gün
@@ -209,7 +236,7 @@ export default function ProgramTab({
                 type="date"
                 value={weekStart}
                 onChange={(e) => {
-                  const next = rangeFromStart(e.target.value);
+                  const next = rangeFromStart(e.target.value, weekLength);
                   setWeekStart(next.start);
                   setWeekEnd(next.end);
                   setSourceHomeworkId(null);
@@ -223,7 +250,7 @@ export default function ProgramTab({
                 value={weekEnd}
                 min={weekStart || undefined}
                 onChange={(e) => {
-                  const next = rangeFromEnd(e.target.value);
+                  const next = rangeFromEnd(e.target.value, weekLength);
                   setWeekStart(next.start);
                   setWeekEnd(next.end);
                   setSourceHomeworkId(null);
@@ -235,7 +262,7 @@ export default function ProgramTab({
           {weekStart && weekEnd && (
             <p className="s360p-span">
               {weekdayLabel(weekStart)} {fmtRange(weekStart, weekEnd)}
-              {studyDays > 0 ? ` · ${studyDays} gün` : ''}
+              {spanDays > 0 ? ` · ${spanDays} gün, son gün kontrol` : ''}
             </p>
           )}
 
@@ -259,7 +286,7 @@ export default function ProgramTab({
               <ul className="s360p-hw-list">
                 {homework.map((hw) => {
                   const selected = sourceHomeworkId === hw.id;
-                  const { start, end } = datesFromHomework(hw);
+                  const { start, end } = datesFromHomework(hw, weekLength);
                   return (
                     <li key={hw.id}>
                       <button

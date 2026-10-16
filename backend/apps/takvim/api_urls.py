@@ -33,6 +33,11 @@ urlpatterns = [
     path('bildirimler/', views_notification.api_notification_list, name='notification_list'),
     path('bildirimler/ozet/', views_notification.api_notification_summary, name='notification_summary'),
     path('bildirimler/ekran/', views_notification.api_notification_screen, name='notification_screen'),
+    path(
+        'bildirimler/ekran/tumunu-kapat/',
+        views_notification.api_notification_dismiss_screen_all,
+        name='notification_dismiss_screen_all',
+    ),
     path('bildirimler/<uuid:pk>/ekran-gosterildi/', views_notification.api_notification_mark_screen_shown, name='notification_mark_screen_shown'),
     path('bildirimler/<uuid:pk>/oku/', views_notification.api_notification_mark_read, name='notification_mark_read'),
     path('bildirimler/hepsini-oku/', views_notification.api_notification_mark_all_read, name='notification_mark_all_read'),

@@ -1,13 +1,15 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   fetchGorevTipleri, seedGorevTipleri, createGorev, fetchGorevDetail, updateGorev,
-  ONCELIK_LABELS, HEDEF_LABELS,
+  ONCELIK_LABELS, HEDEF_LABELS, isBilgilendirme,
   type GorevTipi, type GorevOncelik, type HedefTipi,
 } from '@/lib/gorev-api';
 import PersonelUserPicker, { type SelectedPersonel } from '@/components/gorev/PersonelUserPicker';
+import GorevRichTextEditor, { type GorevEditorHandle } from '@/components/gorev/editor/GorevRichTextEditor';
+import '@/components/gorev/editor/gorev-editor.css';
 
 const ROLLER = [
   { code: 'koc', label: 'Koçlar' },
@@ -48,6 +50,8 @@ export default function GorevFormClient({ gorevId }: Props) {
   const [hedefRol, setHedefRol] = useState('koc');
   const [selectedPersonel, setSelectedPersonel] = useState<SelectedPersonel[]>([]);
   const [ekranMesaji, setEkranMesaji] = useState(false);
+  const [editorReady, setEditorReady] = useState(false);
+  const editorRef = useRef<GorevEditorHandle>(null);
 
   const loadTipler = useCallback(async () => {
     let res = await fetchGorevTipleri();
@@ -102,6 +106,21 @@ export default function GorevFormClient({ gorevId }: Props) {
     });
   }, [gorevId]);
 
+  const bilgiTip = tipler.find(t => t.kod === 'BILGILENDIRME');
+  const gorevTipler = tipler.filter(t => t.kod !== 'BILGILENDIRME');
+  const seciliTip = tipler.find(t => t.id === gorevTipiId);
+  const bilgi = isBilgilendirme(seciliTip);
+
+  const chooseKind = (kind: 'gorev' | 'bilgi') => {
+    if (kind === 'bilgi') {
+      if (bilgiTip) setGorevTipiId(bilgiTip.id);
+      return;
+    }
+    if (!bilgi) return;
+    const yapilacak = gorevTipler.find(t => t.kod === 'YAPILACAK') || gorevTipler[0];
+    if (yapilacak) setGorevTipiId(yapilacak.id);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!baslik || !sonTarih) {
@@ -120,7 +139,8 @@ export default function GorevFormClient({ gorevId }: Props) {
 
     const data: Record<string, unknown> = {
       baslik,
-      aciklama,
+      aciklama: editorRef.current?.getHtml() ?? aciklama,
+      dosya_ids: editorRef.current?.getUploadedIds() ?? [],
       gorev_tipi_id: gorevTipiId,
       oncelik,
       son_tarih: due.toISOString(),
@@ -158,29 +178,57 @@ export default function GorevFormClient({ gorevId }: Props) {
   }
 
   return (
-    <form className="gorev-form" onSubmit={handleSubmit}>
-      <h2>{isEdit ? 'Görevi Düzenle' : 'Yeni Görev Oluştur'}</h2>
+    <form className="gorev-form gorev-form--rich" onSubmit={handleSubmit}>
+      <h2>{isEdit ? (bilgi ? 'Bilgilendirmeyi Düzenle' : 'Görevi Düzenle') : 'Yeni gönderi'}</h2>
       {error && <p className="gorev-form-error">{error}</p>}
+
+      <div className="gorev-kind-switch" role="radiogroup" aria-label="Gönderi türü">
+        <button
+          type="button"
+          role="radio"
+          aria-checked={!bilgi}
+          className={`gorev-kind-option${!bilgi ? ' is-on' : ''}`}
+          onClick={() => chooseKind('gorev')}
+        >
+          <strong>Görev</strong>
+          <small>Atanan kişi, görev tipine göre durumu işaretler.</small>
+        </button>
+        <button
+          type="button"
+          role="radio"
+          aria-checked={bilgi}
+          className={`gorev-kind-option${bilgi ? ' is-on' : ''}`}
+          onClick={() => chooseKind('bilgi')}
+          disabled={!bilgiTip}
+        >
+          <strong>Bilgilendirme</strong>
+          <small>Sadece duyuru. Açan kişi görüldü sayılır, tamamlanması istenmez.</small>
+        </button>
+      </div>
 
       <label className="gorev-field">
         <span>Başlık *</span>
         <input value={baslik} onChange={e => setBaslik(e.target.value)} required />
       </label>
 
-      <label className="gorev-field">
+      <div className="gorev-field">
         <span>Açıklama</span>
-        <textarea value={aciklama} onChange={e => setAciklama(e.target.value)} rows={3} />
-      </label>
+        <GorevRichTextEditor ref={editorRef} value={aciklama} onReady={() => setEditorReady(true)} />
+      </div>
 
       <div className="gorev-form-row">
-        <label className="gorev-field">
-          <span>Görev Tipi</span>
-          <select value={gorevTipiId} onChange={e => setGorevTipiId(e.target.value)}>
-            {tipler.map(t => (
-              <option key={t.id} value={t.id}>{t.ikon} {t.ad}</option>
-            ))}
-          </select>
-        </label>
+        {bilgi ? (
+          <p className="gorev-field gorev-form-hint">Tür: Bilgilendirme. Kişiler bunu görev olarak tamamlamaz.</p>
+        ) : (
+          <label className="gorev-field">
+            <span>Görev tipi</span>
+            <select value={gorevTipiId} onChange={e => setGorevTipiId(e.target.value)}>
+              {gorevTipler.map(t => (
+                <option key={t.id} value={t.id}>{t.ikon} {t.ad}</option>
+              ))}
+            </select>
+          </label>
+        )}
         <label className="gorev-field">
           <span>Öncelik</span>
           <select value={oncelik} onChange={e => setOncelik(e.target.value as GorevOncelik)}>
@@ -247,7 +295,9 @@ export default function GorevFormClient({ gorevId }: Props) {
             />
           )}
           <p className="gorev-form-hint">
-            Seçilen rol veya kişiler hem Görevler listesinde görür hem de ekran mesajı işaretliyse girişte uyarı alır.
+            {bilgi
+              ? 'Seçilen kişiler bunu bilgilendirme olarak görür. Ekran mesajı işaretliyse başlık “Bilgilendirme” diye gider.'
+              : 'Seçilen kişiler bunu görev olarak görür. Ekran mesajında başlık, görev tipiyle birlikte gider.'}
           </p>
         </fieldset>
       )}
@@ -263,8 +313,8 @@ export default function GorevFormClient({ gorevId }: Props) {
         <button type="button" className="gorev-btn gorev-btn-ghost" onClick={() => router.back()}>
           İptal
         </button>
-        <button type="submit" className="gorev-btn gorev-btn-primary" disabled={loading}>
-          {loading ? 'Kaydediliyor…' : isEdit ? 'Güncelle' : 'Görev Oluştur'}
+        <button type="submit" className="gorev-btn gorev-btn-primary" disabled={loading || !editorReady}>
+          {loading ? 'Kaydediliyor…' : isEdit ? 'Güncelle' : bilgi ? 'Bilgilendirme gönder' : 'Görev oluştur'}
         </button>
       </div>
     </form>

@@ -1,31 +1,51 @@
 /* Görev modülü — paylaşılan stiller */
 
-.gorev-page { max-width: 960px; }
-.gorev-page--admin { max-width: 1200px; }
+.gorev-page,
+.gorev-page--admin { max-width: none; }
+
+.app-content:has(.gorev-admin-page) {
+  background: #f3f6fa;
+  padding: 20px 24px 28px;
+}
 
 .gorev-admin-page {
-  padding: 28px 32px 40px;
+  padding: 0;
   min-height: 100%;
-  background: linear-gradient(180deg, #f8fafc 0%, #fff 120px);
+  background: transparent;
 }
 
 .gorev-admin-header {
-  margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+  margin: 0 0 16px;
+  padding: 0;
 }
 
+.gorev-admin-header-copy { min-width: 0; }
+
 .gorev-admin-header h1 {
-  margin: 0 0 6px;
-  font-size: 28px;
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
   font-weight: 700;
   color: #0f172a;
   letter-spacing: -0.02em;
 }
 
 .gorev-admin-header p {
-  margin: 0;
+  margin: 4px 0 0;
   color: #64748b;
-  font-size: 15px;
+  font-size: 13px;
+  line-height: 1.4;
 }
+
+.gorev-admin-header .gorev-toolbar-actions { flex-shrink: 0; }
+
+.gorev-page--admin .gorev-stats,
+.gorev-page--admin .gorev-toolbar,
+.gorev-page--admin .gorev-admin-filters { margin-bottom: 12px; }
 
 .gorev-stats {
   display: flex;
@@ -176,6 +196,49 @@
 .gorev-badge-dusuk { background: #f8fafc; color: #64748b; }
 .gorev-badge-durum { background: #f1f5f9; color: #475569; }
 
+.gorev-kind {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.gorev-kind--task { background: #e8f3fb; color: #0061a6; }
+.gorev-kind--info { background: #f1f5f9; color: #475569; }
+
+.gorev-kind-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.gorev-kind-option {
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  background: #fff;
+  border-radius: 12px;
+  padding: 12px 14px;
+  cursor: pointer;
+}
+.gorev-kind-option strong { display: block; color: #0f172a; font-size: 14px; }
+.gorev-kind-option small { display: block; margin-top: 4px; color: #64748b; font-size: 12px; line-height: 1.4; }
+.gorev-kind-option.is-on { border-color: #0061a6; background: #f3f8fc; box-shadow: inset 0 0 0 1px #0061a6; }
+.gorev-kind-option:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.gorev-record-kind-note {
+  margin: 0;
+  padding: 10px 16px 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+@media (max-width: 640px) {
+  .gorev-kind-switch { grid-template-columns: 1fr; }
+}
+
 .gorev-drawer-backdrop {
   position: fixed;
   inset: 0;
@@ -273,9 +336,16 @@
   }
 }
 
+@media (max-width: 720px) {
+  .app-content:has(.gorev-admin-page) { padding: 16px 14px 24px; }
+  .gorev-admin-header { flex-direction: column; align-items: stretch; }
+  .gorev-admin-header .gorev-toolbar-actions { width: 100%; }
+  .gorev-admin-header .gorev-btn { flex: 1; justify-content: center; }
+}
+
 @media (max-width: 640px) {
   .gorev-admin-filters-row { grid-template-columns: 1fr; }
-  .gorev-admin-page { padding: 16px; }
+  .gorev-admin-page { padding: 0; }
 }
 
 .gorev-filter-field {
@@ -325,20 +395,69 @@
   gap: 10px;
 }
 
-.gorev-admin-card {
+.gorev-bulk-bar {
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+}
+
+.gorev-bulk-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.gorev-bulk-all input,
+.gorev-admin-check input {
+  width: 18px;
+  height: 18px;
+  accent-color: #0061a6;
+}
+
+.gorev-admin-card {
+  display: flex;
+  align-items: stretch;
   width: 100%;
-  padding: 16px 18px 16px 0;
   background: #fff;
   border: 1px solid #e2e8f0;
   border-radius: 14px;
-  cursor: pointer;
   text-align: left;
   overflow: hidden;
   transition: box-shadow 0.15s, border-color 0.15s;
   position: relative;
+}
+
+.gorev-admin-check {
+  display: flex;
+  align-items: center;
+  padding: 0 4px 0 12px;
+  cursor: pointer;
+}
+
+.gorev-admin-card-open {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 16px 18px 16px 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.gorev-admin-card--selected {
+  border-color: #0061a6;
+  box-shadow: inset 0 0 0 1px #0061a6;
 }
 
 .gorev-admin-card:hover {
@@ -406,6 +525,106 @@
   align-items: flex-end;
   flex-shrink: 0;
   padding-right: 4px;
+}
+
+/* Yeni görevler penceresi */
+.gorev-yeni-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100002;
+  background: rgba(15, 23, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.gorev-yeni-panel {
+  width: min(520px, 100%);
+  max-height: min(70vh, 560px);
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border-radius: 16px;
+  border: 1px solid #d6e6f4;
+  box-shadow: 0 20px 48px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+.gorev-yeni-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gorev-yeni-head h2 {
+  margin: 0;
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.gorev-yeni-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  overflow: auto;
+}
+
+.gorev-yeni-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  border-radius: 10px;
+  padding: 10px;
+  cursor: pointer;
+}
+
+.gorev-yeni-row:hover,
+.gorev-yeni-row:focus-visible {
+  background: #f4f9fd;
+  outline: none;
+}
+
+.gorev-yeni-icon {
+  flex: 0 0 auto;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  background: #e8f3fb;
+}
+
+.gorev-yeni-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gorev-yeni-copy strong {
+  color: #0f172a;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gorev-yeni-copy small { color: #64748b; font-size: 12px; }
+
+.gorev-yeni-go {
+  flex: 0 0 auto;
+  color: #0061a6;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 /* Ekran mesajı overlay */
@@ -481,6 +700,117 @@
   display: flex;
   gap: 10px;
   justify-content: center;
+}
+
+.gorev-ekran-modal--stack {
+  max-width: 560px;
+  padding: 22px 18px 16px;
+  text-align: left;
+  border-top: none;
+}
+
+.gorev-ekran-stack-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.gorev-ekran-close {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 10px;
+  background: #f1f5f9;
+  color: #0f172a;
+  font-size: 24px;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.gorev-ekran-close:hover { background: #e2e8f0; }
+
+.gorev-ekran-stack-head .gorev-ekran-title {
+  margin-bottom: 4px;
+}
+
+.gorev-ekran-stack-head .gorev-ekran-count {
+  margin-bottom: 14px;
+}
+
+.gorev-ekran-list {
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(60vh, 480px);
+  overflow: auto;
+}
+
+.gorev-ekran-item {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: 10px 12px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.gorev-ekran-item-icon {
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 18px;
+}
+
+.gorev-ekran-item-body {
+  min-width: 0;
+}
+
+.gorev-ekran-item-body strong {
+  display: block;
+  font-size: 14px;
+  line-height: 1.35;
+  color: #0f172a;
+}
+
+.gorev-ekran-item-sube {
+  display: inline-block;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #e0e7ff;
+  color: #3730a3;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.gorev-ekran-item-body p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #475569;
+}
+
+.gorev-ekran-item-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gorev-ekran-item-actions .gorev-btn {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 13px;
 }
 
 .gorev-field-screen {
@@ -635,10 +965,38 @@
 
 .gorev-admin-atamalar { margin: 16px 0; }
 
+.gorev-admin-atamalar h2,
 .gorev-admin-atamalar h4 {
   margin: 0 0 10px;
   font-size: 14px;
   color: #334155;
+}
+
+.gorev-atama-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gorev-atama-head h2 { margin: 0; }
+
+.gorev-atama-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+}
+
+.gorev-atama-summary span {
+  background: #e8f3fb;
+  color: #0061a6;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .gorev-admin-atama-list {
@@ -647,19 +1005,51 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 6px;
+  background: #fff;
 }
 
 .gorev-admin-atama-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 6px 8px;
   background: #f8fafc;
   border-radius: 8px;
 }
 
-.gorev-admin-atama-name { flex: 1; font-weight: 500; }
+.gorev-admin-atama-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.gorev-seen {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.gorev-seen--yes { color: #0061a6; }
+
+@media (max-width: 640px) {
+  .gorev-admin-atama-row { flex-wrap: wrap; }
+  .gorev-admin-atama-name { flex: 1 1 100%; white-space: normal; }
+  .gorev-bulk-bar { align-items: stretch; flex-direction: column; }
+  .gorev-bulk-bar .gorev-btn { width: 100%; justify-content: center; }
+  .gorev-admin-card-open { padding-right: 12px; }
+  .gorev-admin-card-badges { max-width: 42%; }
+}
 
 .gorev-admin-gecikme {
   font-size: 11px;
@@ -955,7 +1345,7 @@
 }
 
 /* Analitik */
-.gorev-analitik { max-width: 1100px; }
+.gorev-analitik { max-width: none; }
 .gorev-stats-wide { flex-wrap: wrap; }
 .gorev-stats-wide .gorev-stat { min-width: 120px; flex: 1; }
 
@@ -1161,4 +1551,489 @@
   padding: 28px 8px;
   text-align: center;
   color: #64748b;
+}
+
+.gorev-page--coach { max-width: none; }
+
+.gorev-page--coach .gorev-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.gorev-page--coach .gorev-stat {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  text-align: left;
+}
+
+.gorev-page--coach .gorev-stat-icon {
+  margin: 0;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.gorev-page--coach .gorev-stat-value {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.gorev-page--coach .gorev-stat-label {
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.gorev-page--coach .gorev-toolbar { align-items: stretch; }
+
+.gorev-page--coach .gorev-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  flex: 1 1 240px;
+  min-width: 0;
+  gap: 4px;
+}
+
+.gorev-page--coach .gorev-tab {
+  min-height: 40px;
+  padding: 8px 6px;
+  text-align: center;
+}
+
+.gorev-page--coach .gorev-tab.active {
+  background: #0061a6;
+  border-color: #0061a6;
+  color: #fff;
+}
+
+.gorev-page--coach .gorev-btn-primary { background: #0061a6; }
+
+.gorev-page--coach .gorev-tab:focus-visible,
+.gorev-page--coach .gorev-card:focus-visible,
+.gorev-page--coach .gorev-btn:focus-visible {
+  outline: 2px solid #0061a6;
+  outline-offset: 2px;
+}
+
+.gorev-card--coach { align-items: flex-start; }
+
+.gorev-card-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.gorev-card--coach .gorev-card-body strong {
+  overflow-wrap: anywhere;
+  line-height: 1.35;
+}
+
+.gorev-card--coach .gorev-card-badges {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  max-width: 46%;
+}
+
+.gorev-card--coach .gorev-card-meta { display: block; margin-top: 4px; }
+
+@media (min-width: 768px) {
+  .gorev-page--coach .gorev-tabs {
+    display: flex;
+    flex: 0 1 auto;
+  }
+  .gorev-page--coach .gorev-tab { padding: 8px 16px; }
+}
+
+@media (max-width: 640px) {
+  .gorev-card-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .gorev-card--coach .gorev-card-badges {
+    max-width: none;
+    justify-content: flex-start;
+  }
+  .gorev-page--coach .gorev-stat {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+    padding: 10px;
+  }
+  .gorev-page--coach .gorev-toolbar-actions { width: 100%; }
+  .gorev-page--coach .gorev-toolbar-actions .gorev-btn {
+    flex: 1;
+    justify-content: center;
+    min-height: 40px;
+  }
+}
+
+.gorev-record-page,
+.gorev-record-card {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+.gorev-record-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  min-height: 44px;
+}
+
+.coach-gorevler-page .gorev-record-toolbar {
+  position: sticky;
+  top: var(--coach-header-h, 56px);
+  z-index: 4;
+  background: var(--coach-surface, #f8fafc);
+  padding: 8px 0;
+}
+
+.gorev-record-toolbar-actions,
+.gorev-record-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.gorev-record-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 36px;
+  margin: 0;
+  color: #0061a6;
+  font-weight: 700;
+  font-size: 14px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.gorev-record-back:focus-visible {
+  outline: 2px solid #0061a6;
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.gorev-record-head {
+  margin: -4px 0 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.gorev-record-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.gorev-record-head h1 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  color: #0f172a;
+  overflow-wrap: anywhere;
+}
+
+.gorev-record-facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gorev-record-facts li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 140px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.gorev-record-facts span {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.gorev-record-facts strong {
+  font-size: 14px;
+  color: #0f172a;
+}
+
+.gorev-record-pdf-error {
+  margin: 0 0 8px;
+  color: #b91c1c;
+  font-size: 13px;
+}
+
+.gorev-record-late {
+  color: #c2410c;
+  font-weight: 700;
+}
+
+.gorev-record-card {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.gorev-record-body { min-width: 0; }
+
+.gorev-record-body .gorev-rich-view,
+.gorev-record-body .gorev-file-card,
+.gorev-record-body img,
+.gorev-record-body table,
+.gorev-record-body pre {
+  max-width: 100%;
+}
+
+.gorev-record-body .gorev-rich-view { overflow-x: auto; }
+
+.gorev-record-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.gorev-record-remind {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #dbe7f3;
+  border-radius: 12px;
+  background: #f4f8fc;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+
+.gorev-record-remind input {
+  max-width: 280px;
+  width: 100%;
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background: #fff;
+  font-weight: 500;
+}
+
+.gorev-record-remind-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.gorev-record-note textarea {
+  font-weight: 400;
+  background: #fff;
+}
+
+.gorev-record-note-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.gorev-record-note-actions small {
+  font-weight: 500;
+  color: #64748b;
+}
+
+.gorev-admin-notlar h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.gorev-record-status { color: #64748b; }
+
+.gorev-record-actions .gorev-btn {
+  min-height: 40px;
+  justify-content: center;
+}
+
+.gorev-record--assignee .gorev-btn-primary { background: #0061a6; }
+
+.gorev-record-actions .gorev-btn:focus-visible {
+  outline: 2px solid #0061a6;
+  outline-offset: 2px;
+}
+
+@media (min-width: 768px) {
+  .gorev-record-card { padding: 22px 24px; }
+  .gorev-record-head h1 { font-size: 28px; }
+  .gorev-record-facts li { min-width: 180px; }
+}
+
+@media (max-width: 767px) {
+  .gorev-record-toolbar { align-items: flex-start; }
+  .gorev-record-facts { display: grid; grid-template-columns: 1fr 1fr; }
+  .gorev-record-facts li { min-width: 0; }
+}
+
+@media (max-width: 767px) {
+  .coach-gorevler-page .gorev-record--assignee {
+    padding-bottom: 84px;
+  }
+  .coach-gorevler-page .gorev-record--assignee .gorev-record-actions {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: calc(var(--coach-bottom-nav-h, 72px) + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    margin: 0;
+    padding: 10px 12px;
+    background: #fff;
+    border-top: 1px solid #e2e8f0;
+    box-shadow: 0 -6px 16px rgba(15, 23, 42, 0.06);
+  }
+  .coach-gorevler-page .gorev-record--assignee .gorev-record-actions .gorev-btn {
+    flex: 1 1 140px;
+  }
+}
+
+.gorev-bell { position: relative; }
+.gorev-bell-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: none;
+  color: #6b7280;
+  cursor: pointer;
+  border-radius: 10px;
+}
+.gorev-bell-btn:hover { color: #111827; background: #f3f4f6; }
+.gorev-bell-badge {
+  position: absolute;
+  top: 4px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: #0061a6;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+.gorev-bell-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: min(360px, 80vw);
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.16);
+  z-index: 80;
+  overflow: hidden;
+}
+.gorev-bell-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.gorev-bell-x {
+  border: none;
+  background: #f1f5f9;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 18px;
+  cursor: pointer;
+}
+.gorev-bell-empty { margin: 0; padding: 16px 14px; color: #64748b; font-size: 14px; }
+.gorev-bell-list { list-style: none; margin: 0; padding: 8px; max-height: 360px; overflow: auto; }
+.gorev-bell-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px;
+  border-radius: 10px;
+}
+.gorev-bell-item:hover { background: #f8fafc; }
+.gorev-bell-title {
+  flex: 1;
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  border: none;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  padding: 4px;
+  min-width: 0;
+}
+.gorev-bell-title strong {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+  line-height: 1.35;
+}
+.gorev-bell-time { display: block; color: #94a3b8; font-size: 12px; margin-top: 2px; }
+.gorev-bell-icon { font-size: 18px; line-height: 1.2; }
+.gorev-bell-dismiss {
+  border: none;
+  background: #f1f5f9;
+  color: #334155;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.gorev-bell-all {
+  display: block;
+  padding: 12px 14px;
+  border-top: 1px solid #e2e8f0;
+  color: #0061a6;
+  font-weight: 600;
+  font-size: 13px;
+  text-decoration: none;
 }

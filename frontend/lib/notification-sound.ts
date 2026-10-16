@@ -157,7 +157,9 @@ export function playNotificationSound() {
 }
 
 export function isGorevNotification(baslik: string, url?: string | null): boolean {
-  if (baslik.startsWith('Yeni Görev:')) return true;
+  if (baslik.startsWith('Yeni Görev:') || baslik.startsWith('Görev:')) return true;
+  if (baslik.startsWith('Yeni Bilgilendirme:') || baslik.startsWith('Bilgilendirme:')) return true;
+  if (baslik.startsWith('Bilgilendirme Hatırlatması:')) return true;
   if (baslik.startsWith('Görev Tamamlandı:')) return true;
   if (baslik.startsWith('Görev Tamamlanamadı:')) return true;
   if (baslik.startsWith('Görev Gecikti:')) return true;
