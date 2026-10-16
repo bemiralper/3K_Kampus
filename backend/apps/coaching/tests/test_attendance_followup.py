@@ -1,8 +1,9 @@
 """Yoklama sonrası koç bildirimi, eşik ve Risk Merkezi."""
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase
 from rest_framework.test import APIClient
 
 from apps.academic.domain.class_period_attendance import (
@@ -577,6 +578,63 @@ class AttendanceFollowupApiTest(TestCase):
         self.assertEqual(kpis['total_students'], 1)
         self.assertEqual(kpis['today_late'], 1)
 
+    def test_admin_range_summarizes_absences_and_history(self):
+        absent_day = self.day - timedelta(days=2)
+        session = ClassPeriodAttendanceSession.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            sinif=self.sinif,
+            session_date=absent_day,
+            period=ClassPeriodCode.MORNING,
+        )
+        ClassPeriodAttendanceRecord.objects.create(
+            session=session,
+            student=self.student,
+            status=StudentAttendanceStatus.ABSENT,
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        listed = self.client.get(
+            (
+                f'/api/coaching/attendance-followup/?date={self.day.isoformat()}'
+                f'&start_date={absent_day.isoformat()}&end_date={self.day.isoformat()}'
+            ),
+            **self.headers,
+        )
+        self.assertEqual(listed.status_code, 200, listed.content)
+        data = listed.json()['data']
+        self.assertEqual(data['start_date'], absent_day.isoformat())
+        self.assertEqual(data['end_date'], self.day.isoformat())
+        self.assertEqual(data['range_counts']['absent_students'], 1)
+        self.assertEqual(data['range_counts']['late_students'], 1)
+        row = data['students'][0]
+        self.assertEqual(row['absent_days'], 1)
+        self.assertEqual(row['late_days'], 1)
+        self.assertEqual(row['last_absent_date'], absent_day.isoformat())
+
+        history = self.client.get(
+            (
+                f'/api/coaching/attendance-followup/students/{self.student.id}/'
+                f'?date={self.day.isoformat()}&start_date={absent_day.isoformat()}'
+                f'&end_date={self.day.isoformat()}'
+            ),
+            **self.headers,
+        )
+        self.assertEqual(history.status_code, 200, history.content)
+        days = history.json()['data']['days']
+        self.assertTrue(any(row['date'] == absent_day.isoformat() and row['absent'] for row in days))
+
+        today = self.client.get(
+            f'/api/coaching/attendance-followup/?date={self.day.isoformat()}&range=today',
+            **self.headers,
+        )
+        self.assertEqual(today.status_code, 200, today.content)
+        today_data = today.json()['data']
+        self.assertEqual(today_data['start_date'], self.day.isoformat())
+        self.assertEqual(today_data['end_date'], self.day.isoformat())
+        self.assertEqual(today_data['range_counts']['absent_students'], 0)
+        self.assertEqual(today_data['range_counts']['late_students'], 1)
+
     def test_admin_can_update_thresholds(self):
         self.client.force_authenticate(user=self.admin)
         res = self.client.put(
@@ -598,3 +656,165 @@ class AttendanceFollowupApiTest(TestCase):
         self.assertEqual(setting.absence_alarm, 4)
         self.assertEqual(setting.consecutive_absent_alarm, 3)
         self.assertEqual(setting.recommended_action_attention, 'Ara not bırak')
+
+    def test_student_calendar_pdf_marks_absent_and_late(self):
+        absent_day = self.day - timedelta(days=2)
+        session = ClassPeriodAttendanceSession.objects.create(
+            egitim_yili=self.year,
+            term=self.term,
+            sinif=self.sinif,
+            session_date=absent_day,
+            period=ClassPeriodCode.MORNING,
+        )
+        ClassPeriodAttendanceRecord.objects.create(
+            session=session,
+            student=self.student,
+            status=StudentAttendanceStatus.ABSENT,
+        )
+        self.client.force_authenticate(user=self.admin)
+        pdf = b'%PDF-1.4\n' + b'0' * 3000
+        with patch(
+            'apps.communication.application.html_to_pdf.render_html_to_pdf',
+            return_value=pdf,
+        ) as render:
+            res = self.client.get(
+                (
+                    f'/api/coaching/attendance-followup/students/{self.student.id}/'
+                    f'?date={self.day.isoformat()}&start_date=2025-09-01&end_date=2025-09-30&export=pdf'
+                ),
+                **self.headers,
+            )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(res['Content-Type'], 'application/pdf')
+        self.assertIn('attachment', res['Content-Disposition'])
+        self.assertTrue(res.content.startswith(b'%PDF'))
+        html = render.call_args.args[0]
+        self.assertIn('Eylül 2025', html)
+        self.assertNotIn('Ekim 2025', html)
+        self.assertIn('Gelmedi', html)
+        self.assertIn('Geç', html)
+        self.assertIn('>14<', html)
+        self.assertIn('>16<', html)
+
+    def test_student_calendar_pdf_rejects_long_range(self):
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.get(
+            (
+                f'/api/coaching/attendance-followup/students/{self.student.id}/'
+                '?date=2026-10-16&start_date=2020-01-01&end_date=2026-10-16&export=pdf'
+            ),
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn('18 ay', res.json()['error'])
+
+    def test_calendar_notify_preview_and_send(self):
+        from apps.ogrenci.domain.models import OgrenciVeli
+
+        self.student.telefon = '905551112233'
+        self.student.save(update_fields=['telefon'])
+        veli = OgrenciVeli.objects.create(
+            ogrenci=self.student,
+            ad='Ayşe',
+            soyad='Kara',
+            telefon='905559998877',
+            veli_turu='anne',
+        )
+        self.client.force_authenticate(user=self.admin)
+        preview = self.client.get(
+            (
+                f'/api/coaching/attendance-followup/students/{self.student.id}/notify-preview/'
+                '?start_date=2025-09-01&end_date=2025-09-30'
+            ),
+            **self.headers,
+        )
+        self.assertEqual(preview.status_code, 200, preview.content)
+        data = preview.json()['data']
+        self.assertEqual(data['baslangic_tarihi'], '1 Eylül 2025')
+        self.assertEqual(data['bitis_tarihi'], '30 Eylül 2025')
+        self.assertEqual(data['gec_geldigi_gun_sayisi'], 1)
+        self.assertEqual(data['gelmedigi_gun_sayisi'], 0)
+        bodies = {row['recipient_type']: row['body'] for row in data['recipients']}
+        self.assertIn('Geç geldiği gün sayısı: 1 gün', bodies['veli'])
+        self.assertIn('Gelmediği gün sayısı: 0 gün', bodies['veli'])
+        self.assertIn('PDF raporunu', bodies['veli'])
+        self.assertIn('Geç geldiğin gün sayısı: 1 gün', bodies['ogrenci'])
+        self.assertIn('PDF raporunu', bodies['ogrenci'])
+
+        class Result:
+            success = True
+            errors: list[str] = []
+            message_status = 'QUEUED'
+
+        with patch(
+            'apps.coaching.services.attendance_calendar_notify.render_attendance_calendar_pdf',
+            return_value=b'%PDF-1.4\n',
+        ), patch(
+            'apps.coaching.services.attendance_calendar_notify.dispatch_event',
+            return_value=Result(),
+        ) as dispatch, patch(
+            'apps.communication.application.bulk_dispatch.pool_active',
+            return_value=True,
+        ):
+            sent = self.client.post(
+                f'/api/coaching/attendance-followup/students/{self.student.id}/notify-send/',
+                {
+                    'start_date': '2025-09-01',
+                    'end_date': '2025-09-30',
+                    'veli_ids': [veli.id],
+                    'include_student': True,
+                },
+                format='json',
+                **self.headers,
+            )
+        self.assertEqual(sent.status_code, 200, sent.content)
+        self.assertEqual(sent.json()['data']['sent'], 2)
+        self.assertEqual(dispatch.call_count, 2)
+        contexts = [call.kwargs['context'] for call in dispatch.call_args_list]
+        self.assertTrue(all(ctx['gec_geldigi_gun_sayisi'] == '1' for ctx in contexts))
+        attachments = [call.kwargs['attachment'] for call in dispatch.call_args_list]
+        self.assertTrue(all(item.file_bytes.startswith(b'%PDF') for item in attachments))
+        self.assertTrue(all(item.filename.endswith('.pdf') for item in attachments))
+
+
+class AttendanceCalendarPdfHtmlTest(SimpleTestCase):
+    def test_months_write_absent_and_late_on_the_day(self):
+        from apps.coaching.services.attendance_calendar_pdf import build_attendance_calendar_html
+
+        html = build_attendance_calendar_html(
+            {
+                'student_name': 'Zeynep Ecrin Polat',
+                'sinif_name': '11/LOCA 1',
+                'coach_name': 'Nilay Ovat',
+                'days': [
+                    {
+                        'date': '2026-09-27',
+                        'absent': True,
+                        'late': False,
+                        'marks': [{
+                            'source': 'library',
+                            'period_label': 'Öğle',
+                            'status': 'absent',
+                        }],
+                    },
+                    {
+                        'date': '2026-10-02',
+                        'absent': False,
+                        'late': True,
+                        'marks': [{'source': 'class', 'status': 'late'}],
+                    },
+                ],
+            },
+            date(2026, 9, 20),
+            date(2026, 10, 16),
+        )
+        self.assertIn('Eylül 2026', html)
+        self.assertIn('Ekim 2026', html)
+        self.assertNotIn('Ağustos 2026', html)
+        self.assertIn('Gelmedi', html)
+        self.assertIn('Kütüphane · Öğle', html)
+        self.assertIn('Geç', html)
+        self.assertIn('Sınıf', html)
+        self.assertIn('class="day is-absent"', html)
+        self.assertIn('class="day is-late"', html)
+        self.assertIn('class="day muted"', html)

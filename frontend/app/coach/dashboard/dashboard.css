@@ -285,7 +285,7 @@ a.coach-home-task:hover { background: #f8fafc; }
   .coach-home-hero { grid-template-columns: minmax(0, 1.25fr) minmax(250px, .75fr); align-items: end; padding: 28px; }
   .coach-home-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .coach-home-metric:last-child { grid-column: auto; }
-  .coach-home-actions { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .coach-home-actions { grid-template-columns: repeat(auto-fit, minmax(148px, 1fr)); }
   .coach-home-action { flex-direction: column; align-items: flex-start; gap: 7px; min-height: 116px; }
 }
 

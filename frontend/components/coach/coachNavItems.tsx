@@ -155,6 +155,17 @@ export const COACH_NAV_ITEMS: CoachNavItemDef[] = [
     ),
   },
   {
+    id: "yoklama-takibi",
+    href: "/coach/yoklama-takibi",
+    label: "Yoklama Takibi",
+    matchPrefix: "/coach/yoklama-takibi",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-6m4 6V7m4 10v-3M5 21h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v14a2 2 0 002 2z" />
+      </svg>
+    ),
+  },
+  {
     id: "kutuphane",
     href: COACH_KUTUPHANE_BASE,
     label: "Kütüphane",
@@ -251,6 +262,9 @@ export function isCoachNavActive(pathname: string, item: CoachNavItemDef): boole
   const prefix = item.matchPrefix || item.href;
   if (prefix === "/coach/dashboard") {
     return pathname === "/coach" || pathname === "/coach/dashboard";
+  }
+  if (prefix === "/coach/yoklama") {
+    return pathname === "/coach/yoklama" || pathname === "/coach/yoklama/";
   }
   return pathname.startsWith(prefix);
 }

@@ -12,6 +12,8 @@ from apps.coaching.api.coach_student_views import (
     CoachStudentRiskReportView,
 )
 from apps.coaching.api.attendance_followup_views import (
+    AttendanceCalendarNotifyPreviewView,
+    AttendanceCalendarNotifySendView,
     AttendanceFollowupAnalysisView,
     AttendanceFollowupStudentView,
     AttendanceFollowupView,
@@ -51,6 +53,16 @@ urlpatterns = [
     path('risk-reports/<int:event_id>/', CoachRiskReportDetailView.as_view(), name='coach-risk-report-detail'),
     path('attendance-followup/', AttendanceFollowupView.as_view(), name='coach-attendance-followup'),
     path('attendance-followup/analysis/', AttendanceFollowupAnalysisView.as_view(), name='coach-attendance-followup-analysis'),
+    path(
+        'attendance-followup/students/<int:student_id>/notify-preview/',
+        AttendanceCalendarNotifyPreviewView.as_view(),
+        name='coach-attendance-calendar-notify-preview',
+    ),
+    path(
+        'attendance-followup/students/<int:student_id>/notify-send/',
+        AttendanceCalendarNotifySendView.as_view(),
+        name='coach-attendance-calendar-notify-send',
+    ),
     path(
         'attendance-followup/students/<int:student_id>/',
         AttendanceFollowupStudentView.as_view(),

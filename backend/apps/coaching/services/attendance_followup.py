@@ -167,6 +167,13 @@ class StudentDaySummary:
         return sum(1 for flags in self.days.values() if flags.is_exit_day)
 
     @property
+    def excused_days(self) -> int:
+        return sum(
+            1 for flags in self.days.values()
+            if flags.excused and not flags.present and not flags.absent
+        )
+
+    @property
     def consecutive_absent(self) -> int:
         dates = self.school_dates
         if not dates:
@@ -178,6 +185,28 @@ class StudentDaySummary:
             else:
                 break
         return count
+
+    @property
+    def last_absent_date(self) -> date | None:
+        for day in reversed(self.school_dates):
+            if self.days[day].is_absent_day:
+                return day
+        return None
+
+    @property
+    def absent_sources(self) -> list[str]:
+        labels = set()
+        for flags in self.days.values():
+            if not flags.is_absent_day:
+                continue
+            for mark in flags.marks:
+                if mark.get('status') != 'absent':
+                    continue
+                if mark.get('source') == 'library':
+                    labels.add('Kütüphane')
+                else:
+                    labels.add('Sınıf')
+        return sorted(labels)
 
     def last_n_days(self, n: int = 3) -> list[dict[str, Any]]:
         rows = []
@@ -276,8 +305,12 @@ def resolve_followup_scope(
     sube_id: int | None = None,
     egitim_yili_id: int | None = None,
     term=None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    all_time: bool = False,
 ) -> FollowupScope:
     """Aktif dönem penceresi. Pasif / eski dönem yoklaması bu aralığın dışındadır."""
+    explicit_range = bool(start_date or end_date or all_time)
     if term is None:
         from apps.term.domain.models import Term
 
@@ -292,11 +325,16 @@ def resolve_followup_scope(
         end = min(on_date, term.end_date)
         if end < start:
             end = start
+        if explicit_range:
+            start = date(2000, 1, 1) if all_time else (start_date or start)
+            end = end_date or on_date
+            if end < start:
+                start, end = end, start
         return FollowupScope(
             kurum_id=kurum_id,
             sube_id=sube_id or getattr(term, 'sube_id', None),
-            term_id=term.id,
-            year_id=term.egitim_yili_id,
+            term_id=None if explicit_range else term.id,
+            year_id=None if all_time else term.egitim_yili_id,
             start=start,
             end=end,
         )
@@ -305,23 +343,34 @@ def resolve_followup_scope(
 
         year = get_active_academic_year()
         if year:
+            start = date(year.baslangic_yil, 9, 1)
+            end = on_date
+            if explicit_range:
+                start = date(2000, 1, 1) if all_time else (start_date or start)
+                end = end_date or on_date
+                if end < start:
+                    start, end = end, start
             return FollowupScope(
                 kurum_id=kurum_id,
                 sube_id=sube_id,
                 term_id=None,
-                year_id=year.id,
-                start=date(year.baslangic_yil, 9, 1),
-                end=on_date,
+                year_id=None if all_time else year.id,
+                start=start,
+                end=end,
             )
     except Exception:
         logger.debug('Aktif dönem/yıl okunamadı, 180 günlük pencere kullanılacak.')
+    start = date(2000, 1, 1) if all_time else (start_date or (on_date - timedelta(days=180)))
+    end = end_date or on_date
+    if end < start:
+        start, end = end, start
     return FollowupScope(
         kurum_id=kurum_id,
         sube_id=sube_id,
         term_id=None,
         year_id=None,
-        start=on_date - timedelta(days=180),
-        end=on_date,
+        start=start,
+        end=end,
     )
 
 
@@ -403,8 +452,8 @@ def followup_roster_student_ids(
         library__aktif_mi=True,
         library__kurum_id=kurum_id,
         library__sube_id=sube_id,
-        baslangic_tarihi__lte=on_date,
-    ).filter(Q(bitis_tarihi__isnull=True) | Q(bitis_tarihi__gte=on_date))
+        baslangic_tarihi__lte=scope.end,
+    ).filter(Q(bitis_tarihi__isnull=True) | Q(bitis_tarihi__gte=scope.start))
     boxed_ids = set(box_qs.values_list('ogrenci_id', flat=True))
 
     candidate_ids = placed_ids | boxed_ids
@@ -435,6 +484,7 @@ def followup_roster_students(
     on_date: date,
     egitim_yili_id: int | None = None,
     allowed_ids: Iterable[int] | None = None,
+    scope: FollowupScope | None = None,
 ):
     from apps.ogrenci.domain.models import Ogrenci
 
@@ -443,6 +493,7 @@ def followup_roster_students(
         sube_id=sube_id,
         on_date=on_date,
         egitim_yili_id=egitim_yili_id,
+        scope=scope,
     )
     if allowed_ids is not None:
         ids &= {int(x) for x in allowed_ids}
@@ -970,6 +1021,9 @@ def followup_payload_for_students(
     sube_id: int | None = None,
     egitim_yili_id: int | None = None,
     scope: FollowupScope | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    all_time: bool = False,
 ) -> dict[str, Any]:
     setting = get_or_create_thresholds(kurum_id)
     scope = scope or resolve_followup_scope(
@@ -977,10 +1031,15 @@ def followup_payload_for_students(
         sube_id=sube_id,
         on_date=on_date,
         egitim_yili_id=egitim_yili_id,
+        start_date=start_date,
+        end_date=end_date,
+        all_time=all_time,
     )
     if not students:
         return {
             'date': on_date.isoformat(),
+            'start_date': scope.start.isoformat(),
+            'end_date': scope.end.isoformat(),
             'thresholds': serialize_thresholds(setting),
             'day_counts': {
                 'total_students': 0,
@@ -989,6 +1048,21 @@ def followup_payload_for_students(
                 'absent': 0,
                 'exit': 0,
                 'excused': 0,
+            },
+            'range_counts': {
+                'total_students': 0,
+                'absent_students': 0,
+                'late_students': 0,
+                'exit_students': 0,
+                'excused_students': 0,
+                'repeated_absent': 0,
+                'consecutive_absent': 0,
+                'attention': 0,
+                'alarm': 0,
+                'followup_pending': 0,
+                'total_absent_days': 0,
+                'total_late_days': 0,
+                'total_exit_days': 0,
             },
             'students': [],
             'filters': {'coaches': [], 'classes': []},
@@ -1005,6 +1079,21 @@ def followup_payload_for_students(
         'absent': 0,
         'exit': 0,
         'excused': 0,
+    }
+    range_counts = {
+        'total_students': len(summaries),
+        'absent_students': 0,
+        'late_students': 0,
+        'exit_students': 0,
+        'excused_students': 0,
+        'repeated_absent': 0,
+        'consecutive_absent': 0,
+        'attention': 0,
+        'alarm': 0,
+        'followup_pending': 0,
+        'total_absent_days': 0,
+        'total_late_days': 0,
+        'total_exit_days': 0,
     }
     rows = []
     for summary in summaries:
@@ -1026,6 +1115,30 @@ def followup_payload_for_students(
             consecutive_absent=summary.consecutive_absent,
             setting=setting,
         )
+        frequency = _frequency_label(summary, setting)
+        followup_status = _followup_status(severity)
+        if summary.absent_days:
+            range_counts['absent_students'] += 1
+        if summary.late_days:
+            range_counts['late_students'] += 1
+        if summary.exit_days:
+            range_counts['exit_students'] += 1
+        if summary.excused_days:
+            range_counts['excused_students'] += 1
+        if frequency == 'tekrarlayan':
+            range_counts['repeated_absent'] += 1
+        if frequency == 'art_arda':
+            range_counts['repeated_absent'] += 1
+            range_counts['consecutive_absent'] += 1
+        if severity == 'alarm':
+            range_counts['alarm'] += 1
+            range_counts['followup_pending'] += 1
+        elif severity == 'attention':
+            range_counts['attention'] += 1
+            range_counts['followup_pending'] += 1
+        range_counts['total_absent_days'] += summary.absent_days
+        range_counts['total_late_days'] += summary.late_days
+        range_counts['total_exit_days'] += summary.exit_days
         today_status = 'NONE'
         if flags.is_absent_day:
             today_status = 'ABSENT'
@@ -1053,9 +1166,15 @@ def followup_payload_for_students(
             'today_late': flags.is_late_day,
             'today_exit': flags.is_exit_day,
             'absent_days': summary.absent_days,
+            'unexcused_absent_days': summary.absent_days,
+            'excused_days': summary.excused_days,
             'late_days': summary.late_days,
             'exit_days': summary.exit_days,
             'consecutive_absent': summary.consecutive_absent,
+            'last_absent_date': summary.last_absent_date.isoformat() if summary.last_absent_date else '',
+            'absent_sources': summary.absent_sources,
+            'frequency': frequency,
+            'followup_status': followup_status,
             'last_3_days': last_3,
             'last_3_absent': sum(1 for item in last_3 if item['absent']),
             'severity': severity,
@@ -1074,8 +1193,11 @@ def followup_payload_for_students(
     ))
     return {
         'date': on_date.isoformat(),
+        'start_date': scope.start.isoformat(),
+        'end_date': scope.end.isoformat(),
         'thresholds': serialize_thresholds(setting),
         'day_counts': day_counts,
+        'range_counts': range_counts,
         'students': rows,
         'filters': _filter_options(rows),
     }
@@ -1170,6 +1292,24 @@ def _serialize_day_flags(day: date, flags: DayFlags) -> dict[str, Any]:
     }
 
 
+def _frequency_label(summary: StudentDaySummary, setting: AttendanceThresholdSetting) -> str:
+    if setting.consecutive_absent_alarm and summary.consecutive_absent >= setting.consecutive_absent_alarm:
+        return 'art_arda'
+    if summary.absent_days >= 2:
+        return 'tekrarlayan'
+    if summary.absent_days == 1:
+        return 'tek_seferlik'
+    return 'normal'
+
+
+def _followup_status(severity: str) -> str:
+    if severity == 'alarm':
+        return 'incelenecek'
+    if severity == 'attention':
+        return 'takip'
+    return 'normal'
+
+
 def student_history_payload(
     student,
     *,
@@ -1177,6 +1317,9 @@ def student_history_payload(
     kurum_id: int,
     sube_id: int | None = None,
     egitim_yili_id: int | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    all_time: bool = False,
 ) -> dict[str, Any]:
     setting = get_or_create_thresholds(kurum_id)
     scope = resolve_followup_scope(
@@ -1184,6 +1327,9 @@ def student_history_payload(
         sube_id=sube_id or student.sube_id,
         on_date=on_date,
         egitim_yili_id=egitim_yili_id,
+        start_date=start_date,
+        end_date=end_date,
+        all_time=all_time,
     )
     summary = build_student_summaries([student], scope=scope)[0]
     klass = _class_map([student.id], scope).get(student.id) or {}
@@ -1202,6 +1348,8 @@ def student_history_payload(
     last_3 = summary.last_n_days(3)
     return {
         'date': on_date.isoformat(),
+        'start_date': scope.start.isoformat(),
+        'end_date': scope.end.isoformat(),
         'thresholds': serialize_thresholds(setting),
         'student_id': student.id,
         'student_name': summary.student_name,
@@ -1212,11 +1360,16 @@ def student_history_payload(
         'absent_days': summary.absent_days,
         'late_days': summary.late_days,
         'exit_days': summary.exit_days,
+        'excused_days': summary.excused_days,
         'consecutive_absent': summary.consecutive_absent,
         'severity': severity,
         'reasons': reasons,
         'threshold_label': label,
         'recommended_action': _recommended_action(severity, setting),
+        'frequency': _frequency_label(summary, setting),
+        'followup_status': _followup_status(severity),
+        'last_absent_date': summary.last_absent_date.isoformat() if summary.last_absent_date else '',
+        'absent_sources': summary.absent_sources,
         'last_3_days': last_3,
         'last_3_absent': sum(1 for item in last_3 if item['absent']),
         'days': days,
@@ -1230,17 +1383,26 @@ def analysis_payload(
     kurum_id: int,
     sube_id: int | None = None,
     egitim_yili_id: int | None = None,
+    scope: FollowupScope | None = None,
+    start_date: date | None = None,
+    end_date: date | None = None,
+    all_time: bool = False,
 ) -> dict[str, Any]:
     setting = get_or_create_thresholds(kurum_id)
-    scope = resolve_followup_scope(
+    scope = scope or resolve_followup_scope(
         kurum_id=kurum_id,
         sube_id=sube_id,
         on_date=on_date,
         egitim_yili_id=egitim_yili_id,
+        start_date=start_date,
+        end_date=end_date,
+        all_time=all_time,
     )
     if not students:
         return {
             'date': on_date.isoformat(),
+            'start_date': scope.start.isoformat(),
+            'end_date': scope.end.isoformat(),
             'thresholds': serialize_thresholds(setting),
             'kpis': {
                 'total_students': 0,
@@ -1364,6 +1526,8 @@ def analysis_payload(
     top_rows.sort(key=lambda x: (-x['absent_days'], -x['late_days'], x['student_name']))
     return {
         'date': on_date.isoformat(),
+        'start_date': scope.start.isoformat(),
+        'end_date': scope.end.isoformat(),
         'thresholds': serialize_thresholds(setting),
         'kpis': kpis,
         'by_class': _sort_groups(by_class),

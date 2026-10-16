@@ -3,7 +3,8 @@
  * Koçluk modülü için API fonksiyonları
  */
 
-import { apiGet, apiPost, apiFetch, ApiResponse } from './api';
+import { apiGet, apiPost, apiFetch, ApiResponse, getContextHeaders, resolveApiUrl } from './api';
+import { downloadPdfBlob } from './download-file';
 
 // Types
 export interface Coach {
@@ -660,9 +661,15 @@ export interface AttendanceFollowupStudent {
   today_late: boolean;
   today_exit: boolean;
   absent_days: number;
+  unexcused_absent_days?: number;
+  excused_days?: number;
   late_days: number;
   exit_days: number;
   consecutive_absent: number;
+  last_absent_date?: string;
+  absent_sources?: string[];
+  frequency?: 'normal' | 'tek_seferlik' | 'tekrarlayan' | 'art_arda' | string;
+  followup_status?: 'normal' | 'takip' | 'incelenecek' | string;
   last_3_days: Array<{
     date: string;
     attended: boolean;
@@ -679,6 +686,8 @@ export interface AttendanceFollowupStudent {
 
 export interface AttendanceFollowupPayload {
   date: string;
+  start_date?: string;
+  end_date?: string;
   thresholds: AttendanceThresholds;
   day_counts: {
     total_students: number;
@@ -687,6 +696,21 @@ export interface AttendanceFollowupPayload {
     absent: number;
     exit: number;
     excused: number;
+  };
+  range_counts?: {
+    total_students: number;
+    absent_students: number;
+    late_students: number;
+    exit_students: number;
+    excused_students: number;
+    repeated_absent: number;
+    consecutive_absent: number;
+    attention: number;
+    alarm: number;
+    followup_pending: number;
+    total_absent_days: number;
+    total_late_days: number;
+    total_exit_days: number;
   };
   students: AttendanceFollowupStudent[];
   filters?: {
@@ -715,6 +739,8 @@ export interface AttendanceDayFlag {
 
 export interface AttendanceStudentHistory {
   date: string;
+  start_date?: string;
+  end_date?: string;
   student_id: number;
   student_name: string;
   sinif_name?: string;
@@ -722,10 +748,15 @@ export interface AttendanceStudentHistory {
   absent_days: number;
   late_days: number;
   exit_days: number;
+  excused_days?: number;
   consecutive_absent: number;
   severity: string;
   threshold_label: string;
   recommended_action: string;
+  frequency?: string;
+  followup_status?: string;
+  last_absent_date?: string;
+  absent_sources?: string[];
   last_3_days: AttendanceDayFlag[];
   last_3_absent: number;
   days: AttendanceDayFlag[];
@@ -757,6 +788,8 @@ export interface AttendanceAnalysisStudent {
 
 export interface AttendanceAnalysisPayload {
   date: string;
+  start_date?: string;
+  end_date?: string;
   thresholds: AttendanceThresholds;
   kpis: {
     total_students: number;
@@ -797,24 +830,138 @@ export async function patchCoachRiskReport(
   });
 }
 
-export async function fetchAttendanceFollowup(date?: string): Promise<ApiResponse<AttendanceFollowupPayload>> {
-  const qs = date ? `?date=${encodeURIComponent(date)}` : '';
-  return apiGet(`/api/coaching/attendance-followup/${qs}`);
+export interface AttendanceRangeParams {
+  date?: string;
+  start_date?: string;
+  end_date?: string;
+  range?: 'today' | 'week' | 'month' | 'term' | 'all' | 'custom' | string;
 }
 
-export async function fetchAttendanceFollowupAnalysis(date?: string): Promise<ApiResponse<AttendanceAnalysisPayload>> {
+function attendanceRangeQuery(params?: string | AttendanceRangeParams): string {
+  if (!params) return '';
+  if (typeof params === 'string') {
+    return `?date=${encodeURIComponent(params)}`;
+  }
+  const sp = new URLSearchParams();
+  if (params.date) sp.set('date', params.date);
+  if (params.start_date) sp.set('start_date', params.start_date);
+  if (params.end_date) sp.set('end_date', params.end_date);
+  if (params.range) sp.set('range', params.range);
+  const qs = sp.toString();
+  return qs ? `?${qs}` : '';
+}
+
+export async function fetchAttendanceFollowup(params?: string | AttendanceRangeParams): Promise<ApiResponse<AttendanceFollowupPayload>> {
+  return apiGet(`/api/coaching/attendance-followup/${attendanceRangeQuery(params)}`);
+}
+
+export async function fetchAttendanceFollowupAnalysis(params?: string | AttendanceRangeParams): Promise<ApiResponse<AttendanceAnalysisPayload>> {
   const searchParams = new URLSearchParams({ view: 'analysis' });
-  if (date) searchParams.set('date', date);
+  if (typeof params === 'string') {
+    if (params) searchParams.set('date', params);
+  } else if (params) {
+    if (params.date) searchParams.set('date', params.date);
+    if (params.start_date) searchParams.set('start_date', params.start_date);
+    if (params.end_date) searchParams.set('end_date', params.end_date);
+    if (params.range) searchParams.set('range', params.range);
+  }
   return apiGet(`/api/coaching/attendance-followup/?${searchParams}`);
 }
 
 export async function fetchAttendanceStudentHistory(
   studentId: number,
-  date?: string,
+  params?: string | AttendanceRangeParams,
 ): Promise<ApiResponse<AttendanceStudentHistory>> {
   const searchParams = new URLSearchParams({ student_id: String(studentId) });
-  if (date) searchParams.set('date', date);
+  if (typeof params === 'string') {
+    if (params) searchParams.set('date', params);
+  } else if (params) {
+    if (params.date) searchParams.set('date', params.date);
+    if (params.start_date) searchParams.set('start_date', params.start_date);
+    if (params.end_date) searchParams.set('end_date', params.end_date);
+    if (params.range) searchParams.set('range', params.range);
+  }
   return apiGet(`/api/coaching/attendance-followup/?${searchParams}`);
+}
+
+export interface AttendanceNotifyRecipient {
+  recipient_type: 'veli' | 'ogrenci';
+  ogrenci_id: number;
+  veli_id: number | null;
+  display_name: string;
+  telefon: string;
+  body: string;
+  skip_reason: string;
+}
+
+export interface AttendanceNotifyPreview {
+  student_id: number;
+  student_name: string;
+  start_date: string;
+  end_date: string;
+  baslangic_tarihi: string;
+  bitis_tarihi: string;
+  gelmedigi_gun_sayisi: number;
+  gec_geldigi_gun_sayisi: number;
+  recipients: AttendanceNotifyRecipient[];
+}
+
+export async function previewAttendanceCalendarNotify(
+  studentId: number,
+  params: AttendanceRangeParams,
+): Promise<ApiResponse<AttendanceNotifyPreview>> {
+  const search = new URLSearchParams();
+  if (params.start_date) search.set('start_date', params.start_date);
+  if (params.end_date) search.set('end_date', params.end_date);
+  return apiGet(`/api/coaching/attendance-followup/students/${studentId}/notify-preview/?${search}`);
+}
+
+export async function sendAttendanceCalendarNotify(
+  studentId: number,
+  payload: {
+    start_date: string;
+    end_date: string;
+    veli_ids: number[];
+    include_student: boolean;
+  },
+): Promise<ApiResponse<{
+  sent: number;
+  skipped: number;
+  errors: string[];
+  sent_details?: Array<{ recipient_type: string; display_name: string; telefon: string; message_status: string }>;
+}>> {
+  return apiPost(`/api/coaching/attendance-followup/students/${studentId}/notify-send/`, payload);
+}
+
+export async function downloadAttendanceCalendarPdf(
+  studentId: number,
+  params: AttendanceRangeParams,
+  fallbackName: string,
+): Promise<void> {
+  const search = new URLSearchParams({ export: 'pdf' });
+  if (params.date) search.set('date', params.end_date || params.date);
+  if (params.start_date) search.set('start_date', params.start_date);
+  if (params.end_date) search.set('end_date', params.end_date);
+  const res = await fetch(
+    resolveApiUrl(`/api/coaching/attendance-followup/students/${studentId}/?${search}`),
+    { credentials: 'include', headers: getContextHeaders() },
+  );
+  if (!res.ok) {
+    let message = 'PDF indirilemedi.';
+    try {
+      const data = await res.json();
+      if (data?.error) message = String(data.error);
+    } catch {
+      /* yanıt dosya değil */
+    }
+    throw new Error(message);
+  }
+  const blob = await res.blob();
+  const cd = res.headers.get('Content-Disposition') || '';
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(cd);
+  const plain = /filename="([^"]+)"/.exec(cd);
+  const filename = star?.[1] ? decodeURIComponent(star[1]) : (plain?.[1] || fallbackName);
+  await downloadPdfBlob(blob, filename);
 }
 
 export async function fetchAttendanceThresholds(): Promise<ApiResponse<AttendanceThresholds>> {

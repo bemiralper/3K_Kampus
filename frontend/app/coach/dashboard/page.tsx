@@ -131,6 +131,7 @@ export default function CoachDashboardPage() {
         <div className="coach-home-actions">
           <QuickAction href="/coach/ogrenciler" icon="users" title="Öğrencilerim" detail={`${activeStudentCount} aktif öğrenci`} color="#e0f2fe" ink="#0369a1" />
           <QuickAction href="/coach/yoklama" icon="calendar" title="Yoklama al" detail="Sınıf katılımı" color="#dcfce7" ink="#15803d" />
+          <QuickAction href="/coach/yoklama-takibi" icon="warning" title="Yoklama takibi" detail="Devamsızlık ve geç kalma" color="#ffe4e6" ink="#be123c" />
           <QuickAction href="/coach/gorusmeler" icon="check" title="Görüşmeler" detail={`${meetingCount} planlı görüşme`} color="#f3e8ff" ink="#7e22ce" />
           <QuickAction href="/coach/odev/kontrol" icon="book" title="Ödev kontrol" detail={`${dueTodayCount} bugün kontrol`} color="#fff7ed" ink="#c2410c" />
         </div>

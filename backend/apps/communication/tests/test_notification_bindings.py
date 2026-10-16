@@ -79,6 +79,20 @@ class NotificationEventCatalogTest(TestCase):
         self.assertEqual(names[0], 'odev_plani_veli')
         self.assertIn('haftalik_odev_plani_veli', names)
 
+    def test_devamsizlik_takvim_event_is_a_visible_document(self):
+        event = get_event('devamsizlik.takvim')
+        self.assertIsNotNone(event)
+        self.assertFalse(event.hidden_in_ui)
+        self.assertTrue(event.has_document)
+        self.assertEqual(event.recipients, (RecipientType.VELI, RecipientType.OGRENCI))
+        for recipient in event.recipients:
+            body = event.default_body(recipient)
+            self.assertIn('{{baslangic_tarihi}}', body)
+            self.assertIn('{{bitis_tarihi}}', body)
+            self.assertIn('{{gec_geldigi_gun_sayisi}}', body)
+            self.assertIn('{{gelmedigi_gun_sayisi}}', body)
+            self.assertIn('PDF', body)
+
     def test_sinav_cevap_anahtari_event_has_document(self):
         event = get_event('sinav.cevap_anahtari')
         self.assertIsNotNone(event)

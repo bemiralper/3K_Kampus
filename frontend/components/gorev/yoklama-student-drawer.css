@@ -59,7 +59,8 @@ html.ysd-lock .coach-content {
   border: 1px solid #e5e7eb;
   background: #fff;
   border-radius: 10px;
-  padding: 6px 10px;
+  min-height: 36px;
+  padding: 8px 12px;
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -71,12 +72,12 @@ html.ysd-lock .coach-content {
   overflow-y: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
-  padding: 14px 18px 28px;
+  padding: 14px 18px calc(28px + env(safe-area-inset-bottom, 0px));
 }
 
 .ysd-meters {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   margin-bottom: 12px;
 }
@@ -102,6 +103,155 @@ html.ysd-lock .coach-content {
 
 .ysd-meters .late b { color: #d97706; }
 .ysd-meters .absent b { color: #e11d48; }
+
+.ysd-pdf {
+  margin: 0 0 14px;
+  padding: 12px;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  background: #f8fafc;
+}
+
+.ysd-pdf-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ysd-pdf-head h3 {
+  margin: 0;
+}
+
+.ysd-pdf-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.ysd-pdf-actions button {
+  flex: 1;
+  border: 0;
+  background: #111827;
+  color: #fff;
+  border-radius: 10px;
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ysd-pdf-actions button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ysd-pdf-actions .ysd-wa-open {
+  background: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+}
+
+.ysd-wa {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ysd-wa-person {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.ysd-wa-person.is-skipped {
+  opacity: 0.7;
+}
+
+.ysd-wa-person strong,
+.ysd-wa-person small {
+  display: block;
+}
+
+.ysd-wa-person strong {
+  font-size: 12px;
+}
+
+.ysd-wa-person small {
+  margin-top: 2px;
+  color: #6b7280;
+  font-size: 11px;
+}
+
+.ysd-wa-body {
+  display: block;
+  margin-top: 6px;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #374151;
+}
+
+.ysd-wa-send {
+  border: 0;
+  background: #047857;
+  color: #fff;
+  border-radius: 10px;
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.ysd-wa-send:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ysd-wa-ok {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  color: #047857;
+}
+
+.ysd-pdf-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.ysd-pdf-range input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #fff;
+  padding: 0 8px;
+  font: inherit;
+  font-size: 12px;
+}
+
+.ysd-pdf-hint,
+.ysd-pdf-error {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.ysd-pdf-hint { color: #6b7280; }
+.ysd-pdf-error { color: #be123c; }
 
 .ysd-meta {
   display: flex;
@@ -214,5 +364,11 @@ html.ysd-lock .coach-content {
 
 @media (max-width: 860px) {
   .ysd-panel { width: 100vw; }
+}
+
+@media (max-width: 420px) {
   .ysd-meters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ysd-meters div:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .ysd-cal-row { flex-direction: column; }
+  .ysd-cal-right { align-items: flex-start; }
 }

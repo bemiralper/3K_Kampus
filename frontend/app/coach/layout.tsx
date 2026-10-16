@@ -29,6 +29,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/odev/kaynaklar": "Eğitim Kaynakları",
   "/coach/odev/kaynak-havuzu": "Kitap Atamaları",
   "/coach/yoklama": "Sınıf Yoklaması",
+  "/coach/yoklama-takibi": "Yoklama Takibi",
   "/coach/olcme-degerlendirme": "Sınav Listesi",
   "/coach/olcme-degerlendirme/yeni": "Yeni Sınav Oluştur",
   "/coach/olcme-degerlendirme/oturum-gruplari": "Oturum grupları",

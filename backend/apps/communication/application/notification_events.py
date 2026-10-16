@@ -813,6 +813,46 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         }),
     ),
     NotificationEvent(
+        key='devamsizlik.takvim',
+        module=MODULE_DEVAMSIZLIK,
+        label='Devamsızlık takvimi (PDF)',
+        description=(
+            'Devamsızlık Takibi öğrenci panelinden seçilen tarih aralığının '
+            'aylık takvim PDF’i veliye ve öğrenciye WhatsApp ile gönderilir '
+            '(DOCUMENT header Meta şablonu gerekir).'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'baslangic_tarihi', 'bitis_tarihi',
+            'gec_geldigi_gun_sayisi', 'gelmedigi_gun_sayisi',
+            'pdf_baslik',
+        ),
+        meta_name_base='devamsizlik_takvim',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Değerli Velimiz,\n\n'
+                'Öğrencimizin {{baslangic_tarihi}} – {{bitis_tarihi}} tarihleri '
+                'arasındaki devamsızlık durumu aşağıdaki gibidir:\n\n'
+                'Geç geldiği gün sayısı: {{gec_geldigi_gun_sayisi}} gün\n\n'
+                'Gelmediği gün sayısı: {{gelmedigi_gun_sayisi}} gün\n\n'
+                'Devamsızlık yapılan günlerin tarihleri ve ayrıntılı bilgileri için '
+                'ekte gönderilen PDF raporunu incelemenizi rica ederiz.'
+            ),
+            OGRENCI: (
+                'Sevgili Öğrencimiz,\n\n'
+                '{{baslangic_tarihi}} – {{bitis_tarihi}} tarihleri arasındaki '
+                'devamsızlık durumun aşağıdaki gibidir:\n\n'
+                'Geç geldiğin gün sayısı: {{gec_geldigi_gun_sayisi}} gün\n\n'
+                'Gelmediğin gün sayısı: {{gelmedigi_gun_sayisi}} gün\n\n'
+                'Hangi günlerde geç kaldığını veya gelmediğini ve diğer ayrıntıları '
+                'görmek için ekte gönderilen PDF raporunu incelemeni rica ederiz.'
+            ),
+        }),
+    ),
+    NotificationEvent(
         key='devamsizlik.bildirim',
         module=MODULE_DEVAMSIZLIK,
         label='Devamsızlık bildirimi',
