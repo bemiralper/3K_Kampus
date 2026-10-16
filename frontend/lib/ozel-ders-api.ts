@@ -315,6 +315,25 @@ export async function endSlotEarly(slotId: number, bitis_tarihi?: string) {
   return unwrap(res);
 }
 
+export async function ensureOturumlar(
+  start_date: string,
+  end_date: string,
+  ogrenci_id?: number,
+) {
+  const res = await apiFetch<{ created: number; updated: number; programs: number }>(
+    `${BASE}/oturumlar/ensure/`,
+    {
+      method: 'POST',
+      body: JSON.stringify({
+        start_date,
+        end_date,
+        ...(ogrenci_id ? { ogrenci_id } : {}),
+      }),
+    },
+  );
+  return unwrap(res);
+}
+
 export async function materializeProgram(
   programId: number,
   start_date: string,
@@ -811,6 +830,22 @@ export async function createTelafi(id: number, body: Record<string, unknown>) {
   return unwrap(res);
 }
 
+export async function vazgecTelafi(id: number) {
+  const res = await apiFetch<BirebirOturum>(`${BASE}/oturumlar/${id}/telafi-vazgec/`, {
+    method: 'POST',
+    body: '{}',
+  });
+  return unwrap(res);
+}
+
+export async function vazgecTelafiToplu(ids: number[]) {
+  const res = await apiFetch<{ count: number; ids: number[] }>(`${BASE}/oturumlar/telafi-vazgec/`, {
+    method: 'POST',
+    body: JSON.stringify({ ids }),
+  });
+  return unwrap(res);
+}
+
 export async function fetchHakedis(params?: Record<string, string | number | undefined>) {
   const res = await apiFetch<BirebirHakedis[]>(withQuery(`${BASE}/hakedis/`, params));
   return unwrap(res);
@@ -890,6 +925,7 @@ export const TELAFI_DURUMLARI = [
   { value: 'BEKLENIYOR', label: 'Telafi Bekleniyor', color: '#ea580c' },
   { value: 'PLANLANDI', label: 'Telafi Planlandı', color: '#2563eb' },
   { value: 'EDILDI', label: 'Telafi Edildi', color: '#16a34a' },
+  { value: 'VAZGECILDI', label: 'Telafiden Vazgeçildi', color: '#64748b' },
 ] as const;
 
 export const GUN_LABELS = ['', 'Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];

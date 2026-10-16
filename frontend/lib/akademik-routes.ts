@@ -67,8 +67,8 @@ export const AKADEMIK_GROUPS: AkademikGroupDef[] = [
     label: 'Özel Ders Yönetimi',
     tabs: [
       { segment: 'ogrenci-programlari', label: 'Öğrenci Programları' },
-      { segment: 'ogrenci-ozel-ders', label: 'Öğrenci Özel Ders' },
-      { segment: 'haftalik-program-sablonlari', label: 'Haftalık Program Şablonları' },
+      { segment: 'ogrenci-ozel-ders', label: 'Öğrenci Özel Ders', hidden: true },
+      { segment: 'haftalik-program-sablonlari', label: 'Haftalık Program Şablonları', hidden: true },
       { segment: 'birebir-ders-oturumlari', label: 'Birebir Ders Oturumları' },
       { segment: 'birebir-telafi-dersleri', label: 'Birebir Telafi Dersleri' },
       { segment: 'premium-paketler', label: 'Premium Paketler' },

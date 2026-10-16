@@ -5,6 +5,7 @@ from typing import Any, Optional
 
 from django.db import transaction
 from django.db.models import Prefetch
+from django.utils import timezone
 
 from apps.ozel_ders.domain.models import (
     BirebirDersOturumu,
@@ -392,6 +393,9 @@ def _resolve_telafi_durumu(
             if child.durum in PAYABLE_STATUSES:
                 return TelafiDurumu.EDILDI
             return TelafiDurumu.PLANLANDI
+        # Vazgeçilmiş borç, yoklama yeniden kaydedilince kendiliğinden açılmaz.
+        if oturum.telafi_durumu == TelafiDurumu.VAZGECILDI and telafi_durumu != TelafiDurumu.BEKLENIYOR:
+            return TelafiDurumu.VAZGECILDI
         return TelafiDurumu.BEKLENIYOR
     if new_durum in TELAFI_CHOICE_STATUSES:
         if not telafi_durumu or telafi_durumu not in USER_TELAFI_CHOICES:
@@ -464,6 +468,64 @@ def create_telafi(
     notify_telafi_planlandi(source, oturum, sent_by_user_id=user_id)
 
     return oturum, warnings
+
+
+def _append_note(notes: str, line: str) -> str:
+    current = (notes or '').strip()
+    if line in current:
+        return current
+    return f'{current}\n{line}'.strip()
+
+
+@transaction.atomic
+def vazgec_telafi(
+    oturum_id: int,
+    *,
+    kurum_id: int,
+    sube_id: int,
+    user=None,
+) -> BirebirDersOturumu:
+    """Bekleyen telafi borcunu kapatır. Yoklama, sebep ve hakediş durur; çocuk oturum açılmaz."""
+    del user
+    oturum = get_oturum(oturum_id, kurum_id=kurum_id, sube_id=sube_id)
+    if oturum.telafi_durumu != TelafiDurumu.BEKLENIYOR:
+        raise OzelDersError(
+            'Yalnızca telafi bekleyen derslerden vazgeçilebilir.',
+            'telafi_durumu',
+        )
+    if oturum.telafi_oturumlari.filter(is_active=True).exists():
+        raise OzelDersError(
+            'Bu dersin planlanmış bir telafisi var. Önce o oturumu iptal edin.',
+            'telafi_oturum',
+        )
+
+    stamp = timezone.localdate().strftime('%d.%m.%Y')
+    oturum.telafi_durumu = TelafiDurumu.VAZGECILDI
+    oturum.notes = _append_note(oturum.notes, f'Telafiden vazgeçildi ({stamp}).')
+    oturum.save(update_fields=['telafi_durumu', 'notes', 'updated_at'])
+    return get_oturum(oturum.id, kurum_id=kurum_id, sube_id=sube_id)
+
+
+@transaction.atomic
+def vazgec_telafi_toplu(
+    ids: list[int],
+    *,
+    kurum_id: int,
+    sube_id: int,
+    user=None,
+) -> list[BirebirDersOturumu]:
+    clean = []
+    for raw in ids or []:
+        try:
+            clean.append(int(raw))
+        except (TypeError, ValueError):
+            raise OzelDersError('Geçersiz oturum listesi.', 'ids')
+    if not clean:
+        raise OzelDersError('Vazgeçilecek kayıt yok.', 'ids')
+    return [
+        vazgec_telafi(oturum_id, kurum_id=kurum_id, sube_id=sube_id, user=user)
+        for oturum_id in clean
+    ]
 
 
 @transaction.atomic

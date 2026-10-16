@@ -1,0 +1,423 @@
+/* ==========================================================================
+   Öğrenci Programları — Önce Temiz Öğrenci Listesi, Tıklayınca Program
+   Telefon (1 sütun) · Tablet (2 sütun) · PC (3 sütun veya Liste)
+   ========================================================================== */
+
+.op-hub {
+  --op-ink: #0f172a;
+  --op-ink-2: #334155;
+  --op-mute: #64748b;
+  --op-line: #e2e8f0;
+  --op-line-soft: #f1f5f9;
+  --op-surface: #ffffff;
+  --op-canvas: #f8fafc;
+  --op-accent: #2563eb;
+  --op-accent-dark: #1d4ed8;
+  --op-warn: #ea580c;
+  --op-warn-bg: #fff7ed;
+  --op-ok: #059669;
+  --op-ok-bg: #ecfdf5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
+  min-width: 0;
+  color: var(--op-ink);
+  container-type: inline-size;
+  container-name: op;
+}
+
+.op-hub * {
+  box-sizing: border-box;
+}
+
+/* ----- 1. Tek Satır Komut, Özet ve Filtre Barı ----- */
+.op-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--op-surface);
+  border: 1px solid var(--op-line);
+  border-radius: 18px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+}
+
+.op-bar-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.op-stats-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-stat-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--op-line);
+  background: var(--op-canvas);
+  color: var(--op-ink-2);
+  font: inherit;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+button.op-stat-pill {
+  cursor: pointer;
+}
+
+button.op-stat-pill:hover {
+  border-color: #93c5fd;
+}
+
+.op-stat-pill strong {
+  font-weight: 780;
+  color: var(--op-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.op-stat-pill.is-warn {
+  background: var(--op-warn-bg);
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.op-stat-pill.is-warn strong {
+  color: var(--op-warn);
+}
+
+.op-stat-pill.is-on {
+  background: #0f172a;
+  border-color: #0f172a;
+  color: #cbd5e1;
+}
+
+.op-stat-pill.is-on strong {
+  color: #fff;
+}
+
+.op-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 0 13px;
+  border-radius: 10px;
+  border: 1px solid var(--op-line);
+  background: var(--op-surface);
+  color: var(--op-ink);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 660;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.14s ease, border-color 0.14s ease;
+}
+
+.op-btn:hover:not(:disabled) {
+  background: var(--op-canvas);
+  border-color: #cbd5e1;
+}
+
+.op-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.op-btn-primary {
+  background: var(--op-accent);
+  border-color: var(--op-accent);
+  color: #fff;
+}
+
+.op-btn-primary:hover:not(:disabled) {
+  background: var(--op-accent-dark);
+  border-color: var(--op-accent-dark);
+}
+
+.op-bar-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--op-line-soft);
+}
+
+.op-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 240px;
+  max-width: 420px;
+  min-height: 40px;
+  padding: 0 10px 0 12px;
+  background: var(--op-canvas);
+  border: 1px solid var(--op-line);
+  border-radius: 11px;
+  color: var(--op-mute);
+}
+
+.op-search:focus-within {
+  background: var(--op-surface);
+  border-color: var(--op-accent);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.op-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--op-ink);
+}
+
+.op-search button {
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--op-mute);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.op-filter-right {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.op-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--op-line-soft);
+  gap: 2px;
+}
+
+.op-segmented button {
+  min-height: 30px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--op-ink-2);
+  font: inherit;
+  font-size: 0.76rem;
+  font-weight: 680;
+  cursor: pointer;
+}
+
+.op-segmented button.is-on {
+  background: var(--op-surface);
+  color: var(--op-ink);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+/* ----- 2. Öğrenci Kart Izgarası (Her kart en az 280px, metinler asla kesilmez) ----- */
+.op-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+  gap: 12px;
+}
+
+.op-student-card {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid var(--op-line);
+  background: var(--op-surface);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.14s ease, box-shadow 0.14s ease, transform 0.12s ease;
+}
+
+.op-student-card:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+  transform: translateY(-1px);
+}
+
+.op-student-card.is-gap {
+  border-color: #fed7aa;
+  background: linear-gradient(180deg, #fffaf5 0%, #ffffff 55%);
+}
+
+.op-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.op-card-who {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.op-avatar {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 780;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.op-name {
+  display: block;
+  font-size: 0.95rem;
+  font-weight: 760;
+  color: var(--op-ink);
+  line-height: 1.25;
+}
+
+.op-sub {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.75rem;
+  color: var(--op-mute);
+}
+
+.op-quota-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 9px;
+  border-radius: 999px;
+  font-size: 0.73rem;
+  font-weight: 760;
+  font-variant-numeric: tabular-nums;
+  background: var(--op-ok-bg);
+  color: var(--op-ok);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.op-student-card.is-gap .op-quota-badge {
+  background: var(--op-warn-bg);
+  color: var(--op-warn);
+}
+
+.op-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.op-tag-pack {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: #f3e8ff;
+  color: #6d28d9;
+  font-size: 0.71rem;
+  font-weight: 700;
+}
+
+.op-tag-ders {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--op-canvas);
+  border: 1px solid var(--op-line);
+  color: var(--op-ink-2);
+  font-size: 0.72rem;
+  font-weight: 660;
+}
+
+.op-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--op-line-soft);
+  font-size: 0.76rem;
+  color: var(--op-mute);
+}
+
+.op-student-card.is-gap .op-card-foot {
+  color: #c2410c;
+  font-weight: 660;
+}
+
+.op-card-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-weight: 720;
+  color: var(--op-accent);
+  white-space: nowrap;
+}
+
+/* ----- Dar Ekran / Telefon ----- */
+@container op (max-width: 640px) {
+  .op-bar {
+    padding: 12px;
+  }
+  .op-stats-row {
+    width: 100%;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .op-stats-row::-webkit-scrollbar {
+    display: none;
+  }
+  .op-actions {
+    width: 100%;
+  }
+  .op-actions .op-btn {
+    flex: 1 1 auto;
+  }
+  .op-search {
+    max-width: none;
+    width: 100%;
+  }
+  .op-grid {
+    grid-template-columns: 1fr;
+  }
+}

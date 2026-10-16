@@ -19,6 +19,7 @@ from apps.ozel_ders.services.conflict_service import (
     check_all_for_occurrence,
     is_holiday,
     iter_dates_for_weekday,
+    list_holidays,
 )
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.program_service import get_program
@@ -405,6 +406,37 @@ def materialize_program(
     }
 
 
+def _slot_has_gap(
+    slot: BirebirHaftalikSlot,
+    *,
+    start: date,
+    end: date,
+    existing: set[tuple[int, date]],
+    taught: set[tuple[int, date]],
+    holidays: set[date],
+) -> bool:
+    """Bu aralıkta slotun üretilecek bir günü var mı? Varsa programı baştan gez."""
+    program = slot.program
+    slot_start = slot.baslangic_tarihi or program.baslangic_tarihi
+    slot_end = slot.bitis_tarihi or program.bitis_tarihi or end
+    range_start = max(start, slot_start)
+    range_end = min(end, slot_end)
+    if program.baslangic_tarihi:
+        range_start = max(range_start, program.baslangic_tarihi)
+    if program.bitis_tarihi:
+        range_end = min(range_end, program.bitis_tarihi)
+    if range_end < range_start:
+        return False
+    for day in iter_dates_for_weekday(range_start, range_end, slot.gun):
+        if day in holidays:
+            continue
+        if (slot.id, _week_start(day)) in taught:
+            continue
+        if (slot.id, day) not in existing:
+            return True
+    return False
+
+
 def materialize_active_programs(
     *,
     kurum_id: int,
@@ -415,11 +447,14 @@ def materialize_active_programs(
     max_days: int = 62,
     ogrenci_id: int | None = None,
 ) -> dict:
-    """Aktif programların şablon slotlarından tarih aralığı için oturum üretir (idempotent)."""
+    """Aktif programların şablon slotlarından tarih aralığı için oturum üretir (idempotent).
+
+    Aralık zaten doluysa program program dolaşmaz; yalnızca eksiği olan programları üretir.
+    """
     start = _parse_date(start_date)
     end = _parse_date(end_date)
     if end < start:
-        return {'created': 0, 'programs': 0}
+        return {'created': 0, 'updated': 0, 'programs': 0}
     if (end - start).days > max_days:
         end = start + timedelta(days=max_days)
 
@@ -428,12 +463,38 @@ def materialize_active_programs(
         program__kurum_id=kurum_id,
         program__sube_id=sube_id,
         program__durum=ProgramDurumu.AKTIF,
-    )
+    ).select_related('program')
     if ogrenci_id:
         slot_qs = slot_qs.filter(program__ogrenci_id=ogrenci_id)
-    program_ids = list(slot_qs.values_list('program_id', flat=True).distinct())
+    slots = list(slot_qs)
+    if not slots:
+        return {'created': 0, 'updated': 0, 'programs': 0}
+
+    slot_ids = [slot.id for slot in slots]
+    existing = set(
+        BirebirDersOturumu.objects.filter(
+            source_slot_id__in=slot_ids,
+            is_active=True,
+            session_date__gte=start,
+            session_date__lte=end,
+        ).values_list('source_slot_id', 'session_date')
+    )
+    taught = _taught_week_keys(slot_ids, start, end)
+    holidays = {
+        date.fromisoformat(row['date'])
+        for row in list_holidays(kurum_id, sube_id, start, end)
+        if not row.get('ozel_ders_aktif')
+    }
+    needed = {
+        slot.program_id
+        for slot in slots
+        if _slot_has_gap(
+            slot, start=start, end=end, existing=existing, taught=taught, holidays=holidays,
+        )
+    }
     created = 0
-    for program_id in program_ids:
+    updated = 0
+    for program_id in needed:
         result = materialize_program(
             program_id,
             kurum_id=kurum_id,
@@ -443,4 +504,5 @@ def materialize_active_programs(
             user=user,
         )
         created += result.get('created') or 0
-    return {'created': created, 'programs': len(program_ids)}
+        updated += result.get('updated') or 0
+    return {'created': created, 'updated': updated, 'programs': len(needed)}

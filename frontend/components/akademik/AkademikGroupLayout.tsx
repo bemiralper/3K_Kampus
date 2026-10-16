@@ -60,7 +60,15 @@ export default function AkademikGroupLayout({ group, children }: Props) {
           <div className="akademik-tab-nav-scroll">
             {group.tabs.filter((tab) => !tab.hidden).map((tab) => {
               const href = akademikTabHref(group.slug, tab.segment, basePath);
-              const active = pathname === href || pathname.startsWith(`${href}/`);
+              const isMergedStudentTab =
+                group.slug === "ozel-ders-yonetimi" &&
+                tab.segment === "ogrenci-programlari" &&
+                (pathname?.includes("/ogrenci-ozel-ders") ||
+                  pathname?.includes("/haftalik-program-sablonlari"));
+              const active =
+                pathname === href ||
+                pathname?.startsWith(`${href}/`) ||
+                Boolean(isMergedStudentTab);
               const isPlaceholder = !AKADEMIK_TAB_PAGES[tab.segment];
               return (
                 <Link

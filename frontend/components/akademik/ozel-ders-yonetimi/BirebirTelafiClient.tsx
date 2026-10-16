@@ -3,11 +3,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import dayjs from 'dayjs';
 import 'dayjs/locale/tr';
-import { createTelafi, fetchOturumlar, resolveDersLabel, type BirebirOturum } from '@/lib/ozel-ders-api';
+import {
+  createTelafi,
+  fetchOturumlar,
+  resolveDersLabel,
+  vazgecTelafi,
+  vazgecTelafiToplu,
+  type BirebirOturum,
+} from '@/lib/ozel-ders-api';
 import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
 import { useDersDisplayPref } from './useDersDisplayPref';
-import { Badge, Drawer, EmptyState, PageHeader, SkeletonCards, SkeletonRows, StatCard, StatGrid, oturumDurumTone, telafiDurumTone } from './ozelDersUi';
+import { Badge, Drawer, EmptyState, PageHeader, SkeletonRows, oturumDurumTone } from './ozelDersUi';
 import {
   IconAlertTriangle,
   IconCalendar,
@@ -16,8 +23,92 @@ import {
   IconRotateCcw,
 } from './icons';
 import './ozel-ders.css';
+import './telafi.css';
 
 dayjs.locale('tr');
+
+/** Güncel kuyruk. Daha eski bekleyenler ayrı, kapalı bölümde durur. */
+const TELAFI_AKTIF_GUN = 21;
+
+function splitQueue(rows: BirebirOturum[]) {
+  const cutoff = dayjs().subtract(TELAFI_AKTIF_GUN, 'day').startOf('day');
+  const aktif: BirebirOturum[] = [];
+  const eski: BirebirOturum[] = [];
+  for (const row of rows) {
+    if (dayjs(row.session_date).isBefore(cutoff, 'day')) eski.push(row);
+    else aktif.push(row);
+  }
+  return { aktif, eski };
+}
+
+function TelafiRow({
+  row,
+  useKisaAd,
+  asking,
+  busy,
+  onPlan,
+  onAsk,
+  onCancelAsk,
+  onConfirm,
+}: {
+  row: BirebirOturum;
+  useKisaAd: boolean;
+  asking: boolean;
+  busy: boolean;
+  onPlan: () => void;
+  onAsk: () => void;
+  onCancelAsk: () => void;
+  onConfirm: () => void;
+}) {
+  const reason = (row.sebep_display || row.sebep_aciklama || '').trim();
+  const sameAsStatus =
+    reason.toLocaleLowerCase('tr-TR') === (row.durum_display || '').trim().toLocaleLowerCase('tr-TR');
+  const note = !sameAsStatus && reason.length > 42 ? reason : '';
+  const shortReason = !sameAsStatus && !note ? reason : '';
+  const missed = row.durum === 'OGRENCI_GELMEDI' || row.durum === 'OGRETMEN_GELMEDI';
+  return (
+    <article className="tf-row">
+      <div className="tf-when">
+        <strong>{dayjs(row.session_date).format('D MMM')}</strong>
+        <span>{row.start_time.slice(0, 5)}–{row.end_time.slice(0, 5)}</span>
+      </div>
+      <div className="tf-main">
+        <div className="tf-name">{row.ogrenci_ad}</div>
+        <div className="tf-meta">
+          {resolveDersLabel(row, useKisaAd)}
+          {row.ogretmen_ad ? ` · ${row.ogretmen_ad}` : ''}
+        </div>
+        <div className="tf-why">
+          <span className={`tf-status${missed ? ' is-miss' : ''}`}>{row.durum_display}</span>
+          {shortReason && <span>{shortReason}</span>}
+        </div>
+        {note && <p className="tf-note">{note}</p>}
+        {asking && <p className="tf-ask">Telafi kapanacak. Yoklama kaydı durur.</p>}
+      </div>
+      <div className="tf-actions">
+        {asking ? (
+          <>
+            <button type="button" className="od-btn od-btn-secondary od-btn-sm" disabled={busy} onClick={onCancelAsk}>
+              Geri
+            </button>
+            <button type="button" className="od-btn od-btn-danger od-btn-sm" disabled={busy} onClick={onConfirm}>
+              Vazgeç
+            </button>
+          </>
+        ) : (
+          <>
+            <button type="button" className="od-btn od-btn-secondary od-btn-sm" disabled={busy} onClick={onAsk}>
+              Vazgeç
+            </button>
+            <button type="button" className="od-btn od-btn-primary od-btn-sm" disabled={busy} onClick={onPlan}>
+              <IconRotateCcw size={13} /> Telafi Planla
+            </button>
+          </>
+        )}
+      </div>
+    </article>
+  );
+}
 
 export default function BirebirTelafiClient() {
   const { ready, error: metaError } = useOzelDersMeta();
@@ -30,6 +121,10 @@ export default function BirebirTelafiClient() {
 
   const [sourceId, setSourceId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
+  const [askId, setAskId] = useState<number | null>(null);
+  const [askBulk, setAskBulk] = useState(false);
+  const [eskiOpen, setEskiOpen] = useState(false);
+  const [waiving, setWaiving] = useState(false);
   const [form, setForm] = useState({
     session_date: dayjs().add(1, 'day').format('YYYY-MM-DD'),
     start_time: '18:00',
@@ -43,7 +138,7 @@ export default function BirebirTelafiClient() {
       const [c, t] = await Promise.all([
         fetchOturumlar({
           telafi_durumu: 'BEKLENIYOR',
-          start_date: dayjs().subtract(60, 'day').format('YYYY-MM-DD'),
+          start_date: dayjs().subtract(400, 'day').format('YYYY-MM-DD'),
           end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
           skip_materialize: 1,
         }),
@@ -68,6 +163,37 @@ export default function BirebirTelafiClient() {
   }, [load]);
 
   const sourceRow = candidates.find((c) => c.id === sourceId) || null;
+  const { aktif, eski } = splitQueue(candidates);
+
+  async function waiveOne(id: number) {
+    setWaiving(true);
+    try {
+      await vazgecTelafi(id);
+      show('Telafiden vazgeçildi. Kaynak ders kaydı duruyor.');
+      setAskId(null);
+      await load();
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Vazgeçilemedi', 'error');
+    } finally {
+      setWaiving(false);
+    }
+  }
+
+  async function waiveStale() {
+    if (eski.length === 0) return;
+    setWaiving(true);
+    try {
+      const result = await vazgecTelafiToplu(eski.map((r) => r.id));
+      show(`${result.count} eski telafi kapatıldı. Ders kayıtları duruyor.`);
+      setAskBulk(false);
+      setEskiOpen(false);
+      await load();
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Eski kayıtlar kapatılamadı', 'error');
+    } finally {
+      setWaiving(false);
+    }
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -113,77 +239,122 @@ export default function BirebirTelafiClient() {
 
       {metaError && <div className="od-banner-error">{metaError}</div>}
 
-      <StatGrid>
-        <StatCard icon={<IconAlertTriangle size={19} />} tone="orange" value={candidates.length} label="Telafi Bekleyen" />
-        <StatCard icon={<IconCalendar size={19} />} tone="blue" value={telafis.length} label="Planlanan Telafi" />
-        <StatCard
-          icon={<IconCheckCircle size={19} />}
-          tone="green"
-          value={telafis.filter((t) => ['ISLENDI', 'ONLINE'].includes(t.durum)).length}
-          label="Tamamlanan Telafi"
-        />
-      </StatGrid>
+      <div className="tf-summary" aria-label="Telafi özeti">
+        <span><strong>{aktif.length}</strong> bekleyen</span>
+        {eski.length > 0 && <span><strong>{eski.length}</strong> eski</span>}
+        <span><strong>{telafis.length}</strong> planlandı</span>
+        <span>
+          <strong>{telafis.filter((t) => ['ISLENDI', 'ONLINE'].includes(t.durum)).length}</strong> tamamlandı
+        </span>
+      </div>
 
       <div className="od-card">
         <div className="od-card-header">
           <h3>
             <IconAlertTriangle size={17} /> Telafi Bekleyenler
           </h3>
-          <span className="od-cell-muted">{candidates.length} kayıt</span>
+          <span className="od-cell-muted">Son {TELAFI_AKTIF_GUN} gün · {aktif.length} kayıt</span>
         </div>
         <div className="od-card-body">
           {loading ? (
-            <SkeletonCards count={3} />
-          ) : candidates.length === 0 ? (
+            <SkeletonRows rows={4} />
+          ) : aktif.length === 0 ? (
             <EmptyState
               icon={<IconCheckCircle size={24} />}
-              title="Bekleyen telafi yok"
-              description="Tüm telafi gerektiren dersler zaten planlanmış."
+              title="Güncel bekleyen yok"
+              description={
+                eski.length
+                  ? `Son ${TELAFI_AKTIF_GUN} günde telafi borcu yok. Daha eskiler aşağıda.`
+                  : 'Tüm telafi gerektiren dersler kapanmış.'
+              }
             />
           ) : (
-            <div className="od-grid-cards">
-              {candidates.map((r) => (
-                <div className="od-entity-card" key={r.id} style={{ cursor: 'default' }}>
-                  <div className="od-entity-card-top">
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <div className="od-entity-card-name">{r.ogrenci_ad}</div>
-                      <div className="od-entity-card-sub">
-                        {dayjs(r.session_date).format('DD MMM YYYY')} · {r.start_time.slice(0, 5)}
-                      </div>
-                    </div>
-                  </div>
-                  <div className="od-entity-card-meta">
-                    <Badge tone="secondary">{resolveDersLabel(r, useKisaAd)}</Badge>
-                    <Badge tone="info">{r.ogretmen_ad}</Badge>
-                    <Badge tone={oturumDurumTone(r.durum)}>{r.durum_display}</Badge>
-                    {r.sebep_display && <Badge tone="warning">{r.sebep_display}</Badge>}
-                    {r.telafi_durumu === 'BEKLENIYOR' && (
-                      <Badge tone={telafiDurumTone(r.telafi_durumu)}>{r.telafi_durumu_display}</Badge>
-                    )}
-                  </div>
-                  <div className="od-entity-card-footer">
-                    <span className="od-cell-muted">Kaynak ders #{r.id}</span>
-                    <button
-                      type="button"
-                      className="od-btn od-btn-primary od-btn-sm"
-                      onClick={() => {
-                        setSourceId(r.id);
-                        setForm({
-                          session_date: dayjs().add(1, 'day').format('YYYY-MM-DD'),
-                          start_time: r.start_time.slice(0, 5),
-                          end_time: r.end_time.slice(0, 5),
-                        });
-                      }}
-                    >
-                      <IconRotateCcw size={13} /> Telafi Planla
-                    </button>
-                  </div>
-                </div>
+            <div className="tf-list">
+              {aktif.map((r) => (
+                <TelafiRow
+                  key={r.id}
+                  row={r}
+                  useKisaAd={useKisaAd}
+                  asking={askId === r.id}
+                  busy={waiving}
+                  onPlan={() => {
+                    setAskId(null);
+                    setSourceId(r.id);
+                    setForm({
+                      session_date: dayjs().add(1, 'day').format('YYYY-MM-DD'),
+                      start_time: r.start_time.slice(0, 5),
+                      end_time: r.end_time.slice(0, 5),
+                    });
+                  }}
+                  onAsk={() => setAskId(r.id)}
+                  onCancelAsk={() => setAskId(null)}
+                  onConfirm={() => void waiveOne(r.id)}
+                />
               ))}
             </div>
           )}
         </div>
       </div>
+
+      {eski.length > 0 && (
+        <div className="od-card tf-stale">
+          <div className="od-card-header">
+            <h3>Eski bekleyenler</h3>
+            <span className="od-cell-muted">{TELAFI_AKTIF_GUN} günden eski · {eski.length} kayıt</span>
+          </div>
+          <div className="od-card-body">
+            <p className="tf-stale-copy">
+              Bu dersler hâlâ telafi bekliyor. Ana listeye karışmasın diye ayrı duruyor. Planlayabilir
+              veya borcu kapatabilirsiniz; yoklama kaydı silinmez.
+            </p>
+            <div className="tf-stale-actions">
+              <button type="button" className="od-btn od-btn-secondary od-btn-sm" onClick={() => setEskiOpen((v) => !v)}>
+                {eskiOpen ? 'Listeyi gizle' : 'Listeyi aç'}
+              </button>
+              {askBulk ? (
+                <>
+                  <span className="tf-ask">{eski.length} kaydın telafisi kapanacak.</span>
+                  <button type="button" className="od-btn od-btn-secondary od-btn-sm" disabled={waiving} onClick={() => setAskBulk(false)}>
+                    Geri
+                  </button>
+                  <button type="button" className="od-btn od-btn-danger od-btn-sm" disabled={waiving} onClick={() => void waiveStale()}>
+                    {waiving ? 'Kapatılıyor…' : 'Tümünden vazgeç'}
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="od-btn od-btn-danger od-btn-sm" disabled={waiving} onClick={() => setAskBulk(true)}>
+                  Tümünden vazgeç
+                </button>
+              )}
+            </div>
+            {eskiOpen && (
+              <div className="tf-list">
+                {eski.map((r) => (
+                  <TelafiRow
+                    key={r.id}
+                    row={r}
+                    useKisaAd={useKisaAd}
+                    asking={askId === r.id}
+                    busy={waiving}
+                    onPlan={() => {
+                      setAskId(null);
+                      setSourceId(r.id);
+                      setForm({
+                        session_date: dayjs().add(1, 'day').format('YYYY-MM-DD'),
+                        start_time: r.start_time.slice(0, 5),
+                        end_time: r.end_time.slice(0, 5),
+                      });
+                    }}
+                    onAsk={() => setAskId(r.id)}
+                    onCancelAsk={() => setAskId(null)}
+                    onConfirm={() => void waiveOne(r.id)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       <div className="od-card">
         <div className="od-card-header">

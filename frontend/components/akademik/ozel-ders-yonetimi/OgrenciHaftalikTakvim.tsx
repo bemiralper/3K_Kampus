@@ -84,6 +84,7 @@ export default function OgrenciHaftalikTakvim({
   const dragIdRef = useRef<number | null>(null);
   const dropKeyRef = useRef<string | null>(null);
   const suppressClickRef = useRef(false);
+  const shellRef = useRef<HTMLDivElement>(null);
   const [draggingId, setDraggingId] = useState<number | null>(null);
   const [dropKey, setDropKey] = useState<string | null>(null);
   const today = todayIso();
@@ -92,7 +93,72 @@ export default function OgrenciHaftalikTakvim({
     () => Array.from({ length: 7 }, (_, i) => addDaysIso(weekStart, i)),
     [weekStart],
   );
+  const [activeDate, setActiveDate] = useState<string>(() => today);
+
+  useEffect(() => {
+    if (!days.includes(activeDate)) {
+      const todayInWeek = days.find((d) => d === today);
+      if (todayInWeek) {
+        setActiveDate(todayInWeek);
+        return;
+      }
+      const firstWithLesson = days.find((d) => oturumlar.some((o) => o.session_date === d));
+      setActiveDate(firstWithLesson || days[0]);
+    }
+  }, [days, activeDate, today, oturumlar]);
+
   const lessonPeriods = useMemo(() => periods.filter((p) => !p.isBreak), [periods]);
+
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!shell) return;
+
+    const fit = () => {
+      const top = shell.getBoundingClientRect().top;
+      const gap = 16;
+      if (top >= window.innerHeight - 120) {
+        shell.style.height = '';
+        return;
+      }
+      const height = Math.max(360, Math.round(window.innerHeight - Math.max(top, 8) - gap));
+      shell.style.height = `${height}px`;
+    };
+
+    const onWheel = (event: WheelEvent) => {
+      if (Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+      const scroller = shell.querySelector<HTMLElement>('.od-table-scroll');
+      if (!scroller) return;
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      if (max > 0) {
+        scroller.scrollTop = Math.min(max, Math.max(0, scroller.scrollTop + event.deltaY));
+      }
+      event.preventDefault();
+    };
+
+    const grow = () => {
+      const top = shell.getBoundingClientRect().top;
+      if (top >= window.innerHeight - 80) return;
+      const next = Math.max(360, Math.round(window.innerHeight - Math.max(top, 8) - 16));
+      if (next > shell.offsetHeight + 4) shell.style.height = `${next}px`;
+    };
+
+    fit();
+    const frame = window.requestAnimationFrame(fit);
+    window.addEventListener('resize', fit);
+    window.addEventListener('scroll', grow, { passive: true });
+    shell.addEventListener('wheel', onWheel, { passive: false });
+    const header = document.querySelector('.od-ops-top');
+    const observer = new ResizeObserver(fit);
+    if (header) observer.observe(header);
+
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.removeEventListener('resize', fit);
+      window.removeEventListener('scroll', grow);
+      shell.removeEventListener('wheel', onWheel);
+      observer.disconnect();
+    };
+  }, [lessonPeriods.length]);
 
   const holidayByDate = useMemo(() => {
     const map = new Map<string, DonemTatilGun>();
@@ -249,7 +315,71 @@ export default function OgrenciHaftalikTakvim({
         </div>
       </div>
 
-      <div className={`od-week-cal-shell${moving ? ' is-moving' : ''}`}>
+      {/* Mobil / Dar Ekran: 7 Günlük Seçici Şerit + Gündem Kartları */}
+      <div className="od-week-mobile">
+        <div className="od-week-mobile-days" role="tablist" aria-label="Haftanın günleri">
+          {days.map((date, idx) => {
+            const count = oturumlar.filter((o) => o.session_date === date).length;
+            const active = date === activeDate;
+            const isToday = date === today;
+            return (
+              <button
+                key={date}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                className={`od-week-mobile-day${isToday ? ' is-today' : ''}${active ? ' is-active' : ''}`}
+                onClick={() => setActiveDate(date)}
+              >
+                <span>{GUN_LABELS[idx + 1]}</span>
+                <strong>{Number(date.slice(8))}</strong>
+                <em>{count}</em>
+              </button>
+            );
+          })}
+        </div>
+
+        <div className="od-week-mobile-agenda">
+          {lessonPeriods.map((period) => {
+            const items = cellMap.map.get(`${activeDate}:${period.key}`) || [];
+            const holiday = holidayByDate.get(activeDate);
+            return (
+              <div key={period.key} className="od-week-mobile-slot">
+                <div className="od-week-mobile-time">
+                  <strong>{period.baslangic}</strong>
+                  <span>{period.bitis}</span>
+                </div>
+                <div className="od-week-mobile-body">
+                  {items.length > 0 ? (
+                    items.map((o) => (
+                      <button
+                        key={o.id}
+                        type="button"
+                        className={`od-week-chip is-${durumKey(o)}`}
+                        onClick={() => openChip(o)}
+                      >
+                        <span className="od-week-chip-title">{resolveDersLabel(o, useKisaAd)}</span>
+                        <span className="od-week-chip-sub">{o.ogretmen_ad}</span>
+                        <span className="od-week-chip-status">{durumLine(o)}</span>
+                      </button>
+                    ))
+                  ) : (
+                    <button
+                      type="button"
+                      className="od-week-mobile-add"
+                      onClick={() => onAddAt(activeDate, period)}
+                    >
+                      {holiday ? `Tatil (${holiday.title})` : '+ Bu saate ders ekle'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div ref={shellRef} className={`od-week-cal-shell${moving ? ' is-moving' : ''}`}>
         <div className="od-table-scroll">
           <table className="od-grid-table od-week-cal-table">
             <thead>
@@ -385,16 +515,15 @@ export default function OgrenciHaftalikTakvim({
             </tbody>
           </table>
         </div>
-      </div>
-
-      <div className="od-week-cal-legend">
-        {LEGEND.map((item) => (
-          <span key={item.key} className="od-week-cal-legend-item">
-            <i className={`od-week-dot is-${item.key}`} />
-            {item.label}
-          </span>
-        ))}
-        <span className="od-week-cal-hint">Sürükleyerek taşı · ← → hafta · boş hücreye tıklayınca ekle</span>
+        <div className="od-week-cal-legend">
+          {LEGEND.map((item) => (
+            <span key={item.key} className="od-week-cal-legend-item">
+              <i className={`od-week-dot is-${item.key}`} />
+              {item.label}
+            </span>
+          ))}
+          <span className="od-week-cal-hint">Sürükleyerek taşı · boş hücreye tıklayınca ekle</span>
+        </div>
       </div>
     </div>
   );

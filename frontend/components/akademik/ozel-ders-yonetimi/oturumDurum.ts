@@ -13,6 +13,7 @@ export const TELAFI_DURUM_LABEL: Record<string, string> = {
   BEKLENIYOR: 'Telafi Bekleniyor',
   PLANLANDI: 'Telafi Planlandı',
   EDILDI: 'Telafi Edildi',
+  VAZGECILDI: 'Telafiden Vazgeçildi',
 };
 
 export const SEBEP_OPTIONS = [

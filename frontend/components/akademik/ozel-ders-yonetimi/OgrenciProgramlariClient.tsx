@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import dayjs from 'dayjs';
+import 'dayjs/locale/tr';
 import {
   createProgram,
   fetchHakedis,
@@ -23,35 +24,24 @@ import {
   Badge,
   Drawer,
   EmptyState,
-  MiniProgress,
-  PageHeader,
-  Segmented,
-  SkeletonCards,
-  StatCard,
-  StatGrid,
-  StatSkeleton,
   avatarGradient,
   initials,
   formatCurrency,
 } from './ozelDersUi';
 import {
   IconAlertTriangle,
-  IconAward,
-  IconBookOpen,
   IconCheckCircle,
-  IconCalendar,
   IconChevronRight,
-  IconClock,
+  IconClose,
   IconPlus,
   IconRefresh,
-  IconRotateCcw,
   IconSearch,
-  IconStar,
-  IconUser,
   IconUsers,
-  IconWallet,
 } from './icons';
 import './ozel-ders.css';
+import './ogrenci-programlari.css';
+
+dayjs.locale('tr');
 
 type DashboardStats = {
   todaySessions: number;
@@ -64,7 +54,6 @@ type DashboardStats = {
   premiumPackages: number;
 };
 
-/** Aynı öğrencinin birden fazla programını tek kartta toplar */
 type StudentProgramGroup = {
   ogrenci: number;
   ogrenci_ad: string;
@@ -73,7 +62,6 @@ type StudentProgramGroup = {
   paketAds: string[];
   paketDersleri: PaketDersi[];
   slotCount: number;
-  /** Premium kota toplamı; yoksa paket ders adedi */
   expectedHaftalik: number;
   needsSablon: boolean;
   durum: string;
@@ -146,6 +134,69 @@ function groupProgramsByStudent(programs: BirebirProgram[]): StudentProgramGroup
   return groups.sort((a, b) => (a.ogrenci_ad || '').localeCompare(b.ogrenci_ad || '', 'tr'));
 }
 
+function formatPeriod(start: string, end: string | null) {
+  const s = dayjs(start);
+  if (!s.isValid()) return start || '—';
+  const left = s.format('D MMM YYYY');
+  if (!end) return `${left} · süresiz`;
+  const e = dayjs(end);
+  return e.isValid() ? `${left} – ${e.format('D MMM YYYY')}` : left;
+}
+
+type CardTag = {
+  key: string;
+  label: string;
+  kind: 'pack' | 'ders';
+  count: number;
+};
+
+function foldLabel(value: string) {
+  return value.trim().toLocaleLowerCase('tr-TR').replace(/\s+/g, ' ');
+}
+
+/** Sınav öneki, paket soneki ve -1/-2 düzeyini atar; "Fizik" ile "Fizik-1" aynı ders sayılır. */
+function subjectKey(value: string) {
+  return foldLabel(value)
+    .replace(/^(tyt|ayt|ydt|lgs|kpss)\s+/, '')
+    .replace(/\s+(premium\s+)?(paketi|paket)$/i, '')
+    .replace(/\s+(özel ders|ozel ders)$/i, '')
+    .replace(/[-–]\s*\d+$/, '')
+    .replace(/\s+\d+$/, '')
+    .trim();
+}
+
+function buildCardTags(group: StudentProgramGroup, useKisaAd: boolean): CardTag[] {
+  const courses: CardTag[] = [];
+  const byLabel = new Map<string, CardTag>();
+  for (const ders of group.paketDersleri) {
+    const label = resolveDersLabel(ders, useKisaAd).trim();
+    if (!label || label === '—') continue;
+    const key = foldLabel(label);
+    const add = ders.haftalik_adet || 0;
+    const prev = byLabel.get(key);
+    if (prev) {
+      prev.count += add;
+      continue;
+    }
+    const tag: CardTag = { key, label, kind: 'ders', count: add };
+    byLabel.set(key, tag);
+    courses.push(tag);
+  }
+
+  const courseSubjects = new Set(courses.map((tag) => subjectKey(tag.label)));
+  const packs: CardTag[] = [];
+  const seenPacks = new Set<string>();
+  for (const ad of group.paketAds) {
+    const label = ad.trim();
+    const key = foldLabel(label);
+    if (!label || !key || seenPacks.has(key) || courseSubjects.has(subjectKey(label))) continue;
+    seenPacks.add(key);
+    packs.push({ key: `pack:${key}`, label, kind: 'pack', count: 0 });
+  }
+
+  return [...packs, ...courses];
+}
+
 export default function OgrenciProgramlariClient() {
   const router = useRouter();
   const { ready, egitimYiliId, error: metaError } = useOzelDersMeta();
@@ -158,10 +209,10 @@ export default function OgrenciProgramlariClient() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [durumFilter, setDurumFilter] = useState<'AKTIF' | 'PASIF' | ''>('AKTIF');
-
+  const [onlyNeedsSablon, setOnlyNeedsSablon] = useState(false);
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [statsLoading, setStatsLoading] = useState(false);
 
+  // Yeni Program Drawer
   const [createOpen, setCreateOpen] = useState(false);
   const [studentQ, setStudentQ] = useState('');
   const [students, setStudents] = useState<KutuphaneStudentOption[]>([]);
@@ -173,8 +224,6 @@ export default function OgrenciProgramlariClient() {
     notlar: '',
   });
   const [saving, setSaving] = useState(false);
-  const [sortBy, setSortBy] = useState<'ad' | 'eksik'>('ad');
-  const [onlyNeedsSablon, setOnlyNeedsSablon] = useState(false);
   const didAutoSync = useRef(false);
 
   const load = useCallback(async () => {
@@ -200,16 +249,15 @@ export default function OgrenciProgramlariClient() {
 
   const loadStats = useCallback(async () => {
     if (!ready) return;
-    setStatsLoading(true);
     try {
       const today = dayjs().format('YYYY-MM-DD');
-      const weekStart = dayjs().startOf('week').format('YYYY-MM-DD');
-      const weekEnd = dayjs().endOf('week').format('YYYY-MM-DD');
-      const [activePrograms, todayOturumlar, weekOturumlar, telafiPending, hakedisMonth] =
+      const wStart = dayjs().startOf('week').format('YYYY-MM-DD');
+      const wEnd = dayjs().endOf('week').format('YYYY-MM-DD');
+      const [activePrograms, todayOturumlar, wOturumlar, telafiPending, hakedisMonth] =
         await Promise.all([
           fetchProgramlar({ egitim_yili_id: egitimYiliId || undefined, durum: 'AKTIF' }),
           fetchOturumlar({ start_date: today, end_date: today, skip_materialize: 1 }),
-          fetchOturumlar({ start_date: weekStart, end_date: weekEnd, skip_materialize: 1 }),
+          fetchOturumlar({ start_date: wStart, end_date: wEnd, skip_materialize: 1 }),
           fetchOturumlar({
             telafi_durumu: 'BEKLENIYOR',
             start_date: dayjs().subtract(60, 'day').format('YYYY-MM-DD'),
@@ -219,7 +267,7 @@ export default function OgrenciProgramlariClient() {
           fetchHakedis({ yil: dayjs().year(), ay: dayjs().month() + 1 }),
         ]);
 
-      const teacherSet = new Set(weekOturumlar.map((o) => o.ogretmen_ad).filter(Boolean));
+      const teacherSet = new Set(wOturumlar.map((o) => o.ogretmen_ad).filter(Boolean));
       const premiumSet = new Set(
         activePrograms.map((p) => p.premium_paket).filter((v): v is number => v != null),
       );
@@ -233,14 +281,12 @@ export default function OgrenciProgramlariClient() {
         todayEarnings,
         activeStudents: new Set(activePrograms.map((p) => p.ogrenci)).size,
         activeTeachers: teacherSet.size,
-        weekSessions: weekOturumlar.length,
+        weekSessions: wOturumlar.length,
         pendingTelafi: telafiPending.length,
         premiumPackages: premiumSet.size,
       });
     } catch {
-      // Dashboard istatistikleri opsiyoneldir; sessiz geç.
-    } finally {
-      setStatsLoading(false);
+      /* opsiyonel */
     }
   }, [ready, egitimYiliId]);
 
@@ -248,7 +294,6 @@ export default function OgrenciProgramlariClient() {
     loadStats();
   }, [loadStats]);
 
-  // Sayfa açılışında kayıt/sözleşmeden eksik programları sessizce senkronize et
   useEffect(() => {
     if (!ready || didAutoSync.current) return;
     didAutoSync.current = true;
@@ -263,7 +308,7 @@ export default function OgrenciProgramlariClient() {
           await loadStats();
         }
       } catch {
-        /* otomatik senkron opsiyonel */
+        /* opsiyonel */
       }
     })();
     return () => {
@@ -282,9 +327,11 @@ export default function OgrenciProgramlariClient() {
     return () => clearTimeout(t);
   }, [studentQ]);
 
+  const allGroups = useMemo(() => groupProgramsByStudent(rows), [rows]);
+
   const studentGroups = useMemo(() => {
     const q = search.trim();
-    let groups = groupProgramsByStudent(rows);
+    let groups = allGroups;
     if (q) {
       groups = groups.filter((g) => {
         const haystack = [
@@ -302,19 +349,19 @@ export default function OgrenciProgramlariClient() {
     if (onlyNeedsSablon) {
       groups = groups.filter((g) => g.needsSablon);
     }
-    if (sortBy === 'eksik') {
-      groups = [...groups].sort((a, b) => {
-        if (a.needsSablon !== b.needsSablon) return a.needsSablon ? -1 : 1;
-        return (a.ogrenci_ad || '').localeCompare(b.ogrenci_ad || '', 'tr');
-      });
-    }
     return groups;
-  }, [rows, search, useKisaAd, onlyNeedsSablon, sortBy]);
+  }, [allGroups, search, useKisaAd, onlyNeedsSablon]);
 
   const needsSablonCount = useMemo(
-    () => groupProgramsByStudent(rows).filter((g) => g.needsSablon).length,
-    [rows],
+    () => allGroups.filter((g) => g.needsSablon).length,
+    [allGroups],
   );
+
+  function openStudentProgram(ogrenciId: number) {
+    router.push(
+      `${akademikTabHref('ozel-ders-yonetimi', 'ogrenci-ozel-ders')}?ogrenci_id=${ogrenciId}`,
+    );
+  }
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -365,200 +412,234 @@ export default function OgrenciProgramlariClient() {
     <div className="od-scope">
       {toastNode}
 
-      <PageHeader
-        icon={<IconUsers size={19} />}
-        title="Öğrenci Programları"
-        description="Kayıt ve sözleşmeden gelen özel ders / premium öğrenciler. Karta tıklayarak öğrencinin özel ders operasyon ekranını açın."
-        actions={
-          <>
-            <button type="button" className="od-btn od-btn-secondary" onClick={onSync} disabled={syncing || !ready}>
-              <IconRefresh size={15} /> {syncing ? 'Senkron…' : 'Senkronize et'}
-            </button>
-            <button type="button" className="od-btn od-btn-primary" onClick={() => setCreateOpen(true)}>
-              <IconPlus size={15} /> Yeni Program
-            </button>
-          </>
-        }
-      />
+      <div className="op-hub">
+        {/* 1. Üst Komut, Canlı Özet ve Arama Barı */}
+        <section className="op-bar" aria-label="Özet ve filtreler">
+          <div className="op-bar-top">
+            <div className="op-stats-row">
+              <button
+                type="button"
+                className={`op-stat-pill${needsSablonCount > 0 ? ' is-warn' : ''}${onlyNeedsSablon ? ' is-on' : ''}`}
+                onClick={() => setOnlyNeedsSablon((v) => !v)}
+                aria-pressed={onlyNeedsSablon}
+              >
+                <IconAlertTriangle size={14} />
+                Eksik atama <strong>{needsSablonCount}</strong>
+              </button>
+              {stats && (
+                <>
+                  <span className="op-stat-pill">
+                    Bugün <strong>{stats.todaySessions}</strong> ders
+                  </span>
+                  <span className={`op-stat-pill${stats.pendingAttendance > 0 ? ' is-warn' : ''}`}>
+                    Yoklama <strong>{stats.pendingAttendance}</strong>
+                  </span>
+                  <span className="op-stat-pill">
+                    Bu hafta <strong>{stats.weekSessions}</strong>
+                  </span>
+                  <span className="op-stat-pill">
+                    Öğretmen <strong>{stats.activeTeachers}</strong>
+                  </span>
+                  {stats.pendingTelafi > 0 && (
+                    <span className="op-stat-pill is-warn">
+                      Telafi <strong>{stats.pendingTelafi}</strong>
+                    </span>
+                  )}
+                  {stats.todayEarnings > 0 && (
+                    <span className="op-stat-pill">
+                      Hakediş <strong>{formatCurrency(stats.todayEarnings)}</strong>
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
 
-      {(error || metaError) && <div className="od-banner-error">{error || metaError}</div>}
+            <div className="op-actions">
+              <button
+                type="button"
+                className="op-btn"
+                onClick={() => setUseKisaAd(!useKisaAd)}
+                aria-pressed={useKisaAd}
+              >
+                {useKisaAd ? 'Kısa ad' : 'Uzun ad'}
+              </button>
+              <button
+                type="button"
+                className="op-btn"
+                onClick={onSync}
+                disabled={syncing || !ready}
+              >
+                <IconRefresh size={14} /> {syncing ? 'Senkron…' : 'Senkronize et'}
+              </button>
+              <button
+                type="button"
+                className="op-btn op-btn-primary"
+                onClick={() => setCreateOpen(true)}
+              >
+                <IconPlus size={15} /> Yeni Program
+              </button>
+            </div>
+          </div>
 
-      {statsLoading && !stats ? (
-        <StatSkeleton count={8} />
-      ) : stats ? (
-        <StatGrid>
-          <StatCard icon={<IconCalendar size={19} />} tone="blue" value={stats.todaySessions} label="Bugünkü Ders" />
-          <StatCard
-            icon={<IconClock size={19} />}
-            tone={stats.pendingAttendance > 0 ? 'orange' : 'slate'}
-            value={stats.pendingAttendance}
-            label="Bekleyen Yoklama"
-          />
-          <StatCard icon={<IconWallet size={19} />} tone="green" value={formatCurrency(stats.todayEarnings)} label="Bugünkü Hakediş" />
-          <StatCard icon={<IconUser size={19} />} tone="purple" value={stats.activeStudents} label="Aktif Öğrenci" />
-          <StatCard icon={<IconAward size={19} />} tone="teal" value={stats.activeTeachers} label="Aktif Öğretmen" />
-          <StatCard icon={<IconBookOpen size={19} />} tone="blue" value={stats.weekSessions} label="Bu Hafta Ders" />
-          <StatCard
-            icon={<IconRotateCcw size={19} />}
-            tone={stats.pendingTelafi > 0 ? 'red' : 'slate'}
-            value={stats.pendingTelafi}
-            label="Telafi Bekleyen"
-          />
-          <StatCard icon={<IconStar size={19} />} tone="pink" value={stats.premiumPackages} label="Premium Paket" />
-        </StatGrid>
-      ) : null}
-
-      <div className="od-toolbar">
-        <div className="od-search">
-          <IconSearch size={16} />
-          <input
-            placeholder="Öğrenci, paket veya not ara…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
-        <Segmented
-          options={[
-            { value: 'AKTIF', label: 'Aktif' },
-            { value: 'PASIF', label: 'Pasif' },
-            { value: '', label: 'Tümü' },
-          ]}
-          value={durumFilter}
-          onChange={setDurumFilter}
-        />
-        <Segmented
-          options={[
-            { value: 'ad', label: 'Ada Göre' },
-            { value: 'eksik', label: 'Önce Eksik Atama' },
-          ]}
-          value={sortBy}
-          onChange={setSortBy}
-        />
-        <button
-          type="button"
-          className={`od-btn od-btn-secondary od-btn-sm${onlyNeedsSablon ? ' is-active-pref' : ''}`}
-          onClick={() => setOnlyNeedsSablon((v) => !v)}
-          title="Sadece öğretmen/saat ataması eksik olan öğrencileri göster"
-          aria-pressed={onlyNeedsSablon}
-        >
-          <IconAlertTriangle size={13} /> Eksik atama {needsSablonCount > 0 ? `(${needsSablonCount})` : ''}
-        </button>
-        <div className="od-toolbar-spacer" />
-        <span className="od-cell-muted">{studentGroups.length} öğrenci</span>
-        <button
-          type="button"
-          className="od-btn od-btn-secondary od-btn-icon"
-          onClick={() => { load(); loadStats(); }}
-          disabled={loading}
-          title="Listeyi yenile"
-        >
-          <IconRefresh size={15} />
-        </button>
-        <button
-          type="button"
-          className={`od-btn od-btn-secondary od-btn-sm${useKisaAd ? ' is-active-pref' : ''}`}
-          onClick={() => setUseKisaAd(!useKisaAd)}
-          title="Kısa ad göster (Fizik-1 → Fizik; tanımlı kisa_ad varsa o kullanılır)"
-          aria-pressed={useKisaAd}
-        >
-          {useKisaAd ? 'Kısa ad' : 'Uzun ad'}
-        </button>
-      </div>
-
-      {loading ? (
-        <SkeletonCards count={6} />
-      ) : studentGroups.length === 0 ? (
-        <EmptyState
-          icon={<IconUsers size={24} />}
-          title={search ? 'Aramanızla eşleşen öğrenci yok' : 'Henüz program yok'}
-          description={
-            search
-              ? 'Farklı bir arama terimi deneyin veya filtreleri temizleyin.'
-              : 'Kayıt veya sözleşmeden özel ders / premium paket geldiyse Senkronize et ile programlar oluşur.'
-          }
-          action={
-            !search && (
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
-                <button type="button" className="od-btn od-btn-primary" onClick={onSync} disabled={syncing}>
-                  <IconRefresh size={15} /> Senkronize et
+          <div className="op-bar-filters">
+            <div className="op-search">
+              <IconSearch size={16} />
+              <input
+                type="text"
+                placeholder="Öğrenci adı, paket veya ders ara…"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                aria-label="Öğrenci adı, paket veya ders ara"
+              />
+              {search && (
+                <button type="button" onClick={() => setSearch('')} aria-label="Aramayı temizle">
+                  <IconClose size={14} />
                 </button>
-                <button type="button" className="od-btn od-btn-secondary" onClick={() => setCreateOpen(true)}>
-                  <IconPlus size={15} /> Yeni Program
-                </button>
+              )}
+            </div>
+
+            <div className="op-filter-right">
+              <div className="op-segmented" role="tablist" aria-label="Durum filtresi">
+                {(
+                  [
+                    { v: 'AKTIF', l: 'Aktif' },
+                    { v: 'PASIF', l: 'Pasif' },
+                    { v: '', l: 'Tümü' },
+                  ] as const
+                ).map((o) => (
+                  <button
+                    key={o.l}
+                    type="button"
+                    className={durumFilter === o.v ? 'is-on' : ''}
+                    onClick={() => setDurumFilter(o.v)}
+                  >
+                    {o.l}
+                  </button>
+                ))}
               </div>
-            )
-          }
-        />
-      ) : (
-        <div className="od-grid-cards">
-          {studentGroups.map((g) => (
-            <div
-              key={g.ogrenci}
-              className={`od-entity-card${g.needsSablon ? ' needs-attention' : ''}`}
-              onClick={() => {
-                const href = `${akademikTabHref('ozel-ders-yonetimi', 'ogrenci-ozel-ders')}?ogrenci_id=${g.ogrenci}`;
-                router.push(href);
-              }}
-            >
-              <div className="od-entity-card-top">
-                <div className="od-avatar" style={{ background: avatarGradient(g.ogrenci) }}>
-                  {initials(g.ogrenci_ad)}
-                </div>
-                <div style={{ minWidth: 0, flex: 1 }}>
-                  <div className="od-entity-card-name">{g.ogrenci_ad || `Öğrenci #${g.ogrenci}`}</div>
-                  <div className="od-entity-card-sub">
-                    {g.baslangic_tarihi} {g.bitis_tarihi ? `– ${g.bitis_tarihi}` : '· süresiz'}
-                    {g.programs.length > 1 ? ` · ${g.programs.length} paket` : ''}
+
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>
+                {studentGroups.length} öğrenci
+              </span>
+            </div>
+          </div>
+        </section>
+
+        {(error || metaError) && <div className="od-banner-error">{error || metaError}</div>}
+
+        {/* 2. Öğrenci Kartları Izgarası */}
+        {!ready || loading ? (
+          <div className="op-grid" aria-hidden>
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="op-student-card">
+                <div className="op-card-head">
+                  <div className="op-card-who">
+                    <span className="od-skeleton" style={{ width: 42, height: 42, borderRadius: 12 }} />
+                    <div>
+                      <span className="od-skeleton" style={{ display: 'block', width: 130, height: 14, borderRadius: 6 }} />
+                      <span className="od-skeleton" style={{ display: 'block', width: 90, height: 11, borderRadius: 6, marginTop: 6 }} />
+                    </div>
                   </div>
                 </div>
-                <Badge tone={g.durum === 'AKTIF' ? 'success' : 'secondary'}>{g.durum_display}</Badge>
-                <IconChevronRight size={15} className="od-entity-card-chevron" />
+                <span className="od-skeleton" style={{ width: '100%', height: 26, borderRadius: 8 }} />
               </div>
+            ))}
+          </div>
+        ) : studentGroups.length === 0 ? (
+          <EmptyState
+            icon={<IconUsers size={24} />}
+            title={search || onlyNeedsSablon ? 'Eşleşen öğrenci bulunamadı' : 'Henüz program yok'}
+            description={
+              search || onlyNeedsSablon
+                ? 'Aramayı veya eksik atama filtresini temizleyerek tüm öğrencileri görebilirsiniz.'
+                : 'Kayıt veya sözleşmeden özel ders tanımlandıysa Senkronize et ile programları oluşturun.'
+            }
+            action={
+              search || onlyNeedsSablon ? (
+                <button
+                  type="button"
+                  className="op-btn"
+                  onClick={() => {
+                    setSearch('');
+                    setOnlyNeedsSablon(false);
+                  }}
+                >
+                  Filtreleri Temizle
+                </button>
+              ) : (
+                <button type="button" className="op-btn op-btn-primary" onClick={onSync}>
+                  <IconRefresh size={14} /> Senkronize et
+                </button>
+              )
+            }
+          />
+        ) : (
+          <div className="op-grid">
+            {studentGroups.map((g) => {
+              const tags = buildCardTags(g, useKisaAd);
+              const visibleTags = tags.slice(0, 4);
+              const extraCount = tags.length - visibleTags.length;
+              return (
+                <button
+                  key={g.ogrenci}
+                  type="button"
+                  className={`op-student-card${g.needsSablon ? ' is-gap' : ''}`}
+                  onClick={() => openStudentProgram(g.ogrenci)}
+                >
+                  <div className="op-card-head">
+                    <div className="op-card-who">
+                      <span
+                        className="op-avatar"
+                        style={{ background: avatarGradient(g.ogrenci) }}
+                        aria-hidden
+                      >
+                        {initials(g.ogrenci_ad)}
+                      </span>
+                      <div>
+                        <span className="op-name">{g.ogrenci_ad || `Öğrenci #${g.ogrenci}`}</span>
+                        <span className="op-sub">
+                          {formatPeriod(g.baslangic_tarihi, g.bitis_tarihi)}
+                        </span>
+                      </div>
+                    </div>
 
-              {g.paketAds.length > 0 && (
-                <div className="od-entity-card-meta">
-                  {g.paketAds.map((ad) => (
-                    <Badge key={ad} tone="purple">
-                      {ad}
-                    </Badge>
-                  ))}
-                </div>
-              )}
+                    <span className="op-quota-badge">
+                      {g.expectedHaftalik > 0
+                        ? `${g.slotCount} / ${g.expectedHaftalik} ders`
+                        : `${g.slotCount} ders`}
+                    </span>
+                  </div>
 
-              <MiniProgress
-                value={g.slotCount}
-                max={g.expectedHaftalik > 0 ? g.expectedHaftalik : Math.max(g.slotCount, 1)}
-                tone={g.needsSablon ? 'orange' : 'green'}
-              />
-
-              {g.paketDersleri.length > 0 && (
-                <div className="od-entity-card-meta">
-                  {g.paketDersleri.slice(0, 3).map((d) => (
-                    <Badge key={d.id} tone="secondary">
-                      {resolveDersLabel(d, useKisaAd)}
-                      {d.haftalik_adet ? ` ×${d.haftalik_adet}` : ''}
-                    </Badge>
-                  ))}
-                  {g.paketDersleri.length > 3 && (
-                    <Badge tone="secondary">+{g.paketDersleri.length - 3}</Badge>
+                  {visibleTags.length > 0 && (
+                    <div className="op-card-tags">
+                      {visibleTags.map((tag) => (
+                        <span key={tag.key} className={tag.kind === 'pack' ? 'op-tag-pack' : 'op-tag-ders'}>
+                          {tag.label}
+                          {tag.count > 0 ? ` ×${tag.count}` : ''}
+                        </span>
+                      ))}
+                      {extraCount > 0 && <span className="op-tag-ders">+{extraCount}</span>}
+                    </div>
                   )}
-                </div>
-              )}
-              <div className="od-entity-card-footer">
-                <span className="od-cell-muted">
-                  {g.slotCount === 0
-                    ? 'Öğretmen/saat atanmadı — kartı açın'
-                    : g.needsSablon
-                      ? `Eksik atama: ${Math.max(g.expectedHaftalik - g.slotCount, 0)} ders`
-                      : g.notlar
-                        ? g.notlar.slice(0, 42)
-                        : 'Şablon tamam'}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+
+                  <div className="op-card-foot">
+                    <span>
+                      {g.slotCount === 0
+                        ? 'Öğretmen ve saat atanmadı'
+                        : g.needsSablon
+                          ? `${Math.max(g.expectedHaftalik - g.slotCount, 0)} ders ataması eksik`
+                          : 'Haftalık program hazır'}
+                    </span>
+                    <span className="op-card-cta">
+                      Programı Aç <IconChevronRight size={15} />
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       {/* Yeni Program Drawer */}
       <Drawer

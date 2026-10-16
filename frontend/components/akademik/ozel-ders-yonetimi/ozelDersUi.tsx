@@ -397,6 +397,7 @@ export function telafiDurumTone(telafiDurumu: string): BadgeTone {
     case 'EDILDI':
       return 'success';
     case 'GEREKMIYOR':
+    case 'VAZGECILDI':
       return 'secondary';
     default:
       return 'secondary';

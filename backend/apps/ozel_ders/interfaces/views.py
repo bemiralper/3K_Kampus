@@ -685,6 +685,35 @@ def materialize(request, program_id):
 # ─── Oturumlar ──────────────────────────────────────────────
 
 @csrf_exempt
+@ozel_ders_api(methods=['POST'])
+def oturum_ensure(request):
+    """Görünen aralıkta eksik oturum varsa üretir. Liste isteğini bekletmez."""
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        body = json_body(request)
+        start_date = body.get('start_date')
+        end_date = body.get('end_date')
+        if not start_date or not end_date:
+            return JsonResponse(
+                {'success': False, 'error': 'start_date ve end_date zorunludur.'},
+                status=400,
+            )
+        result = materialize_service.materialize_active_programs(
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            start_date=start_date,
+            end_date=end_date,
+            user=request.user,
+            ogrenci_id=_int_or_none(body.get('ogrenci_id')),
+        )
+        return JsonResponse({'success': True, 'data': result})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
 @ozel_ders_api(methods=['GET', 'POST'])
 def oturum_list_create(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -782,6 +811,46 @@ def oturum_set_durum(request, oturum_id):
             user=request.user,
         )
         return JsonResponse({'success': True, 'data': oturum_service.serialize_oturum(o)})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['POST'])
+def oturum_telafi_vazgec(request, oturum_id):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        o = oturum_service.vazgec_telafi(
+            oturum_id,
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            user=request.user,
+        )
+        return JsonResponse({'success': True, 'data': oturum_service.serialize_oturum(o)})
+    except OzelDersError as exc:
+        return error_response(exc)
+
+
+@csrf_exempt
+@ozel_ders_api(methods=['POST'])
+def oturum_telafi_vazgec_toplu(request):
+    ctx, err = mandatory_ozel_ders_context(request)
+    if err:
+        return err
+    try:
+        body = json_body(request)
+        rows = oturum_service.vazgec_telafi_toplu(
+            body.get('ids') or [],
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            user=request.user,
+        )
+        return JsonResponse({
+            'success': True,
+            'data': {'count': len(rows), 'ids': [o.id for o in rows]},
+        })
     except OzelDersError as exc:
         return error_response(exc)
 

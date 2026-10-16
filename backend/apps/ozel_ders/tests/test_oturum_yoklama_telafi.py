@@ -457,3 +457,81 @@ class YoklamaTelafiTests(TestCase):
             sube_id=self.sube.id,
         )
         self.assertEqual(oturum.program_id, program.id)
+
+    def test_vazgec_telafi_kaynak_dersi_korur(self):
+        o = self._oturum(
+            durum=OturumDurumu.OGRETMEN_GELMEDI,
+            telafi_durumu=TelafiDurumu.BEKLENIYOR,
+            sebep_kodu=SebepKodu.KURUM,
+            sebep_aciklama='İşten ayrıldı',
+            notes='Mevcut not',
+        )
+        result = oturum_service.vazgec_telafi(
+            o.id, kurum_id=self.kurum.id, sube_id=self.sube.id,
+        )
+        self.assertEqual(result.telafi_durumu, TelafiDurumu.VAZGECILDI)
+        self.assertEqual(result.durum, OturumDurumu.OGRETMEN_GELMEDI)
+        self.assertEqual(result.sebep_kodu, SebepKodu.KURUM)
+        self.assertEqual(result.sebep_aciklama, 'İşten ayrıldı')
+        self.assertIn('Mevcut not', result.notes)
+        self.assertIn('Telafiden vazgeçildi', result.notes)
+        self.assertFalse(result.telafi_oturumlari.filter(is_active=True).exists())
+
+    def test_vazgec_sonrasi_yoklama_tekrar_bekletmez(self):
+        o = self._oturum(
+            durum=OturumDurumu.OGRETMEN_GELMEDI,
+            telafi_durumu=TelafiDurumu.BEKLENIYOR,
+            sebep_kodu=SebepKodu.HASTALIK,
+        )
+        oturum_service.vazgec_telafi(o.id, kurum_id=self.kurum.id, sube_id=self.sube.id)
+        again = oturum_service.set_durum(
+            o.id, OturumDurumu.OGRETMEN_GELMEDI,
+            kurum_id=self.kurum.id, sube_id=self.sube.id,
+            sebep_kodu=SebepKodu.HASTALIK,
+            send_whatsapp=False,
+        )
+        self.assertEqual(again.telafi_durumu, TelafiDurumu.VAZGECILDI)
+
+    def test_vazgec_planlanmis_telafiyi_bozmaz(self):
+        kaynak = self._oturum(
+            durum=OturumDurumu.OGRETMEN_GELMEDI,
+            telafi_durumu=TelafiDurumu.BEKLENIYOR,
+            sebep_kodu=SebepKodu.HASTALIK,
+        )
+        oturum_service.create_telafi(
+            kaynak.id,
+            {
+                'session_date': (date.today() + timedelta(days=2)).isoformat(),
+                'start_time': '14:00',
+                'end_time': '15:00',
+            },
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+        kaynak.refresh_from_db()
+        with self.assertRaises(OzelDersError):
+            oturum_service.vazgec_telafi(
+                kaynak.id, kurum_id=self.kurum.id, sube_id=self.sube.id,
+            )
+        kaynak.refresh_from_db()
+        self.assertEqual(kaynak.telafi_durumu, TelafiDurumu.PLANLANDI)
+        self.assertEqual(kaynak.telafi_oturumlari.filter(is_active=True).count(), 1)
+
+    def test_vazgec_toplu(self):
+        a = self._oturum(
+            durum=OturumDurumu.OGRENCI_GELMEDI,
+            telafi_durumu=TelafiDurumu.BEKLENIYOR,
+            sebep_kodu=SebepKodu.MAZERET,
+            session_date=date.today() - timedelta(days=40),
+        )
+        b = self._oturum(
+            durum=OturumDurumu.OGRENCI_GELMEDI,
+            telafi_durumu=TelafiDurumu.BEKLENIYOR,
+            sebep_kodu=SebepKodu.MAZERET,
+            session_date=date.today() - timedelta(days=50),
+        )
+        rows = oturum_service.vazgec_telafi_toplu(
+            [a.id, b.id], kurum_id=self.kurum.id, sube_id=self.sube.id,
+        )
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(r.telafi_durumu == TelafiDurumu.VAZGECILDI for r in rows))

@@ -13,6 +13,7 @@ import {
   setDersTatilKarar,
   createSlot,
   createTelafi,
+  vazgecTelafi,
   deleteSlot,
   endSlotEarly,
   fetchOgrenciDonemOzeti,
@@ -1000,6 +1001,24 @@ export default function OgrenciOzelDersClient() {
     });
   }
 
+  async function onVazgecTelafi(o: BirebirOturum) {
+    if (!window.confirm(`${o.ogrenci_ad} · ${resolveDersLabel(o, useKisaAd)} için telafi kapanacak. Yoklama kaydı durur.`)) {
+      return;
+    }
+    setBusyOturumId(o.id);
+    try {
+      const updated = await vazgecTelafi(o.id);
+      setOturumlar((prev) => prev.map((x) => (x.id === o.id ? updated : x)));
+      setDetailOturum((cur) => (cur && cur.id === o.id ? updated : cur));
+      show('Telafiden vazgeçildi.');
+      await refreshSummary(donem.baslangic, donem.bitis);
+    } catch (err) {
+      show(err instanceof Error ? err.message : 'Vazgeçilemedi.', 'error');
+    } finally {
+      setBusyOturumId(null);
+    }
+  }
+
   async function onCreateTelafi(e: React.FormEvent) {
     e.preventDefault();
     if (!telafiFor) return;
@@ -1294,7 +1313,6 @@ export default function OgrenciOzelDersClient() {
             icon={<IconBookOpen size={15} />}
             title="Derslere Göre Özet"
             summary={`${summary.dersler.length} ders`}
-            defaultOpen
           >
             <div className="od-ops-ders-toolbar">
               <p className="od-cell-muted" style={{ margin: 0 }}>
@@ -1727,6 +1745,17 @@ export default function OgrenciOzelDersClient() {
                                 <IconRotateCcw size={15} />
                               </button>
                             )}
+                            {actions.canTelafi && (
+                              <button
+                                type="button"
+                                className="od-row-action-btn is-danger"
+                                title="Telafiden vazgeç"
+                                disabled={busy}
+                                onClick={() => void onVazgecTelafi(o)}
+                              >
+                                <IconXCircle size={15} />
+                              </button>
+                            )}
                             {actions.canReopen && (
                               <button
                                 type="button"
@@ -1978,6 +2007,16 @@ export default function OgrenciOzelDersClient() {
                   }}
                 >
                   <IconRotateCcw size={14} /> Telafi
+                </button>
+              )}
+              {rowActionsFor(detailOturum).canTelafi && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-secondary"
+                  disabled={busyOturumId === detailOturum.id}
+                  onClick={() => void onVazgecTelafi(detailOturum)}
+                >
+                  <IconXCircle size={14} /> Telafiden vazgeç
                 </button>
               )}
               <div style={{ flex: 1 }} />

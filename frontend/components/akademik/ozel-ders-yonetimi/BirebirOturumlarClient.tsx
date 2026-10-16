@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import dayjs from 'dayjs';
 import 'dayjs/locale/tr';
@@ -8,6 +8,7 @@ import {
   changeOturumOgretmen,
   createOturum,
   createTelafi,
+  ensureOturumlar,
   fetchOturumlar,
   fetchProgramlar,
   fetchTatiller,
@@ -43,17 +44,17 @@ import {
   PageHeader,
   Segmented,
   SkeletonRows,
-  StatCard,
-  StatGrid,
   feeStatus,
   oturumDurumTone,
   telafiDurumTone,
+  type BadgeTone,
 } from './ozelDersUi';
 import {
   IconAlertTriangle,
   IconBookOpen,
   IconCalendar,
   IconCheckCircle,
+  IconChevronRight,
   IconClipboard,
   IconClock,
   IconFileText,
@@ -63,11 +64,10 @@ import {
   IconSearch,
   IconUser,
   IconUsers,
-  IconWallet,
-  IconWifi,
   IconXCircle,
 } from './icons';
 import './ozel-ders.css';
+import './oturum-listesi.css';
 
 dayjs.locale('tr');
 
@@ -170,6 +170,7 @@ export default function BirebirOturumlarClient() {
   const [todayLoading, setTodayLoading] = useState(false);
   const [todayBusyId, setTodayBusyId] = useState<number | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
+  const loadSeq = useRef(0);
 
   useEffect(() => {
     if (!urlDate) return;
@@ -180,21 +181,26 @@ export default function BirebirOturumlarClient() {
 
   const load = useCallback(async () => {
     if (!ready) return;
+    const seq = ++loadSeq.current;
+    const listParams = {
+      start_date: start,
+      end_date: end,
+      durum: durumFilter || undefined,
+      telafi_durumu: telafiFilter || undefined,
+      program_id: urlProgramId || undefined,
+      ogrenci_id: urlOgrenciId || undefined,
+      skip_materialize: 1,
+    };
     setLoading(true);
     try {
       const [oturumlar, tatiller] = await Promise.all([
-        fetchOturumlar({
-          start_date: start,
-          end_date: end,
-          durum: durumFilter || undefined,
-          telafi_durumu: telafiFilter || undefined,
-          program_id: urlProgramId || undefined,
-          ogrenci_id: urlOgrenciId || undefined,
-        }),
+        fetchOturumlar(listParams),
         fetchTatiller(start, end).catch(() => [] as OzelDersTatil[]),
       ]);
+      if (seq !== loadSeq.current) return;
       setRows(oturumlar);
       setHolidays(tatiller);
+      setLoading(false);
       if (tatiller.length) {
         const entries = await Promise.all(
           tatiller.map(async (h) => {
@@ -206,14 +212,27 @@ export default function BirebirOturumlarClient() {
             }
           }),
         );
-        setHolidayCounts(Object.fromEntries(entries));
+        if (seq === loadSeq.current) setHolidayCounts(Object.fromEntries(entries));
       } else {
         setHolidayCounts({});
       }
+      // Eksik haftalık oturum varsa listeyi bekletmeden tamamla.
+      if (!durumFilter && !telafiFilter) {
+        try {
+          const ensured = await ensureOturumlar(start, end, urlOgrenciId || undefined);
+          if (seq !== loadSeq.current) return;
+          if ((ensured.created || 0) + (ensured.updated || 0) > 0) {
+            const fresh = await fetchOturumlar(listParams);
+            if (seq === loadSeq.current) setRows(fresh);
+          }
+        } catch {
+          // Liste zaten görünür; eksik oturum üretimi sonraki açılışta yeniden dener.
+        }
+      }
     } catch (e) {
-      show(e instanceof Error ? e.message : 'Yüklenemedi', 'error');
+      if (seq === loadSeq.current) show(e instanceof Error ? e.message : 'Yüklenemedi', 'error');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [ready, start, end, durumFilter, telafiFilter, urlProgramId, urlOgrenciId, show]);
 
@@ -227,7 +246,7 @@ export default function BirebirOturumlarClient() {
     setTodayLoading(true);
     try {
       const [data, tatiller] = await Promise.all([
-        fetchOturumlar({ start_date: today, end_date: today }),
+        fetchOturumlar({ start_date: today, end_date: today, skip_materialize: 1 }),
         fetchTatiller(today, today).catch(() => [] as OzelDersTatil[]),
       ]);
       setTodayRows(data.sort((a, b) => a.start_time.localeCompare(b.start_time)));
@@ -238,10 +257,6 @@ export default function BirebirOturumlarClient() {
       setTodayLoading(false);
     }
   }, [ready, show]);
-
-  useEffect(() => {
-    loadToday();
-  }, [loadToday]);
 
   useEffect(() => {
     if (!form.ogrenci_id) {
@@ -595,6 +610,24 @@ export default function BirebirOturumlarClient() {
     );
   }
 
+  function sessionChips(r: BirebirOturum): { key: string; label: string; tone: BadgeTone }[] {
+    const chips: { key: string; label: string; tone: BadgeTone }[] = [];
+    if (r.oturum_turu === 'TELAFI') chips.push({ key: 'tur', label: 'Telafi dersi', tone: 'warning' });
+    if (r.durum === 'ONLINE') chips.push({ key: 'online', label: 'Online', tone: 'info' });
+    if (r.telafi_durumu && r.telafi_durumu !== 'GEREKMIYOR') {
+      chips.push({
+        key: 'telafi',
+        label: r.telafi_durumu_display || TELAFI_DURUM_LABEL[r.telafi_durumu] || 'Telafi',
+        tone: telafiDurumTone(r.telafi_durumu),
+      });
+    }
+    const fee = feeStatus(r);
+    if (!(r.durum === 'PLANLANDI' && fee.label === 'Planlandı')) {
+      chips.push({ key: 'fee', label: fee.label, tone: fee.tone });
+    }
+    return chips;
+  }
+
   const nextDurumlar = detail ? yoklamaActionButtons(detail.durum) : [];
   const canChangeTeacher = detail ? detail.durum === 'PLANLANDI' : false;
   const telafiKaynak = telafiCandidates.find((c) => String(c.id) === form.telafi_kaynak_id) || null;
@@ -637,14 +670,14 @@ export default function BirebirOturumlarClient() {
 
       {metaError && <div className="od-banner-error">{metaError}</div>}
 
-      <StatGrid>
-        <StatCard icon={<IconCalendar size={19} />} tone="blue" value={summary.total} label="Aralıktaki Oturum" />
-        <StatCard icon={<IconCheckCircle size={19} />} tone="green" value={summary.islendi} label="İşlenen" />
-        <StatCard icon={<IconClock size={19} />} tone="orange" value={summary.planlandi} label="Planlanan" />
-        <StatCard icon={<IconWallet size={19} />} tone="purple" value={summary.hakedisli} label="Hakediş Oluşan" />
-      </StatGrid>
+      <div className="os-summary" aria-label="Aralık özeti">
+        <span><strong>{summary.total}</strong> oturum</span>
+        <span><strong>{summary.planlandi}</strong> planlandı</span>
+        <span><strong>{summary.islendi}</strong> işlendi</span>
+        <span><strong>{summary.hakedisli}</strong> hakediş</span>
+      </div>
 
-      <div className="od-filters">
+      <div className="od-filters os-filters">
         <Segmented
           value={activePreset}
           onChange={(k) => {
@@ -763,12 +796,15 @@ export default function BirebirOturumlarClient() {
         </div>
       )}
 
-      <div className="od-card">
-        <div className="od-card-body no-pad">
-          {loading ? (
+      {loading ? (
+        <div className="od-card">
+          <div className="od-card-body">
             <SkeletonRows rows={6} />
-          ) : filteredRows.length === 0 ? (
-            <EmptyState
+          </div>
+        </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="od-card">
+          <EmptyState
               icon={<IconCalendar size={24} />}
               title="Bu aralıkta oturum yok"
               description={
@@ -777,83 +813,57 @@ export default function BirebirOturumlarClient() {
                   : 'Haftalık şablonu olan programların dersleri bu aralıkta otomatik üretilir. Şablonu yoksa Haftalık Program Şablonları’ndan saat/öğretmen atayın veya tek seferlik ders ekleyin.'
               }
             />
-          ) : (
-            <div className="od-agenda">
+        </div>
+      ) : (
+            <div className="os-list">
               {dayGroups.map(({ date, rows: dayRows }) => {
                 const dayHoliday = holidays.find((h) => h.date === date);
                 return (
-                  <div className="od-agenda-day" key={date}>
-                    <div className="od-agenda-day-head">
-                      <span className="od-agenda-day-title">{dayjs(date).format('DD MMMM YYYY, dddd')}</span>
-                      <span className="od-agenda-day-count">{dayRows.length} ders</span>
+                  <section className="os-day" key={date}>
+                    <div className="os-day-head">
+                      <h3>{dayjs(date).format('D MMMM YYYY, dddd')}</h3>
                       {dayHoliday && (
                         <Badge tone={dayHoliday.ozel_ders_aktif ? 'success' : 'warning'}>
                           {dayHoliday.title}
                         </Badge>
                       )}
+                      <span className="os-day-count">{dayRows.length} ders</span>
                     </div>
-                    <div className="od-table-scroll">
-                      <table className="od-table">
-                        <thead>
-                          <tr>
-                            <th>Saat</th>
-                            <th>Öğrenci</th>
-                            <th>Ders</th>
-                            <th>Öğretmen</th>
-                            <th>Tür</th>
-                            <th>Durum</th>
-                            <th>Telafi</th>
-                            <th>Hakediş</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {dayRows.map((r) => {
-                            const fee = feeStatus(r);
-                            return (
-                              <tr key={r.id} onClick={() => openDetail(r)} style={{ cursor: 'pointer' }}>
-                                <td className="od-cell-time">
-                                  {r.start_time.slice(0, 5)}–{r.end_time.slice(0, 5)}
-                                </td>
-                                <td className="od-cell-primary">{r.ogrenci_ad}</td>
-                                <td>{resolveDersLabel(r, useKisaAd)}</td>
-                                <td>{r.ogretmen_ad}</td>
-                                <td>
-                                  <Badge tone={r.oturum_turu === 'TELAFI' ? 'warning' : 'secondary'}>
-                                    {r.durum === 'ONLINE' && <IconWifi size={11} />}
-                                    {r.oturum_turu_display}
-                                  </Badge>
-                                </td>
-                                <td>
-                                  <Badge tone={oturumDurumTone(r.durum)}>
-                                    {r.durum === 'IPTAL' && <IconXCircle size={11} />}
-                                    {r.durum_display}
-                                  </Badge>
-                                </td>
-                                <td>
-                                  {r.telafi_durumu && r.telafi_durumu !== 'GEREKMIYOR' ? (
-                                    <Badge tone={telafiDurumTone(r.telafi_durumu)}>
-                                      {r.telafi_durumu_display || TELAFI_DURUM_LABEL[r.telafi_durumu]}
-                                    </Badge>
-                                  ) : (
-                                    <span className="od-cell-muted">—</span>
-                                  )}
-                                </td>
-                                <td>
-                                  <Badge tone={fee.tone}>{fee.label}</Badge>
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                    <div className="os-rows">
+                      {dayRows.map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className="os-row"
+                          onClick={() => openDetail(r)}
+                        >
+                          <span className="os-time">
+                            {r.start_time.slice(0, 5)}
+                            <span>{r.end_time.slice(0, 5)}</span>
+                          </span>
+                          <span className="os-main">
+                            <span className="os-name">{r.ogrenci_ad}</span>
+                            <span className="os-sub">
+                              {resolveDersLabel(r, useKisaAd)}
+                              {r.ogretmen_ad ? ` · ${r.ogretmen_ad}` : ''}
+                              {r.oda_ad ? ` · ${r.oda_ad}` : ''}
+                            </span>
+                          </span>
+                          <span className="os-side">
+                            <Badge tone={oturumDurumTone(r.durum)}>{r.durum_display}</Badge>
+                            {sessionChips(r).map((chip) => (
+                              <Badge key={chip.key} tone={chip.tone}>{chip.label}</Badge>
+                            ))}
+                            <IconChevronRight className="os-chevron" size={16} />
+                          </span>
+                        </button>
+                      ))}
                     </div>
-                  </div>
+                  </section>
                 );
               })}
             </div>
-          )}
-        </div>
-      </div>
+      )}
 
       <Drawer
         open={createOpen}

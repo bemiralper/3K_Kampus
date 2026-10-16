@@ -37,6 +37,7 @@ class TelafiDurumu(models.TextChoices):
     BEKLENIYOR = 'BEKLENIYOR', 'Telafi Bekleniyor'
     PLANLANDI = 'PLANLANDI', 'Telafi Planlandı'
     EDILDI = 'EDILDI', 'Telafi Edildi'
+    VAZGECILDI = 'VAZGECILDI', 'Telafiden Vazgeçildi'
 
 
 class SebepKodu(models.TextChoices):

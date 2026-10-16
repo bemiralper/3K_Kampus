@@ -13,10 +13,13 @@ urlpatterns = [
     path('slots/<int:slot_id>/', views.slot_detail, name='ozel-ders-slot-detail'),
     path('slots/<int:slot_id>/erken-bitir/', views.slot_end_early, name='ozel-ders-slot-erken-bitir'),
 
+    path('oturumlar/ensure/', views.oturum_ensure, name='ozel-ders-oturum-ensure'),
     path('oturumlar/', views.oturum_list_create, name='ozel-ders-oturumlar'),
     path('oturumlar/<int:oturum_id>/', views.oturum_detail, name='ozel-ders-oturum-detail'),
     path('oturumlar/<int:oturum_id>/durum/', views.oturum_set_durum, name='ozel-ders-oturum-durum'),
+    path('oturumlar/telafi-vazgec/', views.oturum_telafi_vazgec_toplu, name='ozel-ders-oturum-telafi-vazgec-toplu'),
     path('oturumlar/<int:oturum_id>/telafi/', views.oturum_telafi, name='ozel-ders-oturum-telafi'),
+    path('oturumlar/<int:oturum_id>/telafi-vazgec/', views.oturum_telafi_vazgec, name='ozel-ders-oturum-telafi-vazgec'),
     path('oturumlar/<int:oturum_id>/ogretmen/', views.oturum_change_teacher, name='ozel-ders-oturum-ogretmen'),
 
     path('hakedis/', views.hakedis_list, name='ozel-ders-hakedis'),
