@@ -111,7 +111,7 @@ def apply_department_visibility(qs, user):
     depts = visible_departments_for_user(user)
     if depts is None:
         return qs
-    return qs.filter(department__in=depts)
+    return qs.filter(Q(department__in=depts) | Q(claimed_by_user=user))
 
 
 def user_can_see_department(user, department: str | None) -> bool:
@@ -313,8 +313,9 @@ def filter_by_accessible_whatsapp_accounts(
             return qs.filter(
                 Q(department=CommunicationDepartment.ACCOUNTING)
                 | _own_outbound_conversation_q(user)
+                | Q(claimed_by_user=user)
             )
-        return qs.none()
+        return qs.filter(Q(claimed_by_user=user) | _own_outbound_conversation_q(user))
 
     ids = [cfg.id for cfg in accessible]
     default_ids = {cfg.id for cfg in accessible if cfg.is_default}
@@ -324,8 +325,9 @@ def filter_by_accessible_whatsapp_accounts(
         account_q |= Q(channel_config_id__isnull=True)
     if is_accounting:
         account_q |= Q(department=CommunicationDepartment.ACCOUNTING)
-    # Kendi gönderdiği mesajın olduğu sohbet başka hatta kalsa da listede durmalı
+    # Kendi gönderdiği mesajın olduğu veya üstlendiği sohbet başka hatta kalsa da listede durmalı
     account_q |= _own_outbound_conversation_q(user)
+    account_q |= Q(claimed_by_user=user)
     return qs.filter(account_q)
 
 
@@ -361,6 +363,12 @@ def _apply_inbox_filter(qs, inbox, *, coach_profile, user, is_admin: bool):
 def _user_can_access_conversation_account(user, conversation) -> bool:
     """WhatsApp hesabı rol/şube kapsamı — yönetici değilse zorunlu."""
     if _has_full_inbox_access(user):
+        return True
+
+    # Kendi üstlendiği veya mesaj attığı sohbet
+    if getattr(conversation, 'claimed_by_user_id', None) == user.id:
+        return True
+    if _user_sent_in_conversation(user, conversation):
         return True
 
     from apps.communication.application.account_resolver import AccountResolver
@@ -399,6 +407,10 @@ def _user_can_access_conversation_account(user, conversation) -> bool:
 
 def user_can_access_conversation(user, conversation) -> bool:
     if _bypasses_claim_visibility(user):
+        return True
+
+    # Kullanıcının bizzat üstlendiği sohbetler her zaman erişilebilirdir
+    if getattr(conversation, 'claimed_by_user_id', None) == user.id:
         return True
 
     if not user_can_see_department(user, getattr(conversation, 'department', None)):

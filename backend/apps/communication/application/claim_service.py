@@ -82,9 +82,25 @@ class ClaimService:
         if conv.status == ConversationStatus.NEEDS_SUPPORT:
             conv.status = ConversationStatus.WAITING
             conv.needs_support_at = None
-        conv.save(update_fields=[
+
+        update_fields = [
             'claimed_by_user', 'claim_version', 'status', 'needs_support_at', 'updated_at',
-        ])
+        ]
+
+        from apps.coaching.services.coach_access import get_coach_profile
+        from apps.communication.application.account_resolver import _is_accounting_staff
+        from apps.communication.domain.enums import CommunicationDepartment
+
+        target_coach = get_coach_profile(to_user)
+        if target_coach:
+            conv.department = CommunicationDepartment.COACHING
+            conv.assigned_coach = target_coach
+            update_fields.extend(['department', 'assigned_coach'])
+        elif _is_accounting_staff(to_user):
+            conv.department = CommunicationDepartment.ACCOUNTING
+            update_fields.append('department')
+
+        conv.save(update_fields=update_fields)
         log_conversation_event(
             conv,
             ConversationEventType.TRANSFERRED,

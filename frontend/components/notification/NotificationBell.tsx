@@ -27,6 +27,7 @@ import {
   getNotificationSoundVolume,
   setNotificationSoundVolume,
 } from '@/lib/notification-sound';
+import './notification-bell.css';
 
 /* ════════════════════════════════════════════
    🔔 BİLDİRİM ÇANI (Header Badge + Dropdown)
@@ -39,6 +40,15 @@ interface Props {
    * çan polling + `lms:notifications-refresh` dinler.
    */
   pollInterval?: number;
+}
+
+function splitTitle(baslik: string): { kicker: string; title: string } {
+  const idx = baslik.indexOf(':');
+  if (idx > 1 && idx < 36) {
+    const title = baslik.slice(idx + 1).trim();
+    if (title) return { kicker: baslik.slice(0, idx).trim(), title };
+  }
+  return { kicker: '', title: baslik };
 }
 
 function notifFingerprint(n: AppNotification): string {
@@ -260,240 +270,130 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     return `${days} gün`;
   };
 
+  const branchNames = new Set(recent.map((n) => n.sube_ad).filter(Boolean));
+  const showBranch = branchNames.size > 1;
+  const quiet = soundMuted || soundVolume === 0;
+
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <div className="notif-bell" ref={ref}>
       <button
         type="button"
+        className="notif-bell-btn"
         onClick={() => {
           unlockNotificationAudio();
           setOpen(!open);
         }}
-        style={{
-          position: 'relative', background: 'none', border: 'none',
-          cursor: 'pointer', padding: 8, fontSize: 20, lineHeight: 1,
-          color: '#6B7280', transition: 'color 0.15s',
-        }}
-        onMouseEnter={e => (e.currentTarget.style.color = '#111827')}
-        onMouseLeave={e => (e.currentTarget.style.color = '#6B7280')}
         title="Bildirimler"
+        aria-label="Bildirimler"
+        aria-expanded={open}
       >
-        🔔
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+          <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+        </svg>
         {unreadCount > 0 && (
-          <span style={{
-            position: 'absolute', top: 2, right: 2,
-            minWidth: 18, height: 18, borderRadius: 9,
-            background: '#EF4444', color: '#fff',
-            fontSize: 10, fontWeight: 700, lineHeight: '18px',
-            textAlign: 'center', padding: '0 4px',
-            animation: 'notif-pulse 2s infinite',
-          }}>
+          <span className="notif-bell-count">
             {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
 
       {open && (
-        <div style={{
-          position: 'absolute', top: '100%', right: 0, marginTop: 8,
-          width: 360, maxHeight: 480,
-          background: '#fff', borderRadius: 12,
-          boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,0,0,0.05)',
-          zIndex: 9999, overflow: 'hidden',
-          animation: 'notif-slideDown 0.2s ease-out',
-        }}>
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '14px 16px 10px',
-            gap: 8,
-          }}>
-            <span style={{ fontSize: 14, fontWeight: 600, color: '#111827' }}>
-              🔔 Bildirimler
+        <div className="notif-panel" role="dialog" aria-label="Bildirimler">
+          <div className="notif-panel-head">
+            <div className="notif-panel-title">
+              <strong>Bildirimler</strong>
+              {unreadCount > 0 && <span className="notif-panel-badge">{unreadCount} yeni</span>}
+            </div>
+            <div className="notif-panel-tools">
               {unreadCount > 0 && (
-                <span style={{
-                  marginLeft: 8, fontSize: 11, background: '#EEF2FF', color: '#4F46E5',
-                  padding: '2px 8px', borderRadius: 10, fontWeight: 500,
-                }}>
-                  {unreadCount} yeni
-                </span>
-              )}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              {unreadCount > 0 && (
-                <button
-                  type="button"
-                  onClick={handleMarkAllRead}
-                  disabled={loading}
-                  style={{
-                    background: 'none', border: 'none', cursor: 'pointer',
-                    fontSize: 12, color: '#4F46E5', fontWeight: 500,
-                    opacity: loading ? 0.5 : 1,
-                  }}
-                >
+                <button type="button" className="notif-mark" onClick={handleMarkAllRead} disabled={loading}>
                   Tümünü oku
                 </button>
               )}
+              <button
+                type="button"
+                className="notif-sound-btn"
+                onClick={() => {
+                  unlockNotificationAudio();
+                  const nextMuted = toggleNotificationSoundMuted();
+                  setSoundMuted(nextMuted);
+                  if (!nextMuted && soundVolume === 0) {
+                    handleVolumeChange(70);
+                  } else if (!nextMuted) {
+                    playNotificationSound();
+                  }
+                }}
+                title={quiet ? 'Sesi aç' : 'Sesi kapat'}
+                aria-label={quiet ? 'Sesi aç' : 'Sesi kapat'}
+              >
+                {quiet ? (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <line x1="23" y1="9" x2="17" y2="15" />
+                    <line x1="17" y1="9" x2="23" y2="15" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+                    <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+                    <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+                  </svg>
+                )}
+              </button>
             </div>
           </div>
 
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              padding: '0 16px 12px',
-              borderBottom: '1px solid #f3f4f6',
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <button
-              type="button"
-              onClick={() => {
-                unlockNotificationAudio();
-                const nextMuted = toggleNotificationSoundMuted();
-                setSoundMuted(nextMuted);
-                if (!nextMuted && soundVolume === 0) {
-                  handleVolumeChange(70);
-                } else if (!nextMuted) {
-                  playNotificationSound();
-                }
-              }}
-              style={{
-                background: 'none',
-                border: 'none',
-                cursor: 'pointer',
-                fontSize: 16,
-                lineHeight: 1,
-                padding: 0,
-                color: '#6B7280',
-              }}
-              title={soundMuted || soundVolume === 0 ? 'Sesi aç' : 'Sesi kapat'}
-              aria-label={soundMuted || soundVolume === 0 ? 'Sesi aç' : 'Sesi kapat'}
-            >
-              {soundMuted || soundVolume === 0 ? '🔇' : soundVolume < 40 ? '🔉' : '🔊'}
-            </button>
+          <div className="notif-volume" onClick={(e) => e.stopPropagation()}>
             <input
               type="range"
               min={0}
               max={100}
               step={5}
-              value={soundMuted ? 0 : soundVolume}
+              value={quiet ? 0 : soundVolume}
               onChange={(e) => handleVolumeChange(Number(e.target.value))}
               aria-label="Bildirim ses seviyesi"
-              title={`Ses: ${soundMuted ? 0 : soundVolume}%`}
-              style={{
-                flex: 1,
-                accentColor: '#4F46E5',
-                cursor: 'pointer',
-                height: 4,
-              }}
+              title={`Ses: ${quiet ? 0 : soundVolume}%`}
             />
-            <span
-              style={{
-                fontSize: 11,
-                fontWeight: 600,
-                color: '#6B7280',
-                minWidth: 32,
-                textAlign: 'right',
-                fontVariantNumeric: 'tabular-nums',
-              }}
-            >
-              {soundMuted ? 0 : soundVolume}%
-            </span>
+            <span>{quiet ? 0 : soundVolume}%</span>
           </div>
 
-          <div style={{ maxHeight: 380, overflowY: 'auto' }}>
+          <div className="notif-list">
             {recent.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#9CA3AF' }}>
-                <div style={{ fontSize: 32, marginBottom: 8 }}>🔕</div>
-                <div style={{ fontSize: 13 }}>Bildirim yok</div>
-              </div>
+              <div className="notif-empty">Bildirim yok</div>
             ) : (
-              recent.map(n => (
-                <div
-                  key={n.id}
-                  onClick={() => handleClick(n)}
-                  style={{
-                    display: 'flex', gap: 12, padding: '12px 16px',
-                    cursor: 'pointer', transition: 'background 0.15s',
-                    background: n.is_read ? 'transparent' : '#F0F7FF',
-                    borderBottom: '1px solid #f9fafb',
-                  }}
-                  onMouseEnter={e => (e.currentTarget.style.background = n.is_read ? '#f9fafb' : '#E0EFFF')}
-                  onMouseLeave={e => (e.currentTarget.style.background = n.is_read ? 'transparent' : '#F0F7FF')}
-                >
-                  <div style={{
-                    width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                    background: `${n.renk}15`, display: 'flex',
-                    alignItems: 'center', justifyContent: 'center', fontSize: 18,
-                  }}>
-                    {n.ikon}
-                  </div>
-
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontSize: 13, fontWeight: n.is_read ? 400 : 600,
-                      color: '#111827', lineHeight: 1.4,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {n.baslik}
-                    </div>
-                    <div style={{
-                      fontSize: 12, color: '#6B7280', marginTop: 2,
-                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    }}>
-                      {n.mesaj}
-                    </div>
-                    <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 4, display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <span>{timeAgo(n.created_at)}</span>
-                      {n.sube_ad ? (
-                        <span style={{
-                          padding: '1px 6px', borderRadius: 999, background: '#eef2ff',
-                          color: '#4338ca', fontWeight: 700,
-                        }}>{n.sube_ad}</span>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {!n.is_read && (
-                    <div style={{
-                      width: 8, height: 8, borderRadius: '50%',
-                      background: '#3B82F6', flexShrink: 0, marginTop: 6,
-                    }} />
-                  )}
-                </div>
-              ))
+              recent.map((n) => {
+                const parts = splitTitle(n.baslik);
+                return (
+                  <button
+                    key={n.id}
+                    type="button"
+                    className={`notif-row${n.is_read ? '' : ' is-unread'}`}
+                    onClick={() => handleClick(n)}
+                  >
+                    <span className="notif-row-icon" style={{ background: `${n.renk}18`, color: n.renk }}>
+                      {n.ikon}
+                    </span>
+                    <span className="notif-row-body">
+                      {parts.kicker ? <span className="notif-kicker">{parts.kicker}</span> : null}
+                      <span className="notif-row-title">{parts.title}</span>
+                      {n.mesaj ? <span className="notif-row-msg">{n.mesaj}</span> : null}
+                      <span className="notif-row-meta">
+                        <span>{timeAgo(n.created_at)}</span>
+                        {showBranch && n.sube_ad ? <span>{n.sube_ad}</span> : null}
+                      </span>
+                    </span>
+                  </button>
+                );
+              })
             )}
           </div>
 
-          {recent.length > 0 && (
-            <div style={{
-              padding: '10px 16px', borderTop: '1px solid #f3f4f6',
-              textAlign: 'center',
-            }}>
-              <Link
-                href={allNotificationsHref}
-                onClick={() => setOpen(false)}
-                style={{
-                  fontSize: 12, color: '#4F46E5', textDecoration: 'none', fontWeight: 500,
-                }}
-              >
-                Tüm bildirimleri görüntüle →
-              </Link>
-            </div>
-          )}
+          <Link href={allNotificationsHref} className="notif-foot" onClick={() => setOpen(false)}>
+            Tüm bildirimleri görüntüle
+          </Link>
         </div>
       )}
-
-      <style>{`
-        @keyframes notif-pulse {
-          0%, 100% { transform: scale(1); }
-          50% { transform: scale(1.1); }
-        }
-        @keyframes notif-slideDown {
-          from { opacity: 0; transform: translateY(-8px); }
-          to { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
     </div>
   );
 }

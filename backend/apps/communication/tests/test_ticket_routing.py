@@ -637,3 +637,50 @@ class ManagerSeesTransferredConversationsTest(TestCase):
             kurum_id=self.kurum.id,
         )
         self.assertNotIn(self.conv.id, qs.values_list('id', flat=True))
+
+    def test_transfer_to_accounting_updates_department_and_visible(self):
+        from apps.communication.application.coach_scope import filter_conversations_for_user
+        from apps.personel.domain.models import Personel
+        from apps.roller.models import Role, UserRole
+
+        acc_user = User.objects.create_user(username='acc_user_test', password='x')
+        p = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Muh', soyad='Asebe',
+            tc_kimlik_no='55555555563', user=acc_user,
+        )
+        role_acc, _ = Role.objects.get_or_create(code='muhasebe', defaults={'name': 'Muhasebe'})
+        UserRole.objects.update_or_create(user=acc_user, defaults={'role': role_acc})
+
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel='WHATSAPP',
+            contact_phone='+905558888888',
+            contact_type=RecipientType.RAW_PHONE,
+            status=ConversationStatus.WAITING,
+            department='COACHING',
+            claimed_by_user=self.claimer,
+        )
+        ClaimService.transfer(conv.id, self.claimer, acc_user, reason='Muhasebeye aktarıldı')
+        conv.refresh_from_db()
+
+        self.assertEqual(conv.claimed_by_user_id, acc_user.id)
+        self.assertEqual(conv.department, 'ACCOUNTING')
+        self.assertTrue(user_can_access_conversation(acc_user, conv))
+
+        qs = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            acc_user,
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+        self.assertIn(conv.id, qs.values_list('id', flat=True))
+
+        qs_mine = filter_conversations_for_user(
+            Conversation.objects.filter(kurum=self.kurum),
+            acc_user,
+            inbox='mine',
+            kurum_id=self.kurum.id,
+            sube_id=self.sube.id,
+        )
+        self.assertIn(conv.id, qs_mine.values_list('id', flat=True))
