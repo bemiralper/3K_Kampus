@@ -464,6 +464,48 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         saved = ExamRoom.objects.get(exam=self.exam, name='Salon A')
         self.assertEqual(saved.seat_numbers()[:3], [51, 54, 57])
 
+    def test_same_salon_reused_on_different_days(self):
+        thursday = ExamSessionModel.objects.create(
+            exam=self.exam, name='1.Oturum/Perşembe', order=0,
+            session_date=date(2026, 10, 15), start_time=time(10, 0), end_time=time(12, 45),
+        )
+        saturday = ExamSessionModel.objects.create(
+            exam=self.exam, name='2. Oturum/Cumartesi', order=1,
+            session_date=date(2026, 10, 17), start_time=time(10, 0), end_time=time(12, 45),
+        )
+        res = self.client.put(
+            f'{EXAMS_URL}{self.exam.id}/rooms/',
+            {'rooms': [
+                {'name': '3K Vizyon', 'capacity': 130, 'exam_session_id': thursday.id},
+                {'name': '3K Vizyon', 'capacity': 130, 'exam_session_id': saturday.id},
+            ]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        names = list(ExamRoom.objects.filter(exam=self.exam).values_list('name', 'exam_session_id'))
+        self.assertEqual(names, [('3K Vizyon', thursday.id), ('3K Vizyon', saturday.id)])
+
+    def test_same_salon_rejected_when_clocks_overlap(self):
+        morning = ExamSessionModel.objects.create(
+            exam=self.exam, name='Sabah', order=0,
+            session_date=date(2026, 10, 17), start_time=time(10, 0), end_time=time(12, 0),
+        )
+        overlap = ExamSessionModel.objects.create(
+            exam=self.exam, name='Öğle', order=1,
+            session_date=date(2026, 10, 17), start_time=time(11, 0), end_time=time(13, 0),
+        )
+        res = self.client.put(
+            f'{EXAMS_URL}{self.exam.id}/rooms/',
+            {'rooms': [
+                {'name': '3K Vizyon', 'capacity': 130, 'exam_session_id': morning.id},
+                {'name': '3K Vizyon', 'capacity': 130, 'exam_session_id': overlap.id},
+            ]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 400, res.content[:400])
+        self.assertIn('aynı gün ve saatte', res.json().get('error', ''))
+        self.assertFalse(ExamRoom.objects.filter(exam=self.exam, name='3K Vizyon').exists())
+
     def test_rooms_put_skips_inactive_seats(self):
         seated = ExamParticipant.objects.create(
             exam=self.exam, student=self.in_class, seat_no=2,

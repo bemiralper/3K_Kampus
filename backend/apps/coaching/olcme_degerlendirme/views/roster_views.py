@@ -124,7 +124,10 @@ def apply_roster_payload(exam, data: dict) -> dict:
 
     rooms_payload = data.get('rooms')
     if rooms_payload is not None:
-        rooms = replace_rooms(exam, rooms_payload)
+        try:
+            rooms = replace_rooms(exam, rooms_payload)
+        except ValueError as exc:
+            return {'ok': False, 'error': str(exc)}
     else:
         rooms = list(exam.rooms.order_by('order', 'id'))
 
@@ -434,7 +437,10 @@ def exam_rooms(request, exam_pk):
             payload = request.data
         if not isinstance(payload, list):
             return Response({'error': 'Salon listesi geçersiz.'}, status=400)
-        replace_rooms(exam, payload)
+        try:
+            replace_rooms(exam, payload)
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=400)
     rooms = list(exam.rooms.order_by('order', 'id'))
     count = _max_session_count(exam)
     cap = sum(r.capacity for r in rooms)

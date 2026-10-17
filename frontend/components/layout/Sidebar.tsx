@@ -271,6 +271,7 @@ const navItems: MenuItem[] = [
       { label: "Konu & Kazanımlar", href: "/admin/olcme-degerlendirme/kazanimlar", group: "Tanımlar" },
       { label: "Puan Katsayıları", href: "/admin/olcme-degerlendirme/ayarlar", group: "Tanımlar" },
       { label: "Oturum grupları", href: "/admin/olcme-degerlendirme/oturum-gruplari", group: "Tanımlar" },
+      { label: "Sınav salonları", href: "/admin/olcme-degerlendirme/salonlar", group: "Tanımlar" },
       { label: "Optik Formlar", href: "/admin/olcme-degerlendirme/daire-dizisi", group: "Tanımlar" },
       { label: "Optik Okuma", href: "/admin/olcme-degerlendirme/optik-okuma", group: "Tanımlar" },
     ],

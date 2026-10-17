@@ -32,7 +32,7 @@ import {
 } from '../../../../components/olcme/curriculum-band';
 import { matchSubjectId } from '../../../../components/olcme/SubjectPicker';
 import tree from '../../../../components/olcme/section-tree.module.css';
-import { groupSeated, previewSeating, seatNumbers } from '../../../../components/olcme/roster/seating';
+import { groupSeated, previewSeating, sameSalonReuseError, seatNumbers, sessionsShareClock } from '../../../../components/olcme/roster/seating';
 import type { SeatedStudent } from '../../../../components/olcme/roster/seating';
 import { resolveCoachPhotoUrl } from '../../../../lib/coach-media';
 import AudiencePicker from '../../../../components/olcme/roster/AudiencePicker';
@@ -176,6 +176,9 @@ export default function YeniSinavPage() {
   const [rooms, setRooms] = useState<ExamRoomItem[]>([{ name: 'Salon 1', capacity: 30, seat_start: 1, seat_gap: 0, order: 0 }]);
   const [roomDetail, setRoomDetail] = useState<number | null>(null);
   const [salonlar, setSalonlar] = useState<DenemeSalon[]>([]);
+  const [newSalonName, setNewSalonName] = useState('');
+  const [newSalonCap, setNewSalonCap] = useState('130');
+  const [salonBusy, setSalonBusy] = useState(false);
   const [seatingMode, setSeatingMode] = useState<SeatingMode>('shuffle');
   const [seatingTick, setSeatingTick] = useState(0);
 
@@ -193,14 +196,37 @@ export default function YeniSinavPage() {
   }, []);
 
   const applySavedSalon = (salon: DenemeSalon) => {
+    const name = salon.name.trim();
+    const same = rooms.filter(item => item.name.trim() === name);
+    let sessionIndex: number | null = null;
+    if (sessions.length > 1) {
+      if (same.some(item => item.session_index == null)) {
+        setError(`${name} zaten tüm oturumlarda. İkinci kez eklenmez; oturumu seçin.`);
+        return;
+      }
+      const taken = new Set(
+        same.map(item => item.session_index).filter((n): n is number => n != null),
+      );
+      const missing = sessions.findIndex((_, i) => !taken.has(i));
+      if (missing < 0) return;
+      const clash = [...taken].some(i => sessionsShareClock(sessions[i], sessions[missing]));
+      if (clash) {
+        setError(`${name} aynı gün ve saatte başka bir oturumda. Farklı gün veya saat seçin.`);
+        return;
+      }
+      sessionIndex = missing;
+    } else if (same.length) {
+      return;
+    }
+    setError('');
     setRooms(prev => {
-      if (prev.some(item => item.name.trim() === salon.name)) return prev;
       const untouched = prev.length === 1
         && prev[0].name === 'Salon 1'
         && prev[0].capacity === 30
         && !(prev[0].inactive_seats || []).length
         && (prev[0].seat_start ?? 1) === 1
-        && (prev[0].seat_gap ?? 0) === 0;
+        && (prev[0].seat_gap ?? 0) === 0
+        && prev[0].session_index == null;
       const next: ExamRoomItem = {
         name: salon.name,
         capacity: salon.capacity,
@@ -208,9 +234,36 @@ export default function YeniSinavPage() {
         seat_start: 1,
         seat_gap: 0,
         order: untouched ? 0 : prev.length,
+        ...(sessionIndex != null ? { session_index: sessionIndex } : {}),
       };
       return untouched ? [next] : [...prev, next];
     });
+  };
+
+  const rememberSalon = (saved: DenemeSalon) => {
+    setSalonlar(prev => [...prev.filter(s => s.id !== saved.id), saved].sort(
+      (a, b) => a.name.localeCompare(b.name, 'tr'),
+    ));
+  };
+
+  const createCatalogSalon = async () => {
+    const name = newSalonName.trim();
+    if (!name) {
+      setError('Salon adı yazın.');
+      return;
+    }
+    setSalonBusy(true);
+    setError('');
+    try {
+      const saved = await examApi.saveDenemeSalon(name, Math.max(1, Number(newSalonCap) || 1));
+      rememberSalon(saved);
+      setNewSalonName('');
+      applySavedSalon(saved);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Salon kaydedilemedi.');
+    } finally {
+      setSalonBusy(false);
+    }
   };
 
   useEffect(() => {
@@ -464,9 +517,10 @@ export default function YeniSinavPage() {
 
   const totalCap = rooms.reduce((a, r) => a + seatNumbers(r).length, 0);
   const capError = (() => {
+    const reuse = sameSalonReuseError(rooms, sessions);
+    if (reuse) return reuse;
     if (!rooms.some(r => r.name.trim())) return '';
-    const split = sessions.length > 1 && rooms.some(r => r.session_index != null);
-    if (!split) {
+    if (sessions.length < 2) {
       return roster.length > totalCap
         ? `${roster.length} öğrenci için toplam salon kapasitesi ${totalCap}.`
         : '';
@@ -558,6 +612,19 @@ export default function YeniSinavPage() {
         sessions,
       });
       examId = exam.id;
+      const known = new Set(salonlar.map(s => s.name.trim().toLocaleLowerCase('tr')));
+      const fresh = new Map<string, ExamRoomItem>();
+      for (const room of rooms) {
+        const label = room.name.trim();
+        const key = label.toLocaleLowerCase('tr');
+        if (!label || known.has(key) || fresh.has(key)) continue;
+        fresh.set(key, room);
+      }
+      await Promise.all([...fresh.values()].map(room => examApi.saveDenemeSalon(
+        room.name.trim(),
+        Math.max(1, Number(room.capacity) || 1),
+        room.inactive_seats || [],
+      ).catch(() => null)));
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Sınav oluşturulamadı.');
       setSubmitting(false);
@@ -1058,14 +1125,49 @@ export default function YeniSinavPage() {
             <div className={r.hero}>
               <div className={r.heroCopy}>
                 <h2>Salonlar</h2>
-                <p>{roster.length} kişi için {totalCap} yer. Ad ve kapasite yeterli.</p>
+                <p>
+                  {sessions.length > 1
+                    ? `${roster.length} kişi. Aynı salon, günü veya saati farklı oturumlarda yeniden kullanılır; yer sayısı her oturum için ayrı bakılır.`
+                    : `${roster.length} kişi için ${totalCap} yer. Ad ve kapasite yeterli.`}
+                </p>
               </div>
             </div>
             {capError && <div className={`${y.notice} ${y.noticeError}`}>{capError}</div>}
+            <div className={y.salonCreate}>
+              <input
+                aria-label="Yeni salon adı"
+                placeholder="Yeni salon adı"
+                value={newSalonName}
+                onChange={e => setNewSalonName(e.target.value)}
+              />
+              <label className={y.roomCapField}>
+                <span>Kapasite</span>
+                <input
+                  type="number"
+                  min={1}
+                  inputMode="numeric"
+                  aria-label="Yeni salon kapasitesi"
+                  value={newSalonCap}
+                  onChange={e => setNewSalonCap(e.target.value)}
+                />
+              </label>
+              <button type="button" className={y.salonSave} disabled={salonBusy} onClick={createCatalogSalon}>
+                {salonBusy ? 'Kaydediliyor…' : 'Salonu kaydet'}
+              </button>
+            </div>
+            <p className={y.salonNote}>
+              Kayıtlı salon sınavdan önce durur ve sonraki sınavlarda da seçilir.
+              {sessions.length > 1 ? ' Çipi bir kez daha seçince salon diğer oturuma eklenir.' : ''}
+            </p>
             {salonlar.length > 0 && (
               <div className={y.salonChips}>
                 {salonlar.map(salon => {
-                  const added = rooms.some(item => item.name.trim() === salon.name);
+                  const copies = rooms.filter(item => item.name.trim() === salon.name);
+                  const covered = sessions.length > 1
+                    ? copies.some(item => item.session_index == null)
+                      || sessions.every((_, i) => copies.some(item => item.session_index === i))
+                    : copies.length > 0;
+                  const added = copies.length > 0;
                   const places = seatNumbers({
                     capacity: salon.capacity,
                     seat_start: 1,
@@ -1077,7 +1179,8 @@ export default function YeniSinavPage() {
                       key={salon.id}
                       type="button"
                       className={added ? y.salonChipOn : y.salonChip}
-                      aria-pressed={added}
+                      aria-pressed={covered}
+                      title={sessions.length > 1 && added && !covered ? 'Diğer oturuma da ekle' : undefined}
                       onClick={() => applySavedSalon(salon)}
                     >
                       {salon.name} · {places}

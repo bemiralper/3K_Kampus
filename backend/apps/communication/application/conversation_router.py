@@ -262,6 +262,16 @@ class ConversationRouter:
             conversation.needs_support_at = None
             if conversation.status != ConversationStatus.ARCHIVED:
                 conversation.status = ConversationStatus.REPLIED
+            try:
+                from apps.takvim.domain.models import AppNotification
+
+                AppNotification.objects.filter(
+                    kurum_id=conversation.kurum_id,
+                    url__icontains=str(conversation.id),
+                    ekran_mesaji=True,
+                ).update(ekran_gosterildi=True, is_read=True, read_at=now)
+            except Exception:
+                pass
         else:
             # Sistem mesajı: bekleyen soru bekliyor kalır, yalnız arşivden çıkarılır
             update_fields = ['updated_at']

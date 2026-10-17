@@ -33,6 +33,7 @@ const PAGE_TITLES: Record<string, string> = {
   "/coach/olcme-degerlendirme": "Sınav Listesi",
   "/coach/olcme-degerlendirme/yeni": "Yeni Sınav Oluştur",
   "/coach/olcme-degerlendirme/oturum-gruplari": "Oturum grupları",
+  "/coach/olcme-degerlendirme/salonlar": "Sınav salonları",
   "/coach/kutuphane": "Kütüphane",
   "/coach/haftalik-program": "Haftalık Program",
   "/coach/gorusmeler": "Görüşmeler",

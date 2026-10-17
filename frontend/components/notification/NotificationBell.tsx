@@ -254,6 +254,11 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     const target = inboxPortal === 'coach' && isBirthdayNotificationUrl(rewritten)
       ? coachBirthdayHref(rewritten)
       : rewritten;
+    if (n.sube_id) {
+      try {
+        localStorage.setItem('3k_active_sube', String(n.sube_id));
+      } catch {}
+    }
     if (target) {
       window.location.href = target;
     }

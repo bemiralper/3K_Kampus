@@ -298,7 +298,7 @@ export default function UserProfilPanel({
           <p className="coach-muted-text" style={{ marginTop: 0, marginBottom: 14 }}>
             Yönetici olarak diğer portalları açabilir, aynı oturumla geri dönebilirsiniz.
           </p>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="coach-profil-portals">
             {(["admin", "coach", "muhasebe"] as PortalView[]).map((view) => (
               <button
                 key={view}

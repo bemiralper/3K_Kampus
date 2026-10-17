@@ -240,12 +240,16 @@ class WeeklyProgramViewSet(viewsets.ModelViewSet):
             'program_id': program.id,
             'assignment_ids': request.data.get('assignment_ids', []),
             'metric': request.data.get('metric') or 'question',
+            'day_ids': request.data.get('day_ids') or [],
+            'lesson_ids': request.data.get('lesson_ids') or [],
         })
         ser.is_valid(raise_exception=True)
         result = services.auto_distribute(
             program,
             assignment_ids=ser.validated_data.get('assignment_ids') or None,
             metric=ser.validated_data.get('metric') or 'question',
+            day_ids=ser.validated_data.get('day_ids') or None,
+            lesson_ids=ser.validated_data.get('lesson_ids') or None,
         )
         return Response(result, status=status.HTTP_200_OK)
 

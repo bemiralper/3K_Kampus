@@ -340,16 +340,18 @@ class AutoDistributeRequestSerializer(serializers.Serializer):
     program_id     = serializers.IntegerField()
     assignment_ids = serializers.ListField(child=serializers.IntegerField(), allow_empty=True)
     metric         = serializers.ChoiceField(choices=['question', 'test'], default='question', required=False)
+    day_ids        = serializers.ListField(child=serializers.IntegerField(), required=False, allow_empty=True)
+    lesson_ids     = serializers.ListField(child=serializers.IntegerField(), required=False, allow_empty=True)
 
 
 class SplitBlockRequestSerializer(serializers.Serializer):
     """
     Bir ödevi birden fazla güne bölmek için request body.
-    day_ids: hedef gün id listesi (2-7 arası)
+    day_ids: hedef gün id listesi (2-8 arası)
     question_counts: her güne düşecek soru sayıları (opsiyonel — verilmezse eşit dağıtır)
     titles: her parça için özel başlık (opsiyonel — verilmezse otomatik numaralanır)
     """
-    day_ids         = serializers.ListField(child=serializers.IntegerField(), min_length=2, max_length=7)
+    day_ids         = serializers.ListField(child=serializers.IntegerField(), min_length=1, max_length=8)
     question_counts = serializers.ListField(child=serializers.IntegerField(min_value=0), required=False)
     titles          = serializers.ListField(child=serializers.CharField(max_length=255), required=False)
 

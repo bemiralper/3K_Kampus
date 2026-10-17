@@ -21,7 +21,6 @@ import {
   moveBlock,
   deleteProgram,
   splitBlockToDays,
-  splitHomeworkToDays,
   updateDay,
   resetProgram,
   WEEKDAY_LABELS,
@@ -145,6 +144,7 @@ export default function StudyProgramEditor({
   const [distributeOpen, setDistributeOpen] = useState(false);
   const [distributeMetric, setDistributeMetric] = useState<'question' | 'test'>('question');
   const [distributeHomeworkId, setDistributeHomeworkId] = useState<number | null>(null);
+  const [distributeDayIds, setDistributeDayIds] = useState<number[]>([]);
   const [distributeSaving, setDistributeSaving] = useState(false);
   const [staleOpen, setStaleOpen] = useState(false);
 
@@ -293,6 +293,7 @@ export default function StudyProgramEditor({
     homework?: HomeworkPoolItem;
     title: string;
     totalQuestions: number;
+    testCount?: number;
     currentDayId?: number;
   } | null>(null);
 
@@ -675,14 +676,28 @@ export default function StudyProgramEditor({
     }
     const first = currentHomeworks[0];
     setDistributeHomeworkId(first ? first.id : null);
+    setDistributeDayIds(
+      [...(program.days || [])]
+        .sort((a, b) => a.day_date.localeCompare(b.day_date))
+        .map((day) => day.id),
+    );
     setDistributeOpen(true);
   };
 
   const handleConfirmDistribute = async () => {
     if (!program || isExpired || !distributeHomeworkId) return;
+    if (distributeDayIds.length < 1) {
+      showToast('En az bir gün seçin.', 'error');
+      return;
+    }
     setDistributeSaving(true);
     try {
-      const res = await autoDistribute(program.id, [distributeHomeworkId], distributeMetric);
+      const res = await autoDistribute(
+        program.id,
+        [distributeHomeworkId],
+        distributeMetric,
+        distributeDayIds,
+      );
       if (res.success) {
         const count = res.data?.distributed ?? 0;
         if (count === 0) {
@@ -900,6 +915,7 @@ export default function StudyProgramEditor({
       block,
       title: primaryBlockLabel(block),
       totalQuestions: block.question_count,
+      testCount: 0,
       currentDayId: block.day,
     });
     setSplitModalOpen(true);
@@ -912,32 +928,42 @@ export default function StudyProgramEditor({
       homework: item,
       title: item.topic_name?.trim() || item.lesson_name || item.title,
       totalQuestions: item.question_count,
+      testCount: item.test_count || 0,
     });
     setSplitModalOpen(true);
   };
 
   // ✂️ Böl onayı
-  const handleSplitConfirm = async (dayIds: number[], questionCounts: number[]) => {
+  const handleSplitConfirm = async (dayIds: number[], metric: 'question' | 'test') => {
     setSplitModalOpen(false);
-    if (!splitTarget) return;
+    if (!splitTarget || !program) return;
 
     try {
       if (splitTarget.type === 'block' && splitTarget.block) {
-        const res = await splitBlockToDays(splitTarget.block.id, { day_ids: dayIds, question_counts: questionCounts });
+        const res = await splitBlockToDays(splitTarget.block.id, { day_ids: dayIds });
         if (res.success) {
-          showToast(`Ödev ${dayIds.length} güne bölündü!`);
+          showToast(`Ödev ${dayIds.length} güne bölündü.`);
           reloadCurrentProgram();
         } else {
           showToast(res.error || 'Bölme başarısız', 'error');
         }
       } else if (splitTarget.type === 'homework' && splitTarget.homework) {
-        const res = await splitHomeworkToDays(splitTarget.homework, dayIds, questionCounts);
-        if (res.success) {
-          showToast(`Ödev ${dayIds.length} güne bölünerek eklendi!`);
+        const lessonId = splitTarget.homework.lesson_id;
+        const res = await autoDistribute(
+          program.id,
+          [splitTarget.homework.id],
+          metric,
+          dayIds,
+          lessonId ? [lessonId] : undefined,
+        );
+        const count = res.data?.distributed ?? 0;
+        if (res.success && count > 0) {
+          const label = metric === 'test' ? 'test sayısına' : 'soru sayısına';
+          showToast(`Bu ödev ${dayIds.length} güne ${label} göre bölündü.`);
           reloadCurrentProgram();
           loadHomeworkPool();
         } else {
-          showToast('Bölme başarısız', 'error');
+          showToast(res.data?.detail || res.error || 'Bölme başarısız', 'error');
         }
       }
     } catch {
@@ -1506,10 +1532,9 @@ export default function StudyProgramEditor({
             <section className="sps-distribute" aria-label="Ödev dağıtımı">
               <div className="sps-distribute-head">
                 <div>
-                  <h3>Ödevleri {inclusiveDayCount(program.week_start, program.week_end)} güne böl</h3>
+                  <h3>Bu ödevi böl</h3>
                   <p>
-                    Her konu kendi soru veya test sayısına göre günlere yazılır.
-                    Kontrol günü de pay alır.
+                    Seçilen ödev, işaretlediğiniz günlere soru veya test sayısına göre yazılır.
                   </p>
                 </div>
                 <button
@@ -1545,7 +1570,7 @@ export default function StudyProgramEditor({
                     })}
                   </div>
                 )}
-                <div className="sps-metric" role="group" aria-label="Dağıtım ölçüsü">
+                <div className="sps-metric" role="group" aria-label="Bölme ölçüsü">
                   <button
                     type="button"
                     className={distributeMetric === 'question' ? 'is-on' : ''}
@@ -1561,10 +1586,46 @@ export default function StudyProgramEditor({
                     Test sayısı
                   </button>
                 </div>
+                <div className="sps-day-picks">
+                  <button
+                    type="button"
+                    className="sps-day-all"
+                    onClick={() => {
+                      const ids = sortedDays.map((day) => day.id);
+                      const allOn = ids.length > 0 && ids.every((id) => distributeDayIds.includes(id));
+                      setDistributeDayIds(allOn ? [] : ids);
+                    }}
+                  >
+                    {sortedDays.length > 0 && sortedDays.every((day) => distributeDayIds.includes(day.id))
+                      ? 'Seçimi kaldır'
+                      : 'Tümünü seç'}
+                  </button>
+                  {sortedDays.map((day) => {
+                    const on = distributeDayIds.includes(day.id);
+                    const dt = new Date(`${day.day_date}T12:00:00`);
+                    return (
+                      <button
+                        key={day.id}
+                        type="button"
+                        aria-pressed={on}
+                        className={`sps-day-pick${on ? ' is-on' : ''}`}
+                        onClick={() => {
+                          setDistributeDayIds((prev) => (
+                            prev.includes(day.id)
+                              ? prev.filter((id) => id !== day.id)
+                              : [...prev, day.id]
+                          ));
+                        }}
+                      >
+                        {WEEKDAY_LABELS[day.weekday] || 'Gün'} {dt.getDate()}
+                      </button>
+                    );
+                  })}
+                </div>
                 <button
                   type="button"
                   className="sps-btn sps-btn-primary sps-distribute-go"
-                  disabled={distributeSaving || !distributeHomeworkId}
+                  disabled={distributeSaving || !distributeHomeworkId || distributeDayIds.length < 1}
                   onClick={() => { void handleConfirmDistribute(); }}
                 >
                   {distributeSaving ? 'Dağıtılıyor…' : 'Dağıt'}
@@ -1968,6 +2029,7 @@ export default function StudyProgramEditor({
           onConfirm={handleSplitConfirm}
           title={splitTarget.title}
           totalQuestions={splitTarget.totalQuestions}
+          testCount={splitTarget.testCount}
           days={program.days}
           currentDayId={splitTarget.currentDayId}
         />

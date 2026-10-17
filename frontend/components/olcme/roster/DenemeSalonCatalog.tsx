@@ -90,6 +90,71 @@ function SalonRow({
   );
 }
 
+function NewSalon({
+  onCreated,
+  onError,
+}: {
+  onCreated: (row: DenemeSalon) => void;
+  onError: (message: string) => void;
+}) {
+  const [name, setName] = useState('');
+  const [capacity, setCapacity] = useState('130');
+  const [passive, setPassive] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    const nextName = name.trim();
+    if (!nextName) {
+      onError('Salon adı yazın.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const saved = await examApi.saveDenemeSalon(
+        nextName,
+        Math.max(1, Number(capacity) || 1),
+        parseInactiveSeats(passive),
+      );
+      setName('');
+      setCapacity('130');
+      setPassive('');
+      onCreated(saved);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : 'Salon kaydedilemedi.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className={r.salonCard}>
+      <div className={r.salonRow}>
+        <input aria-label="Yeni salon adı" placeholder="Yeni salon adı" value={name} onChange={e => setName(e.target.value)} />
+        <input
+          aria-label="Yeni salon kapasitesi"
+          type="number"
+          min={1}
+          inputMode="numeric"
+          value={capacity}
+          onChange={e => setCapacity(e.target.value)}
+        />
+        <button type="button" className={r.salonSave} disabled={busy} onClick={save}>
+          {busy ? '…' : 'Oluştur'}
+        </button>
+      </div>
+      <label className={r.field}>
+        <span>Pasif sıralar</span>
+        <input
+          aria-label="Yeni salon pasif sıralar"
+          value={passive}
+          placeholder="5, 12, 18-20"
+          onChange={e => setPassive(e.target.value)}
+        />
+      </label>
+    </div>
+  );
+}
+
 export default function DenemeSalonCatalog({
   salonlar,
   onChange,
@@ -99,20 +164,21 @@ export default function DenemeSalonCatalog({
   onChange: (next: DenemeSalon[]) => void;
   onError: (message: string) => void;
 }) {
-  if (salonlar.length === 0) return null;
+  const sortIn = (row: DenemeSalon) => onChange(
+    [...salonlar.filter(s => s.id !== row.id), row].sort((a, b) => a.name.localeCompare(b.name, 'tr')),
+  );
   return (
     <div className={r.salonCatalog}>
       <p className={r.roomHint}>
-        Kayıtlı salonlar. Ad, kapasite ve pasif sıraları değiştirip Güncelle. Sil, yalnızca bu listeyi temizler. Pasif sıralar salonu seçince sınava kopyalanır.
+        Salonları sınavdan önce tanımlayın. Aynı salon, günü veya saati çakışmayan sınav ve oturumlarda tekrar kullanılır. Sil, yalnızca bu listeyi temizler; eski sınavlardaki salon durur.
       </p>
+      <NewSalon onCreated={sortIn} onError={onError} />
       {salonlar.map(salon => (
         <SalonRow
           key={salon.id}
           salon={salon}
           onError={onError}
-          onSaved={saved => onChange(
-            [...salonlar.filter(s => s.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'tr')),
-          )}
+          onSaved={sortIn}
           onDeleted={id => onChange(salonlar.filter(s => s.id !== id))}
         />
       ))}

@@ -1532,8 +1532,9 @@ export default function SozlesmeOlusturClient() {
       ),
     );
     setKalemler(rows);
+    // Katalog adı (canlı deneme adı) satıra yansısın; fiyat birleştirmesi önceki satırdan gelir.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractSel.selection, paketData]);
+  }, [contractSel.selection, contractSel.catalog, paketData]);
 
   // Kalem KDV/İndirim/Brüt/Ödenecek değişikliği
   const updateKalem = (key: string, field: "kdv_orani" | "indirim_orani" | "brut_tutar" | "net_tutar" | "indirim_tutari", value: number) => {

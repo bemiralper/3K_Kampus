@@ -348,10 +348,14 @@ export async function autoDistribute(
   programId: number,
   assignmentIds?: number[],
   metric: 'question' | 'test' = 'question',
+  dayIds?: number[],
+  lessonIds?: number[],
 ): Promise<ApiResponse<{ distributed: number; detail?: string; study_days?: number; per_day?: number[] }>> {
   return apiPost(`${BASE}/programs/${programId}/auto-distribute/`, {
     assignment_ids: assignmentIds || [],
     metric,
+    day_ids: dayIds || [],
+    lesson_ids: lessonIds || [],
   });
 }
 

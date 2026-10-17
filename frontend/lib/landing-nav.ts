@@ -69,3 +69,20 @@ export function navItemActiveId(pathname: string, scrollActiveId: string): strin
   if (pathname !== '/') return '';
   return scrollActiveId;
 }
+
+/**
+ * Aktif bölüm, listedeki sabit sıraya göre değil sayfadaki dikey konuma göre seçilir.
+ * Sınav Takvimi Duyuruların üstündeyse, Duyurulara inince hâlâ Sınav Takvimi seçili kalmasın.
+ */
+export function activeSectionFromRects(
+  sections: { id: string; top: number }[],
+  offset: number,
+  fallback = 'anasayfa',
+): string {
+  const ordered = sections.slice().sort((a, b) => a.top - b.top);
+  let current = fallback;
+  for (const section of ordered) {
+    if (section.top <= offset) current = section.id;
+  }
+  return current;
+}

@@ -16,6 +16,7 @@ import {
   toggleEkHizmet,
   mapSelectionToKalemInputs,
   mergePackageCatalogs,
+  overlayLiveCatalogNames,
   filterGrupCatalogByAlan,
 } from "@/lib/package-selection";
 
@@ -198,7 +199,7 @@ export function useContractPackageSelection(
   const enrolledCatalog = useMemo(() => catalogFromPaketData(paketData), [paketData]);
   const catalog = useMemo(() => {
     const merged = kalemCatalog
-      ? mergePackageCatalogs(enrolledCatalog, kalemCatalog)
+      ? overlayLiveCatalogNames(mergePackageCatalogs(enrolledCatalog, kalemCatalog), kalemCatalog)
       : enrolledCatalog;
     return filterGrupCatalogByAlan(merged, paketData?.kayit?.alan_id);
   }, [enrolledCatalog, kalemCatalog, paketData?.kayit?.alan_id]);

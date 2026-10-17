@@ -37,6 +37,32 @@ export function filterGrupCatalogByAlan(catalog: PackageCatalog, alanId?: number
   };
 }
 
+function overlayNames<T extends { id: number; ad: string }>(items: T[], live: T[]): T[] {
+  if (!live.length) return items;
+  const byId = new Map(live.map((item) => [item.id, item.ad]));
+  return items.map((item) => {
+    const ad = byId.get(item.id);
+    if (!ad || ad === item.ad) return item;
+    return { ...item, ad };
+  });
+}
+
+/**
+ * Birleşik katalogda fiyat kayıtlı sözleşmeden kalsın, ad canlı katalogdan gelsin.
+ * Paket sonradan yeniden adlandırıldığında eski kayıt adı (ör. "Deneme") seçili
+ * kutuyu ezmesin.
+ */
+export function overlayLiveCatalogNames(merged: PackageCatalog, live: PackageCatalog): PackageCatalog {
+  return {
+    grupDersleri: overlayNames(merged.grupDersleri, live.grupDersleri),
+    premiumPaketler: overlayNames(merged.premiumPaketler, live.premiumPaketler),
+    ozelDersler: overlayNames(merged.ozelDersler, live.ozelDersler),
+    denemeler: overlayNames(merged.denemeler, live.denemeler),
+    yayinPaketleri: overlayNames(merged.yayinPaketleri, live.yayinPaketleri),
+    ekHizmetler: overlayNames(merged.ekHizmetler, live.ekHizmetler),
+  };
+}
+
 /** Kayıtlı paket kataloğu + kalem-secenekleri kataloğunu birleştir */
 export function mergePackageCatalogs(enrolled: PackageCatalog, kalem: PackageCatalog): PackageCatalog {
   return {

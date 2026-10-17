@@ -74,7 +74,9 @@ class ConversationContextView(CommunicationAPIView):
         if err:
             return err
 
-        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
+        conversation = ConversationRepository.get_by_id(
+            kurum_id, conversation_id, sube_id=sube_id,
+        ) or ConversationRepository.get_by_id(kurum_id, conversation_id)
         if not conversation:
             return Response({'error': 'Sohbet bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
         gate = assert_conversation_sube_access(request, kurum_id, conversation)

@@ -684,3 +684,39 @@ class ManagerSeesTransferredConversationsTest(TestCase):
             sube_id=self.sube.id,
         )
         self.assertIn(conv.id, qs_mine.values_list('id', flat=True))
+
+    def test_cross_sube_conversation_accessible_when_user_has_access(self):
+        from rest_framework.test import APIClient
+        from apps.sube.domain.models import Sube
+
+        other_sube = Sube.objects.create(kurum=self.kurum, ad='İkinci Şube', kod='SB2')
+        conv = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            channel='WHATSAPP',
+            contact_phone='+905559999999',
+            contact_type=RecipientType.RAW_PHONE,
+            status=ConversationStatus.OPEN,
+            department='COACHING',
+        )
+
+        client = APIClient()
+        client.force_authenticate(user=self.yonetici)
+
+        # Aktif şube header'ı diğer şube iken kendi şubesindeki konuşmayı açma
+        response = client.get(
+            f'/api/communication/conversations/{conv.id}/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(other_sube.id),
+        )
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json()['id'], str(conv.id))
+
+        # Item endpoint
+        item_response = client.get(
+            f'/api/communication/conversations/{conv.id}/item/',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(other_sube.id),
+        )
+        self.assertEqual(item_response.status_code, 200, item_response.content)
+        self.assertEqual(item_response.json()['id'], str(conv.id))

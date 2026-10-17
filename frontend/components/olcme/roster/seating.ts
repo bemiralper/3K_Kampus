@@ -173,3 +173,58 @@ export function groupSeated(rows: SeatedStudent[]) {
   }
   return [...map.entries()];
 }
+
+export type SessionClock = {
+  name?: string;
+  session_date?: string;
+  start_time?: string;
+  end_time?: string;
+};
+
+/** Aynı takvim gününde saat aralıkları kesişiyor mu. Tarihi boşsa çakışma sayılmaz. */
+export function sessionsShareClock(a: SessionClock, b: SessionClock): boolean {
+  if (!a.session_date || !b.session_date || a.session_date !== b.session_date) return false;
+  const aStart = a.start_time || '00:00';
+  const aEnd = a.end_time || '23:59';
+  const bStart = b.start_time || '00:00';
+  const bEnd = b.end_time || '23:59';
+  return aStart < bEnd && bStart < aEnd;
+}
+
+/** Aynı salon adı, çakışmayan oturumlarda tekrar kullanılabilir. */
+export function sameSalonReuseError(
+  rooms: { name: string; session_index?: number | null }[],
+  sessions: SessionClock[],
+): string {
+  const groups = new Map<string, { name: string; session_index: number | null }[]>();
+  for (const room of rooms) {
+    const name = room.name.trim();
+    if (!name) continue;
+    const key = name.toLocaleLowerCase('tr');
+    const row = { name, session_index: room.session_index ?? null };
+    groups.set(key, [...(groups.get(key) || []), row]);
+  }
+  for (const rows of groups.values()) {
+    if (rows.length < 2) continue;
+    const label = rows[0].name;
+    if (rows.some(row => row.session_index == null)) {
+      return `${label} tüm oturumlarda açık. Aynı salonu ikinci kez eklemeyin; oturumu seçin.`;
+    }
+    for (let i = 0; i < rows.length; i += 1) {
+      for (let j = i + 1; j < rows.length; j += 1) {
+        const a = rows[i].session_index;
+        const b = rows[j].session_index;
+        if (a == null || b == null) continue;
+        if (a === b) return `${label} aynı oturumda iki kez var.`;
+        const left = sessions[a];
+        const right = sessions[b];
+        if (left && right && sessionsShareClock(left, right)) {
+          const leftName = left.name || `${a + 1}. oturum`;
+          const rightName = right.name || `${b + 1}. oturum`;
+          return `${label}, ${leftName} ve ${rightName} oturumlarında aynı gün ve saatte. Günü veya saati farklıysa salon tekrar eklenebilir.`;
+        }
+      }
+    }
+  }
+  return '';
+}

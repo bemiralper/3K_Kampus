@@ -175,7 +175,9 @@ class ConversationDetailView(CommunicationAPIView):
         if err:
             return err
 
-        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
+        conversation = ConversationRepository.get_by_id(
+            kurum_id, conversation_id, sube_id=sube_id,
+        ) or ConversationRepository.get_by_id(kurum_id, conversation_id)
         if not conversation:
             return Response({'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -202,7 +204,9 @@ class ConversationItemView(CommunicationAPIView):
         if err:
             return err
 
-        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
+        conversation = ConversationRepository.get_by_id(
+            kurum_id, conversation_id, sube_id=sube_id,
+        ) or ConversationRepository.get_by_id(kurum_id, conversation_id)
         if not conversation:
             return Response({'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -222,7 +226,9 @@ class ConversationArchiveView(CommunicationAPIView):
         if err:
             return err
 
-        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
+        conversation = ConversationRepository.get_by_id(
+            kurum_id, conversation_id, sube_id=sube_id,
+        ) or ConversationRepository.get_by_id(kurum_id, conversation_id)
         if not conversation:
             return Response({'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -249,7 +255,9 @@ class ConversationReadView(CommunicationAPIView):
         if err:
             return err
 
-        conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
+        conversation = ConversationRepository.get_by_id(
+            kurum_id, conversation_id, sube_id=sube_id,
+        ) or ConversationRepository.get_by_id(kurum_id, conversation_id)
         if not conversation:
             return Response({'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
 

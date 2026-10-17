@@ -868,8 +868,8 @@ class ConversationRepository:
                 for cid in str_ids:
                     url_q |= Q(url__icontains=cid)
                 AppNotification.objects.filter(
-                    user_id=user_id, kurum_id__in=kurum_ids, is_read=False,
-                ).filter(url_q).update(is_read=True, read_at=now)
+                    user_id=user_id, kurum_id__in=kurum_ids,
+                ).filter(url_q).update(is_read=True, read_at=now, ekran_gosterildi=True)
             except Exception:
                 pass
 

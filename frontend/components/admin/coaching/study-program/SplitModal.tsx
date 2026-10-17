@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { ProgramDay } from '@/lib/study-program-api';
 import { WEEKDAY_LABELS } from '@/lib/study-program-api';
 
@@ -11,83 +11,63 @@ function dayLabel(day: ProgramDay): string {
   return `${wd} ${short}`;
 }
 
-interface SplitTarget {
-  dayId: number;
-  dayLabel: string;
-  questionCount: number;
-}
+export type SplitMetric = 'question' | 'test';
 
 interface SplitModalProps {
   open: boolean;
   onClose: () => void;
-  onConfirm: (dayIds: number[], questionCounts: number[]) => void;
+  onConfirm: (dayIds: number[], metric: SplitMetric) => void;
   title: string;
   totalQuestions: number;
+  testCount?: number;
   days: ProgramDay[];
   currentDayId?: number;
 }
 
 export default function SplitModal({
   open, onClose, onConfirm,
-  title, totalQuestions, days, currentDayId,
+  title, totalQuestions, testCount = 0, days, currentDayId,
 }: SplitModalProps) {
-  const [targets, setTargets] = useState<SplitTarget[]>([]);
+  const [metric, setMetric] = useState<SplitMetric>('question');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [error, setError] = useState('');
-  const orderedDays = [...days].sort((a, b) => a.day_date.localeCompare(b.day_date));
+  const orderedDays = useMemo(
+    () => [...days].sort((a, b) => a.day_date.localeCompare(b.day_date)),
+    [days],
+  );
+  const allIds = orderedDays.map((day) => day.id);
+  const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.includes(id));
 
   useEffect(() => {
     if (!open) return;
-    setTargets([]);
+    setMetric('question');
+    setSelectedIds([]);
     setError('');
   }, [open]);
 
-  const toggleDay = useCallback((day: ProgramDay) => {
-    setTargets((prev) => {
-      const exists = prev.find((t) => t.dayId === day.id);
-      if (exists) return prev.filter((t) => t.dayId !== day.id);
-      return [...prev, { dayId: day.id, dayLabel: dayLabel(day), questionCount: 0 }];
-    });
+  const toggleDay = (dayId: number) => {
+    setSelectedIds((prev) => (
+      prev.includes(dayId) ? prev.filter((id) => id !== dayId) : [...prev, dayId]
+    ));
     setError('');
-  }, []);
+  };
 
-  const updateQuestion = useCallback((dayId: number, value: number) => {
-    setTargets((prev) =>
-      prev.map((t) => (t.dayId === dayId ? { ...t, questionCount: Math.max(0, value) } : t)),
-    );
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? [] : allIds);
     setError('');
-  }, []);
-
-  const distributeEvenly = useCallback(() => {
-    if (targets.length === 0) return;
-    const base = Math.floor(totalQuestions / targets.length);
-    const remainder = totalQuestions % targets.length;
-    setTargets((prev) =>
-      prev.map((t, i) => ({ ...t, questionCount: base + (i < remainder ? 1 : 0) })),
-    );
-    setError('');
-  }, [targets.length, totalQuestions]);
-
-  useEffect(() => {
-    if (targets.length >= 2) distributeEvenly();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [targets.length]);
-
-  const currentTotal = targets.reduce((s, t) => s + t.questionCount, 0);
-  const diff = totalQuestions - currentTotal;
+  };
 
   const handleConfirm = () => {
-    if (targets.length < 2) {
-      setError('En az 2 gün seçin.');
+    if (selectedIds.length < 1) {
+      setError('En az bir gün seçin.');
       return;
     }
-    if (totalQuestions > 0 && diff !== 0) {
-      setError(`Soru toplamı ${diff > 0 ? `${diff} eksik` : `${Math.abs(diff)} fazla`}.`);
+    if (metric === 'test' && testCount < 1) {
+      setError('Bu ödevde bölünecek test yok.');
       return;
     }
-    onConfirm(
-      targets.map((t) => t.dayId),
-      targets.map((t) => t.questionCount),
-    );
+    const ordered = orderedDays.filter((day) => selectedIds.includes(day.id)).map((day) => day.id);
+    onConfirm(ordered, metric);
   };
 
   if (!open) return null;
@@ -112,7 +92,7 @@ export default function SplitModal({
           backgroundColor: '#fff',
           borderRadius: 16,
           width: '100%',
-          maxWidth: 460,
+          maxWidth: 480,
           maxHeight: '90vh',
           overflow: 'hidden',
           display: 'flex',
@@ -130,10 +110,10 @@ export default function SplitModal({
         }}>
           <div>
             <h3 style={{ margin: 0, fontSize: 18, fontWeight: 800, color: '#0f172a' }}>
-              Günlere böl
+              Bu ödevi böl
             </h3>
             <p style={{ margin: '6px 0 0', fontSize: 13, color: '#64748b', lineHeight: 1.4 }}>
-              Soruları seçtiğiniz günlere dağıtın.
+              Yalnızca bu ödev, seçtiğiniz günlere soru veya test sayısına göre yazılır.
             </p>
           </div>
           <button
@@ -161,18 +141,19 @@ export default function SplitModal({
             background: '#f8fafc',
             borderRadius: 12,
             padding: '12px 14px',
-            marginBottom: 18,
+            marginBottom: 16,
             border: '1px solid #e8eef5',
           }}>
             <div style={{ fontWeight: 700, fontSize: 14, color: '#0f172a', marginBottom: 4 }}>
               {title}
             </div>
             <div style={{ fontSize: 13, color: '#64748b' }}>
-              Toplam <strong style={{ color: '#0f172a' }}>{totalQuestions}</strong> soru
+              {totalQuestions} soru
+              {testCount > 0 ? ` · ${testCount} test` : ''}
             </div>
           </div>
 
-          <div style={{ marginBottom: 18 }}>
+          <div style={{ marginBottom: 16 }}>
             <div style={{
               fontSize: 11,
               fontWeight: 700,
@@ -181,17 +162,71 @@ export default function SplitModal({
               textTransform: 'uppercase',
               marginBottom: 8,
             }}>
-              Günler
+              Bölme
+            </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }} role="group" aria-label="Bölme ölçüsü">
+              <button
+                type="button"
+                onClick={() => { setMetric('question'); setError(''); }}
+                style={metricBtn(metric === 'question')}
+              >
+                Soru sayısı
+              </button>
+              <button
+                type="button"
+                onClick={() => { setMetric('test'); setError(''); }}
+                disabled={testCount < 1}
+                style={metricBtn(metric === 'test', testCount < 1)}
+              >
+                Test sayısı
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <div style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              gap: 8,
+              marginBottom: 8,
+            }}>
+              <span style={{
+                fontSize: 11,
+                fontWeight: 700,
+                color: '#64748b',
+                letterSpacing: '0.04em',
+                textTransform: 'uppercase',
+              }}>
+                Günler
+              </span>
+              <button
+                type="button"
+                onClick={toggleAll}
+                style={{
+                  border: '1px solid #e2e8f0',
+                  background: '#fff',
+                  borderRadius: 8,
+                  padding: '5px 10px',
+                  fontSize: 12,
+                  fontWeight: 700,
+                  color: '#0f172a',
+                  cursor: 'pointer',
+                }}
+              >
+                {allSelected ? 'Seçimi kaldır' : 'Tümünü seç'}
+              </button>
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {orderedDays.map((day) => {
-                const selected = targets.some((t) => t.dayId === day.id);
+                const selected = selectedIds.includes(day.id);
                 const isCurrent = day.id === currentDayId;
                 return (
                   <button
                     key={day.id}
                     type="button"
-                    onClick={() => toggleDay(day)}
+                    aria-pressed={selected}
+                    onClick={() => toggleDay(day.id)}
                     style={{
                       padding: '9px 12px',
                       borderRadius: 10,
@@ -222,106 +257,9 @@ export default function SplitModal({
             </div>
           </div>
 
-          {targets.length >= 2 && (
-            <div style={{ marginBottom: 12 }}>
-              <div style={{
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-                marginBottom: 10,
-              }}>
-                <span style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  color: '#64748b',
-                  letterSpacing: '0.04em',
-                  textTransform: 'uppercase',
-                }}>
-                  Soru dağılımı
-                </span>
-                <button
-                  type="button"
-                  onClick={distributeEvenly}
-                  style={{
-                    padding: '5px 10px',
-                    borderRadius: 8,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    border: '1px solid #e2e8f0',
-                    background: '#fff',
-                    color: '#334155',
-                    cursor: 'pointer',
-                  }}
-                >
-                  Eşit dağıt
-                </button>
-              </div>
-
-              {targets.map((t) => (
-                <div
-                  key={t.dayId}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 10,
-                    marginBottom: 10,
-                    padding: '8px 10px',
-                    background: '#f8fafc',
-                    borderRadius: 10,
-                    border: '1px solid #e8eef5',
-                  }}
-                >
-                  <span style={{
-                    width: 72,
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: '#0f766e',
-                    flexShrink: 0,
-                  }}>
-                    {t.dayLabel}
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={totalQuestions}
-                    value={t.questionCount}
-                    onChange={(e) => updateQuestion(t.dayId, parseInt(e.target.value, 10))}
-                    style={{ flex: 1, accentColor: '#0f766e' }}
-                  />
-                  <input
-                    type="number"
-                    min={0}
-                    max={totalQuestions}
-                    value={t.questionCount}
-                    onChange={(e) => updateQuestion(t.dayId, parseInt(e.target.value, 10) || 0)}
-                    style={{
-                      width: 56,
-                      textAlign: 'center',
-                      padding: '6px 4px',
-                      borderRadius: 8,
-                      border: '1px solid #e2e8f0',
-                      fontSize: 13,
-                      fontWeight: 700,
-                    }}
-                  />
-                </div>
-              ))}
-
-              <div style={{
-                textAlign: 'right',
-                fontSize: 13,
-                fontWeight: 700,
-                color: diff === 0 ? '#16a34a' : '#dc2626',
-                marginTop: 4,
-              }}>
-                {currentTotal} / {totalQuestions}
-                {diff !== 0 && ` (${diff > 0 ? '−' : '+'}${Math.abs(diff)})`}
-              </div>
-            </div>
-          )}
-
           {error && (
             <div style={{
+              marginTop: 12,
               padding: '10px 12px',
               borderRadius: 10,
               backgroundColor: '#fef2f2',
@@ -361,22 +299,36 @@ export default function SplitModal({
           <button
             type="button"
             onClick={handleConfirm}
-            disabled={targets.length < 2}
+            disabled={selectedIds.length < 1}
             style={{
               padding: '10px 18px',
               borderRadius: 10,
               fontSize: 13,
               fontWeight: 700,
               border: 'none',
-              background: targets.length < 2 ? '#cbd5e1' : '#0f766e',
+              background: selectedIds.length < 1 ? '#cbd5e1' : '#0f766e',
               color: '#fff',
-              cursor: targets.length < 2 ? 'not-allowed' : 'pointer',
+              cursor: selectedIds.length < 1 ? 'not-allowed' : 'pointer',
             }}
           >
-            Böl ve dağıt
+            Böl
           </button>
         </div>
       </div>
     </div>
   );
+}
+
+function metricBtn(on: boolean, disabled = false): React.CSSProperties {
+  return {
+    padding: '8px 14px',
+    borderRadius: 10,
+    fontSize: 13,
+    fontWeight: 700,
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    border: on ? '2px solid #0f766e' : '1px solid #e2e8f0',
+    background: on ? '#f0fdfa' : '#fff',
+    color: disabled ? '#94a3b8' : on ? '#0f766e' : '#334155',
+    opacity: disabled ? 0.6 : 1,
+  };
 }

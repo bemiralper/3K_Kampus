@@ -176,6 +176,8 @@ def auto_distribute(
     program: WeeklyProgram,
     assignment_ids: list[int] | None = None,
     metric: str = 'question',
+    day_ids: list[int] | None = None,
+    lesson_ids: list[int] | None = None,
 ):
     """
     Seçilen ödevin her konusunu haftanın her gününe kendi ölçütüyle böler.
@@ -193,8 +195,11 @@ def auto_distribute(
         return {'distributed': 0, 'detail': 'Ölçüt soru veya test olmalıdır.'}
 
     days = _program_days(program)
+    if day_ids:
+        wanted_days = {int(day_id) for day_id in day_ids}
+        days = [day for day in days if day.id in wanted_days]
     if not days:
-        return {'distributed': 0, 'detail': 'Dağıtılacak gün yok.'}
+        return {'distributed': 0, 'detail': 'Dağıtılacak gün seçilmedi.'}
 
     if (program.week_end - program.week_start).days + 1 not in PROGRAM_LENGTHS:
         return {
@@ -249,6 +254,8 @@ def auto_distribute(
             })
             continue
         for lesson in lessons:
+            if lesson_ids and lesson.id not in lesson_ids:
+                continue
             tasks = list(lesson.tasks.all())
             total_q = sum((t.question_count or 0) for t in tasks)
             key = (asgn.id, lesson.id)

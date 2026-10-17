@@ -112,7 +112,16 @@ class ExamRoom(models.Model):
         verbose_name_plural = 'Sınav Salonları'
         ordering = ['exam', 'order', 'id']
         constraints = [
-            models.UniqueConstraint(fields=['exam', 'name'], name='unique_exam_room_name'),
+            models.UniqueConstraint(
+                fields=['exam', 'name'],
+                condition=models.Q(exam_session__isnull=True),
+                name='unique_exam_room_name_all_sessions',
+            ),
+            models.UniqueConstraint(
+                fields=['exam', 'name', 'exam_session'],
+                condition=models.Q(exam_session__isnull=False),
+                name='unique_exam_room_name_per_session',
+            ),
         ]
 
     def __str__(self):

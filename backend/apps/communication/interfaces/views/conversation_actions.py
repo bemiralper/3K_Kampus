@@ -35,7 +35,9 @@ def _get_conversation(request, conversation_id):
     kurum_id, sube_id, err = resolve_kurum_and_sube(request)
     if err:
         return None, None, None, err
-    conversation = ConversationRepository.get_by_id(kurum_id, conversation_id, sube_id=sube_id)
+    conversation = ConversationRepository.get_by_id(
+        kurum_id, conversation_id, sube_id=sube_id,
+    ) or ConversationRepository.get_by_id(kurum_id, conversation_id)
     if not conversation:
         return kurum_id, sube_id, None, Response(
             {'error': 'Konuşma bulunamadı.'}, status=status.HTTP_404_NOT_FOUND,

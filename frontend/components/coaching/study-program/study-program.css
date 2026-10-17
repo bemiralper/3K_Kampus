@@ -405,6 +405,39 @@
   line-height: 1.45;
 }
 
+.sps-day-picks {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 100%;
+}
+
+.sps-day-all,
+.sps-day-pick {
+  border: 1px solid var(--sp-line);
+  background: var(--sp-canvas);
+  color: var(--sp-ink-2);
+  border-radius: 10px;
+  min-height: 34px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.sps-day-all {
+  background: #fff;
+  color: var(--sp-ink);
+}
+
+.sps-day-pick.is-on {
+  border-color: #0f766e;
+  background: #f0fdfa;
+  color: #0f766e;
+}
+
 .sps-metric {
   display: inline-flex;
   padding: 3px;

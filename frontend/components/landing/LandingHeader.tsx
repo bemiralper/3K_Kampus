@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { getHeaderLogo, mergeBranding, type KurumBranding } from '@/lib/kurum-branding';
 import { LANDING_COLORS, SECTION_SCROLL_ORDER } from '@/lib/landing-theme';
-import { NAV_ITEMS, handleLandingNav, navItemActiveId } from '@/lib/landing-nav';
+import { NAV_ITEMS, activeSectionFromRects, handleLandingNav, navItemActiveId } from '@/lib/landing-nav';
 import MobileMenu from './MobileMenu';
 
 type LandingHeaderProps = {
@@ -43,13 +43,11 @@ export default function LandingHeader({ branding, onLoginClick }: LandingHeaderP
       }
 
       const offset = 120;
-      let current = 'anasayfa';
-      for (const id of SECTION_SCROLL_ORDER) {
+      const measured = SECTION_SCROLL_ORDER.flatMap((id) => {
         const el = document.getElementById(id);
-        if (el && el.getBoundingClientRect().top <= offset) {
-          current = id;
-        }
-      }
+        return el ? [{ id, top: el.getBoundingClientRect().top }] : [];
+      });
+      const current = activeSectionFromRects(measured, offset);
       if (current !== lastActiveId) {
         lastActiveId = current;
         setScrollActiveId(current);

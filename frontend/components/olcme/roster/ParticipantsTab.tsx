@@ -689,7 +689,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
             {showSalon && (
               <div className={p.sideBody}>
                 <p className={p.hint}>
-                  Kapasite numaralı yer sayısıdır. Pasif sıralara öğrenci oturmaz. Kayıtlı salonu seçince ad, kapasite ve pasif sıralar dolar.
+                  Kapasite numaralı yer sayısıdır. Pasif sıralara öğrenci oturmaz. Kayıtlı salonu seçince ad, kapasite ve pasif sıralar dolar. Günü veya saati farklı oturumlara aynı salon tekrar eklenebilir.
                 </p>
                 <DenemeSalonCatalog salonlar={salonlar} onChange={next => { setSalonlar(next); setError(''); }} onError={setError} />
                 {rooms.map((room, i) => {

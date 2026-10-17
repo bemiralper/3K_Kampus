@@ -104,18 +104,21 @@ export function useUnsavedChangesGuard({
     router.replace(href);
   }, [router]);
 
-  const executeNavigation = useCallback(
-    (navigation: PendingNavigation) => {
-      bypassRef.current = true;
-      setPendingNavigation(null);
-      if (navigation.kind === "href" && navigation.href) {
-        router.push(navigation.href);
-        return;
-      }
-      navigation.action?.();
-    },
-    [router]
-  );
+  const executeNavigation = useCallback((navigation: PendingNavigation) => {
+    bypassRef.current = true;
+    isDirtyRef.current = false;
+    setPendingNavigation(null);
+    if (typeof document !== "undefined") {
+      document.body.style.overflow = "";
+    }
+    if (navigation.kind === "href" && navigation.href) {
+      // Soft router.push, onay diyaloğu kapanırken geçişi yarıda bırakıp
+      // sayfayı kilitliyor. Ayrılma tam sayfa yüklemesiyle tamamlanır.
+      window.location.assign(navigation.href);
+      return;
+    }
+    navigation.action?.();
+  }, []);
 
   const requestNavigation = useCallback(
     (target: string | (() => void), options?: { hard?: boolean }) => {

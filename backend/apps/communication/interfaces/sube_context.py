@@ -70,13 +70,39 @@ def filter_conversations_by_sube(qs, sube_id):
 
 
 def assert_conversation_sube_access(request, kurum_id, conversation):
-    """Konuşma kaydı için şube erişim doğrulaması."""
+    """Konuşma kaydı için şube erişim doğrulaması.
+
+    Kullanıcı bildirime veya direkt linke tıkladığında aktif seçili şubesi
+    konuşmanın şubesinden farklı olabilir. Kullanıcının konuşmanın ait olduğu
+    şubeye yetkisi varsa (veya süper admin / tam yetkili ise) erişime izin verilir.
+    """
     record_sube = conversation_sube_id(conversation)
     allow_null = (
         record_sube is None
         and not getattr(conversation, 'ogrenci_id', None)
         and not getattr(conversation, 'veli_id', None)
     )
+    if allow_null and record_sube is None:
+        return None
+
+    user = getattr(request, 'user', None)
+    if user and getattr(user, 'is_authenticated', False):
+        from apps.communication.application.coach_scope import _has_full_inbox_access
+        from shared.sube_access import get_allowed_subeler_for_user
+
+        if _has_full_inbox_access(user) or getattr(user, 'is_superuser', False):
+            return None
+
+        # Kullanıcı konuşmayı bizzat üstlenmişse
+        if getattr(conversation, 'claimed_by_user_id', None) == user.id:
+            return None
+
+        # Kullanıcının bu konuşmanın ait olduğu şubeye erişim yetkisi varsa
+        if record_sube is not None:
+            allowed = get_allowed_subeler_for_user(user, kurum_id=int(kurum_id))
+            if allowed.filter(id=record_sube).exists():
+                return None
+
     return assert_record_sube_access(
         request, kurum_id, record_sube, allow_null_sube=allow_null,
     )

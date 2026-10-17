@@ -111,6 +111,16 @@ export default function GorevEkranMesajiOverlay() {
       busyRef.current = false;
     }
     if (open && item.url) {
+      if (item.sube_id) {
+        try {
+          const currentSube = localStorage.getItem('3k_active_sube');
+          if (currentSube !== String(item.sube_id)) {
+            localStorage.setItem('3k_active_sube', String(item.sube_id));
+            window.location.href = notificationTarget(item.url, pathname);
+            return;
+          }
+        } catch {}
+      }
       router.push(notificationTarget(item.url, pathname));
     }
   };

@@ -91,3 +91,29 @@ class NotificationContextResponseTest(TestCase):
         self.assertFalse(
             AppNotification.objects.filter(user_id=self.user.id, ekran_gosterildi=False).exists(),
         )
+
+    def test_mark_conversation_read_clears_screen_notification(self):
+        from apps.takvim.infrastructure.repository import AppNotificationRepository
+
+        conv_id = 'a1b2c3d4-e5f6-7a8b-9c0d-1e2f3a4b5c6d'
+        n = AppNotification.objects.create(
+            kurum_id=self.kurum.id,
+            user_id=self.user.id,
+            baslik='Cevapsız sohbet: Ali',
+            mesaj='30 dakikadır yanıtlanmadı',
+            url=f'/admin/iletisim/sohbetler?conversation={conv_id}',
+            ekran_mesaji=True,
+            ekran_gosterildi=False,
+            is_read=False,
+        )
+        updated = AppNotificationRepository.mark_conversation_read_for_user(
+            self.user.id, self.kurum.id, conv_id,
+        )
+        self.assertEqual(updated, 1)
+        n.refresh_from_db()
+        self.assertTrue(n.ekran_gosterildi)
+        self.assertTrue(n.is_read)
+
+        # get_screen_messages should not return it anymore
+        screens = AppNotificationRepository.get_screen_messages(self.user.id, self.kurum.id)
+        self.assertEqual(screens.count(), 0)

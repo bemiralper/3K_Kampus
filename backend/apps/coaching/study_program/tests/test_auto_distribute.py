@@ -128,6 +128,28 @@ class AutoDistributeEqualTest(TestCase):
         self.assertEqual(counts, [6, 6, 6, 6, 6, 6, 6, 5])
         self.assertEqual(sum(counts), 47)
 
+    def test_selected_days_receive_the_homework_and_the_rest_stay_empty(self):
+        self._lesson('Doğruda Açı', 47, order=0)
+        days = list(self.program.days.order_by('day_date'))
+        chosen = [days[0].id, days[2].id, days[-1].id]
+        result = auto_distribute(
+            self.program,
+            assignment_ids=[self.assignment.id],
+            metric='question',
+            day_ids=chosen,
+        )
+        self.assertEqual(result['study_days'], 3)
+        self.assertEqual(result['distributed'], 3)
+        filled = []
+        for day in days:
+            blocks = list(day.blocks.all())
+            if day.id in chosen:
+                self.assertEqual(len(blocks), 1)
+                filled.append(blocks[0].question_count)
+            else:
+                self.assertEqual(blocks, [])
+        self.assertEqual(sum(filled), 47)
+
     def test_move_merges_same_topic_on_target_day(self):
         lesson = self._lesson('Doğruda Açı', 47, order=0)
         days = list(self.program.days.order_by('day_date'))

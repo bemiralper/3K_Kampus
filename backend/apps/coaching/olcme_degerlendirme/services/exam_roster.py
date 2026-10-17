@@ -347,6 +347,51 @@ def _release_unusable_seats(exam) -> None:
             participant.save(update_fields=['room', 'seat_no', 'desk_no', 'updated_at'])
 
 
+def _clocks_overlap(a: ExamSessionModel, b: ExamSessionModel) -> bool:
+    """Aynı gün ve kesişen saat. Tarihi boş olan oturum çakışma sayılmaz."""
+    if not a.session_date or not b.session_date or a.session_date != b.session_date:
+        return False
+    a_start = a.start_time or time.min
+    a_end = a.end_time or time.max
+    b_start = b.start_time or time.min
+    b_end = b.end_time or time.max
+    return a_start < b_end and b_start < a_end
+
+
+def room_name_reuse_error(exam, pending: list[tuple[ExamRoom, str]]) -> str | None:
+    """Aynı salon adı, günü veya saati çakışmayan oturumlarda tekrar kullanılabilir."""
+    sessions = {s.pk: s for s in exam.exam_sessions.all()}
+    grouped: dict[str, list[tuple[ExamRoom, str]]] = {}
+    for room, name in pending:
+        grouped.setdefault(name.casefold(), []).append((room, name))
+    for rows in grouped.values():
+        if len(rows) < 2:
+            continue
+        label = rows[0][1]
+        scopes = [
+            sessions.get(room.exam_session_id) if room.exam_session_id else None
+            for room, _name in rows
+        ]
+        if any(sess is None for sess in scopes):
+            return (
+                f'{label} tüm oturumlarda açık. Aynı salonu ikinci kez eklemeyin; '
+                'oturumu seçerek güne bağlayın.'
+            )
+        for i in range(len(scopes)):
+            for j in range(i + 1, len(scopes)):
+                a, b = scopes[i], scopes[j]
+                if a is None or b is None:
+                    continue
+                if a.pk == b.pk:
+                    return f'{label} aynı oturumda iki kez var.'
+                if _clocks_overlap(a, b):
+                    return (
+                        f'{label}, {a.name} ve {b.name} oturumlarında aynı gün ve saatte. '
+                        'Günü veya saati farklıysa salon tekrar eklenebilir.'
+                    )
+    return None
+
+
 @transaction.atomic
 def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
     """İsim takası unique constraint'i bozmasın diye önce geçici ad, sonra asıl ad."""
@@ -403,6 +448,9 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
             )
         pending.append((room, name))
         keep_ids.append(room.pk)
+    reuse_error = room_name_reuse_error(exam, pending)
+    if reuse_error:
+        raise ValueError(reuse_error)
     removed_ids = list(
         ExamRoom.objects.filter(exam=exam)
         .exclude(pk__in=keep_ids)
@@ -415,8 +463,9 @@ def replace_rooms(exam, rooms_payload: list[dict]) -> list[ExamRoom]:
             room=None, seat_no=None, desk_no='',
         )
         ExamRoom.objects.filter(pk__in=removed_ids).delete()
-    used = set()
+    used_by_scope: dict[int | None, set[str]] = {}
     for room, name in pending:
+        used = used_by_scope.setdefault(room.exam_session_id, set())
         final = name
         n = 2
         while final.casefold() in used:
@@ -797,7 +846,6 @@ def apply_explicit_seating(exam, assignments: list[dict], exam_session=None) -> 
         return {'ok': True, 'placed': placed, 'mode': 'explicit'}
 
     rooms = list(exam.rooms.order_by('order', 'id'))
-    by_name = {r.name: r for r in rooms}
     by_index = {i: r for i, r in enumerate(rooms)}
     sf = _session_filter(exam_session)
     locked_ids = {
@@ -826,7 +874,14 @@ def apply_explicit_seating(exam, assignments: list[dict], exam_session=None) -> 
             except (TypeError, ValueError):
                 room = None
         elif raw.get('room_name'):
-            room = by_name.get(str(raw['room_name']))
+            wanted = str(raw['room_name'])
+            named = [r for r in rooms if r.name == wanted]
+            if exam_session is not None:
+                sid = exam_session if isinstance(exam_session, int) else exam_session.pk
+                scoped = [r for r in named if not r.exam_session_id or r.exam_session_id == sid]
+                room = scoped[0] if scoped else None
+            else:
+                room = named[0] if named else None
         seat = raw.get('seat_no')
         try:
             seat = int(seat) if seat not in (None, '') else None

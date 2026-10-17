@@ -155,6 +155,18 @@ export default function BildirimlerClient({ variant = 'default' }: { variant?: '
   const openNotification = (n: AppNotification) => {
     if (!n.is_read) void handleRead(n.id);
     const target = targetFor(n, pathname);
+    if (n.sube_id) {
+      try {
+        const currentSube = localStorage.getItem('3k_active_sube');
+        if (currentSube !== String(n.sube_id)) {
+          localStorage.setItem('3k_active_sube', String(n.sube_id));
+          if (target) {
+            window.location.href = target;
+            return;
+          }
+        }
+      } catch {}
+    }
     if (target) router.push(target);
   };
 

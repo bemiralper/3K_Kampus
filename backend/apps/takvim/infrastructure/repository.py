@@ -361,25 +361,26 @@ class AppNotificationRepository:
             kurum_id=kurum_id,
             ekran_mesaji=True,
             ekran_gosterildi=False,
+            is_read=False,
         ).select_related('event').order_by('-created_at')[:limit]
 
     @staticmethod
     def mark_ekran_gosterildi(notification_id):
         AppNotification.objects.filter(
-            id=notification_id, ekran_gosterildi=False,
-        ).update(ekran_gosterildi=True)
+            id=notification_id,
+        ).update(ekran_gosterildi=True, is_read=True, read_at=timezone.now())
 
     @staticmethod
     def mark_ekran_gosterildi_many(user_id: int, kurum_id: int, ids=None) -> int:
         qs = AppNotification.objects.filter(
             user_id=user_id,
             kurum_id=kurum_id,
-            ekran_mesaji=True,
-            ekran_gosterildi=False,
         )
         if ids:
             qs = qs.filter(id__in=list(ids))
-        return qs.update(ekran_gosterildi=True)
+        else:
+            qs = qs.filter(ekran_mesaji=True, ekran_gosterildi=False)
+        return qs.update(ekran_gosterildi=True, is_read=True, read_at=timezone.now())
 
     @staticmethod
     def get_by_user(user_id: int, kurum_id: int, unread_only: bool = False,
@@ -422,23 +423,26 @@ class AppNotificationRepository:
         return AppNotification.objects.filter(
             user_id=user_id,
             kurum_id=kurum_id,
-            is_read=False,
             url__icontains=str(conversation_id),
-        ).update(is_read=True, read_at=timezone.now())
+        ).update(
+            is_read=True,
+            read_at=timezone.now(),
+            ekran_gosterildi=True,
+        )
 
     @staticmethod
     def mark_as_read(notification_id):
-        AppNotification.objects.filter(id=notification_id, is_read=False).update(
-            is_read=True, read_at=timezone.now()
+        AppNotification.objects.filter(id=notification_id).update(
+            is_read=True, read_at=timezone.now(), ekran_gosterildi=True,
         )
 
     @staticmethod
     def mark_all_as_read(user_id: int, kurum_id: int):
         qs = AppNotification.objects.filter(
-            user_id=user_id, kurum_id=kurum_id, is_read=False,
+            user_id=user_id, kurum_id=kurum_id,
         )
         AppNotificationRepository._apply_kaynak(qs, 'diger').update(
-            is_read=True, read_at=timezone.now(),
+            is_read=True, read_at=timezone.now(), ekran_gosterildi=True,
         )
 
     @staticmethod

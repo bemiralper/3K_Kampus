@@ -393,6 +393,28 @@ class OzelDers(models.Model):
         return f"{self.ad} ({seviyeler}) [{self.egitim_yili}]"
 
 
+def sync_deneme_display_names(deneme_id, ad, previous_ad=None):
+    """Deneme adı değişince ek hizmet, öğrenci kaydı ve sözleşme kalemindeki görünen adı güncelle.
+
+    Fiyatlara dokunulmaz. Sözleşme kalemi yalnızca eski adı taşıyan satırlarda değişir;
+    aynı sayısal id'ye sahip başka paket türleri (grup, özel ders) korunur.
+    """
+    if not deneme_id or not ad:
+        return
+    expected = f"Deneme — {ad}"
+    EkHizmet.objects.filter(deneme_paketi_id=deneme_id, hizmet_turu="deneme").exclude(ad=expected).update(ad=expected)
+    from apps.ogrenci.domain.models import OgrenciEgitimPaketi
+    OgrenciEgitimPaketi.objects.filter(paket_turu="deneme", paket_id=deneme_id).exclude(paket_adi=ad).update(paket_adi=ad)
+    if not previous_ad or previous_ad == ad:
+        return
+    from apps.odeme_takip.domain.models import SozlesmeKalemi
+    SozlesmeKalemi.objects.filter(
+        kalem_id=deneme_id,
+        kalem_turu__in=["paket", "deneme"],
+        kalem_adi=previous_ad,
+    ).update(kalem_adi=ad)
+
+
 class Deneme(models.Model):
     """Deneme Sınavı Paketi"""
     ad = models.CharField('Deneme Adı', max_length=200)
@@ -432,9 +454,14 @@ class Deneme(models.Model):
             raise ValidationError({'kdv_orani': 'KDV oranı 0, 10 veya 20 olmalıdır'})
 
     def save(self, *args, **kwargs):
+        previous_ad = None
+        if self.pk:
+            previous_ad = type(self).objects.filter(pk=self.pk).values_list("ad", flat=True).first()
         self.net_fiyat, self.kdv_tutari = hesapla_kdv(self.brut_fiyat, self.kdv_orani)
         super().save(*args, **kwargs)
-    
+        if previous_ad != self.ad:
+            sync_deneme_display_names(self.pk, self.ad, previous_ad)
+
     class Meta:
         db_table = 'deneme'
         verbose_name = 'Deneme'
