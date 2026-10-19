@@ -1,5 +1,6 @@
 .uad-wrap {
   position: relative;
+  flex-shrink: 0;
 }
 
 .uad-trigger {

@@ -877,7 +877,7 @@ export default function YeniSinavPage() {
                       <input type="time" value={sess.end_time}
                         onChange={e => updateSession(idx, 'end_time', e.target.value)} />
                     </label>
-                    <div className={y.field}>
+                    <div className={`${y.field} ${y.fieldWide}`}>
                       <span>Gün tercihi</span>
                       <div className={y.prefs}>
                         {SCHEDULE_PREFERENCES.map(pref => (

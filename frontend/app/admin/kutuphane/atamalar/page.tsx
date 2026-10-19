@@ -469,7 +469,14 @@ export default function AtamalarPage() {
         @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
         @keyframes slideUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
 
-        .atamalar-page { padding: 0; }
+        .atamalar-page { padding: 0; min-width: 0; }
+        .atama-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 16px; }
+        .atama-head h1 { margin: 0; font-size: 22px; font-weight: 650; color: #1a2332; letter-spacing: -0.02em; }
+        .atama-crumb { margin-top: 4px; font-size: 13px; color: #667085; }
+        .atama-crumb a { color: #667085; text-decoration: none; }
+        .atama-crumb span { margin: 0 6px; }
+        .atama-new { display: inline-flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border: none; border-radius: 8px; background: #0061a6; color: #fff; font-size: 13px; font-weight: 650; cursor: pointer; }
+        .atama-new:disabled { background: #e6e9ee; color: #98a2b3; cursor: not-allowed; }
 
         /* ─── Spinner ─── */
         .spinner-small { width: 18px; height: 18px; border: 2px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin 0.6s linear infinite; }
@@ -517,11 +524,11 @@ export default function AtamalarPage() {
         @media (max-width: 1280px) { .stat-cards-grid { grid-template-columns: repeat(3, 1fr); } }
         @media (max-width: 768px) { .stat-cards-grid { grid-template-columns: repeat(2, 1fr); } }
 
-        .stat-card { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px; border: 1.5px solid transparent; background: #fff; cursor: pointer; transition: all 0.2s; position: relative; overflow: hidden; text-align: left; width: 100%; box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
-        .stat-card:hover { box-shadow: 0 4px 12px rgba(0,0,0,0.06); transform: translateY(-1px); }
-        .stat-card.active { border-color: currentColor; transform: translateY(-1px); box-shadow: 0 4px 14px rgba(0,0,0,0.06); }
-        .stat-card-deco { position: absolute; top: -16px; right: -16px; width: 56px; height: 56px; border-radius: 50%; pointer-events: none; }
-        .stat-card-icon { width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 17px; flex-shrink: 0; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+        .stat-card { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 10px; border: 1px solid #e6e9ee; background: #fff; cursor: pointer; transition: border-color 0.15s; position: relative; overflow: hidden; text-align: left; width: 100%; }
+        .stat-card:hover { border-color: #b9c6d4; }
+        .stat-card.active { border-color: #0061a6; background: #f3f8fc; }
+        .stat-card-deco { display: none; }
+        .stat-card-icon { width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; background: #f3f8fc !important; box-shadow: none; }
         .stat-card-body { flex: 1; min-width: 0; position: relative; z-index: 1; }
         .stat-card-value { font-size: 20px; font-weight: 800; line-height: 1.1; color: #111827; }
         .stat-card.active .stat-card-value { color: inherit; }
@@ -543,8 +550,8 @@ export default function AtamalarPage() {
         .filter-count { margin-left: auto; font-size: 13px; color: #9ca3af; font-weight: 500; }
 
         /* ─── Table ─── */
-        .student-table-wrap { background: #fff; border-radius: 16px; border: 1px solid #e5e7eb; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.04); }
-        .student-table { width: 100%; border-collapse: collapse; }
+        .student-table-wrap { background: #fff; border-radius: 10px; border: 1px solid #e6e9ee; overflow: auto; }
+        .student-table { width: 100%; min-width: 920px; border-collapse: collapse; }
         .student-table thead th { padding: 14px 18px; text-align: left; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; border-bottom: 2px solid #e2e8f0; background: #f8fafc; }
         .student-table thead th:last-child { text-align: right; }
         .student-table tbody tr { border-bottom: 1px solid #f1f5f9; transition: background 0.15s; animation: fadeIn 0.25s ease both; }
@@ -576,9 +583,22 @@ export default function AtamalarPage() {
         .btn-remove-danger:hover { background: #fee2e2; }
 
         /* ─── Modal ─── */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-        .modal-card { background: #fff; border-radius: 20px; width: 620px; max-height: 90vh; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 25px 60px rgba(0,0,0,0.2); animation: slideUp 0.3s ease; }
-        .modal-header { padding: 24px 28px 20px; border-bottom: 1px solid #f3f4f6; background: linear-gradient(135deg, #f8faff, #f0f4ff); }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(16, 24, 40, 0.45); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px; }
+        .modal-card { background: #fff; border-radius: 12px; width: min(620px, 100%); max-height: min(90vh, 760px); overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 16px 40px rgba(16, 24, 40, 0.16); animation: slideUp 0.2s ease; }
+        .modal-header { padding: 20px 24px 16px; border-bottom: 1px solid #e6e9ee; background: #fff; }
+        @media (max-width: 1280px) {
+          .student-table { min-width: 0; }
+          .student-table thead { display: none; }
+          .student-table, .student-table tbody { display: block; width: 100%; }
+          .student-table tr { display: block; margin: 0 10px 10px; padding: 8px 12px; border: 1px solid #e6e9ee; border-radius: 10px; background: #fff; }
+          .student-table td { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; width: auto !important; padding: 8px 0; border: none; text-align: left !important; }
+          .student-table td[data-label]::before { content: attr(data-label); flex: 0 0 72px; color: #667085; font-size: 12px; font-weight: 650; padding-top: 4px; }
+          .student-table td[data-label=""]::before { content: none; }
+        }
+        @media (max-width: 760px) {
+          .atama-head { flex-direction: column; }
+          .atama-new { width: 100%; justify-content: center; }
+        }
         .modal-body { padding: 24px 28px; overflow-y: auto; flex: 1; }
         .modal-footer { padding: 16px 28px 20px; border-top: 1px solid #f3f4f6; display: flex; justify-content: space-between; align-items: center; background: #fafbfc; }
 
@@ -591,7 +611,7 @@ export default function AtamalarPage() {
         .stepper-num.pending { background: #e5e7eb; color: #9ca3af; }
         .stepper-line { flex: 1; height: 2px; margin: 0 4px; border-radius: 1px; transition: all 0.3s; }
 
-        .btn-primary { padding: 10px 24px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; background: linear-gradient(135deg, #3b82f6, #2563eb); color: #fff; transition: all 0.15s; box-shadow: 0 2px 8px rgba(59,130,246,0.3); }
+        .btn-primary { padding: 10px 24px; border-radius: 8px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; background: #0061a6; color: #fff; }
         .btn-primary:disabled { background: #e5e7eb; color: #9ca3af; cursor: not-allowed; box-shadow: none; }
         .btn-success { padding: 10px 28px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; background: linear-gradient(135deg, #22c55e, #16a34a); color: #fff; transition: all 0.15s; box-shadow: 0 2px 8px rgba(34,197,94,0.3); }
         .btn-success:disabled { background: #94a3b8; color: #fff; opacity: 0.7; cursor: not-allowed; }
@@ -624,35 +644,17 @@ export default function AtamalarPage() {
         .form-input:focus { border-color: #3b82f6; background: #fff; }
       `}</style>
 
-      {/* ═══ HERO HEADER ═══ */}
-      <div className="hero-header" style={{ marginBottom: 28 }}>
-        <div className="hero-content">
-          <div className="hero-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><polyline points="17 11 19 13 23 9"/></svg>
-          </div>
-          <div className="hero-text">
-            <h1>Öğrenci Atamaları</h1>
-            <div className="hero-breadcrumb">
-              <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span>
-              <a href={href()}>Kütüphane</a><span>/</span><span>Öğrenci Atamaları</span>
-            </div>
+      <div className="atama-head">
+        <div>
+          <h1>Öğrenci Atamaları</h1>
+          <div className="atama-crumb">
+            <a href={portalHomeHref}>{portalHomeLabel}</a><span>/</span>
+            <a href={href()}>Kütüphane</a><span>/</span><span>Öğrenci Atamaları</span>
           </div>
         </div>
-        <div className="hero-actions">
-          <button onClick={() => openModal('both')} disabled={libraries.length === 0}
-            style={{
-              padding: '12px 24px',
-              background: libraries.length > 0 ? 'linear-gradient(135deg, #0061a6, #004d85)' : '#e5e7eb',
-              color: libraries.length > 0 ? '#fff' : '#9ca3af',
-              borderRadius: 12, border: 'none', fontSize: 14, fontWeight: 600,
-              cursor: libraries.length > 0 ? 'pointer' : 'not-allowed',
-              display: 'flex', alignItems: 'center', gap: 8,
-              boxShadow: libraries.length > 0 ? '0 4px 14px rgba(0,97,166,0.3)' : 'none',
-            }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-            Yeni Atama
-          </button>
-        </div>
+        <button type="button" className="atama-new" onClick={() => openModal('both')} disabled={libraries.length === 0}>
+          Yeni atama
+        </button>
       </div>
 
       {/* ═══ TOAST MESSAGES (fixed — layout shift yok) ═══ */}
@@ -736,9 +738,8 @@ export default function AtamalarPage() {
             <p style={{ fontSize: 14, color: '#6b7280', marginBottom: 24, maxWidth: 360, margin: '0 auto 24px' }}>
               Filtrelere uygun öğrenci yok veya henüz hiçbir öğrenciye kaynak atanmamış.
             </p>
-            <button onClick={() => openModal('both')}
-              style={{ padding: '12px 24px', background: 'linear-gradient(135deg, #0061a6, #004d85)', color: '#fff', borderRadius: 12, border: 'none', fontSize: 14, fontWeight: 600, cursor: 'pointer', boxShadow: '0 4px 14px rgba(0,97,166,0.3)' }}>
-              + Yeni Atama Yap
+            <button type="button" className="atama-new" onClick={() => openModal('both')}>
+              Yeni atama
             </button>
           </div>
         ) : (
@@ -757,7 +758,7 @@ export default function AtamalarPage() {
                 {visibleStudents.map((s, idx) => (
                   <tr key={s.ogrenci_id} style={{ animationDelay: `${idx * 0.02}s` }}>
                     {/* Öğrenci */}
-                    <td>
+                    <td data-label="">
                       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                         <KutuphaneStudentPhotoCell
                           ogrenciId={s.ogrenci_id}
@@ -771,12 +772,12 @@ export default function AtamalarPage() {
                     </td>
 
                     {/* Sınıf */}
-                    <td>
+                    <td data-label="Sınıf">
                       {s.sinif_adi ? <span className="badge-class">{s.sinif_adi}</span> : <span style={{ fontSize: 13, color: '#cbd5e1' }}>—</span>}
                     </td>
 
                     {/* Masa */}
-                    <td>
+                    <td data-label="Masa">
                       {s.masa ? (
                         <div>
                           <span className="badge badge-blue">🪑 {s.masa.masa_no}</span>
@@ -791,7 +792,7 @@ export default function AtamalarPage() {
                     </td>
 
                     {/* Dolap */}
-                    <td>
+                    <td data-label="Dolap">
                       {s.dolap ? (
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
@@ -830,7 +831,7 @@ export default function AtamalarPage() {
                     </td>
 
                     {/* İşlem */}
-                    <td>
+                    <td data-label="İşlem">
                       <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
                         {s.masa && (
                           <button className="btn-remove btn-remove-warn"

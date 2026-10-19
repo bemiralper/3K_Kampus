@@ -293,14 +293,14 @@ export default function CoachDashboardPage() {
                   className={`cdash-view-btn ${viewMode === "gunluk" ? "is-active" : ""}`}
                   onClick={() => setViewMode("gunluk")}
                 >
-                  📋 Günlük
+                  Günlük
                 </button>
                 <button
                   type="button"
                   className={`cdash-view-btn ${viewMode === "haftalik" ? "is-active" : ""}`}
                   onClick={() => setViewMode("haftalik")}
                 >
-                  📅 Haftalık
+                  Haftalık
                 </button>
               </div>
 
@@ -352,7 +352,7 @@ export default function CoachDashboardPage() {
                 onClick={() => void downloadPdf()}
                 disabled={!program?.coach_id || downloading}
               >
-                {downloading ? "Hazırlanıyor…" : "📄 PDF İndir"}
+                {downloading ? "Hazırlanıyor…" : "PDF indir"}
               </button>
 
               <Link href="/coach/haftalik-program" className="cdash-full-link">

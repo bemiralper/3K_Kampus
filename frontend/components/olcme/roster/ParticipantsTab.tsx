@@ -628,7 +628,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
                       </label>
                       <span className={p.photo}><StudentPhoto foto={row.profil_foto} name={row.full_name} /></span>
                       <div className={p.who}>
-                        <div className={p.name}>
+                        <div className={p.name} title={row.full_name}>
                           {row.full_name}
                           {row.seat_stale && <span className={p.stale}>Mesajı güncelle</span>}
                         </div>

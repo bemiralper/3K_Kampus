@@ -274,7 +274,7 @@ class AudienceSearchView(CampaignBulkView):
         if include_personel and 'personel' in kinds:
             from apps.personel.domain.models import Personel
 
-            pqs = Personel.objects.filter(kurum_id=kurum_id).filter(
+            pqs = Personel.objects.filter(kurum_id=kurum_id, aktif_mi=True).filter(
                 Q(ad__icontains=q) | Q(soyad__icontains=q) | Q(telefon__icontains=q) | Q(cep_telefon__icontains=q)
             )
             if sube_id:

@@ -152,11 +152,11 @@
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 10px;
-  padding: 12px 16px;
+  gap: 10px 12px;
+  padding: 10px 12px;
   background: #fff;
-  border: 1px solid var(--coach-border-soft, #e2e8f0);
-  border-radius: 14px;
+  border: 1px solid #e6e9ee;
+  border-radius: 10px;
 }
 
 .cdash-prog-left {

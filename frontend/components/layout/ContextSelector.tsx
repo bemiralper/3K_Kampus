@@ -183,6 +183,9 @@ export default function ContextSelector({ layout = "inline" }: ContextSelectorPr
       <style jsx>{`
         .ctx-compact-wrapper {
           position: relative;
+          min-width: 0;
+          flex: 1 1 auto;
+          max-width: 320px;
         }
         .ctx-compact-loading {
           font-size: 12px;
@@ -204,7 +207,9 @@ export default function ContextSelector({ layout = "inline" }: ContextSelectorPr
           color: #334155;
           cursor: pointer;
           transition: all 0.2s ease;
-          max-width: 320px;
+          max-width: 100%;
+          min-width: 0;
+          width: 100%;
         }
         .ctx-compact-btn:hover {
           border-color: #0262a7;
@@ -215,6 +220,8 @@ export default function ContextSelector({ layout = "inline" }: ContextSelectorPr
           color: #0262a7;
         }
         .ctx-compact-text {
+          min-width: 0;
+          flex: 1 1 auto;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;

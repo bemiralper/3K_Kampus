@@ -32,6 +32,7 @@ def _coach_options(kurum_id: int):
             is_active=True,
             is_coach=True,
             teacher__kurum_id=kurum_id,
+            teacher__aktif_mi=True,
         )
         .select_related('teacher')
         .order_by('teacher__ad', 'teacher__soyad', 'id')
@@ -66,6 +67,7 @@ def _resolve_coach(request, kurum_id: int):
         is_active=True,
         is_coach=True,
         teacher__kurum_id=kurum_id,
+        teacher__aktif_mi=True,
     ).select_related('teacher')
     requested = request.query_params.get('coach_id')
     if requested:

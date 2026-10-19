@@ -424,16 +424,49 @@
 }
 .detailTabs {
   display: flex;
-  gap: 4px;
-  margin-bottom: 20px;
+  gap: 2px;
+  margin: 4px 0 16px;
   overflow-x: auto;
-  padding-bottom: 2px;
+  border-bottom: 1px solid #e6e9ee;
+  background: transparent;
+  scrollbar-width: none;
   -webkit-overflow-scrolling: touch;
 }
+.detailTabs::-webkit-scrollbar { display: none; }
 .detailTabs :global(.tab-modern) {
   flex: 0 0 auto;
   white-space: nowrap;
   min-height: 42px;
+  margin-bottom: -1px;
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: #5c6778;
+  font-size: 13px;
+  font-weight: 600;
+}
+.detailTabs :global(.tab-modern:hover) {
+  background: transparent;
+  color: #1a2332;
+}
+.detailTabs :global(.tab-modern.active),
+.detailTabs :global(.tab-modern.active:hover) {
+  background: transparent !important;
+  color: #0061a6 !important;
+  border-bottom-color: #0061a6;
+  box-shadow: none !important;
+}
+.detailTabs :global(.tab-modern svg) {
+  width: 15px;
+  height: 15px;
+  opacity: 0.7;
+}
+.detailTabs :global(.tab-modern.active svg) {
+  opacity: 1;
+  color: #0061a6;
 }
 
 @media (max-width: 640px) {

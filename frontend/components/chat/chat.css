@@ -7,30 +7,35 @@
    ========================================================================== */
 
 .chat-workspace {
-  --chat-accent: var(--primary, #0262a7);
-  --chat-accent-soft: #eaf3fa;
-  --chat-accent-line: #cfe2f1;
+  --chat-accent: #0061a6;
+  --chat-accent-soft: #f3f8fc;
+  --chat-accent-line: #d3e4f2;
   --chat-surface: #ffffff;
   --chat-canvas: #f6f8fb;
-  --chat-line: #e4eaf1;
-  --chat-line-soft: #eef2f6;
-  --chat-text: #16283f;
-  --chat-text-soft: #64778d;
-  --chat-text-faint: #93a3b5;
-  --chat-warning: #b45309;
-  --chat-warning-soft: #fdf4e6;
-  --chat-danger: #c0392f;
-  --chat-danger-soft: #fdeeed;
+  --chat-line: #e6ebf1;
+  --chat-line-soft: #f1f4f8;
+  --chat-text: #142033;
+  --chat-text-soft: #5c6b7e;
+  --chat-text-faint: #8b98a8;
+  --chat-warning: #9a5b12;
+  --chat-warning-soft: #fbf6ee;
+  --chat-danger: #b42318;
+  --chat-danger-soft: #fdf2f1;
   --chat-bubble-in: #ffffff;
-  --chat-bubble-out: #e7f1fa;
-  --chat-radius: 10px;
-  --chat-sidebar-w: 360px;
-  --chat-info-w: 320px;
+  --chat-bubble-out: #f3f8fc;
+  --chat-radius: 12px;
+  --chat-sidebar-w: 340px;
+  --chat-info-w: 300px;
 
+  container-type: inline-size;
+  container-name: chat;
   display: flex;
   flex-direction: column;
   flex: 1;
+  min-width: 0;
   min-height: 0;
+  width: 100%;
+  max-width: 100%;
   height: 100%;
   color: var(--chat-text);
   background: var(--chat-surface);
@@ -44,6 +49,7 @@
   display: grid;
   grid-template-columns: var(--chat-sidebar-w) minmax(0, 1fr);
   flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 
@@ -610,9 +616,10 @@
   content: "";
   position: absolute;
   left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 2px;
   background: var(--chat-accent);
 }
 
@@ -850,6 +857,7 @@
 .chat-header {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   flex: 0 0 auto;
   padding: 8px 10px 8px 14px;
@@ -904,18 +912,23 @@
 .chat-header-status {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 6px;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .chat-status-pill {
   max-width: 220px;
-  padding: 3px 9px;
-  border-radius: 12px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
   background: var(--chat-line-soft);
   color: var(--chat-text-soft);
   font-size: 11.5px;
   font-weight: 600;
+  line-height: 24px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1030,7 +1043,7 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 16px clamp(16px, 6vw, 72px) 12px;
+  padding: 16px 20px 12px;
   scroll-behavior: auto;
 }
 
@@ -1106,12 +1119,11 @@
 
 .chat-bubble {
   position: relative;
-  max-width: min(680px, 74%);
-  padding: 7px 11px 6px;
+  max-width: min(720px, 78%);
+  padding: 8px 12px 7px;
   border-radius: 10px;
   background: var(--chat-bubble-in);
   border: 1px solid var(--chat-line);
-  box-shadow: 0 1px 1px rgba(16, 40, 66, 0.04);
   word-break: break-word;
 }
 
@@ -2659,5 +2671,27 @@
 @media (hover: none) {
   .chat-row-menu {
     display: inline-flex;
+  }
+}
+
+/* Dar çalışma alanında üç kolon mesajı ezer. Bilgi paneli akışın üstüne biner.
+   Geniş ekranda üç kolon yan yana kalır. Telefonda tek ekran, drawer kendi yerleşimini korur. */
+@media (min-width: 861px) {
+  @container chat (max-width: 1120px) {
+    .chat-workspace:not(.chat-workspace--drawer).info-open .chat-panes {
+      position: relative;
+      grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+    }
+
+    .chat-workspace:not(.chat-workspace--drawer).info-open .chat-info {
+      position: absolute;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 30;
+      width: min(340px, 92%);
+      border-left: 1px solid var(--chat-line);
+      box-shadow: -8px 0 24px rgba(16, 40, 66, 0.08);
+    }
   }
 }

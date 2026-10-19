@@ -124,6 +124,8 @@ export function ChatWorkspace({
   const listSearchRef = useRef<HTMLInputElement>(null);
   const threadSearchRef = useRef<HTMLInputElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  /** Adresteki sohbet yalnızca ilk açılışta okunur. Sonraki boş seçim kullanıcının geri dönüşüdür. */
+  const conversationFromUrlApplied = useRef(false);
 
   // Açık sohbet listeden bağımsız yaşar: okundu işaretlenince "Okunmamış"
   // filtresinden düşebilir, derin bağlantıyla gelen sohbet ise ilk sayfada ya
@@ -237,12 +239,16 @@ export function ChatWorkspace({
     const url = new URL(window.location.href);
     const fromUrl = url.searchParams.get("conversation");
     // İlk karede seçim henüz yokken adresteki sohbeti silme; bildirim
-    // bağlantısı aksi halde listeye düşüp kayboluyordu.
-    if (!selectedId && fromUrl) {
-      setSelectedId(fromUrl);
-      setMobilePane("thread");
-      setDetachedError(null);
-      return;
+    // bağlantısı aksi halde listeye düşüp kayboluyordu. Geri oku bundan
+    // sonra seçimi boşaltınca aynı adres sohbeti yeniden açmasın.
+    if (!conversationFromUrlApplied.current) {
+      conversationFromUrlApplied.current = true;
+      if (!selectedId && fromUrl) {
+        setSelectedId(fromUrl);
+        setMobilePane("thread");
+        setDetachedError(null);
+        return;
+      }
     }
     if (selectedId) url.searchParams.set("conversation", selectedId);
     else url.searchParams.delete("conversation");

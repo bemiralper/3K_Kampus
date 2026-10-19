@@ -115,12 +115,43 @@
   right: 14px;
 }
 
+/* Dar menüde sağ boşluk logoyu 20px'e sıkıştırıp kesiyordu. */
+.sidebar:not(.open) .sidebar-header {
+  padding: 0 4px 0 8px;
+  gap: 2px;
+}
+
+.sidebar:not(.open) .logo-container {
+  flex: 0 0 36px;
+  width: 36px;
+  gap: 0;
+  overflow: visible;
+}
+
+.sidebar:not(.open) .sidebar-logo {
+  width: 36px;
+  height: 36px;
+}
+
+.sidebar:not(.open) .toggle-btn {
+  position: static;
+  transform: none;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
+.sidebar:not(.open) .toggle-btn:active {
+  transform: scale(0.92);
+}
+
 
 /* ----------------------------------------------------------------
    Navigasyon Alanı
    ---------------------------------------------------------------- */
 .sidebar-nav {
   flex: 1;
+  min-height: 0;
   overflow-x: visible;
   overflow-y: auto;
   padding: 8px 0;
@@ -1232,4 +1263,38 @@
 
 .logout-btn:active {
   transform: scale(0.92);
+}
+
+/* Dokunmatikte ilk dokunuş yalnızca :hover uygular.
+   Satırın 2px kayması ve beliren sabitle düğmesi tıklamayı yutar;
+   menü başlığı ikinci dokunuşta açılır. Bu efektler fareye kalsın. */
+@media (hover: none), (pointer: coarse) {
+  .nav-link:hover,
+  .sidebar:not(.open) .nav-link:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .nav-link:hover:not(.active),
+  .sidebar:not(.open) .nav-link:hover:not(.active) {
+    color: var(--sidebar-text);
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .nav-link:hover .nav-icon[data-icon],
+  .sidebar:not(.open) .nav-link:hover .nav-icon[data-icon] {
+    animation: none;
+  }
+
+  .nav-link-row:hover .pin-btn {
+    opacity: 0;
+    transform: none;
+  }
+
+  .pin-btn.pinned,
+  .nav-link-row:hover .pin-btn.pinned {
+    opacity: 1;
+    transform: none;
+  }
 }

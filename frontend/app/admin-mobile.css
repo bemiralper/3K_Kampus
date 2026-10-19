@@ -67,9 +67,14 @@
     border: 1px solid var(--border-color);
   }
 
-  /* Drawer — kapalıyken tıklama yakalamasın */
+  /* Drawer — kapalıyken tıklama yakalamasın.
+     100vh Safari adres çubuğunun altına uzanır; svh çubuğun üstünde biter. */
   .app-container.admin-mobile-shell .sidebar {
     width: min(280px, 88vw);
+    height: 100vh;
+    height: 100svh;
+    max-height: 100svh;
+    overflow: hidden;
     transform: translateX(-100%);
     z-index: 1100;
     box-shadow: 8px 0 32px rgba(15, 23, 42, 0.28);
@@ -482,6 +487,18 @@
 
   .app-container.admin-mobile-shell .sidebar {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* svh yoksa menü 100vh ile adres çubuğunun altında biter.
+     Kaydırınca son öğe (Ayarlar) çubuğun üstüne çıksın. */
+  .app-container.admin-mobile-shell .sidebar-nav {
+    padding-bottom: calc(88px + env(safe-area-inset-bottom, 0px));
+  }
+
+  @supports (height: 100svh) {
+    .app-container.admin-mobile-shell .sidebar-nav {
+      padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    }
   }
 }
 

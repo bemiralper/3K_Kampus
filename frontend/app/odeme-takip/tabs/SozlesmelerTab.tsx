@@ -384,64 +384,42 @@ export default function SozlesmelerTab({
   if (!selectedSozlesme) {
     return (
       <div>
-        {/* Üst bar: Card modern header ile */}
         <div className="card-modern">
-          <div className="card-modern-header">
-            <h3>
-              <svg width="20" height="20" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          <div className="ot-toolbar">
+            <div className="search-modern">
+              <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-              Sözleşmeler
-            </h3>
-            <div className="card-modern-header-actions">
-              <div className="search-modern">
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                </svg>
-                <input
-                  type="text"
-                  placeholder="Sözleşme no, öğrenci adı veya paket ara..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <select
-                className="odeme-form-control"
-                value={durumFilter}
-                onChange={(e) => setDurumFilter(e.target.value)}
-                style={{ minWidth: 140, padding: "8px 12px", fontSize: 13 }}
-              >
-                <option value="">Tüm Durumlar</option>
-                {Object.entries(durumLabel).map(([key, val]) => (
-                  <option key={key} value={key}>{val.label}</option>
-                ))}
-              </select>
-              <label
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 13,
-                  color: "#475569",
-                  whiteSpace: "nowrap",
-                  cursor: "pointer",
-                  userSelect: "none",
-                }}
-              >
-                <input
-                  type="checkbox"
-                  checked={odemesizOnly}
-                  onChange={(e) => setOdemesizOnly(e.target.checked)}
-                />
-                Ödemesiz
-              </label>
-              <Link href={href("sozlesme-olustur")} className="btn-modern btn-primary">
-                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
-                </svg>
-                Yeni Sözleşme
-              </Link>
+              <input
+                type="search"
+                aria-label="Sözleşme ara"
+                placeholder="Sözleşme, öğrenci veya paket"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
+            <select
+              className="ot-select"
+              aria-label="Durum filtresi"
+              value={durumFilter}
+              onChange={(e) => setDurumFilter(e.target.value)}
+            >
+              <option value="">Tüm durumlar</option>
+              {Object.entries(durumLabel).map(([key, val]) => (
+                <option key={key} value={key}>{val.label}</option>
+              ))}
+            </select>
+            <label className="ot-check">
+              <input
+                type="checkbox"
+                checked={odemesizOnly}
+                onChange={(e) => setOdemesizOnly(e.target.checked)}
+              />
+              Ödemesiz
+            </label>
+            <Link href={href("sozlesme-olustur")} className="btn-modern btn-primary">
+              Yeni sözleşme
+            </Link>
           </div>
 
           <div className="card-modern-body">
@@ -453,6 +431,7 @@ export default function SozlesmelerTab({
               </div>
             ) : (
               <>
+                <div className="ot-scroll">
                 <table className="table-modern">
                   <thead>
                     <tr>
@@ -481,11 +460,7 @@ export default function SozlesmelerTab({
                             {s.ogrenci?.ogrenci_no && <span className="cell-secondary">{s.ogrenci.ogrenci_no}</span>}
                           </div>
                         </td>
-                        <td>
-                          <div style={{ maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                            {s.paket_adi}
-                          </div>
-                        </td>
+                        <td>{s.paket_adi}</td>
                         <td><DurumBadgeModern durum={s.durum} map={durumLabel} /></td>
                         <td style={{ textAlign: "right", fontWeight: 600 }}>{formatCurrency(s.net_tutar)}</td>
                         <td style={{ textAlign: "right", color: "#059669", fontWeight: 600 }}>{formatCurrency(s.toplam_odenen)}</td>
@@ -507,7 +482,8 @@ export default function SozlesmelerTab({
                     ))}
                   </tbody>
                 </table>
-                <div style={{ padding: "0 14px", borderTop: "1px solid #f1f4f9" }}>
+                </div>
+                <div className="ot-pager">
                   <Pagination
                     currentPage={currentPage}
                     totalItems={filteredSozlesmeler.length}
@@ -562,53 +538,42 @@ export default function SozlesmelerTab({
   return (
     <div>
       {/* Geri butonu + Başlık */}
-      <div className="odeme-detail-header">
-        <button className="btn-modern btn-secondary" onClick={onCloseDetail}>
-          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-          </svg>
-          Listeye Dön
+      <header className="ot-detail">
+        <button type="button" className="ot-back" onClick={onCloseDetail}>
+          ← Listeye dön
         </button>
-        <div className="odeme-detail-title">
-          <h2>
-            {s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}` : "—"}
-            {s.paket_adi && (
-              <span className="odeme-detail-package"> • {s.paket_adi}</span>
+        <div className="ot-detail-row">
+          <div className="ot-detail-id">
+            <h2>{s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}` : "—"}</h2>
+            <p>
+              {s.paket_adi && <span>{s.paket_adi}</span>}
+              <DurumBadgeModern durum={s.durum} map={durumLabel} />
+              {s.versiyon && s.versiyon > 1 && <span className="ot-ver">v{s.versiyon}</span>}
+              <span className="ot-no">{s.sozlesme_no}</span>
+            </p>
+          </div>
+          <div className="ot-detail-actions">
+            {(s.durum === "taslak" || s.durum === "aktif") && (
+              <button type="button" className="btn-modern btn-primary" onClick={() => onEdit(s.id)}>
+                Düzenle
+              </button>
             )}
-            <DurumBadgeModern durum={s.durum} map={durumLabel} />
-            {s.versiyon && s.versiyon > 1 && (
-              <span className="badge-modern" style={{ background: "#f5f3ff", color: "#7c3aed" }}>v{s.versiyon}</span>
+            {mevcutGecisler.map((g) => (
+              <button
+                key={g.durum}
+                type="button"
+                className={`ot-ghost${g.durum === "feshedilmis" || g.durum === "iptal" ? " is-danger" : ""}`}
+                onClick={() => onStatusChange(s.id, g.durum)}
+              >{g.label}</button>
+            ))}
+            {s.durum === "taslak" && (
+              <button type="button" className="ot-ghost is-danger" onClick={() => onDelete(s.id)}>
+                Sil
+              </button>
             )}
-          </h2>
-          <p className="odeme-detail-contract-no">{s.sozlesme_no}</p>
+          </div>
         </div>
-
-        <div className="odeme-detail-actions">
-          {(s.durum === "taslak" || s.durum === "aktif") && (
-            <button className="btn-modern btn-primary" onClick={() => onEdit(s.id)}>
-              <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-              </svg>
-              Düzenle
-            </button>
-          )}
-          {mevcutGecisler.map((g) => (
-            <button
-              key={g.durum}
-              className="btn-modern btn-secondary"
-              style={{ color: g.color, borderColor: g.color }}
-              onClick={() => onStatusChange(s.id, g.durum)}
-            >{g.label}</button>
-          ))}
-          {s.durum === "taslak" && (
-            <button
-              className="btn-modern btn-secondary"
-              style={{ color: "#dc2626", borderColor: "#dc2626" }}
-              onClick={() => onDelete(s.id)}
-            >🗑️ Sil</button>
-          )}
-        </div>
-      </div>
+      </header>
 
       {/* Finans Kartları */}
       <div className="odeme-stats">
@@ -642,14 +607,17 @@ export default function SozlesmelerTab({
       </div>
 
       {/* Sub-tabs (pill style) */}
-      <div className="odeme-subtabs">
+      <div className="ot-tabs ot-subtabs" role="tablist" aria-label="Sözleşme bölümleri">
         {subTabs.map((tab) => (
           <button
             key={tab.key}
+            type="button"
+            role="tab"
+            aria-selected={subTab === tab.key}
             onClick={() => setSubTab(tab.key)}
-            className={`odeme-subtab ${subTab === tab.key ? "active" : ""}`}
+            className={`ot-tab${subTab === tab.key ? " is-active" : ""}`}
           >
-            {tab.icon} {tab.label}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -1454,6 +1422,7 @@ function GenelSubTab({ sozlesme: s }: { sozlesme: Sozlesme }) {
       {s.indirimler && s.indirimler.length > 0 && (
         <div style={{ gridColumn: "1 / -1" }}>
           <h4 style={{ margin: "0 0 12px", fontSize: 14, fontWeight: 700 }}>🏷️ İndirimler</h4>
+          <div className="ot-scroll">
           <table className="table-modern">
             <thead>
               <tr>
@@ -1480,6 +1449,7 @@ function GenelSubTab({ sozlesme: s }: { sozlesme: Sozlesme }) {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
@@ -1512,6 +1482,7 @@ function KalemlerSubTab({ sozlesme: s, onAddClick, onRemoveClick }: { sozlesme: 
           <p>Sözleşmeye kalem eklemek için yukarıdaki butonu kullanın</p>
         </div>
       ) : (
+        <div className="ot-scroll">
         <table className="table-modern">
           <thead>
             <tr>
@@ -1561,6 +1532,7 @@ function KalemlerSubTab({ sozlesme: s, onAddClick, onRemoveClick }: { sozlesme: 
             </tr>
           </tfoot>
         </table>
+        </div>
       )}
     </div>
   );
@@ -1782,7 +1754,7 @@ function OdemePlaniSubTab({
   return (
     <div>
       {/* Finans Özeti */}
-      <div className="odeme-stats" style={{ gridTemplateColumns: "repeat(5, 1fr)" }}>
+      <div className="odeme-stats ot-stats-5">
         {[
           { label: "Brüt Tutar", value: formatCurrency(s.brut_tutar), color: "var(--text-color)" },
           { label: "Toplam İndirim", value: `-${formatCurrency(s.toplam_indirim_tutari)}`, color: "#dc2626" },
@@ -1798,9 +1770,9 @@ function OdemePlaniSubTab({
       </div>
 
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <h4 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>📅 Taksit Planı</h4>
-        <div style={{ display: "flex", gap: 8 }}>
+      <div className="ot-plan-bar">
+        <h4>Taksit Planı</h4>
+        <div className="ot-plan-actions">
           {canEdit && (
             <button
               className={`btn-modern ${showCreator ? "" : "btn-primary"}`}
@@ -1988,6 +1960,7 @@ function OdemePlaniSubTab({
           <p>{canEdit ? "Yukarıdaki \"Taksit Planı Oluştur\" butonunu kullanın" : ""}</p>
         </div>
       ) : (
+        <div className="ot-scroll">
         <table className="table-modern">
           <thead>
             <tr>
@@ -2125,6 +2098,7 @@ function OdemePlaniSubTab({
             </tr>
           </tfoot>
         </table>
+        </div>
       )}
     </div>
   );
@@ -2152,6 +2126,7 @@ function TahsilatlarSubTab({
           <p>Taksit planından tahsilat kaydı oluşturabilirsiniz</p>
         </div>
       ) : (
+        <div className="ot-scroll">
         <table className="table-modern">
           <thead>
             <tr>
@@ -2223,6 +2198,7 @@ function TahsilatlarSubTab({
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

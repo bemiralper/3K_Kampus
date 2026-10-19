@@ -70,9 +70,6 @@ export default function ExamHeader({
 
         <div className={s.titleRow}>
           <div className={s.titleBlock}>
-            <span className={s.titleIcon}>
-              <Icon name="exam" size={23} />
-            </span>
             <div style={{ minWidth: 0 }}>
               <h1 className={s.title}>{exam.name}</h1>
               <div className={s.metaRow}>

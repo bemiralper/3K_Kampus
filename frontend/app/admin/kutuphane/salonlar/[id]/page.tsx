@@ -53,11 +53,11 @@ import './salon-detail-polish.css';
    TABS  (Oturumlar kaldırıldı — ders programı kullanılıyor)
    ════════════════════════════════════════════════════════════ */
 const TABS = [
-  { key: 'genel',    label: 'Genel Bilgiler',  icon: '📋' },
-  { key: 'masalar',  label: 'Masalar',          icon: '🪑' },
-  { key: 'yoklama',  label: 'Yoklama',          icon: '✅' },
-  { key: 'atamalar', label: 'Atamalar',         icon: '🔗' },
-  { key: 'loglar',   label: 'İşlem Geçmişi',    icon: '📝' },
+  { key: 'genel',    label: 'Genel bilgiler' },
+  { key: 'masalar',  label: 'Masalar' },
+  { key: 'yoklama',  label: 'Yoklama' },
+  { key: 'atamalar', label: 'Atamalar' },
+  { key: 'loglar',   label: 'İşlem geçmişi' },
 ];
 
 /* ════════════════════════════════════════════════════════════
@@ -72,15 +72,15 @@ const ATTENDANCE_STATUS_LABELS: Record<string, { label: string; color: string; b
 };
 
 const PERIOD_LABELS: Record<string, string> = {
-  MORNING: '🌅 Sabah', AFTERNOON: '☀️ Öğle', EVENING: '🌙 Akşam',
-  SABAH: '🌅 Sabah', OGLE: '☀️ Öğle', AKSAM: '🌙 Akşam',
-  GECE: '🌙 Gece', TAM_GUN: '📅 Tam Gün', OZEL: '⭐ Özel', CUSTOM: '⭐ Özel',
+  MORNING: 'Sabah', AFTERNOON: 'Öğle', EVENING: 'Akşam',
+  SABAH: 'Sabah', OGLE: 'Öğle', AKSAM: 'Akşam',
+  GECE: 'Gece', TAM_GUN: 'Tam gün', OZEL: 'Özel', CUSTOM: 'Özel',
 };
 
 const ALL_PERIYOT_OPTIONS = [
-  { key: 'MORNING', label: '🌅 Sabah', shortLabel: 'Sabah' },
-  { key: 'AFTERNOON', label: '☀️ Öğle', shortLabel: 'Öğle' },
-  { key: 'EVENING', label: '🌙 Akşam', shortLabel: 'Akşam' },
+  { key: 'MORNING', label: 'Sabah', shortLabel: 'Sabah' },
+  { key: 'AFTERNOON', label: 'Öğle', shortLabel: 'Öğle' },
+  { key: 'EVENING', label: 'Akşam', shortLabel: 'Akşam' },
 ];
 
 const STATUS_LABELS: Record<string, string> = {
@@ -107,10 +107,10 @@ const ASSIGNMENT_STATUS_LABELS: Record<string, string> = {
 };
 
 const LOG_ACTION_LABELS: Record<string, { label: string; icon: string; color: string; bg: string }> = {
-  CREATE:        { label: 'Oluşturma',         icon: '➕', color: '#059669', bg: '#ecfdf5' },
-  UPDATE:        { label: 'Güncelleme',         icon: '✏️', color: '#3b82f6', bg: '#eff6ff' },
-  DELETE:        { label: 'Silme',              icon: '🗑️', color: '#ef4444', bg: '#fef2f2' },
-  STATUS_CHANGE: { label: 'Durum Değişikliği',  icon: '🔄', color: '#d97706', bg: '#fffbeb' },
+  CREATE:        { label: 'Oluşturma',        icon: '', color: '#067647', bg: '#ecfdf3' },
+  UPDATE:        { label: 'Güncelleme',       icon: '', color: '#0061a6', bg: '#e8f3fb' },
+  DELETE:        { label: 'Silme',             icon: '', color: '#b42318', bg: '#fdf4f3' },
+  STATUS_CHANGE: { label: 'Durum değişikliği', icon: '', color: '#b54708', bg: '#fffaeb' },
 };
 
 
@@ -130,33 +130,19 @@ function PortalModal({ children }: { children: React.ReactNode }) {
    ════════════════════════════════════════════════════════════ */
 function Badge({ label, color, bg, border }: { label: string; color: string; bg: string; border?: string }) {
   return (
-    <span style={{
-      display: 'inline-flex', alignItems: 'center', padding: '3px 10px',
-      borderRadius: '6px', fontSize: '12px', fontWeight: 600,
-      backgroundColor: bg, color, border: border ? `1px solid ${border}` : 'none',
-      lineHeight: '1.5', whiteSpace: 'nowrap',
-    }}>
+    <span className="sd-badge" style={{ backgroundColor: bg, color, borderColor: border || 'transparent' }}>
       {label}
     </span>
   );
 }
 
-function Card({ children, style, hover, onClick }: {
-  children: React.ReactNode; style?: React.CSSProperties; hover?: boolean; onClick?: () => void;
+function Card({ children, style, hover, onClick, className }: {
+  children: React.ReactNode; style?: React.CSSProperties; hover?: boolean; onClick?: () => void; className?: string;
 }) {
-  const [hovered, setHovered] = useState(false);
   return (
     <div
-      style={{
-        backgroundColor: '#fff', borderRadius: '14px',
-        border: '1px solid #e5e7eb',
-        boxShadow: hovered && hover ? '0 4px 12px rgba(0,0,0,0.06)' : '0 1px 3px rgba(0,0,0,0.03)',
-        transition: 'all 0.2s ease',
-        cursor: onClick ? 'pointer' : undefined,
-        ...style,
-      }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      className={`sd-card${hover ? ' is-hoverable' : ''}${className ? ` ${className}` : ''}`}
+      style={{ cursor: onClick ? 'pointer' : undefined, ...style }}
       onClick={onClick}
     >
       {children}
@@ -164,12 +150,11 @@ function Card({ children, style, hover, onClick }: {
   );
 }
 
-function EmptyState({ icon, title, description }: { icon: string; title: string; description?: string }) {
+function EmptyState({ title, description }: { icon?: string; title: string; description?: string }) {
   return (
-    <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-      <div style={{ fontSize: '40px', marginBottom: '12px', opacity: 0.8 }}>{icon}</div>
-      <div style={{ fontSize: '15px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>{title}</div>
-      {description && <div style={{ fontSize: '13px', color: '#9ca3af' }}>{description}</div>}
+    <div className="sd-empty">
+      <strong>{title}</strong>
+      {description && <span>{description}</span>}
     </div>
   );
 }
@@ -178,13 +163,12 @@ function EmptyState({ icon, title, description }: { icon: string; title: string;
    TABLO STİLLERİ
    ════════════════════════════════════════════════════════════ */
 const thStyle: React.CSSProperties = {
-  padding: '10px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700,
-  color: '#6b7280', textTransform: 'uppercase', letterSpacing: '0.06em',
-  backgroundColor: '#f8fafc', borderBottom: '2px solid #e5e7eb',
+  padding: '10px 14px', textAlign: 'left', fontSize: '12px', fontWeight: 650,
+  color: '#5c6778', backgroundColor: '#f7f8fa', borderBottom: '1px solid #e6e9ee',
 };
 const tdStyle: React.CSSProperties = {
-  padding: '10px 16px', fontSize: '13px', color: '#374151',
-  borderBottom: '1px solid #f3f4f6',
+  padding: '11px 14px', fontSize: '13px', color: '#344054',
+  borderBottom: '1px solid #f0f2f5',
 };
 
 /* ════════════════════════════════════════════════════════════
@@ -349,17 +333,18 @@ export default function SalonDetayPage() {
   /* ─── Yükleniyor / Hata — skeleton/fade yok; önbellek varsa anında göster ─── */
   if (!library) {
     if (loading) {
-      return <div style={{ padding: 0, minHeight: 200 }} />;
+      return (
+        <div className="kutuphane-salon-detail">
+          <p className="sd-loading">Salon yükleniyor…</p>
+        </div>
+      );
     }
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-        <Card style={{ padding: '32px', textAlign: 'center', maxWidth: 400 }}>
-          <div style={{ fontSize: '36px', marginBottom: '12px' }}>⚠️</div>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, color: '#111827', margin: '0 0 8px' }}>{error || 'Salon bulunamadı'}</h3>
-          <Link href={href('salonlar')} style={{ color: '#3b82f6', fontSize: '14px', textDecoration: 'none' }}>
-            ← Salonlara dön
-          </Link>
-        </Card>
+      <div className="kutuphane-salon-detail">
+        <div className="sd-card sd-empty-page">
+          <h2>{error || 'Salon bulunamadı'}</h2>
+          <Link href={href('salonlar')}>Salonlara dön</Link>
+        </div>
       </div>
     );
   }
@@ -367,122 +352,76 @@ export default function SalonDetayPage() {
   const statusInfo = STATUS_COLORS[library.durum] || STATUS_COLORS.INACTIVE;
   const doluluk = library.doluluk_orani ?? library.doluluk_yuzde ?? 0;
 
+  const metaBits = [library.sube_adi, library.kod].filter(Boolean);
+
   return (
-    <div className="kutuphane-salon-detail" style={{ padding: 0, animation: 'none', opacity: 1, transform: 'none' }}>
-      <style>{`
-        .kutuphane-salon-detail { animation: none !important; opacity: 1 !important; transform: none !important; padding-bottom: calc(var(--coach-bottom-nav-h, 0px) + 24px + env(safe-area-inset-bottom, 0px)); }
-        .kutuphane-salon-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-bottom: 24px; }
-        .kutuphane-salon-tabs { display: flex; gap: 4px; margin-bottom: 24px; overflow-x: auto; -webkit-overflow-scrolling: touch; border-bottom: 2px solid #f3f4f6; }
-        @media (max-width: 900px) {
-          .kutuphane-salon-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
-        }
-        @media (max-width: 640px) {
-          .kutuphane-salon-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 16px; }
-          .kutuphane-salon-kpis > div { padding: 10px 8px !important; }
-          .kutuphane-salon-tabs { margin-bottom: 16px; }
-        }
-      `}</style>
-      {/* Toast */}
+    <div className="kutuphane-salon-detail">
       {toast && (
-        <div style={{
-          position: 'fixed', top: 20, right: 20, zIndex: 10000,
-          padding: '12px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-          color: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-          backgroundColor: toast.type === 'success' ? '#059669' : '#dc2626',
-        }}>
-          {toast.type === 'success' ? '✓' : '✕'} {toast.msg}
+        <div className={`sd-toast is-${toast.type}`} role="status">
+          {toast.msg}
         </div>
       )}
 
-      {/* ════ HEADER ════ */}
-      <div className="hero-header" style={{ marginBottom: '24px' }}>
-        <div className="hero-content">
-          <div className="hero-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg>
+      <header className="sd-head">
+        <div>
+          <nav className="sd-crumb" aria-label="Konum">
+            <a href={href()}>Kütüphane</a>
+            <span aria-hidden>/</span>
+            <a href={href('salonlar')}>Salonlar</a>
+            <span aria-hidden>/</span>
+            <span>{library.ad}</span>
+          </nav>
+          <div className="sd-title-row">
+            <h1>{library.ad}</h1>
+            <Badge
+              label={STATUS_LABELS[library.durum] || library.durum}
+              color={statusInfo.color}
+              bg={statusInfo.bg}
+              border={statusInfo.border}
+            />
           </div>
-          <div className="hero-text">
-            <h1 style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              {library.ad}
-              <Badge
-                label={STATUS_LABELS[library.durum] || library.durum}
-                color={statusInfo.color} bg={`${statusInfo.color}30`} border={`${statusInfo.color}50`}
-              />
-            </h1>
-            <div className="hero-breadcrumb">
-              <a href={href()}>Kütüphane</a><span>/</span>
-              <a href={href('salonlar')}>Salonlar</a><span>/</span><span>{library.ad}</span>
-            </div>
-          </div>
+          {metaBits.length > 0 && <p className="sd-meta">{metaBits.join(' · ')}</p>}
         </div>
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="sd-actions">
           {library.durum !== 'ACTIVE' && (
-            <button onClick={() => handleStatusChange('ACTIVE')} style={{
-              padding: '8px 16px', background: 'rgba(255,255,255,0.15)', color: '#fff',
-              borderRadius: '10px', border: '1px solid rgba(255,255,255,0.25)', fontSize: '12px',
-              fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(10px)',
-            }}>Aktifleştir</button>
+            <button type="button" className="sd-btn" onClick={() => handleStatusChange('ACTIVE')}>Aktifleştir</button>
           )}
           {library.durum === 'ACTIVE' && (
-            <button onClick={() => handleStatusChange('MAINTENANCE')} style={{
-              padding: '8px 16px', background: 'rgba(255,255,255,0.15)', color: '#fff',
-              borderRadius: '10px', border: '1px solid rgba(255,255,255,0.25)', fontSize: '12px',
-              fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(10px)',
-            }}>Bakıma Al</button>
+            <button type="button" className="sd-btn" onClick={() => handleStatusChange('MAINTENANCE')}>Bakıma al</button>
           )}
           {library.durum !== 'INACTIVE' && (
-            <button onClick={() => handleStatusChange('INACTIVE')} style={{
-              padding: '8px 16px', background: 'rgba(255,255,255,0.15)', color: '#fff',
-              borderRadius: '10px', border: '1px solid rgba(255,255,255,0.25)', fontSize: '12px',
-              fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(10px)',
-            }}>Pasifleştir</button>
+            <button type="button" className="sd-btn" onClick={() => handleStatusChange('INACTIVE')}>Pasifleştir</button>
           )}
-          <button onClick={handleDelete} style={{
-            padding: '8px 16px', background: 'rgba(239,68,68,0.2)', color: '#fca5a5',
-            borderRadius: '10px', border: '1px solid rgba(239,68,68,0.3)', fontSize: '12px',
-            fontWeight: 600, cursor: 'pointer', backdropFilter: 'blur(10px)',
-          }}>Sil</button>
+          <button type="button" className="sd-btn sd-btn-danger" onClick={handleDelete}>Sil</button>
         </div>
-      </div>
+      </header>
 
-      {/* KPI Bar */}
-      <div className="kutuphane-salon-kpis">
+      <section className="sd-metrics" aria-label="Salon özeti">
         {[
-          { label: 'Toplam Masa', value: library.toplam_masa ?? 0, icon: '🪑', bg: '#f0f9ff', border: '#bae6fd' },
-          { label: 'Aktif Masa',  value: library.aktif_masa ?? 0,  icon: '✅', bg: '#f0fdf4', border: '#bbf7d0' },
-          { label: 'Dolu',        value: library.dolu_masa ?? 0,   icon: '🔴', bg: '#fef2f2', border: '#fecaca' },
-          { label: 'Boş',         value: library.bos_masa ?? 0,    icon: '🟢', bg: '#f0fdf4', border: '#bbf7d0' },
-          { label: 'Doluluk',     value: `%${doluluk}`,            icon: '📊', bg: '#f5f3ff', border: '#c4b5fd' },
-        ].map((kpi, i) => (
-          <div key={i} style={{
-            padding: '18px 20px', textAlign: 'center', borderRadius: '16px',
-            backgroundColor: kpi.bg, border: `1.5px solid ${kpi.border}`,
-            transition: 'all 0.2s',
-          }}>
-            <div style={{ fontSize: '12px', color: '#6b7280', marginBottom: '6px', fontWeight: 600 }}>{kpi.icon} {kpi.label}</div>
-            <div style={{ fontSize: '24px', fontWeight: 800, color: '#111827' }}>{kpi.value}</div>
+          { label: 'Toplam masa', value: library.toplam_masa ?? 0 },
+          { label: 'Aktif masa', value: library.aktif_masa ?? 0 },
+          { label: 'Dolu', value: library.dolu_masa ?? 0 },
+          { label: 'Boş', value: library.bos_masa ?? 0 },
+          { label: 'Doluluk', value: `%${doluluk}`, accent: true },
+        ].map((kpi) => (
+          <div key={kpi.label} className={`sd-metric${kpi.accent ? ' is-accent' : ''}`}>
+            <span>{kpi.label}</span>
+            <strong>{kpi.value}</strong>
           </div>
         ))}
-      </div>
+      </section>
 
-      {/* ════ TABS BAR ════ */}
-      <div className="kutuphane-salon-tabs" role="tablist" aria-label="Salon yönetim bölümleri">
+      <div className="sd-tabs" role="tablist" aria-label="Salon yönetim bölümleri">
         {TABS.map(tab => (
           <button
             key={tab.key}
+            type="button"
             onClick={() => setActiveTab(tab.key)}
             role="tab"
             aria-selected={activeTab === tab.key}
-            style={{
-              padding: '10px 18px', fontSize: '13px', fontWeight: 600,
-              color: activeTab === tab.key ? '#1d4ed8' : '#6b7280',
-              backgroundColor: 'transparent', border: 'none',
-              borderBottom: activeTab === tab.key ? '2px solid #1d4ed8' : '2px solid transparent',
-              cursor: 'pointer', whiteSpace: 'nowrap',
-              transition: 'all 0.15s ease',
-              marginBottom: '-2px',
-            }}
+            className="sd-tab"
           >
-            {tab.icon} {tab.label}
+            {tab.label}
           </button>
         ))}
       </div>
@@ -568,54 +507,49 @@ function GenelTab({ library, onSave, showToast, readOnly = false }: {
   };
 
   return (
-    <div>
-      {/* Salon Bilgileri */}
-      <Card style={{ padding: '24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-          <h3 style={{ fontSize: '16px', fontWeight: 700, margin: 0, color: '#111827' }}>📋 Salon Bilgileri</h3>
-          {!editMode && !readOnly && (
-            <button onClick={() => setEditMode(true)} style={{
-              padding: '6px 14px', backgroundColor: '#eff6ff', color: '#1d4ed8',
-              borderRadius: '7px', border: '1px solid #bfdbfe', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-            }}>
-              ✏️ Düzenle
-            </button>
-          )}
+    <Card style={{ padding: '18px 20px' }}>
+      <div className="sd-panel-head">
+        <div>
+          <h2>Salon bilgileri</h2>
+          <p>Ad, kapasite ve salon kuralları</p>
         </div>
-
-        {editMode ? (
-          <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <FormField label="Salon Adı" name="ad" defaultValue={library.ad} required />
-            <FormField label="Açıklama" name="aciklama" defaultValue={library.aciklama} textarea />
-            <FormField label="Kapasite" name="kapasite" defaultValue={String(library.kapasite)} type="number" required />
-            <FormField label="Kurallar" name="kurallar" defaultValue={library.kurallar} textarea />
-            <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '8px' }}>
-              <button type="button" onClick={() => setEditMode(false)} style={cancelBtnStyle}>İptal</button>
-              <button type="submit" disabled={saving} style={saveBtnStyle}>
-                {saving ? '💾 Kaydediliyor...' : '💾 Kaydet'}
-              </button>
-            </div>
-          </form>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-            <InfoRow label="Salon Adı" value={library.ad} />
-            <InfoRow label="Kod" value={library.kod} mono />
-            <InfoRow label="Açıklama" value={library.aciklama || '—'} />
-            <InfoRow label="Kapasite" value={String(library.kapasite)} />
-            <InfoRow label="Dolap" value={library.dolap_var_mi ? `Var (${library.dolap_sayisi} adet)` : 'Yok'} />
-            <InfoRow label="Kurallar" value={library.kurallar || '—'} />
-          </div>
+        {!editMode && !readOnly && (
+          <button type="button" className="sd-btn" onClick={() => setEditMode(true)}>Düzenle</button>
         )}
-      </Card>
-    </div>
+      </div>
+
+      {editMode ? (
+        <form onSubmit={handleSave} className="sd-form">
+          <FormField label="Salon adı" name="ad" defaultValue={library.ad} required />
+          <FormField label="Kapasite" name="kapasite" defaultValue={String(library.kapasite)} type="number" required />
+          <FormField label="Açıklama" name="aciklama" defaultValue={library.aciklama} textarea />
+          <FormField label="Kurallar" name="kurallar" defaultValue={library.kurallar} textarea />
+          <div className="sd-form-actions sd-field-wide">
+            <button type="button" className="sd-btn" onClick={() => setEditMode(false)}>İptal</button>
+            <button type="submit" className="sd-btn sd-btn-primary" disabled={saving}>
+              {saving ? 'Kaydediliyor…' : 'Kaydet'}
+            </button>
+          </div>
+        </form>
+      ) : (
+        <div className="sd-facts">
+          <InfoRow label="Salon adı" value={library.ad} />
+          <InfoRow label="Kod" value={library.kod} mono />
+          <InfoRow label="Kapasite" value={String(library.kapasite)} />
+          <InfoRow label="Dolap" value={library.dolap_var_mi ? `Var (${library.dolap_sayisi} adet)` : 'Yok'} />
+          <InfoRow label="Açıklama" value={library.aciklama || '—'} wide />
+          <InfoRow label="Kurallar" value={library.kurallar || '—'} wide />
+        </div>
+      )}
+    </Card>
   );
 }
 
-function InfoRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+function InfoRow({ label, value, mono, wide }: { label: string; value: string; mono?: boolean; wide?: boolean }) {
   return (
-    <div style={{ display: 'flex', gap: '12px' }}>
-      <span style={{ fontSize: '13px', color: '#6b7280', minWidth: 100, flexShrink: 0 }}>{label}</span>
-      <span style={{ fontSize: '13px', fontWeight: 500, color: '#111827', fontFamily: mono ? 'monospace' : 'inherit' }}>{value}</span>
+    <div className={`sd-fact${wide ? ' is-wide' : ''}`}>
+      <dt>{label}</dt>
+      <dd className={mono ? 'is-mono' : undefined}>{value}</dd>
     </div>
   );
 }
@@ -623,31 +557,23 @@ function InfoRow({ label, value, mono }: { label: string; value: string; mono?: 
 function FormField({ label, name, defaultValue, type, required, textarea }: {
   label: string; name: string; defaultValue?: string; type?: string; required?: boolean; textarea?: boolean;
 }) {
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 12px', border: '1px solid #d1d5db', borderRadius: '8px',
-    fontSize: '13px', outline: 'none', resize: textarea ? 'vertical' as const : undefined,
-  };
   return (
-    <div>
-      <label style={{ display: 'block', fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '4px' }}>
-        {label} {required && <span style={{ color: '#ef4444' }}>*</span>}
+    <div className={`sd-field${textarea ? ' sd-field-wide' : ''}`}>
+      <label>
+        {label} {required && <span className="sd-req">*</span>}
       </label>
       {textarea ? (
-        <textarea name={name} defaultValue={defaultValue} rows={3} style={inputStyle} />
+        <textarea className="sd-input is-area" name={name} defaultValue={defaultValue} rows={3} />
       ) : (
-        <input name={name} type={type || 'text'} defaultValue={defaultValue} required={required} style={inputStyle} />
+        <input className="sd-input" name={name} type={type || 'text'} defaultValue={defaultValue} required={required} />
       )}
     </div>
   );
 }
 
-const cancelBtnStyle: React.CSSProperties = {
-  padding: '8px 16px', backgroundColor: '#f3f4f6', color: '#374151',
-  borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: '13px', fontWeight: 500, cursor: 'pointer',
-};
 const saveBtnStyle: React.CSSProperties = {
-  padding: '8px 20px', backgroundColor: '#1d4ed8', color: '#fff',
-  borderRadius: '8px', border: 'none', fontSize: '13px', fontWeight: 600, cursor: 'pointer',
+  height: 36, padding: '0 16px', backgroundColor: '#0061A6', color: '#fff',
+  borderRadius: 8, border: 'none', fontSize: 13, fontWeight: 600, cursor: 'pointer',
 };
 
 /* ════════════════════════════════════════════════════════════
@@ -809,150 +735,105 @@ function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBu
 
   return (
     <div>
-      {/* Toolbar */}
-      <Card style={{ padding: '16px 20px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <div style={{ display: 'flex', gap: '8px', fontSize: '12px' }}>
-              <span style={{ color: '#374151', fontWeight: 600 }}>{stats.total} masa</span>
-              <span style={{ color: '#059669' }}>● {stats.available} müsait</span>
-              <span style={{ color: '#dc2626' }}>● {stats.occupied} dolu</span>
-              <span style={{ color: '#d97706' }}>● {stats.reserved} rezerve</span>
-            </div>
-            <select
-              value={filterStatus}
-              onChange={e => setFilterStatus(e.target.value)}
-              style={{ padding: '5px 10px', border: '1px solid #d1d5db', borderRadius: '6px', fontSize: '12px' }}
-            >
+      <Card style={{ padding: '12px 14px', marginBottom: 12 }}>
+        <div className="sd-toolbar">
+          <div className="sd-toolbar-group">
+            <span className="sd-count">
+              <b>{stats.total}</b> masa
+              <span className="sd-dot" style={{ color: '#067647' }}> · {stats.available} müsait</span>
+              <span className="sd-dot" style={{ color: '#b42318' }}> · {stats.occupied} dolu</span>
+              <span className="sd-dot" style={{ color: '#b54708' }}> · {stats.reserved} rezerve</span>
+            </span>
+            <select className="sd-input" style={{ width: 'auto' }} value={filterStatus} onChange={e => setFilterStatus(e.target.value)} aria-label="Masa durumu">
               <option value="ALL">Tümü</option>
               {Object.entries(SEAT_STATUS_LABELS).map(([k, v]) => (
                 <option key={k} value={k}>{v}</option>
               ))}
             </select>
           </div>
-          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-            <button onClick={() => handleDownloadExport('xlsx')} disabled={exporting !== null} style={{
-              padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#15803d',
-              borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
-            }}>
-              {exporting === 'xlsx' ? '⏳ Hazırlanıyor…' : '📥 Excel'}
+          <div className="sd-toolbar-group is-actions">
+            <button type="button" className="sd-btn sd-btn-sm" onClick={() => handleDownloadExport('xlsx')} disabled={exporting !== null}>
+              {exporting === 'xlsx' ? 'Hazırlanıyor…' : 'Excel'}
             </button>
-            <button onClick={() => handleDownloadExport('csv')} disabled={exporting !== null} style={{
-              padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#15803d',
-              borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
-            }}>
-              {exporting === 'csv' ? '⏳ Hazırlanıyor…' : '📥 CSV'}
+            <button type="button" className="sd-btn sd-btn-sm" onClick={() => handleDownloadExport('csv')} disabled={exporting !== null}>
+              {exporting === 'csv' ? 'Hazırlanıyor…' : 'CSV'}
             </button>
             <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
-              <button
-                onClick={() => setPdfMenuOpen(open => !open)}
-                disabled={exporting !== null}
-                style={{
-                  padding: '6px 14px', backgroundColor: '#f0f9ff', color: '#0369a1',
-                  borderRadius: '8px', border: '1px solid #bae6fd', fontSize: '12px', fontWeight: 600, cursor: exporting ? 'wait' : 'pointer',
-                }}
-              >
-                {exporting === 'pdf' ? '⏳ Hazırlanıyor…' : '📄 PDF / Yazdır'}
+              <button type="button" className="sd-btn sd-btn-sm" onClick={() => setPdfMenuOpen(open => !open)} disabled={exporting !== null} aria-expanded={pdfMenuOpen}>
+                {exporting === 'pdf' ? 'Hazırlanıyor…' : 'PDF / Yazdır'}
               </button>
               {pdfMenuOpen && (
-                <div style={{
-                  position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 30, minWidth: 160,
-                  background: '#fff', border: '1px solid #e2e8f0', borderRadius: 8,
-                  boxShadow: '0 8px 20px rgba(15,23,42,0.12)', padding: 4,
-                }}>
-                  <button
-                    onClick={() => { setPdfMenuOpen(false); handlePrintList('occupied'); }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#b91c1c', cursor: 'pointer' }}
-                  >
-                    Dolu masalar
-                  </button>
-                  <button
-                    onClick={() => { setPdfMenuOpen(false); handlePrintList('empty'); }}
-                    style={{ display: 'block', width: '100%', textAlign: 'left', padding: '8px 10px', border: 'none', background: 'transparent', borderRadius: 6, fontSize: 12, fontWeight: 600, color: '#15803d', cursor: 'pointer' }}
-                  >
-                    Boş masalar
-                  </button>
+                <div className="sd-menu" role="menu">
+                  <button type="button" onClick={() => { setPdfMenuOpen(false); handlePrintList('occupied'); }}>Dolu masalar</button>
+                  <button type="button" onClick={() => { setPdfMenuOpen(false); handlePrintList('empty'); }}>Boş masalar</button>
                 </div>
               )}
             </div>
-            <div style={{ display: 'flex', border: '1px solid #d1d5db', borderRadius: '8px', overflow: 'hidden' }}>
+            <div className="sd-segment" role="group" aria-label="Görünüm">
               {(['grid', 'table'] as const).map(m => (
-                <button key={m} onClick={() => setViewMode(m)} style={{
-                  padding: '5px 12px', fontSize: '12px', border: 'none', cursor: 'pointer',
-                  backgroundColor: viewMode === m ? '#1d4ed8' : '#fff',
-                  color: viewMode === m ? '#fff' : '#374151',
-                }}>
-                  {m === 'grid' ? '⊞ Grid' : '☰ Tablo'}
+                <button key={m} type="button" aria-pressed={viewMode === m} onClick={() => setViewMode(m)}>
+                  {m === 'grid' ? 'Izgara' : 'Tablo'}
                 </button>
               ))}
             </div>
             {!readOnly && (
-            <button onClick={onToggleBulkForm} style={{
-              padding: '6px 14px', backgroundColor: '#1d4ed8', color: '#fff',
-              borderRadius: '8px', border: 'none', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-            }}>
-              + Toplu Ekle
-            </button>
+              <button type="button" className="sd-btn sd-btn-primary sd-btn-sm" onClick={onToggleBulkForm}>Toplu ekle</button>
             )}
           </div>
         </div>
       </Card>
 
-      {/* Toplu Oluşturma Formu */}
       {showBulkForm && !readOnly && (
-        <Card style={{ padding: '20px', marginBottom: '16px', borderColor: '#bfdbfe' }}>
-          <h4 style={{ fontSize: '14px', fontWeight: 700, margin: '0 0 14px', color: '#1d4ed8' }}>🪑 Toplu Masa Oluştur</h4>
+        <Card style={{ padding: '16px', marginBottom: 12 }}>
+          <h3 className="sd-section-title" style={{ marginBottom: 12 }}>Toplu masa oluştur</h3>
           <form onSubmit={onBulkCreate}>
-            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
-              <div>
-                <label style={formLabelStyle}>Adet *</label>
-                <input name="adet" type="number" min={1} max={100} required style={formInputStyle} placeholder="10" />
+            <div className="sd-bulk">
+              <div className="sd-field">
+                <label>Adet <span className="sd-req">*</span></label>
+                <input className="sd-input" name="adet" type="number" min={1} max={100} required placeholder="10" />
               </div>
-              <div>
-                <label style={formLabelStyle}>Masa Tipi</label>
-                <select name="masa_tipi" style={formInputStyle}>
+              <div className="sd-field">
+                <label>Masa tipi</label>
+                <select className="sd-input" name="masa_tipi">
                   <option value="STANDARD">Standart</option>
                   <option value="COMPUTER">Bilgisayar</option>
                   <option value="GROUP">Grup</option>
                 </select>
               </div>
-              <div>
-                <label style={formLabelStyle}>Başlangıç No</label>
-                <input name="baslangic_no" type="number" min={1} defaultValue={1} style={formInputStyle} />
+              <div className="sd-field">
+                <label>Başlangıç no</label>
+                <input className="sd-input" name="baslangic_no" type="number" min={1} defaultValue={1} />
               </div>
-              <button type="submit" style={saveBtnStyle}>Oluştur</button>
-              <button type="button" onClick={onToggleBulkForm} style={cancelBtnStyle}>İptal</button>
+              <button type="submit" className="sd-btn sd-btn-primary">Oluştur</button>
+              <button type="button" className="sd-btn" onClick={onToggleBulkForm}>İptal</button>
             </div>
           </form>
         </Card>
       )}
 
-      {/* Masalar */}
       {filtered.length === 0 ? (
-        <EmptyState icon="🪑" title="Masa bulunamadı" description="Toplu masa ekleme ile masaları oluşturabilirsiniz" />
+        <EmptyState title="Masa bulunamadı" description="Toplu masa ekleme ile masaları oluşturabilirsiniz" />
       ) : viewMode === 'grid' ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: '10px' }}>
+        <div className="sd-seat-grid">
           {filtered.map(seat => {
             const sc = SEAT_STATUS_COLORS[seat.durum] || SEAT_STATUS_COLORS.AVAILABLE;
             const ogrenciAdi = getSeatStudentName(seat);
             return (
-              <Card key={seat.id} hover style={{ padding: '14px', textAlign: 'center', borderColor: sc.border }}>
-                <div style={{ fontSize: '18px', fontWeight: 800, color: '#111827', marginBottom: '4px' }}>{seat.masa_no}</div>
+              <Card key={seat.id} className="sd-seat" style={{ padding: 14 }}>
+                <div className="sd-seat-no">{seat.masa_no}</div>
                 <Badge label={SEAT_STATUS_LABELS[seat.durum] || seat.durum} color={sc.color} bg={sc.bg} border={sc.border} />
-                {ogrenciAdi && (
-                  <div style={{ fontSize: '11px', color: '#6b7280', marginTop: '6px' }}>👤 {ogrenciAdi}</div>
+                {ogrenciAdi && <div className="sd-seat-student">{ogrenciAdi}</div>}
+                {(seat.priz_var_mi || seat.lamba_var_mi) && (
+                  <div className="sd-seat-flags">
+                    {seat.priz_var_mi && <span>Priz</span>}
+                    {seat.lamba_var_mi && <span>Lamba</span>}
+                  </div>
                 )}
-                <div style={{ display: 'flex', gap: '4px', marginTop: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-                  {seat.priz_var_mi && <span title="Priz" style={{ fontSize: '14px' }}>🔌</span>}
-                  {seat.lamba_var_mi && <span title="Lamba" style={{ fontSize: '14px' }}>💡</span>}
-                </div>
                 <select
+                  className="sd-input"
+                  aria-label={`${seat.masa_no} durumu`}
                   value={seat.durum}
                   onChange={e => onStatusChange(seat.id, e.target.value as SeatStatus)}
-                  style={{
-                    marginTop: '8px', width: '100%', padding: '4px', fontSize: '11px',
-                    border: '1px solid #e5e7eb', borderRadius: '6px', color: '#6b7280',
-                  }}
                 >
                   {Object.entries(SEAT_STATUS_LABELS).map(([k, v]) => (
                     <option key={k} value={k}>{v}</option>
@@ -963,11 +844,11 @@ function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBu
           })}
         </div>
       ) : (
-        <Card style={{ overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <Card className="sd-table-card">
+          <table>
             <thead>
               <tr>
-                <th style={thStyle}>Masa No</th>
+                <th style={thStyle}>Masa no</th>
                 <th style={thStyle}>Tip</th>
                 <th style={thStyle}>Durum</th>
                 <th style={thStyle}>Öğrenci</th>
@@ -979,22 +860,21 @@ function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBu
               {filtered.map(seat => {
                 const sc = SEAT_STATUS_COLORS[seat.durum] || SEAT_STATUS_COLORS.AVAILABLE;
                 const ogrenciAdi = getSeatStudentName(seat);
+                const ozellik = [seat.priz_var_mi && 'Priz', seat.lamba_var_mi && 'Lamba'].filter(Boolean).join(', ');
                 return (
                   <tr key={seat.id}>
-                    <td style={tdStyle}><span style={{ fontWeight: 700 }}>{seat.masa_no}</span></td>
+                    <td style={tdStyle}><span style={{ fontWeight: 650 }}>{seat.masa_no}</span></td>
                     <td style={tdStyle}>{MASA_TIPI_LABELS[seat.masa_tipi] || seat.masa_tipi}</td>
                     <td style={tdStyle}><Badge label={SEAT_STATUS_LABELS[seat.durum] || seat.durum} color={sc.color} bg={sc.bg} border={sc.border} /></td>
                     <td style={tdStyle}>{ogrenciAdi || '—'}</td>
-                    <td style={tdStyle}>
-                      {seat.priz_var_mi && '🔌 '}
-                      {seat.lamba_var_mi && '💡 '}
-                      {!seat.priz_var_mi && !seat.lamba_var_mi && '—'}
-                    </td>
+                    <td style={tdStyle}>{ozellik || '—'}</td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       <select
+                        className="sd-input"
+                        style={{ width: 'auto', minWidth: 120 }}
+                        aria-label={`${seat.masa_no} durumu`}
                         value={seat.durum}
                         onChange={e => onStatusChange(seat.id, e.target.value as SeatStatus)}
-                        style={{ padding: '4px 8px', fontSize: '11px', border: '1px solid #e5e7eb', borderRadius: '6px' }}
                       >
                         {Object.entries(SEAT_STATUS_LABELS).map(([k, v]) => (
                           <option key={k} value={k}>{v}</option>
@@ -1011,13 +891,6 @@ function MasalarTab({ libraryId, seats, salonAdi, subeAdi, kurumBranding, showBu
     </div>
   );
 }
-
-const formLabelStyle: React.CSSProperties = {
-  display: 'block', fontSize: '11px', fontWeight: 600, color: '#374151', marginBottom: '4px',
-};
-const formInputStyle: React.CSSProperties = {
-  padding: '7px 10px', border: '1px solid #d1d5db', borderRadius: '7px', fontSize: '13px',
-};
 
 /* ════════════════════════════════════════════════════════════
    TAB: YOKLAMA
@@ -1214,6 +1087,15 @@ function YoklamaTab({
     if (librarySubeId) setSelectedSube(librarySubeId);
     setShowOpenModal(true);
   };
+
+  useEffect(() => {
+    if (!showOpenModal) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowOpenModal(false);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [showOpenModal]);
 
   // Yoklama kapat
   const handleCloseSession = async (sessionId: string) => {
@@ -1622,107 +1504,72 @@ function YoklamaTab({
     <div>
       {/* Toast */}
       {toast && (
-        <div style={{
-          position: 'fixed', top: 20, right: 20, zIndex: 10000,
-          padding: '12px 20px', borderRadius: '10px', fontSize: '13px', fontWeight: 600,
-          color: '#fff', boxShadow: '0 8px 24px rgba(0,0,0,0.15)',
-          backgroundColor: toast.type === 'success' ? '#059669' : '#dc2626',
-        }}>
-          {toast.type === 'success' ? '✓' : '✕'} {toast.msg}
-        </div>
+        <div className={`sd-toast is-${toast.type}`} role="status">{toast.msg}</div>
       )}
 
-      {/* Toolbar */}
-      <Card style={{ padding: '16px 20px', marginBottom: '16px' }}>
+      <Card style={{ padding: '12px 14px', marginBottom: 12 }}>
         <div className="yk-toolbar">
           <div className="yk-toolbar-meta">
             <input
+              className="sd-input"
+              style={{ width: 'auto' }}
               type="date"
               value={selectedDate}
+              aria-label="Yoklama tarihi"
               onChange={(e) => setSelectedDate(e.target.value)}
-              style={{ padding: '7px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px' }}
             />
-            <span style={{ fontSize: '13px', color: '#6b7280' }}>
-              {sessions.length} yoklama
+            <span className="sd-count">
+              <b>{sessions.length}</b> yoklama
               {sessions.filter(s => s.durum === 'OPEN').length > 0 && (
-                <> <Badge label={`${sessions.filter(s => s.durum === 'OPEN').length} açık`} color="#059669" bg="#ecfdf5" border="#a7f3d0" /></>
+                <> · <Badge label={`${sessions.filter(s => s.durum === 'OPEN').length} açık`} color="#067647" bg="#ecfdf3" border="#abefc6" /></>
               )}
             </span>
           </div>
           <div className="yk-toolbar-actions">
-            <button onClick={() => loadWeekly()} style={toolbarBtn('#0c4a6e', '#f0f9ff', '#bae6fd')}>📊 Haftalık Özet</button>
-            <div style={{ position: 'relative', display: 'inline-flex' }}>
-              <button onClick={() => { setSheetOrientation('portrait'); loadSheet('daily'); }} style={toolbarBtn('#854d0e', '#fefce8', '#fde68a')}>📋 Günlük Liste</button>
-            </div>
-            <div style={{ position: 'relative', display: 'inline-flex' }}>
-              <button onClick={() => { setSheetOrientation('landscape'); loadSheet('weekly'); }} style={toolbarBtn('#7f1d1d', '#fef2f2', '#fca5a5')}>📋 Haftalık Liste</button>
-            </div>
-            <button onClick={() => setShowNotifySettings(true)} style={toolbarBtn('#334155', '#f8fafc', '#cbd5e1')}>
-              ⚙️ Bildirim şablonları
-            </button>
-            <button onClick={openYoklamaModal} style={{
-              padding: '7px 16px', backgroundColor: '#1d4ed8', color: '#fff',
-              borderRadius: '8px', border: 'none', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-            }}>
-              + Yoklama Aç
-            </button>
+            <button type="button" className="sd-btn sd-btn-sm" onClick={() => loadWeekly()}>Haftalık özet</button>
+            <button type="button" className="sd-btn sd-btn-sm" onClick={() => { setSheetOrientation('portrait'); loadSheet('daily'); }}>Günlük liste</button>
+            <button type="button" className="sd-btn sd-btn-sm" onClick={() => { setSheetOrientation('landscape'); loadSheet('weekly'); }}>Haftalık liste</button>
+            <button type="button" className="sd-btn sd-btn-sm" onClick={() => setShowNotifySettings(true)}>Bildirim şablonları</button>
+            <button type="button" className="sd-btn sd-btn-primary sd-btn-sm" onClick={openYoklamaModal}>Yoklama aç</button>
           </div>
         </div>
       </Card>
 
-      {/* Sessions List */}
       {loading ? (
-        <div style={{ padding: '48px', textAlign: 'center' }}>
-          <div style={{ width: 32, height: 32, border: '3px solid #e5e7eb', borderTopColor: '#3b82f6', borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto' }} />
-          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
-        </div>
+        <div className="sd-spinner" role="status" aria-label="Yoklamalar yükleniyor" />
       ) : sessions.length === 0 ? (
-        <EmptyState icon="📋" title="Bu tarihte yoklama oturumu yok" description="Yeni yoklama açmak için yukarıdaki butonu kullanın" />
+        <EmptyState title="Bu tarihte yoklama oturumu yok" description="Yeni yoklama açmak için Yoklama aç düğmesini kullanın" />
       ) : (
-        <div style={{ display: 'grid', gap: '10px' }}>
+        <div className="sd-list">
           {sessions.map(s => (
-            <Card key={s.id} hover style={{ padding: '16px 20px' }}>
-              <div className="yk-session-row">
-                <div className="yk-session-main">
-                  <div style={{
-                    width: 40, height: 40, borderRadius: 10,
-                    background: s.durum === 'OPEN'
-                      ? 'linear-gradient(135deg, #22c55e, #16a34a)'
-                      : 'linear-gradient(135deg, #94a3b8, #64748b)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    color: '#fff', fontSize: 16, flexShrink: 0,
-                  }}>
-                    {s.yoklama_tipi === 'LESSON' ? '📝' : '📋'}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: '#111827' }}>
-                      {s.oturum_adi || 'Yoklama'}
-                      {s.ders_no && <span style={{ marginLeft: 8, fontSize: '11px', color: '#6366f1', fontWeight: 600 }}>{s.ders_no}. Ders</span>}
-                    </div>
-                    <div style={{ fontSize: '12px', color: '#6b7280', marginTop: 2 }}>
-                      {PERIOD_LABELS[s.periyot_kodu || ''] || s.periyot_kodu}
-                      {' · '}{s.yoklama_tipi === 'LESSON' ? 'Ders Bazlı' : 'Periyot Bazlı'}
-                      {s.toplam_kayit != null && ` · ${s.toplam_kayit} kayıt`}
-                      {s.katilim_orani != null && ` · %${s.katilim_orani} katılım`}
-                    </div>
-                  </div>
-                </div>
-                <div className="yk-session-actions">
-                  <Badge
-                    label={s.durum === 'OPEN' ? '● Açık' : '● Kapalı'}
-                    color={s.durum === 'OPEN' ? '#059669' : '#6b7280'}
-                    bg={s.durum === 'OPEN' ? '#ecfdf5' : '#f9fafb'}
-                    border={s.durum === 'OPEN' ? '#a7f3d0' : '#e5e7eb'}
-                  />
-                  <button onClick={() => loadDetail(s)} style={actionBtn('#1d4ed8', '#eff6ff')}>Yoklama Al</button>
-                  {s.durum === 'OPEN' ? (
-                    <button onClick={() => handleCloseSession(s.id)} style={actionBtn('#d97706', '#fffbeb')}>Kapat</button>
-                  ) : (
-                    <button onClick={() => handleReopenSession(s.id)} style={actionBtn('#059669', '#ecfdf5')}>Tekrar Aç</button>
-                  )}
-                </div>
+            <div key={s.id} className="sd-list-row">
+              <div className="sd-session-main">
+                <strong>
+                  {s.oturum_adi || 'Yoklama'}
+                  {s.ders_no && <span className="sd-lesson">{s.ders_no}. ders</span>}
+                </strong>
+                <span>
+                  {PERIOD_LABELS[s.periyot_kodu || ''] || s.periyot_kodu}
+                  {' · '}{s.yoklama_tipi === 'LESSON' ? 'Ders bazlı' : 'Periyot bazlı'}
+                  {s.toplam_kayit != null && ` · ${s.toplam_kayit} kayıt`}
+                  {s.katilim_orani != null && ` · %${s.katilim_orani} katılım`}
+                </span>
               </div>
-            </Card>
+              <div className="yk-session-actions sd-session-actions">
+                <Badge
+                  label={s.durum === 'OPEN' ? 'Açık' : 'Kapalı'}
+                  color={s.durum === 'OPEN' ? '#067647' : '#5c6778'}
+                  bg={s.durum === 'OPEN' ? '#ecfdf3' : '#f6f7f9'}
+                  border={s.durum === 'OPEN' ? '#abefc6' : '#e6e9ee'}
+                />
+                <button type="button" className="sd-btn sd-btn-primary sd-btn-sm" onClick={() => loadDetail(s)}>Yoklama al</button>
+                {s.durum === 'OPEN' ? (
+                  <button type="button" className="sd-btn sd-btn-sm" onClick={() => handleCloseSession(s.id)}>Kapat</button>
+                ) : (
+                  <button type="button" className="sd-btn sd-btn-sm" onClick={() => handleReopenSession(s.id)}>Tekrar aç</button>
+                )}
+              </div>
+            </div>
           ))}
         </div>
       )}
@@ -1730,16 +1577,22 @@ function YoklamaTab({
       {/* ═══ YOKLAMA AÇ MODALı ═══ */}
       {showOpenModal && (
         <PortalModal>
-          <div className="yc-veil" onClick={(e) => { if (e.target === e.currentTarget) setShowOpenModal(false); }}>
-            <div className="yc-open" onClick={(e) => e.stopPropagation()}>
-              <div className="yc-open-head">
-                <p className="yc-kicker">Salon</p>
-                <h1 className="yc-title" style={{ color: '#1b1712' }}>Yoklamayı aç</h1>
+          <div className="sd-veil" onClick={(e) => { if (e.target === e.currentTarget) setShowOpenModal(false); }}>
+            <div
+              className="sd-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="sd-open-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="sd-dialog-head">
+                <p className="sd-dialog-kicker">{libraryName}</p>
+                <h2 id="sd-open-title">Yoklamayı aç</h2>
               </div>
-              <div className="yc-open-body">
+              <div className="sd-dialog-body">
                 <div>
-                  <label className="yc-open-label">Tip</label>
-                  <div className="yc-types">
+                  <span className="sd-label">Tip</span>
+                  <div className="sd-choices" role="radiogroup" aria-label="Yoklama tipi">
                     {[
                       { key: 'PERIOD' as const, label: 'Periyot', desc: 'Tüm periyot, tek liste' },
                       { key: 'LESSON' as const, label: 'Ders', desc: 'Her ders ayrı' },
@@ -1747,7 +1600,9 @@ function YoklamaTab({
                       <button
                         key={t.key}
                         type="button"
-                        className={`yc-type${openType === t.key ? ' active' : ''}`}
+                        role="radio"
+                        aria-checked={openType === t.key}
+                        className={`sd-choice${openType === t.key ? ' is-active' : ''}`}
                         onClick={() => setOpenType(t.key)}
                       >
                         <strong>{t.label}</strong>
@@ -1757,66 +1612,65 @@ function YoklamaTab({
                   </div>
                 </div>
 
-                <div>
-                  <label className="yc-open-label">Periyot</label>
+                <div className="sd-field">
+                  <label htmlFor="sd-open-periyot">Periyot</label>
                   <select
+                    id="sd-open-periyot"
                     value={selectedPeriyot}
                     onChange={(e) => setSelectedPeriyot(e.target.value)}
-                    className="yc-field"
+                    className="sd-input"
                   >
                     {PERIYOT_OPTIONS.map(p => (
-                      <option key={p.key} value={p.key} disabled={(p as any).disabled}>
-                        {(p as any).disabled ? `${p.label} (Kapalı)` : p.label}
+                      <option key={p.key} value={p.key} disabled={p.disabled}>
+                        {p.disabled ? `${p.shortLabel} (kapalı)` : p.shortLabel}
                       </option>
                     ))}
                   </select>
-                  {PERIYOT_OPTIONS.every((p: any) => p.disabled) && (
-                    <div className="yc-hint warn">Bu gün için aktif periyot yok.</div>
+                  {PERIYOT_OPTIONS.every(p => p.disabled) && (
+                    <p className="sd-hint is-warn">Bu gün için aktif periyot yok.</p>
                   )}
                 </div>
 
                 {openType === 'LESSON' && (
-                  <div>
-                    <label className="yc-open-label">Şube</label>
+                  <div className="sd-field">
+                    <label htmlFor="sd-open-sube">Şube</label>
                     <select
+                      id="sd-open-sube"
                       value={selectedSube || ''}
                       onChange={(e) => setSelectedSube(e.target.value ? Number(e.target.value) : null)}
-                      className="yc-field"
+                      className="sd-input"
                     >
-                      <option value="">Şube seçin...</option>
+                      <option value="">Şube seçin</option>
                       {subeler.filter(s => s.program_var).map(s => (
                         <option key={s.id} value={s.id}>{s.ad}</option>
                       ))}
                     </select>
-                    <div className="yc-hint">
+                    <p className="sd-hint">
                       {librarySubeAdi
                         ? `Salon şubesi: ${librarySubeAdi}`
                         : 'Ders programı olan şube gerekli'}
-                    </div>
+                    </p>
                   </div>
                 )}
 
-                <div>
-                  <label className="yc-open-label">Tarih</label>
+                <div className="sd-field">
+                  <label htmlFor="sd-open-tarih">Tarih</label>
                   <input
+                    id="sd-open-tarih"
                     type="date"
                     value={selectedDate}
                     onChange={(e) => setSelectedDate(e.target.value)}
-                    className="yc-field"
+                    className="sd-input"
                   />
                 </div>
               </div>
-              <div className="yc-open-foot">
-                <button type="button" className="yc-ghost" onClick={() => setShowOpenModal(false)}>Vazgeç</button>
-                <div style={{ display: 'flex', gap: 8 }}>
+              <div className="sd-dialog-foot">
+                <button type="button" className="sd-btn" onClick={() => setShowOpenModal(false)}>Vazgeç</button>
+                <div className="sd-dialog-foot-actions">
                   {openType === 'PERIOD' && PERIYOT_OPTIONS.some(p => !p.disabled) && (
-                    <button type="button" className="yc-ghost" onClick={handleOpenAllPeriods}>
-                      Hepsini aç
-                    </button>
+                    <button type="button" className="sd-btn" onClick={handleOpenAllPeriods}>Hepsini aç</button>
                   )}
-                  <button type="button" className="yc-btn save" onClick={handleOpenSession}>
-                    Başla
-                  </button>
+                  <button type="button" className="sd-btn sd-btn-primary" onClick={handleOpenSession}>Başla</button>
                 </div>
               </div>
             </div>
@@ -1893,7 +1747,7 @@ function YoklamaTab({
       {/* ═══ YOKLAMA KAĞIDI MODALı ═══ */}
       {showSheet && (
         <PortalModal>
-          <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) { setShowSheet(false); setSheetData(null); } }}>
+          <div className="sd-overlay" style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) { setShowSheet(false); setSheetData(null); } }}>
             <div style={{ ...modalBoxStyle(1200), maxHeight: '94vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
               <div style={modalHeaderStyle}>
                 <div>
@@ -1935,13 +1789,13 @@ function YoklamaTab({
                       </button>
                     ))}
                   </div>
-                  <button onClick={() => handleDownloadAttendanceExport('xlsx')} disabled={sheetExportFormat !== null} style={actionBtn('#15803d', '#f0fdf4')}>
-                    {sheetExportFormat === 'xlsx' ? '⏳ Hazırlanıyor…' : '📥 Excel'}
+                  <button type="button" className="sd-btn sd-btn-sm" onClick={() => handleDownloadAttendanceExport('xlsx')} disabled={sheetExportFormat !== null}>
+                    {sheetExportFormat === 'xlsx' ? 'Hazırlanıyor…' : 'Excel'}
                   </button>
-                  <button onClick={() => handleDownloadAttendanceExport('csv')} disabled={sheetExportFormat !== null} style={actionBtn('#15803d', '#f0fdf4')}>
-                    {sheetExportFormat === 'csv' ? '⏳ Hazırlanıyor…' : '📥 CSV'}
+                  <button type="button" className="sd-btn sd-btn-sm" onClick={() => handleDownloadAttendanceExport('csv')} disabled={sheetExportFormat !== null}>
+                    {sheetExportFormat === 'csv' ? 'Hazırlanıyor…' : 'CSV'}
                   </button>
-                  <button onClick={handleDownloadPDF} style={actionBtn('#0369a1', '#f0f9ff')}>📄 PDF / Yazdır</button>
+                  <button type="button" className="sd-btn sd-btn-sm" onClick={handleDownloadPDF}>PDF / Yazdır</button>
                   <button onClick={() => { setShowSheet(false); setSheetData(null); }} style={closeBtnStyle}>✕</button>
                 </div>
               </div>
@@ -2166,7 +2020,7 @@ function YoklamaTab({
       {/* ═══ HAFTALIK ÖZET MODALı ═══ */}
       {showWeekly && (
         <PortalModal>
-          <div style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) { setShowWeekly(false); setWeeklyData(null); } }}>
+          <div className="sd-overlay" style={overlayStyle} onClick={(e) => { if (e.target === e.currentTarget) { setShowWeekly(false); setWeeklyData(null); } }}>
             <div style={{ ...modalBoxStyle(800), maxHeight: '82vh', display: 'flex', flexDirection: 'column' }} onClick={(e) => e.stopPropagation()}>
               <div style={modalHeaderStyle}>
                 <div>
@@ -2198,12 +2052,13 @@ function YoklamaTab({
                           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '8px', padding: '12px' }}>
                             {gun.oturumlar.map(s => (
                               <div key={s.id} style={{
-                                padding: '10px 14px', backgroundColor: s.durum === 'OPEN' ? '#f0fdf4' : '#f9fafb',
-                                borderRadius: '8px', border: '1px solid #e5e7eb',
+                                padding: '10px 12px', backgroundColor: '#fff',
+                                borderRadius: 8, border: '1px solid #e6e9ee',
+                                borderLeft: s.durum === 'OPEN' ? '3px solid #067647' : '3px solid #d5dbe3',
                               }}>
-                                <div style={{ fontSize: '13px', fontWeight: 600 }}>
+                                <div style={{ fontSize: 13, fontWeight: 650 }}>
                                   {s.oturum_adi}
-                                  {s.ders_no && <span style={{ color: '#6366f1', marginLeft: 4, fontSize: '11px' }}>D{s.ders_no}</span>}
+                                  {s.ders_no && <span style={{ color: '#0061a6', marginLeft: 4, fontSize: 12 }}>{s.ders_no}. ders</span>}
                                 </div>
                                 <div style={{ fontSize: '11px', color: '#6b7280', marginTop: 2 }}>
                                   {s.toplam_kayit != null && `${s.toplam_kayit} öğrenci`}
@@ -2263,26 +2118,21 @@ function AtamalarTab({ seatAssignments, salonAdi, subeAdi, kurumBranding, onEnd 
 
   return (
     <div>
-      <Card style={{ padding: '16px 20px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', gap: '16px', fontSize: '13px' }}>
-            <span style={{ fontWeight: 600, color: '#374151' }}>{seatAssignments.length} toplam atama</span>
-            <span style={{ color: '#059669' }}>● {activeAssignments.length} aktif</span>
-            <span style={{ color: '#6b7280' }}>● {pastAssignments.length} geçmiş</span>
-          </div>
-          <button onClick={handlePrintList} style={{
-            padding: '6px 14px', backgroundColor: '#f0fdf4', color: '#059669',
-            borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-          }}>
-            📄 PDF Listesi
-          </button>
+      <Card style={{ padding: '12px 14px', marginBottom: 12 }}>
+        <div className="sd-toolbar">
+          <span className="sd-count">
+            <b>{seatAssignments.length}</b> atama
+            <span style={{ color: '#067647' }}> · {activeAssignments.length} aktif</span>
+            <span> · {pastAssignments.length} geçmiş</span>
+          </span>
+          <button type="button" className="sd-btn sd-btn-sm" onClick={handlePrintList}>PDF listesi</button>
         </div>
       </Card>
 
       {seatAssignments.length === 0 ? (
-        <EmptyState icon="🔗" title="Henüz masa ataması yok" description="Öğrenciler masalara atandığında burada görünecektir" />
+        <EmptyState title="Henüz masa ataması yok" description="Öğrenciler masalara atandığında burada görünecektir" />
       ) : (
-        <Card style={{ overflow: 'hidden' }}>
+        <Card className="sd-table-card">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -2313,7 +2163,7 @@ function AtamalarTab({ seatAssignments, salonAdi, subeAdi, kurumBranding, onEnd 
                     </td>
                     <td style={{ ...tdStyle, textAlign: 'right' }}>
                       {isActive && (
-                        <button onClick={() => onEnd(a.id)} style={actionBtn('#d97706', '#fffbeb')}>Sonlandır</button>
+                        <button type="button" className="sd-btn sd-btn-sm sd-btn-danger" onClick={() => onEnd(a.id)}>Sonlandır</button>
                       )}
                     </td>
                   </tr>
@@ -2324,16 +2174,10 @@ function AtamalarTab({ seatAssignments, salonAdi, subeAdi, kurumBranding, onEnd 
         </Card>
       )}
 
-      <div style={{ marginTop: '16px' }}>
-        <Card style={{ padding: '14px 20px', borderColor: '#bae6fd', backgroundColor: '#f0f9ff' }}>
-          <div style={{ fontSize: '13px', color: '#0c4a6e' }}>
-            💡 Dolap atamaları kurum genelinde yönetilmektedir.{' '}
-            <Link href={href('atamalar')} style={{ color: '#1d4ed8', fontWeight: 600, textDecoration: 'none' }}>
-              Atamalar sayfasına git →
-            </Link>
-          </div>
-        </Card>
-      </div>
+      <p className="sd-note-bar">
+        Dolap atamaları kurum genelinde yönetilir.{' '}
+        <Link href={href('atamalar')}>Atamalar sayfasına git</Link>
+      </p>
     </div>
   );
 }
@@ -2369,34 +2213,29 @@ function LoglarTab({ logs }: { logs: AuditLog[] }) {
 
   return (
     <div>
-      {/* Toolbar */}
-      <Card style={{ padding: '16px 20px', marginBottom: '16px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>{logs.length} kayıt</span>
-            <div style={{ display: 'flex', gap: '6px' }}>
-              {Object.entries(stats).map(([action, count]) => {
-                const info = LOG_ACTION_LABELS[action] || { label: action, icon: '•', color: '#6b7280', bg: '#f3f4f6' };
-                return <Badge key={action} label={`${info.icon} ${count}`} color={info.color} bg={info.bg} />;
-              })}
-            </div>
+      <Card style={{ padding: '12px 14px', marginBottom: 12 }}>
+        <div className="sd-toolbar">
+          <div className="sd-inline">
+            <span className="sd-count"><b>{logs.length}</b> kayıt</span>
+            {Object.entries(stats).map(([action, count]) => {
+              const info = LOG_ACTION_LABELS[action] || { label: action, icon: '', color: '#5c6778', bg: '#f6f7f9' };
+              return <Badge key={action} label={`${info.label} ${count}`} color={info.color} bg={info.bg} />;
+            })}
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
+          <div className="sd-inline">
             <input
-              type="text"
-              placeholder="🔍 Ara..."
+              className="sd-input"
+              type="search"
+              placeholder="Ara"
+              aria-label="İşlem geçmişinde ara"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '7px', fontSize: '12px', width: 160 }}
+              style={{ width: 180 }}
             />
-            <select
-              value={filterAction}
-              onChange={e => setFilterAction(e.target.value)}
-              style={{ padding: '6px 10px', border: '1px solid #d1d5db', borderRadius: '7px', fontSize: '12px' }}
-            >
-              <option value="ALL">Tüm İşlemler</option>
+            <select className="sd-input" style={{ width: 'auto' }} value={filterAction} onChange={e => setFilterAction(e.target.value)} aria-label="İşlem türü">
+              <option value="ALL">Tüm işlemler</option>
               {Object.entries(LOG_ACTION_LABELS).map(([k, v]) => (
-                <option key={k} value={k}>{v.icon} {v.label}</option>
+                <option key={k} value={k}>{v.label}</option>
               ))}
             </select>
           </div>
@@ -2404,50 +2243,28 @@ function LoglarTab({ logs }: { logs: AuditLog[] }) {
       </Card>
 
       {filteredLogs.length === 0 ? (
-        <EmptyState icon="📝" title="İşlem geçmişi bulunamadı" description={logs.length > 0 ? 'Filtreleri değiştirerek tekrar deneyin' : 'Henüz log kaydı yok'} />
+        <EmptyState title="İşlem geçmişi bulunamadı" description={logs.length > 0 ? 'Filtreleri değiştirerek tekrar deneyin' : 'Henüz kayıt yok'} />
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        <div className="sd-list">
           {filteredLogs.map(log => {
-            const info = LOG_ACTION_LABELS[log.action] || { label: log.action, icon: '•', color: '#6b7280', bg: '#f3f4f6' };
+            const info = LOG_ACTION_LABELS[log.action] || { label: log.action, icon: '', color: '#5c6778', bg: '#f6f7f9' };
+            const dateStr = log.performed_at || log.created_at;
+            const when = !dateStr ? '—' : (() => {
+              const d = new Date(dateStr);
+              return isNaN(d.getTime()) ? '—' : d.toLocaleString('tr-TR');
+            })();
             return (
-              <Card key={log.id} hover style={{ padding: '14px 20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', flex: 1 }}>
-                    <div style={{
-                      width: 34, height: 34, borderRadius: 8,
-                      backgroundColor: info.bg, color: info.color,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '14px', flexShrink: 0,
-                    }}>
-                      {info.icon}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                        <Badge label={info.label} color={info.color} bg={info.bg} />
-                        <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>{log.entity_type}</span>
-                      </div>
-                      {log.description && (
-                        <div style={{ fontSize: '12px', color: '#6b7280', marginTop: '2px' }}>
-                          {log.description}
-                        </div>
-                      )}
-                      {log.performed_by && (
-                        <div style={{ fontSize: '11px', color: '#9ca3af', marginTop: '2px' }}>
-                          👤 {log.performed_by}
-                        </div>
-                      )}
-                    </div>
+              <div key={log.id} className="sd-list-row sd-log-row">
+                <div className="sd-log-main">
+                  <div className="sd-inline">
+                    <Badge label={info.label} color={info.color} bg={info.bg} />
+                    <strong style={{ fontSize: 13 }}>{log.entity_type}</strong>
                   </div>
-                  <span style={{ fontSize: '11px', color: '#9ca3af', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    {(() => {
-                      const dateStr = log.performed_at || log.created_at;
-                      if (!dateStr) return '—';
-                      const d = new Date(dateStr);
-                      return isNaN(d.getTime()) ? '—' : d.toLocaleString('tr-TR');
-                    })()}
-                  </span>
+                  {log.description && <span className="sd-log-desc">{log.description}</span>}
+                  {log.performed_by && <span className="sd-log-desc">{log.performed_by}</span>}
                 </div>
-              </Card>
+                <time className="sd-log-time">{when}</time>
+              </div>
             );
           })}
         </div>
@@ -2460,34 +2277,26 @@ function LoglarTab({ logs }: { logs: AuditLog[] }) {
    PAYLAŞILAN MODAL STİLLERİ
    ════════════════════════════════════════════════════════════ */
 const overlayStyle: React.CSSProperties = {
-  position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.45)',
-  zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px',
+  position: 'fixed', inset: 0, backgroundColor: 'rgba(22, 28, 36, 0.36)',
+  zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px',
 };
 
 function modalBoxStyle(maxWidth: number): React.CSSProperties {
   return {
-    backgroundColor: '#fff', borderRadius: '16px', width: '100%',
-    maxWidth, boxShadow: '0 20px 60px rgba(0,0,0,0.18)',
+    backgroundColor: '#fff', borderRadius: 12, width: '100%',
+    maxWidth, boxShadow: '0 16px 40px rgba(16, 24, 40, 0.14)',
   };
 }
 
 const modalHeaderStyle: React.CSSProperties = {
-  padding: '18px 24px', borderBottom: '1px solid #e5e7eb',
-  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+  padding: '16px 18px', borderBottom: '1px solid #e6e9ee',
+  display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap',
 };
 
 const modalFooterStyle: React.CSSProperties = {
-  padding: '14px 24px', borderTop: '1px solid #e5e7eb',
-  backgroundColor: '#f9fafb', display: 'flex', justifyContent: 'flex-end', gap: '8px',
-  borderRadius: '0 0 16px 16px',
-};
-
-const modalLabel: React.CSSProperties = {
-  fontSize: '12px', fontWeight: 600, color: '#374151', marginBottom: '6px', display: 'block',
-};
-
-const modalSelectStyle: React.CSSProperties = {
-  width: '100%', padding: '9px 12px', border: '1px solid #d1d5db', borderRadius: '8px', fontSize: '13px',
+  padding: '12px 18px', borderTop: '1px solid #e6e9ee',
+  backgroundColor: '#fff', display: 'flex', justifyContent: 'flex-end', gap: 8,
+  borderRadius: '0 0 12px 12px',
 };
 
 const closeBtnStyle: React.CSSProperties = {
@@ -2495,16 +2304,3 @@ const closeBtnStyle: React.CSSProperties = {
   width: 32, height: 32, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
 };
 
-function toolbarBtn(color: string, bg: string, border: string): React.CSSProperties {
-  return {
-    padding: '7px 14px', backgroundColor: bg, color,
-    borderRadius: '8px', border: `1px solid ${border}`, fontSize: '12px', fontWeight: 500, cursor: 'pointer',
-  };
-}
-
-function actionBtn(color: string, bg: string): React.CSSProperties {
-  return {
-    padding: '5px 12px', backgroundColor: bg, color,
-    borderRadius: '6px', border: 'none', fontSize: '12px', fontWeight: 500, cursor: 'pointer',
-  };
-}

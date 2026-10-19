@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { API_BASE, apiHeaders, parseApiError, postHeaders } from "../helpers";
 
 type Satir = {
@@ -333,7 +334,9 @@ export default function FaturaModal({
     ? new Date(data.tahsilat_tarihi).toLocaleDateString("tr-TR")
     : "";
 
-  return (
+  if (typeof document === "undefined") return null;
+
+  return createPortal(
     <div className="fatura-overlay" onClick={onClose}>
       <style>{MODAL_CSS}</style>
       <div className="fatura-dialog" onClick={(event) => event.stopPropagation()} role="dialog" aria-modal="true" aria-labelledby="fatura-baslik">
@@ -517,13 +520,14 @@ export default function FaturaModal({
           )}
         </footer>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
 const MODAL_CSS = `
-.fatura-overlay { position: fixed; inset: 0; z-index: 80; background: rgba(15,23,42,.48); display: flex; align-items: center; justify-content: center; padding: 16px; }
-.fatura-dialog { width: min(880px, 100%); max-height: min(92vh, 900px); display: flex; flex-direction: column; background: #fff; border-radius: 20px; box-shadow: 0 24px 60px rgba(15,23,42,.22); overflow: hidden; color: #0f172a; }
+.fatura-overlay { position: fixed; inset: 0; z-index: 4000; background: rgba(15,23,42,.48); display: flex; align-items: center; justify-content: center; padding: 16px; }
+.fatura-dialog { width: min(880px, calc(100vw - 32px)); max-height: min(92vh, 900px); display: flex; flex-direction: column; background: #fff; border-radius: 16px; box-shadow: 0 24px 60px rgba(15,23,42,.22); overflow: hidden; color: #0f172a; }
 .fatura-head { display: flex; justify-content: space-between; gap: 16px; padding: 18px 22px 14px; border-bottom: 1px solid #eef2f7; }
 .fatura-kicker { margin: 0 0 4px; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #0262a7; }
 .fatura-head h2 { margin: 0; font-size: 22px; line-height: 1.2; }
@@ -577,7 +581,10 @@ const MODAL_CSS = `
 .fatura-foot .primary:disabled, .fatura-foot .danger:disabled { opacity: .55; cursor: not-allowed; }
 @media (max-width: 720px) {
   .fatura-buyer { grid-template-columns: 1fr; }
-  .fatura-section-head, .fatura-total, .fatura-head { flex-direction: column; }
+  .fatura-controls { grid-template-columns: 1fr; }
+  .fatura-section-head, .fatura-total, .fatura-head, .fatura-foot { flex-direction: column; align-items: stretch; }
   .fatura-line-name { flex-direction: column; gap: 2px; }
+  .fatura-foot-spacer { display: none; }
+  .fatura-tools { flex-wrap: wrap; }
 }
 `;

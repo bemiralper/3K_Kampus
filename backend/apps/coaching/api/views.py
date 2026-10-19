@@ -49,7 +49,8 @@ def sync_coaches_from_gorevlendirme(kurum_id=None, egitim_yili_id=None):
     # Koç rolündeki görevlendirmeleri bul
     queryset = PersonelGorevlendirme.objects.filter(
         rol__code='koc',
-        aktif_mi=True
+        aktif_mi=True,
+        personel__aktif_mi=True,
     ).select_related('personel')
     
     if kurum_id:
@@ -118,7 +119,7 @@ class CoachViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         """Filtreleme ve optimizasyon"""
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().filter(teacher__aktif_mi=True)
         
         # is_active filtresi
         is_active = self.request.query_params.get('is_active')
@@ -168,6 +169,7 @@ class CoachViewSet(viewsets.ModelViewSet):
                 kurum_id=ctx['kurum_id'],
                 gorev_sube_id=ctx['sube_id'],
                 aktif_mi=True,
+                personel__aktif_mi=True,
             ).values_list('personel_id', flat=True)
             queryset = queryset.filter(
                 Q(id__in=coach_ids_in_sube) | Q(teacher_id__in=personel_ids)

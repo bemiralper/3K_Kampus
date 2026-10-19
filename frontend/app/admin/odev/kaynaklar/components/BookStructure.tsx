@@ -157,7 +157,7 @@ function InlineQuestionCount({
             width: 56,
             padding: "2px 6px",
             fontSize: 12,
-            border: "1px solid #8b5cf6",
+            border: "1px solid #0061a6",
             borderRadius: 6,
             outline: "none",
           }}
@@ -259,7 +259,7 @@ function InlineContentAd({
           maxWidth: 260,
           padding: "2px 8px",
           fontSize: 13,
-          border: "1px solid #8b5cf6",
+          border: "1px solid #0061a6",
           borderRadius: 6,
           outline: "none",
         }}
@@ -435,26 +435,17 @@ export function BookStructure(props: BookStructureProps) {
     opts?: { variant?: "primary" | "danger" | "neutral" | "teal"; disabled?: boolean },
   ) => {
     const variant = opts?.variant || "neutral";
-    const styles: Record<string, React.CSSProperties> = {
-      primary: { background: "#0061a6", color: "#fff", border: "1px solid #0061a6" },
-      teal: { background: "#0f766e", color: "#fff", border: "1px solid #0f766e" },
-      danger: { background: "#dc2626", color: "#fff", border: "1px solid #dc2626" },
-      neutral: { background: "#fff", color: "#0f172a", border: "1px solid #cbd5e1" },
-    };
+    const variantClass = variant === "primary" || variant === "teal"
+      ? " kk-st-btn--primary"
+      : variant === "danger"
+        ? " kk-st-btn--danger"
+        : "";
     return (
       <button
         type="button"
         disabled={opts?.disabled || busyAction}
         onClick={onClick}
-        style={{
-          ...styles[variant],
-          borderRadius: 8,
-          padding: "8px 14px",
-          cursor: opts?.disabled || busyAction ? "not-allowed" : "pointer",
-          fontSize: 13,
-          fontWeight: 700,
-          opacity: opts?.disabled || busyAction ? 0.6 : 1,
-        }}
+        className={`kk-st-btn kk-st-btn--sm${variantClass}`}
       >
         {label}
       </button>
@@ -627,142 +618,84 @@ export function BookStructure(props: BookStructureProps) {
   })();
 
   return (
-    <div
-      className={fullPage ? "kk-structure-fullpage" : undefined}
-      style={{
-      background: "white",
-      borderRadius: fullPage ? 16 : 12,
-      border: "1px solid #e2e8f0",
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column",
-      height: fullPage ? "calc(100vh - 88px)" : "calc(100vh - 260px)",
-      minHeight: fullPage ? 520 : undefined,
-    }}>
-      {/* Book Header */}
-      <div style={{ padding: 20, borderBottom: "1px solid #e2e8f0", background: "#f8fafc", flexShrink: 0 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "start" }}>
+    <div className={`kk-st${fullPage ? " kk-structure-fullpage" : ""}`}>
+      <div className="kk-st-head">
+        <div className="kk-st-head-row">
           <div style={{ flex: 1, minWidth: 0 }}>
-            <h2 style={{ margin: "0 0 8px", fontSize: 20 }}>{selectedBook.ad}</h2>
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <h2 className="kk-st-title">{selectedBook.ad}</h2>
+            <div className="kk-st-meta">
               <span className={`badge ${getBookTypeBadgeClass(selectedBook.book_type_renk)}`}>{selectedBook.book_type_display}</span>
               <span className="badge badge-secondary">{selectedBook.ders_ad}</span>
               <span className="badge badge-secondary">
                 {selectedBook.sinif_seviyeleri_ad || selectedBook.sinif_seviyesi_ad}
               </span>
               {selectedBook.zorluk_display && (
-                <span style={{ display: "inline-block", padding: "4px 8px", borderRadius: 4, fontSize: 12, fontWeight: 600, background: "#fef3c7", color: "#92400e" }}>
-                  📊 Zorluk: {selectedBook.zorluk_display}
-                </span>
+                <span className="kk-st-chip">Zorluk: {selectedBook.zorluk_display}</span>
               )}
               {selectedBook.yayinevi && <span className="badge badge-light">{selectedBook.yayinevi}</span>}
               {selectedBook.icerik_tamamlandi_mi && <BookContentCompleteBadge />}
-              <span
-                style={{
-                  display: "inline-block",
-                  padding: "4px 10px",
-                  borderRadius: 4,
-                  fontSize: 12,
-                  fontWeight: 700,
-                  background: "#ecfdf5",
-                  color: "#047857",
-                  border: "1px solid #a7f3d0",
-                }}
-                title="Kitaptaki tüm aktif içeriklerin soru sayısı toplamı"
-              >
-                📝 {totalQuestionCount.toLocaleString("tr-TR")} soru
+              <span className="kk-st-chip" title="Kitaptaki tüm aktif içeriklerin soru sayısı toplamı">
+                {totalQuestionCount.toLocaleString("tr-TR")} soru
               </span>
             </div>
           </div>
-          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
-            <button
-              onClick={openUsersDrawer}
-              style={{ background: "#ecfdf5", border: "1px solid #a7f3d0", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, color: "#047857" }}
-              title="Bu kaynağı kullanan öğrencileri göster"
-            >
-              👥 Kullanan Öğrenciler
+          <div className="kk-st-actions">
+            <button type="button" className="kk-st-btn" onClick={openUsersDrawer} title="Bu kaynağı kullanan öğrencileri göster">
+              Kullanan öğrenciler
             </button>
             {!readOnly && (
               <>
-                <button onClick={() => onDuplicateBook(selectedBook)} style={{ background: "#dbeafe", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, color: "#2563eb" }} title="Kitabı kopyala">
-                  📋 Kopyala
+                <button type="button" className="kk-st-btn" onClick={() => onDuplicateBook(selectedBook)} title="Kitabı kopyala">
+                  Kopyala
                 </button>
-                <button onClick={() => onEditBook(selectedBook)} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14 }}>
-                  ✏️ Düzenle
+                <button type="button" className="kk-st-btn kk-st-btn--primary" onClick={() => onEditBook(selectedBook)}>
+                  Düzenle
                 </button>
-                <button onClick={() => onDeleteBook(selectedBook.id)} style={{ background: "#fee2e2", border: "none", borderRadius: 8, padding: "8px 16px", cursor: "pointer", fontSize: 14, color: "#dc2626" }}>
-                  🗑️ Sil
+                <button type="button" className="kk-st-btn kk-st-btn--danger" onClick={() => onDeleteBook(selectedBook.id)}>
+                  Sil
                 </button>
               </>
             )}
             <button
+              type="button"
+              className="kk-st-btn"
               onClick={onClose}
-              style={{
-                background: fullPage ? "#e0f2fe" : "#f1f5f9",
-                border: fullPage ? "1px solid #bae6fd" : "none",
-                borderRadius: 8,
-                padding: "8px 16px",
-                cursor: "pointer",
-                fontSize: 14,
-                fontWeight: fullPage ? 600 : 400,
-                color: fullPage ? "#0369a1" : undefined,
-              }}
               title={fullPage ? "Kitap listesine dön" : "Kapat"}
             >
-              {fullPage ? "← Listeye dön" : "✕"}
+              {fullPage ? "Listeye dön" : "Kapat"}
             </button>
           </div>
         </div>
       </div>
 
-      {/* Toolbar */}
-      <div style={{ padding: "12px 20px", borderBottom: "1px solid #e2e8f0", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <div className="kk-st-toolbar">
         <input
           type="text"
-          placeholder="🔍 Yapıda ara..."
+          className="kk-st-search"
+          placeholder="Yapıda ara"
+          aria-label="Yapıda ara"
           value={structureSearch}
           onChange={e => setStructureSearch(e.target.value)}
-          style={{ flex: "1 1 200px", padding: "8px 12px", border: "1px solid #e2e8f0", borderRadius: 8, fontSize: 13 }}
         />
-        <button onClick={expandAll} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-          ↕ Hepsini Aç
-        </button>
-        <button onClick={collapseAll} style={{ background: "#f1f5f9", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-          ↔ Hepsini Kapat
-        </button>
-        <div style={{ borderLeft: "1px solid #e2e8f0", height: 24 }} />
-        {!readOnly && (
-          <>
-            <button onClick={onAddUnit} style={{ background: "#667eea", color: "white", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-              + Ünite
-            </button>
-            <button onClick={onBulkUnit} style={{ background: "#10b981", color: "white", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-              📋 Toplu Ünite
-            </button>
-            <button onClick={onImport} style={{ background: "#f59e0b", color: "white", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", fontSize: 12, fontWeight: 500 }}>
-              📥 Import
-            </button>
-          </>
-        )}
+        <div className="kk-st-tools">
+          <button type="button" className="kk-st-btn kk-st-btn--sm" onClick={expandAll}>Hepsini aç</button>
+          <button type="button" className="kk-st-btn kk-st-btn--sm" onClick={collapseAll}>Hepsini kapat</button>
+          {!readOnly && (
+            <>
+              <span className="kk-st-split" aria-hidden />
+              <button type="button" className="kk-st-btn kk-st-btn--sm kk-st-btn--primary" onClick={onAddUnit}>Ünite ekle</button>
+              <button type="button" className="kk-st-btn kk-st-btn--sm" onClick={onBulkUnit}>Toplu ünite</button>
+              <button type="button" className="kk-st-btn kk-st-btn--sm" onClick={onImport}>İçe aktar</button>
+            </>
+          )}
+        </div>
       </div>
 
       {!readOnly && (selectedContentIds.length > 0 || clipboard) && (
-        <div
-          style={{
-            flexShrink: 0,
-            padding: "12px 16px",
-            borderBottom: "1px solid #93c5fd",
-            background: "linear-gradient(180deg, #dbeafe 0%, #eff6ff 100%)",
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            boxShadow: "0 2px 8px rgba(37, 99, 235, 0.12)",
-            zIndex: 5,
-          }}
-        >
+        <div className="kk-st-select">
           {selectedContentIds.length > 0 && (
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-              <strong style={{ color: "#1e3a8a", fontSize: 14 }}>
+            <div className="kk-st-tools">
+              <strong>
                 {selectedContentIds.length} içerik seçili
               </strong>
               {actionBtn("Kopyala", copySelected, { variant: "primary" })}
@@ -774,37 +707,13 @@ export function BookStructure(props: BookStructureProps) {
             </div>
           )}
           {clipboard && (
-            <div
-              style={{
-                fontSize: 13,
-                color: "#0f172a",
-                background: "#fff",
-                border: "1px solid #bfdbfe",
-                borderRadius: 8,
-                padding: "8px 12px",
-                fontWeight: 600,
-              }}
-            >
+            <div className="kk-st-clip">
               Pano: {clipboard.contentIds.length} içerik{" "}
               {clipboard.mode === "cut" ? "kesildi" : "kopyalandı"}.
-              {" "}Hedef konuyu açıp sağdaki{" "}
-              <span style={{ color: clipboard.mode === "cut" ? "#0f766e" : "#0369a1" }}>
-                {clipboard.mode === "cut" ? "Taşı" : "Yapıştır"}
-              </span>{" "}
-              butonuna tıklayın.
-              <button
-                type="button"
-                onClick={() => setClipboard(null)}
-                style={{
-                  marginLeft: 12,
-                  border: 0,
-                  background: "none",
-                  color: "#64748b",
-                  cursor: "pointer",
-                  textDecoration: "underline",
-                  fontSize: 12,
-                }}
-              >
+              {" "}Hedef konuyu açıp{" "}
+              {clipboard.mode === "cut" ? "Taşı" : "Yapıştır"}
+              {" "}düğmesine basın.
+              <button type="button" className="kk-st-linkish" onClick={() => setClipboard(null)}>
                 Panoyu temizle
               </button>
             </div>
@@ -814,53 +723,46 @@ export function BookStructure(props: BookStructureProps) {
 
       {/* Tree Content */}
       <div
+        className="kk-st-tree"
         ref={treeScrollRef}
         onScroll={(e) => { treeScrollTopRef.current = e.currentTarget.scrollTop; }}
-        style={{ flex: 1, overflowY: "auto", padding: 20 }}
       >
         {loadingStructure ? (
           <StructureSkeleton />
         ) : !sortedUnits.length ? (
-          <div style={{ textAlign: "center", padding: 40, color: "#64748b", background: "#f8fafc", borderRadius: 8 }}>
-            <span style={{ fontSize: 48, display: "block", marginBottom: 12 }}>📑</span>
-            Henüz ünite eklenmemiş
-          </div>
+          <div className="kk-st-empty">Henüz ünite eklenmemiş</div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div className="kk-st-units">
             <DragSortList
               items={sortedUnits}
               onReorder={readOnly ? () => {} : reorderUnits}
               renderItem={(unit, dragProps) => (
-                <div style={{ ...dragProps.style, border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}
-                  onDragOver={dragProps.onDragOver} onDrop={dragProps.onDrop}>
-                  {/* Unit Header */}
-                  <div
-                    style={{
-                      padding: "12px 16px",
-                      background: expandedUnits.includes(unit.id) ? "#f0f9ff" : "#f8fafc",
-                      cursor: "pointer",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    }}
-                  >
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}
-                      onClick={() => toggleUnit(unit.id)}>
+                <div
+                  className={`kk-st-unit${expandedUnits.includes(unit.id) ? " is-open" : ""}`}
+                  style={{
+                    opacity: dragProps.style.opacity,
+                    boxShadow: String(dragProps.style.borderTop || "").includes("solid") ? "inset 0 2px 0 #0061a6" : undefined,
+                  }}
+                  onDragOver={dragProps.onDragOver}
+                  onDrop={dragProps.onDrop}
+                >
+                  <div className="kk-st-unit-h">
+                    <div className="kk-st-grow" onClick={() => toggleUnit(unit.id)}>
                       {!readOnly && (
                         <span draggable onDragStart={dragProps.onDragStart} onDragEnd={dragProps.onDragEnd}>
                           <DragHandle />
                         </span>
                       )}
-                      <span style={{ transform: expandedUnits.includes(unit.id) ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.2s" }}>▶</span>
-                      <span style={{ fontWeight: 500 }}>{unit.ad}</span>
+                      <span className={`kk-st-caret${expandedUnits.includes(unit.id) ? " is-open" : ""}`}>▶</span>
+                      <span className="kk-st-name">{unit.ad}</span>
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 12, color: "#64748b" }}>{unit.topic_count || (unit.topics?.length || 0)} konu</span>
+                    <div className="kk-st-inline-actions">
+                      <span className="kk-st-count">{unit.topic_count || (unit.topics?.length || 0)} konu</span>
                       {!readOnly && (
                         <>
-                          <button onClick={(e) => { e.stopPropagation(); onEditUnit(unit); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }} title="Düzenle">✏️</button>
-                          <button onClick={(e) => { e.stopPropagation(); onDuplicateUnit(unit); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14 }} title="Üniteyi kopyala">📋</button>
-                          <button onClick={(e) => { e.stopPropagation(); onDeleteUnit(unit.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 14, opacity: 0.6 }} title="Sil">🗑️</button>
+                          <button type="button" className="kk-st-icon" onClick={(e) => { e.stopPropagation(); onEditUnit(unit); }} title="Düzenle" aria-label="Üniteyi düzenle">✏️</button>
+                          <button type="button" className="kk-st-icon" onClick={(e) => { e.stopPropagation(); onDuplicateUnit(unit); }} title="Üniteyi kopyala" aria-label="Üniteyi kopyala">📋</button>
+                          <button type="button" className="kk-st-icon" onClick={(e) => { e.stopPropagation(); onDeleteUnit(unit.id); }} title="Sil" aria-label="Üniteyi sil">🗑️</button>
                         </>
                       )}
                     </div>
@@ -868,13 +770,13 @@ export function BookStructure(props: BookStructureProps) {
 
                   {/* Topics */}
                   {expandedUnits.includes(unit.id) && (
-                    <div style={{ borderTop: "1px solid #e2e8f0" }}>
-                      <div style={{ padding: "8px 16px", background: "#fafafa", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <span style={{ fontSize: 13, fontWeight: 500, color: "#64748b" }}>Konular</span>
+                    <div className="kk-st-topics">
+                      <div className="kk-st-subbar">
+                        <span>Konular</span>
                         {!readOnly && (
-                          <div style={{ display: "flex", gap: 8 }}>
-                            <button onClick={() => onAddTopic(unit.id)} style={{ background: "#10b981", color: "white", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>+ Konu</button>
-                            <button onClick={() => onBulkTopic(unit.id, unit.ad)} style={{ background: "#6366f1", color: "white", border: "none", borderRadius: 6, padding: "4px 12px", cursor: "pointer", fontSize: 12 }}>📋 Toplu</button>
+                          <div className="kk-st-tools">
+                            <button type="button" className="kk-st-btn kk-st-btn--sm" onClick={() => onAddTopic(unit.id)}>Konu ekle</button>
+                            <button type="button" className="kk-st-btn kk-st-btn--sm" onClick={() => onBulkTopic(unit.id, unit.ad)}>Toplu konu</button>
                           </div>
                         )}
                       </div>
@@ -884,43 +786,33 @@ export function BookStructure(props: BookStructureProps) {
                           items={[...(unit.topics || [])].sort((a, b) => a.sira - b.sira)}
                           onReorder={readOnly ? () => {} : reorderTopics}
                           renderItem={(topic, tDragProps) => (
-                            <div style={{ ...tDragProps.style, borderTop: "1px solid #e2e8f0" }}
-                              onDragOver={tDragProps.onDragOver} onDrop={tDragProps.onDrop}>
-                              {/* Topic Header */}
-                              <div
-                                style={{
-                                  padding: "10px 16px 10px 32px",
-                                  cursor: "pointer",
-                                  display: "flex",
-                                  justifyContent: "space-between",
-                                  alignItems: "center",
-                                  background: expandedTopics.includes(topic.id) ? "#f0fdf4" : "white",
-                                }}
-                              >
-                                <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}
-                                  onClick={() => toggleTopic(topic.id)}>
+                            <div
+                              className={`kk-st-topic${expandedTopics.includes(topic.id) ? " is-open" : ""}`}
+                              style={{
+                                opacity: tDragProps.style.opacity,
+                                boxShadow: String(tDragProps.style.borderTop || "").includes("solid") ? "inset 0 2px 0 #0061a6" : undefined,
+                              }}
+                              onDragOver={tDragProps.onDragOver}
+                              onDrop={tDragProps.onDrop}
+                            >
+                              <div className="kk-st-topic-h">
+                                <div className="kk-st-grow" onClick={() => toggleTopic(topic.id)}>
                                   {!readOnly && (
                                     <span draggable onDragStart={tDragProps.onDragStart} onDragEnd={tDragProps.onDragEnd}>
                                       <DragHandle />
                                     </span>
                                   )}
-                                  <span style={{ transform: expandedTopics.includes(topic.id) ? "rotate(90deg)" : "rotate(0)", transition: "transform 0.2s", fontSize: 12 }}>▶</span>
-                                  <span style={{ fontSize: 14 }}>{topic.ad}</span>
+                                  <span className={`kk-st-caret${expandedTopics.includes(topic.id) ? " is-open" : ""}`}>▶</span>
+                                  <span>{topic.ad}</span>
                                 </div>
-                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                  <span style={{ fontSize: 11, color: "#64748b" }}>{topic.content_count || (topic.contents?.length || 0)} içerik</span>
+                                <div className="kk-st-inline-actions">
+                                  <span className="kk-st-count">{topic.content_count || (topic.contents?.length || 0)} içerik</span>
                                   {!readOnly && (
                                     <>
-                                      <button onClick={(e) => { e.stopPropagation(); onEditTopic(unit.id, topic); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }} title="Düzenle">✏️</button>
-                                      <button onClick={(e) => { e.stopPropagation(); onDuplicateTopic(topic); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }} title="Konuyu kopyala">📋</button>
-                                      <button
-                                        onClick={(e) => { e.stopPropagation(); openMoveTopic(unit.id, topic); }}
-                                        style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: "#0f766e" }}
-                                        title="Başka üniteye taşı / kopyala"
-                                      >
-                                        ↗
-                                      </button>
-                                      <button onClick={(e) => { e.stopPropagation(); onDeleteTopic(topic.id); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.6 }} title="Sil">🗑️</button>
+                                      <button type="button" className="kk-st-icon" onClick={(e) => { e.stopPropagation(); onEditTopic(unit.id, topic); }} title="Düzenle" aria-label="Konuyu düzenle">✏️</button>
+                                      <button type="button" className="kk-st-icon" onClick={(e) => { e.stopPropagation(); onDuplicateTopic(topic); }} title="Konuyu kopyala" aria-label="Konuyu kopyala">📋</button>
+                                      <button type="button" className="kk-st-icon" onClick={(e) => { e.stopPropagation(); openMoveTopic(unit.id, topic); }} title="Başka üniteye taşı veya kopyala" aria-label="Konuyu taşı">↗</button>
+                                      <button type="button" className="kk-st-icon" onClick={(e) => { e.stopPropagation(); onDeleteTopic(topic.id); }} title="Sil" aria-label="Konuyu sil">🗑️</button>
                                     </>
                                   )}
                                 </div>
@@ -928,35 +820,24 @@ export function BookStructure(props: BookStructureProps) {
 
                               {/* Contents */}
                               {expandedTopics.includes(topic.id) && (
-                                <div style={{ background: "#fafafa", borderTop: "1px solid #e2e8f0" }}>
-                                  <div style={{ padding: "6px 16px 6px 48px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                                    <span style={{ fontSize: 12, fontWeight: 500, color: "#64748b" }}>İçerikler</span>
+                                <div className="kk-st-contents">
+                                  <div className="kk-st-subbar">
+                                    <span>İçerikler</span>
                                     {!readOnly && (
-                                      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                      <div className="kk-st-tools">
                                         {clipboard && (
                                           <button
                                             type="button"
+                                            className="kk-st-btn kk-st-btn--sm kk-st-btn--primary"
                                             onClick={() => { void pasteIntoTopic(topic.id); }}
                                             disabled={busyAction}
-                                            style={{
-                                              background: clipboard.mode === "cut" ? "#0f766e" : "#0369a1",
-                                              color: "white",
-                                              border: "2px solid #fff",
-                                              boxShadow: "0 0 0 2px " + (clipboard.mode === "cut" ? "#0f766e" : "#0369a1"),
-                                              borderRadius: 8,
-                                              padding: "6px 12px",
-                                              cursor: busyAction ? "wait" : "pointer",
-                                              fontSize: 12,
-                                              fontWeight: 800,
-                                              animation: "kkPulse 1.4s ease-in-out infinite",
-                                            }}
                                             title={clipboard.mode === "cut" ? "Kesilen içerikleri buraya taşı" : "Kopyalanan içerikleri buraya yapıştır"}
                                           >
-                                            {clipboard.mode === "cut" ? `⬇ Taşı (${clipboard.contentIds.length})` : `⬇ Yapıştır (${clipboard.contentIds.length})`}
+                                            {clipboard.mode === "cut" ? `Taşı (${clipboard.contentIds.length})` : `Yapıştır (${clipboard.contentIds.length})`}
                                           </button>
                                         )}
-                                        <button onClick={() => onBulkTest(topic.id, topic.ad)} style={{ background: "#f59e0b", color: "white", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11 }}>⚡ Toplu Test</button>
-                                        <button onClick={() => onAddContent(topic.id)} style={{ background: "#8b5cf6", color: "white", border: "none", borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontSize: 11 }}>+ İçerik</button>
+                                        <button type="button" className="kk-st-btn kk-st-btn--sm" onClick={() => onBulkTest(topic.id, topic.ad)}>Toplu test</button>
+                                        <button type="button" className="kk-st-btn kk-st-btn--sm kk-st-btn--primary" onClick={() => onAddContent(topic.id)}>İçerik ekle</button>
                                       </div>
                                     )}
                                   </div>
@@ -970,20 +851,15 @@ export function BookStructure(props: BookStructureProps) {
                                         const isCutPending = clipboard?.mode === "cut" && clipboard.contentIds.includes(content.id);
                                         return (
                                         <div
+                                          className={`kk-st-content${isSelected ? " is-selected" : ""}${isCutPending ? " is-cut" : ""}`}
                                           style={{
-                                            ...cDragProps.style,
-                                            padding: "8px 16px 8px 48px",
-                                            borderTop: "1px solid #e2e8f0",
-                                            display: "flex",
-                                            justifyContent: "space-between",
-                                            alignItems: "center",
-                                            background: isSelected ? "#eff6ff" : "white",
-                                            opacity: isCutPending ? 0.55 : 1,
+                                            opacity: cDragProps.style.opacity,
+                                            boxShadow: String(cDragProps.style.borderTop || "").includes("solid") ? "inset 0 2px 0 #0061a6" : undefined,
                                           }}
                                           onDragOver={cDragProps.onDragOver}
                                           onDrop={cDragProps.onDrop}
                                         >
-                                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                          <div className="kk-st-grow">
                                             {!readOnly && (
                                               <>
                                                 <input
@@ -992,14 +868,14 @@ export function BookStructure(props: BookStructureProps) {
                                                   onChange={() => toggleContentSelected(content.id)}
                                                   onClick={(e) => e.stopPropagation()}
                                                   title="Seç — Kopyala / Kes / Sil için"
-                                                  style={{ width: 16, height: 16, cursor: "pointer", accentColor: "#0061a6" }}
+                                                  aria-label={`${content.ad} seç`}
                                                 />
                                                 <span draggable onDragStart={cDragProps.onDragStart} onDragEnd={cDragProps.onDragEnd}>
                                                   <DragHandle />
                                                 </span>
                                               </>
                                             )}
-                                            <span>{CONTENT_TYPE_ICON[content.content_type] || "📌"}</span>
+                                            <span aria-hidden>{CONTENT_TYPE_ICON[content.content_type] || "•"}</span>
                                             {content.content_type === "TEST_SET" ? (
                                               <InlineContentAd
                                                 contentId={content.id}
@@ -1008,11 +884,11 @@ export function BookStructure(props: BookStructureProps) {
                                                 onSave={onUpdateContentAd}
                                               />
                                             ) : (
-                                              <span style={{ fontSize: 13 }}>{content.ad}</span>
+                                              <span>{content.ad}</span>
                                             )}
-                                            <span style={{ fontSize: 11, color: "#64748b" }}>({content.content_type_display})</span>
+                                            <span className="kk-st-type">{content.content_type_display}</span>
                                           </div>
-                                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                          <div className="kk-st-inline-actions">
                                             {content.content_type === "TEST_SET" ? (
                                               <InlineQuestionCount
                                                 contentId={content.id}
@@ -1030,15 +906,17 @@ export function BookStructure(props: BookStructureProps) {
                                               <>
                                                 {content.content_type === "TEST_SET" && (
                                                   <button
+                                                    type="button"
+                                                    className="kk-st-icon"
                                                     onClick={() => onDuplicateContent(topic.id, content)}
-                                                    style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }}
                                                     title="Testi çoğalt (numara +1)"
+                                                    aria-label="Testi çoğalt"
                                                   >
                                                     📋
                                                   </button>
                                                 )}
-                                                <button onClick={() => onEditContent(topic.id, content)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12 }}>✏️</button>
-                                                <button onClick={() => onDeleteContent(content.id)} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, opacity: 0.6 }}>🗑️</button>
+                                                <button type="button" className="kk-st-icon" onClick={() => onEditContent(topic.id, content)} title="Düzenle" aria-label="İçeriği düzenle">✏️</button>
+                                                <button type="button" className="kk-st-icon" onClick={() => onDeleteContent(content.id)} title="Sil" aria-label="İçeriği sil">🗑️</button>
                                               </>
                                             )}
                                           </div>
@@ -1047,7 +925,7 @@ export function BookStructure(props: BookStructureProps) {
                                       }}
                                     />
                                   ) : (
-                                    <div style={{ padding: "12px 16px 12px 48px", fontSize: 12, color: "#94a3b8", fontStyle: "italic" }}>İçerik bulunmuyor</div>
+                                    <div className="kk-st-none">İçerik bulunmuyor</div>
                                   )}
                                 </div>
                               )}
@@ -1055,7 +933,7 @@ export function BookStructure(props: BookStructureProps) {
                           )}
                         />
                       ) : (
-                        <div style={{ padding: "16px 32px", fontSize: 13, color: "#94a3b8", fontStyle: "italic" }}>Konu bulunmuyor</div>
+                        <div className="kk-st-none">Konu bulunmuyor</div>
                       )}
                     </div>
                   )}
@@ -1068,20 +946,10 @@ export function BookStructure(props: BookStructureProps) {
 
       {/* Summary Bar */}
       {bookStructure && (
-        <div style={{
-          flexShrink: 0,
-          padding: "10px 20px",
-          borderTop: "1px solid #e2e8f0",
-          background: "#f8fafc",
-          display: "flex",
-          gap: 20,
-          fontSize: 12,
-          color: "#64748b",
-          fontWeight: 500,
-        }}>
-          <span>📑 {bookStructure.units?.length || 0} Ünite</span>
-          <span>📝 {bookStructure.units?.reduce((s, u) => s + (u.topics?.length || 0), 0) || 0} Konu</span>
-          <span>📄 {bookStructure.units?.reduce((s, u) => s + (u.topics || []).reduce((s2, t) => s2 + (t.contents?.length || 0), 0), 0) || 0} İçerik</span>
+        <div className="kk-st-summary">
+          <span>{bookStructure.units?.length || 0} ünite</span>
+          <span>{bookStructure.units?.reduce((s, u) => s + (u.topics?.length || 0), 0) || 0} konu</span>
+          <span>{bookStructure.units?.reduce((s, u) => s + (u.topics || []).reduce((s2, t) => s2 + (t.contents?.length || 0), 0), 0) || 0} içerik</span>
         </div>
       )}
 
@@ -1126,62 +994,36 @@ export function BookStructure(props: BookStructureProps) {
 
       {usersDrawerOpen && (
         <>
-          <div
-            onClick={() => setUsersDrawerOpen(false)}
-            style={{ position: "fixed", inset: 0, background: "rgba(15,23,42,0.35)", zIndex: 1200 }}
-          />
-          <div
-            style={{
-              position: "fixed",
-              top: 0,
-              right: 0,
-              height: "100vh",
-              width: "min(420px, 100vw)",
-              background: "white",
-              zIndex: 1201,
-              display: "flex",
-              flexDirection: "column",
-              boxShadow: "-8px 0 30px rgba(0,0,0,0.15)",
-            }}
-          >
-            <div style={{ padding: "20px 24px", borderBottom: "1px solid #e2e8f0", display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div className="kk-st-shade" onClick={() => setUsersDrawerOpen(false)} />
+          <div className="kk-st-drawer" role="dialog" aria-modal="true" aria-label="Kullanan öğrenciler">
+            <div className="kk-st-drawer-h">
               <div>
-                <h3 style={{ margin: 0, fontSize: 16, fontWeight: 700 }}>👥 Kullanan Öğrenciler</h3>
-                <p style={{ margin: "4px 0 0", fontSize: 13, color: "#64748b" }}>{selectedBook.ad}</p>
+                <h3>Kullanan öğrenciler</h3>
+                <p>{selectedBook.ad}</p>
               </div>
-              <button onClick={() => setUsersDrawerOpen(false)} style={{ background: "none", border: "none", fontSize: 22, cursor: "pointer", color: "#64748b" }}>×</button>
+              <button type="button" className="kk-st-icon" onClick={() => setUsersDrawerOpen(false)} aria-label="Kapat">✕</button>
             </div>
-            <div style={{ padding: "16px 24px", overflowY: "auto", flex: 1 }}>
+            <div className="kk-st-drawer-b">
               {usersLoading ? (
-                <div style={{ color: "#64748b", fontSize: 13 }}>Yükleniyor…</div>
+                <div className="kk-st-none">Yükleniyor…</div>
               ) : usersList.length === 0 ? (
-                <div style={{ color: "#64748b", fontSize: 13 }}>Bu kaynak henüz hiçbir öğrencinin havuzunda değil.</div>
+                <div className="kk-st-none">Bu kaynak henüz hiçbir öğrencinin havuzunda değil.</div>
               ) : (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {usersList.map((u) => (
-                    <Link
-                      key={u.assignment_id}
-                      href={`/admin/odev/kaynak-havuzu/${u.student_id}`}
-                      style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        padding: "10px 12px",
-                        border: "1px solid #e2e8f0",
-                        borderRadius: 8,
-                        textDecoration: "none",
-                        color: "#0f172a",
-                      }}
-                    >
-                      <span style={{ fontWeight: 600 }}>{`${u.ad || ""} ${u.soyad || ""}`.trim() || "—"}</span>
-                      <span style={{ fontSize: 12, color: "#94a3b8" }}>→ Detay</span>
-                    </Link>
-                  ))}
-                </div>
+                usersList.map((u) => (
+                  <Link
+                    key={u.assignment_id}
+                    className="kk-st-person"
+                    href={`/admin/odev/kaynak-havuzu/${u.student_id}`}
+                  >
+                    <span>{`${u.ad || ""} ${u.soyad || ""}`.trim() || "—"}</span>
+                    <small>Detay</small>
+                  </Link>
+                ))
               )}
             </div>
-            <div style={{ padding: "14px 24px", borderTop: "1px solid #e2e8f0" }}>
-              <Link href="/admin/odev/analizler" style={{ fontSize: 13, color: "#0061a6", fontWeight: 600 }}>
-                Kaynak Analizlerinde detaylı görüntüle →
+            <div className="kk-st-drawer-f">
+              <Link href="/admin/odev/analizler">
+                Kaynak analizlerinde görüntüle
               </Link>
             </div>
           </div>

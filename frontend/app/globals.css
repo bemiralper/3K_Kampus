@@ -415,17 +415,23 @@ a {
   position: sticky;
   top: 0;
   z-index: 100;
+  min-width: 0;
+  container-type: inline-size;
+  container-name: app-topbar;
 }
 
 .topbar-left {
   display: flex;
   align-items: center;
   gap: 15px;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .sidebar-toggle-btn {
   width: 40px;
   height: 40px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -475,7 +481,30 @@ a {
 .topbar-right {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.topbar-right > .uad-wrap,
+.topbar-right > .notif-bell,
+.topbar-right > .gorev-bell,
+.topbar-right > .topbar-icon-btn,
+.topbar-right > .admin-topbar-hide-mobile {
+  flex-shrink: 0;
+}
+
+@container app-topbar (max-width: 920px) {
+  .cmd-trigger-text,
+  .cmd-trigger-kbd {
+    display: none;
+  }
+
+  .cmd-trigger-btn {
+    flex: 0 0 auto;
+    padding: 8px 10px;
+  }
 }
 
 .topbar-icon-btn {

@@ -15,7 +15,7 @@ import {
   tahsilatYontemOptions,
 } from "../lib/filterTahsilatlar";
 
-const KURUM_COLOR = "#0262a7";
+const KURUM_COLOR = "#0061a6";
 
 const cellStyle: React.CSSProperties = {
   padding: "10px 14px", textAlign: "left", fontSize: 13, borderBottom: "1px solid #f3f4f6",
@@ -79,57 +79,37 @@ export default function TahsilatlarTab({
   return (
     <div>
       {/* Üst bar */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-        <div>
-          <span style={{ fontSize: 13, fontWeight: 700, color: "#059669" }}>
-            Aktif Toplam: {formatCurrency(toplamTutar)}
-          </span>
+      <div className="ot-toolbar">
+        <div className="ot-summary">
+          <span>Aktif toplam</span>
+          <strong>{formatCurrency(toplamTutar)}</strong>
           {hasActiveFilters && (
-            <span style={{ marginLeft: 12, fontSize: 12, color: "#6b7280" }}>
-              {tahsilatlar.length} kayıt (filtrelenmiş)
-            </span>
+            <em>{tahsilatlar.length} kayıt</em>
           )}
         </div>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div className="ot-toolbar-actions">
           <button
             type="button"
+            className="ot-ghost"
             onClick={() => setShowExport(true)}
             disabled={tahsilatlar.length === 0}
-            style={{
-              padding: "8px 16px", borderRadius: 8,
-              border: "1px solid #d1d5db",
-              background: "#fff",
-              fontSize: 13, cursor: tahsilatlar.length === 0 ? "not-allowed" : "pointer",
-              color: "#374151",
-              display: "flex", alignItems: "center", gap: 6,
-              opacity: tahsilatlar.length === 0 ? 0.55 : 1,
-            }}
           >
-            ⬇ Dışa Aktar
+            Dışa aktar
           </button>
           <button
             type="button"
+            className={`ot-ghost${hasActiveFilters || showFilters ? " is-on" : ""}`}
+            aria-expanded={showFilters}
             onClick={() => setShowFilters(!showFilters)}
-            style={{
-              padding: "8px 16px", borderRadius: 8,
-              border: hasActiveFilters ? `2px solid ${KURUM_COLOR}` : "1px solid #d1d5db",
-              background: hasActiveFilters ? "#f0f7ff" : "#fff",
-              fontSize: 13, cursor: "pointer", color: "#374151",
-              display: "flex", alignItems: "center", gap: 6,
-            }}
           >
-            🔍 Filtreler {hasActiveFilters && "●"}
+            Filtreler{hasActiveFilters ? " · açık" : ""}
           </button>
         </div>
       </div>
 
-      {/* Filtre Paneli */}
       {showFilters && (
-        <div style={{
-          padding: 20, borderRadius: 12, border: "1px solid #e5e7eb", background: "#f9fafb",
-          marginBottom: 16, animation: "fadeIn .2s",
-        }}>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 14 }}>
+        <div className="ot-filter-panel">
+          <div className="ot-filters">
             {/* Öğrenci Adı */}
             <div>
               <label style={{ fontSize: 12, fontWeight: 600, color: "#6b7280", display: "block", marginBottom: 4 }}>Öğrenci Adı</label>
@@ -223,22 +203,11 @@ export default function TahsilatlarTab({
             </div>
           </div>
 
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
-            <button
-              type="button"
-              onClick={handleClearFilters}
-              style={{ padding: "8px 16px", borderRadius: 6, border: "1px solid #d1d5db", background: "#fff", fontSize: 13, cursor: "pointer" }}
-            >
+          <div className="ot-filter-actions">
+            <button type="button" className="ot-ghost" onClick={handleClearFilters}>
               Temizle
             </button>
-            <button
-              type="button"
-              onClick={() => setCurrentPage(1)}
-              style={{
-                padding: "8px 20px", borderRadius: 6, border: "none",
-                background: KURUM_COLOR, color: "#fff", fontSize: 13, fontWeight: 600, cursor: "pointer",
-              }}
-            >
+            <button type="button" className="ot-solid" onClick={() => setCurrentPage(1)}>
               Filtrele
             </button>
           </div>
@@ -247,16 +216,16 @@ export default function TahsilatlarTab({
 
       {/* Tablo */}
       {tahsilatlar.length === 0 ? (
-        <div style={{ textAlign: "center", padding: 60, color: "#9ca3af", background: "#fff", borderRadius: 12, border: "1px solid #e5e7eb" }}>
-          <div style={{ fontSize: 48, marginBottom: 12 }}>💰</div>
-          <p style={{ fontSize: 14 }}>
-            {hasActiveFilters ? "Filtrelere uygun tahsilat bulunamadı" : "Henüz tahsilat kaydı bulunmuyor"}
+        <div className="ot-empty">
+          <h4>{hasActiveFilters ? "Kayıt bulunamadı" : "Tahsilat yok"}</h4>
+          <p>
+            {hasActiveFilters ? "Filtrelere uygun tahsilat bulunamadı." : "Henüz tahsilat kaydı bulunmuyor."}
           </p>
         </div>
       ) : (
-        <div style={{ borderRadius: 12, border: "1px solid #e5e7eb", overflow: "hidden", background: "#fff" }}>
-          <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <div className="ot-panel">
+          <div className="ot-scroll">
+            <table className="ot-tahsilat">
               <thead>
                 <tr>
                   <th style={thStyle}>Tarih</th>

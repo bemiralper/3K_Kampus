@@ -3,11 +3,11 @@
 import Link from 'next/link';
 import type { Duyuru } from '@/lib/website-api';
 import { formatDateTR } from '@/lib/format-date';
-import { LANDING_COLORS } from '@/lib/landing-theme';
 import ContentBadge from '@/components/website-content/ContentBadge';
 import ContentCoverFrame from '@/components/website-content/ContentCoverFrame';
 import { CONTENT_KIND_LABEL } from '@/lib/content-labels';
 import '@/app/duyurular/content.css';
+import './public-home.css';
 
 type DuyurularSectionProps = {
   duyurular: Duyuru[];
@@ -17,21 +17,21 @@ export default function DuyurularSection({ duyurular }: DuyurularSectionProps) {
   const items = duyurular;
 
   return (
-    <section id="duyurular" className="bg-slate-50 py-16 lg:py-24 wc-scope">
-      <div className="mx-auto max-w-7xl px-4 lg:px-8">
-        <div className="mb-10 flex flex-col items-center gap-3 sm:flex-row sm:justify-between">
-          <div className="text-center sm:text-left">
-            <h2 className="text-3xl font-bold tracking-tight" style={{ color: LANDING_COLORS.navy }}>Duyurular</h2>
-            <p className="mt-2 text-slate-500">3K Kampüs&apos;ten güncel haberler</p>
+    <section id="duyurular" className="duy-home wc-scope">
+      <div className="duy-home__wrap">
+        <div className="duy-home__head">
+          <div>
+            <h2>Duyurular</h2>
+            <p className="duy-home__lead">3K Kampüs&apos;ten güncel haberler</p>
           </div>
-          <Link href="/duyurular" className="text-sm font-semibold" style={{ color: LANDING_COLORS.accent }}>
-            Tümünü Gör →
+          <Link href="/duyurular" className="duy-home__all">
+            Tümünü gör
           </Link>
         </div>
         {items.length === 0 ? (
-          <p className="text-center text-slate-500">Henüz duyuru bulunmuyor.</p>
+          <p className="duy-home__empty">Henüz duyuru bulunmuyor.</p>
         ) : (
-          <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="duy-home__grid">
             {items.map((d) => (
               <article key={d.id} className="wc-card">
                 <ContentCoverFrame
@@ -52,7 +52,7 @@ export default function DuyurularSection({ duyurular }: DuyurularSectionProps) {
                   <p className="wc-card__excerpt">{d.ozet}</p>
                   <div className="wc-card__actions">
                     <Link href={`/duyurular/${d.slug}`} className="wc-card__link">
-                      Detay →
+                      Detay
                     </Link>
                   </div>
                 </div>

@@ -513,6 +513,35 @@ class CoachStudentApiTest(TestCase):
         self.assertEqual(response.status_code, 403)
         self.assertTrue(GorusmeKaydi.objects.filter(pk=self.gorusme.id).exists())
 
+    def test_pasif_personel_koc_listesinde_gorunmez(self):
+        passive = Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Pasif',
+            soyad='Koç',
+            tc_kimlik_no='33333333333',
+            aktif_mi=False,
+        )
+        passive_cp = CoachProfile.objects.create(
+            teacher=passive,
+            capacity=10,
+            is_active=True,
+            is_coach=True,
+        )
+        CoachStudentAssignment.objects.create(
+            coach=passive_cp,
+            student=self.other_student,
+            start_date=date(2026, 1, 1),
+            is_primary=True,
+        )
+
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get(COACHES_URL)
+        self.assertEqual(response.status_code, 200)
+        ids = {row['id'] for row in response.data['data']}
+        self.assertIn(self.coach_profile.id, ids)
+        self.assertNotIn(passive_cp.id, ids)
+
     def test_coach_list_scoped_to_self(self):
         other_personel = Personel.objects.create(
             kurum=self.kurum,

@@ -636,41 +636,39 @@ export default function OdemeTakipClient() {
   }
 
   return (
-    <div className="section">
-      {/* ─── Hero Header ──────────────────────────────── */}
-      <div className="odeme-hero">
-        <div className="odeme-hero-content">
-          <div className="odeme-hero-icon">💳</div>
-          <div>
-            <h1>Sözleşme/Tahsilat</h1>
-            <div className="odeme-hero-breadcrumb">
-              <a href={portalHomeHref}>Ana Sayfa</a>
-              <span>/</span>
-              <span>Sözleşme/Tahsilat</span>
-            </div>
-          </div>
-        </div>
-      </div>
+    <div className="section ot-page">
+      <header className="ot-head">
+        <h1>Sözleşme / Tahsilat</h1>
+        <p>Öğrenci sözleşmeleri, tahsilat kayıtları ve risk raporları</p>
+        <nav className="ot-crumb" aria-label="Konum">
+          <a href={portalHomeHref}>Ana sayfa</a>
+          <span aria-hidden="true">/</span>
+          <span>Sözleşme / Tahsilat</span>
+        </nav>
+      </header>
 
-      {/* ─── Tabs (Modern Pill Style) ─────────────────── */}
-      <div className="tabs-modern">
-        {tabs.map((tab) => (
-          <a
-            key={tab.key}
-            className={`tab-modern ${activeTab === tab.key ? "active" : ""}`}
-            onClick={(e) => { e.preventDefault(); setActiveTab(tab.key); }}
-            href="#"
-          >
-            {tab.icon}
-            {tab.label}
-            {tab.key === "sozlesmeler" && sozlesmeler.length > 0 && (
-              <span className="tab-count">{sozlesmeler.length}</span>
-            )}
-            {tab.key === "tahsilatlar" && tahsilatlar.length > 0 && (
-              <span className="tab-count">{tahsilatlar.length}</span>
-            )}
-          </a>
-        ))}
+      <div className="ot-tabs" role="tablist" aria-label="Sözleşme ve tahsilat">
+        {tabs.map((tab) => {
+          const count = tab.key === "sozlesmeler"
+            ? sozlesmeler.length
+            : tab.key === "tahsilatlar"
+              ? tahsilatlar.length
+              : 0;
+          return (
+            <button
+              key={tab.key}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.key}
+              className={`ot-tab${activeTab === tab.key ? " is-active" : ""}`}
+              onClick={() => setActiveTab(tab.key)}
+            >
+              {tab.icon}
+              {tab.label}
+              {count > 0 && <span className="ot-count">{count}</span>}
+            </button>
+          );
+        })}
       </div>
 
       {/* ─── Tab Content ──────────────────────────────── */}

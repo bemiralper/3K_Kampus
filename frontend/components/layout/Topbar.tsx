@@ -1111,6 +1111,10 @@ export default function Topbar({
             display: flex;
             align-items: center;
             gap: 8px;
+            min-width: 0;
+            max-width: 280px;
+            flex: 1 1 160px;
+            overflow: hidden;
             padding: 6px 12px;
             background: var(--body-bg, #f4f7fa);
             border: 1px solid #e2e8f0;
@@ -1129,6 +1133,9 @@ export default function Topbar({
             flex-shrink: 0;
           }
           .cmd-trigger-text {
+            min-width: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
             white-space: nowrap;
           }
           .cmd-trigger-kbd {

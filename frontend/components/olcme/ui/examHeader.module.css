@@ -1,11 +1,12 @@
 /* Sınav detay başlığı — hero + quick-stats yerine tek blok */
 
 .header {
-  background: linear-gradient(135deg, #0061a6 0%, #0085e0 55%, #00a3ff 100%);
-  border-radius: 20px;
-  box-shadow: 0 10px 40px -12px rgba(0, 97, 166, 0.45);
-  color: #fff;
+  background: #fff;
+  border: 1px solid #e6e9ee;
+  border-radius: 10px;
+  color: #1a2332;
   overflow: hidden;
+  margin-bottom: 4px;
 }
 
 .top {
@@ -16,28 +17,26 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.72);
-  margin-bottom: 10px;
+  font-size: 12px;
+  color: #8b95a5;
+  margin-bottom: 8px;
 }
 
 .crumbLink {
   background: none;
   border: none;
   padding: 0;
-  color: rgba(255, 255, 255, 0.85);
+  color: #5c6778;
   font: inherit;
   cursor: pointer;
-  transition: color 0.15s ease;
 }
 
 .crumbLink:hover {
-  color: #fff;
-  text-decoration: underline;
+  color: #0061a6;
 }
 
 .crumbCurrent {
-  color: #fff;
+  color: #1a2332;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -58,24 +57,12 @@
   min-width: 0;
 }
 
-.titleIcon {
-  width: 46px;
-  height: 46px;
-  flex-shrink: 0;
-  border-radius: 13px;
-  background: rgba(255, 255, 255, 0.18);
-  backdrop-filter: blur(10px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .title {
   margin: 0;
   font-size: 22px;
-  font-weight: 700;
+  font-weight: 650;
   line-height: 1.25;
-  letter-spacing: -0.2px;
+  letter-spacing: -0.02em;
   word-break: break-word;
 }
 
@@ -85,8 +72,8 @@
   flex-wrap: wrap;
   gap: 6px 14px;
   margin-top: 6px;
-  font-size: 12.5px;
-  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  color: #5c6778;
 }
 
 .metaItem {
@@ -99,11 +86,13 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 9px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.2);
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: #f6f7f9;
+  border: 1px solid #e6e9ee;
+  color: #5c6778;
   font-weight: 600;
-  font-size: 11.5px;
+  font-size: 12px;
 }
 
 /* ── Eylemler ─────────────────────────────────────────────────────────── */
@@ -118,21 +107,25 @@
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 8px 15px;
-  border-radius: 11px;
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  height: 36px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #d5dbe3;
+  background: #fff;
+  color: #1a2332;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.15s ease, border-color 0.15s ease;
   white-space: nowrap;
 }
 
 .action:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.26);
-  border-color: rgba(255, 255, 255, 0.5);
+  background: #f7f8fa;
+}
+
+.action:focus-visible {
+  outline: 2px solid #0061a6;
+  outline-offset: 2px;
 }
 
 .action:disabled {
@@ -140,9 +133,14 @@
   cursor: not-allowed;
 }
 
+.actionDanger {
+  color: #b42318;
+  border-color: #f3d0cc;
+}
+
 .actionDanger:hover:not(:disabled) {
-  background: rgba(239, 68, 68, 0.9);
-  border-color: rgba(239, 68, 68, 1);
+  background: #fdf4f3;
+  border-color: #f3d0cc;
 }
 
 /* ── Durum hattı ──────────────────────────────────────────────────────── */
@@ -180,104 +178,109 @@
   top: 9px;
   left: calc(50% + 12px);
   right: calc(-50% + 12px);
-  height: 2px;
-  background: rgba(255, 255, 255, 0.25);
+  height: 1px;
+  background: #e6e9ee;
 }
 
 .stepDone:not(:last-child)::after {
-  background: rgba(255, 255, 255, 0.85);
+  background: #9ec3e2;
 }
 
 .dot {
   width: 20px;
   height: 20px;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.45);
-  background: rgba(255, 255, 255, 0.12);
+  border: 1px solid #d5dbe3;
+  background: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   color: #0061a6;
   z-index: 1;
-  transition: all 0.2s ease;
 }
 
 .dotDone {
-  background: #fff;
-  border-color: #fff;
+  background: #e8f3fb;
+  border-color: #9ec3e2;
 }
 
 .dotCurrent {
-  background: #fff;
-  border-color: #fff;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25);
+  background: #0061a6;
+  border-color: #0061a6;
+  color: #fff;
 }
 
 .stepLabel {
-  font-size: 11.5px;
-  font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b95a5;
   text-align: center;
   line-height: 1.3;
 }
 
 .stepLabelActive {
-  color: #fff;
-  font-weight: 700;
+  color: #0061a6;
+  font-weight: 650;
 }
 
 .step:hover:not(:disabled) .stepLabel {
-  color: #fff;
+  color: #1a2332;
 }
 
 /* ── Metrik şeridi ────────────────────────────────────────────────────── */
 
 .metrics {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 1px;
-  background: rgba(255, 255, 255, 0.16);
-  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border-top: 1px solid #e6e9ee;
+  background: #fff;
 }
 
 .metric {
-  background: rgba(0, 61, 105, 0.28);
-  padding: 12px 18px;
+  background: #fff;
+  padding: 12px 16px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  border-right: 1px solid #e6e9ee;
 }
 
+.metric:last-child { border-right: 0; }
+
 .metricValue {
-  font-size: 19px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
   line-height: 1.15;
   display: flex;
   align-items: baseline;
   gap: 4px;
+  color: #1a2332;
+  font-variant-numeric: tabular-nums;
 }
 
 .metricUnit {
-  font-size: 11.5px;
-  font-weight: 500;
-  opacity: 0.75;
+  font-size: 12px;
+  font-weight: 600;
+  color: #8b95a5;
 }
 
 .metricLabel {
   display: flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
-  color: rgba(255, 255, 255, 0.75);
+  font-size: 12px;
+  font-weight: 600;
+  color: #5c6778;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .metricWarn {
-  color: #fecaca;
-  font-weight: 600;
+  color: #b42318;
+  font-weight: 650;
 }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
@@ -302,7 +305,7 @@
 
 @media (max-width: 640px) {
   .header {
-    border-radius: 16px;
+    border-radius: 10px;
   }
 
   .top {
@@ -315,12 +318,6 @@
 
   .crumbCurrent {
     max-width: 22ch;
-  }
-
-  .titleIcon {
-    width: 38px;
-    height: 38px;
-    border-radius: 11px;
   }
 
   .pipeline {
@@ -339,6 +336,9 @@
   .metrics {
     grid-template-columns: 1fr 1fr;
   }
+
+  .metric:nth-child(2n) { border-right: 0; }
+  .metric:nth-child(n + 3) { border-top: 1px solid #e6e9ee; }
 
   .metric {
     padding: 10px 14px;
