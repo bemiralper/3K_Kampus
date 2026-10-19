@@ -469,12 +469,12 @@ def _write_desired(mapping: GoogleContactMapping, client, desired) -> str:
                 raise
             logger.warning('Google kişi fotoğrafı yazılamadı resource=%s', resource_name, exc_info=True)
             photo_person = None
-            photo_error = 'Profil fotoğrafı Google kişi kartına yazılamadı.'
+            photo_error = f'Fotoğraf: {exc}'
         etag = ((photo_person or {}).get('person') or {}).get('etag')
         if etag:
             mapping.etag = etag
     elif desired.photo_digest:
-        photo_error = 'Profil fotoğrafı okunamadı.'
+        photo_error = 'Fotoğraf: profil dosyası okunamadı.'
     elif previous_had_photo and not created and resource_name:
         try:
             client.delete_contact_photo(resource_name)
@@ -485,7 +485,7 @@ def _write_desired(mapping: GoogleContactMapping, client, desired) -> str:
     mapping.display_name = desired.display_name[:300]
     mapping.phone_e164 = desired.phone_e164[:20]
     # Fotoğraf yazılamadıysa hash'e ekleme; sonraki eşitleme yeniden dener.
-    mapping.content_hash = desired.content_hash if not photo_error else desired.content_hash.split('|p|')[0]
+    mapping.content_hash = desired.content_hash if not photo_error else desired.content_hash.split('|f|')[0]
     mapping.status = GoogleContactSyncStatus.SYNCED
     mapping.last_error = photo_error[:500] if photo_error else ''
     mapping.last_synced_at = timezone.now()
@@ -803,6 +803,9 @@ def account_counts(account: GoogleContactsAccount) -> dict:
         if status in counts:
             counts[status] += 1
     counts['removing'] = GoogleContactRemoval.objects.filter(account=account).count()
+    counts['photo_errors'] = GoogleContactMapping.objects.filter(
+        account=account, last_error__startswith='Fotoğraf:',
+    ).count()
     return counts
 
 

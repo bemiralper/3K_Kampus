@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useOgrenciPath } from '@/components/ogrenci/OgrenciPathProvider';
 import WhatsAppChatButton from '@/components/communication/WhatsAppChatButton';
-import { downloadBlob } from '@/lib/download-file';
 import { formatPhoneDisplay, phoneDigits } from '@/lib/phone-format';
 
 export type QuickInfoPhone = {
@@ -79,6 +78,18 @@ function ContactIcon() {
   );
 }
 
+function ShareIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="18" cy="5" r="3" />
+      <circle cx="6" cy="12" r="3" />
+      <circle cx="18" cy="19" r="3" />
+      <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+      <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+    </svg>
+  );
+}
+
 function vcardEscape(value: string): string {
   return value
     .replace(/\\/g, '\\\\')
@@ -121,20 +132,90 @@ function buildVCard(name: string, phone: string, note: string): string {
   ].join('\r\n');
 }
 
-async function saveContactCard(name: string, phone: string, note: string): Promise<'shared' | 'downloaded'> {
-  const vcf = buildVCard(name, phone, note);
+function isIosDevice(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent;
+  return /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+}
+
+function isAndroidDevice(): boolean {
+  return typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent);
+}
+
+function openContactCard(name: string, phone: string, note: string): 'contacts' | 'downloaded' {
+  const tel = contactTel(phone);
+  if (isAndroidDevice()) {
+    const intent = [
+      'intent://contacts/#Intent',
+      'action=android.intent.action.INSERT',
+      'type=vnd.android.cursor.dir/raw_contact',
+      `S.name=${encodeURIComponent(name)}`,
+      `S.phone=${encodeURIComponent(tel)}`,
+      note ? `S.notes=${encodeURIComponent(note)}` : '',
+      'end',
+    ].filter(Boolean).join(';');
+    window.location.href = intent;
+    return 'contacts';
+  }
+
+  const blob = new Blob([buildVCard(name, phone, note)], { type: 'text/vcard;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  if (isIosDevice()) {
+    // İndirme ve paylaşım sayfası yok; Kişiler “Yeni Kişi Yarat” önizlemesi.
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.target = '_blank';
+    anchor.rel = 'noopener';
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return 'contacts';
+  }
+
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${fileSlug(name)}.vcf`;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+  return 'downloaded';
+}
+
+function downloadContactCard(name: string, phone: string, note: string): void {
+  const blob = new Blob([buildVCard(name, phone, note)], { type: 'text/vcard;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `${fileSlug(name)}.vcf`;
+  anchor.rel = 'noopener';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+
+async function shareContactCard(name: string, phone: string, note: string): Promise<'shared' | 'downloaded' | 'cancelled'> {
   const filename = `${fileSlug(name)}.vcf`;
-  const file = new File([vcf], filename, { type: 'text/vcard' });
-  const nav = navigator as Navigator & { canShare?: (data: ShareData) => boolean };
-  if (typeof nav.share === 'function' && nav.canShare?.({ files: [file] })) {
-    try {
-      await nav.share({ files: [file], title: name });
-      return 'shared';
-    } catch (err) {
-      if (err instanceof Error && err.name === 'AbortError') return 'shared';
+  const file = new File([buildVCard(name, phone, note)], filename, { type: 'text/vcard' });
+  if (typeof navigator.share === 'function') {
+    const canShareFiles = typeof navigator.canShare !== 'function' || navigator.canShare({ files: [file] });
+    if (canShareFiles) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: name.trim() || 'Kişi',
+          text: contactTel(phone),
+        });
+        return 'shared';
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return 'cancelled';
+      }
     }
   }
-  downloadBlob(new Blob([vcf], { type: 'text/vcard;charset=utf-8' }), filename);
+  downloadContactCard(name, phone, note);
   return 'downloaded';
 }
 
@@ -182,7 +263,7 @@ function ContactActions({
   note: string;
 }) {
   const [copied, setCopied] = useState(false);
-  const [saveNote, setSaveNote] = useState('');
+  const [actionNote, setActionNote] = useState('');
   const display = formatPhoneDisplay(phone) || phone.trim();
   const telHref = phoneDigits(phone) ? `tel:${contactTel(phone)}` : undefined;
 
@@ -197,17 +278,32 @@ function ContactActions({
     }
   }, [display]);
 
-  const handleSave = useCallback(async () => {
-    setSaveNote('');
+  const handleSave = useCallback(() => {
+    setActionNote('');
     try {
-      const result = await saveContactCard(personName, phone, note);
-      setSaveNote(
-        result === 'downloaded'
-          ? 'Kişi kartı indirildi. Dosyayı açınca rehbere eklenir.'
-          : '',
+      const result = openContactCard(personName, phone, note);
+      setActionNote(
+        result === 'contacts'
+          ? 'Rehber açıldı. Yeni kişi olarak kaydedin.'
+          : 'Kişi kartı indirildi. Dosyayı açınca Kişiler uygulaması kaydeder.',
       );
     } catch {
-      setSaveNote('Rehbere kaydedilemedi.');
+      setActionNote('Rehbere kaydedilemedi.');
+    }
+  }, [note, personName, phone]);
+
+  const handleShare = useCallback(async () => {
+    setActionNote('');
+    try {
+      const result = await shareContactCard(personName, phone, note);
+      if (result === 'cancelled') return;
+      setActionNote(
+        result === 'shared'
+          ? 'Kişi kartı paylaşıldı.'
+          : 'Kişi kartı indirildi. Dosyayı istediğiniz uygulamayla paylaşabilirsiniz.',
+      );
+    } catch {
+      setActionNote('Kişi kartı paylaşılamadı.');
     }
   }, [note, personName, phone]);
 
@@ -242,13 +338,22 @@ function ContactActions({
           type="button"
           className="oqim-icon-btn"
           onClick={handleSave}
-          title="Rehbere kaydet"
-          aria-label={`${personName} kişisini rehbere kaydet`}
+          title="Rehbere ekle"
+          aria-label={`${personName} kişisini rehbere ekle`}
         >
           <ContactIcon />
         </button>
+        <button
+          type="button"
+          className="oqim-icon-btn"
+          onClick={handleShare}
+          title="Kişiyi paylaş"
+          aria-label={`${personName} kişi kartını paylaş`}
+        >
+          <ShareIcon />
+        </button>
       </div>
-      {saveNote && <p className="oqim-save-note">{saveNote}</p>}
+      {actionNote && <p className="oqim-save-note">{actionNote}</p>}
     </>
   );
 }

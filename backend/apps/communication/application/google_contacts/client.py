@@ -24,6 +24,17 @@ class GoogleContactNotFound(GoogleContactsError):
     pass
 
 
+def _has_user_photo(person: dict | None) -> bool:
+    """Google herkese harf avatarı döndürür (default=true). O, profil fotoğrafı değildir."""
+    for photo in (person or {}).get('photos') or []:
+        if not isinstance(photo, dict) or not photo.get('url'):
+            continue
+        if photo.get('default') is True:
+            continue
+        return True
+    return False
+
+
 class GooglePeopleClient:
     def __init__(self, account):
         self.account = account
@@ -129,11 +140,24 @@ class GooglePeopleClient:
             json_body={
                 'photoBytes': base64.b64encode(photo).decode('ascii'),
                 'personFields': 'photos',
+                'sources': ['READ_SOURCE_TYPE_CONTACT'],
             },
         ) or {}
-        photos = ((updated.get('person') or {}).get('photos')) or []
-        if not photos:
-            raise GoogleContactsError('Google kişi fotoğrafı profil resmi olarak kaydedilmedi.')
+        person = updated.get('person') or {}
+        if not _has_user_photo(person):
+            person = self._request(
+                'GET',
+                f'{PEOPLE_BASE}/{resource_name}',
+                params={
+                    'personFields': 'photos',
+                    'sources': 'READ_SOURCE_TYPE_CONTACT',
+                },
+            ) or {}
+            updated = {'person': person}
+        if not _has_user_photo(person):
+            raise GoogleContactsError(
+                'Google kişi kartında profil fotoğrafı görünmüyor. Harf avatarı gerçek fotoğraf sayılmaz.',
+            )
         return updated
 
     def delete_contact_photo(self, resource_name: str) -> None:

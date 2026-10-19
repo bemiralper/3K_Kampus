@@ -61,7 +61,7 @@ class FakePeople:
             'person': {
                 'resourceName': resource_name,
                 'etag': 'e-photo',
-                'photos': [{'url': 'https://example.test/photo.jpg', 'default': True}],
+                'photos': [{'url': 'https://example.test/photo.jpg', 'default': False}],
             }
         }
 
@@ -370,7 +370,7 @@ class GoogleContactPhotoRequestTests(TestCase):
             'person': {
                 'resourceName': 'people/c1',
                 'etag': 'e1',
-                'photos': [{'url': 'https://lh3.googleusercontent.com/a', 'default': True}],
+                'photos': [{'url': 'https://lh3.googleusercontent.com/a', 'default': False}],
             }
         }
         account = GoogleContactsAccount(refresh_token_encrypted='x', access_token_encrypted='y')
@@ -381,3 +381,23 @@ class GoogleContactPhotoRequestTests(TestCase):
         self.assertTrue(url.endswith('/people/c1:updateContactPhoto'))
         self.assertIn('photoBytes', body)
         self.assertEqual(body['personFields'], 'photos')
+        self.assertEqual(body['sources'], ['READ_SOURCE_TYPE_CONTACT'])
+
+    @patch('apps.communication.application.google_contacts.client.ensure_access_token', return_value='token')
+    @patch('apps.communication.application.google_contacts.client.httpx.request')
+    def test_letter_avatar_is_not_a_profile_photo(self, request, _token):
+        from apps.communication.application.google_contacts.client import (
+            GoogleContactsError,
+            GooglePeopleClient,
+        )
+
+        response = request.return_value
+        response.status_code = 200
+        response.content = b'{}'
+        response.json.return_value = {
+            'person': {'photos': [{'url': 'https://lh3.googleusercontent.com/a', 'default': True}]},
+        }
+        account = GoogleContactsAccount(refresh_token_encrypted='x', access_token_encrypted='y')
+        with self.assertRaises(GoogleContactsError):
+            GooglePeopleClient(account).update_contact_photo('people/c1', b'\xff\xd8\xff')
+        self.assertGreaterEqual(request.call_count, 2)

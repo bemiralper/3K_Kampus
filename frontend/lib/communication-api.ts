@@ -3211,6 +3211,7 @@ export interface GoogleContactCounts {
   failed: number;
   pending_delete: number;
   removing: number;
+  photo_errors?: number;
 }
 
 export interface GoogleContactsAccountStatus {
@@ -3226,6 +3227,7 @@ export interface GoogleContactsAccountStatus {
   last_sync_error: string;
   last_sync_stats: Record<string, number>;
   counts: GoogleContactCounts;
+  photo_error?: string;
 }
 
 export interface GoogleContactsStatus {

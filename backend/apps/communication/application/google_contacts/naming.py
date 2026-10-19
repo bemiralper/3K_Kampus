@@ -61,8 +61,8 @@ class DesiredContact:
         raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(raw.encode('utf-8')).hexdigest()
         if self.photo_digest:
-            # |p| eski (POST ile giden, profil resmi olmayan) eşitlemeleri yeniden yazar.
-            return f'{digest[:40]}|p|{self.photo_digest[:20]}'
+            # |f| önceki turda harf avatarını fotoğraf sanıp atlanan kartları yeniden yazar.
+            return f'{digest[:40]}|f|{self.photo_digest[:20]}'
         return digest
 
     def person_body(self) -> dict:
@@ -183,7 +183,7 @@ def photo_digest(file_field) -> str:
     try:
         size = int(file_field.size)
     except Exception:
-        return ''
+        size = 0
     raw = f'{name}:{size}'.encode()
     return hashlib.sha256(raw).hexdigest()[:20]
 
@@ -212,7 +212,7 @@ def contact_photo_bytes(file_field) -> bytes | None:
             image = image.convert('RGB')
         image = ImageOps.fit(image, (720, 720), method=Image.LANCZOS, centering=(0.5, 0.5))
         out = BytesIO()
-        image.save(out, format='JPEG', quality=82, optimize=True)
+        image.save(out, format='JPEG', quality=85, optimize=False, progressive=False)
         return out.getvalue() or None
     except Exception:
         if len(raw) <= 900_000:

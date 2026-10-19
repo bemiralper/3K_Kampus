@@ -379,6 +379,12 @@ export default function GoogleKisilerClient() {
           {account.last_sync_error && (
             <p style={{ color: "#b91c1c", margin: "0.75rem 0 0" }}>{account.last_sync_error}</p>
           )}
+          {(account.counts?.photo_errors ?? 0) > 0 && (
+            <p style={{ color: "#b91c1c", margin: "0.75rem 0 0" }}>
+              {account.counts?.photo_errors} kişinin profil fotoğrafı Google kartına yazılamadı.
+              {account.photo_error ? ` ${account.photo_error}` : ""} Eşitleme bu kartları yeniden dener.
+            </p>
+          )}
           {account.connected && (
             <>
               {queueSize(account) >= 20 && !account.syncing && (

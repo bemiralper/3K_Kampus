@@ -50,6 +50,13 @@ def _account_payload(account: GoogleContactsAccount) -> dict:
         'last_sync_error': account.last_sync_error,
         'last_sync_stats': stats,
         'counts': account_counts(account),
+        'photo_error': (
+            account.mappings.filter(last_error__startswith='Fotoğraf:')
+            .order_by('-updated_at')
+            .values_list('last_error', flat=True)
+            .first()
+            or ''
+        ),
     }
 
 
