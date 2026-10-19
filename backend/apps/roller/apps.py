@@ -14,7 +14,7 @@ def _seed_roles_after_migrate(sender, **kwargs):
 
 
 def _seed_roles_on_startup():
-    if any(cmd in sys.argv for cmd in ('migrate', 'makemigrations', 'test', 'shell')):
+    if any(cmd in sys.argv for cmd in ('migrate', 'makemigrations', 'test', 'shell', 'setup_roles')):
         return
     try:
         from django.db import connection

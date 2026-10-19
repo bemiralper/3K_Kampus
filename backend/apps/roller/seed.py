@@ -3,6 +3,8 @@ Varsayılan sistem yetkileri ve rolleri.
 
 Management command ve uygulama başlangıcında idempotent olarak çalışır.
 """
+from django.db import IntegrityError, transaction
+
 from apps.roller.models import Permission, Role, RolePermission
 
 PERMISSIONS_DATA = [
@@ -312,9 +314,19 @@ def ensure_system_roles(*, verbose: bool = False, stdout=None):
                     is_active=True,
                 )
 
+            # Canlıda gunicorn ile aynı anda çalışan seed, aynı çifti ikinci kez
+            # yazınca deploy'u düşürmesin.
             RolePermission.objects.filter(role=role).delete()
-            for perm in permissions:
-                RolePermission.objects.create(role=role, permission=perm)
+            seen_ids = set()
+            for perm in permissions.distinct():
+                if perm.pk in seen_ids:
+                    continue
+                seen_ids.add(perm.pk)
+                try:
+                    with transaction.atomic():
+                        RolePermission.objects.create(role=role, permission=perm)
+                except IntegrityError:
+                    continue
 
             if verbose and stdout:
                 stdout.write(f'    → {permissions.count()} yetki atandı')
