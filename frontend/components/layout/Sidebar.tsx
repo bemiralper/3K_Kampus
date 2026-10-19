@@ -206,6 +206,7 @@ const navItems: MenuItem[] = [
     children: [
       { label: "Öğrenci Listesi", href: "/ogrenciler" },
       { label: "Yeni Kayıt", href: "/ogrenciler/yeni-kayit" },
+      { label: "Misafir Öğrenciler", href: "/ogrenciler/misafir" },
     ],
   },
   {

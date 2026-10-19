@@ -32,6 +32,7 @@ const breadcrumbMap: Record<string, string> = {
   ...akademikBreadcrumbMap(),
   ogrenciler: "Öğrenciler",
   "yeni-kayit": "Yeni Kayıt",
+  misafir: "Misafir Öğrenciler",
   personel: "Personel",
   gorevlendirmeler: "Görevlendirmeler",
   admin: "Yönetim",
@@ -89,6 +90,7 @@ const allMenuItems = [
   ...akademikCommandPaletteItems(),
   { label: "Öğrenci Listesi", href: "/ogrenciler", section: "Öğrenci" },
   { label: "Yeni Kayıt", href: "/ogrenciler/yeni-kayit", section: "Öğrenci" },
+  { label: "Misafir Öğrenciler", href: "/ogrenciler/misafir", section: "Öğrenci" },
   { label: "Personel Tanımları", href: "/personel", section: "Personel" },
   { label: "Görevlendirmeler", href: "/personel/gorevlendirmeler", section: "Personel" },
   { label: "Koç Yönetimi", href: "/admin/coaching/coaches", section: "Koçluk" },
@@ -139,7 +141,10 @@ function Breadcrumb() {
         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
       </svg>
       {displaySegments.map((segment, idx) => {
-        const label = breadcrumbMap[segment] || segment.replace(/-/g, " ");
+        const prev = displaySegments[idx - 1];
+        const label = prev === "misafir" && segment === "yeni"
+          ? "Günü birlik kayıt"
+          : (breadcrumbMap[segment] || segment.replace(/-/g, " "));
         const isLast = idx === displaySegments.length - 1;
         return (
           <span key={idx} className="breadcrumb-segment">

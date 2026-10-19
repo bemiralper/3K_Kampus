@@ -216,17 +216,24 @@ export type FetchOptions = Omit<RequestInit, "headers"> & {
   headers?: Record<string, string>;
 };
 
-function getCsrfToken(): string | null {
+function readCookie(name: string): string | null {
   if (typeof document === "undefined") return null;
-
-  const cookies = document.cookie.split(";");
-  for (const cookie of cookies) {
-    const [name, value] = cookie.trim().split("=");
-    if (name === "lms_csrftoken" || name === "csrftoken") {
-      return value;
-    }
+  const row = document.cookie
+    .split(";")
+    .map((cookie) => cookie.trim())
+    .find((cookie) => cookie.startsWith(`${name}=`));
+  if (!row) return null;
+  const value = row.slice(name.length + 1);
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
   }
-  return null;
+}
+
+function getCsrfToken(): string | null {
+  // Django çerezi lms_csrftoken. Eski/yanlış csrftoken önce gelirse istek 401 olur.
+  return readCookie("lms_csrftoken") || readCookie("csrftoken");
 }
 
 /** Oturum/CSRF kaynaklı yanıt mı — yetki reddi (403 permission_denied) sayılmaz. */

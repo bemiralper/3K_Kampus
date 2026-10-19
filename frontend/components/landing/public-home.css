@@ -11,7 +11,7 @@
 }
 
 .stk {
-  padding: 56px 0 28px;
+  padding: 72px 0 32px;
   background: #fff;
 }
 
@@ -24,18 +24,19 @@
 .stk-head,
 .duy-home__head {
   display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 20px;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  margin-bottom: 28px;
 }
 
 .stk-head h2,
 .duy-home__head h2 {
   margin: 0;
-  font-size: 1.65rem;
+  font-size: clamp(1.7rem, 2.4vw, 2.15rem);
   font-weight: 700;
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   color: var(--ph-ink);
 }
 
@@ -115,29 +116,74 @@
 .stk-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 14px;
+  align-items: center;
+  gap: 10px 16px;
 }
 
-.stk-legend span {
+.stk-legend-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.stk-legend-group + .stk-legend-group {
+  padding-left: 16px;
+  border-left: 1px solid var(--ph-line);
+  gap: 6px;
+}
+
+.stk-legend-group > span:not(.stk-scope) {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   font-size: 12.5px;
+  font-weight: 500;
   color: #3d4d60;
 }
 
-.stk-legend i {
-  width: 8px;
-  height: 8px;
-  border-radius: 99px;
+.stk-legend-group i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
   font-style: normal;
 }
 
-.stk-board {
-  border: 1px solid var(--ph-line);
-  border-radius: 12px;
+/* Kapsam etiketi: Türkiye geneli dolu mavi, yerel çerçeveli gri */
+.stk-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.stk-scope svg {
+  flex-shrink: 0;
+}
+
+.stk-scope--tr {
+  background: var(--ph-brand);
+  color: #fff;
+}
+
+.stk-scope--yerel {
   background: #fff;
-  padding: 16px 16px 14px;
+  border: 1px solid #c9d3de;
+  color: #475569;
+}
+
+.stk-board {
+  border: 1px solid #e4ebf2;
+  border-radius: 20px;
+  background: #fff;
+  padding: 18px 18px 16px;
+  box-shadow: 0 10px 30px rgba(20, 32, 51, 0.04);
 }
 
 .stk-month {
@@ -151,8 +197,9 @@
 .stk-month h3 {
   margin: 0;
   text-align: center;
-  font-size: 1.05rem;
+  font-size: 1.35rem;
   font-weight: 700;
+  letter-spacing: -0.02em;
   color: var(--ph-ink);
 }
 
@@ -200,36 +247,65 @@
   color: var(--ph-brand);
 }
 
+.stk-cal {
+  overflow: hidden;
+  border: 1px solid #e7eef5;
+  border-radius: 16px;
+  background: #fff;
+}
+
 .stk-weekdays,
 .stk-grid {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
+  gap: 0;
+}
+
+.stk-weekdays {
+  background: #f7fafc;
+  border-bottom: 1px solid #e7eef5;
 }
 
 .stk-weekdays span {
-  padding: 0 0 6px;
+  padding: 10px 0;
   text-align: center;
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-weight: 700;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: #8b98a8;
+  color: #6d7c8d;
+}
+
+.stk-weekdays span[data-weekend='true'] {
+  color: #a3aebb;
+}
+
+.stk-day-blank,
+.stk-day {
+  min-height: 118px;
+  box-shadow: inset -1px -1px 0 #eef3f7;
+}
+
+.stk-day-blank[data-weekend='true'],
+.stk-day[data-weekend='true'] {
+  background: #fbfcfd;
 }
 
 .stk-day {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  min-height: 92px;
+  gap: 6px;
   min-width: 0;
-  padding: 7px 7px 6px;
-  border: 1px solid #eef1f5;
-  border-radius: 8px;
-  background: #fbfcfd;
+  padding: 8px 8px 8px;
+  border: 0;
+  border-radius: 0;
+  background: #fff;
   color: inherit;
   text-align: left;
   font: inherit;
+  overflow: hidden;
 }
 
 .stk-day:disabled {
@@ -237,19 +313,20 @@
 }
 
 .stk-day--exam {
-  background: #fff;
-  border-color: #e3e9ef;
   cursor: pointer;
 }
 
 .stk-day--exam:hover {
-  border-color: #b9d0e4;
   background: #f8fbfe;
 }
 
-.stk-day--today {
-  border-color: var(--ph-brand);
-  background: var(--ph-brand-soft);
+.stk-day--exam:hover .stk-event {
+  background: color-mix(in srgb, var(--stk-c) 16%, #fff);
+}
+
+.stk-day--today .stk-day-num {
+  background: var(--ph-brand);
+  color: #fff;
 }
 
 .stk-day:focus-visible,
@@ -262,67 +339,111 @@
   outline-offset: 2px;
 }
 
-.stk-day-num {
-  font-size: 12px;
-  font-weight: 700;
-  color: #64748b;
-  font-variant-numeric: tabular-nums;
-}
-
-.stk-day--exam .stk-day-num,
-.stk-day--today .stk-day-num {
-  color: var(--ph-ink);
-}
-
-.stk-chips {
+.stk-day-top {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 6px;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
 }
 
-.stk-chip {
+.stk-day-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #314155;
+  font-variant-numeric: tabular-nums;
+}
+
+.stk-day[data-weekend='true'] .stk-day-num {
+  color: #8b98a8;
+}
+
+.stk-day-today {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--ph-brand);
+}
+
+.stk-event {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin-top: auto;
+  padding: 6px 7px 7px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--stk-c) 11%, #fff);
+}
+
+.stk-day-kicker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.stk-day-badge {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: var(--stk-c);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  line-height: 1.3;
+}
+
+.stk-day-title {
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
-  padding: 3px 5px 3px 6px;
-  border-radius: 4px;
-  border-left: 3px solid var(--stk-c, var(--ph-brand));
-  background: #f4f7fa;
-  font-size: 11.5px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 650;
   line-height: 1.3;
   color: #1e293b;
+  word-break: break-word;
 }
 
-.stk-chip em {
-  margin-right: 4px;
-  font-style: normal;
+.stk-event .stk-scope {
+  height: 18px;
+  padding: 0 6px;
+  font-size: 10px;
+}
+
+.stk-day-more {
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #1e293b;
+  color: #fff;
   font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  color: var(--stk-c, var(--ph-brand));
-}
-
-.stk-more {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--ph-brand);
 }
 
 .stk-dots {
   display: none;
   gap: 3px;
-  margin-top: 6px;
   justify-content: center;
 }
 
 .stk-dots i {
-  width: 5px;
-  height: 5px;
+  width: 6px;
+  height: 6px;
   border-radius: 99px;
+}
+
+.stk-dots i[data-yerel='true'] {
+  background: #fff !important;
+  box-shadow: inset 0 0 0 1.5px #64748b;
 }
 
 .stk-empty {
@@ -348,12 +469,13 @@
 
 .stk-agenda button {
   display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 48px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
   width: 100%;
-  padding: 10px 12px;
+  padding: 10px 12px 10px 10px;
   border: 1px solid var(--ph-line);
+  border-left: 3px solid var(--stk-c, var(--ph-brand));
   border-radius: 10px;
   background: #fff;
   text-align: left;
@@ -362,28 +484,49 @@
 }
 
 .stk-agenda button:hover {
-  border-color: #b9d0e4;
-  background: var(--ph-brand-soft);
+  background: color-mix(in srgb, var(--stk-c, var(--ph-brand)) 6%, #fff);
 }
 
 .stk-agenda time {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--ph-brand);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--stk-c, var(--ph-brand)) 10%, #fff);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--stk-c, var(--ph-brand));
+}
+
+.stk-agenda time b {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.1;
 }
 
 .stk-agenda strong {
   display: block;
   font-size: 14px;
   font-weight: 600;
+  line-height: 1.3;
   color: var(--ph-ink);
 }
 
 .stk-agenda small {
-  display: block;
-  margin-top: 2px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 5px;
   font-size: 12px;
   color: var(--ph-muted);
+}
+
+.stk-agenda small em {
+  font-style: normal;
+  font-weight: 800;
+  color: var(--stk-c, var(--ph-brand));
 }
 
 .stk-shade {
@@ -460,6 +603,8 @@
 }
 
 .stk-pick-list small {
+  display: block;
+  margin-top: 4px;
   color: var(--ph-muted);
   font-size: 12px;
 }
@@ -648,9 +793,8 @@
 }
 
 .duy-home {
-  padding: 36px 0 72px;
-  background: #f6f8fa;
-  border-top: 1px solid var(--ph-line);
+  padding: 72px 0 88px;
+  background: #fff;
 }
 
 .duy-home__all {
@@ -675,15 +819,26 @@
   gap: 16px;
 }
 
+.duy-home .wc-cover--card,
+.duy-home .wc-card__cover {
+  background: #f7fafc;
+}
+
+.duy-home .wc-cover__blur {
+  display: none;
+}
+
 .duy-home .wc-card {
-  border-radius: 12px;
-  box-shadow: none;
+  border: 1px solid #e6ebf1;
+  border-radius: 20px;
+  background: #fff;
+  box-shadow: 0 10px 28px rgba(20, 32, 51, 0.05);
 }
 
 .duy-home .wc-card:hover {
-  transform: none;
-  box-shadow: none;
-  border-color: #b9d0e4;
+  transform: translateY(-2px);
+  box-shadow: 0 16px 36px rgba(20, 32, 51, 0.08);
+  border-color: #d3e0ea;
 }
 
 .duy-home .wc-card__title {
@@ -715,14 +870,39 @@
   }
 }
 
-@media (max-width: 860px) {
-  .stk-day {
-    min-height: 84px;
-    padding: 6px 5px;
+@media (max-width: 1024px) {
+  .stk-day,
+  .stk-day-blank {
+    min-height: 108px;
   }
 
-  .stk-chip {
+  .stk-day {
+    padding: 7px 6px 6px;
+  }
+
+  .stk-day-title {
+    font-size: 11.5px;
+  }
+}
+
+@media (max-width: 860px) {
+  .stk-day,
+  .stk-day-blank {
+    min-height: 100px;
+  }
+
+  .stk-day-title {
     font-size: 11px;
+  }
+
+  .stk-day-badge {
+    padding: 1px 4px;
+    font-size: 9px;
+  }
+
+  .stk-legend-group + .stk-legend-group {
+    padding-left: 0;
+    border-left: 0;
   }
 }
 
@@ -738,8 +918,7 @@
 
   .stk-head,
   .duy-home__head {
-    flex-direction: column;
-    align-items: flex-start;
+    align-items: center;
   }
 
   .stk-head h2,
@@ -753,15 +932,27 @@
 
   .stk-board {
     padding: 12px 10px;
+    border-radius: 16px;
+  }
+
+  .stk-day,
+  .stk-day-blank {
+    min-height: 52px;
   }
 
   .stk-day {
-    min-height: 48px;
     align-items: center;
+    justify-content: flex-start;
+    gap: 4px;
     padding: 6px 2px;
   }
 
-  .stk-chips {
+  .stk-day-top {
+    justify-content: center;
+  }
+
+  .stk-day-today,
+  .stk-event {
     display: none;
   }
 

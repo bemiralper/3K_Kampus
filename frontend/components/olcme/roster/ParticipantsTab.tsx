@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { examApi } from '../api';
 import type { DenemeSalon, ExamDetail, ExamParticipantRow, ExamRoomItem, ExamSessionItem, ParticipantSearchHit, SeatingMode } from '../types';
 import { resolveCoachPhotoUrl } from '@/lib/coach-media';
@@ -516,6 +517,9 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
               )}
             </div>
             <div className={p.actions}>
+              <Link href={`/ogrenciler/misafir/yeni?exam=${exam.id}`} className={p.act}>
+                Günü birlik ekle
+              </Link>
               <button type="button" className={p.act} onClick={() => setExportOpen(true)}>
                 <Icon name="download" size={14} />
                 <span className={p.full}>Dışa aktar</span>

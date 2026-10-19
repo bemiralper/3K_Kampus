@@ -1,0 +1,106 @@
+.gb-form {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  padding: 16px;
+  background: var(--ogl-surface, #fff);
+  border: 1px solid var(--ogl-border, #e3e8ef);
+  border-radius: 12px;
+}
+
+.gb-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.gb-field--wide {
+  grid-column: span 2;
+}
+
+.gb-field label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ogl-text-2, #475569);
+}
+
+.gb-field input,
+.gb-field select {
+  height: 38px;
+  border: 1px solid var(--ogl-border-strong, #cbd5e1);
+  border-radius: 8px;
+  padding: 0 10px;
+  font: inherit;
+  font-size: 14px;
+  background: #fff;
+  color: var(--ogl-text, #0f172a);
+}
+
+.gb-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.gb-note {
+  margin: 0;
+  font-size: 13px;
+  color: var(--ogl-text-3, #64748b);
+}
+
+.gb-error {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fdecec;
+  color: #b91c1c;
+  font-size: 13.5px;
+}
+
+.gb-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  background: #eef2f7;
+  color: #334155;
+}
+
+.gb-badge--yeni { background: #e8f5ec; color: #15803d; }
+.gb-badge--mevcut_misafir,
+.gb-badge--kayitli_ogrenci { background: #e8f1f9; color: #00538f; }
+.gb-badge--zaten_sinavda { background: #fdf3e2; color: #92400e; }
+.gb-badge--hata { background: #fdecec; color: #b91c1c; }
+
+.gb-exams {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.gb-exams span {
+  font-size: 13px;
+  color: #334155;
+}
+
+@media (max-width: 900px) {
+  .gb-form {
+    grid-template-columns: 1fr 1fr;
+  }
+  .gb-field--wide {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 640px) {
+  .gb-form,
+  .gb-field--wide {
+    grid-template-columns: 1fr;
+    grid-column: auto;
+  }
+}

@@ -1,7 +1,9 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
 import { sinavTurBadge, sinavTurColor } from '@/lib/landing-theme';
+import SinavKapsamEtiketi from './SinavKapsamEtiketi';
 
 type MonthCalendarGridProps = {
   year: number;
@@ -28,62 +30,77 @@ export default function MonthCalendarGrid({ year, month, byDate, onDayClick }: M
     return `${year}-${m}-${day}`;
   };
 
-  const today = new Date();
+  // Sunucu ve tarayıcı gece yarısı farklı günde olabilir; bugün istemcide hesaplanır.
+  const [today, setToday] = useState<Date | null>(null);
+  useEffect(() => setToday(new Date()), []);
   const isToday = (d: number) =>
-    today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
+    !!today && today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
 
   return (
-    <div>
+    <div className="stk-cal">
       <div className="stk-weekdays">
-        {WEEKDAYS.map(w => (
-          <span key={w}>{w}</span>
+        {WEEKDAYS.map((w, i) => (
+          <span key={w} data-weekend={i > 4 ? 'true' : undefined}>{w}</span>
         ))}
       </div>
       <div className="stk-grid">
         {cells.map((day, i) => {
-          if (day === null) return <div key={`empty-${i}`} aria-hidden />;
+          if (day === null) {
+            return <div key={`empty-${i}`} className="stk-day-blank" data-weekend={i % 7 >= 5 ? 'true' : undefined} aria-hidden />;
+          }
           const dateKey = padDate(day);
           const exams = byDate[dateKey] || [];
-          const hasExam = exams.length > 0;
-          const visible = exams.slice(0, 2);
-          const extra = exams.length - visible.length;
+          const primary = exams[0];
+          const extra = exams.length - 1;
+          const color = primary ? sinavTurColor(primary.tur) : undefined;
+          const todayCell = isToday(day);
+
+          const weekend = i % 7 >= 5;
 
           return (
             <button
               key={dateKey}
               type="button"
-              onClick={() => hasExam && onDayClick(dateKey, exams)}
-              disabled={!hasExam}
-              className={`stk-day${hasExam ? ' stk-day--exam' : ''}${isToday(day) ? ' stk-day--today' : ''}`}
+              onClick={() => primary && onDayClick(dateKey, exams)}
+              disabled={!primary}
+              className={`stk-day${primary ? ' stk-day--exam' : ''}${todayCell ? ' stk-day--today' : ''}`}
+              data-weekend={weekend ? 'true' : undefined}
+              style={color ? { ['--stk-c' as string]: color } : undefined}
               aria-label={
-                hasExam
-                  ? `${day} ${exams.map(exam => exam.baslik).join(', ')}`
+                primary
+                  ? `${day}: ${exams
+                      .map(e => `${e.baslik} (${e.kapsam === 'yerel' ? 'Yerel' : 'Türkiye Geneli'})`)
+                      .join(', ')}`
                   : undefined
               }
             >
-              <span className="stk-day-num">{day}</span>
-              {hasExam && (
-                <span className="stk-dots" aria-hidden>
-                  {exams.slice(0, 3).map(exam => (
-                    <i key={exam.id} style={{ background: sinavTurColor(exam.tur) }} />
-                  ))}
-                </span>
-              )}
-              {hasExam && (
-                <span className="stk-chips">
-                  {visible.map(exam => (
-                    <span
-                      key={exam.id}
-                      className="stk-chip"
-                      style={{ ['--stk-c' as string]: sinavTurColor(exam.tur) }}
-                      title={exam.baslik}
-                    >
-                      <em>{sinavTurBadge(exam.tur)}</em>
-                      {exam.baslik}
+              <span className="stk-day-top">
+                <span className="stk-day-num">{day}</span>
+                {todayCell && <span className="stk-day-today">Bugün</span>}
+              </span>
+
+              {primary && (
+                <>
+                  <span className="stk-event">
+                    <span className="stk-day-kicker">
+                      <span className="stk-day-badge">{sinavTurBadge(primary.tur)}</span>
+                      <SinavKapsamEtiketi kapsam={primary.kapsam} compact />
+                      {extra > 0 && <span className="stk-day-more">+{extra}</span>}
                     </span>
-                  ))}
-                  {extra > 0 && <span className="stk-more">+{extra} sınav</span>}
-                </span>
+                    <span className="stk-day-title" title={primary.baslik}>
+                      {primary.baslik}
+                    </span>
+                  </span>
+                  <span className="stk-dots" aria-hidden>
+                    {exams.slice(0, 3).map(exam => (
+                      <i
+                        key={exam.id}
+                        style={{ background: sinavTurColor(exam.tur) }}
+                        data-yerel={exam.kapsam === 'yerel' ? 'true' : undefined}
+                      />
+                    ))}
+                  </span>
+                </>
               )}
             </button>
           );

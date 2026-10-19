@@ -195,6 +195,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  text-decoration: none;
 }
 
 .actPrimary { background: #0061a6; border-color: #0061a6; color: #fff; }

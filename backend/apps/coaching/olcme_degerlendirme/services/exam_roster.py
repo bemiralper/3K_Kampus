@@ -180,7 +180,11 @@ def resolve_exam_candidates(
 
     by_id: dict[int, CandidateRec] = {}
 
+    from apps.ogrenci.services.kayit_turu import is_gunu_birlik_kayit
+
     for kayit in kayitlar:
+        if is_gunu_birlik_kayit(kayit.ogrenci):
+            continue
         ogr_id = kayit.ogrenci_id
         sev = _seviye_of(kayit)
         matched = False

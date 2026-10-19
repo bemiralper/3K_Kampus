@@ -17,6 +17,7 @@ from apps.kimlik.application.enforcement import assert_identity_for_new_record
 from apps.kimlik.exceptions import KimlikConflictError
 from apps.kimlik.domain.models import Kisi
 from apps.ogrenci.domain.models import Ogrenci, OgrenciAdres, OgrenciEgitimPaketi, OgrenciKayit, OgrenciVeli
+from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
 from apps.sinif.domain.models import Sinif
 from apps.sube.domain.models import Sube
 from apps.okul.application.enrollment import resolve_school_for_enrollment
@@ -298,6 +299,9 @@ class WizardMetadataView(APIView):
         lookups = {}
         categories = LookupCategory.objects.filter(is_active=True).prefetch_related("options")
         for category in categories:
+            options = category.options.filter(is_active=True).order_by("order")
+            if category.code == "registration_type":
+                options = options.exclude(code=GUNU_BIRLIK_CODE)
             lookups[category.code] = [
                 {
                     "id": option.id,
@@ -305,7 +309,7 @@ class WizardMetadataView(APIView):
                     "label": option.label,
                     "metadata": option.metadata,
                 }
-                for option in category.options.filter(is_active=True).order_by("order")
+                for option in options
             ]
 
         cities = [
@@ -510,9 +514,24 @@ class DirectRegistrationView(APIView):
                     )
                     KisiService.link_ogrenci(ogrenci)
                 else:
+                    updates = []
                     if ogrenci.sube_id != sube_id:
                         ogrenci.sube_id = sube_id
-                        ogrenci.save(update_fields=['sube_id'])
+                        updates.append('sube_id')
+                    if (ogrenci.kayit_turu or '') == GUNU_BIRLIK_CODE:
+                        ogrenci.kayit_turu = kayit_turu_code or 'asil'
+                        ogrenci.ad = student_data['ad']
+                        ogrenci.soyad = student_data['soyad']
+                        ogrenci.dogum_tarihi = student_data['dogum_tarihi']
+                        ogrenci.cinsiyet = cinsiyet_code
+                        ogrenci.telefon = normalize_phone(student_data.get('telefon') or '')
+                        ogrenci.email = student_data.get('email') or ''
+                        updates.extend([
+                            'kayit_turu', 'ad', 'soyad', 'dogum_tarihi',
+                            'cinsiyet', 'telefon', 'email',
+                        ])
+                    if updates:
+                        ogrenci.save(update_fields=updates)
                     if ogrenci.kisi_id:
                         KisiService.sync_from_profile(ogrenci.kisi, {
                             'ad': student_data['ad'],

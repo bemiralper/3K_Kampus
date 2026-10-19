@@ -6,6 +6,7 @@ import { sinavTurBadge, sinavTurColor } from '@/lib/landing-theme';
 import { SINAV_TABS, filterSinavByTab, sinavTabById, type SinavTabId } from '@/lib/sinav-takvim';
 import MonthCalendarGrid from './MonthCalendarGrid';
 import SinavDetailModal from './SinavDetailModal';
+import SinavKapsamEtiketi from './SinavKapsamEtiketi';
 import './public-home.css';
 
 type SinavTakvimiSectionProps = {
@@ -122,12 +123,18 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
             })}
           </div>
           <div className="stk-legend">
-            {legendItems.map(({ value, label }) => (
-              <span key={value}>
-                <i style={{ backgroundColor: sinavTurColor(value) }} />
-                {label}
-              </span>
-            ))}
+            <div className="stk-legend-group" aria-label="Sınav türü">
+              {legendItems.map(({ value, label }) => (
+                <span key={value}>
+                  <i style={{ backgroundColor: sinavTurColor(value) }} />
+                  {label}
+                </span>
+              ))}
+            </div>
+            <div className="stk-legend-group" aria-label="Kapsam">
+              <SinavKapsamEtiketi kapsam="turkiye_geneli" />
+              <SinavKapsamEtiketi kapsam="yerel" />
+            </div>
           </div>
         </div>
 
@@ -166,14 +173,22 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
               {agenda.map(exam => {
                 const day = Number(exam.tarih.slice(8, 10));
                 return (
-                  <button key={exam.id} type="button" onClick={() => setSelected(exam)}>
-                    <time dateTime={exam.tarih}>{day} {monthNames[month].slice(0, 3)}</time>
+                  <button
+                    key={exam.id}
+                    type="button"
+                    onClick={() => setSelected(exam)}
+                    style={{ ['--stk-c' as string]: sinavTurColor(exam.tur) }}
+                  >
+                    <time dateTime={exam.tarih}>
+                      <b>{day}</b>
+                      {monthNames[month].slice(0, 3)}
+                    </time>
                     <span>
                       <strong>{exam.baslik}</strong>
                       <small>
-                        {sinavTurBadge(exam.tur)}
-                        {exam.saat ? ` · ${exam.saat}` : ''}
-                        {exam.kapsam === 'turkiye_geneli' ? ' · Türkiye Geneli' : ''}
+                        <em>{sinavTurBadge(exam.tur)}</em>
+                        {exam.saat ? <span>{exam.saat}</span> : null}
+                        <SinavKapsamEtiketi kapsam={exam.kapsam} />
                       </small>
                     </span>
                   </button>
@@ -208,7 +223,7 @@ export default function SinavTakvimiSection({ sinavlar }: SinavTakvimiSectionPro
                   </span>
                   <span>
                     <strong>{exam.baslik}</strong>
-                    <small>{exam.kapsam === 'turkiye_geneli' ? 'Türkiye Geneli' : 'Yerel'}</small>
+                    <small><SinavKapsamEtiketi kapsam={exam.kapsam} /></small>
                   </span>
                 </button>
               ))}

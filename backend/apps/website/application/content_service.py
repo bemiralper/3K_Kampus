@@ -156,7 +156,7 @@ def resolve_attachments(entry: ContentEntry, request=None) -> list[dict]:
 
 def serialize_public_content(entry: ContentEntry, request=None, *, full: bool = False) -> dict:
     """Public API / landing ile uyumlu Duyuru benzeri dict."""
-    publish = entry.publish_at
+    publish = timezone.localtime(entry.publish_at) if entry.publish_at else None
     data = {
         'id': entry.id,
         'cms_id': entry.id,

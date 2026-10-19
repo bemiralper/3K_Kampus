@@ -9,6 +9,16 @@ def _fold_tr(value: str) -> str:
     return (value or '').translate(table).casefold()
 
 
+GUNU_BIRLIK_CODE = 'gunu_birlik'
+
+
+def is_gunu_birlik_kayit(ogrenci) -> bool:
+    """Kayıt türü günü birlik misafir mi? Yıllık kaydı yoktur, ana listede görünmez."""
+    if not ogrenci:
+        return False
+    return (getattr(ogrenci, 'kayit_turu', None) or '').strip() == GUNU_BIRLIK_CODE
+
+
 def looks_like_deneme_kulubu(code: str, label: str = '') -> bool:
     blob = _fold_tr(f'{code} {label}')
     compact = blob.replace(' ', '').replace('_', '').replace('-', '')

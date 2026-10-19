@@ -388,15 +388,47 @@ def _kutuphane_student_ids(student_ids, egitim_yili) -> set[int]:
     return set(qs.values_list('ogrenci_id', flat=True))
 
 
-def _program_label(sinif_adi: str, has_kutuphane: bool, has_deneme_kayit: bool) -> str:
-    """Sınıf yoksa: kütüphane hizmeti, yoksa kayıt türü deneme kulübü, yoksa boş."""
+def _program_label(
+    sinif_adi: str,
+    has_kutuphane: bool,
+    has_deneme_kayit: bool,
+    gunu_birlik_label: str = '',
+) -> str:
+    """Sınıf yoksa: kütüphane, günü birlik seviyesi, deneme kulübü, yoksa boş."""
     if sinif_adi:
         return sinif_adi
     if has_kutuphane:
         return 'Kütüphane'
+    if gunu_birlik_label:
+        return gunu_birlik_label
     if has_deneme_kayit:
         return 'Deneme Kulübü'
     return ''
+
+
+def _gunu_birlik_labels(exam, student_ids) -> dict[int, str]:
+    """Sınıfı olmayan günü birlik katılımcının seviye etiketi."""
+    from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
+
+    ids = [sid for sid in student_ids if sid]
+    if not ids:
+        return {}
+    labels: dict[int, str] = {}
+    rows = (
+        ExamParticipant.objects.filter(
+            exam=exam,
+            student_id__in=ids,
+            student__kayit_turu=GUNU_BIRLIK_CODE,
+        )
+        .select_related('sinif_seviyesi')
+        .order_by('id')
+    )
+    for row in rows:
+        if row.student_id in labels:
+            continue
+        seviye = (row.sinif_seviyesi.ad or '').strip() if row.sinif_seviyesi_id else ''
+        labels[row.student_id] = f'{seviye} · Günü birlik' if seviye else 'Günü birlik'
+    return labels
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1195,6 +1227,7 @@ def exam_analysis_students(request, exam_pk):
         [a.student_id for a in answers if a.student_id],
         exam.egitim_yili,
     )
+    gunu_labels = _gunu_birlik_labels(exam, [a.student_id for a in answers])
 
     # Puan hesapla ve sırala
     student_list = []
@@ -1235,6 +1268,7 @@ def exam_analysis_students(request, exam_pk):
         deneme = bool(kayit_kodu) and (
             _looks_like_deneme_kulubu(kayit_kodu) or kayit_kodu in deneme_codes
         )
+        gunu_label = '' if sinif_adi else gunu_labels.get(a.student_id, '')
 
         profil_foto, _foto_path = _student_photo_fields(a.student)
         student_list.append({
@@ -1243,7 +1277,7 @@ def exam_analysis_students(request, exam_pk):
             'student_name': f'{a.student.ad} {a.student.soyad}' if a.student else (a.raw_student_name or a.raw_student_id),
             'profil_foto': profil_foto,
             'raw_student_id': a.raw_student_id,
-            'sinif': _program_label(sinif_adi, kutuphane, deneme),
+            'sinif': _program_label(sinif_adi, kutuphane, deneme, gunu_label),
             'has_class': bool(sinif_adi),
             'has_kutuphane': kutuphane,
             'has_deneme': deneme,
@@ -1734,6 +1768,10 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
             )
         sinif_rank = puan_turleri_detail[pt_key]['sinif_ici_sira'] or sinif_rank
 
+    gunu_label = ''
+    if not sinif_adi and answer.student_id:
+        gunu_label = _gunu_birlik_labels(exam, [answer.student_id]).get(answer.student_id, '')
+
     return {
         'answer_id': answer.id,
         'student_id': answer.student_id,
@@ -1741,7 +1779,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'profil_foto': profil_foto,
         'profil_foto_path': profil_foto_path,
         'raw_student_id': answer.raw_student_id,
-        'sinif': _program_label(sinif_adi, has_kutuphane, has_deneme),
+        'sinif': _program_label(sinif_adi, has_kutuphane, has_deneme, gunu_label),
         'has_class': bool(sinif_adi),
         'has_kutuphane': has_kutuphane,
         'has_deneme': has_deneme,
@@ -1933,6 +1971,7 @@ def exam_analysis_rankings(request, exam_pk):
         [a.student_id for a in answers if a.student_id],
         exam.egitim_yili,
     )
+    gunu_labels = _gunu_birlik_labels(exam, [a.student_id for a in answers])
     ranking_list = []
     for a in answers:
         section_scores_detail = {}  # str(section_id) → {net, correct, wrong, empty}
@@ -1970,6 +2009,7 @@ def exam_analysis_rankings(request, exam_pk):
         deneme = bool(kayit_kodu) and (
             _looks_like_deneme_kulubu(kayit_kodu) or kayit_kodu in deneme_codes
         )
+        gunu_label = '' if sinif_adi else gunu_labels.get(a.student_id, '')
 
         ranking_list.append({
             'answer_id': a.id,
@@ -1990,7 +2030,7 @@ def exam_analysis_rankings(request, exam_pk):
             'tahmini_siralama': est.get('tahmini_siralama'),
             'yuzdelik_dilim': est.get('yuzdelik_dilim'),
             'section_nets': section_scores_detail,
-            'sinif': _program_label(sinif_adi, kutuphane, deneme),
+            'sinif': _program_label(sinif_adi, kutuphane, deneme, gunu_label),
             'has_class': bool(sinif_adi),
             'has_kutuphane': kutuphane,
             'has_deneme': deneme,

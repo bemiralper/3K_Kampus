@@ -19,6 +19,7 @@ SYSTEM_LOOKUPS = {
             ("asil", "Asil"),
             ("misafir", "Misafir"),
             ("yaz_programi", "Yaz Programı"),
+            ("gunu_birlik", "Günü Birlik Misafir"),
         ],
         "auto_code": True,
         "empty_label_error": "Kayıt türü adı zorunludur",
