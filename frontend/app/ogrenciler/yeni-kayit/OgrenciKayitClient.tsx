@@ -24,6 +24,7 @@ import { apiFetch } from "@/lib/api";
 import { ensureTelefonlar } from "@/components/ogrenci/VeliTelefonEditor";
 import { isKimlikConflictCode, useKimlikLookup } from "@/hooks/useKimlikLookup";
 import type { KimlikResolveResponse } from "@/lib/kimlik-api";
+import SinavStep from "./steps/SinavStep";
 import KimlikStep from "./steps/KimlikStep";
 import KurumsalStep from "./steps/KurumsalStep";
 import AdresStep from "./steps/AdresStep";
@@ -97,6 +98,24 @@ const STEPS: { id: StepType; label: string; icon: JSX.Element }[] = [
   },
 ];
 
+const SINAV_STEP: (typeof STEPS)[number] = {
+  id: "sinav",
+  label: "Sınav",
+  icon: (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="3" y="4" width="18" height="18" rx="2" />
+      <line x1="16" y1="2" x2="16" y2="6" />
+      <line x1="8" y1="2" x2="8" y2="6" />
+      <line x1="3" y1="10" x2="21" y2="10" />
+    </svg>
+  ),
+};
+
+function wizardSteps(mode: "standard" | "gunu_birlik") {
+  if (mode !== "gunu_birlik") return STEPS;
+  return [SINAV_STEP, ...STEPS.filter((step) => step.id !== "ozet")];
+}
+
 const initialData: WizardData = {
   student: {
     kayit_turu: undefined,
@@ -148,7 +167,18 @@ function clearWizardStorage() {
   }
 }
 
-export default function OgrenciKayitClient() {
+export default function OgrenciKayitClient({
+  mode = "standard",
+  initialExamId = "",
+}: {
+  mode?: "standard" | "gunu_birlik";
+  initialExamId?: string;
+}) {
+  const isWalkIn = mode === "gunu_birlik";
+  const steps = wizardSteps(mode);
+  const metadataUrl = isWalkIn
+    ? "/api/ogrenci-kayit/metadata/?kapsam=gunu_birlik"
+    : "/api/ogrenci-kayit/metadata/";
   const pathname = usePathname();
   const { href: ogrenciHref } = useOgrenciPath();
   const { activeSube, activeEgitimYili } = useKurum();
@@ -159,6 +189,8 @@ export default function OgrenciKayitClient() {
     return `${odemeTakipHref(base, "sozlesme-olustur")}?ogrenci_id=${ogrenciId}`;
   };
   const [currentStep, setCurrentStep] = useState(0);
+  const [examId, setExamId] = useState(initialExamId);
+  const [sessionId, setSessionId] = useState("");
   const [data, setData] = useState<WizardData>(initialData);
   const [metadata, setMetadata] = useState<MetadataResponse | null>(null);
   const [districts, setDistricts] = useState<DistrictOption[]>([]);
@@ -216,7 +248,7 @@ export default function OgrenciKayitClient() {
   useEffect(() => {
     const fetchMetadata = async () => {
       try {
-        const result = await apiFetch<MetadataResponse>("/api/ogrenci-kayit/metadata/");
+        const result = await apiFetch<MetadataResponse>(metadataUrl);
         if (!result.success || !result.data) throw new Error(result.error || "Metadata yüklenemedi");
         const meta = result.data;
         setMetadata(meta);
@@ -247,8 +279,12 @@ export default function OgrenciKayitClient() {
           }
         }
 
+        const walkInType = meta.lookups.registration_type?.find((item) => item.code === "gunu_birlik");
         setData((prev) => ({
           ...prev,
+          student: isWalkIn
+            ? { ...prev.student, kayit_turu: walkInType?.id || prev.student.kayit_turu }
+            : prev.student,
           enrollment: {
             ...prev.enrollment,
             egitim_yili: contextYearId || activeYear?.id || meta.egitim_yillari?.[0]?.id,
@@ -271,7 +307,7 @@ export default function OgrenciKayitClient() {
     };
 
     fetchMetadata();
-  }, []);
+  }, [metadataUrl, isWalkIn]);
 
   // Üst bardaki eğitim yılı = kayıt eğitim yılı (Eğitim Paketleri modülü ile aynı kapsam)
   useEffect(() => {
@@ -308,15 +344,15 @@ export default function OgrenciKayitClient() {
     }));
 
     if (subeChanged) {
-      apiFetch<MetadataResponse>("/api/ogrenci-kayit/metadata/").then((result) => {
+      apiFetch<MetadataResponse>(metadataUrl).then((result) => {
         if (result.success && result.data) setMetadata(result.data);
       });
     }
-  }, [activeSube?.id]);
+  }, [activeSube?.id, metadataUrl]);
 
   // Paketleri yükle
   useEffect(() => {
-    if (currentStep !== 4 || !activeSube?.id || !activeEgitimYili?.id) return;
+    if (steps[currentStep]?.id !== "paket" || !activeSube?.id || !activeEgitimYili?.id) return;
 
     const fetchPackages = async () => {
       if (!activeSube?.id) {
@@ -562,7 +598,10 @@ export default function OgrenciKayitClient() {
       setRenewalState({ isRenewal: false });
       setData((prev) => ({
         ...prev,
-        student: { ...initialData.student },
+        student: {
+          ...initialData.student,
+          ...(isWalkIn ? { kayit_turu: prev.student.kayit_turu } : {}),
+        },
         enrollment: {
           ...prev.enrollment,
           giris_turu: metadata?.lookups.entry_type?.find((e) => e.code === "yeni_kayit")?.id || prev.enrollment.giris_turu,
@@ -590,8 +629,20 @@ export default function OgrenciKayitClient() {
   const validateStep = (step: number): boolean => {
     const newErrors: Record<string, string> = {};
 
-    switch (step) {
-      case 0: // Kimlik
+    switch (steps[step]?.id) {
+      case "sinav": {
+        if (!examId) {
+          newErrors.sinav = "Sınav seçiniz";
+          break;
+        }
+        const exam = (metadata?.sinavlar || []).find((item) => String(item.id) === examId);
+        if (exam && exam.sessions.length > 1 && !sessionId) {
+          newErrors.sinav = "Oturum seçiniz";
+        }
+        break;
+      }
+
+      case "kimlik":
         if (!data.student.kayit_turu) newErrors.kayit_turu = "Kayıt türü seçiniz";
         if (!data.student.tc_kimlik_no) {
           newErrors.tc_kimlik_no = "TC Kimlik No giriniz";
@@ -606,7 +657,7 @@ export default function OgrenciKayitClient() {
         if (!data.student.cinsiyet) newErrors.cinsiyet = "Cinsiyet seçiniz";
         break;
 
-      case 1: // Kurumsal
+      case "kurumsal":
         if (!data.enrollment.ogrenci_no) newErrors.ogrenci_no = "Öğrenci numarası giriniz";
         if (!data.enrollment.egitim_yili) newErrors.egitim_yili = "Eğitim yılı seçiniz";
         if (!data.enrollment.sinif_seviyesi) newErrors.sinif_seviyesi = "Sınıf seviyesi seçiniz";
@@ -619,7 +670,7 @@ export default function OgrenciKayitClient() {
         if (!data.enrollment.giris_turu) newErrors.giris_turu = "Giriş türü seçiniz";
         break;
 
-      case 2: // Adres
+      case "adres":
         if (!data.address.adres_turu) newErrors.adres_turu = "Adres türü seçiniz";
         if (!data.address.il) newErrors.il = "İl seçiniz";
         if (districts.length > 0) {
@@ -630,7 +681,7 @@ export default function OgrenciKayitClient() {
         if (!data.address.acik_adres.trim()) newErrors.acik_adres = "Açık adres giriniz";
         break;
 
-      case 3: // Veli
+      case "veli":
         // Eğer öğrenci kendi velisi ise validasyon gerekmez
         if (data.veliSecimi === 'self') {
           break;
@@ -671,7 +722,7 @@ export default function OgrenciKayitClient() {
         });
         break;
 
-      case 4: // Paket
+      case "paket":
         {
           const hasPaket = (data.package.paketler || []).length > 0;
           const hasEkHizmet = (data.package.ek_hizmet_ids || []).length > 0;
@@ -691,7 +742,7 @@ export default function OgrenciKayitClient() {
   // İleri git
   const handleNext = () => {
     if (validateStep(currentStep)) {
-      setCurrentStep((prev) => Math.min(prev + 1, STEPS.length - 1));
+      setCurrentStep((prev) => Math.min(prev + 1, steps.length - 1));
     }
   };
 
@@ -717,6 +768,14 @@ export default function OgrenciKayitClient() {
         guardians: data.guardians,
         package: data.package,
         veliSecimi: data.veliSecimi,
+        ...(isWalkIn
+          ? {
+              gunu_birlik: {
+                exam_id: Number(examId),
+                exam_session_id: sessionId ? Number(sessionId) : null,
+              },
+            }
+          : {}),
       };
 
       const result = await apiFetch<Record<string, unknown>>("/api/ogrenci-kayit/register/", {
@@ -793,14 +852,18 @@ export default function OgrenciKayitClient() {
       {/* Header */}
       <div className="wizard-header">
         <div className="wizard-title">
-          <h1>Yeni Öğrenci Kaydı</h1>
-          <p>Adım adım öğrenci kayıt işlemini tamamlayın</p>
+          <h1>{isWalkIn ? "Günü Birlik Kayıt" : "Yeni Öğrenci Kaydı"}</h1>
+          <p>
+            {isWalkIn
+              ? "Deneme sınavı, kimlik, okul, adres, veli ve paket bilgilerini kaydedin"
+              : "Adım adım öğrenci kayıt işlemini tamamlayın"}
+          </p>
         </div>
       </div>
 
       {/* Steps Navigation */}
       <div className="wizard-steps-nav">
-        {STEPS.map((step, index) => (
+        {steps.map((step, index) => (
           <div
             key={step.id}
             className={`wizard-step-item ${
@@ -834,7 +897,19 @@ export default function OgrenciKayitClient() {
 
       {/* Step Content */}
       <div className="wizard-content">
-        {currentStep === 0 && (
+        {steps[currentStep]?.id === "sinav" && (
+          <SinavStep
+            exams={metadata.sinavlar || []}
+            examId={examId}
+            sessionId={sessionId}
+            error={errors.sinav}
+            onChange={(nextExamId, nextSessionId) => {
+              setExamId(nextExamId);
+              setSessionId(nextSessionId);
+            }}
+          />
+        )}
+        {steps[currentStep]?.id === "kimlik" && (
           <KimlikStep
             data={data}
             metadata={metadata}
@@ -844,9 +919,10 @@ export default function OgrenciKayitClient() {
             conflictNonce={kimlikConflictNonce}
             onRenewalDecision={handleRenewalDecision}
             onUseExistingStudent={handleUseExistingStudent}
+            registrationLocked={isWalkIn}
           />
         )}
-        {currentStep === 1 && (
+        {steps[currentStep]?.id === "kurumsal" && (
           <KurumsalStep
             data={data}
             metadata={metadata}
@@ -855,7 +931,7 @@ export default function OgrenciKayitClient() {
             onStudentNumberRefresh={fetchStudentNumber}
           />
         )}
-        {currentStep === 2 && (
+        {steps[currentStep]?.id === "adres" && (
           <AdresStep
             data={data}
             metadata={metadata}
@@ -865,7 +941,7 @@ export default function OgrenciKayitClient() {
             onCityChange={fetchDistricts}
           />
         )}
-        {currentStep === 3 && (
+        {steps[currentStep]?.id === "veli" && (
           <VeliStep
             data={data}
             metadata={metadata}
@@ -874,7 +950,7 @@ export default function OgrenciKayitClient() {
             renewalState={renewalState}
           />
         )}
-        {currentStep === 4 && (
+        {steps[currentStep]?.id === "paket" && (
           <PaketStep
             data={data}
             errors={errors}
@@ -887,7 +963,7 @@ export default function OgrenciKayitClient() {
             packageLoadError={packageLoadError}
           />
         )}
-        {currentStep === 5 && (
+        {steps[currentStep]?.id === "ozet" && (
           <OzetStep
             data={data}
             metadata={metadata}
@@ -938,9 +1014,13 @@ export default function OgrenciKayitClient() {
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
               </div>
-              <h2 style={{ margin: 0, color: "#fff", fontSize: 20, fontWeight: 700 }}>Kayıt Başarılı!</h2>
+              <h2 style={{ margin: 0, color: "#fff", fontSize: 20, fontWeight: 700 }}>
+                {isWalkIn ? "Sınava eklendi" : "Kayıt Başarılı!"}
+              </h2>
               <p style={{ margin: "6px 0 0", color: "rgba(255,255,255,0.85)", fontSize: 14 }}>
-                Öğrenci başarıyla sisteme kaydedildi
+                {isWalkIn
+                  ? registeredStudent.message || "Öğrenci seçilen sınava eklendi."
+                  : "Öğrenci başarıyla sisteme kaydedildi"}
               </p>
             </div>
 
@@ -974,6 +1054,11 @@ export default function OgrenciKayitClient() {
               <button
                 type="button"
                 onClick={() => {
+                  if (isWalkIn) {
+                    markClean();
+                    requestNavigation("/ogrenciler/misafir", { hard: true });
+                    return;
+                  }
                   const ogrenciId = registeredStudent.id ?? registeredStudent.ogrenci_id;
                   if (!ogrenciId) {
                     setShowSuccessModal(false);
@@ -1022,8 +1107,12 @@ export default function OgrenciKayitClient() {
                   </svg>
                 </div>
                 <div>
-                  <div style={{ fontWeight: 700, fontSize: 14 }}>Sözleşme Oluştur</div>
-                  <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>Hemen ödeme planı ve sözleşme oluştur</div>
+                  <div style={{ fontWeight: 700, fontSize: 14 }}>
+                    {isWalkIn ? "Misafir listesine dön" : "Sözleşme Oluştur"}
+                  </div>
+                  <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
+                    {isWalkIn ? "Kayıtlı günü birlik öğrencileri görüntüle" : "Hemen ödeme planı ve sözleşme oluştur"}
+                  </div>
                 </div>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginLeft: "auto" }}>
                   <polyline points="9 18 15 12 9 6" />
@@ -1134,10 +1223,10 @@ export default function OgrenciKayitClient() {
         </button>
 
         <div className="wizard-step-counter">
-          {currentStep + 1} / {STEPS.length}
+          {currentStep + 1} / {steps.length}
         </div>
 
-        {currentStep < STEPS.length - 1 ? (
+        {currentStep < steps.length - 1 ? (
           <button type="button" className="wizard-btn-primary" onClick={handleNext}>
             İleri
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

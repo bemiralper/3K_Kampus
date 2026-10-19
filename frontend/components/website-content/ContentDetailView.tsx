@@ -5,6 +5,7 @@ import ContentAttachmentList from './ContentAttachmentList';
 import ContentBadge from './ContentBadge';
 import ContentCoverFrame from './ContentCoverFrame';
 import ContentLightbox from './ContentLightbox';
+import ContentShareBar from './ContentShareBar';
 import { CONTENT_KIND_LABEL, formatContentDate, shouldShowContentExcerpt } from '@/lib/content-labels';
 import { resolveMediaUrl, type PublicContentItem } from '@/lib/website-api';
 
@@ -30,6 +31,9 @@ export default function ContentDetailView({ item, variant = 'standalone' }: Prop
           {item.yayin_tarihi && (
             <time className="text-sm text-slate-400">{formatContentDate(item.yayin_tarihi)}</time>
           )}
+          {item.slug ? (
+            <ContentShareBar title={item.baslik} text={item.ozet} path={`/duyurular/${item.slug}`} />
+          ) : null}
           <h1 className="mt-2 text-3xl font-bold text-slate-900">{item.baslik}</h1>
         </>
       )}
@@ -41,6 +45,9 @@ export default function ContentDetailView({ item, variant = 'standalone' }: Prop
           {item.yayin_tarihi && (
             <time className="text-sm text-slate-400">{formatContentDate(item.yayin_tarihi)}</time>
           )}
+          {item.slug ? (
+            <ContentShareBar title={item.baslik} text={item.ozet} path={`/duyurular/${item.slug}`} />
+          ) : null}
         </div>
       )}
       {cover && (

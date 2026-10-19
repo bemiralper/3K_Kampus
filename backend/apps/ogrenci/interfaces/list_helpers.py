@@ -11,6 +11,7 @@ from django.http import JsonResponse
 
 from apps.ogrenci.application.veli_telefon import normalize_telefonlar
 from apps.ogrenci.domain.models import OgrenciKayit, OgrenciVeli, OgrenciEgitimPaketi
+from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
 
 
 MAX_EXPORT_ROWS = 5000
@@ -696,6 +697,8 @@ def build_kayit_queryset(ctx, params, apply_durum=True):
 
     if params['kayit_turu']:
         qs = qs.filter(ogrenci__kayit_turu=params['kayit_turu'])
+    else:
+        qs = qs.exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
 
     if params['cinsiyet']:
         qs = qs.filter(ogrenci__cinsiyet=params['cinsiyet'])

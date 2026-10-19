@@ -33,6 +33,7 @@ interface KimlikStepProps {
     tcResult: TcCheckResponse,
     kimlikResult: KimlikResolveResponse | null,
   ) => void;
+  registrationLocked?: boolean;
 }
 
 export default function KimlikStep({
@@ -44,6 +45,7 @@ export default function KimlikStep({
   onRenewalDecision,
   onUseExistingStudent,
   conflictNonce = 0,
+  registrationLocked = false,
 }: KimlikStepProps) {
   const [tcChecking, setTcChecking] = useState(false);
   const [tcResult, setTcResult] = useState<TcCheckResponse | null>(null);
@@ -182,6 +184,7 @@ export default function KimlikStep({
           <select
             className={`wizard-select ${errors.kayit_turu ? 'error' : ''}`}
             value={data.student.kayit_turu ?? ""}
+            disabled={registrationLocked}
             onChange={(e) =>
               onChange({
                 ...data,

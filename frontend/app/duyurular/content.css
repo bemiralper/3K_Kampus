@@ -162,6 +162,61 @@
   border-bottom: 1px solid var(--wc-border);
 }
 
+.wc-share {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.wc-share__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid var(--wc-border);
+  background: #fff;
+  color: #475569;
+  cursor: pointer;
+  text-decoration: none;
+}
+.wc-share__btn svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+}
+.wc-share__btn:hover {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+  color: var(--wc-ink);
+}
+.wc-share__btn--wa {
+  color: #128c7e;
+}
+.wc-share__btn--wa:hover {
+  border-color: #86efac;
+  background: #f0fdf4;
+  color: #047857;
+}
+.wc-share__btn--ok {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+.wc-share--compact .wc-share__btn {
+  width: 28px;
+  height: 28px;
+}
+.wc-share--compact .wc-share__btn svg {
+  width: 14px;
+  height: 14px;
+}
+.wc-card__actions .wc-card__link {
+  margin-top: 0;
+}
+
 .wc-prose {
   font-size: 1rem;
   line-height: 1.75;

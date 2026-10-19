@@ -21,7 +21,8 @@ from apps.egitim_paketleri.models import EkHizmet
 from apps.egitim_tanimlari.models import SinifSeviyesi
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
-from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
+from apps.ogrenci.domain.models import Ogrenci, OgrenciAdres, OgrenciKayit, OgrenciVeli
+from apps.ogrenci.interfaces.list_helpers import build_kayit_queryset
 from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
 from apps.ogrenci_kayit.domain.models import LookupCategory, LookupOption
 from apps.roller.models import Role, UserRole
@@ -267,3 +268,105 @@ class GunuBirlikTamKayitTests(TestCase):
         self.assertEqual(self.guest.ad, 'Yeni')
         self.assertTrue(OgrenciKayit.objects.filter(ogrenci=self.guest, egitim_yili=self.yil).exists())
         self.assertEqual(Ogrenci.objects.filter(tc_kimlik_no='10000000009').count(), 1)
+
+    def _register(self, payload):
+        return self.client.post(
+            '/api/ogrenci-kayit/register/',
+            data=json.dumps(payload),
+            content_type='application/json',
+            **self.headers,
+        )
+
+    def _walk_payload(self, **student):
+        base = {
+            'tc_kimlik_no': '10000000046',
+            'ad': 'Deneme',
+            'soyad': 'Misafir',
+            'dogum_tarihi': '2011-04-04',
+            'telefon': '05321110046',
+        }
+        base.update(student)
+        return {
+            'student': base,
+            'enrollment': {
+                'egitim_yili': self.yil.id,
+                'sinif_seviyesi': self.seviye.id,
+                'ogrenci_no': 'GB-46',
+            },
+            'address': {'acik_adres': 'Deneme sokak 1'},
+            'guardians': [{
+                'ad': 'Veli',
+                'soyad': 'Misafir',
+                'tc_kimlik_no': '10000000047',
+                'telefon': '05321110047',
+            }],
+            'veliSecimi': 'add',
+            'package': {'ek_hizmet_ids': [self.hizmet.id]},
+            'gunu_birlik': {'exam_id': self.exam.id},
+        }
+
+    def test_wizard_veli_okul_ve_secilen_sinavi_yazar_listeye_dusmez(self):
+        from apps.coaching.olcme_degerlendirme.models import Exam, ExamParticipant
+
+        self.exam = Exam.objects.create(
+            name='TYT Deneme', exam_type='YKS_TYT', exam_date='2026-10-25',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        other = Exam.objects.create(
+            name='Başka Deneme', exam_type='YKS_TYT', exam_date='2026-11-01',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        res = self._register(self._walk_payload())
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertIn('sınava eklendi', res.json()['message'])
+        ogrenci = Ogrenci.objects.get(tc_kimlik_no='10000000046')
+        self.assertEqual(ogrenci.kayit_turu, GUNU_BIRLIK_CODE)
+        self.assertTrue(OgrenciKayit.objects.filter(ogrenci=ogrenci, egitim_yili=self.yil).exists())
+        self.assertTrue(OgrenciAdres.objects.filter(ogrenci=ogrenci, adres='Deneme sokak 1').exists())
+        self.assertTrue(OgrenciVeli.objects.filter(ogrenci=ogrenci, ad='Veli', telefon='05321110047').exists())
+        self.assertTrue(ExamParticipant.objects.filter(exam=self.exam, student=ogrenci).exists())
+        self.assertFalse(ExamParticipant.objects.filter(exam=other, student=ogrenci).exists())
+        ctx = {
+            'kurum_id': self.kurum.id,
+            'sube_id': self.sube.id,
+            'egitim_yili_id': self.yil.id,
+        }
+        params = {
+            'q': '', 'all_years': False, 'durum': 'aktif',
+            'sinif_seviyesi_ids': [], 'giris_turu': None, 'kayit_turu': None,
+            'cinsiyet': None, 'paket_id': None, 'paket_turu': None, 'kalemler': [],
+            'sinif_ids': [], 'school_ids': [], 'alan_ids': [], 'coach_ids': [],
+            'kayit_tarihi_bas': None, 'kayit_tarihi_bit': None,
+            'sort': 'created_at_desc', 'page': 1, 'page_size': 25,
+        }
+        qs, _ = build_kayit_queryset(ctx, params)
+        self.assertNotIn(ogrenci.id, set(qs.values_list('ogrenci_id', flat=True)))
+        params['kayit_turu'] = GUNU_BIRLIK_CODE
+        listed, _ = build_kayit_queryset(ctx, params)
+        self.assertIn(ogrenci.id, set(listed.values_list('ogrenci_id', flat=True)))
+
+    def test_kayitli_ogrenci_turu_degismez_sinava_eklenir(self):
+        from apps.coaching.olcme_degerlendirme.models import Exam, ExamParticipant
+
+        self.exam = Exam.objects.create(
+            name='TYT Deneme', exam_type='YKS_TYT', exam_date='2026-10-25',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        asil = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Asıl', soyad='Öğrenci',
+            tc_kimlik_no='10000000048', telefon='05321110048',
+            kayit_turu='asil', aktif_mi=True,
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=asil, kurum=self.kurum, sube=self.sube, egitim_yili=self.yil, aktif_mi=True,
+        )
+        res = self._register(self._walk_payload(
+            tc_kimlik_no='10000000048', ad='Asıl', soyad='Öğrenci', telefon='05321110048',
+        ))
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()['message'], 'Kayıtlı öğrenci, sınava eklendi.')
+        asil.refresh_from_db()
+        self.assertEqual(asil.kayit_turu, 'asil')
+        self.assertEqual(asil.ad, 'Asıl')
+        self.assertEqual(OgrenciKayit.objects.filter(ogrenci=asil).count(), 1)
+        self.assertTrue(ExamParticipant.objects.filter(exam=self.exam, student=asil).exists())

@@ -124,6 +124,22 @@ export type MetadataResponse = {
   siniflar?: SinifOption[];
   subeler: Sube[];
   egitim_yillari: EgitimYili[];
+  sinavlar?: GunuBirlikSinav[];
+};
+
+export type GunuBirlikOturum = {
+  id: number;
+  name: string;
+  session_date: string | null;
+  schedule_preference_display: string;
+};
+
+export type GunuBirlikSinav = {
+  id: number;
+  name: string;
+  exam_date: string | null;
+  exam_type: string;
+  sessions: GunuBirlikOturum[];
 };
 
 export type StudentData = {
@@ -207,7 +223,7 @@ export type WizardData = {
   veliSecimi: 'self' | 'add' | null;
 };
 
-export type StepType = 'kimlik' | 'kurumsal' | 'adres' | 'veli' | 'paket' | 'ozet';
+export type StepType = 'sinav' | 'kimlik' | 'kurumsal' | 'adres' | 'veli' | 'paket' | 'ozet';
 
 // ═══ TC Kimlik Kontrol Yanıtları ═══
 

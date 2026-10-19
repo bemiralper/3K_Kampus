@@ -296,12 +296,16 @@ class WizardMetadataView(APIView):
         ensure_all_system_lookups()
         ensure_locations()
 
+        kapsam = (request.query_params.get("kapsam") or "").strip()
         lookups = {}
         categories = LookupCategory.objects.filter(is_active=True).prefetch_related("options")
         for category in categories:
             options = category.options.filter(is_active=True).order_by("order")
             if category.code == "registration_type":
-                options = options.exclude(code=GUNU_BIRLIK_CODE)
+                if kapsam == GUNU_BIRLIK_CODE:
+                    options = options.filter(code=GUNU_BIRLIK_CODE)
+                else:
+                    options = options.exclude(code=GUNU_BIRLIK_CODE)
             lookups[category.code] = [
                 {
                     "id": option.id,
@@ -395,18 +399,24 @@ class WizardMetadataView(APIView):
             for yil in EgitimYili.objects.filter(aktif_mi=True).order_by("-baslangic_yil")
         ]
 
-        return Response(
-            {
-                "lookups": lookups,
-                "cities": cities,
-                "rules": rules,
-                "sinif_seviyeleri": sinif_seviyeleri,
-                "alanlar": alanlar,
-                "siniflar": siniflar,
-                "subeler": subeler,
-                "egitim_yillari": egitim_yillari,
-            }
-        )
+        payload = {
+            "lookups": lookups,
+            "cities": cities,
+            "rules": rules,
+            "sinif_seviyeleri": sinif_seviyeleri,
+            "alanlar": alanlar,
+            "siniflar": siniflar,
+            "subeler": subeler,
+            "egitim_yillari": egitim_yillari,
+        }
+        if kapsam == GUNU_BIRLIK_CODE and kurum_id and sube_id:
+            from apps.ogrenci_kayit.application.gunu_birlik import exam_options
+            from shared.context import get_secili_egitim_yili_id
+
+            payload["sinavlar"] = exam_options(
+                kurum_id, sube_id, get_secili_egitim_yili_id(request),
+            )
+        return Response(payload)
 
 
 class WizardDistrictView(APIView):
@@ -468,8 +478,29 @@ class DirectRegistrationView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        walk = data.get("gunu_birlik") if isinstance(data.get("gunu_birlik"), dict) else {}
+        is_walk_in = bool(walk.get("exam_id"))
+        walk_exam = None
+        walk_session_id = None
+        if is_walk_in:
+            from apps.coaching.olcme_degerlendirme.models import Exam
+
+            try:
+                walk_session_id = int(walk["exam_session_id"]) if walk.get("exam_session_id") else None
+            except (TypeError, ValueError):
+                return Response({"detail": "Oturum bulunamadı"}, status=status.HTTP_400_BAD_REQUEST)
+            walk_exam = Exam.objects.filter(
+                id=walk.get("exam_id"),
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                is_active=True,
+            ).first()
+            if walk_exam is None:
+                return Response({"detail": "Sınav bulunamadı"}, status=status.HTTP_400_BAD_REQUEST)
+
         try:
             with transaction.atomic():
+                skip_profile_writes = False
                 # Lookup değerlerini çöz
                 kayit_turu_code = None
                 if student_data.get("kayit_turu"):
@@ -509,7 +540,7 @@ class DirectRegistrationView(APIView):
                         cinsiyet=cinsiyet_code,
                         telefon=normalize_phone(student_data.get("telefon") or ""),
                         email=student_data.get("email") or "",
-                        kayit_turu=kayit_turu_code or "asil",
+                        kayit_turu=GUNU_BIRLIK_CODE if is_walk_in else (kayit_turu_code or "asil"),
                         aktif_mi=True,
                     )
                     KisiService.link_ogrenci(ogrenci)
@@ -519,7 +550,7 @@ class DirectRegistrationView(APIView):
                         ogrenci.sube_id = sube_id
                         updates.append('sube_id')
                     if (ogrenci.kayit_turu or '') == GUNU_BIRLIK_CODE:
-                        ogrenci.kayit_turu = kayit_turu_code or 'asil'
+                        ogrenci.kayit_turu = GUNU_BIRLIK_CODE if is_walk_in else (kayit_turu_code or 'asil')
                         ogrenci.ad = student_data['ad']
                         ogrenci.soyad = student_data['soyad']
                         ogrenci.dogum_tarihi = student_data['dogum_tarihi']
@@ -573,7 +604,7 @@ class DirectRegistrationView(APIView):
                     egitim_yili=egitim_yili,
                 ).first()
 
-                if existing_kayit:
+                if existing_kayit and not is_walk_in:
                     return Response({"detail": "Bu öğrenci bu eğitim yılında zaten kayıtlı"}, status=status.HTTP_400_BAD_REQUEST)
 
                 # Kayıt oluştur — şube her zaman aktif bağlamdan (üst bar seçimi)
@@ -588,25 +619,42 @@ class DirectRegistrationView(APIView):
                 if school_err:
                     return Response({"detail": school_err}, status=status.HTTP_400_BAD_REQUEST)
 
-                kayit = OgrenciKayit.objects.create(
-                    ogrenci=ogrenci,
-                    sinif=sinif,
-                    sinif_seviyesi=sinif_seviyesi,
-                    alan=alan,
-                    egitim_yili=egitim_yili,
-                    kurum_id=kurum_id,
-                    sube_id=sube_id,
-                    okul_no=enrollment_data.get("ogrenci_no") or "",
-                    giris_turu=giris_turu_code,
-                    giris_tarihi=enrollment_data.get("giris_tarihi"),
-                    school=okul,
-                    geldigi_okul="",
-                    referans=enrollment_data.get("referans") or "",
-                    kaydi_alan=request.user if request.user.is_authenticated else None,
-                )
+                if existing_kayit:
+                    kayit = existing_kayit
+                    if (ogrenci.kayit_turu or '') != GUNU_BIRLIK_CODE:
+                        skip_profile_writes = True
+                    else:
+                        kayit.sinif = sinif
+                        kayit.sinif_seviyesi = sinif_seviyesi
+                        kayit.alan = alan
+                        kayit.school = okul
+                        kayit.okul_no = enrollment_data.get("ogrenci_no") or kayit.okul_no
+                        kayit.giris_turu = giris_turu_code
+                        kayit.giris_tarihi = enrollment_data.get("giris_tarihi") or kayit.giris_tarihi
+                        kayit.referans = enrollment_data.get("referans") or kayit.referans
+                        kayit.save()
+                else:
+                    kayit = OgrenciKayit.objects.create(
+                        ogrenci=ogrenci,
+                        sinif=sinif,
+                        sinif_seviyesi=sinif_seviyesi,
+                        alan=alan,
+                        egitim_yili=egitim_yili,
+                        kurum_id=kurum_id,
+                        sube_id=sube_id,
+                        okul_no=enrollment_data.get("ogrenci_no") or "",
+                        giris_turu=giris_turu_code,
+                        giris_tarihi=enrollment_data.get("giris_tarihi"),
+                        school=okul,
+                        geldigi_okul="",
+                        referans=enrollment_data.get("referans") or "",
+                        kaydi_alan=request.user if request.user.is_authenticated else None,
+                    )
 
                 # Adres
-                if address_data.get("acik_adres"):
+                if address_data.get("acik_adres") and not OgrenciAdres.objects.filter(
+                    ogrenci=ogrenci, varsayilan=True,
+                ).exists():
                     adres_turu_code = "ev"
                     if address_data.get("adres_turu"):
                         adres_turu_opt = LookupOption.objects.filter(id=address_data["adres_turu"]).first()
@@ -632,7 +680,10 @@ class DirectRegistrationView(APIView):
                         varsayilan=True,
                     )
 
-                # Veliler
+                # Veliler — kayıtlı velisi olan öğrenciye ikinci veli açma
+                if OgrenciVeli.objects.filter(ogrenci=ogrenci).exists():
+                    veli_secimi = None
+                    guardians_data = []
                 if veli_secimi == 'self':
                     veli_self = OgrenciVeli.objects.create(
                         ogrenci=ogrenci,
@@ -715,7 +766,9 @@ class DirectRegistrationView(APIView):
                                     varsayilan=False,
                                 )
 
-                # Eğitim Paketleri
+                # Eğitim Paketleri — asıl öğrencinin mevcut hizmetlerine dokunma
+                if skip_profile_writes:
+                    package_data = {}
                 from apps.egitim_paketleri.models import (
                     GrupDersi, OzelDers, Deneme, EkHizmet, PremiumPaket, YayinPaketi,
                 )
@@ -938,6 +991,22 @@ class DirectRegistrationView(APIView):
                     except YayinPaketi.DoesNotExist:
                         pass
 
+                message = "Kayıt başarıyla tamamlandı"
+                if is_walk_in:
+                    from apps.ogrenci_kayit.application.gunu_birlik import _attach
+
+                    _, attach_err = _attach(
+                        walk_exam, ogrenci, sinif_seviyesi.id, walk_session_id,
+                    )
+                    if attach_err and attach_err != 'zaten':
+                        raise ValueError(attach_err)
+                    if attach_err == 'zaten':
+                        message = "Bu öğrenci zaten bu sınavda."
+                    elif skip_profile_writes:
+                        message = "Kayıtlı öğrenci, sınava eklendi."
+                    else:
+                        message = "Günü birlik kayıt açıldı ve sınava eklendi."
+
                 return Response({
                     "id": ogrenci.id,
                     "kayit_id": kayit.id,
@@ -945,7 +1014,7 @@ class DirectRegistrationView(APIView):
                     "soyad": ogrenci.soyad,
                     "tam_ad": f"{ogrenci.ad} {ogrenci.soyad}".strip(),
                     "ogrenci_no": kayit.okul_no,
-                    "message": "Kayıt başarıyla tamamlandı",
+                    "message": message,
                 }, status=status.HTTP_201_CREATED)
 
         except KimlikConflictError as e:

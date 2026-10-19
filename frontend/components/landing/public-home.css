@@ -829,10 +829,33 @@
 }
 
 .duy-home .wc-card {
+  position: relative;
   border: 1px solid #e6ebf1;
   border-radius: 20px;
   background: #fff;
   box-shadow: 0 10px 28px rgba(20, 32, 51, 0.05);
+}
+
+.duy-home .wc-card__open {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 100%;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.duy-home .wc-card__open .wc-card__link {
+  padding-right: 72px;
+}
+
+.duy-home .wc-share--compact {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  margin-left: 0;
 }
 
 .duy-home .wc-card:hover {
