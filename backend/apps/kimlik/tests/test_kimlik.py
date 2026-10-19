@@ -273,3 +273,83 @@ class BackfillKisiTests(TestCase):
         self.assertIsNone(personel.kisi_id)
         self.assertIsNone(veli.kisi_id)
         self.assertIn('Backfill tamamlandı', output)
+
+    def test_same_person_in_multiple_roles_is_not_a_conflict(self):
+        from apps.kimlik.management.commands.backfill_kisi import collect_conflicts
+
+        ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='11111111111',
+            ad='Ogrenci',
+            soyad='Bir',
+            aktif_mi=True,
+        )
+        ogrenci_iki = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='22222222222',
+            ad='Ogrenci',
+            soyad='Iki',
+            aktif_mi=True,
+        )
+        Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='10000000001',
+            ad='Mustafa',
+            soyad='Koçak',
+            cep_telefon='05320000001',
+            aktif_mi=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=ogrenci,
+            veli_turu='baba',
+            tc_kimlik_no='10000000001',
+            ad='MUSTAFA',
+            soyad='KOÇAK',
+            telefon='5320000001',
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=ogrenci_iki,
+            veli_turu='baba',
+            tc_kimlik_no='10000000001',
+            ad='Mustafa',
+            soyad='Koçak',
+            telefon='05320000001',
+        )
+
+        self.assertEqual(collect_conflicts(kurum_id=self.kurum.id), [])
+
+    def test_same_tc_with_different_names_is_a_conflict(self):
+        from apps.kimlik.management.commands.backfill_kisi import collect_conflicts
+
+        ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='11111111111',
+            ad='Ogrenci',
+            soyad='Bir',
+            aktif_mi=True,
+        )
+        Personel.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='10000000001',
+            ad='Mustafa',
+            soyad='Koçak',
+            aktif_mi=True,
+        )
+        OgrenciVeli.objects.create(
+            ogrenci=ogrenci,
+            veli_turu='baba',
+            tc_kimlik_no='10000000001',
+            ad='Ayşe',
+            soyad='Demir',
+        )
+
+        conflicts = collect_conflicts(kurum_id=self.kurum.id)
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(conflicts[0]['tip'], 'tc_cross_entity')
+        self.assertEqual(conflicts[0]['tc'], '10000000001')
+        self.assertEqual(len(conflicts[0]['kayitlar']), 2)

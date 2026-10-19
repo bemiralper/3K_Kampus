@@ -460,6 +460,7 @@ def _write_desired(mapping: GoogleContactMapping, client, desired) -> str:
     mapping.save(update_fields=['resource_name', 'etag', 'updated_at'])
     previous_had_photo = '|' in (mapping.content_hash or '')
     photo_bytes = contact_photo_bytes(desired.photo_field) if desired.photo_digest else None
+    photo_error = ''
     if photo_bytes and resource_name:
         try:
             photo_person = client.update_contact_photo(resource_name, photo_bytes)
@@ -468,10 +469,13 @@ def _write_desired(mapping: GoogleContactMapping, client, desired) -> str:
                 raise
             logger.warning('Google kişi fotoğrafı yazılamadı resource=%s', resource_name, exc_info=True)
             photo_person = None
+            photo_error = 'Profil fotoğrafı Google kişi kartına yazılamadı.'
         etag = ((photo_person or {}).get('person') or {}).get('etag')
         if etag:
             mapping.etag = etag
-    elif previous_had_photo and not created and resource_name and not desired.photo_digest:
+    elif desired.photo_digest:
+        photo_error = 'Profil fotoğrafı okunamadı.'
+    elif previous_had_photo and not created and resource_name:
         try:
             client.delete_contact_photo(resource_name)
         except GoogleContactsError as exc:
@@ -480,9 +484,10 @@ def _write_desired(mapping: GoogleContactMapping, client, desired) -> str:
             logger.warning('Google kişi fotoğrafı silinemedi resource=%s', resource_name, exc_info=True)
     mapping.display_name = desired.display_name[:300]
     mapping.phone_e164 = desired.phone_e164[:20]
-    mapping.content_hash = desired.content_hash
+    # Fotoğraf yazılamadıysa hash'e ekleme; sonraki eşitleme yeniden dener.
+    mapping.content_hash = desired.content_hash if not photo_error else desired.content_hash.split('|p|')[0]
     mapping.status = GoogleContactSyncStatus.SYNCED
-    mapping.last_error = ''
+    mapping.last_error = photo_error[:500] if photo_error else ''
     mapping.last_synced_at = timezone.now()
     mapping.save()
     if created and resource_name:

@@ -2,7 +2,17 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { RefreshCw } from "lucide-react";
 import { fetchKimlikConflicts, type KimlikConflictItem } from "@/lib/kimlik-api";
+
+const TIP_LABEL: Record<string, string> = {
+  tc_cross_entity: "TC çakışması",
+  telefon_farkli_tc: "Aynı telefon, farklı TC",
+};
+
+function tipLabel(tip: string) {
+  return TIP_LABEL[tip] || tip;
+}
 
 export default function KimlikCakismalariPage() {
   const [loading, setLoading] = useState(true);
@@ -31,81 +41,114 @@ export default function KimlikCakismalariPage() {
   }, [load]);
 
   return (
-    <div className="mx-auto max-w-5xl p-6">
-      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link href="/kurum-yonetimi/kurumlar" className="text-sm text-slate-500 hover:text-slate-700">
+    <div className="flex min-w-0 flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="min-w-0">
+          <Link href="/kurum-yonetimi/kurumlar" className="text-sm text-[#5c6b80] no-underline hover:text-[#0061A6]">
             ← Kurum Yönetimi
           </Link>
-          <h1 className="mt-2 text-2xl font-bold text-slate-900">Kimlik Çakışmaları</h1>
-          <p className="mt-1 text-sm text-slate-600">
-            TC veya telefon tekilliği ihlali riski taşıyan kayıtlar. Otomatik birleştirme yapılmaz; manuel inceleme gerekir.
+          <h1 className="m-0 mt-2 text-xl font-semibold tracking-tight text-[#1e3352]">Kimlik Çakışmaları</h1>
+          <p className="m-0 mt-1 max-w-3xl text-sm leading-relaxed text-[#5c6b80]">
+            Farklı kişilerin aynı TC veya telefonu paylaştığı kayıtlar. Aynı kişinin personel ve veli rolleri çakışma sayılmaz. Otomatik birleştirme yapılmaz; manuel inceleme gerekir.
           </p>
         </div>
         <button
           type="button"
           onClick={() => void load()}
-          className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          disabled={loading}
+          className="inline-flex min-h-[40px] shrink-0 cursor-pointer items-center justify-center gap-2 self-start rounded-lg border border-[#d5deea] bg-white px-3.5 text-sm font-[inherit] font-medium text-[#1e3352] transition-colors hover:bg-[#f4f7fb] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0061A6] disabled:cursor-not-allowed disabled:opacity-50"
         >
+          <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} aria-hidden />
           Yenile
         </button>
       </div>
 
-      {loading && <p className="text-slate-500">Yükleniyor…</p>}
+      {loading && (
+        <p role="status" className="m-0 text-sm text-[#5c6b80]">
+          Yükleniyor…
+        </p>
+      )}
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{error}</div>
+        <div role="alert" className="rounded-lg border border-[#f3c7c3] bg-[#fef3f2] px-3.5 py-3 text-sm text-[#b42318]">
+          {error}
+        </div>
       )}
 
       {!loading && !error && (
         <>
-          <div className="mb-4 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm">
-            Toplam çakışma grubu: <strong>{total}</strong>
+          <p className="m-0 text-sm text-[#5c6b80]">
+            Toplam çakışma grubu: <strong className="font-semibold text-[#1e3352]">{total}</strong>
             {total > conflicts.length && (
-              <span className="text-slate-500"> (ilk {conflicts.length} gösteriliyor)</span>
+              <span> (ilk {conflicts.length} gösteriliyor)</span>
             )}
-          </div>
+          </p>
 
           {conflicts.length === 0 ? (
-            <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-6 py-8 text-center text-emerald-900">
+            <div className="rounded-lg border border-[#cfe8d8] bg-[#f3faf6] px-4 py-8 text-center text-sm text-[#146c43]">
               Çakışma bulunamadı. Kimlik constraint migration için hazır görünüyor.
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
               {conflicts.map((item, idx) => (
-                <div key={`${item.tip}-${item.tc || item.telefon}-${idx}`} className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-                  <div className="mb-2 flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-900">
-                      {item.tip}
-                    </span>
-                    {item.kurum_ad && <span className="text-sm text-slate-600">{item.kurum_ad}</span>}
-                  </div>
-                  {item.tc && <div className="text-sm"><span className="text-slate-500">TC:</span> {item.tc}</div>}
-                  {item.telefon && (
-                    <div className="text-sm"><span className="text-slate-500">Telefon:</span> {item.telefon}</div>
-                  )}
-                  {item.kayitlar && item.kayitlar.length > 0 && (
-                    <ul className="mt-3 space-y-1 border-t border-slate-100 pt-3 text-sm">
-                      {item.kayitlar.map((k) => (
-                        <li key={`${k.model}-${k.id}`} className="text-slate-700">
-                          <strong>{k.model}</strong> #{k.id} — {k.ad}
-                          {k.tc ? ` (TC: ${k.tc})` : ""}
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {item.onerilen_aksiyon && (
-                    <p className="mt-3 text-xs text-slate-500">{item.onerilen_aksiyon}</p>
-                  )}
-                </div>
+                <ConflictCard key={`${item.tip}-${item.tc || item.telefon}-${idx}`} item={item} />
               ))}
             </div>
           )}
 
-          <p className="mt-6 text-xs text-slate-500">
-            Sunucuda düzeltme için: <code className="rounded bg-slate-100 px-1">python manage.py backfill_kisi --report=...</code>
+          <p className="m-0 max-w-3xl break-words text-xs leading-relaxed text-[#8b9bb0]">
+            Sunucuda düzeltme için:{" "}
+            <code className="rounded bg-[#f1f4f8] px-1.5 py-0.5 font-mono text-[11px] text-[#31445c]">
+              python manage.py backfill_kisi --report=...
+            </code>
           </p>
         </>
       )}
     </div>
+  );
+}
+
+function ConflictCard({ item }: { item: KimlikConflictItem }) {
+  const known = Boolean(TIP_LABEL[item.tip]);
+
+  return (
+    <article className="min-w-0 rounded-lg border border-[#e6ebf2] bg-white p-4">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span className="inline-flex items-center rounded-md bg-[#fff6e8] px-2 py-0.5 text-xs font-medium text-[#8a5a00]">
+          {tipLabel(item.tip)}
+        </span>
+        {known && <span className="font-mono text-[11px] text-[#8b9bb0]">{item.tip}</span>}
+        {item.kurum_ad && <span className="text-sm text-[#5c6b80]">{item.kurum_ad}</span>}
+      </div>
+
+      {item.tc && (
+        <p className="m-0 mt-3 break-all text-sm text-[#1e3352]">
+          <span className="text-[#8b9bb0]">TC: </span>
+          <span className="font-medium tabular-nums">{item.tc}</span>
+        </p>
+      )}
+      {item.telefon && (
+        <p className="m-0 mt-1 break-all text-sm text-[#1e3352]">
+          <span className="text-[#8b9bb0]">Telefon: </span>
+          <span className="font-medium">{item.telefon}</span>
+        </p>
+      )}
+
+      {item.kayitlar && item.kayitlar.length > 0 && (
+        <ul className="m-0 mt-3 list-none space-y-1.5 border-t border-[#f0f3f7] p-0 pt-3">
+          {item.kayitlar.map((k) => (
+            <li key={`${k.model}-${k.id}`} className="break-words text-sm text-[#31445c]">
+              <span className="font-medium text-[#1e3352]">{k.model}</span>
+              <span className="tabular-nums"> #{k.id}</span>
+              <span> — {k.ad}</span>
+              {k.tc ? <span className="text-[#5c6b80]"> (TC: {k.tc})</span> : null}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {item.onerilen_aksiyon && (
+        <p className="m-0 mt-3 text-xs leading-relaxed text-[#8b9bb0]">{item.onerilen_aksiyon}</p>
+      )}
+    </article>
   );
 }

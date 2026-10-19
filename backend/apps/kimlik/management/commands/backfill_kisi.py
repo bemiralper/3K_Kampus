@@ -5,6 +5,7 @@ Mevcut Personel / Öğrenci / Veli kayıtlarını Kisi'ye bağlar.
 from __future__ import annotations
 
 import json
+import re
 from collections import defaultdict
 
 from django.core.management.base import BaseCommand
@@ -19,8 +20,23 @@ from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
 from apps.personel.domain.models import Personel
 
 
+def _normalized_person_name(value: str | None) -> str:
+    """Aynı kişinin ad yazım farklarını tek kimliğe indirger."""
+    text = (value or "").strip().casefold()
+    text = text.replace("\u0307", "").replace("ı", "i")
+    return re.sub(r"\s+", " ", text)
+
+
+def _distinct_person_names(kayitlar: list[dict]) -> set[str]:
+    return {name for name in (_normalized_person_name(k.get("ad")) for k in kayitlar) if name}
+
+
 def collect_conflicts(kurum_id: int | None = None, dry_run: bool = True) -> list[dict]:
-    """TC / telefon çakışmalarını tespit et."""
+    """Farklı kişilerin aynı TC veya telefonu paylaştığı kayıtları tespit et.
+
+    Aynı kişinin personel, öğrenci ve veli rolleri çakışma değildir.
+    Bir velinin birden fazla öğrencide kaydı da çakışma değildir.
+    """
     conflicts: list[dict] = []
     kurum_qs = Kurum.objects.filter(aktif_mi=True)
     if kurum_id:
@@ -49,27 +65,26 @@ def collect_conflicts(kurum_id: int | None = None, dry_run: bool = True) -> list
                 tel_map[tel].append({'model': 'OgrenciVeli', 'id': v.id, 'ad': v.tam_ad, 'tc': v.tc_kimlik_no})
 
         for tc, kayitlar in tc_map.items():
-            models = {k['model'] for k in kayitlar}
-            if len(models) > 1 or len(kayitlar) > 1 and 'Personel' in models and 'Ogrenci' in models:
+            if len(_distinct_person_names(kayitlar)) > 1:
                 conflicts.append({
                     'tip': 'tc_cross_entity',
                     'kurum_id': kurum.id,
                     'kurum_ad': kurum.ad,
                     'tc': tc,
                     'kayitlar': kayitlar,
-                    'onerilen_aksiyon': 'Manuel birleştirme — merge_kisi veya admin',
+                    'onerilen_aksiyon': 'Farklı kişiler aynı TC kullanıyor — manuel inceleme gerekli',
                 })
 
         for tel, kayitlar in tel_map.items():
             tcs = {k.get('tc') for k in kayitlar if k.get('tc')}
-            if len(tcs) > 1:
+            if len(tcs) > 1 or len(_distinct_person_names(kayitlar)) > 1:
                 conflicts.append({
                     'tip': 'telefon_farkli_tc',
                     'kurum_id': kurum.id,
                     'kurum_ad': kurum.ad,
                     'telefon': tel,
                     'kayitlar': kayitlar,
-                    'onerilen_aksiyon': 'Manuel inceleme gerekli',
+                    'onerilen_aksiyon': 'Farklı kişiler aynı telefonu kullanıyor — manuel inceleme gerekli',
                 })
 
     return conflicts

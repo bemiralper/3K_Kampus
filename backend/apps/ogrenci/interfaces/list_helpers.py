@@ -9,6 +9,7 @@ from django.db import models
 from django.db.models import Func, Value, CharField
 from django.http import JsonResponse
 
+from apps.ogrenci.application.veli_telefon import normalize_telefonlar
 from apps.ogrenci.domain.models import OgrenciKayit, OgrenciVeli, OgrenciEgitimPaketi
 
 
@@ -515,6 +516,10 @@ def serialize_veli_fields(ogrenci):
         name = f'{veli.ad or ""} {veli.soyad or ""}'.strip()
         yakinlik = veli.get_veli_turu_display() if veli.veli_turu else ''
         phone = (veli.telefon or '').strip()
+        telefonlar = normalize_telefonlar(
+            getattr(veli, 'telefonlar', None),
+            fallback_telefon=phone,
+        )
         tc = (veli.tc_kimlik_no or '').strip()
         names.append(f'{name} ({yakinlik})' if many and name and yakinlik else name)
         if phone:
@@ -527,6 +532,7 @@ def serialize_veli_fields(ogrenci):
             'id': veli.id,
             'ad_soyad': name,
             'telefon': phone,
+            'telefonlar': telefonlar,
             'tc_kimlik_no': tc,
             'yakinlik': veli.veli_turu,
             'yakinlik_display': yakinlik,

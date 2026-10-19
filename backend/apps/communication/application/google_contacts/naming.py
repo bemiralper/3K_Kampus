@@ -61,7 +61,8 @@ class DesiredContact:
         raw = json.dumps(payload, ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(raw.encode('utf-8')).hexdigest()
         if self.photo_digest:
-            return f'{digest[:43]}|{self.photo_digest[:20]}'
+            # |p| eski (POST ile giden, profil resmi olmayan) eşitlemeleri yeniden yazar.
+            return f'{digest[:40]}|p|{self.photo_digest[:20]}'
         return digest
 
     def person_body(self) -> dict:
@@ -154,7 +155,6 @@ def student_desired(ogrenci, *, sinif_ad: str = '', sube_ad: str = '', kayit_yil
         f'Şube: {sube_ad}' if sube_ad else '',
         f'Kayıt: {kayit_yili}' if kayit_yili else '',
     ])
-    digest = photo_digest(getattr(ogrenci, 'profil_foto', None))
     return DesiredContact(
         display_name=display,
         given_name=ad or full,
@@ -162,9 +162,16 @@ def student_desired(ogrenci, *, sinif_ad: str = '', sube_ad: str = '', kayit_yil
         phones=phones,
         biography=bio,
         group_kind='students',
-        photo_digest=digest,
-        photo_field=getattr(ogrenci, 'profil_foto', None) if digest else None,
+        **_photo_kwargs(getattr(ogrenci, 'profil_foto', None)),
     )
+
+
+def _photo_kwargs(file_field) -> dict:
+    digest = photo_digest(file_field)
+    return {
+        'photo_digest': digest,
+        'photo_field': file_field if digest else None,
+    }
 
 
 def photo_digest(file_field) -> str:
@@ -201,9 +208,9 @@ def contact_photo_bytes(file_field) -> bytes | None:
         from PIL import Image, ImageOps
 
         image = ImageOps.exif_transpose(Image.open(BytesIO(raw)))
-        image.thumbnail((720, 720))
         if image.mode != 'RGB':
             image = image.convert('RGB')
+        image = ImageOps.fit(image, (720, 720), method=Image.LANCZOS, centering=(0.5, 0.5))
         out = BytesIO()
         image.save(out, format='JPEG', quality=82, optimize=True)
         return out.getvalue() or None
@@ -389,4 +396,5 @@ def staff_desired(personel) -> DesiredContact | None:
         biography=_join_bio(bio_parts),
         group_kind=kinds[0],
         group_kinds=tuple(kinds),
+        **_photo_kwargs(getattr(personel, 'fotograf', None)),
     )

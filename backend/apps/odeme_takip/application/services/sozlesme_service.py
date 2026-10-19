@@ -727,6 +727,11 @@ class SozlesmeService:
 
         if new_status in (SozlesmeDurum.AKTIF, SozlesmeDurum.TAMAMLANDI, SozlesmeDurum.DONDURULMUS):
             self._sync_erisim(sozlesme, user=user)
+        elif new_status in (SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS):
+            from apps.coaching.services.coach_student_visibility import (
+                release_student_after_contract_revoked,
+            )
+            release_student_after_contract_revoked(sozlesme.ogrenci_id, sozlesme)
 
         if eski_durum != SozlesmeDurum.AKTIF and new_status == SozlesmeDurum.AKTIF:
             sozlesme_id = sozlesme.pk

@@ -238,7 +238,7 @@ export default function GoogleKisilerClient() {
   return (
     <CommunicationPageShell
       title="Google Kişiler"
-      subtitle="Merkez Google hesabına öğrenci, veli ve personel numaralarını isimle yazar. Öğrenci fotoğrafı ve öğretmen branşı da karta yazılır."
+      subtitle="Merkez Google hesabına öğrenci, veli ve personel numaralarını isimle yazar. Varsa profil fotoğrafı kartın fotoğrafı olur; öğretmen branşı da yazılır."
       icon="👤"
       breadcrumbs={[{ label: "İletişim" }, { label: "Google Kişiler" }]}
       actions={

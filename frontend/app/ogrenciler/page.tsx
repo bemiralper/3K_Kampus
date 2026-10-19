@@ -45,6 +45,13 @@ type OgrenciData = {
   veli_id?: number | null;
   veli_yakinlik?: string;
   veli_yakinlik_display?: string;
+  veliler?: {
+    id: number;
+    ad_soyad: string;
+    telefon?: string;
+    telefonlar?: { numara: string; etiket?: string }[];
+    yakinlik_display?: string;
+  }[];
   profil_foto?: string | null;
   // Yıllık kayıt bilgileri
   sinif_id?: number;
@@ -584,56 +591,55 @@ export default function OgrenciListesiPage() {
 
   if (contextLoading) {
     return (
-      <div className="section">
-        <div className="loading-state">
-          <div className="spinner"></div>
-          <p>Yükleniyor...</p>
+      <div className="section ogl-page">
+        <div className="ogl-loading">
+          <div className="ogl-spinner" aria-hidden />
+          <p>Yükleniyor…</p>
         </div>
       </div>
     );
   }
 
+  const contextParts = [
+    activeKurum?.ad,
+    activeSube?.ad,
+    activeEgitimYili ? `${activeEgitimYili.baslangic_yil}-${activeEgitimYili.bitis_yil}` : null,
+  ].filter(Boolean);
+
   return (
-    <div className="section">
-      {/* Hero Header */}
-      <div className="hero-header">
-        <div className="hero-content">
-          <div className="hero-icon">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-              <circle cx="9" cy="7" r="4" />
-              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-            </svg>
-          </div>
-          <div className="hero-text">
-            <h1>Öğrenci Listesi</h1>
-            <div className="hero-breadcrumb">
-              <Link href={portalHomeHref}>Ana Sayfa</Link>
-              <span>/</span>
-              <span>Öğrenci Listesi</span>
-            </div>
-          </div>
+    <div className="section ogl-page">
+      <header className="ogl-head">
+        <div className="ogl-head-main">
+          <nav className="ogl-crumbs" aria-label="Sayfa yolu">
+            <Link href={portalHomeHref}>Ana Sayfa</Link>
+            <span aria-hidden>/</span>
+            <span aria-current="page">Öğrenci Listesi</span>
+          </nav>
+          <h1 className="ogl-title">Öğrenci Listesi</h1>
+          <p className="ogl-subtitle">
+            {contextParts.length > 0 ? `${contextParts.join(" · ")} — ` : ""}
+            Kayıtlı öğrencileri arayın, filtreleyin ve dışa aktarın.
+          </p>
         </div>
-        <Link href={href("yeni-kayit")} className="btn-hero">
-          <span className="btn-hero-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <div className="ogl-head-actions">
+          <Link href={href("yeni-kayit")} className="ogl-btn ogl-btn--primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-          </span>
-          <span>Yeni Öğrenci</span>
-        </Link>
-      </div>
+            Yeni Öğrenci
+          </Link>
+        </div>
+      </header>
 
       {allYearsCount != null && allYearsCount > 0 && !filters.all_years && (
-        <div className="ogrenci-all-years-banner">
+        <div className="ogl-notice ogl-notice--warn" role="status">
           <span>
             Seçili yılda sonuç bulunamadı. Tüm yıllarda <strong>{allYearsCount}</strong> eşleşme var.
           </span>
           <button
             type="button"
-            className="btn-modern btn-secondary small"
+            className="ogl-btn ogl-btn--ghost ogl-btn--sm"
             onClick={() => updateFilters({ all_years: true, page: 1 })}
           >
             Tüm yıllarda ara
@@ -642,8 +648,8 @@ export default function OgrenciListesiPage() {
       )}
 
       {error && (
-        <div className="alert-modern alert-error">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <div className="ogl-notice ogl-notice--error" role="alert">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
             <circle cx="12" cy="12" r="10" />
             <line x1="12" y1="8" x2="12" y2="12" />
             <line x1="12" y1="16" x2="12.01" y2="16" />
@@ -720,13 +726,15 @@ export default function OgrenciListesiPage() {
           hasKalemFilter={activeKalemFilters.length > 0}
           visibleColumns={visibleColumns}
         />
-        <Pagination
-          currentPage={filters.page || 1}
-          totalItems={totalCount}
-          pageSize={filters.page_size || 25}
-          onPageChange={(page) => updateFilters({ page })}
-          onPageSizeChange={(size) => updateFilters({ page_size: size, page: 1 })}
-        />
+        <div className="ogl-footer">
+          <Pagination
+            currentPage={filters.page || 1}
+            totalItems={totalCount}
+            pageSize={filters.page_size || 25}
+            onPageChange={(page) => updateFilters({ page })}
+            onPageSizeChange={(size) => updateFilters({ page_size: size, page: 1 })}
+          />
+        </div>
       </div>
 
       <OgrenciFilterDrawer
@@ -765,57 +773,64 @@ export default function OgrenciListesiPage() {
         />
       )}
 
-      {/* Silme Onay Dialogu */}
+      {/* Pasife alma onayı */}
       {deleteTarget && (
-        <div className="modal-overlay" onClick={() => { if (!deleteLoading) { setDeleteTarget(null); setDeleteError(null); } }}>
-          <div className="delete-dialog" onClick={(e) => e.stopPropagation()}>
-            <div className="delete-dialog-icon">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <div
+          className="ogl-dialog-overlay"
+          onClick={() => { if (!deleteLoading) { setDeleteTarget(null); setDeleteError(null); } }}
+          role="presentation"
+        >
+          <div
+            className="ogl-dialog"
+            onClick={(e) => e.stopPropagation()}
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="ogl-delete-title"
+            aria-describedby="ogl-delete-text"
+          >
+            <div className="ogl-dialog-icon" aria-hidden>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="12" cy="12" r="10" />
-                <line x1="12" y1="8" x2="12" y2="12" />
-                <line x1="12" y1="16" x2="12.01" y2="16" />
+                <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
               </svg>
             </div>
-            <h3 className="delete-dialog-title">Öğrenciyi Pasife Al</h3>
-            <p className="delete-dialog-text">
-              <strong>{deleteTarget.tam_ad || `${deleteTarget.ad} ${deleteTarget.soyad}`}</strong> isimli öğrenciyi pasife almak istediğinize emin misiniz?
+            <h3 id="ogl-delete-title" className="ogl-dialog-title">Öğrenciyi pasife al</h3>
+            <p id="ogl-delete-text" className="ogl-dialog-text">
+              <strong>{deleteTarget.tam_ad || `${deleteTarget.ad} ${deleteTarget.soyad}`}</strong> pasife alınacak.
+              Öğrenci listelerden düşer; kaydı ve geçmişi korunur.
             </p>
             {deleteError && (
-              <div className="delete-dialog-error">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <div className="ogl-dialog-error" role="alert">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                   <circle cx="12" cy="12" r="10" />
-                  <line x1="15" y1="9" x2="9" y2="15" />
-                  <line x1="9" y1="9" x2="15" y2="15" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
                 </svg>
                 <span>{deleteError}</span>
               </div>
             )}
-            <div className="delete-dialog-actions">
-              <button 
-                className="delete-dialog-btn cancel" 
+            <div className="ogl-dialog-actions">
+              <button
+                type="button"
+                className="ogl-btn ogl-btn--ghost"
                 onClick={() => { setDeleteTarget(null); setDeleteError(null); }}
                 disabled={deleteLoading}
               >
                 Vazgeç
               </button>
-              <button 
-                className="delete-dialog-btn confirm" 
+              <button
+                type="button"
+                className="ogl-btn ogl-btn--danger"
                 onClick={handleDelete}
                 disabled={deleteLoading}
               >
                 {deleteLoading ? (
                   <>
-                    <span className="delete-spinner"></span>
-                    Pasife alınıyor...
+                    <span className="ogl-spinner ogl-spinner--sm ogl-spinner--light" aria-hidden />
+                    Pasife alınıyor…
                   </>
                 ) : (
-                  <>
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <circle cx="12" cy="12" r="10" />
-                      <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
-                    </svg>
-                    Evet, Pasife Al
-                  </>
+                  "Evet, pasife al"
                 )}
               </button>
             </div>
@@ -832,239 +847,6 @@ export default function OgrenciListesiPage() {
           onClose={() => setPopupOgrenci(null)}
         />
       )}
-
-      <style jsx>{`
-        .loading-state {
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          padding: 60px 20px;
-          color: var(--text-secondary);
-        }
-        
-        .spinner {
-          width: 40px;
-          height: 40px;
-          border: 3px solid var(--border-color);
-          border-top-color: var(--primary-color);
-          border-radius: 50%;
-          animation: spin 1s linear infinite;
-          margin-bottom: 16px;
-        }
-        
-        @keyframes spin {
-          to { transform: rotate(360deg); }
-        }
-        
-        .alert-modern {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 14px 16px;
-          border-radius: 10px;
-          margin-bottom: 20px;
-        }
-        
-        .alert-modern.alert-error {
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid rgba(239, 68, 68, 0.2);
-          color: #ef4444;
-        }
-        
-        .badge-modern.info {
-          background: rgba(59, 130, 246, 0.1);
-          color: #3b82f6;
-        }
-        
-        .badge-modern.purple {
-          background: rgba(139, 92, 246, 0.1);
-          color: #8b5cf6;
-        }
-        
-        .badge-modern.warning {
-          background: rgba(245, 158, 11, 0.1);
-          color: #f59e0b;
-        }
-        
-        .date-text {
-          font-size: 13px;
-          color: var(--text-secondary);
-        }
-        
-        .cell-primary-row {
-          display: flex;
-          align-items: center;
-          gap: 6px;
-        }
-        
-        .avatar-circle.avatar-photo {
-          padding: 0;
-          overflow: hidden;
-          background: transparent;
-        }
-        
-        .avatar-circle.avatar-photo img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        .avatar-circle.avatar-photo.is-zoomable {
-          border: 0;
-          padding: 0;
-          cursor: zoom-in;
-        }
-        
-        /* Silme onay overlay */
-        .modal-overlay {
-          position: fixed;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          background: rgba(0, 0, 0, 0.6);
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          z-index: 1000;
-          backdrop-filter: blur(8px);
-          animation: fadeIn 0.2s ease-out;
-        }
-        
-        @keyframes fadeIn {
-          from { opacity: 0; }
-          to { opacity: 1; }
-        }
-        
-        @keyframes slideUp {
-          from {
-            opacity: 0;
-            transform: translateY(30px) scale(0.95);
-          }
-          to {
-            opacity: 1;
-            transform: translateY(0) scale(1);
-          }
-        }
-        
-        /* Silme Onay Dialogu */
-        .delete-dialog {
-          background: var(--card-bg);
-          border-radius: 20px;
-          width: 90%;
-          max-width: 400px;
-          padding: 32px;
-          text-align: center;
-          box-shadow: 0 25px 80px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.05);
-          animation: slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
-        }
-        
-        .delete-dialog-icon {
-          width: 64px;
-          height: 64px;
-          border-radius: 50%;
-          background: rgba(239, 68, 68, 0.1);
-          color: #ef4444;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          margin: 0 auto 16px;
-        }
-        
-        .delete-dialog-title {
-          font-size: 18px;
-          font-weight: 700;
-          color: var(--text-primary);
-          margin: 0 0 8px;
-        }
-        
-        .delete-dialog-text {
-          font-size: 14px;
-          color: var(--text-secondary);
-          margin: 0 0 20px;
-          line-height: 1.5;
-        }
-        
-        .delete-dialog-text strong {
-          color: var(--text-primary);
-        }
-        
-        .delete-dialog-error {
-          display: flex;
-          align-items: flex-start;
-          gap: 10px;
-          padding: 12px 16px;
-          background: rgba(239, 68, 68, 0.08);
-          border: 1px solid rgba(239, 68, 68, 0.2);
-          border-radius: 12px;
-          margin-bottom: 20px;
-          text-align: left;
-          color: #ef4444;
-          font-size: 13px;
-          line-height: 1.5;
-        }
-        
-        .delete-dialog-error svg {
-          flex-shrink: 0;
-          margin-top: 1px;
-        }
-        
-        .delete-dialog-actions {
-          display: flex;
-          gap: 12px;
-        }
-        
-        .delete-dialog-btn {
-          flex: 1;
-          padding: 12px 20px;
-          border: none;
-          border-radius: 12px;
-          font-size: 14px;
-          font-weight: 600;
-          cursor: pointer;
-          transition: all 0.2s;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          gap: 8px;
-        }
-        
-        .delete-dialog-btn.cancel {
-          background: var(--bg-secondary);
-          color: var(--text-primary);
-          border: 1px solid var(--border-color);
-        }
-        
-        .delete-dialog-btn.cancel:hover {
-          background: var(--border-color);
-        }
-        
-        .delete-dialog-btn.confirm {
-          background: linear-gradient(135deg, #ef4444, #dc2626);
-          color: white;
-          box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
-        }
-        
-        .delete-dialog-btn.confirm:hover:not(:disabled) {
-          transform: translateY(-1px);
-          box-shadow: 0 6px 20px rgba(239, 68, 68, 0.4);
-        }
-        
-        .delete-dialog-btn:disabled {
-          opacity: 0.6;
-          cursor: not-allowed;
-        }
-        
-        .delete-spinner {
-          width: 16px;
-          height: 16px;
-          border: 2px solid rgba(255, 255, 255, 0.3);
-          border-top-color: white;
-          border-radius: 50%;
-          animation: spin 0.8s linear infinite;
-        }
-      `}</style>
     </div>
   );
 }

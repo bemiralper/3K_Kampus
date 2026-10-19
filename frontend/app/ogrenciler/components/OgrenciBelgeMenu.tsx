@@ -9,6 +9,8 @@ export type OgrenciBelgeTipi = 'ogrenci_belgesi' | 'ogrenci_izin_belgesi';
 interface OgrenciBelgeMenuProps {
   student: OgrenciRow;
   onSelect: (student: OgrenciRow, tip: OgrenciBelgeTipi) => void;
+  /** icon: tablo satırı; button: telefon/tablet kartındaki metin düğmesi */
+  variant?: 'icon' | 'button';
 }
 
 type DropdownPos = {
@@ -41,7 +43,11 @@ function computeDropdownPos(trigger: HTMLElement): DropdownPos {
   return { top, left, minWidth, placement: openUp ? 'top' : 'bottom' };
 }
 
-export default function OgrenciBelgeMenu({ student, onSelect }: OgrenciBelgeMenuProps) {
+export default function OgrenciBelgeMenu({
+  student,
+  onSelect,
+  variant = 'icon',
+}: OgrenciBelgeMenuProps) {
   const [open, setOpen] = useState(false);
   const [pos, setPos] = useState<DropdownPos | null>(null);
   const [mounted, setMounted] = useState(false);
@@ -146,22 +152,30 @@ export default function OgrenciBelgeMenu({ student, onSelect }: OgrenciBelgeMenu
       : null;
 
   return (
-    <div className="ogrenci-belge-menu" ref={rootRef}>
+    <div
+      className={`ogrenci-belge-menu${variant === 'button' ? ' ogrenci-belge-menu--button' : ''}`}
+      ref={rootRef}
+    >
       <button
         ref={btnRef}
         type="button"
-        className="row-action-btn"
+        className={variant === 'button' ? 'ogl-btn ogl-btn--ghost ogl-btn--sm' : 'row-action-btn'}
         title="Belgeler"
+        aria-label={`${student.ad} ${student.soyad} — belgeler`}
         aria-expanded={open}
         aria-haspopup="menu"
         onClick={toggle}
       >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-          <polyline points="14 2 14 8 20 8" />
-          <line x1="16" y1="13" x2="8" y2="13" />
-          <line x1="16" y1="17" x2="8" y2="17" />
-        </svg>
+        {variant === 'button' ? (
+          'Belge'
+        ) : (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+          </svg>
+        )}
       </button>
       {dropdown}
     </div>

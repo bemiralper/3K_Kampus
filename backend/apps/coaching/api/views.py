@@ -389,7 +389,17 @@ class CoachViewSet(viewsets.ModelViewSet):
         # active_only parametresi (varsayılan true)
         active_only = request.query_params.get('active_only', 'true')
         if active_only.lower() in ['true', '1', 'yes']:
+            from apps.coaching.services.coach_student_visibility import (
+                release_hidden_coach_assignments,
+                visible_coach_student_queryset,
+            )
+
             assignments = assignments.filter(end_date__isnull=True, is_primary=True)
+            open_ids = list(assignments.values_list('student_id', flat=True))
+            release_hidden_coach_assignments(open_ids)
+            assignments = assignments.filter(
+                student_id__in=visible_coach_student_queryset().values('pk'),
+            )
         
         assignments = assignments.order_by('-is_primary', '-start_date')
         
@@ -425,11 +435,15 @@ class CoachViewSet(viewsets.ModelViewSet):
         sube_id = ctx['sube_id']
         egitim_yili_id = ctx.get('egitim_yili_id')
 
+        from apps.coaching.services.coach_student_visibility import (
+            visible_coach_student_queryset,
+        )
+
         queryset = get_assignable_kocluk_ogrenci_queryset(
             kurum_id=kurum_id,
             sube_id=sube_id,
             egitim_yili_id=egitim_yili_id,
-        )
+        ).filter(id__in=visible_coach_student_queryset().values('pk'))
 
         search = request.query_params.get('search', '').strip()
         if search:
@@ -549,7 +563,19 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(coach=cp)
             else:
                 queryset = queryset.none()
-        
+
+        if active_only_on:
+            from apps.coaching.services.coach_student_visibility import (
+                release_hidden_coach_assignments,
+                visible_coach_student_queryset,
+            )
+
+            open_ids = list(queryset.values_list('student_id', flat=True))
+            release_hidden_coach_assignments(open_ids)
+            queryset = queryset.filter(
+                student_id__in=visible_coach_student_queryset().values('pk'),
+            )
+
         return queryset
 
     def get_object(self):

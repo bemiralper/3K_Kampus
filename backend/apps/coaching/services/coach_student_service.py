@@ -29,13 +29,23 @@ HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS = 2
 
 def get_coach_student_queryset(user, request, sube_id=None):
     """Koç veya admin kapsamındaki öğrenci queryset'i."""
+    from apps.coaching.services.coach_student_visibility import (
+        release_hidden_coach_assignments,
+        visible_coach_student_queryset,
+    )
+
     allowed = scoped_student_ids(user)
-    qs = Ogrenci.objects.filter(aktif_mi=True)
+    qs = visible_coach_student_queryset()
 
     if allowed is None:
         kurum_id = get_secili_kurum_id(request)
         if kurum_id:
             qs = qs.filter(kurum_id=kurum_id)
+            open_ids = CoachStudentAssignment.objects.filter(
+                end_date__isnull=True,
+                student__kurum_id=kurum_id,
+            ).values_list('student_id', flat=True)
+            release_hidden_coach_assignments(open_ids)
     elif not allowed:
         return Ogrenci.objects.none()
     else:

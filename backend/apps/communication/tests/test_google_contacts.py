@@ -1,4 +1,5 @@
 """Google Kişiler eşitleme ve OAuth."""
+from unittest.mock import patch
 from urllib.parse import unquote
 
 from django.contrib.auth import get_user_model
@@ -56,7 +57,13 @@ class FakePeople:
 
     def update_contact_photo(self, resource_name, photo):
         self.photos.append(photo)
-        return {'person': {'resourceName': resource_name, 'etag': 'e-photo'}}
+        return {
+            'person': {
+                'resourceName': resource_name,
+                'etag': 'e-photo',
+                'photos': [{'url': 'https://example.test/photo.jpg', 'default': True}],
+            }
+        }
 
     def delete_contact_photo(self, resource_name):
         self.photos.append(None)
@@ -348,3 +355,29 @@ class GoogleContactsApiTests(TestCase):
         self.assertEqual(status_response.data['client_id'], 'sayfa-client.apps.googleusercontent.com')
         self.assertEqual(status_response.data['credential_source'], 'database')
         self.assertNotIn('sayfa-secret', str(status_response.data))
+
+
+class GoogleContactPhotoRequestTests(TestCase):
+    @patch('apps.communication.application.google_contacts.client.ensure_access_token', return_value='token')
+    @patch('apps.communication.application.google_contacts.client.httpx.request')
+    def test_profile_photo_is_patched(self, request, _token):
+        from apps.communication.application.google_contacts.client import GooglePeopleClient
+
+        response = request.return_value
+        response.status_code = 200
+        response.content = b'{}'
+        response.json.return_value = {
+            'person': {
+                'resourceName': 'people/c1',
+                'etag': 'e1',
+                'photos': [{'url': 'https://lh3.googleusercontent.com/a', 'default': True}],
+            }
+        }
+        account = GoogleContactsAccount(refresh_token_encrypted='x', access_token_encrypted='y')
+        GooglePeopleClient(account).update_contact_photo('people/c1', b'\xff\xd8\xff')
+        method, url = request.call_args.args[:2]
+        body = request.call_args.kwargs['json']
+        self.assertEqual(method, 'PATCH')
+        self.assertTrue(url.endswith('/people/c1:updateContactPhoto'))
+        self.assertIn('photoBytes', body)
+        self.assertEqual(body['personFields'], 'photos')

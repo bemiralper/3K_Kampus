@@ -99,6 +99,15 @@ export default function OgrenciFilterDrawer({
 
   useEffect(() => {
     if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
+    if (!open) return;
     setOptionsLoading(true);
     apiGet<{
       sinif_seviyeleri?: SinifSeviyesiOption[];
@@ -497,13 +506,14 @@ export default function OgrenciFilterDrawer({
         className="ogrenci-filter-drawer ogrenci-filter-drawer--modern"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-labelledby="filter-drawer-title"
       >
         <div className="ogrenci-filter-drawer-header">
           <div>
-            <h3 id="filter-drawer-title">Gelişmiş Filtreler</h3>
+            <h3 id="filter-drawer-title">Filtreler</h3>
             <p className="ogrenci-filter-drawer-subtitle">
-              Bölüm seçin, arayın ve birden fazla kriteri birlikte uygulayın
+              Bölüm seçin, arayın ve birden fazla kriteri birlikte uygulayın.
             </p>
           </div>
           <button type="button" className="ogrenci-drawer-close" onClick={onClose} aria-label="Kapat">
@@ -530,9 +540,10 @@ export default function OgrenciFilterDrawer({
                 title="Kaldır"
               >
                 <span>{chip.label}</span>
-                <span className="ogrenci-filter-active-chip-x" aria-hidden>
-                  ×
-                </span>
+                <svg className="ogrenci-filter-active-chip-x" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+                  <line x1="18" y1="6" x2="6" y2="18" />
+                  <line x1="6" y1="6" x2="18" y2="18" />
+                </svg>
               </button>
             ))
           )}
@@ -865,25 +876,27 @@ export default function OgrenciFilterDrawer({
         </div>
 
         <div className="ogrenci-filter-drawer-footer">
-          <button type="button" className="btn-modern btn-secondary" onClick={onClear}>
-            Temizle
-          </button>
-          <button
-            type="button"
-            className="btn-modern btn-primary ogrenci-filter-apply-btn"
-            onClick={() => {
-              onApply({ ...local, page: 1 });
-              onClose();
-            }}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
-            </svg>
-            Filtreleri Uygula
-            {activeFilterCount > 0 && (
-              <span className="ogrenci-filter-apply-badge">{activeFilterCount}</span>
-            )}
-          </button>
+          <span className="ogrenci-filter-footer-info">
+            {activeFilterCount > 0 ? `${activeFilterCount} kriter seçili` : 'Kriter seçilmedi'}
+          </span>
+          <div className="ogrenci-filter-footer-actions">
+            <button type="button" className="ogl-btn ogl-btn--ghost" onClick={onClear}>
+              Temizle
+            </button>
+            <button
+              type="button"
+              className="ogl-btn ogl-btn--primary ogrenci-filter-apply-btn"
+              onClick={() => {
+                onApply({ ...local, page: 1 });
+                onClose();
+              }}
+            >
+              Uygula
+              {activeFilterCount > 0 && (
+                <span className="ogrenci-filter-apply-badge">{activeFilterCount}</span>
+              )}
+            </button>
+          </div>
         </div>
       </div>
     </div>

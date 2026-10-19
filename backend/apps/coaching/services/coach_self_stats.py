@@ -7,7 +7,7 @@ from django.db.models.functions import TruncDate
 from django.utils import timezone
 
 from apps.coaching.assignment_manual.models import ManualAssignment
-from apps.coaching.models import CoachStudentAssignment, GorusmeKaydi
+from apps.coaching.models import GorusmeKaydi
 from apps.coaching.services.coach_student_service import (
     _needs_meeting_map,
     _risk_map,
@@ -98,13 +98,9 @@ def get_coach_self_stats(coach_profile, user):
     today = date.today()
 
     # Kapasite ile aynı kapsam: yalnızca birincil aktif atamalar
-    student_ids = list(
-        CoachStudentAssignment.objects.filter(
-            coach=coach_profile,
-            end_date__isnull=True,
-            is_primary=True,
-        ).values_list('student_id', flat=True)
-    )
+    from apps.coaching.services.coach_access import get_active_coach_student_ids
+
+    student_ids = list(get_active_coach_student_ids(coach_profile))
 
     needs_followup = _needs_meeting_map(student_ids)
     risk_map = _risk_map(student_ids)

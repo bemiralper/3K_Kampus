@@ -67,6 +67,7 @@ export type OgrenciRow = {
     id: number;
     ad_soyad: string;
     telefon?: string;
+    telefonlar?: { numara: string; etiket?: string }[];
     yakinlik_display?: string;
   }[];
 };
@@ -221,7 +222,7 @@ function renderDataCell(
                   title="İletişim bilgileri"
                   aria-label={`${ogrenci.ad} ${ogrenci.soyad} iletişim bilgileri`}
                 >
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                     <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
                   </svg>
                 </button>
@@ -242,13 +243,17 @@ function renderDataCell(
     case 'alan':
       return (
         <td key={colId}>
-          <span className="badge-modern info">{ogrenci.alan_ad || '-'}</span>
+          {ogrenci.alan_ad ? <span className="ogl-tag">{ogrenci.alan_ad}</span> : <span className="ogrenci-kalem-empty">—</span>}
         </td>
       );
     case 'sinif_seviyesi':
       return (
         <td key={colId}>
-          <span className="badge-modern purple">{ogrenci.sinif_seviyesi || '-'}</span>
+          {ogrenci.sinif_seviyesi ? (
+            <span className="ogl-tag ogl-tag--level">{ogrenci.sinif_seviyesi}</span>
+          ) : (
+            <span className="ogrenci-kalem-empty">—</span>
+          )}
         </td>
       );
     case 'kalemler':
@@ -266,13 +271,17 @@ function renderDataCell(
     case 'sinif':
       return (
         <td key={colId}>
-          <span className="badge-modern info">{ogrenci.sinif_ad || '-'}</span>
+          {ogrenci.sinif_ad ? <span className="ogl-tag">{ogrenci.sinif_ad}</span> : <span className="ogrenci-kalem-empty">—</span>}
         </td>
       );
     case 'egitim_yili':
       return (
         <td key={colId}>
-          <span className="badge-modern info">{ogrenci.egitim_yili || '-'}</span>
+          {ogrenci.egitim_yili ? (
+            <span className="ogl-tag ogl-tag--muted">{ogrenci.egitim_yili}</span>
+          ) : (
+            <span className="ogrenci-kalem-empty">—</span>
+          )}
         </td>
       );
     case 'koc':
@@ -288,7 +297,8 @@ function renderDataCell(
     case 'aktif_mi':
       return (
         <td key={colId}>
-          <span className={`badge-modern ${ogrenci.aktif_mi ? 'success' : 'danger'}`}>
+          <span className={`ogl-status ${ogrenci.aktif_mi ? 'ogl-status--on' : 'ogl-status--off'}`}>
+            <span className="ogl-status-dot" aria-hidden />
             {ogrenci.aktif_mi ? 'Aktif' : 'Pasif'}
           </span>
         </td>
@@ -342,8 +352,13 @@ function renderDataCell(
       return (
         <td key={colId}>
           <div className="row-actions">
-            <Link href={ctx.href(String(ogrenci.id))} className="row-action-btn" title="Görüntüle">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <Link
+              href={ctx.href(String(ogrenci.id))}
+              className="row-action-btn"
+              title="Görüntüle"
+              aria-label={`${ogrenci.ad} ${ogrenci.soyad} — görüntüle`}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
                 <circle cx="12" cy="12" r="3" />
               </svg>
@@ -351,11 +366,12 @@ function renderDataCell(
             {ctx.onBelge && <OgrenciBelgeMenu student={ogrenci} onSelect={ctx.onBelge} />}
             <button
               className="row-action-btn danger"
-              title="Pasife Al"
+              title="Pasife al"
+              aria-label={`${ogrenci.ad} ${ogrenci.soyad} — pasife al`}
               type="button"
               onClick={() => ctx.onDelete(ogrenci)}
             >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <circle cx="12" cy="12" r="10" />
                 <line x1="4.93" y1="4.93" x2="19.07" y2="19.07" />
               </svg>
@@ -438,7 +454,21 @@ export default function OgrenciListResults({
     const isSearch = Boolean(searchQuery.trim());
     return (
       <div className="ogrenci-empty">
-        <div className="ogrenci-empty-visual">{isSearch ? '🔍' : '🎓'}</div>
+        <div className="ogrenci-empty-visual" aria-hidden>
+          {isSearch ? (
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <circle cx="11" cy="11" r="8" />
+              <path d="M21 21l-4.35-4.35" />
+            </svg>
+          ) : (
+            <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          )}
+        </div>
         <h4>
           {isSearch
             ? 'Aramanızla eşleşen öğrenci yok'
@@ -455,12 +485,12 @@ export default function OgrenciListResults({
         </p>
         <div className="ogrenci-empty-actions">
           {isSearch && (
-            <button type="button" className="btn-modern btn-secondary" onClick={onClearSearch}>
-              Aramayı Temizle
+            <button type="button" className="ogl-btn ogl-btn--ghost" onClick={onClearSearch}>
+              Aramayı temizle
             </button>
           )}
-          <Link href={href("yeni-kayit")} className="btn-modern btn-primary">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <Link href={href("yeni-kayit")} className="ogl-btn ogl-btn--primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
@@ -487,7 +517,10 @@ export default function OgrenciListResults({
         {students.map((ogrenci, index) => {
           const meta = mobileMetaParts(ogrenci, visibleSet);
           return (
-            <div key={ogrenci.kayit_id || ogrenci.id} className="ogrenci-mobile-card">
+            <div
+              key={ogrenci.kayit_id || ogrenci.id}
+              className={`ogrenci-mobile-card${selectedIds?.has(ogrenci.id) ? ' is-selected' : ''}`}
+            >
               <div className="ogrenci-mobile-card-top">
                 {onToggleSelect && (
                   <input
@@ -495,6 +528,7 @@ export default function OgrenciListResults({
                     className="ogrenci-row-checkbox"
                     checked={selectedIds?.has(ogrenci.id) || false}
                     onChange={() => onToggleSelect(ogrenci.id)}
+                    aria-label={`${ogrenci.ad} ${ogrenci.soyad} seç`}
                   />
                 )}
                 {ogrenci.profil_foto ? (
@@ -522,19 +556,20 @@ export default function OgrenciListResults({
                 </div>
               </div>
               <div className="ogrenci-mobile-card-actions">
-                <button type="button" className="ogrenci-quick-info-btn" onClick={() => onQuickInfo(ogrenci)}>
+                <button type="button" className="ogl-btn ogl-btn--ghost ogl-btn--sm" onClick={() => onQuickInfo(ogrenci)}>
                   İletişim
                 </button>
                 {onBelge && (
-                  <button
-                    type="button"
-                    className="row-action-btn"
-                    onClick={() => onBelge(ogrenci, 'ogrenci_belgesi')}
-                  >
-                    Belge
-                  </button>
+                  <OgrenciBelgeMenu student={ogrenci} onSelect={onBelge} variant="button" />
                 )}
-                <Link href={href(String(ogrenci.id))} className="row-action-btn">Detay</Link>
+                <Link href={href(String(ogrenci.id))} className="ogl-btn ogl-btn--soft ogl-btn--sm">Detay</Link>
+                <button
+                  type="button"
+                  className="ogl-btn ogl-btn--ghost ogl-btn--sm ogl-btn--danger-text"
+                  onClick={() => onDelete(ogrenci)}
+                >
+                  Pasife al
+                </button>
               </div>
             </div>
           );
@@ -565,7 +600,10 @@ export default function OgrenciListResults({
           </thead>
           <tbody>
             {students.map((ogrenci, index) => (
-              <tr key={ogrenci.kayit_id || ogrenci.id}>
+              <tr
+                key={ogrenci.kayit_id || ogrenci.id}
+                className={selectedIds?.has(ogrenci.id) ? 'is-selected' : undefined}
+              >
                 <td>
                   {onToggleSelect && (
                     <input

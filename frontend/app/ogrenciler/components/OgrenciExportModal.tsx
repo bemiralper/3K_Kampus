@@ -140,6 +140,15 @@ export default function OgrenciExportModal({
   }, [showSinifOptions]);
 
   useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
+
+  useEffect(() => {
     if (open) {
       setSelectedKeys([...DEFAULT_EXPORT_KEYS]);
       setPageMode('single');
@@ -313,6 +322,7 @@ export default function OgrenciExportModal({
         className="ogrenci-export-modal ogrenci-export-modal--wide"
         onClick={(e) => e.stopPropagation()}
         role="dialog"
+        aria-modal="true"
         aria-labelledby="export-modal-title"
       >
         <div className="ogrenci-filter-drawer-header">
@@ -321,7 +331,7 @@ export default function OgrenciExportModal({
             <p className="ogrenci-filter-drawer-subtitle">{modalSubtitle}</p>
           </div>
           <button type="button" className="ogrenci-drawer-close" onClick={onClose} aria-label="Kapat">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
@@ -471,18 +481,18 @@ export default function OgrenciExportModal({
         </div>
 
         <div className="ogrenci-filter-drawer-footer">
-          <button type="button" className="btn-modern btn-secondary" onClick={onClose} disabled={loading}>
+          <button type="button" className="ogl-btn ogl-btn--ghost" onClick={onClose} disabled={loading}>
             Vazgeç
           </button>
-          <button type="button" className="btn-modern btn-primary ogrenci-export-submit" onClick={handleExport} disabled={loading}>
+          <button type="button" className="ogl-btn ogl-btn--primary ogrenci-export-submit" onClick={handleExport} disabled={loading}>
             {loading ? (
               <>
-                <span className="ogrenci-export-spinner" aria-hidden />
+                <span className="ogl-spinner ogl-spinner--sm ogl-spinner--light" aria-hidden />
                 Hazırlanıyor…
               </>
             ) : (
               <>
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                   <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                   <polyline points="7 10 12 15 17 10" />
                   <line x1="12" y1="15" x2="12" y2="3" />

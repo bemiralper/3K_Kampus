@@ -117,8 +117,8 @@ export default function OgrenciListToolbar({
     <>
       <div className="ogrenci-list-card-header">
         <div className={`ogrenci-search-shell${loading ? ' is-searching' : ''}`}>
-          <span className="ogrenci-search-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <span className="ogrenci-search-icon" aria-hidden>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="11" cy="11" r="8" />
               <path d="M21 21l-4.35-4.35" />
             </svg>
@@ -128,7 +128,8 @@ export default function OgrenciListToolbar({
             type="text"
             inputMode="search"
             className="ogrenci-search-input"
-            placeholder="Ad, soyad, okul no veya TC ile ara..."
+            placeholder="Ad, soyad, okul no veya TC ile ara"
+            aria-label="Öğrenci ara"
             value={searchInput}
             onChange={(e) => onSearchInputChange(e.target.value)}
             autoComplete="off"
@@ -136,12 +137,11 @@ export default function OgrenciListToolbar({
             autoCapitalize="off"
             spellCheck={false}
           />
-          <span className="ogrenci-search-kbd">⌘K</span>
           <div className="ogrenci-search-actions">
             {loading && (
               <span className="ogrenci-search-spinner" aria-hidden />
             )}
-            {searchInput && (
+            {searchInput ? (
               <button
                 type="button"
                 className="ogrenci-search-btn clear"
@@ -154,29 +154,19 @@ export default function OgrenciListToolbar({
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
+            ) : (
+              <span className="ogrenci-search-kbd" aria-hidden>⌘K</span>
             )}
-            <button
-              type="button"
-              className="ogrenci-search-btn refresh"
-              onClick={onRefresh}
-              title="Listeyi yenile"
-              aria-label="Yenile"
-            >
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="23 4 23 10 17 10" />
-                <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
-              </svg>
-            </button>
           </div>
         </div>
-      </div>
 
-      <div className="ogrenci-toolbar">
-        <div className="ogrenci-filter-pills">
+        <div className="ogrenci-filter-pills" role="tablist" aria-label="Durum">
           {pills.map((pill) => (
             <button
               key={pill.key}
               type="button"
+              role="tab"
+              aria-selected={statusFilter === pill.key}
               className={`ogrenci-filter-pill${statusFilter === pill.key ? ' active' : ''}`}
               onClick={() => onStatusFilterChange(pill.key)}
             >
@@ -185,16 +175,60 @@ export default function OgrenciListToolbar({
             </button>
           ))}
         </div>
-        <div className="ogrenci-toolbar-right">
-          {selectedCount > 0 && onExportSelected && (
-            <button type="button" className="ogrenci-toolbar-btn" onClick={onExportSelected}>
-              Seçilileri Aktar ({selectedCount})
-            </button>
-          )}
+
+        <div className="ogrenci-header-tools">
+          <label className="ogrenci-sort-wrap">
+            <span className="ogrenci-sort-label">Sırala</span>
+            <select
+              className="ogrenci-sort-select"
+              value={sortBy}
+              onChange={(e) => onSortChange(e.target.value as SortOption)}
+              aria-label="Sıralama"
+            >
+              <option value="created_at_desc">En yeni kayıt</option>
+              <option value="kayit_tarihi_desc">Kayıt tarihi (yeni → eski)</option>
+              <option value="kayit_tarihi_asc">Kayıt tarihi (eski → yeni)</option>
+              <option value="name_asc">Ad (A → Z)</option>
+              <option value="name_desc">Ad (Z → A)</option>
+            </select>
+          </label>
+          <button
+            type="button"
+            className="ogrenci-toolbar-btn ogrenci-toolbar-btn--icon"
+            onClick={onRefresh}
+            title="Listeyi yenile"
+            aria-label="Listeyi yenile"
+            disabled={loading}
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              className={loading ? 'is-spinning' : undefined}
+              aria-hidden
+            >
+              <polyline points="23 4 23 10 17 10" />
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div className="ogrenci-toolbar">
+        <div className="ogrenci-toolbar-left">
           {onOpenFilters && (
-            <button type="button" className="ogrenci-toolbar-btn" onClick={onOpenFilters}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+            <button
+              type="button"
+              className={`ogrenci-toolbar-btn${advancedFilterCount > 0 ? ' has-badge' : ''}`}
+              onClick={onOpenFilters}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <line x1="4" y1="6" x2="20" y2="6" />
+                <line x1="7" y1="12" x2="17" y2="12" />
+                <line x1="10" y1="18" x2="14" y2="18" />
               </svg>
               Filtreler
               {advancedFilterCount > 0 && (
@@ -212,8 +246,10 @@ export default function OgrenciListToolbar({
                 aria-haspopup="menu"
                 onClick={() => setColOpen((v) => !v)}
               >
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M4 6h16M4 12h10M4 18h14" />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                  <rect x="3" y="4" width="18" height="16" rx="2" />
+                  <line x1="9" y1="4" x2="9" y2="20" />
+                  <line x1="15" y1="4" x2="15" y2="20" />
                 </svg>
                 Sütunlar
                 <span className="ogrenci-toolbar-badge soft">{visibleToggleCount}</span>
@@ -297,9 +333,20 @@ export default function OgrenciListToolbar({
             </div>
           )}
           {rosterExport}
+        </div>
+        <div className="ogrenci-toolbar-right">
+          {selectedCount > 0 && onExportSelected && (
+            <button type="button" className="ogrenci-toolbar-btn is-selection" onClick={onExportSelected}>
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              Seçilileri aktar
+              <span className="ogrenci-toolbar-badge">{selectedCount}</span>
+            </button>
+          )}
           {onOpenExport && (
             <button type="button" className="ogrenci-toolbar-btn primary" onClick={onOpenExport}>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
                 <polyline points="7 10 12 15 17 10" />
                 <line x1="12" y1="15" x2="12" y2="3" />
@@ -307,51 +354,29 @@ export default function OgrenciListToolbar({
               Dışa Aktar
             </button>
           )}
-          <select
-            className="ogrenci-sort-select"
-            value={sortBy}
-            onChange={(e) => onSortChange(e.target.value as SortOption)}
-            aria-label="Sıralama"
-          >
-            <option value="created_at_desc">En Yeni Kayıt</option>
-            <option value="kayit_tarihi_desc">Kayıt Tarihi (Yeni → Eski)</option>
-            <option value="kayit_tarihi_asc">Kayıt Tarihi (Eski → Yeni)</option>
-            <option value="name_asc">Ad (A → Z)</option>
-            <option value="name_desc">Ad (Z → A)</option>
-          </select>
         </div>
       </div>
 
       <div className="ogrenci-results-meta">
         <div className="ogrenci-results-meta-left">
-          <span>
+          <span className="ogrenci-results-text" aria-live="polite">
             <span className="ogrenci-results-count">{displayedCount}</span>
             {' '}sonuç
             {displayedCount !== totalFetched && (
-              <span> · {totalFetched} kayıttan filtrelendi</span>
+              <span className="ogrenci-results-sub"> · {totalFetched} kayıttan filtrelendi</span>
             )}
           </span>
           {searchInput.trim() && (
-            <span className="ogrenci-search-tag">
-              &quot;{searchInput.trim()}&quot;
+            <span className="ogrenci-filter-chip ogrenci-filter-chip--search">
+              <span>&ldquo;{searchInput.trim()}&rdquo;</span>
               <button type="button" onClick={onSearchClear} aria-label="Arama etiketini kaldır">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                   <line x1="18" y1="6" x2="6" y2="18" />
                   <line x1="6" y1="6" x2="18" y2="18" />
                 </svg>
               </button>
             </span>
           )}
-        </div>
-        {hasActiveFilters && (
-          <button type="button" className="ogrenci-clear-filters" onClick={onClearFilters}>
-            Filtreleri temizle
-          </button>
-        )}
-      </div>
-
-      {activeFilterChips.length > 0 && (
-        <div className="ogrenci-active-filters">
           {activeFilterChips.map((chip) => (
             <button
               key={chip.key}
@@ -361,14 +386,19 @@ export default function OgrenciListToolbar({
               aria-label={`${chip.label} filtresini kaldır`}
             >
               <span>{chip.label}</span>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
                 <line x1="18" y1="6" x2="6" y2="18" />
                 <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
           ))}
         </div>
-      )}
+        {hasActiveFilters && (
+          <button type="button" className="ogrenci-clear-filters" onClick={onClearFilters}>
+            Filtreleri temizle
+          </button>
+        )}
+      </div>
     </>
   );
 }

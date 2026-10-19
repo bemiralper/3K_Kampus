@@ -124,11 +124,17 @@ class GooglePeopleClient:
         if not resource_name or not photo:
             return {}
         updated = self._request(
-            'POST',
+            'PATCH',
             f'{PEOPLE_BASE}/{resource_name}:updateContactPhoto',
-            json_body={'photoBytes': base64.b64encode(photo).decode('ascii')},
-        )
-        return updated or {}
+            json_body={
+                'photoBytes': base64.b64encode(photo).decode('ascii'),
+                'personFields': 'photos',
+            },
+        ) or {}
+        photos = ((updated.get('person') or {}).get('photos')) or []
+        if not photos:
+            raise GoogleContactsError('Google kişi fotoğrafı profil resmi olarak kaydedilmedi.')
+        return updated
 
     def delete_contact_photo(self, resource_name: str) -> None:
         if not resource_name:

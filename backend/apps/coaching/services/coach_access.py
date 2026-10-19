@@ -56,25 +56,42 @@ def can_access_all_coaches(user) -> bool:
     return user_can_manage_coach_assignment(user) and get_coach_profile(user) is None
 
 
-def get_active_coach_student_ids(coach_profile):
-    """Yönetici sayısı ile aynı: yalnızca aktif birincil atama."""
+def _open_assignment_ids(coach_profile, *, primary_only):
     from apps.coaching.models import CoachStudentAssignment
+    from apps.coaching.services.coach_student_visibility import (
+        release_hidden_coach_assignments,
+        visible_coach_student_queryset,
+    )
 
+    qs = CoachStudentAssignment.objects.filter(
+        coach=coach_profile,
+        end_date__isnull=True,
+    )
+    if primary_only:
+        qs = qs.filter(is_primary=True)
+    raw_ids = list(qs.values_list('student_id', flat=True))
+    release_hidden_coach_assignments(raw_ids)
+    visible = visible_coach_student_queryset().filter(id__in=raw_ids or [0]).values('pk')
     return CoachStudentAssignment.objects.filter(
         coach=coach_profile,
-        is_primary=True,
         end_date__isnull=True,
+        student_id__in=visible,
+        **({'is_primary': True} if primary_only else {}),
     ).values_list('student_id', flat=True)
+
+
+def get_active_coach_student_ids(coach_profile):
+    """Yönetici sayısı ile aynı: yalnızca aktif birincil atama.
+
+    Pasif, kaydı kapanmış veya sözleşmesi iptal/fesih olan öğrenciler
+    bu kapsamdan düşer; açık atamaları kapanır.
+    """
+    return _open_assignment_ids(coach_profile, primary_only=True)
 
 
 def get_active_assignment_student_ids(coach_profile):
     """Aktif tüm atamalar (birincil + yardımcı). Sohbet görünürlüğü için."""
-    from apps.coaching.models import CoachStudentAssignment
-
-    return CoachStudentAssignment.objects.filter(
-        coach=coach_profile,
-        end_date__isnull=True,
-    ).values_list('student_id', flat=True)
+    return _open_assignment_ids(coach_profile, primary_only=False)
 
 
 def scoped_student_ids(user):

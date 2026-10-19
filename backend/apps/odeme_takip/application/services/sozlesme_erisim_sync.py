@@ -38,6 +38,13 @@ _NORMALIZE = {
 }
 
 
+def close_revoked_sozlesme_erisim(sozlesme, *, dry_run=False) -> dict:
+    """İptal veya fesih sonrası, başka geçerli sözleşme kalmadıysa erişimi kapatır."""
+    if not getattr(sozlesme, 'ogrenci_id', None) or sozlesme.durum in GRANTING_DURUMLAR:
+        return {'closed_paket': [], 'closed_ek_hizmet': []}
+    return _close_stale_erisim(sozlesme, dry_run=dry_run)
+
+
 def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False) -> dict:
     """Sözleşme kalemleri için eksik erişim kayıtlarını açar."""
     result = {

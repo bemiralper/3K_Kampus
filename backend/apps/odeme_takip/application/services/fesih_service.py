@@ -334,6 +334,11 @@ class FesihService:
         sozlesme.durum = SozlesmeDurum.FESHEDILMIS
         sozlesme.save(update_fields=['durum', 'updated_at'])
 
+        from apps.coaching.services.coach_student_visibility import (
+            release_student_after_contract_revoked,
+        )
+        release_student_after_contract_revoked(sozlesme.ogrenci_id, sozlesme)
+
         # Audit log
         self.gecmis_repo.create({
             'sozlesme': sozlesme,

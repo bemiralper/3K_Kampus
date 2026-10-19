@@ -1177,6 +1177,37 @@
   font-size: 14px;
   line-height: 1.45;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* FormattedWhatsAppText her satırı .wa-line span'ına böler. Bu kurallar
+   communication.css içindedir; sohbet sayfası o dosyayı yüklemez. Span
+   inline kalırsa şablon gövdesindeki satır sonları yan yana yapışır
+   ("Bilgileri" + "Öğrenci:" → "BilgileriÖğrenci:"). */
+.chat-bubble-text .wa-line {
+  display: block;
+  min-height: 1.45em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.chat-bubble-text .wa-line-quote {
+  margin: 2px 0;
+  padding: 2px 0 2px 8px;
+  border-left: 3px solid rgba(15, 23, 42, 0.28);
+}
+
+.chat-bubble-text .wa-line-bullet,
+.chat-bubble-text .wa-line-number {
+  display: flex;
+  gap: 6px;
+  min-height: 0;
+}
+
+.chat-bubble-text .wa-line-mark {
+  flex: none;
+  min-width: 1.1em;
+  font-weight: 700;
 }
 
 .chat-bubble-foot {

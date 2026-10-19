@@ -75,7 +75,16 @@ class CoachBirthdayListView(APIView):
                 focus = datetime.strptime(raw, '%Y-%m-%d').date()
             except ValueError:
                 focus = None
+        from apps.coaching.services.coach_student_visibility import (
+            portal_visible_student_ids,
+            release_hidden_coach_assignments,
+        )
+
         rows = list_staff_birthdays(ctx['kurum_id'], focus_date=focus)
+        birthday_ids = [row['ogrenci_id'] for row in rows]
+        release_hidden_coach_assignments(birthday_ids)
+        visible_ids = portal_visible_student_ids(birthday_ids)
+        rows = [row for row in rows if row['ogrenci_id'] in visible_ids]
         for row in rows:
             row['can_open'] = user_can_access_student(request.user, row['ogrenci_id'])
         return Response({
@@ -154,6 +163,18 @@ class CoachStudentProfileView(APIView):
         if err:
             return err
 
+        from apps.coaching.services.coach_student_visibility import (
+            is_student_visible_in_coach_portal,
+            release_hidden_coach_assignments,
+        )
+
+        release_hidden_coach_assignments([student_id])
+        if not is_student_visible_in_coach_portal(student_id):
+            return Response(
+                {'success': False, 'error': 'Öğrenci bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
         try:
             student = Ogrenci.objects.get(pk=student_id)
         except Ogrenci.DoesNotExist:
@@ -211,6 +232,18 @@ class CoachStudentRiskReportView(APIView):
         ctx, err = mandatory_coaching_context(request)
         if err:
             return err
+
+        from apps.coaching.services.coach_student_visibility import (
+            is_student_visible_in_coach_portal,
+            release_hidden_coach_assignments,
+        )
+
+        release_hidden_coach_assignments([student_id])
+        if not is_student_visible_in_coach_portal(student_id):
+            return Response(
+                {'success': False, 'error': 'Öğrenci bulunamadı.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
 
         if not user_can_access_student(request.user, student_id):
             return Response(

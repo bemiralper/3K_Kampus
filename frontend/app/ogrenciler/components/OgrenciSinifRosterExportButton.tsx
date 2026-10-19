@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import FloatingMenu from "@/components/finans/FloatingMenu";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { runSinifRosterExport, type SinifRosterExportFilters } from "@/lib/sinif-roster-export";
 import type { OgrenciListFilters } from "../lib/ogrenci-list-utils";
@@ -8,6 +9,12 @@ import type { OgrenciListFilters } from "../lib/ogrenci-list-utils";
 interface OgrenciSinifRosterExportButtonProps {
   filters: OgrenciListFilters;
 }
+
+const FORMAT_LABELS: Record<"xlsx" | "csv" | "pdf", { label: string; desc: string }> = {
+  xlsx: { label: "Excel (.xlsx)", desc: "Biçimli tablo" },
+  csv: { label: "CSV", desc: "Düz veri" },
+  pdf: { label: "PDF", desc: "Yazdırılabilir liste" },
+};
 
 export default function OgrenciSinifRosterExportButton({
   filters,
@@ -17,6 +24,7 @@ export default function OgrenciSinifRosterExportButton({
   const [loading, setLoading] = useState(false);
   const [termId, setTermId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   const sinifIds = filters.sinif_ids || [];
   const seviyeIds = filters.sinif_seviyesi_ids || [];
@@ -73,64 +81,60 @@ export default function OgrenciSinifRosterExportButton({
   if (!visible) return null;
 
   return (
-    <div style={{ position: "relative" }}>
+    <div className="ogrenci-col-picker-wrap">
       <button
+        ref={btnRef}
         type="button"
-        className="ogrenci-toolbar-btn secondary"
+        className={`ogrenci-toolbar-btn secondary${open ? " is-active" : ""}`}
         disabled={loading}
+        aria-expanded={open}
+        aria-haspopup="menu"
         onClick={() => setOpen((v) => !v)}
         title="Dönem bazlı sınıf öğrenci listesi (Eğitim Tanımları verisi)"
       >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+        </svg>
         Sınıf Listesi
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" aria-hidden>
+          <polyline points="6 9 12 15 18 9" />
+        </svg>
       </button>
-      {open && (
-        <>
-          <div
-            style={{ position: "fixed", inset: 0, zIndex: 40 }}
-            onClick={() => setOpen(false)}
-          />
-          <div
-            style={{
-              position: "absolute",
-              right: 0,
-              top: "calc(100% + 6px)",
-              minWidth: "140px",
-              background: "#fff",
-              border: "1px solid #e2e8f0",
-              borderRadius: "8px",
-              boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
-              padding: "6px",
-              zIndex: 50,
-            }}
-          >
-            {(["xlsx", "csv", "pdf"] as const).map((f) => (
-              <button
-                key={f}
-                type="button"
-                disabled={loading}
-                onClick={() => handleExport(f)}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  padding: "8px 12px",
-                  border: "none",
-                  background: "transparent",
-                  borderRadius: "6px",
-                  fontSize: "13px",
-                  cursor: loading ? "wait" : "pointer",
-                  textTransform: "uppercase",
-                }}
-              >
-                {f}
-              </button>
-            ))}
-            {error && (
-              <p style={{ margin: "6px 8px 0", fontSize: "11px", color: "#dc2626" }}>{error}</p>
-            )}
+      <FloatingMenu
+        open={open}
+        anchorRef={btnRef}
+        onClose={() => setOpen(false)}
+        className="ogrenci-col-picker-menu ogrenci-roster-menu"
+        minWidth={220}
+        align="start"
+      >
+        <div className="ogrenci-col-picker-head">
+          <div>
+            <strong>Sınıf listesi</strong>
+            <p>Dönem bazlı öğrenci listesi</p>
           </div>
-        </>
-      )}
+        </div>
+        <div className="ogrenci-roster-menu-body">
+          {(["xlsx", "csv", "pdf"] as const).map((f) => (
+            <button
+              key={f}
+              type="button"
+              role="menuitem"
+              className="ogrenci-roster-menu-item"
+              disabled={loading}
+              onClick={() => handleExport(f)}
+            >
+              <span className="ogrenci-roster-menu-item-label">{FORMAT_LABELS[f].label}</span>
+              <span className="ogrenci-roster-menu-item-desc">{FORMAT_LABELS[f].desc}</span>
+            </button>
+          ))}
+          {loading && <p className="ogrenci-roster-menu-note">Hazırlanıyor…</p>}
+          {error && (
+            <p className="ogrenci-roster-menu-error" role="alert">{error}</p>
+          )}
+        </div>
+      </FloatingMenu>
     </div>
   );
 }

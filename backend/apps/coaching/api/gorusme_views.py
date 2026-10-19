@@ -719,10 +719,20 @@ class GorusmeKullaniciBilgiView(APIView):
         if coach_profile:
             result['coach_full_name'] = f"{coach_profile.teacher.ad} {coach_profile.teacher.soyad}"
 
-            # Koçun atanmış aktif öğrencilerini getir
+            from apps.coaching.services.coach_student_visibility import (
+                release_hidden_coach_assignments,
+                visible_coach_student_queryset,
+            )
+
             assignments = CoachStudentAssignment.objects.filter(
                 coach=coach_profile,
                 end_date__isnull=True,
+            )
+            release_hidden_coach_assignments(
+                assignments.values_list('student_id', flat=True),
+            )
+            assignments = assignments.filter(
+                student_id__in=visible_coach_student_queryset().values('pk'),
             ).select_related('student').order_by('student__ad', 'student__soyad')
 
             result['assigned_students'] = [
