@@ -928,7 +928,7 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
                         <div className="cell-info">
                           <span className="cell-primary">{sube.telefon || sube.eposta || "-"}</span>
                           <span className="cell-secondary">
-                            {sube.adres ? sube.adres.substring(0, 40) + (sube.adres.length > 40 ? "…" : "") : sube.kurs_muduru || "-"}
+                            {[ [sube.il, sube.ilce].filter(Boolean).join(" / "), sube.adres ].filter(Boolean).join(" · ") || sube.kurs_muduru || "-"}
                           </span>
                         </div>
                       </td>
@@ -1564,7 +1564,7 @@ export default function KurumYonetimiClient({ initialData }: KurumYonetimiClient
                 onClick={handleSave}
                 disabled={saving || 
                   (activeTab === "kurumlar" && (!kurumForm.ad || !kurumForm.kod)) ||
-                  (activeTab === "subeler" && (!subeForm.ad || !subeForm.kurum_id)) ||
+                  (activeTab === "subeler" && (!subeForm.ad || !subeForm.kurum_id || !subeForm.il.trim() || !subeForm.ilce.trim())) ||
                   (activeTab === "egitim_yillari" && (!yilForm.baslangic_yil || !yilForm.bitis_yil)) ||
                   (activeTab === "kayit_tanimlari" && !kayitTuruForm.label.trim())
                 }

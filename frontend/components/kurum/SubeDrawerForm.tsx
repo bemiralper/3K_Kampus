@@ -162,6 +162,26 @@ export default function SubeDrawerForm({ form, onChange, kurumOptions }: SubeDra
               />
             </Field>
           </div>
+          <div className="sube-grid-2">
+            <Field label="İl" required>
+              <input
+                type="text"
+                className="sube-input"
+                value={form.il}
+                onChange={e => set('il', e.target.value)}
+                placeholder="Örn: Erzurum"
+              />
+            </Field>
+            <Field label="İlçe" required>
+              <input
+                type="text"
+                className="sube-input"
+                value={form.ilce}
+                onChange={e => set('ilce', e.target.value)}
+                placeholder="Örn: Yakutiye"
+              />
+            </Field>
+          </div>
           <Field label="Adres">
             <textarea
               className="sube-input sube-textarea"

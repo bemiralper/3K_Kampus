@@ -46,6 +46,8 @@ export interface Sube {
   web_adresi?: string;
   eposta?: string;
   telefon?: string;
+  il?: string;
+  ilce?: string;
   adres?: string;
   ticari_unvan?: string;
   vergi_dairesi?: string;

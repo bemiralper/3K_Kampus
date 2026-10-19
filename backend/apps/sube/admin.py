@@ -10,7 +10,7 @@ class SubeAdmin(admin.ModelAdmin):
     readonly_fields = ['created_at', 'updated_at']
     fieldsets = (
         ('Genel', {'fields': ('kurum', 'ad', 'kod', 'resmi_ad', 'aktif_mi')}),
-        ('İletişim', {'fields': ('web_adresi', 'eposta', 'telefon', 'adres')}),
+        ('İletişim', {'fields': ('web_adresi', 'eposta', 'telefon', 'il', 'ilce', 'adres')}),
         ('Ticari', {'fields': ('ticari_unvan', 'vergi_dairesi', 'vergi_no', 'ticaret_sicil_no')}),
         ('Yönetim', {'fields': ('kurs_muduru', 'kurs_muduru_telefon')}),
         ('Sistem', {'fields': ('created_at', 'updated_at')}),

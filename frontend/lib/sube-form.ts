@@ -5,6 +5,8 @@ export type SubeFormState = {
   resmi_ad: string;
   web_adresi: string;
   eposta: string;
+  il: string;
+  ilce: string;
   adres: string;
   telefon: string;
   ticari_unvan: string;
@@ -23,6 +25,8 @@ export const DEFAULT_SUBE_FORM: SubeFormState = {
   resmi_ad: '',
   web_adresi: '',
   eposta: '',
+  il: '',
+  ilce: '',
   adres: '',
   telefon: '',
   ticari_unvan: 'Özgün Sınav Öğretim Eğitim A.Ş.',
@@ -47,6 +51,8 @@ export function subeFormFromApi(item: Partial<SubeProfile>): SubeFormState {
     resmi_ad: item.resmi_ad || '',
     web_adresi: item.web_adresi || '',
     eposta: item.eposta || '',
+    il: item.il || '',
+    ilce: item.ilce || '',
     adres: item.adres || '',
     telefon: item.telefon || '',
     ticari_unvan: item.ticari_unvan || DEFAULT_SUBE_FORM.ticari_unvan,

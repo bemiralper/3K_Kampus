@@ -141,6 +141,11 @@ class OptikPrintTest(TestCase):
         self.assertEqual(rows[0]['il'], 'Erzurum')
         self.assertEqual(rows[0]['ilce'], 'Yakutiye')
         self.assertEqual(rows[0]['il_ilce'], 'Erzurum / Yakutiye')
+        self.sube.il = 'Erzurum'
+        self.sube.ilce = 'Aziziye'
+        self.sube.save(update_fields=['il', 'ilce'])
+        sube_rows = participant_value_rows(self.exam, [self.participant])
+        self.assertEqual(sube_rows[0]['il_ilce'], 'Erzurum / Aziziye')
         self.assertEqual(rows[0]['salon'], 'Salon 1 / 12')
         self.assertEqual(rows[0]['sira'], '12')
         self.assertEqual(rows[0]['tc'], '10000000146')

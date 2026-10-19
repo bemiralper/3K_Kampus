@@ -330,6 +330,14 @@ def api_kurum_delete_info(request, pk):
     })
 
 
+def _il_ilce_eksik(data: dict) -> JsonResponse | None:
+    il = (data.get('il') or '').strip()
+    ilce = (data.get('ilce') or '').strip()
+    if not il or not ilce:
+        return JsonResponse({'success': False, 'error': 'İl ve ilçe zorunludur.'}, status=400)
+    return None
+
+
 @csrf_exempt
 @require_sube_api
 def api_sube_list_create(request):
@@ -356,6 +364,9 @@ def api_sube_list_create(request):
             kurum_id, err = _resolve_kurum_id_for_sube(data)
             if err:
                 return err
+            eksik = _il_ilce_eksik(data)
+            if eksik:
+                return eksik
             sube = Sube.objects.create(
                 kurum_id=kurum_id,
                 ad=data.get('ad'),
@@ -389,6 +400,9 @@ def api_sube_detail(request, pk):
                 kurum_id, err = _resolve_kurum_id_for_sube(data)
                 if err:
                     return err
+            eksik = _il_ilce_eksik(data)
+            if eksik:
+                return eksik
             apply_sube_fields(sube, data)
             sube.save()
             return JsonResponse({

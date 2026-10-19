@@ -13,6 +13,14 @@ def optik_filename(exam_name: str) -> str:
     return f'{(slug or "sinav")[:80]}-optik.pdf'
 
 
+def _yer(birincil, yedek, attr: str) -> str:
+    """Şubedeki il veya ilçe doluysa onu, boşsa kurumdakini kullan."""
+    primary = (getattr(birincil, attr, '') or '').strip() if birincil is not None else ''
+    if primary:
+        return primary
+    return (getattr(yedek, attr, '') or '').strip()
+
+
 def _il_ilce(il: str, ilce: str) -> str:
     parts = [p for p in ((il or '').strip(), (ilce or '').strip()) if p]
     return ' / '.join(parts)
@@ -41,8 +49,9 @@ def participant_value_rows(exam, participants) -> list[dict]:
 
     kurum = exam.kurum
     kurum_ad = getattr(kurum, 'ad', '') or ''
-    il = (getattr(kurum, 'il', '') or '').strip()
-    ilce = (getattr(kurum, 'ilce', '') or '').strip()
+    sinav_subesi = exam.sube if getattr(exam, 'sube_id', None) else None
+    il = _yer(sinav_subesi, kurum, 'il')
+    ilce = _yer(sinav_subesi, kurum, 'ilce')
     rows = []
     for participant in participants:
         student = participant.student

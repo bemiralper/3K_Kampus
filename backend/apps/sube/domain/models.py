@@ -43,6 +43,8 @@ class Sube(models.Model):
     # İletişim
     web_adresi = models.URLField('Web Adresi', max_length=500, blank=True)
     eposta = models.EmailField('E-posta', blank=True)
+    il = models.CharField('İl', max_length=100, blank=True, default='')
+    ilce = models.CharField('İlçe', max_length=100, blank=True, default='')
     adres = models.TextField('Adres', blank=True)
     telefon = models.CharField('Telefon', max_length=20, blank=True)
 

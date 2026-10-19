@@ -11,6 +11,8 @@ def serialize_sube(sube, request=None, *, include_kurum: bool = True) -> dict:
         'resmi_ad': sube.resmi_ad or '',
         'web_adresi': sube.web_adresi or '',
         'eposta': sube.eposta or '',
+        'il': sube.il or '',
+        'ilce': sube.ilce or '',
         'adres': sube.adres or '',
         'telefon': sube.telefon or '',
         'ticari_unvan': sube.ticari_unvan or '',
@@ -35,7 +37,7 @@ def serialize_sube(sube, request=None, *, include_kurum: bool = True) -> dict:
 
 
 SUBE_WRITABLE_FIELDS = (
-    'ad', 'kod', 'resmi_ad', 'web_adresi', 'eposta', 'adres', 'telefon',
+    'ad', 'kod', 'resmi_ad', 'web_adresi', 'eposta', 'il', 'ilce', 'adres', 'telefon',
     'ticari_unvan', 'vergi_dairesi', 'vergi_no', 'ticaret_sicil_no',
     'kurs_muduru', 'kurs_muduru_telefon', 'aktif_mi',
     'gorunen_ad', 'slogan',
