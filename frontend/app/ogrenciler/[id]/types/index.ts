@@ -25,6 +25,8 @@ export type OgrenciVeli = {
   meslek: string;
   varsayilan: boolean;
   sms_bildirimleri?: string[];
+  sms_tercih_kayitli?: boolean;
+  sms_bildirimleri_etkin?: string[];
 };
 
 export type OgrenciEkHizmet = {
@@ -53,6 +55,7 @@ export type OgrenciDetay = {
   kayit_turu: string;
   kayit_turu_display: string;
   telefon: string;
+  whatsapp_uygun?: boolean;
   email: string;
   adres: string;
   veli_ad_soyad: string;

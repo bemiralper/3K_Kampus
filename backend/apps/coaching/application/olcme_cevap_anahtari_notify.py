@@ -130,7 +130,9 @@ def preview_answer_key_notify(exam) -> dict:
             display_name=f'{student.ad} {student.soyad}'.strip(),
             telefon=_mask_phone(phone) if phone else '',
             body=student_body,
-            skip_reason='' if phone else 'Öğrenci telefonu bulunamadı',
+            skip_reason=ContactResolver.ogrenci_outbound_skip(
+                student, empty='Öğrenci telefonu bulunamadı',
+            ),
         ))
         students.append({
             'student_id': student.id,
@@ -217,10 +219,11 @@ def send_answer_key_notify(
                     fallback_body=body,
                 )))
         if include_student:
-            phone = (student.telefon or '').strip()
-            if not phone:
+            phone_skip = ContactResolver.ogrenci_outbound_skip(
+                student, empty='Öğrenci telefonu bulunamadı',
+            )
+            if phone_skip:
                 skipped += 1
-                errors.append(f'{ctx["ogrenci_ad"]}: Öğrenci telefonu bulunamadı')
             else:
                 body = _fallback_body(exam, student, for_veli=False)
                 jobs.append(('', lambda student=student, ctx=ctx, body=body: dispatch_event(

@@ -7,6 +7,7 @@ from typing import Any
 from django.db import transaction
 
 from apps.communication.application.communication_service import MessageSource
+from apps.communication.application.contact_resolver import ContactResolver
 from apps.communication.application.integration_hooks import SOURCE_KOC
 from apps.communication.application.notification_dispatcher import (
     NotificationAttachment,
@@ -110,7 +111,6 @@ class StudyProgramNotifyService:
             if not phone.strip():
                 skip = 'Veli telefonu bulunamadı'
             else:
-                from apps.communication.application.contact_resolver import ContactResolver
                 if not ContactResolver.veli_allows_outbound(veli, OPT_IN_CATEGORY):
                     skip = 'Veli duyuru bildirimini kabul etmemiş'
             recipients.append(StudyProgramNotifyRecipient(
@@ -141,7 +141,9 @@ class StudyProgramNotifyService:
             display_name=student_name,
             telefon=_mask_phone(student_phone) if student_phone else '',
             body=_fallback_body(program, for_veli=False),
-            skip_reason='' if student_phone else 'Öğrenci telefonu bulunamadı',
+            skip_reason=ContactResolver.ogrenci_outbound_skip(
+                student, empty='Öğrenci telefonu bulunamadı',
+            ),
         ))
 
         resolved_v = resolve_binding(
@@ -242,7 +244,6 @@ class StudyProgramNotifyService:
             elif item.recipient_type == 'ogrenci' and include_student:
                 if item.skip_reason:
                     skipped += 1
-                    errors.append(f'{item.display_name}: {item.skip_reason}')
                     continue
                 ctx = _context(program)
                 body = _fallback_body(program, for_veli=False)

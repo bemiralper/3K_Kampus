@@ -736,7 +736,9 @@ def _hatirlatma_rows(
             'veli_id': None,
             'display_name': f'{st.ad} {st.soyad}'.strip(),
             'telefon': _mask_phone(student_phone) if student_phone else '',
-            'skip_reason': '' if student_phone else 'Öğrenci telefonu bulunamadı',
+            'skip_reason': ContactResolver.ogrenci_outbound_skip(
+                st, empty='Öğrenci telefonu bulunamadı',
+            ),
         })
         rows.append({
             'participant_id': p.id,

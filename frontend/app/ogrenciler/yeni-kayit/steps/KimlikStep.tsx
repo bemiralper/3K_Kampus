@@ -369,6 +369,25 @@ export default function KimlikStep({
             onBlur={() => kimlik.checkPhone(data.student.telefon)}
           />
           {kimlik.phoneError && <span className="kimlik-phone-error">{kimlik.phoneError}</span>}
+          <label className="wizard-check" style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8 }}>
+            <input
+              type="checkbox"
+              checked={data.student.whatsapp_uygun !== false}
+              onChange={(e) =>
+                onChange({
+                  ...data,
+                  student: { ...data.student, whatsapp_uygun: e.target.checked },
+                })
+              }
+              style={{ marginTop: 3 }}
+            />
+            <span>
+              <span className="wizard-label" style={{ marginBottom: 0 }}>WhatsApp gidebilir</span>
+              <span className="wizard-hint" style={{ display: "block", fontSize: 12, color: "#64748b" }}>
+                WhatsApp&apos;ı olmayan numaralarda kapatın. Kapalı numaraya mesaj gitmez.
+              </span>
+            </span>
+          </label>
         </div>
       </div>
 

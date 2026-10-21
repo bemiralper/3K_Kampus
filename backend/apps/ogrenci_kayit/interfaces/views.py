@@ -198,6 +198,7 @@ class TcCheckView(APIView):
                 "dogum_tarihi": str(ogrenci.dogum_tarihi) if ogrenci.dogum_tarihi else "",
                 "cinsiyet": ogrenci.cinsiyet,
                 "telefon": ogrenci.telefon,
+                "whatsapp_uygun": bool(getattr(ogrenci, "whatsapp_uygun", True)),
                 "email": ogrenci.email,
                 "kayit_turu": ogrenci.kayit_turu,
                 "aktif_mi": ogrenci.aktif_mi,
@@ -434,6 +435,16 @@ class WizardDistrictView(APIView):
         return Response(districts)
 
 
+def _whatsapp_uygun_flag(student_data, default=True) -> bool:
+    """Kayıt formunda kutu yoksa akıllı telefon kabul edilir."""
+    if not isinstance(student_data, dict) or 'whatsapp_uygun' not in student_data:
+        return default
+    raw = student_data.get('whatsapp_uygun')
+    if isinstance(raw, str):
+        return raw.strip().lower() not in {'0', 'false', 'hayir', 'no', 'off', ''}
+    return bool(raw)
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class DirectRegistrationView(APIView):
     """Doğrudan öğrenci kaydı - CSRF muaf"""
@@ -539,6 +550,7 @@ class DirectRegistrationView(APIView):
                         dogum_tarihi=student_data["dogum_tarihi"],
                         cinsiyet=cinsiyet_code,
                         telefon=normalize_phone(student_data.get("telefon") or ""),
+                        whatsapp_uygun=_whatsapp_uygun_flag(student_data),
                         email=student_data.get("email") or "",
                         kayit_turu=GUNU_BIRLIK_CODE if is_walk_in else (kayit_turu_code or "asil"),
                         aktif_mi=True,
@@ -561,6 +573,9 @@ class DirectRegistrationView(APIView):
                             'kayit_turu', 'ad', 'soyad', 'dogum_tarihi',
                             'cinsiyet', 'telefon', 'email',
                         ])
+                    if 'whatsapp_uygun' in student_data:
+                        ogrenci.whatsapp_uygun = _whatsapp_uygun_flag(student_data)
+                        updates.append('whatsapp_uygun')
                     if updates:
                         ogrenci.save(update_fields=updates)
                     if ogrenci.kisi_id:

@@ -50,6 +50,7 @@ export default function OgrenciBilgiDrawer({
     dogum_tarihi: '',
     cinsiyet: '',
     telefon: '',
+    whatsapp_uygun: true,
     email: '',
     adres: '',
     kayit_turu: '',
@@ -154,6 +155,7 @@ export default function OgrenciBilgiDrawer({
         dogum_tarihi: data.dogum_tarihi_iso || '',
         cinsiyet: data.cinsiyet || '',
         telefon: data.telefon || '',
+        whatsapp_uygun: data.whatsapp_uygun !== false,
         email: data.email || '',
         adres: data.adres || '',
         kayit_turu: data.kayit_turu || 'asil',
@@ -705,6 +707,22 @@ export default function OgrenciBilgiDrawer({
                         {kimlik.phoneError}
                       </span>
                     )}
+                    <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 10, cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={formData.whatsapp_uygun}
+                        onChange={(e) => setFormData({ ...formData, whatsapp_uygun: e.target.checked })}
+                        style={{ marginTop: 3 }}
+                      />
+                      <span>
+                        <span style={{ display: 'block', fontSize: 13, fontWeight: 600, color: '#334155' }}>
+                          WhatsApp gidebilir
+                        </span>
+                        <span style={{ display: 'block', fontSize: 12, color: '#64748b', lineHeight: 1.4 }}>
+                          WhatsApp&apos;ı olmayan numaralarda kapatın. Kapalı numaraya mesaj gitmez.
+                        </span>
+                      </span>
+                    </label>
                   </div>
                   <div className="form-field">
                     <label style={{ display: 'block', marginBottom: '8px', fontSize: '14px', fontWeight: 600, color: '#334155' }}>

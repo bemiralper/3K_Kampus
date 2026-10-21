@@ -160,6 +160,9 @@ class CommunicationService:
         except Exception as exc:
             return SendResult(success=False, errors=[str(exc)])
 
+        if channel == Channel.WHATSAPP and not ContactResolver.whatsapp_number_allowed(kurum_id, e164):
+            return SendResult(success=False, errors=[ContactResolver.FEATURE_PHONE_ERROR])
+
         if not conversation:
             resolved = ContactResolver.resolve_contact(kurum_id, e164)
             if recipients.ogrenci_id and not recipients.veli_id:

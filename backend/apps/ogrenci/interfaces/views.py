@@ -89,6 +89,14 @@ def _sync_term_placement_from_kayit(ogrenci, sinif_id):
         )
 
 
+def _parse_bool(raw, *, default: bool = False) -> bool:
+    if isinstance(raw, str):
+        return raw.strip().lower() not in {'0', 'false', 'hayir', 'no', 'off', ''}
+    if raw is None:
+        return default
+    return bool(raw)
+
+
 def _normalize_sms_bildirimleri(raw, *, default_on_create: bool = False) -> list[str]:
     if raw is None:
         return ['duyuru', 'devamsizlik', 'odeme'] if default_on_create else []
@@ -101,6 +109,7 @@ def _normalize_sms_bildirimleri(raw, *, default_on_create: bool = False) -> list
 
 
 def _veli_api_dict(veli: OgrenciVeli) -> dict:
+    from apps.communication.application.contact_resolver import ContactResolver
     from apps.ogrenci.application.veli_telefon import (
         ensure_telefonlar_populated,
         normalize_telefonlar,
@@ -128,6 +137,8 @@ def _veli_api_dict(veli: OgrenciVeli) -> dict:
         'meslek': veli.meslek or '',
         'varsayilan': veli.varsayilan,
         'sms_bildirimleri': veli.sms_bildirimleri or [],
+        'sms_tercih_kayitli': bool(getattr(veli, 'sms_tercih_kayitli', False)),
+        'sms_bildirimleri_etkin': ContactResolver.effective_veli_sms_categories(veli),
     }
 
 
@@ -729,6 +740,8 @@ def ogrenci_api(request, pk):
         allowed_fields = ['ad', 'soyad', 'tc_kimlik_no', 'dogum_tarihi', 'cinsiyet', 
                          'telefon', 'email', 'adres', 'veli_ad_soyad', 'veli_telefon', 
                          'kayit_turu', 'aktif_mi']
+        if 'whatsapp_uygun' in data:
+            update_data['whatsapp_uygun'] = _parse_bool(data.get('whatsapp_uygun'), default=True)
         
         # String alanlar için boş string kabul eden alanlar (null olamaz)
         string_fields_no_null = ['email', 'telefon', 'adres', 'veli_ad_soyad', 'veli_telefon']
@@ -966,6 +979,7 @@ def ogrenci_api(request, pk):
         'kayit_turu': kayit_turu_code,
         'kayit_turu_display': kayit_turu_display,
         'telefon': ogrenci.telefon or '',
+        'whatsapp_uygun': bool(getattr(ogrenci, 'whatsapp_uygun', True)),
         'email': ogrenci.email or '',
         # Eski model uyumluluğu
         'adres': adres_text or ogrenci.adres or '',
@@ -1095,9 +1109,10 @@ def ogrenci_veliler_api(request, pk):
         if varsayilan:
             OgrenciVeli.objects.filter(ogrenci=ogrenci, varsayilan=True).update(varsayilan=False)
         
+        tercih_kayitli = 'sms_bildirimleri' in data
         sms_bildirimleri = _normalize_sms_bildirimleri(
             data.get('sms_bildirimleri'),
-            default_on_create=True,
+            default_on_create=not tercih_kayitli,
         )
 
         # Veli oluştur
@@ -1111,6 +1126,7 @@ def ogrenci_veliler_api(request, pk):
             email=_json_str(data, 'email'),
             meslek=_json_str(data, 'meslek'),
             sms_bildirimleri=sms_bildirimleri,
+            sms_tercih_kayitli=tercih_kayitli,
             varsayilan=varsayilan,
         )
         apply_telefonlar(
@@ -1205,6 +1221,7 @@ def ogrenci_veli_detail_api(request, pk, veli_id):
             veli.meslek = _json_str(data, 'meslek')
         if 'sms_bildirimleri' in data:
             veli.sms_bildirimleri = _normalize_sms_bildirimleri(data.get('sms_bildirimleri'))
+            veli.sms_tercih_kayitli = True
         
         # Varsayılan kontrolü
         if data.get('varsayilan', False):

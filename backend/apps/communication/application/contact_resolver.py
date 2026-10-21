@@ -38,12 +38,29 @@ class ContactResolver:
 
     # sms_bildirimleri kodları — duyuru/genel mesajlar için
     GENERAL_OPT_IN_CODES = {'duyuru', 'genel', 'general', 'announcement'}
+    OPERATIONAL_OPT_IN = ('duyuru', 'devamsizlik', 'odeme')
     # Tercih kaydedilmemiş veliler için varsayılan operasyonel bildirimler
     DEFAULT_OPT_IN_CATEGORIES = GENERAL_OPT_IN_CODES | {'devamsizlik', 'odeme'}
     # Eski veli kaydı varsayılanı (ödeme kutusu yoktu). Ödeme sözleşmesel
     # hatırlatmadır; bu tam listeyi "ödeme opt-out" saymayız.
+    # sms_tercih_kayitli=True olan kayıtlarda bu istisna uygulanmaz.
     LEGACY_DEFAULT_OPT_IN = frozenset({'duyuru', 'devamsizlik'})
     TRANSACTIONAL_CATEGORIES = frozenset({'odeme'})
+    FEATURE_PHONE_ERROR = 'Bu numarada WhatsApp yok.'
+    FEATURE_PHONE_SKIP = 'WhatsApp yok'
+
+    @classmethod
+    def ogrenci_outbound_skip(cls, ogrenci, *, empty: str) -> str:
+        """Öğrenci şablon önizlemesi: boş numara veya WhatsApp'ı kapalı numara.
+
+        WhatsApp'ı olmayan numara hata değildir; alıcı listesinde atlanır.
+        """
+        phone = (getattr(ogrenci, 'telefon', None) or '').strip()
+        if not phone:
+            return empty
+        if not getattr(ogrenci, 'whatsapp_uygun', True):
+            return cls.FEATURE_PHONE_SKIP
+        return ''
 
     #: Uluslararası E.164: ülke kodu 1-3 hane, toplam 8-15 hane (ITU-T E.164)
     INTL_E164_PATTERN = re.compile(r'^\+[1-9]\d{7,14}$')
@@ -321,22 +338,65 @@ class ContactResolver:
         return {}
 
     @classmethod
+    def _canonical_sms_code(cls, raw) -> str:
+        code = str(raw or '').lower().strip()
+        if code in cls.GENERAL_OPT_IN_CODES:
+            return 'duyuru'
+        return code
+
+    @classmethod
+    def effective_veli_sms_categories(cls, veli) -> list[str]:
+        """Formun göstermesi ve gönderimin kullanması gereken konu listesi.
+
+        sms_tercih_kayitli ise liste aynen geçerlidir; boş liste hiçbir
+        otomatik bildirime izin vermez. Eski kayıtlarda boş liste ve
+        {duyuru, devamsizlik} üç konuyu da açık sayar.
+        """
+        if not veli:
+            return list(cls.OPERATIONAL_OPT_IN)
+        seen: list[str] = []
+        for raw in (getattr(veli, 'sms_bildirimleri', None) or []):
+            code = cls._canonical_sms_code(raw)
+            if code in cls.OPERATIONAL_OPT_IN and code not in seen:
+                seen.append(code)
+        if getattr(veli, 'sms_tercih_kayitli', False):
+            return seen
+        if not seen or set(seen) == cls.LEGACY_DEFAULT_OPT_IN:
+            return list(cls.OPERATIONAL_OPT_IN)
+        return seen
+
+    @classmethod
     def veli_allows_outbound(cls, veli, category: str = 'duyuru') -> bool:
         """Veli sms_bildirimleri opt-in kontrolü."""
         if not veli:
             return True
-        codes = veli.sms_bildirimleri or []
-        cat = category.lower().strip()
-        if not codes:
-            return cat in cls.DEFAULT_OPT_IN_CATEGORIES
-        normalized = {str(c).lower().strip() for c in codes}
-        if cat in normalized:
+        cat = cls._canonical_sms_code(category)
+        if cat == 'genel':
+            cat = 'duyuru'
+        return cat in cls.effective_veli_sms_categories(veli)
+
+    @classmethod
+    def whatsapp_number_allowed(cls, kurum_id: int, phone: str) -> bool:
+        """WhatsApp'ı kapalı işaretli öğrenci numarasına mesaj gitmez."""
+        if not kurum_id or not phone:
             return True
-        if cat in ('duyuru', 'general', 'genel') and normalized & cls.GENERAL_OPT_IN_CODES:
+        try:
+            e164 = cls.normalize(phone)
+        except ValidationError:
             return True
-        if cat in cls.TRANSACTIONAL_CATEGORIES and normalized == cls.LEGACY_DEFAULT_OPT_IN:
+        suffix = cls._phone_suffix(e164)
+        if not suffix:
             return True
-        return False
+        from apps.ogrenci.domain.models import Ogrenci
+
+        for stored in (
+            Ogrenci.objects.filter(kurum_id=kurum_id, whatsapp_uygun=False)
+            .exclude(telefon='')
+            .values_list('telefon', flat=True)
+        ):
+            if cls._phone_suffix(stored) == suffix:
+                return False
+        return True
 
     @classmethod
     def upsert_identity(

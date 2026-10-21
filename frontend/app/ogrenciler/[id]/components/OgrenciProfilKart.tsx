@@ -433,7 +433,10 @@ export default function OgrenciProfilKart({
               <span className="detail-label">Telefon</span>
               <span className="detail-value with-action">
                 {data.telefon || '-'}
-                {data.telefon && (
+                {data.telefon && data.whatsapp_uygun === false && (
+                  <span className="detail-muted">WhatsApp yok</span>
+                )}
+                {data.telefon && data.whatsapp_uygun !== false && (
                   <WhatsAppChatButton
                     phone={data.telefon}
                     ogrenciId={data.id}

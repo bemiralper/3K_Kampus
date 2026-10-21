@@ -311,7 +311,10 @@ export default function CoachStudentInfoPanel({
                 <span className="detail-label">Telefon</span>
                 <span className="detail-value with-action">
                   {student.telefon || '-'}
-                  {student.telefon && (
+                  {student.telefon && student.whatsapp_uygun === false && (
+                    <span className="detail-muted">WhatsApp yok</span>
+                  )}
+                  {student.telefon && student.whatsapp_uygun !== false && (
                     <WhatsAppChatButton
                       phone={student.telefon}
                       ogrenciId={student.id}

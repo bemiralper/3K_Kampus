@@ -14,6 +14,7 @@ from apps.coaching.services.attendance_calendar_pdf import (
 )
 from apps.coaching.services.attendance_followup import student_history_payload
 from apps.communication.application.communication_service import MessageSource
+from apps.communication.application.contact_resolver import ContactResolver
 from apps.communication.application.integration_hooks import SOURCE_DEVAMSIZLIK
 from apps.communication.application.notification_dispatcher import (
     NotificationAttachment,
@@ -151,7 +152,9 @@ def preview_attendance_calendar_notify(
         'display_name': _student_name(student),
         'telefon': _mask_phone(phone) if phone else '',
         'body': _body(kurum_id, student, RecipientType.OGRENCI, ctx) if phone else '',
-        'skip_reason': '' if phone else 'Öğrenci telefonu bulunamadı',
+        'skip_reason': ContactResolver.ogrenci_outbound_skip(
+            student, empty='Öğrenci telefonu bulunamadı',
+        ),
     })
 
     return {
@@ -247,7 +250,7 @@ def send_attendance_calendar_notify(
                 )
         elif item['recipient_type'] == 'ogrenci' and include_student:
             if item['skip_reason']:
-                _fail(item['display_name'], item['skip_reason'])
+                skipped += 1
                 continue
             ctx = _context(student, start, end, absent=absent, late=late)
             result = dispatch_event(

@@ -244,6 +244,12 @@ def send_birthday_wishes_for_kurum(
             result.details.append(detail)
             continue
 
+        if not getattr(ogrenci, 'whatsapp_uygun', True):
+            result.skipped += 1
+            detail['status'] = 'feature_phone'
+            result.details.append(detail)
+            continue
+
         if asset is None:
             result.skipped += 1
             detail['status'] = 'no_media'

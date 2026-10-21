@@ -10,6 +10,10 @@ class KurumConfig(AppConfig):
     verbose_name = 'Kurum Yönetimi'
 
     def ready(self):
+        # Django'nun UPPER() karşılaştırması İ ile i'yi ayırır (İncesu ≠ incesu).
+        # Varsayılan icontains/iexact kayıtlarından sonra değiştirilmeli.
+        from shared.turkish_search import register_turkish_lookups
+        register_turkish_lookups()
         try:
             from apps.yedekleme.registry import register_resources
             from .backup_resources import RESOURCES

@@ -298,9 +298,9 @@ class AssignmentNotificationService:
             for_veli=False,
             kurum=kurum,
         )
-        student_skip = ''
-        if not student_phone:
-            student_skip = 'Öğrenci telefonu bulunamadı'
+        student_skip = ContactResolver.ogrenci_outbound_skip(
+            ogrenci, empty='Öğrenci telefonu bulunamadı',
+        )
 
         student_source = self._source_id(notify_type, assignment.id, 'ogrenci')
         student_history = self._recipient_send_history(
@@ -506,7 +506,6 @@ class AssignmentNotificationService:
             elif item.recipient_type == 'ogrenci' and include_student:
                 if item.skip_reason:
                     skipped += 1
-                    errors.append(f'{item.display_name}: {item.skip_reason}')
                     continue
                 short_body = build_pdf_attachment_message(
                     assignment,

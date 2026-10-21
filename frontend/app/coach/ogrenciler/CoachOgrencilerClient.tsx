@@ -252,6 +252,7 @@ function StudentCard({
         {!selectMode && (
           <CoachStudentQuickActions
             ogrenciTelefon={student.telefon}
+            ogrenciWhatsappUygun={student.whatsapp_uygun !== false}
             veliTelefon={student.veli_telefon}
             veliId={student.veli_id ?? undefined}
             ogrenciId={student.id}
@@ -769,6 +770,7 @@ export default function CoachOgrencilerClient() {
                       <td>
                         <CoachStudentQuickActions
                           ogrenciTelefon={s.telefon}
+                          ogrenciWhatsappUygun={s.whatsapp_uygun !== false}
                           veliTelefon={s.veli_telefon}
                           veliId={s.veli_id ?? undefined}
                           ogrenciId={s.id}

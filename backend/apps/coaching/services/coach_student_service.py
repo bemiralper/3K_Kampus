@@ -243,7 +243,7 @@ def build_coach_student_list(user, request, sube_id=None):
     """GET /api/coaching/students/ yanıt gövdesi."""
     students = list(
         get_coach_student_queryset(user, request, sube_id=sube_id).values(
-            'id', 'ad', 'soyad', 'telefon', 'dogum_tarihi',
+            'id', 'ad', 'soyad', 'telefon', 'whatsapp_uygun', 'dogum_tarihi',
         )
     )
     if not students:
@@ -276,6 +276,7 @@ def build_coach_student_list(user, request, sube_id=None):
             'last_meeting_date': last_date.isoformat() if last_date else None,
             'overdue_homework_count': overdue.get(sid, 0),
             'telefon': s.get('telefon') or '',
+            'whatsapp_uygun': s.get('whatsapp_uygun', True),
             'dogum_tarihi': s['dogum_tarihi'].isoformat() if s.get('dogum_tarihi') else None,
             'veli_telefon': (veli_contacts.get(sid) or {}).get('telefon'),
             'veli_id': (veli_contacts.get(sid) or {}).get('id'),
@@ -604,6 +605,7 @@ def _build_coach_student_identity(student, kayit, veli_contact):
             student.kayit_turu, 'Asil'
         ),
         'telefon': student.telefon or '',
+        'whatsapp_uygun': bool(getattr(student, 'whatsapp_uygun', True)),
         'email': student.email or '',
         'adres': adres_text or student.adres or '',
         'veli_ad_soyad': (

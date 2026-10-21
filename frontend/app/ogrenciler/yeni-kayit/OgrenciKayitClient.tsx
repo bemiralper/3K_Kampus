@@ -126,6 +126,7 @@ const initialData: WizardData = {
     cinsiyet: undefined,
     email: "",
     telefon: "",
+    whatsapp_uygun: true,
   },
   enrollment: {
     ogrenci_no: "",
@@ -563,6 +564,7 @@ export default function OgrenciKayitClient({
           dogum_tarihi: ogr.dogum_tarihi || "",
           cinsiyet: cinsiyetOpt?.id || prev.student.cinsiyet,
           telefon: ogr.telefon || prev.student.telefon,
+          whatsapp_uygun: ogr.whatsapp_uygun !== false,
           email: ogr.email || prev.student.email,
         },
         enrollment: {

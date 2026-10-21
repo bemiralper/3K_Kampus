@@ -153,6 +153,7 @@ export type StudentData = {
   cinsiyet?: number;
   email: string;
   telefon: string;
+  whatsapp_uygun?: boolean;
 };
 
 export type EnrollmentData = {
@@ -236,6 +237,7 @@ export type TcCheckOgrenci = {
   dogum_tarihi: string;
   cinsiyet: string;
   telefon: string;
+  whatsapp_uygun?: boolean;
   email: string;
   kayit_turu: string;
   aktif_mi: boolean;

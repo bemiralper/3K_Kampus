@@ -3424,6 +3424,13 @@ a {
   flex-wrap: wrap;
 }
 
+.detail-muted {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted, #64748b);
+}
+
 .detail-value.with-action {
   display: flex;
   align-items: center;

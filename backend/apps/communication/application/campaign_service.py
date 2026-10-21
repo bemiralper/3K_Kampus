@@ -374,7 +374,7 @@ class AudienceResolver:
             for o in oqs:
                 if not o.telefon and filter_json.get('has_phone') is not False:
                     continue
-                if o.telefon:
+                if o.telefon and o.whatsapp_uygun:
                     entries.append((o.telefon, RecipientType.OGRENCI, o.id, None, o.tam_ad))
 
         veli_kinds = contact_kinds & {'anne', 'baba', 'vasi', 'veli'}
@@ -618,7 +618,9 @@ class AudienceResolver:
     def _collect_ogrenciler(cls, kurum_id: int, allowed_student_ids, *, sube_id=None) -> list[tuple]:
         from apps.ogrenci.domain.models import Ogrenci
 
-        qs = Ogrenci.objects.filter(kurum_id=kurum_id, aktif_mi=True).exclude(telefon='')
+        qs = Ogrenci.objects.filter(
+            kurum_id=kurum_id, aktif_mi=True, whatsapp_uygun=True,
+        ).exclude(telefon='')
         if sube_id:
             qs = qs.filter(sube_id=int(sube_id))
         if allowed_student_ids is not None:
@@ -653,7 +655,7 @@ class AudienceResolver:
         ogrenci_ids = list(qs.values_list('ogrenci_id', flat=True))
         for kayit in qs:
             o = kayit.ogrenci
-            if o.telefon:
+            if o.telefon and o.whatsapp_uygun:
                 entries.append((o.telefon, RecipientType.OGRENCI, o.id, None, o.tam_ad))
 
         veli_qs = OgrenciVeli.objects.filter(
@@ -684,6 +686,7 @@ class AudienceResolver:
         entries = [
             (o.telefon, RecipientType.OGRENCI, o.id, None, o.tam_ad)
             for o in qs
+            if o.whatsapp_uygun
         ]
         ogrenci_ids = list(qs.values_list('id', flat=True))
         veli_qs = OgrenciVeli.objects.filter(ogrenci_id__in=ogrenci_ids).exclude(telefon='')
@@ -749,7 +752,8 @@ class AudienceResolver:
             if allowed_student_ids is not None:
                 qs = qs.filter(id__in=allowed_student_ids)
             for o in qs:
-                entries.append((o.telefon, RecipientType.OGRENCI, o.id, None, o.tam_ad))
+                if o.whatsapp_uygun:
+                    entries.append((o.telefon, RecipientType.OGRENCI, o.id, None, o.tam_ad))
 
         if veli_ids:
             veli_qs = OgrenciVeli.objects.filter(

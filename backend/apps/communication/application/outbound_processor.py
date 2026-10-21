@@ -558,6 +558,17 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
 
     conversation = sync_conversation_linked_phone(message.conversation)
     phone = resolve_outbound_phone(conversation)
+    if getattr(conversation, 'channel', None) == Channel.WHATSAPP and phone:
+        from apps.communication.application.contact_resolver import ContactResolver
+
+        if not ContactResolver.whatsapp_number_allowed(item.kurum_id, phone):
+            OutboundQueueRepository.mark_failed(
+                item,
+                ContactResolver.FEATURE_PHONE_ERROR,
+                permanent=True,
+            )
+            _safe_refresh_campaign_stats(item.campaign_id)
+            return False
     debug_trace(
         'C',
         'outbound_processor.py:process_queue_item',

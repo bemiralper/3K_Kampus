@@ -706,7 +706,13 @@ class AudienceQueryService:
         return meta
 
     @classmethod
-    def _apply_deliverability(cls, person: AudiencePerson, *, opt_in_ok: bool = True) -> AudiencePerson:
+    def _apply_deliverability(
+        cls,
+        person: AudiencePerson,
+        *,
+        opt_in_ok: bool = True,
+        opt_out_reason: str = 'WhatsApp gönderimine uygun değil',
+    ) -> AudiencePerson:
         phone = (person.phone or '').strip()
         if not phone:
             person.deliverable = False
@@ -720,7 +726,7 @@ class AudienceQueryService:
             return person
         if not opt_in_ok:
             person.deliverable = False
-            person.skip_reason = 'WhatsApp gönderimine uygun değil'
+            person.skip_reason = opt_out_reason
             return person
         person.deliverable = True
         person.skip_reason = ''
@@ -728,6 +734,7 @@ class AudienceQueryService:
 
     @classmethod
     def _person_from_student(cls, ogrenci, info: dict) -> AudiencePerson:
+        allowed = bool(getattr(ogrenci, 'whatsapp_uygun', True))
         return cls._apply_deliverability(AudiencePerson(
             person_type=PERSON_OGRENCI,
             ogrenci_id=ogrenci.id,
@@ -736,7 +743,7 @@ class AudienceQueryService:
             sube_name=info.get('sube_name', ''),
             coach_name=info.get('coach_name', ''),
             phone=(ogrenci.telefon or '').strip(),
-        ))
+        ), opt_in_ok=allowed, opt_out_reason=ContactResolver.FEATURE_PHONE_SKIP)
 
     @classmethod
     def _person_from_parent(cls, veli, info: dict) -> AudiencePerson:

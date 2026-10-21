@@ -576,7 +576,9 @@ def preview_ders_ozet(
         'display_name': payload['ogrenci_ad'],
         'telefon': _mask_phone(student_phone) if student_phone else '',
         'body': _render_body(RecipientType.OGRENCI, _base_context(payload)),
-        'skip_reason': '' if student_phone else 'Öğrenci telefonu yok',
+        'skip_reason': ContactResolver.ogrenci_outbound_skip(
+            ogrenci, empty='Öğrenci telefonu yok',
+        ),
     })
     templates = {
         'veli': _template_info(kurum_id, sube_id, RecipientType.VELI),
@@ -669,7 +671,6 @@ def send_ders_ozet(
                 continue
             if item['skip_reason']:
                 skipped += 1
-                errors.append(f"{item['display_name']}: {item['skip_reason']}")
                 continue
             result = dispatch_event(
                 kurum_id, EVENT_KEY,
@@ -750,7 +751,9 @@ def preview_ders_timeline(
         'display_name': payload['ogrenci_ad'],
         'telefon': _mask_phone(student_phone) if student_phone else '',
         'body': _render_body(RecipientType.OGRENCI, _base_context(payload), EVENT_KEY_TIMELINE),
-        'skip_reason': '' if student_phone else 'Öğrenci telefonu yok',
+        'skip_reason': ContactResolver.ogrenci_outbound_skip(
+            ogrenci, empty='Öğrenci telefonu yok',
+        ),
     })
     templates = {
         'veli': _template_info(kurum_id, sube_id, RecipientType.VELI, EVENT_KEY_TIMELINE),
@@ -849,7 +852,6 @@ def send_ders_timeline(
                 continue
             if item['skip_reason']:
                 skipped += 1
-                errors.append(f"{item['display_name']}: {item['skip_reason']}")
                 continue
             result = dispatch_event(
                 kurum_id, EVENT_KEY_TIMELINE,

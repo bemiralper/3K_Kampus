@@ -550,7 +550,9 @@ def preview_haftalik_program(
         'display_name': payload['ogrenci_ad'],
         'telefon': _mask_phone(student_phone) if student_phone else '',
         'body': _render_body(RecipientType.OGRENCI, _base_context(payload)),
-        'skip_reason': '' if student_phone else 'Öğrenci telefonu yok',
+        'skip_reason': ContactResolver.ogrenci_outbound_skip(
+            ogrenci, empty='Öğrenci telefonu yok',
+        ),
     })
 
     templates = {
@@ -653,7 +655,6 @@ def send_haftalik_program(
                 continue
             if item['skip_reason']:
                 skipped += 1
-                errors.append(f"{item['display_name']}: {item['skip_reason']}")
                 continue
             result = dispatch_event(
                 kurum_id,

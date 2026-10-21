@@ -191,7 +191,9 @@ def preview_karne_notify(kurum_id: int, karne: dict) -> KarneNotifyPreview:
         display_name=f'{ogrenci.ad} {ogrenci.soyad}'.strip(),
         telefon=_mask_phone(student_phone) if student_phone else '',
         body=_fallback_body(karne, for_veli=False),
-        skip_reason='' if student_phone else 'Öğrenci telefonu bulunamadı',
+        skip_reason=ContactResolver.ogrenci_outbound_skip(
+            ogrenci, empty='Öğrenci telefonu bulunamadı',
+        ),
     ))
 
     sube_id = getattr(ogrenci, 'sube_id', None)
@@ -304,7 +306,7 @@ def send_karne_notify(
                 )
         elif item.recipient_type == 'ogrenci' and include_student:
             if item.skip_reason:
-                _fail(item, item.skip_reason)
+                skipped += 1
                 continue
             ctx = _context(karne)
             body = _fallback_body(karne, for_veli=False)

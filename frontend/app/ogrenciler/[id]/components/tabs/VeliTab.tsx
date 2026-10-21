@@ -104,8 +104,8 @@ export default function VeliTab({ data }: VeliTabProps) {
       telefonlar,
       email: veli.email || '',
       meslek: veli.meslek || '',
-      sms_bildirimleri: veli.sms_bildirimleri?.length
-        ? [...veli.sms_bildirimleri]
+      sms_bildirimleri: Array.isArray(veli.sms_bildirimleri_etkin)
+        ? [...veli.sms_bildirimleri_etkin]
         : [...DEFAULT_SMS_BILDIRIMLERI],
     };
   };
@@ -532,14 +532,19 @@ export default function VeliTab({ data }: VeliTabProps) {
           <div className="veli-detail-row veli-detail-row-stack">
             <span className="veli-detail-label">Bildirimler</span>
             <div className="veli-bildirim-tags">
-              {(veli.sms_bildirimleri && veli.sms_bildirimleri.length > 0
-                ? veli.sms_bildirimleri
-                : DEFAULT_SMS_BILDIRIMLERI
-              ).map((code) => (
-                <span key={code} className="veli-bildirim-tag">
-                  {BILDIRIM_LABELS[code] || code}
-                </span>
-              ))}
+              {(() => {
+                const etkin = Array.isArray(veli.sms_bildirimleri_etkin)
+                  ? veli.sms_bildirimleri_etkin
+                  : (veli.sms_bildirimleri?.length ? veli.sms_bildirimleri : DEFAULT_SMS_BILDIRIMLERI);
+                if (etkin.length === 0) {
+                  return <span className="veli-bildirim-tag">Otomatik bildirim kapalı</span>;
+                }
+                return etkin.map((code) => (
+                  <span key={code} className="veli-bildirim-tag">
+                    {BILDIRIM_LABELS[code] || code}
+                  </span>
+                ));
+              })()}
             </div>
           </div>
         </div>

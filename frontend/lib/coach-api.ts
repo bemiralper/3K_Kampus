@@ -30,6 +30,7 @@ export interface CoachPortalStudent {
   overdue_homework_count?: number;
   /** Öğrenci kendi telefonu — sohbet_kocluk_ogrenci */
   telefon?: string | null;
+  whatsapp_uygun?: boolean;
   veli_telefon?: string | null;
   veli_id?: number | null;
   profil_foto?: string | null;
@@ -50,6 +51,7 @@ interface CoachStudentListRaw {
   last_meeting_date?: string | null;
   overdue_homework_count?: number;
   telefon?: string | null;
+  whatsapp_uygun?: boolean;
   veli_telefon?: string | null;
   veli_id?: number | null;
   profil_foto?: string | null;
@@ -73,6 +75,7 @@ function mapPortalStudent(raw: CoachStudentListRaw): CoachPortalStudent {
     son_gorusme_tarihi: raw.last_meeting_date ?? null,
     overdue_homework_count: raw.overdue_homework_count ?? 0,
     telefon: raw.telefon ?? null,
+    whatsapp_uygun: raw.whatsapp_uygun !== false,
     veli_telefon: raw.veli_telefon ?? null,
     veli_id: raw.veli_id ?? null,
     profil_foto: raw.profil_foto ?? null,
@@ -192,6 +195,7 @@ export interface CoachStudentProfileStudent {
   kayit_turu?: string;
   kayit_turu_display?: string;
   telefon?: string;
+  whatsapp_uygun?: boolean;
   email?: string;
   adres?: string;
   veli_ad_soyad?: string;

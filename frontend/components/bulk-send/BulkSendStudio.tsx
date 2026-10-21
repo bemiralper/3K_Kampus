@@ -412,7 +412,7 @@ function AudienceInsight({
               )}
               {unsuitable > 0 && (
                 <li className="is-warn">
-                  <span>Telefonsuz</span>
+                  <span>Gönderilmeyecek</span>
                   <b>{unsuitable.toLocaleString("tr-TR")}</b>
                 </li>
               )}

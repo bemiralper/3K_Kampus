@@ -8,6 +8,10 @@ PostgreSQL ILIKE varsayılan collation'da:
 
 icontains / iexact / istartswith / iendswith her iki tarafta da
 Türkçe harfleri ASCII karşılıklarına indirger, sonra LOWER + LIKE kullanır.
+
+Kayıt apps.kurum.apps.KurumConfig.ready içinde yapılır. Modül import edilmezse
+Django'nun UPPER(kolon) LIKE UPPER('%aranan%') karşılaştırması kalır ve
+'İncesu' araması tutarken 'incesu' tutmaz.
 """
 from django.db.models import Field
 from django.db.models.lookups import IContains, IEndsWith, IExact, IStartsWith

@@ -96,6 +96,12 @@ class Ogrenci(models.Model):
     
     # İletişim
     telefon = models.CharField('Telefon', max_length=20, blank=True)
+    whatsapp_uygun = models.BooleanField(
+        'WhatsApp uygun',
+        default=True,
+        db_index=True,
+        help_text='Kapalıysa bu numaraya WhatsApp gönderilmez.',
+    )
     email = models.EmailField('E-posta', blank=True)
     adres = models.TextField('Adres', blank=True)
     
@@ -412,6 +418,11 @@ class OgrenciVeli(models.Model):
         default=list,
         blank=True,
         help_text='Hangi konularda SMS alacak: devamsizlik, odeme, duyuru vs.'
+    )
+    sms_tercih_kayitli = models.BooleanField(
+        'Bildirim tercihi kaydedildi',
+        default=False,
+        help_text='Formdan açıkça kaydedildiyse liste kelimesi kelimesine uygulanır. Eski kayıtlarda kapalıdır.',
     )
     
     egitim_seviyesi = models.CharField('Eğitim Seviyesi', max_length=100, blank=True)

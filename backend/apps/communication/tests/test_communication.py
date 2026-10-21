@@ -193,6 +193,61 @@ class ContactResolverTest(TestCase):
         self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'odeme'))
         self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'duyuru'))
 
+    def test_explicit_preference_is_literal(self):
+        veli = OgrenciVeli.objects.create(
+            ogrenci=self.student,
+            veli_turu='anne',
+            ad='Secim',
+            soyad='Veli',
+            telefon='05326667788',
+            sms_bildirimleri=['duyuru', 'devamsizlik'],
+            sms_tercih_kayitli=True,
+        )
+        self.assertFalse(ContactResolver.veli_allows_outbound(veli, 'odeme'))
+        self.assertTrue(ContactResolver.veli_allows_outbound(veli, 'duyuru'))
+        self.assertEqual(
+            ContactResolver.effective_veli_sms_categories(veli),
+            ['duyuru', 'devamsizlik'],
+        )
+        veli.sms_bildirimleri = []
+        veli.save(update_fields=['sms_bildirimleri'])
+        self.assertFalse(ContactResolver.veli_allows_outbound(veli, 'duyuru'))
+        self.assertFalse(ContactResolver.veli_allows_outbound(veli, 'devamsizlik'))
+        self.assertFalse(ContactResolver.veli_allows_outbound(veli, 'odeme'))
+        self.assertEqual(ContactResolver.effective_veli_sms_categories(veli), [])
+
+    def test_feature_phone_blocks_whatsapp(self):
+        from apps.communication.application.communication_service import (
+            CommunicationService,
+            MessageContent,
+            RecipientQuery,
+        )
+
+        self.assertEqual(
+            ContactResolver.ogrenci_outbound_skip(self.student, empty='Öğrenci telefonu bulunamadı'),
+            '',
+        )
+        self.student.whatsapp_uygun = False
+        self.student.save(update_fields=['whatsapp_uygun', 'telefon'])
+        self.assertEqual(
+            ContactResolver.ogrenci_outbound_skip(self.student, empty='Öğrenci telefonu bulunamadı'),
+            'WhatsApp yok',
+        )
+        self.assertFalse(
+            ContactResolver.whatsapp_number_allowed(self.kurum.id, '0532 123 45 67'),
+        )
+        self.assertTrue(
+            ContactResolver.whatsapp_number_allowed(self.kurum.id, '05329990011'),
+        )
+        result = CommunicationService().send(
+            self.kurum.id,
+            recipients=RecipientQuery(phone=self.student.telefon, ogrenci_id=self.student.id),
+            content=MessageContent(text='deneme'),
+            process_immediately=False,
+        )
+        self.assertFalse(result.success)
+        self.assertTrue(any('whatsapp yok' in err.lower() for err in result.errors))
+
 
 class InboundWebhookTest(TestCase):
     def setUp(self):

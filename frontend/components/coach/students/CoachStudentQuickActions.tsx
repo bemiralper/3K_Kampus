@@ -4,6 +4,7 @@ import WhatsAppChatButton from '@/components/communication/WhatsAppChatButton';
 
 interface CoachStudentQuickActionsProps {
   ogrenciTelefon?: string | null;
+  ogrenciWhatsappUygun?: boolean;
   veliTelefon?: string | null;
   veliId?: number;
   ogrenciId?: number;
@@ -15,6 +16,7 @@ interface CoachStudentQuickActionsProps {
 
 export default function CoachStudentQuickActions({
   ogrenciTelefon,
+  ogrenciWhatsappUygun = true,
   veliTelefon,
   veliId,
   ogrenciId,
@@ -50,7 +52,7 @@ export default function CoachStudentQuickActions({
         </button>
       )}
 
-      {ogrTel && ogrenciId ? (
+      {ogrTel && ogrenciId && ogrenciWhatsappUygun ? (
         <WhatsAppChatButton
           phone={ogrenciTelefon!}
           ogrenciId={ogrenciId}

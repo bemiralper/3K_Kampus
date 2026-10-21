@@ -384,10 +384,10 @@ class ClassAttendanceNotificationService:
                     kurum_id, event_key, RecipientType.OGRENCI, ctx,
                     sube_id=getattr(ogrenci, 'sube_id', None),
                 )
-                skip = ''
-                if not phone:
-                    skip = 'Öğrenci telefonu bulunamadı'
-                elif _already_sent(
+                skip = ContactResolver.ogrenci_outbound_skip(
+                    ogrenci, empty='Öğrenci telefonu bulunamadı',
+                )
+                if not skip and _already_sent(
                     source_type=source_type,
                     source_id=source_id,
                     ogrenci_id=student_id,
