@@ -38,6 +38,7 @@ export default function OgrenciKocAtama({ studentId, studentName }: OgrenciKocAt
   const canManage = canManageCoachAssignment(user);
 
   const [activeAssignment, setActiveAssignment] = useState<Assignment | null>(null);
+  const [closedNote, setClosedNote] = useState<string | null>(null);
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [selectedCoachId, setSelectedCoachId] = useState<number | "">("");
   const [loading, setLoading] = useState(true);
@@ -49,9 +50,11 @@ export default function OgrenciKocAtama({ studentId, studentName }: OgrenciKocAt
     const res = await fetchActiveCoachForStudent(studentId);
     if (res.success) {
       setActiveAssignment(res.data ?? null);
+      setClosedNote(typeof res.closed_note === "string" ? res.closed_note : null);
       return true;
     }
     setActiveAssignment(null);
+    setClosedNote(null);
     setError(res.error || "Koç bilgisi yüklenemedi");
     return false;
   }, [studentId]);
@@ -262,6 +265,20 @@ export default function OgrenciKocAtama({ studentId, studentName }: OgrenciKocAt
           Koç atanmamış
         </div>
       )}
+
+      {!loading && !activeAssignment && closedNote ? (
+        <span
+          style={{
+            fontSize: "11px",
+            color: "#92400e",
+            textAlign: "center",
+            lineHeight: 1.4,
+            maxWidth: "240px",
+          }}
+        >
+          {closedNote}
+        </span>
+      ) : null}
 
       {canManage && !loading && (
         <div

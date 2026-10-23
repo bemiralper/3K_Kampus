@@ -556,7 +556,7 @@ export default function AssignmentsPage() {
                               <span style={{ fontWeight: 500 }}>{assignment.student_full_name}</span>
                             </div>
                           </td>
-                          <td style={tdStyle}>{assignment.student_sinif || '-'}</td>
+                          <td style={tdStyle}>{assignment.student_sinif || 'Sınıf yok'}</td>
                           <td style={tdStyle}>
                             {new Date(assignment.start_date).toLocaleDateString('tr-TR')}
                           </td>

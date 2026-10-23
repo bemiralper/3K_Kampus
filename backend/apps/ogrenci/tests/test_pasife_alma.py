@@ -81,6 +81,7 @@ class PasifeAlmaSyncTest(TestCase):
         assignment.refresh_from_db()
         self.assertFalse(placement.is_active)
         self.assertEqual(assignment.end_date, today)
+        self.assertEqual(assignment.end_reason, 'ogrenci_pasif')
 
     def test_update_aktif_mi_false_deactivates_kayit(self):
         self.repo.update(self.ogrenci.id, {'aktif_mi': False})

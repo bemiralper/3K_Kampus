@@ -178,6 +178,8 @@ export interface Assignment {
   student_profil_foto?: string | null;
   start_date: string;
   end_date: string | null;
+  end_reason?: string;
+  end_reason_label?: string;
   is_primary: boolean;
   is_active?: boolean;
   created_at: string;
@@ -278,6 +280,17 @@ export function assignmentCoachName(assignment: Assignment | null | undefined): 
   return assignment.coach_full_name?.trim() || 'Koç';
 }
 
+export function latestClosedAssignmentNote(assignments: Assignment[]): string | null {
+  const latest = assignments
+    .filter((item) => item.end_date && item.end_reason_label)
+    .sort((a, b) => String(b.end_date).localeCompare(String(a.end_date)))[0];
+  if (!latest?.end_reason_label) return null;
+  const coach = latest.coach_full_name?.trim();
+  return coach
+    ? `${coach} ataması kapandı: ${latest.end_reason_label}`
+    : `Son atama kapandı: ${latest.end_reason_label}`;
+}
+
 /**
  * Assignment listesini getir
  */
@@ -321,13 +334,15 @@ export async function fetchActiveCoachForStudent(
       historyRes,
       'active_coach',
     );
+    const active = pickActiveAssignment(
+      assignments,
+      hasExplicitActiveCoach ? (historyRes.active_coach ?? null) : undefined,
+      { honorExplicitActiveCoach: hasExplicitActiveCoach },
+    );
     return {
       success: true,
-      data: pickActiveAssignment(
-        assignments,
-        hasExplicitActiveCoach ? (historyRes.active_coach ?? null) : undefined,
-        { honorExplicitActiveCoach: hasExplicitActiveCoach },
-      ),
+      data: active,
+      closed_note: active ? null : latestClosedAssignmentNote(assignments),
     };
   }
 

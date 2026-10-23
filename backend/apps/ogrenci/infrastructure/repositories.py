@@ -135,8 +135,6 @@ class OgrenciRepository:
         Yeniden aktifleştirmede yerleşim/atamalar otomatik geri gelmez;
         öğrenci gerektiğinde yeniden yerleştirilir.
         """
-        from datetime import date
-
         try:
             from apps.academic.domain.student_class_placement import StudentClassPlacement
             StudentClassPlacement.objects.filter(
@@ -147,9 +145,13 @@ class OgrenciRepository:
 
         try:
             from apps.coaching.models import CoachStudentAssignment
-            CoachStudentAssignment.objects.filter(
-                student_id=ogrenci_id, end_date__isnull=True,
-            ).update(end_date=date.today())
+            from apps.coaching.services.coach_student_visibility import (
+                close_open_coach_assignments,
+            )
+            close_open_coach_assignments(
+                [ogrenci_id],
+                reason=CoachStudentAssignment.EndReason.OGRENCI_PASIF,
+            )
         except Exception:
             pass
 

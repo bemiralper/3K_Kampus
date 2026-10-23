@@ -84,6 +84,11 @@ class CoachStudentAssignment(models.Model):
     Bir öğrencinin bir koça atanmasını temsil eder.
     Her öğrencinin bir tane birincil (primary) koçu olabilir.
     """
+
+    class EndReason(models.TextChoices):
+        OGRENCI_PASIF = 'ogrenci_pasif', 'Öğrenci pasif'
+        KAYIT_KAPALI = 'kayit_kapali', 'Kayıt kapalı'
+        GECERLI_SOZLESME_YOK = 'gecerli_sozlesme_yok', 'Geçerli sözleşme yok'
     
     coach = models.ForeignKey(
         CoachProfile,
@@ -108,6 +113,15 @@ class CoachStudentAssignment(models.Model):
         null=True,
         blank=True,
         help_text='Boş bırakılırsa atama aktif kabul edilir'
+    )
+
+    end_reason = models.CharField(
+        'Kapanma nedeni',
+        max_length=32,
+        blank=True,
+        default='',
+        choices=EndReason.choices,
+        help_text='Sistem atamayı kapattıysa neden. Elle kapatmada boş kalır.',
     )
     
     is_primary = models.BooleanField(

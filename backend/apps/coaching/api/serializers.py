@@ -231,6 +231,7 @@ class AssignmentListSerializer(serializers.ModelSerializer):
     student_full_name = serializers.SerializerMethodField()
     student_sinif = serializers.SerializerMethodField()
     student_profil_foto = serializers.SerializerMethodField()
+    end_reason_label = serializers.SerializerMethodField()
     
     class Meta:
         model = CoachStudentAssignment
@@ -239,12 +240,18 @@ class AssignmentListSerializer(serializers.ModelSerializer):
             'coach', 'coach_id', 'coach_full_name', 'coach_capacity', 'coach_current_count',
             'student', 'student_id', 'student_ad', 'student_soyad', 'student_full_name',
             'student_sinif', 'student_profil_foto',
-            'start_date', 'end_date', 'is_primary', 'is_active',
+            'start_date', 'end_date', 'end_reason', 'end_reason_label',
+            'is_primary', 'is_active',
             'created_at', 'updated_at',
         ]
     
     def get_is_active(self, obj):
         return obj.end_date is None
+
+    def get_end_reason_label(self, obj):
+        if not obj.end_reason:
+            return ''
+        return obj.get_end_reason_display()
 
     def get_coach_full_name(self, obj):
         return f"{obj.coach.teacher.ad} {obj.coach.teacher.soyad}"

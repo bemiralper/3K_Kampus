@@ -362,7 +362,7 @@ export default function CoachDetailPage() {
                           <span style={{ fontWeight: 500 }}>{a.student_full_name}</span>
                         </div>
                       </td>
-                      <td style={tdStyle}>{a.student_sinif || '-'}</td>
+                      <td style={tdStyle}>{a.student_sinif || 'Sınıf yok'}</td>
                       <td style={tdStyle}>{new Date(a.start_date).toLocaleDateString('tr-TR')}</td>
                       <td style={tdStyle}>
                         <span style={{ padding: '2px 8px', borderRadius: '10px', fontSize: '12px', backgroundColor: a.is_primary ? '#d1fae5' : '#f3f4f6', color: a.is_primary ? '#059669' : '#6b7280' }}>

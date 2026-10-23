@@ -61,10 +61,64 @@ def is_student_visible_in_coach_portal(student_id) -> bool:
     return sid in portal_visible_student_ids([sid])
 
 
-def release_hidden_coach_assignments(student_ids) -> int:
-    """Görünmemesi gereken öğrencilerin açık koç atamasını bugün kapatır."""
+def hidden_assignment_end_reasons(student_ids) -> dict[int, str]:
+    """Gizli öğrencinin koç atamasının kapanma nedeni.
+
+    Öncelik: pasif öğrenci, kapalı kayıt, geçerli sözleşmesi olmayan kayıt.
+    """
+    from apps.coaching.models import CoachStudentAssignment
+    from apps.odeme_takip.domain.models import Sozlesme
+    from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
+
+    ids = _clean_ids(student_ids)
+    if not ids:
+        return {}
+
+    students = Ogrenci.objects.filter(id__in=ids).only('id', 'aktif_mi')
+    has_kayit = set(
+        OgrenciKayit.objects.filter(ogrenci_id__in=ids).values_list('ogrenci_id', flat=True)
+    )
+    active_kayit = set(
+        OgrenciKayit.objects.filter(ogrenci_id__in=ids, aktif_mi=True).values_list(
+            'ogrenci_id', flat=True,
+        )
+    )
+    has_sozlesme = set(
+        Sozlesme.objects.filter(ogrenci_id__in=ids).values_list('ogrenci_id', flat=True)
+    )
+    granting = set(
+        Sozlesme.objects.filter(
+            ogrenci_id__in=ids,
+            durum__in=GRANTING_DURUMLAR,
+        ).values_list('ogrenci_id', flat=True)
+    )
+
+    reasons: dict[int, str] = {}
+    for student in students:
+        if not student.aktif_mi:
+            reasons[student.id] = CoachStudentAssignment.EndReason.OGRENCI_PASIF
+        elif student.id in has_kayit and student.id not in active_kayit:
+            reasons[student.id] = CoachStudentAssignment.EndReason.KAYIT_KAPALI
+        elif student.id in has_sozlesme and student.id not in granting:
+            reasons[student.id] = CoachStudentAssignment.EndReason.GECERLI_SOZLESME_YOK
+    return reasons
+
+
+def close_open_coach_assignments(student_ids, *, reason: str = '') -> int:
+    """Açık koç atamalarını bugün kapatır. reason boşsa elle kapatma sayılır."""
     from apps.coaching.models import CoachStudentAssignment
 
+    ids = _clean_ids(student_ids)
+    if not ids:
+        return 0
+    return CoachStudentAssignment.objects.filter(
+        student_id__in=ids,
+        end_date__isnull=True,
+    ).update(end_date=timezone.localdate(), end_reason=reason or '')
+
+
+def release_hidden_coach_assignments(student_ids) -> int:
+    """Görünmemesi gereken öğrencilerin açık koç atamasını bugün kapatır."""
     ids = _clean_ids(student_ids)
     if not ids:
         return 0
@@ -72,10 +126,15 @@ def release_hidden_coach_assignments(student_ids) -> int:
     hidden = [sid for sid in ids if sid not in visible]
     if not hidden:
         return 0
-    updated = CoachStudentAssignment.objects.filter(
-        student_id__in=hidden,
-        end_date__isnull=True,
-    ).update(end_date=timezone.localdate())
+
+    reasons = hidden_assignment_end_reasons(hidden)
+    grouped: dict[str, list[int]] = {}
+    for sid in hidden:
+        grouped.setdefault(reasons.get(sid, ''), []).append(sid)
+
+    updated = 0
+    for reason, group_ids in grouped.items():
+        updated += close_open_coach_assignments(group_ids, reason=reason)
     _close_access_without_granting_contract(hidden)
     return updated
 

@@ -106,6 +106,16 @@ class CoachPortalVisibilityTests(TestCase):
         self.assertEqual(response.status_code, 200)
         return {row['id'] for row in response.data['data']}
 
+    def _assert_history_reason(self, student_id, code, label):
+        self.client.force_authenticate(user=self.admin_user)
+        response = self.client.get(
+            f'/api/coaching/assignments/student-history/?student_id={student_id}',
+        )
+        self.assertEqual(response.status_code, 200)
+        row = response.data['data'][0]
+        self.assertEqual(row['end_reason'], code)
+        self.assertEqual(row['end_reason_label'], label)
+
     def test_pasif_ogrenci_listeden_duser_ve_atama_kapanir(self):
         ogrenci = self._student('Pasif')
         assignment = self._assign(ogrenci)
@@ -115,6 +125,7 @@ class CoachPortalVisibilityTests(TestCase):
         self.assertNotIn(ogrenci.id, self._listed_ids(self.coach_user))
         assignment.refresh_from_db()
         self.assertEqual(assignment.end_date, timezone.localdate())
+        self.assertEqual(assignment.end_reason, 'ogrenci_pasif')
         self.assertEqual(self.coach.current_student_count, 0)
 
     def test_kaydi_kapanan_ogrenci_listeden_duser(self):
@@ -124,6 +135,7 @@ class CoachPortalVisibilityTests(TestCase):
         self.assertNotIn(ogrenci.id, self._listed_ids(self.coach_user))
         assignment.refresh_from_db()
         self.assertIsNotNone(assignment.end_date)
+        self.assertEqual(assignment.end_reason, 'kayit_kapali')
 
     def test_iptal_sozlesme_listeden_duser_ve_erisim_kapanir(self):
         ogrenci = self._student('Iptal')
@@ -135,7 +147,9 @@ class CoachPortalVisibilityTests(TestCase):
         assignment.refresh_from_db()
         erisim.refresh_from_db()
         self.assertIsNotNone(assignment.end_date)
+        self.assertEqual(assignment.end_reason, 'gecerli_sozlesme_yok')
         self.assertFalse(erisim.aktif_mi)
+        self._assert_history_reason(ogrenci.id, 'gecerli_sozlesme_yok', 'Geçerli sözleşme yok')
 
     def test_fesih_sozlesme_listeden_duser(self):
         ogrenci = self._student('Fesih')
@@ -145,6 +159,7 @@ class CoachPortalVisibilityTests(TestCase):
         self.assertNotIn(ogrenci.id, self._listed_ids(self.admin_user))
         assignment.refresh_from_db()
         self.assertIsNotNone(assignment.end_date)
+        self.assertEqual(assignment.end_reason, 'gecerli_sozlesme_yok')
 
     def test_iptal_yaninda_aktif_sozlesme_listede_kalir(self):
         ogrenci = self._student('Cift')
@@ -155,6 +170,7 @@ class CoachPortalVisibilityTests(TestCase):
         self.assertIn(ogrenci.id, self._listed_ids(self.coach_user))
         assignment.refresh_from_db()
         self.assertIsNone(assignment.end_date)
+        self.assertEqual(assignment.end_reason, '')
 
     def test_sozlesmesiz_aktif_ogrenci_listede_kalir(self):
         ogrenci = self._student('Sozlesmesiz', kayit=False)
@@ -211,6 +227,7 @@ class CoachPortalVisibilityTests(TestCase):
         assignment.refresh_from_db()
         erisim.refresh_from_db()
         self.assertEqual(assignment.end_date, timezone.localdate())
+        self.assertEqual(assignment.end_reason, 'gecerli_sozlesme_yok')
         self.assertFalse(erisim.aktif_mi)
         self.assertNotIn(ogrenci.id, self._listed_ids(self.coach_user))
 
@@ -232,4 +249,5 @@ class CoachPortalVisibilityTests(TestCase):
         sozlesme.refresh_from_db()
         self.assertEqual(sozlesme.durum, SozlesmeDurum.FESHEDILMIS)
         self.assertEqual(assignment.end_date, timezone.localdate())
+        self.assertEqual(assignment.end_reason, 'gecerli_sozlesme_yok')
         self.assertFalse(erisim.aktif_mi)

@@ -68,6 +68,7 @@ class CoachStudentAssignmentAdmin(admin.ModelAdmin):
         'coach',
         'start_date',
         'end_date',
+        'end_reason',
         'is_primary',
         'created_by',
         'created_at',
@@ -88,6 +89,7 @@ class CoachStudentAssignmentAdmin(admin.ModelAdmin):
     ]
     
     readonly_fields = [
+        'end_reason',
         'created_at',
         'updated_at',
     ]
@@ -102,7 +104,7 @@ class CoachStudentAssignmentAdmin(admin.ModelAdmin):
             'fields': ('coach', 'student', 'is_primary')
         }),
         ('Tarih Bilgileri', {
-            'fields': ('start_date', 'end_date')
+            'fields': ('start_date', 'end_date', 'end_reason')
         }),
         ('Sistem Bilgileri', {
             'fields': ('created_by', 'created_at', 'updated_at'),
