@@ -131,6 +131,35 @@ const matchesFilter = (eylem: string, filter: FilterId) => {
   return eylem === filter;
 };
 
+const cihazEtiketi = (aktivite: AktiviteLog) =>
+  [aktivite.cihaz, aktivite.isletim_sistemi].filter(Boolean).join(" · ");
+
+const CihazIcon = ({ cihaz }: { cihaz?: string }) => {
+  if (cihaz === "Telefon") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="7" y="2" width="10" height="20" rx="2"/>
+        <line x1="11" y1="18" x2="13" y2="18"/>
+      </svg>
+    );
+  }
+  if (cihaz === "Tablet") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="4" y="2" width="16" height="20" rx="2"/>
+        <line x1="11" y1="18" x2="13" y2="18"/>
+      </svg>
+    );
+  }
+  return (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <rect x="2" y="3" width="20" height="14" rx="2"/>
+      <line x1="8" y1="21" x2="16" y2="21"/>
+      <line x1="12" y1="17" x2="12" y2="21"/>
+    </svg>
+  );
+};
+
 export default function AktiviteTab({ aktiviteler, stats }: AktiviteTabProps) {
   const [filter, setFilter] = useState<FilterId>("all");
 
@@ -238,6 +267,7 @@ export default function AktiviteTab({ aktiviteler, stats }: AktiviteTabProps) {
           <div className="aktivite-list">
             {filtered.map((aktivite) => {
               const color = getActivityColor(aktivite.eylem);
+              const cihaz = cihazEtiketi(aktivite);
               return (
                 <div key={aktivite.id} className={`aktivite-item ${color}`}>
                   <div className={`aktivite-icon ${color}`}>
@@ -254,6 +284,12 @@ export default function AktiviteTab({ aktiviteler, stats }: AktiviteTabProps) {
                       <p className="aktivite-detay">{aktivite.detay}</p>
                     )}
                     <div className="aktivite-meta">
+                      {cihaz && (
+                        <span className="meta-item" title={aktivite.user_agent || undefined}>
+                          <CihazIcon cihaz={aktivite.cihaz} />
+                          {cihaz}
+                        </span>
+                      )}
                       {aktivite.ip_adresi && (
                         <span className="meta-item">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

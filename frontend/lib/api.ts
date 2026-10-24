@@ -258,7 +258,9 @@ export function isSessionExpiredResponse(status: number, data: unknown): boolean
     }
     return false;
   }
-  return status === 401;
+  // Boş veya HTML 401 (vekil katmanı, yeniden başlayan sunucu) oturum silmez.
+  // Gerçek bitiş, JSON içindeki kod veya "oturum" mesajıyla anlaşılır.
+  return false;
 }
 
 /** POST/PUT/PATCH/DELETE öncesi CSRF çerezi yoksa /auth/api/me/ ile alınır. */
@@ -340,7 +342,7 @@ export async function apiFetch<T = unknown>(
           notifySessionExpired();
         }
       } catch {
-        notifySessionExpired();
+        /* Okunamayan 401 gövdesi oturumu kapatmasın */
       }
     }
 

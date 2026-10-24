@@ -66,6 +66,16 @@ interface AuthContextData {
 const AuthContext = createContext<AuthContextData | undefined>(undefined);
 
 const AUTH_USER_CACHE_KEY = "3k_auth_user";
+const AUTH_RETRY_LIMIT = 4;
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Sunucu yeniden başlarken veya vekil 502 dönerken oturum bitmiş sayılmaz. */
+function isTransientAuthFailure(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
 
 function readCachedUser(): User | null {
   if (typeof window === "undefined") return null;
@@ -96,9 +106,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const isCheckingRef = useRef(false);
   const hasCheckedRef = useRef(false);
+  const authEpochRef = useRef(0);
   
   // Get API base URL
   const apiBaseUrl = getApiBaseUrl();
+
+  const holdCachedSession = useCallback(() => {
+    const cached = readCachedUser();
+    if (cached) setUser(cached);
+    return cached;
+  }, []);
 
   // Check authentication status
   const checkAuth = useCallback(async () => {
@@ -109,26 +126,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     
     isCheckingRef.current = true;
+    const epoch = authEpochRef.current;
     
     try {
       const url = `${apiBaseUrl}/auth/api/me/`;
       console.log("[Auth] Checking auth, URL:", url);
 
-      const response = await fetch(url, {
-        method: "GET",
-        credentials: "include",
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-          "Pragma": "no-cache",
-          "Expires": "0",
-        },
-      });
+      let response: Response | null = null;
+      let lastError: unknown = null;
+      for (let attempt = 0; attempt <= AUTH_RETRY_LIMIT; attempt += 1) {
+        if (authEpochRef.current !== epoch) return;
+        try {
+          response = await fetch(url, {
+            method: "GET",
+            credentials: "include",
+            headers: {
+              "Content-Type": "application/json",
+              "Cache-Control": "no-cache, no-store, must-revalidate",
+              "Pragma": "no-cache",
+              "Expires": "0",
+            },
+          });
+          lastError = null;
+          if (!isTransientAuthFailure(response.status) || attempt === AUTH_RETRY_LIMIT) {
+            break;
+          }
+        } catch (error) {
+          lastError = error;
+          response = null;
+          if (attempt === AUTH_RETRY_LIMIT) break;
+        }
+        // Önbellekteki oturumu ekranda tut. Sunucu kalkınca aynı kontrol yenilenir.
+        if (attempt === 0 && authEpochRef.current === epoch && holdCachedSession()) {
+          setIsLoading(false);
+        }
+        await sleep(400 * (attempt + 1));
+      }
+
+      if (authEpochRef.current !== epoch) return;
+
+      if (!response) {
+        console.error("[Auth] Auth check failed:", lastError);
+        if (!holdCachedSession()) {
+          setUser(null);
+        }
+        return;
+      }
 
       console.log("[Auth] Response status:", response.status);
 
       if (response.ok) {
         const data = await response.json();
+        if (authEpochRef.current !== epoch) return;
         console.log("[Auth] Response data:", data);
         if (data.authenticated && data.user) {
           setUser(data.user);
@@ -142,33 +191,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setUser(null);
           writeCachedUser(null);
         }
-      } else {
-        console.log("[Auth] Auth failed with status", response.status);
-        if (response.status === 401) {
-          try {
-            const data = await response.json();
-            if (data.code === "session_idle_timeout") {
-              window.dispatchEvent(new CustomEvent("3k:session-expired"));
-            }
-          } catch {
-            /* ignore parse errors */
-          }
+        return;
+      }
+
+      console.log("[Auth] Auth failed with status", response.status);
+      if (response.status === 401) {
+        let idle = false;
+        try {
+          const data = await response.json();
+          idle = data.code === "session_idle_timeout";
+        } catch {
+          /* ignore parse errors */
         }
         setUser(null);
         writeCachedUser(null);
+        if (idle) {
+          window.dispatchEvent(new CustomEvent("3k:session-expired"));
+        }
+        return;
       }
-    } catch (error) {
-      console.error("[Auth] Auth check failed:", error);
-      if (!readCachedUser()) {
+
+      if (!holdCachedSession()) {
         setUser(null);
-        writeCachedUser(null);
       }
     } finally {
       isCheckingRef.current = false;
       hasCheckedRef.current = true;
       setIsLoading(false);
     }
-  }, [apiBaseUrl]);
+  }, [apiBaseUrl, holdCachedSession]);
 
   // Login
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string; user?: User }> => {
@@ -216,6 +267,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Logout
   const logout = useCallback(async () => {
+    authEpochRef.current += 1;
     try {
       await fetch(`${apiBaseUrl}/auth/api/logout/`, {
         method: "POST",
@@ -254,9 +306,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         credentials: "include",
         headers: { "Cache-Control": "no-cache, no-store, must-revalidate" },
       });
-      if (!response.ok) return response.status === 401;
-      const data = await response.json();
-      return !(data.authenticated && data.user);
+      let data: unknown = null;
+      try {
+        data = await response.json();
+      } catch {
+        data = null;
+      }
+      if (!response.ok) {
+        // 502/500 ve gövdesiz 401 çıkış yaptırmaz; aksi halde logout çerezi siler.
+        if (isTransientAuthFailure(response.status)) return false;
+        if (data && typeof data === "object") {
+          const code = (data as { code?: string }).code;
+          return code === "session_idle_timeout" || code === "not_authenticated";
+        }
+        return false;
+      }
+      if (!data || typeof data !== "object") return false;
+      const body = data as { authenticated?: boolean; user?: unknown; session_expired?: boolean; code?: string };
+      if (body.session_expired || body.code === "session_idle_timeout") return true;
+      return !(body.authenticated && body.user);
     } catch {
       // Ağ hatasında oturumu düşürme — kullanıcı çalışmaya devam edebilsin.
       return false;

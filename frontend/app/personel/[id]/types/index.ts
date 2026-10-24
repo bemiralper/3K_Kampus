@@ -66,6 +66,8 @@ export type AktiviteLog = {
   detay: string;
   ip_adresi: string;
   user_agent: string;
+  cihaz?: string;
+  isletim_sistemi?: string;
   sayfa_url: string;
   created_at: string;
 };

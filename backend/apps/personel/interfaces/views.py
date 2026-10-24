@@ -12,7 +12,7 @@ from django.db import models
 from datetime import datetime
 import json
 
-from apps.personel.application.activity_log import log_personel_activity
+from apps.personel.application.activity_log import describe_user_agent, log_personel_activity
 from apps.personel.application.services import (
     PersonelService,
     assign_user_role_for_personel,
@@ -1294,19 +1294,21 @@ def personel_full_detail_api(request, pk):
             aktivite_qs = aktivite_qs.filter(eylem=eylem_filter)
         aktivite_loglari = aktivite_qs.order_by('-created_at')[:100]
         
-        aktivite_list = [
-            {
+        aktivite_list = []
+        for a in aktivite_loglari:
+            client = describe_user_agent(a.user_agent)
+            aktivite_list.append({
                 'id': a.id,
                 'eylem': a.eylem,
                 'eylem_display': a.get_eylem_display(),
                 'detay': a.detay or '',
                 'ip_adresi': a.ip_adresi or '',
                 'user_agent': a.user_agent[:100] if a.user_agent else '',
+                'cihaz': client['cihaz'],
+                'isletim_sistemi': client['isletim_sistemi'],
                 'sayfa_url': a.sayfa_url or '',
                 'created_at': a.created_at.isoformat() if a.created_at else None,
-            }
-            for a in aktivite_loglari
-        ]
+            })
     except Exception:
         aktivite_list = []
     
