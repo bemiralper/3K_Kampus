@@ -596,12 +596,18 @@ class OgrenciEkHizmet(models.Model):
         verbose_name_plural = 'Öğrenci Ek Hizmetleri'
         ordering = ['-created_at']
         constraints = [
-            # Aynı öğrenci aynı ek hizmetten sadece 1 aktif kayıt
+            # Aynı öğrenci, aynı hizmet, aynı eğitim yılında tek aktif satır.
+            # Farklı eğitim yılları ayrı satırdır; biri diğerinin yılını taşımaz.
+            models.UniqueConstraint(
+                fields=['ogrenci', 'ek_hizmet', 'egitim_yili'],
+                condition=models.Q(aktif_mi=True),
+                name='unique_ogrenci_ek_hizmet_yil_aktif',
+            ),
             models.UniqueConstraint(
                 fields=['ogrenci', 'ek_hizmet'],
-                condition=models.Q(aktif_mi=True),
-                name='unique_ogrenci_ek_hizmet_aktif'
-            )
+                condition=models.Q(aktif_mi=True, egitim_yili__isnull=True),
+                name='unique_ogrenci_ek_hizmet_yilsiz_aktif',
+            ),
         ]
         indexes = [
             models.Index(fields=['ogrenci', 'aktif_mi']),

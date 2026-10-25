@@ -62,7 +62,7 @@ def get_kocluk_ogrenci_ids(*, kurum_id=None, sube_id=None, egitim_yili_id=None):
         aktif_mi=True,
     )
     if egitim_yili_id:
-        ek_qs = ek_qs.filter(Q(egitim_yili_id=egitim_yili_id) | Q(egitim_yili__isnull=True))
+        ek_qs = ek_qs.filter(egitim_yili_id=egitim_yili_id)
     student_ids.update(ek_qs.values_list('ogrenci_id', flat=True))
 
     soz_qs = Sozlesme.objects.filter(durum__in=AKTIF_SOZLESME_DURUMLARI)

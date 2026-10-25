@@ -446,13 +446,13 @@ class AudienceQueryService:
             if join == 'or' and filters:
                 q_obj = Q()
                 for item in filters:
-                    part = cls._student_filter_q(item)
+                    part = cls._student_filter_q(item, egitim_yili_id=implicit_year)
                     if part is not None:
                         q_obj |= part
                 qs = qs.filter(q_obj) if q_obj else qs
             else:
                 for item in filters:
-                    qs = cls._apply_student_filter(qs, item)
+                    qs = cls._apply_student_filter(qs, item, egitim_yili_id=implicit_year)
             sets.append(set(qs.values_list('ogrenci_id', flat=True)))
 
         return _combine_sets(sets, tree.get('join') or 'or')
@@ -496,12 +496,12 @@ class AudienceQueryService:
         return _combine_sets(sets, tree.get('join') or 'or')
 
     @classmethod
-    def _apply_student_filter(cls, qs, item: dict):
-        q_obj = cls._student_filter_q(item)
+    def _apply_student_filter(cls, qs, item: dict, egitim_yili_id=None):
+        q_obj = cls._student_filter_q(item, egitim_yili_id=egitim_yili_id)
         return qs.filter(q_obj) if q_obj is not None else qs
 
     @classmethod
-    def _student_filter_q(cls, item: dict) -> Q | None:
+    def _student_filter_q(cls, item: dict, egitim_yili_id=None) -> Q | None:
         from apps.coaching.models import CoachStudentAssignment
         from apps.ogrenci.domain.models import OgrenciEgitimPaketi, OgrenciEkHizmet
 
@@ -568,6 +568,8 @@ class AudienceQueryService:
                 qs = qs.filter(ek_hizmet_id__in=_int_list(values))
             else:
                 qs = qs.filter(ek_hizmet__hizmet_turu__in=[str(v) for v in values])
+            if egitim_yili_id:
+                qs = qs.filter(egitim_yili_id=egitim_yili_id)
             return Q(ogrenci_id__in=list(qs.values_list('ogrenci_id', flat=True)))
         return None
 

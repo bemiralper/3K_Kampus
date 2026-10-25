@@ -230,12 +230,12 @@ def _attach_dahil_ek_hizmetler(ogrenci, dahil_ids, kaynak_turu, kaynak_id, egiti
             ogrenci=ogrenci,
             ek_hizmet=ek_hizmet,
             aktif_mi=True,
+            egitim_yili=egitim_yili,
             defaults={
                 "fiyat": 0,
                 "dahil_mi": True,
                 "kaynak_paket_turu": kaynak_turu,
                 "kaynak_paket_id": kaynak_id,
-                "egitim_yili": egitim_yili,
                 "baslangic_tarihi": baslangic_tarihi,
             },
         )
@@ -268,12 +268,12 @@ def _attach_dahil_denemeler(ogrenci, dahil_deneme_ids, kaynak_turu, kaynak_id, k
             ogrenci=ogrenci,
             ek_hizmet=ek_hizmet,
             aktif_mi=True,
+            egitim_yili=egitim_yili,
             defaults={
                 "fiyat": 0,
                 "dahil_mi": True,
                 "kaynak_paket_turu": kaynak_turu,
                 "kaynak_paket_id": kaynak_id,
-                "egitim_yili": egitim_yili,
                 "baslangic_tarihi": baslangic_tarihi,
             },
         )
@@ -823,12 +823,12 @@ def submit_draft(draft: WizardDraft, user):
                         ogrenci=ogrenci,
                         ek_hizmet=ek_hizmet,
                         aktif_mi=True,
+                        egitim_yili=enrollment.egitim_yili,
                         defaults={
                             'fiyat': 0,
                             'dahil_mi': True,
                             'kaynak_paket_turu': 'deneme',
                             'kaynak_paket_id': deneme_obj.id,
-                            'egitim_yili': enrollment.egitim_yili,
                             'baslangic_tarihi': enrollment.giris_tarihi,
                         }
                     )
@@ -843,12 +843,12 @@ def submit_draft(draft: WizardDraft, user):
                     ogrenci=ogrenci,
                     ek_hizmet=ek_hizmet,
                     aktif_mi=True,
+                    egitim_yili=enrollment.egitim_yili,
                     defaults={
                         'fiyat': ek_hizmet.fiyat,
                         'dahil_mi': False,
-                        'kaynak_paket_turu': '',
+                        'kaynak_paket_turu': 'bireysel',
                         'kaynak_paket_id': None,
-                        'egitim_yili': enrollment.egitim_yili,
                         'baslangic_tarihi': enrollment.giris_tarihi,
                     }
                 )

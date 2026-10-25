@@ -588,13 +588,18 @@ def api_student_resource_overview(request):
 
     # Kuruma kayıtlı tüm öğrencileri al — sadece kütüphane ek hizmeti aktif olanlar
     try:
-        from apps.ogrenci.domain.models import Ogrenci, OgrenciEkHizmet
+        from apps.ogrenci.domain.models import Ogrenci
         
-        # Kütüphane ek hizmeti aktif olan öğrenci ID'leri
-        kutuphane_ogrenci_ids = OgrenciEkHizmet.objects.filter(
-            ek_hizmet__hizmet_turu='kutuphane',
-            aktif_mi=True,
-        ).values_list('ogrenci_id', flat=True)
+        # Kütüphane hizmeti bu kurum, şube ve seçili eğitim yılında aktif olanlar
+        from apps.ogrenci.services.hizmet_erisim import ogrenci_ids_with_hizmet_turu
+        from shared.context import get_secili_egitim_yili_id
+
+        kutuphane_ogrenci_ids = ogrenci_ids_with_hizmet_turu(
+            'kutuphane',
+            kurum_id=ctx['kurum_id'],
+            sube_id=ctx['sube_id'],
+            egitim_yili_id=get_secili_egitim_yili_id(request),
+        )
         
         ogrenci_qs = Ogrenci.objects.filter(
             kurum_id=ctx['kurum_id'],
@@ -1185,6 +1190,8 @@ def api_seat_assignment_list_create(request, library_id):
             if 'bitis_tarihi' in data and data['bitis_tarihi']:
                 data['bitis_tarihi'] = date.fromisoformat(data['bitis_tarihi'])
             user_id = _get_user_id(request)
+            from shared.context import get_secili_egitim_yili_id
+            data['egitim_yili_id'] = get_secili_egitim_yili_id(request)
             service = AssignmentService()
             assignment = service.create_seat_assignment(data, user_id)
             return JsonResponse({
@@ -1284,6 +1291,8 @@ def api_locker_assignment_list_create(request):
             if 'bitis_tarihi' in data and data['bitis_tarihi']:
                 data['bitis_tarihi'] = date.fromisoformat(data['bitis_tarihi'])
             user_id = _get_user_id(request)
+            from shared.context import get_secili_egitim_yili_id
+            data['egitim_yili_id'] = get_secili_egitim_yili_id(request)
             service = AssignmentService()
             assignment = service.create_locker_assignment(data, user_id)
             return JsonResponse({

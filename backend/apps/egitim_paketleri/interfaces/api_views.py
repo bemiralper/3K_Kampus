@@ -1010,7 +1010,14 @@ class EkHizmetSatisView(EgitimPaketleriPermissionMixin, View):
                 satis_fiyat = int(fiyat) if fiyat is not None else ek_hizmet.brut_fiyat
             
             # Mükerrer kontrol
-            if OgrenciEkHizmet.objects.filter(ogrenci=ogrenci, ek_hizmet=ek_hizmet, aktif_mi=True).exists():
+            ayni_yil = OgrenciEkHizmet.objects.filter(
+                ogrenci=ogrenci, ek_hizmet=ek_hizmet, aktif_mi=True,
+            )
+            if egitim_yili_id:
+                ayni_yil = ayni_yil.filter(egitim_yili_id=egitim_yili_id)
+            else:
+                ayni_yil = ayni_yil.filter(egitim_yili__isnull=True)
+            if ayni_yil.exists():
                 return JsonResponse({
                     'success': False, 
                     'error': f'Bu öğrenci zaten "{ek_hizmet.ad}" hizmetine kayıtlı'

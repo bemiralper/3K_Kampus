@@ -27,6 +27,11 @@ HOMEWORK_FOLLOWUP_HELD_DAYS = 7
 HOMEWORK_FOLLOWUP_CONTROL_OVERDUE_DAYS = 2
 
 
+def _kayit_turu_label(code) -> str:
+    from apps.ogrenci.services.kayit_turu import registration_type_label
+    return registration_type_label(code) or 'Asil'
+
+
 def get_coach_student_queryset(user, request, sube_id=None):
     """Koç veya admin kapsamındaki öğrenci queryset'i."""
     from apps.coaching.services.coach_student_visibility import (
@@ -601,9 +606,7 @@ def _build_coach_student_identity(student, kayit, veli_contact):
         'cinsiyet': student.cinsiyet or '',
         'cinsiyet_display': dict(student.CINSIYET_CHOICES).get(student.cinsiyet, '-'),
         'kayit_turu': student.kayit_turu or 'asil',
-        'kayit_turu_display': dict(student.KAYIT_TURU_CHOICES).get(
-            student.kayit_turu, 'Asil'
-        ),
+        'kayit_turu_display': _kayit_turu_label(student.kayit_turu),
         'telefon': student.telefon or '',
         'whatsapp_uygun': bool(getattr(student, 'whatsapp_uygun', True)),
         'email': student.email or '',

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { useOgrenciPath } from "@/components/ogrenci/OgrenciPathProvider";
 import { apiGet, apiDelete } from "@/lib/api";
+import { ERISIM_OLAYI } from "@/lib/erisim-olay";
 import Pagination from "../odeme-takip/components/Pagination";
 import OgrenciListToolbar, { type StatusFilter, type SortOption } from "./components/OgrenciListToolbar";
 import OgrenciListResults, { type OgrenciRow } from "./components/OgrenciListResults";
@@ -63,6 +64,7 @@ type OgrenciData = {
   okul_no?: string;
   giris_turu?: string;
   giris_turu_display?: string;
+  kayit_turu?: string;
   egitim_kalemleri?: {
     kalem_turu: string;
     kalem_id: number;
@@ -190,9 +192,11 @@ export default function OgrenciListesiPage() {
   );
 
 
-  const fetchOgrenciler = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  const fetchOgrenciler = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const query = buildListApiQuery({
@@ -260,6 +264,19 @@ export default function OgrenciListesiPage() {
     setError(null);
     fetchOgrenciler();
   }, [contextLoading, initialized, activeKurum?.id, activeSube?.id, activeEgitimYili?.id, fetchOgrenciler, applyStoredContext]);
+
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible') fetchOgrenciler({ silent: true });
+    };
+    const onErisim = () => fetchOgrenciler({ silent: true });
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener(ERISIM_OLAYI, onErisim);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener(ERISIM_OLAYI, onErisim);
+    };
+  }, [fetchOgrenciler]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);

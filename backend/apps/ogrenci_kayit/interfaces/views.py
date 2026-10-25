@@ -916,12 +916,12 @@ class DirectRegistrationView(APIView):
                             ogrenci=ogrenci,
                             ek_hizmet=ek_hizmet,
                             aktif_mi=True,
+                            egitim_yili=egitim_yili,
                             defaults={
                                 'fiyat': ek_hizmet.brut_fiyat,
                                 'dahil_mi': False,
-                                'kaynak_paket_turu': '',
+                                'kaynak_paket_turu': 'bireysel',
                                 'kaynak_paket_id': None,
-                                'egitim_yili': egitim_yili,
                                 'baslangic_tarihi': enrollment_data.get("giris_tarihi"),
                             }
                         )
@@ -964,11 +964,11 @@ class DirectRegistrationView(APIView):
                             ogrenci=ogrenci,
                             ek_hizmet=ek_hizmet,
                             aktif_mi=True,
+                            egitim_yili=egitim_yili,
                             defaults={
                                 'fiyat': deneme_paketi.fiyat,
                                 'dahil_mi': False,
                                 'kaynak_paket_turu': 'bireysel',
-                                'egitim_yili': egitim_yili,
                                 'baslangic_tarihi': enrollment_data.get("giris_tarihi"),
                             }
                         )

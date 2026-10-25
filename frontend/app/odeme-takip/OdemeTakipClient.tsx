@@ -12,6 +12,7 @@ import "./odeme-takip.css";
 import { Sozlesme, TahsilatItem, OdemeYontemi, IndirimTuru, DashboardOzet, TabType, TahsilatFormData, Taksit, OgrenciRiskSkoru } from "./types";
 import { API_BASE, formatCurrency, durumLabel, postHeaders, apiHeaders, parseApiError } from "./helpers";
 import { STATUS_CONFIRM_MESSAGES } from "@/lib/sozlesme-notlar";
+import { bildirErisimDegisti } from "@/lib/erisim-olay";
 
 import SozlesmelerTab from "./tabs/SozlesmelerTab";
 import TahsilatlarTab from "./tabs/TahsilatlarTab";
@@ -387,6 +388,7 @@ export default function OdemeTakipClient() {
   const handleKalemChanged = async () => {
     await fetchSozlesmeler();
     if (selectedSozlesme) await fetchSozlesmeDetail(selectedSozlesme.id);
+    bildirErisimDegisti();
   };
 
   const handleStatusChange = async () => {
@@ -402,6 +404,7 @@ export default function OdemeTakipClient() {
       if (res.ok) {
         await fetchSozlesmeler();
         if (selectedSozlesme?.id === statusSozlesmeId) await fetchSozlesmeDetail(statusSozlesmeId);
+        bildirErisimDegisti();
         setShowStatusModal(false);
         setStatusAciklama("");
         setStatusConfirmAck(false);

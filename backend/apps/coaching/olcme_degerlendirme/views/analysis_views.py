@@ -341,51 +341,19 @@ def _fold_tr(text: str) -> str:
     return (text or '').translate(_TR_FOLD).casefold()
 
 
-def _looks_like_deneme_kulubu(code: str, label: str = '') -> bool:
-    blob = _fold_tr(f'{code} {label}')
-    compact = blob.replace(' ', '').replace('_', '').replace('-', '')
-    if compact == 'denemekulubu':
-        return True
-    return 'deneme' in blob and 'kulub' in blob
-
-
-def _deneme_kulubu_codes() -> set[str]:
-    codes = {'deneme_kulubu'}
-    from apps.ogrenci_kayit.domain.models import LookupOption
-    for code, label in LookupOption.objects.filter(
-        category__code='registration_type',
-    ).values_list('code', 'label'):
-        if _looks_like_deneme_kulubu(code, label):
-            codes.add(code)
-    return codes
-
-
-def _is_deneme_kulubu_kayit(ogrenci) -> bool:
-    """Kayıt türü Deneme Kulübü mü? Ek hizmet değil, Ogrenci.kayit_turu."""
-    if not ogrenci:
-        return False
-    code = (getattr(ogrenci, 'kayit_turu', None) or '').strip()
-    if not code:
-        return False
-    if _looks_like_deneme_kulubu(code):
-        return True
-    return code in _deneme_kulubu_codes()
-
-
 def _kutuphane_student_ids(student_ids, egitim_yili) -> set[int]:
-    from apps.ogrenci.domain.models import OgrenciEkHizmet
+    from apps.ogrenci.services.hizmet_erisim import ogrenci_ids_with_hizmet_turu
 
     ids = [sid for sid in student_ids if sid]
     if not ids:
         return set()
-    qs = OgrenciEkHizmet.objects.filter(
-        ogrenci_id__in=ids,
-        aktif_mi=True,
-        ek_hizmet__hizmet_turu='kutuphane',
+    year_id = getattr(egitim_yili, 'pk', egitim_yili)
+    return ogrenci_ids_with_hizmet_turu(
+        'kutuphane',
+        egitim_yili_id=year_id,
+        ogrenci_ids=ids,
+        aktif_ogrenci=False,
     )
-    if egitim_yili:
-        qs = qs.filter(Q(egitim_yili=egitim_yili) | Q(egitim_yili__isnull=True))
-    return set(qs.values_list('ogrenci_id', flat=True))
 
 
 def _program_label(
@@ -1222,7 +1190,11 @@ def exam_analysis_students(request, exam_pk):
     blocks = blocks_for_answers(exam, answers, ranking_year)
     is_ayt = exam.exam_type == 'YKS_AYT'
     profiles = _profiles_for_students(exam, [a.student_id for a in answers])
-    deneme_codes = _deneme_kulubu_codes()
+    from apps.ogrenci.services.kayit_turu import (
+        deneme_kulubu_codes,
+        looks_like_deneme_kulubu,
+    )
+    deneme_codes = deneme_kulubu_codes()
     kutuphane_ids = _kutuphane_student_ids(
         [a.student_id for a in answers if a.student_id],
         exam.egitim_yili,
@@ -1266,7 +1238,7 @@ def exam_analysis_students(request, exam_pk):
         kutuphane = bool(a.student_id and a.student_id in kutuphane_ids)
         kayit_kodu = (getattr(a.student, 'kayit_turu', None) or '').strip() if a.student else ''
         deneme = bool(kayit_kodu) and (
-            _looks_like_deneme_kulubu(kayit_kodu) or kayit_kodu in deneme_codes
+            looks_like_deneme_kulubu(kayit_kodu) or kayit_kodu in deneme_codes
         )
         gunu_label = '' if sinif_adi else gunu_labels.get(a.student_id, '')
 
@@ -1587,7 +1559,8 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     sinif_student_ids = []
     if answer.student:
         has_kutuphane = answer.student_id in ctx['kutuphane_ids']
-        has_deneme = _is_deneme_kulubu_kayit(answer.student)
+        from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit
+        has_deneme = is_deneme_kulubu_kayit(answer.student)
         kayit = ctx['kayit_map'].get(answer.student_id)
 
         if kayit:
@@ -1966,7 +1939,11 @@ def exam_analysis_rankings(request, exam_pk):
     is_ayt = exam.exam_type == 'YKS_AYT'
     blocks = blocks_for_answers(exam, answers, ranking_year)
     profiles = _profiles_for_students(exam, [a.student_id for a in answers])
-    deneme_codes = _deneme_kulubu_codes()
+    from apps.ogrenci.services.kayit_turu import (
+        deneme_kulubu_codes,
+        looks_like_deneme_kulubu,
+    )
+    deneme_codes = deneme_kulubu_codes()
     kutuphane_ids = _kutuphane_student_ids(
         [a.student_id for a in answers if a.student_id],
         exam.egitim_yili,
@@ -2007,7 +1984,7 @@ def exam_analysis_rankings(request, exam_pk):
         kutuphane = bool(a.student_id and a.student_id in kutuphane_ids)
         kayit_kodu = (getattr(a.student, 'kayit_turu', None) or '').strip() if a.student else ''
         deneme = bool(kayit_kodu) and (
-            _looks_like_deneme_kulubu(kayit_kodu) or kayit_kodu in deneme_codes
+            looks_like_deneme_kulubu(kayit_kodu) or kayit_kodu in deneme_codes
         )
         gunu_label = '' if sinif_adi else gunu_labels.get(a.student_id, '')
 

@@ -70,10 +70,22 @@ def _ids(*values) -> list[int]:
 
 
 def _deneme_ogrenci_ids(paket_ids: list[int], egitim_yili_id: int | None) -> set[int]:
+    """Deneme paketi olan öğrenciler.
+
+    Eğitim yılı verildiyse başka yılın sözleşmesinden kalan paket satırı bu
+    yılın sınavına aday yapmaz. Sözleşmesi hiç olmayan eski kayıtlar paket
+    satırından okunmaya devam eder.
+    """
+    from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
+        GRANTING_DURUMLAR,
+        _contract_items,
+    )
+    from apps.odeme_takip.domain.models import Sozlesme
     from apps.ogrenci.domain.models import OgrenciEgitimPaketi, OgrenciEkHizmet
 
     if not paket_ids:
         return set()
+    paket_set = set(paket_ids)
     from_ep = set(
         OgrenciEgitimPaketi.objects.filter(
             paket_turu='deneme', paket_id__in=paket_ids, aktif_mi=True,
@@ -84,9 +96,30 @@ def _deneme_ogrenci_ids(paket_ids: list[int], egitim_yili_id: int | None) -> set
         | Q(ek_hizmet__hizmet_turu='deneme', ek_hizmet__deneme_paketi_id__in=paket_ids)
     )
     if egitim_yili_id:
-        eh_qs = eh_qs.filter(Q(egitim_yili_id=egitim_yili_id) | Q(egitim_yili_id__isnull=True))
+        eh_qs = eh_qs.filter(egitim_yili_id=egitim_yili_id)
     from_eh = set(eh_qs.values_list('ogrenci_id', flat=True))
-    return from_ep | from_eh
+    if not egitim_yili_id or not from_ep:
+        return from_ep | from_eh
+
+    any_granting = set(
+        Sozlesme.objects.filter(
+            ogrenci_id__in=from_ep,
+            durum__in=GRANTING_DURUMLAR,
+        ).values_list('ogrenci_id', flat=True)
+    )
+    explicit: set[int] = set()
+    this_year = Sozlesme.objects.filter(
+        ogrenci_id__in=from_ep,
+        durum__in=GRANTING_DURUMLAR,
+        egitim_yili_id=egitim_yili_id,
+    ).prefetch_related('kalemler')
+    for sozlesme in this_year:
+        for item in _contract_items(sozlesme):
+            if item['tur'] == 'deneme' and item['kalem_id'] in paket_set:
+                explicit.add(sozlesme.ogrenci_id)
+                break
+    legacy = from_ep - any_granting
+    return explicit | legacy | from_eh
 
 
 def _kayit_base(kurum_id, sube_id, egitim_yili_id):

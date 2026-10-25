@@ -918,13 +918,11 @@ def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
         ek_hizmet__deneme_paketi_id__isnull=False,
     ).select_related('ek_hizmet', 'ek_hizmet__deneme_paketi')
     if yil_ids:
-        eh_qs = eh_qs.filter(
-            models.Q(egitim_yili_id__in=yil_ids) | models.Q(egitim_yili_id__isnull=True)
-        )
+        eh_qs = eh_qs.filter(egitim_yili_id__in=yil_ids)
 
     for oeh in eh_qs:
         eh = oeh.ek_hizmet
-        if not eh or not eh.deneme_paketi_id:
+        if not eh or not eh.deneme_paketi_id or not oeh.egitim_yili_id:
             continue
         adi = eh.deneme_paketi.ad if eh.deneme_paketi else eh.ad
         _put_for_ogrenci(
@@ -944,12 +942,10 @@ def _merge_enrollment_kalemler(pair_kalemler, kayit_list, catalog_index):
         ek_hizmet__deneme_paketi_id__isnull=True,
     ).select_related('ek_hizmet')
     if yil_ids:
-        plain_qs = plain_qs.filter(
-            models.Q(egitim_yili_id__in=yil_ids) | models.Q(egitim_yili_id__isnull=True)
-        )
+        plain_qs = plain_qs.filter(egitim_yili_id__in=yil_ids)
     for oeh in plain_qs:
         eh = oeh.ek_hizmet
-        if not eh:
+        if not eh or not oeh.egitim_yili_id:
             continue
         _put_for_ogrenci(
             oeh.ogrenci_id,
@@ -1120,6 +1116,7 @@ def serialize_kayit_row(
         'sube_ad': kayit.sube.ad if kayit.sube else '',
         'kayit_tarihi': format_date(kayit.kayit_tarihi),
         'okul_no': kayit.okul_no or '',
+        'kayit_turu': ogrenci.kayit_turu or '',
         'giris_turu': kayit.giris_turu,
         'giris_turu_display': (
             dict(OgrenciKayit.GIRIS_TURU_CHOICES).get(kayit.giris_turu, kayit.giris_turu)

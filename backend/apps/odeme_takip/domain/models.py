@@ -125,6 +125,15 @@ class Sozlesme(models.Model):
     paket_turu = models.CharField('Paket Türü', max_length=20, choices=PaketTuru.CHOICES, blank=True, default='')
     paket_id = models.IntegerField('Paket ID', null=True, blank=True)
     paket_adi = models.CharField('Paket Adı', max_length=200, blank=True, default='')
+    erisim_kapsam_anlik = models.JSONField(
+        'Erişim kapsamı anlık görüntüsü',
+        null=True,
+        blank=True,
+        help_text=(
+            'Pakete dahil hizmetler kapsam değişince sabitlenir. '
+            'Katalog sonradan değişince veya not gibi ilgisiz bir kayıtta yenilenmez.'
+        ),
+    )
 
     # ═══ FİYAT YAPISI — Integer-Only ═══
     brut_tutar = models.IntegerField('Brüt Tutar (KDV Dahil)', default=0, validators=[MinValueValidator(0)])

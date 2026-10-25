@@ -123,14 +123,24 @@ class SozlesmeService:
             'toplam_indirim_tutari', 'net_tutar', 'updated_at',
         ])
 
-    def _sync_erisim(self, sozlesme, user=None):
-        try:
-            from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
-                sync_sozlesme_erisim,
-            )
-            sync_sozlesme_erisim(sozlesme, user=user)
-        except Exception:
-            logger.exception('Sözleşme erişim senkronu başarısız (sozlesme=%s)', sozlesme.id)
+    def _kapsam_anahtari(self, sozlesme):
+        kalemler = tuple(sorted(
+            (k.kalem_turu, k.kalem_id) for k in sozlesme.kalemler.all()
+        ))
+        return (sozlesme.paket_turu or '', sozlesme.paket_id, kalemler)
+
+    def _sync_erisim(self, sozlesme, user=None, *, refresh_inclusions=False):
+        """Erişim kaydını sözleşme ile aynı işlemde günceller.
+
+        Hata yutulmaz; çağıran atomic blok yarım sözleşmeyi geri alır.
+        refresh_inclusions yalnızca paket veya kalem kapsamı değişince True olur.
+        """
+        from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
+            sync_sozlesme_erisim,
+        )
+        sync_sozlesme_erisim(
+            sozlesme, user=user, refresh_inclusions=refresh_inclusions,
+        )
 
     def _sync_ozel_ders_kalem(self, sozlesme, kalem, *, removed=False, user=None):
         try:
@@ -511,6 +521,10 @@ class SozlesmeService:
 
         # ─── Kalemler güncelleme ─────────────
         kalemler_raw = data.get('kalemler')
+        kapsam_izlenir = kalemler_raw is not None or any(
+            k in data for k in ('paket_id', 'paket_turu')
+        )
+        eski_kapsam = self._kapsam_anahtari(sozlesme) if kapsam_izlenir else None
         if kalemler_raw is not None:
             # Mevcut kalemleri temizle ve yeniden oluştur
             SozlesmeKalemi.objects.filter(sozlesme=sozlesme).delete()
@@ -679,9 +693,13 @@ class SozlesmeService:
                 ensure_program_from_sozlesme(sozlesme, user=user)
             except Exception:
                 logger.exception('Özel ders program senkronu başarısız (sozlesme=%s)', sozlesme.id)
-        if kalemler_raw is not None or any(k in data for k in ('paket_id', 'paket_turu')):
-            # Kalemler ya da ana paket değişti: erişim kayıtlarını (eksik aç / eskiyi kapat) eşitle
-            self._sync_erisim(sozlesme, user=user)
+        if kapsam_izlenir:
+            # Aynı kalem kümesiyle yeniden kaydetmek katalogdan yeni hak üretmez.
+            self._sync_erisim(
+                sozlesme,
+                user=user,
+                refresh_inclusions=eski_kapsam != self._kapsam_anahtari(sozlesme),
+            )
 
         return sozlesme, None
 
@@ -713,25 +731,32 @@ class SozlesmeService:
                     'code': 'ODEME_PLANI_TAMAMLANMADI',
                 }
 
-        sozlesme.durum = new_status
-        sozlesme.save(update_fields=['durum', 'updated_at'])
+        with transaction.atomic():
+            sozlesme.durum = new_status
+            sozlesme.save(update_fields=['durum', 'updated_at'])
 
-        self.gecmis_repo.create({
-            'sozlesme': sozlesme,
-            'islem_turu': GecmisIslemTuru.DURUM_DEGISIKLIGI,
-            'eski_deger': {'durum': eski_durum},
-            'yeni_deger': {'durum': new_status},
-            'aciklama': aciklama or f'Durum değişikliği: {eski_durum} → {new_status}',
-            'islem_yapan': user,
-        })
+            self.gecmis_repo.create({
+                'sozlesme': sozlesme,
+                'islem_turu': GecmisIslemTuru.DURUM_DEGISIKLIGI,
+                'eski_deger': {'durum': eski_durum},
+                'yeni_deger': {'durum': new_status},
+                'aciklama': aciklama or f'Durum değişikliği: {eski_durum} → {new_status}',
+                'islem_yapan': user,
+            })
 
-        if new_status in (SozlesmeDurum.AKTIF, SozlesmeDurum.TAMAMLANDI, SozlesmeDurum.DONDURULMUS):
-            self._sync_erisim(sozlesme, user=user)
-        elif new_status in (SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS):
-            from apps.coaching.services.coach_student_visibility import (
-                release_student_after_contract_revoked,
-            )
-            release_student_after_contract_revoked(sozlesme.ogrenci_id, sozlesme)
+            if new_status in (SozlesmeDurum.AKTIF, SozlesmeDurum.TAMAMLANDI, SozlesmeDurum.DONDURULMUS):
+                # Taslaktan çıkış kapsamı ilk kez sabitler. Dondurma ve tamamlama
+                # mevcut görüntüyü korur; dondurulmuş sözleşme hak vermeye devam eder.
+                self._sync_erisim(
+                    sozlesme,
+                    user=user,
+                    refresh_inclusions=eski_durum == SozlesmeDurum.TASLAK,
+                )
+            elif new_status in (SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS):
+                from apps.coaching.services.coach_student_visibility import (
+                    release_student_after_contract_revoked,
+                )
+                release_student_after_contract_revoked(sozlesme.ogrenci_id, sozlesme)
 
         if eski_durum != SozlesmeDurum.AKTIF and new_status == SozlesmeDurum.AKTIF:
             sozlesme_id = sozlesme.pk
@@ -776,17 +801,34 @@ class SozlesmeService:
             }
 
         onceki = sozlesme.durum
-        sozlesme.durum = eski_durum
-        sozlesme.save(update_fields=['durum', 'updated_at'])
+        with transaction.atomic():
+            sozlesme.durum = eski_durum
+            sozlesme.save(update_fields=['durum', 'updated_at'])
 
-        self.gecmis_repo.create({
-            'sozlesme': sozlesme,
-            'islem_turu': GecmisIslemTuru.DURUM_DEGISIKLIGI,
-            'eski_deger': {'durum': onceki},
-            'yeni_deger': {'durum': eski_durum},
-            'aciklama': aciklama or f'Durum geri alındı: {onceki} → {eski_durum}',
-            'islem_yapan': user,
-        })
+            self.gecmis_repo.create({
+                'sozlesme': sozlesme,
+                'islem_turu': GecmisIslemTuru.DURUM_DEGISIKLIGI,
+                'eski_deger': {'durum': onceki},
+                'yeni_deger': {'durum': eski_durum},
+                'aciklama': aciklama or f'Durum geri alındı: {onceki} → {eski_durum}',
+                'islem_yapan': user,
+            })
+
+            if eski_durum in (
+                SozlesmeDurum.AKTIF,
+                SozlesmeDurum.TAMAMLANDI,
+                SozlesmeDurum.DONDURULMUS,
+            ):
+                self._sync_erisim(
+                    sozlesme,
+                    user=user,
+                    refresh_inclusions=eski_durum == SozlesmeDurum.TASLAK,
+                )
+            elif eski_durum in (SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS):
+                from apps.coaching.services.coach_student_visibility import (
+                    release_student_after_contract_revoked,
+                )
+                release_student_after_contract_revoked(sozlesme.ogrenci_id, sozlesme)
 
         return sozlesme, None
 
@@ -1009,7 +1051,15 @@ class SozlesmeService:
             )
 
         self._sync_ozel_ders_kalem(sozlesme, kalem, user=user)
-        self._sync_erisim(sozlesme, user=user)
+        paket_kalemleri = {
+            KalemTuru.PAKET, KalemTuru.GRUP_DERSI, KalemTuru.OZEL_DERS,
+            KalemTuru.PREMIUM, KalemTuru.YAYIN, KalemTuru.DENEME,
+        }
+        self._sync_erisim(
+            sozlesme,
+            user=user,
+            refresh_inclusions=storage_turu in paket_kalemleri,
+        )
 
         self.gecmis_repo.create(
             {
@@ -1053,6 +1103,11 @@ class SozlesmeService:
     def _kalem_cikar_atomic(self, sozlesme, kalem, user=None):
         kalem_net = kalem.net_tutar
         kalem_adi = kalem.kalem_adi
+        paket_kalemleri = {
+            KalemTuru.PAKET, KalemTuru.GRUP_DERSI, KalemTuru.OZEL_DERS,
+            KalemTuru.PREMIUM, KalemTuru.YAYIN, KalemTuru.DENEME,
+        }
+        kapsam_yenile = kalem.kalem_turu in paket_kalemleri
         eski_net = sozlesme.net_tutar
         extra = self._kalem_totals_extra(sozlesme)
 
@@ -1086,7 +1141,7 @@ class SozlesmeService:
 
         # Çıkarılan kalemin öğrenci erişimi (OgrenciEgitimPaketi / OgrenciEkHizmet)
         # kapansın; aksi halde öğrenci listesi filtresi eski hizmeti bulmaya devam ediyordu.
-        self._sync_erisim(sozlesme, user=user)
+        self._sync_erisim(sozlesme, user=user, refresh_inclusions=kapsam_yenile)
 
         return {'removed': True}, None
 

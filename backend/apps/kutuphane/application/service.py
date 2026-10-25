@@ -431,6 +431,28 @@ class LockerService:
 class AssignmentService:
     """Masa & Dolap Atama iş mantığı"""
 
+    @staticmethod
+    def _require_kutuphane_hizmeti(ogrenci_id, *, kurum_id, sube_id, egitim_yili_id=None):
+        """Yeni atama yalnızca güncel kütüphane hizmeti olan öğrenciye yapılır.
+
+        Mevcut atama ve geçmiş yoklama bu kontrolden geçmez; hizmet kalkınca
+        masa kendiliğinden silinmez.
+        """
+        from apps.ogrenci.services.hizmet_erisim import student_has_hizmet_turu
+
+        if student_has_hizmet_turu(
+            ogrenci_id,
+            'kutuphane',
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            egitim_yili_id=egitim_yili_id,
+        ):
+            return
+        raise ValueError(
+            'Bu öğrencinin seçili eğitim yılında kütüphane hizmeti yok. '
+            'Atama için önce sözleşmeye kütüphane hizmeti eklenmeli.'
+        )
+
     @transaction.atomic
     def create_seat_assignment(self, data: dict, user_id: int) -> SeatAssignment:
         seat = SeatRepository.get_by_id(data['seat_id'])
@@ -438,6 +460,13 @@ class AssignmentService:
             raise ValueError("Masa bulunamadı")
         if seat.durum != SeatStatus.AVAILABLE:
             raise ValueError(f"Masa müsait değil (durum: {seat.get_durum_display()})")
+
+        self._require_kutuphane_hizmeti(
+            data['ogrenci_id'],
+            kurum_id=seat.library.kurum_id,
+            sube_id=seat.library.sube_id,
+            egitim_yili_id=data.pop('egitim_yili_id', None),
+        )
 
         # Aynı masada aktif atama kontrolü
         if SeatAssignmentRepository.has_active_for_seat(data['seat_id']):
@@ -502,6 +531,13 @@ class AssignmentService:
             raise ValueError("Dolap bulunamadı")
         if locker.durum != LockerStatus.AVAILABLE:
             raise ValueError(f"Dolap müsait değil (durum: {locker.get_durum_display()})")
+
+        self._require_kutuphane_hizmeti(
+            data['ogrenci_id'],
+            kurum_id=locker.kurum_id,
+            sube_id=locker.sube_id,
+            egitim_yili_id=data.pop('egitim_yili_id', None),
+        )
 
         if LockerAssignmentRepository.has_active_for_locker(data['locker_id']):
             raise ValueError("Bu dolapta zaten aktif bir atama var")

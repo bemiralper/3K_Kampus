@@ -7,6 +7,7 @@ import "react-datepicker/dist/react-datepicker.css";
 import { dateToIsoLocal, isoToLocalDate } from "@/lib/date-utils";
 import SchoolAutocomplete from "@/components/okul/SchoolAutocomplete";
 import { apiPut } from "@/lib/api";
+import { bildirErisimDegisti } from "@/lib/erisim-olay";
 import KisiBulunduModal from "@/components/kimlik/KisiBulunduModal";
 import { useKimlikLookup } from "@/hooks/useKimlikLookup";
 import { pickOgrenciRol } from "@/lib/kimlik-api";
@@ -211,6 +212,7 @@ export default function OgrenciBilgiDrawer({
 
       if (response.success) {
         setSuccess(response.message || 'Öğrenci bilgileri güncellendi');
+        bildirErisimDegisti();
         // Update parent with new data - display alanlarını da güncelle
         const cinsiyetMap: Record<string, string> = {};
         cinsiyetSecenekleri.forEach(c => { cinsiyetMap[c.value] = c.label; });

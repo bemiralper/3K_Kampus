@@ -11,6 +11,7 @@ import {
   type StudentResource,
 } from '@/lib/kutuphane-api';
 import { searchKutuphaneStudents } from '@/lib/kutuphane-student-search';
+import { ERISIM_OLAYI } from '@/lib/erisim-olay';
 import { useKutuphanePath } from '@/components/kutuphane/KutuphanePathProvider';
 import KutuphaneConfirmModal from '@/components/kutuphane/KutuphaneConfirmModal';
 import KutuphaneToast from '@/components/kutuphane/KutuphaneToast';
@@ -303,8 +304,9 @@ export default function AtamalarPage() {
   }, []);
 
   /* ── Load students */
-  const loadStudents = useCallback(async () => {
-    setLoading(true); setErrorMsg('');
+  const loadStudents = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    setErrorMsg('');
     try {
       const res = await fetchStudentResources({ filtre: studentFilter, search: studentSearch });
       if (res.success && res.data) {
@@ -316,6 +318,18 @@ export default function AtamalarPage() {
   }, [studentFilter, studentSearch]);
 
   useEffect(() => { loadStudents(); }, [loadStudents]);
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'visible') loadStudents(true);
+    };
+    const onErisim = () => loadStudents(true);
+    document.addEventListener('visibilitychange', refresh);
+    window.addEventListener(ERISIM_OLAYI, onErisim);
+    return () => {
+      document.removeEventListener('visibilitychange', refresh);
+      window.removeEventListener(ERISIM_OLAYI, onErisim);
+    };
+  }, [loadStudents]);
   useEffect(() => { if (successMsg) { const t = setTimeout(() => setSuccessMsg(''), 4000); return () => clearTimeout(t); } }, [successMsg]);
 
   /* ── Open modal */
