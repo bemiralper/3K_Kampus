@@ -11,6 +11,34 @@ function dayLabel(day: ProgramDay): string {
   return `${wd} ${short}`;
 }
 
+/** Sunucudaki bölme ile aynı: kalan, tarih sırasındaki ilk günlere birer eklenir. */
+function splitAmounts(total: number, parts: number): number[] {
+  if (parts <= 0) return [];
+  const safe = Math.max(0, Math.trunc(total) || 0);
+  const base = Math.floor(safe / parts);
+  const extra = safe % parts;
+  return Array.from({ length: parts }, (_, index) => base + (index < extra ? 1 : 0));
+}
+
+function dailySplitLabel(amounts: number[], unit: 'soru' | 'test'): string {
+  if (amounts.length === 0) return '';
+  if (amounts.length === 1) {
+    return amounts[0] === 0 ? `Bu günde ${unit} yok` : `${amounts[0]} ${unit}`;
+  }
+  const grouped = new Map<number, number>();
+  for (const amount of amounts) grouped.set(amount, (grouped.get(amount) ?? 0) + 1);
+  if (grouped.size === 1) {
+    const amount = amounts[0];
+    return amount === 0 ? `Seçilen günlere ${unit} düşmez` : `Günde ${amount} ${unit}`;
+  }
+  return [...grouped.entries()]
+    .sort((a, b) => b[0] - a[0])
+    .map(([amount, days]) => (
+      amount === 0 ? `${days} günde ${unit} yok` : `${days} güne ${amount} ${unit}`
+    ))
+    .join(', ');
+}
+
 export type SplitMetric = 'question' | 'test';
 
 interface SplitModalProps {
@@ -69,6 +97,13 @@ export default function SplitModal({
     const ordered = orderedDays.filter((day) => selectedIds.includes(day.id)).map((day) => day.id);
     onConfirm(ordered, metric);
   };
+
+  const selectedOrdered = orderedDays.filter((day) => selectedIds.includes(day.id));
+  const splitUnit: 'soru' | 'test' = metric === 'test' ? 'test' : 'soru';
+  const splitTotal = metric === 'test' ? testCount : totalQuestions;
+  const splitShares = splitAmounts(splitTotal, selectedOrdered.length);
+  const shareByDayId = new Map(selectedOrdered.map((day, index) => [day.id, splitShares[index] ?? 0]));
+  const splitLabel = dailySplitLabel(splitShares, splitUnit);
 
   if (!open) return null;
 
@@ -221,11 +256,18 @@ export default function SplitModal({
               {orderedDays.map((day) => {
                 const selected = selectedIds.includes(day.id);
                 const isCurrent = day.id === currentDayId;
+                const share = selected ? shareByDayId.get(day.id) : undefined;
+                const shareText = share == null
+                  ? ''
+                  : share > 0
+                    ? `${share} ${splitUnit}`
+                    : `${splitUnit} yok`;
                 return (
                   <button
                     key={day.id}
                     type="button"
                     aria-pressed={selected}
+                    aria-label={shareText ? `${dayLabel(day)}, ${shareText}` : dayLabel(day)}
                     onClick={() => toggleDay(day.id)}
                     style={{
                       padding: '9px 12px',
@@ -237,9 +279,22 @@ export default function SplitModal({
                       backgroundColor: selected ? '#f0fdfa' : '#fff',
                       color: selected ? '#0f766e' : '#334155',
                       position: 'relative',
+                      textAlign: 'center',
+                      lineHeight: 1.2,
                     }}
                   >
                     {dayLabel(day)}
+                    {shareText && (
+                      <span style={{
+                        display: 'block',
+                        marginTop: 3,
+                        fontSize: 11,
+                        fontWeight: 800,
+                        color: share && share > 0 ? '#0f766e' : '#94a3b8',
+                      }}>
+                        {shareText}
+                      </span>
+                    )}
                     {isCurrent && (
                       <span style={{
                         position: 'absolute',
@@ -255,6 +310,28 @@ export default function SplitModal({
                 );
               })}
             </div>
+            {selectedOrdered.length > 0 && (
+              <div style={{
+                marginTop: 12,
+                padding: '10px 12px',
+                borderRadius: 10,
+                background: '#f0fdfa',
+                border: '1px solid #ccfbf1',
+              }}>
+                <div style={{
+                  fontSize: 11,
+                  fontWeight: 700,
+                  color: '#0f766e',
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                }}>
+                  {selectedOrdered.length} gün
+                </div>
+                <div style={{ marginTop: 2, fontSize: 14, fontWeight: 800, color: '#0f172a' }}>
+                  {splitLabel}
+                </div>
+              </div>
+            )}
           </div>
 
           {error && (
