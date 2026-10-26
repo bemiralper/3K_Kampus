@@ -8,6 +8,11 @@ from rest_framework import status
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.authentication import SessionAuthentication
 from apps.academic.interfaces.permissions import AcademicModulePermission
+from apps.academic.interfaces.teacher_write_scope import (
+    owns_plan,
+    teacher_personel_id,
+    user_administers_academic,
+)
 from rest_framework.response import Response
 
 from apps.academic.interfaces.sube_context import (
@@ -394,6 +399,14 @@ def class_lesson_plan_update_api(request, plan_id):
                 {'errors': serializer.errors},
                 status=status.HTTP_400_BAD_REQUEST
             )
+
+        if not owns_plan(request.user, plan):
+            return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN)
+        if 'ogretmen' in serializer.validated_data and not user_administers_academic(request.user):
+            incoming = serializer.validated_data['ogretmen']
+            incoming_id = incoming.id if incoming is not None else None
+            if incoming_id != teacher_personel_id(request.user):
+                return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN)
         
         # Güncelleme verilerini hazırla
         service = ClassLessonPlanService()
@@ -483,6 +496,8 @@ def class_lesson_plan_delete_api(request, plan_id):
         _, plan, gate_err = gate_class_lesson_plan_drf(request, plan_id)
         if gate_err:
             return gate_err
+        if not owns_plan(request.user, plan):
+            return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=status.HTTP_403_FORBIDDEN)
 
         service = ClassLessonPlanService()
         service.delete(plan_id)

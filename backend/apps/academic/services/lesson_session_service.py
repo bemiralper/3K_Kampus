@@ -197,6 +197,7 @@ def materialize_sessions_for_date(
     classroom_id: Optional[int] = None,
     sube_id: Optional[int] = None,
     user=None,
+    ogretmen_id: Optional[int] = None,
 ) -> dict[str, Any]:
     """
     FILLED grid hücrelerinden o güne REGULAR oturum üret (idempotent).
@@ -244,6 +245,7 @@ def materialize_sessions_for_date(
             classroom_id=classroom_id,
             sube_id=sube_id,
             user=user,
+            ogretmen_id=ogretmen_id,
         )
         for v in versions
     ]
@@ -286,6 +288,7 @@ def _materialize_one_version(
     classroom_id: Optional[int],
     sube_id: Optional[int],
     user,
+    ogretmen_id: Optional[int] = None,
 ) -> dict[str, Any]:
     """Tek programın o güne ait hücrelerini oturuma çevirir."""
     year = _active_year()
@@ -320,6 +323,8 @@ def _materialize_one_version(
         cells = cells.filter(sinif_id=classroom_id)
     if sube_id:
         cells = cells.filter(sinif__sube_id=sube_id)
+    if ogretmen_id:
+        cells = cells.filter(ogretmen_id=ogretmen_id)
 
     created = 0
     existing = 0

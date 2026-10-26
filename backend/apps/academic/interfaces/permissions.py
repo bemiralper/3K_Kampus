@@ -20,6 +20,11 @@ from rest_framework.permissions import BasePermission, SAFE_METHODS
 
 from shared.permissions import user_has_akademik_full_access, user_has_any_permission
 
+from apps.academic.interfaces.teacher_write_scope import (
+    user_administers_academic,
+    view_allows_teacher_object_write,
+)
+
 ACADEMIC_READ_CODES = (
     'sinif.read', 'sinif.write', 'sinif.manage',
     'egitim_tanimlari.read', 'egitim_tanimlari.write', 'egitim_tanimlari.manage',
@@ -83,7 +88,11 @@ class AcademicModulePermission(BasePermission):
             return True
         if request.method in SAFE_METHODS:
             return user_has_any_permission(request.user, *ACADEMIC_READ_CODES)
-        return user_has_any_permission(request.user, *ACADEMIC_WRITE_CODES)
+        if not user_has_any_permission(request.user, *ACADEMIC_WRITE_CODES):
+            return False
+        if user_administers_academic(request.user):
+            return True
+        return view_allows_teacher_object_write(request)
 
 
 class ClassPeriodAttendancePermission(AcademicModulePermission):
@@ -115,6 +124,11 @@ def academic_view_permission(view_func):
             allowed = user_has_any_permission(request.user, *ACADEMIC_READ_CODES)
         else:
             allowed = user_has_any_permission(request.user, *ACADEMIC_WRITE_CODES)
+            if allowed and not user_administers_academic(request.user):
+                allowed = view_func.__name__ in (
+                    'teacher_availability_save_api',
+                    'teacher_availability_temp_delete_api',
+                )
         if not allowed:
             return JsonResponse(
                 {'success': False, 'error': 'Bu işlem için yetkiniz yok.'},

@@ -16,6 +16,11 @@ from apps.academic.interfaces.permissions import (
     user_can_access_classroom_attendance,
     user_can_write_academic,
 )
+from apps.academic.interfaces.teacher_write_scope import (
+    owns_session,
+    teacher_personel_id,
+    user_administers_academic,
+)
 from rest_framework.response import Response
 
 from apps.academic.interfaces.sube_context import (
@@ -104,6 +109,11 @@ def lesson_session_materialize_api(request):
         session_date = _parse_date(request.data.get('date') or date.today().isoformat())
         version_id = request.data.get('version_id')
         weekly_cycle_id = request.data.get('weekly_cycle_id')
+        scope_teacher = None
+        if not user_administers_academic(request.user):
+            scope_teacher = teacher_personel_id(request.user)
+            if not scope_teacher:
+                return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=403)
         result = materialize_sessions_for_date(
             term_id=term_id,
             session_date=session_date,
@@ -112,6 +122,7 @@ def lesson_session_materialize_api(request):
             classroom_id=int(classroom_id) if classroom_id else None,
             sube_id=ctx['sube_id'],
             user=request.user,
+            ogretmen_id=scope_teacher,
         )
         return Response(result, status=status.HTTP_201_CREATED if result['created_count'] else status.HTTP_200_OK)
     except LessonSessionError as e:
@@ -182,6 +193,14 @@ def lesson_session_create_api(request):
             return gate
         if sinif.term_id and sinif.term_id != term_id:
             return Response({'error': 'Sınıf seçili döneme ait değil.'}, status=400)
+    if not user_administers_academic(request.user):
+        personel_id = teacher_personel_id(request.user)
+        try:
+            requested = int(data.get('ogretmen_id'))
+        except (TypeError, ValueError):
+            requested = None
+        if not personel_id or requested != personel_id:
+            return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=403)
     try:
         session = create_session(data=data, user=request.user)
         session = LessonSession.objects.select_related(
@@ -211,9 +230,11 @@ def lesson_session_detail_api(request, pk):
 @permission_classes([AcademicModulePermission])
 def lesson_session_action_api(request, pk, action):
     """POST .../lesson-sessions/<id>/<action>/  action in start|complete|cancel|no_show"""
-    _, _, err = gate_lesson_session_drf(request, pk)
+    _, session, err = gate_lesson_session_drf(request, pk)
     if err:
         return err
+    if not owns_session(request.user, session):
+        return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=403)
     try:
         session = transition_session(
             session_id=pk,
@@ -234,9 +255,11 @@ def lesson_session_action_api(request, pk, action):
 @authentication_classes([SessionAuthentication])
 @permission_classes([AcademicModulePermission])
 def lesson_teacher_attendance_api(request, pk):
-    _, _, err = gate_lesson_session_drf(request, pk)
+    _, session, err = gate_lesson_session_drf(request, pk)
     if err:
         return err
+    if not owns_session(request.user, session):
+        return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=403)
     try:
         session = set_teacher_attendance(
             session_id=pk,
@@ -273,6 +296,9 @@ def lesson_student_attendance_api(request, pk):
                 {'value': v, 'label': l} for v, l in StudentAttendanceStatus.choices
             ],
         })
+
+    if not owns_session(request.user, session):
+        return Response({'error': 'Bu işlem için yetkiniz yok.'}, status=403)
 
     try:
         records = request.data.get('records') or []
