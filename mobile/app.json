@@ -1,0 +1,39 @@
+{
+  "expo": {
+    "name": "3K Kampüs",
+    "slug": "3k-kampus",
+    "icon": "./assets/icon.png",
+    "scheme": "kampus",
+    "orientation": "default",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-asset",
+      "expo-font"
+    ],
+    "ios": {
+      "bundleIdentifier": "com.kkampus.ogretmen",
+      "supportsTablet": true,
+      "appleTeamId": "WA5Y5L8469",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSLocalNetworkUsageDescription": "Dersler ve sınav analizi bu ağdaki okul sunucusundan okunur.",
+        "NSAppTransportSecurity": {
+          "NSAllowsLocalNetworking": true
+        }
+      }
+    },
+    "experiments": {
+      "typedRoutes": false
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "extra": {
+      "apiUrl": "http://Taner-Alper.local:8000"
+    }
+  }
+}

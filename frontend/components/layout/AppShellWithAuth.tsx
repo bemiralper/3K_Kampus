@@ -9,6 +9,7 @@ import {
   isStudentUser,
   isCoachOnlyUser,
   isMuhasebeOnlyUser,
+  canEnterTeacherPortal,
   isTeacherPortalUser,
   assignedPortalCodes,
   needsPortalPicker,
@@ -174,7 +175,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       !isContextPickerRoute &&
       !isPrintRoute
     ) {
-      if (needsPortalPicker(user)) {
+      if (needsPortalPicker(user) && !(isTeacherRoute && canEnterTeacherPortal(user))) {
         hasRedirectedRef.current = true;
         hardReplace("/portal-sec");
         return;
@@ -184,8 +185,9 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       const search = typeof window !== "undefined" ? window.location.search : "";
       const lockMuhasebe = active === "muhasebe" || isMuhasebeOnlyUser(user);
       const lockCoach = active === "coach" || isCoachOnlyUser(user);
+      const teacherVisit = isTeacherRoute && canEnterTeacherPortal(user);
 
-      if (lockMuhasebe && !isMuhasebeRoute) {
+      if (lockMuhasebe && !isMuhasebeRoute && !teacherVisit) {
         if (
           pathname === "/akademik-planlama" ||
           pathname.startsWith("/akademik-planlama/")
@@ -205,7 +207,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
         return;
       }
 
-      if (lockCoach && !isCoachRoute) {
+      if (lockCoach && !isCoachRoute && !teacherVisit) {
         const inboxPath = toPortalInboxPath(user, pathname, search);
         if (inboxPath) {
           hasRedirectedRef.current = true;
@@ -223,7 +225,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
         return;
       }
 
-      if (isTeacherRoute && !isTeacherPortalUser(user)) {
+      if (isTeacherRoute && !isTeacherPortalUser(user) && !canEnterTeacherPortal(user)) {
         hasRedirectedRef.current = true;
         hardReplace(getDefaultHomePath(user));
         return;
@@ -232,7 +234,8 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
       if (
         assignedPortalCodes(user).length > 1 &&
         active === "admin" &&
-        isPortalRoute
+        isPortalRoute &&
+        !teacherVisit
       ) {
         hasRedirectedRef.current = true;
         hardReplace("/dashboard");

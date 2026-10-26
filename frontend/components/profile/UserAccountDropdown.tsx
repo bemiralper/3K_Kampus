@@ -7,6 +7,7 @@ import { resolveActivePortal } from "@/lib/auth-routes";
 import CoachAvatar from "@/components/coach/CoachAvatar";
 import AdminPortalReturn from "@/components/profile/AdminPortalReturn";
 import { activatePortal, portalHomePath, type PortalView } from "@/lib/profile-api";
+import { clearContextGate } from "@/lib/post-login-routing";
 import "./user-account-dropdown.css";
 
 export type AccountMenuLink = {
@@ -193,6 +194,28 @@ export default function UserAccountDropdown({
             ))}
 
             <PortalSwitchItems user={user} onNavigate={close} />
+            {user?.teacher_portal ? (
+              <Link
+                href="/ogretmen"
+                className="uad-menu-item uad-menu-item-portal"
+                role="menuitem"
+                onClick={() => {
+                  clearContextGate();
+                  close();
+                }}
+              >
+                <span className="uad-menu-icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                  </svg>
+                </span>
+                <span className="uad-menu-copy">
+                  <span className="uad-menu-label">Öğretmen Portalı</span>
+                  <span className="uad-menu-desc">Ders, sınıf ve program</span>
+                </span>
+              </Link>
+            ) : null}
             {(user?.portals?.length ?? 0) < 2 && (
               <AdminPortalReturn
                 variant="dropdown-item"

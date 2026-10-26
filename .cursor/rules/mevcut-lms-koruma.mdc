@@ -1,0 +1,27 @@
+---
+description: Mobil geliştirmede mevcut Django, Next.js ve PostgreSQL LMS korunur
+alwaysApply: true
+---
+
+# 3K Kampüs — mevcut sistemi koruma
+
+En yüksek öncelik budur. Çalışan sistemi korumak, yeni özellikten önce gelir.
+
+Mobil uygulama mevcut LMS'nin yerine geçmez, LMS'yi yeniden yazmaz ve çalışan web sistemini değiştirmez. Mevcut sistemin kontrollü biçimde genişletilmiş bir istemcisidir. Ayrı mobil arayüz riski azaltır, sıfırlamaz. Ortak Django servislerindeki değişiklik web LMS'yi etkileyebilir.
+
+## Zorunlu kurallar
+
+- Mevcut çalışan özelliği silme, bozma veya izinsiz değiştirme.
+- Next.js web arayüzünü mobil için yeniden düzenleme. Mobil ayrı frontend'dir (`mobile/`).
+- Django modellerini ve servislerini önce yeniden kullan. Yeni API geriye uyumlu ve izole olsun (`/api/teacher/` gibi). Mevcut uçların parametresini, yanıtını ve davranışını mevcut istemciyi bozacak şekilde değiştirme.
+- Veritabanı tablosu, alanı, ilişkisi ve migration geçmişini onaysız değiştirme.
+- Canlı veritabanında geliştirme veya test yapma. Docker açıkken `localhost:5433` üretim verisidir. Yerel port test verisi değildir. Mobil migrate bu hacme uygulanmaz. `DJANGO_ENV=test` test veritabanında kalır.
+- Mevcut rol, yetki ve kurum/şube izolasyonunu koru. `sinif.write` topluca kaldırılmaz. Öğretmen kapsamı ek kapıdır. Başlık (`X-Portal`, `X-Sube-ID`) yetki kaynağı değildir. Sunucu her istekte doğrular.
+- Her geliştirme ayrı Git branch ve test ortamındadır.
+- Yeni kod mevcut web testlerini geçmek zorundadır. Test kırmızıysa canlıya alma.
+- Yayın öncesi yedek ve geri dönüş planı vardır. Mobil özellik mümkün olduğunca feature flag ile açılır.
+- Her aşamada mevcut sistem üzerindeki olası etkiyi raporla.
+
+## Değişiklik prosedürü
+
+Django veya PostgreSQL değişikliği gerekiyorsa, uygulamadan önce: mevcut kod ve bağımlılıkları incele, nedeni yaz, mevcut API'nin yetip yetmediğini değerlendir, etkilenecek dosya, model, uç ve modülü listele, risk ve geriye uyumluluk analizini yaz, test ve geri dönüş planını belirle, kullanıcı onayı al.

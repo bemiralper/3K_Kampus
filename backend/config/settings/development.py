@@ -16,10 +16,10 @@ DEMO_DATABASE_ALLOWED = os.environ.get('DEMO_DATABASE_ALLOWED', '').lower() in (
 ENVIRONMENT_LABEL = os.environ.get('ENVIRONMENT_LABEL', 'Geliştirme')
 
 ALLOWED_HOSTS = [
+    '*',
     'localhost', '127.0.0.1', '[::1]', '0.0.0.0',
     'backend',  # Docker Compose: Next.js proxy → backend container
-    '192.168.1.9', '192.168.1.12',
-    '192.168.2.7', '192.168.2.9',
+    'Taner-Alper.local', 'taner-alper.local',
 ]
 _extra_allowed_hosts = [
     h.strip() for h in os.environ.get('ALLOWED_HOSTS', '').split(',') if h.strip()

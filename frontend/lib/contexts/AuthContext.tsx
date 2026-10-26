@@ -51,6 +51,7 @@ export interface User {
   must_change_password?: boolean;
   permissions?: string[];
   portals?: { code: "admin" | "coach" | "muhasebe"; label: string; role_code?: string | null }[];
+  teacher_portal?: boolean;
   active_portal?: "admin" | "coach" | "muhasebe" | null;
 }
 

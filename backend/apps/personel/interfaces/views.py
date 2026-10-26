@@ -809,6 +809,27 @@ def gorevlendirme_list_api(request):
     })
 
 
+def _duplicate_assignment_message(personel_id, egitim_yili_id, gorev_sube_id, rol_id, brans_id, exclude_id=None):
+    """Aynı yıl ve personelde aynı branş, ya da aynı şubede branşsız aynı rol tekrarlanmasın."""
+    from apps.personel.domain.models import PersonelGorevlendirme
+
+    existing = PersonelGorevlendirme.objects.filter(
+        personel_id=personel_id,
+        egitim_yili_id=egitim_yili_id,
+    )
+    if exclude_id:
+        existing = existing.exclude(pk=exclude_id)
+    if brans_id and existing.filter(brans_id=brans_id).exists():
+        return 'Bu personelde bu branş için zaten bir görevlendirme var. Aynı branşa ikinci görev açılmaz.'
+    if (
+        not brans_id
+        and rol_id
+        and existing.filter(rol_id=rol_id, brans__isnull=True, gorev_sube_id=gorev_sube_id).exists()
+    ):
+        return 'Bu personelde bu şubede aynı rol için zaten bir görevlendirme var.'
+    return None
+
+
 @csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
@@ -908,6 +929,16 @@ def gorevlendirme_create_api(request):
         if data.get('gorev_bitis'):
             from datetime import datetime
             gorev_bitis = datetime.strptime(data['gorev_bitis'], '%Y-%m-%d').date()
+
+        duplicate = _duplicate_assignment_message(
+            personel_id,
+            egitim_yili_id,
+            gorev_sube_id,
+            data.get('rol_id'),
+            data.get('brans_id'),
+        )
+        if duplicate:
+            return JsonResponse({'success': False, 'error': duplicate}, status=400)
         
         gorevlendirme = PersonelGorevlendirme.objects.create(
             kurum_id=kurum_id,
@@ -1099,6 +1130,17 @@ def gorevlendirme_detail_api(request, pk):
                 gorevlendirme.aktif_mi = data['aktif_mi']
             if 'notlar' in data:
                 gorevlendirme.notlar = data['notlar']
+
+            duplicate = _duplicate_assignment_message(
+                gorevlendirme.personel_id,
+                gorevlendirme.egitim_yili_id,
+                gorevlendirme.gorev_sube_id,
+                gorevlendirme.rol_id,
+                gorevlendirme.brans_id,
+                exclude_id=gorevlendirme.id,
+            )
+            if duplicate:
+                return JsonResponse({'success': False, 'error': duplicate}, status=400)
             
             gorevlendirme.save()
             

@@ -120,6 +120,25 @@ def portal_roles(user) -> dict:
     return chosen
 
 
+def has_teacher_assignment(user) -> bool:
+    """Aktif öğretmen görevlendirmesi. Yönetici paneline katlanan rolü ayrıca görünür kılar."""
+    try:
+        personel = user.personel
+    except Exception:
+        return False
+    if personel is None:
+        return False
+    from apps.personel.domain.models import PersonelGorevlendirme
+
+    return PersonelGorevlendirme.objects.filter(
+        personel=personel,
+        aktif_mi=True,
+        rol__code='ogretmen',
+        rol__is_active=True,
+        rol__silindi_mi=False,
+    ).exists()
+
+
 def portals_payload(user) -> list[dict]:
     roles = portal_roles(user)
     items = []

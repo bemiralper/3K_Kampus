@@ -1,0 +1,38 @@
+---
+description: Mobil geliştirmede mevcut Django, Next.js ve PostgreSQL LMS korunur
+alwaysApply: true
+---
+
+# 3K Kampüs — Mevcut sistemi koru
+
+En yüksek öncelik: çalışan Django + Next.js + PostgreSQL LMS’nin işlevleri, verileri, API sözleşmeleri ve web deneyimi korunur. Yeni özellik, çalışan sistemi korumaktan sonra gelir.
+
+Mobil uygulama LMS’nin yerine geçmez, LMS’yi yeniden yazmaz ve web arayüzünü mobil için yeniden düzenlemez. Mevcut sistemin kontrollü biçimde genişletilmiş bir istemcisidir.
+
+Ayrı mobil arayüz riski azaltır, sıfırlamaz. Ortak Django servislerindeki değişiklik web LMS’yi etkileyebilir. Backend değişikliği ayrıca denetlenir.
+
+## Zorunlu kurallar
+
+- Mevcut çalışan özelliği silme, bozma veya izinsiz değiştirme.
+- Next.js ekranlarını ve bileşenlerini mobil için yeniden düzenleme. Mobil ayrı frontend’dir (`mobile/`).
+- Mevcut Django modellerini ve servislerini önce yeniden kullan.
+- Yeni API geriye uyumlu ve izole olur. Mevcut uçların davranışı, parametresi ve yanıtı mevcut istemciyi bozacak şekilde değişmez.
+- Tablo, alan, ilişki ve migration geçmişi onaysız değişmez.
+- Canlı veritabanında geliştirme veya test yapma. Docker açıkken `localhost:5433` üretim verisidir. Yerel port test verisi değildir. Mobil migrate bu hacme uygulanmaz. `DJANGO_ENV=test` test veritabanında kalır.
+- Mevcut rol, yetki ve kurum/şube izolasyonunu koru. `sinif.write` topluca kaldırılmaz.
+- Her geliştirme ayrı Git branch üzerindedir.
+- Yeni kod mevcut web testlerini geçmek zorundadır. Test kırmızıysa canlıya alınmaz.
+- Test ortamında doğrulanmayan değişiklik canlıya aktarılmaz.
+- Yayın öncesi geri dönüş planı ve yedek vardır.
+- Mobil özellik mümkün olduğunca feature flag ile açılır.
+- Her aşamada mevcut sistem üzerindeki olası etki raporlanır.
+
+## Değişiklik prosedürü
+
+Django veya PostgreSQL değişikliği gerekiyorsa, uygulanmadan önce:
+
+- Mevcut kod ve bağımlılıklar incelenir.
+- Neden yazılır. Mevcut API’nin yetip yetmediği değerlendirilir.
+- Etkilenecek dosya, model, uç ve modül listelenir.
+- Risk, geriye uyumluluk, test ve geri dönüş planı yazılır.
+- Kullanıcı onayı olmadan değişiklik uygulanmaz.

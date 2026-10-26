@@ -5,6 +5,17 @@ from ._idempotent import AddFieldIfMissing
 
 def _heal(apps, schema_editor):
     # Canlı Docker migrate sırasında kirliliği temizle + DAT'ı yeniden hizala.
+    # `program` sütunu 0034'te gelir. Boş kurulumda güncel model bu sütunu
+    # sorduğu için temizlik o adımdan önce çalışamaz.
+    with schema_editor.connection.cursor() as cursor:
+        columns = {
+            column.name
+            for column in schema_editor.connection.introspection.get_table_description(
+                cursor, 'olcme_degerlendirme_topic',
+            )
+        }
+    if 'program' not in columns:
+        return
     from apps.coaching.olcme_degerlendirme.services.curriculum_heal import (
         uygula_karisan_kazanim_temizligi,
     )

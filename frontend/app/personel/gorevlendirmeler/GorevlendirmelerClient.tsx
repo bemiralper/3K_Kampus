@@ -326,9 +326,26 @@ export default function GorevlendirmelerClient() {
     );
   });
 
+  const personGroups = Array.from(
+    filteredGorevlendirmeler.reduce((groups, item) => {
+      const current = groups.get(item.personel_id) ?? [];
+      current.push(item);
+      groups.set(item.personel_id, current);
+      return groups;
+    }, new Map<number, Gorevlendirme[]>()),
+  ).sort(([, left], [, right]) => (left[0]?.personel_ad || "").localeCompare(right[0]?.personel_ad || "", "tr"));
+
+  const repeatedDuty = (item: Gorevlendirme, siblings: Gorevlendirme[]) =>
+    siblings.some((other) => {
+      if (other.id === item.id) return false;
+      if (item.brans_id && other.brans_id === item.brans_id) return true;
+      return !item.brans_id && !other.brans_id && other.rol_id === item.rol_id && other.gorev_sube_id === item.gorev_sube_id;
+    });
+
   // Stats
   const totalCount = gorevlendirmeler.length;
   const aktifCount = gorevlendirmeler.filter(g => g.aktif_mi).length;
+  const personelCount = new Set(gorevlendirmeler.map((item) => item.personel_id)).size;
 
   // Icons
   const assignmentIcon = (
@@ -347,12 +364,6 @@ export default function GorevlendirmelerClient() {
       <polyline points="17 11 19 13 23 9" />
     </svg>
   );
-
-  // Helper function for icon colors
-  const getIconColor = (index: number) => {
-    const colors = ["blue", "green", "purple", "orange", "pink", "teal"];
-    return colors[index % colors.length];
-  };
 
   // Get drawer title
   const getDrawerTitle = () => {
@@ -405,97 +416,58 @@ export default function GorevlendirmelerClient() {
     }
 
     return (
-      <table className="gv-table">
-        <thead>
-          <tr>
-            <th>Personel</th>
-            <th>Rol</th>
-            <th>Branş</th>
-            <th>Başlangıç</th>
-            <th>Bitiş</th>
-            <th>Durum</th>
-            <th style={{ width: "100px" }}>İşlemler</th>
-          </tr>
-        </thead>
-        <tbody>
-          {filteredGorevlendirmeler.map((item, index) => (
-            <tr key={item.id}>
-              <td>
-                <div className="gv-cell-with-icon">
-                  <div className={`gv-cell-icon ${getIconColor(index)}`}>
-                    {assignmentIcon}
-                  </div>
-                  <div className="gv-cell-info">
-                    <Link
-                      href={`${personelHomeHref}/${item.personel_id}`}
-                      className="gv-cell-primary"
-                      style={{ color: "inherit", textDecoration: "none" }}
-                    >
-                      {item.personel_ad}
-                    </Link>
-                    <span className="gv-cell-secondary">{item.gorev_sube_ad || "-"}</span>
-                  </div>
-                </div>
-              </td>
-              <td>
-                {item.rol_ad ? (
-                  <span className="gv-badge gv-badge-primary">{item.rol_ad}</span>
-                ) : (
-                  <span className="gv-text-muted">-</span>
-                )}
-              </td>
-              <td>
-                {item.brans_ad ? (
-                  <span className="gv-badge gv-badge-secondary">{item.brans_ad}</span>
-                ) : (
-                  <span className="gv-text-muted">-</span>
-                )}
-              </td>
-              <td>{formatDate(item.gorev_baslangic)}</td>
-              <td>{formatDate(item.gorev_bitis)}</td>
-              <td>
-                <span className={`gv-badge ${item.aktif_mi ? "gv-badge-success" : "gv-badge-danger"}`}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    {item.aktif_mi ? (
-                      <polyline points="20 6 9 17 4 12" />
-                    ) : (
-                      <>
-                        <line x1="18" y1="6" x2="6" y2="18" />
-                        <line x1="6" y1="6" x2="18" y2="18" />
-                      </>
-                    )}
-                  </svg>
-                  {item.aktif_mi ? "Aktif" : "Pasif"}
+      <div className="gv-people">
+        {personGroups.map(([personelId, items]) => {
+          const first = items[0];
+          const branches = Array.from(new Set(items.map((item) => item.gorev_sube_ad).filter(Boolean)));
+          const hasRepeat = items.some((item) => repeatedDuty(item, items));
+          return (
+            <article key={personelId} className="gv-person">
+              <div className="gv-person-id">
+                <Link href={`${personelHomeHref}/${personelId}`} className="gv-person-name">
+                  {first.personel_ad}
+                </Link>
+                <span className="gv-person-meta">
+                  {branches.join(" · ") || "Şube yok"}
+                  {" · "}
+                  {items.length} görev
                 </span>
-              </td>
-              <td>
-                <div className="gv-row-actions">
-                  <button
-                    className="gv-row-action-btn"
-                    title="Düzenle"
-                    onClick={() => handleOpenEdit(item)}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                    </svg>
-                  </button>
-                  <button
-                    className="gv-row-action-btn gv-danger"
-                    title="Sil"
-                    onClick={() => handleDeleteClick(item)}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <polyline points="3 6 5 6 21 6" />
-                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                    </svg>
-                  </button>
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+              <div className="gv-duties">
+                {items.map((item) => {
+                  const title = [item.rol_ad, item.brans_ad].filter(Boolean).join(" · ") || "Görev";
+                  const dates = [formatDate(item.gorev_baslangic), item.gorev_bitis ? formatDate(item.gorev_bitis) : ""]
+                    .filter(Boolean)
+                    .join(" – ");
+                  return (
+                    <div key={item.id} className={`gv-duty${repeatedDuty(item, items) ? " is-duplicate" : ""}${item.aktif_mi ? "" : " is-passive"}`}>
+                      <div className="gv-duty-copy">
+                        <strong>{title}</strong>
+                        <span>{dates}{item.aktif_mi ? "" : " · Pasif"}</span>
+                      </div>
+                      <button className="gv-row-action-btn" type="button" title="Düzenle" onClick={() => handleOpenEdit(item)}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                        </svg>
+                      </button>
+                      <button className="gv-row-action-btn gv-danger" type="button" title="Sil" onClick={() => handleDeleteClick(item)}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="3 6 5 6 21 6" />
+                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+                {hasRepeat ? (
+                  <p className="gv-duty-note">Aynı branş veya aynı rol birden fazla kez kayıtlı. Fazla olanı silebilirsiniz.</p>
+                ) : null}
+              </div>
+            </article>
+          );
+        })}
+      </div>
     );
   };
 
@@ -548,6 +520,13 @@ export default function GorevlendirmelerClient() {
           <div className="gv-quick-stat-info">
             <h4>{totalCount}</h4>
             <span>Toplam Görevlendirme</span>
+          </div>
+        </div>
+        <div className="gv-quick-stat">
+          <div className="gv-quick-stat-icon purple">{assignmentIcon}</div>
+          <div className="gv-quick-stat-info">
+            <h4>{personelCount}</h4>
+            <span>Personel</span>
           </div>
         </div>
         <div className="gv-quick-stat">

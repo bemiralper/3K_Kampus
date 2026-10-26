@@ -138,6 +138,11 @@ export function isStudentUser(user: User | null): boolean {
  * Yalnızca öğretmen görevi olan site kullanıcısı.
  * Yönetici, koç ve muhasebe kendi panellerinde kalır.
  */
+/** Aktif öğretmen görevlendirmesi var. Yönetici veya koç paneli de açıksa otomatik yönlendirme yapmaz. */
+export function canEnterTeacherPortal(user: User | null): boolean {
+  return !!user?.teacher_portal;
+}
+
 export function isTeacherPortalUser(user: User | null): boolean {
   if (!user || user.is_staff || user.is_superuser) return false;
   if (isStudentUser(user) || needsPortalPicker(user)) return false;

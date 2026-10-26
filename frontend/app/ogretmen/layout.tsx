@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 
 import { useAuth } from "@/lib/contexts/AuthContext";
+import { isTeacherPortalUser } from "@/lib/auth-routes";
+import { activatePortal, portalHomePath } from "@/lib/profile-api";
 import { TeacherProvider, useTeacher } from "@/lib/teacher-web";
 import "./ogretmen.css";
 
@@ -25,7 +27,7 @@ function current(pathname: string, href: string) {
 function Frame({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const { scope, branches, yearNames, profileName, termName, loading, error, choose, clearScope } = useTeacher();
   const [navOpen, setNavOpen] = useState(false);
   const menuRef = useRef<HTMLButtonElement>(null);
@@ -171,6 +173,21 @@ function Frame({ children }: { children: ReactNode }) {
               Şube değiştir
             </button>
           ) : null}
+          {!isTeacherPortalUser(user)
+            ? (user?.portals ?? []).map((portal) => (
+                <button
+                  key={portal.code}
+                  type="button"
+                  onClick={() => {
+                    void activatePortal(portal.code).then((res) => {
+                      if (res.success) window.location.assign(portalHomePath(portal.code));
+                    });
+                  }}
+                >
+                  {portal.label}
+                </button>
+              ))
+            : null}
           <button
             type="button"
             onClick={() => {

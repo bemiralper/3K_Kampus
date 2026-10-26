@@ -195,6 +195,47 @@ class PersonelSubeIsolationAPITest(TestCase):
         self.assertIn(personel.id, ids_a)
         self.assertIn(personel.id, ids_b)
 
+    def test_same_branch_cannot_be_assigned_twice(self):
+        from apps.egitim_tanimlari.models import Brans
+
+        manage_user = User.objects.create_user(username='personeliso_brans', password='test')
+        _assign_personel_manage(manage_user, self.kurum)
+        self.client.force_login(manage_user)
+        brans = Brans.objects.create(kurum=self.kurum, sube=self.sube_a, ad='Matematik', kod='MAT')
+        personel = Personel.objects.create(
+            kurum=self.kurum, sube=self.sube_a, ad='Cift', soyad='Brans', aktif_mi=True,
+        )
+        headers = {
+            'HTTP_X_KURUM_ID': str(self.kurum.id),
+            'HTTP_X_SUBE_ID': str(self.sube_a.id),
+            'HTTP_X_EGITIMYILI_ID': str(self.yil.id),
+        }
+        payload = {
+            'personel_id': personel.id,
+            'egitim_yili_id': self.yil.id,
+            'gorev_sube_id': self.sube_a.id,
+            'rol_id': self.gorev_rol.id,
+            'brans_id': brans.id,
+            'aktif_mi': True,
+        }
+        first = self.client.post(
+            '/personel/api/gorevlendirme/create/',
+            data=json.dumps(payload),
+            content_type='application/json',
+            **headers,
+        )
+        self.assertEqual(first.status_code, 200, first.content)
+        second = self.client.post(
+            '/personel/api/gorevlendirme/create/',
+            data=json.dumps({**payload, 'gorev_sube_id': self.sube_b.id}),
+            content_type='application/json',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+            HTTP_X_SUBE_ID=str(self.sube_b.id),
+            HTTP_X_EGITIMYILI_ID=str(self.yil.id),
+        )
+        self.assertEqual(second.status_code, 400)
+        self.assertIn('branş', second.json().get('error', ''))
+
     def test_gorevlendirme_list_requires_sube(self):
         res = self.client.get(
             '/personel/api/gorevlendirmeler/',

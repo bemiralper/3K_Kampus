@@ -82,6 +82,7 @@ class PortalSelectionTests(TestCase):
         self.assertEqual(codes, ['admin', 'coach'])
         self.assertIsNone(data['user']['active_portal'])
         self.assertEqual(data['user']['role_code'], 'koc')
+        self.assertTrue(data['user']['teacher_portal'])
 
     def test_selecting_admin_uses_teacher_permissions_only(self):
         response = self.client.post(
@@ -129,6 +130,7 @@ class PortalSelectionTests(TestCase):
         data = self.client.get(ME_URL).json()
         codes = [item['code'] for item in data['user']['portals']]
         self.assertEqual(codes, ['coach'])
+        self.assertFalse(data['user']['teacher_portal'])
         response = self.client.post(
             PORTAL_URL,
             data=json.dumps({'portal': 'admin'}),

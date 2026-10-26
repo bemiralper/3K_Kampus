@@ -40,6 +40,7 @@ services:
       - ./backend:/app/backend
       # Host media ile aynı olsun (named volume host'taki dosyaları gizler)
       - ./backend/media:/app/backend/media
+      - ./secrets:/run/secrets:ro
     ports:
       - "8000:8000"
     depends_on:

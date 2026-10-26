@@ -16,7 +16,7 @@ export default function PortalSecPage() {
   const router = useRouter();
   const { user, isLoading: authLoading, checkAuth } = useAuth();
   const [error, setError] = useState<string | null>(null);
-  const [submitting, setSubmitting] = useState<PortalView | null>(null);
+  const [submitting, setSubmitting] = useState<PortalView | "teacher" | null>(null);
 
   useEffect(() => {
     if (authLoading) return;
@@ -50,6 +50,12 @@ export default function PortalSecPage() {
     window.location.assign(portalHomePath(code));
   };
 
+  const openTeacher = () => {
+    setSubmitting("teacher");
+    clearContextGate();
+    window.location.assign("/ogretmen");
+  };
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 to-emerald-50/30 p-4">
       <div className="w-full max-w-lg bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
@@ -70,12 +76,13 @@ export default function PortalSecPage() {
             </div>
           )}
 
-          {portals.length === 0 ? (
+          {portals.length === 0 && !user.teacher_portal ? (
             <p className="text-center text-sm text-gray-500 py-8">
               Açılabilir panel bulunamadı. Yöneticinize başvurun.
             </p>
           ) : (
-            portals.map((portal) => {
+            <>
+            {portals.map((portal) => {
               const copy = PORTAL_COPY[portal.code];
               const busy = submitting === portal.code;
               return (
@@ -96,7 +103,25 @@ export default function PortalSecPage() {
                   </span>
                 </button>
               );
-            })
+            })}
+            {user.teacher_portal ? (
+              <button
+                type="button"
+                disabled={submitting !== null}
+                onClick={openTeacher}
+                className="w-full text-left px-4 py-4 rounded-xl border border-gray-200 hover:border-emerald-400 hover:bg-emerald-50/40 transition disabled:opacity-60"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="text-2xl" aria-hidden>📚</span>
+                  <span>
+                    <span className="block font-semibold text-gray-900">Öğretmen Portalı</span>
+                    <span className="block text-sm text-gray-500 mt-0.5">Ders programı, sınıflar ve notlar</span>
+                  </span>
+                  {submitting === "teacher" && <span className="ml-auto text-sm text-emerald-700">Açılıyor…</span>}
+                </span>
+              </button>
+            ) : null}
+            </>
           )}
         </div>
       </div>

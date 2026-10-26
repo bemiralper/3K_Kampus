@@ -12,6 +12,7 @@ import json
 
 from apps.auth_custom.application.portals import (
     portal_is_selectable,
+    has_teacher_assignment,
     portals_payload,
     session_portal,
     set_session_portal,
@@ -266,6 +267,7 @@ def _build_user_data(user, request=None):
 
     data['permissions'] = sorted(user_permission_codes(user))
     data['portals'] = portals_payload(user)
+    data['teacher_portal'] = has_teacher_assignment(user)
     data['active_portal'] = session_portal(request)
 
     return data
