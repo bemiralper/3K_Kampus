@@ -399,10 +399,26 @@ class ResourcePublisherViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='upload-logo')
     def upload_logo(self, request, pk=None):
+        import hashlib
+
+        from django.core.files.base import ContentFile
+
         from apps.resources.application.kapak import process_kapak_image, validate_kapak_upload
 
         publisher = self.get_object()
+        remove = str(request.data.get('remove') or '').lower() in {'1', 'true', 'yes'}
         file = request.FILES.get('logo') or request.FILES.get('file')
+        if remove and not file:
+            if publisher.logo:
+                publisher.logo.delete(save=False)
+                publisher.logo = None
+                publisher.save(update_fields=['logo', 'updated_at'])
+            publisher.refresh_from_db()
+            return Response({
+                'success': True,
+                'data': ResourcePublisherSerializer(publisher, context={'request': request}).data,
+                'message': 'Logo kaldırıldı.',
+            })
         if not file:
             return Response(
                 {'success': False, 'error': 'Logo dosyası gerekli.'},
@@ -416,14 +432,19 @@ class ResourcePublisherViewSet(viewsets.ModelViewSet):
             )
         try:
             processed = process_kapak_image(file)
+            raw = processed.read()
         except Exception as exc:
             return Response(
                 {'success': False, 'error': f'Logo işlenemedi: {exc}'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        # İçerik özeti dosya adına girer. Aynı adla üzerine yazmak tarayıcı
+        # önbelleğinde eski logoyu bırakıyordu; yeni dosya yeni adres alır.
+        digest = hashlib.sha1(raw).hexdigest()[:10]
+        content = ContentFile(raw, name=f'publisher_{publisher.id}_{digest}.jpg')
         if publisher.logo:
             publisher.logo.delete(save=False)
-        publisher.logo.save(f'publisher_{publisher.id}_logo.jpg', processed, save=True)
+        publisher.logo.save(content.name, content, save=True)
         publisher.refresh_from_db()
         return Response({
             'success': True,

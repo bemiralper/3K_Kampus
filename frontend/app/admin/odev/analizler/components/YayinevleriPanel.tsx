@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  clearPublisherLogo,
   createPublisher,
   deletePublisher,
   fetchPublishers,
@@ -20,6 +21,7 @@ type FormState = {
   aciklama: string;
   eslesme_anahtarlari: string;
   aktif_mi: boolean;
+  logo_url: string;
 };
 
 const EMPTY: FormState = {
@@ -29,7 +31,91 @@ const EMPTY: FormState = {
   aciklama: "",
   eslesme_anahtarlari: "",
   aktif_mi: true,
+  logo_url: "",
 };
+
+function PublisherLogoField({
+  inputRef,
+  previewUrl,
+  savedUrl,
+  onPick,
+  onRemove,
+}: {
+  inputRef: React.RefObject<HTMLInputElement>;
+  previewUrl: string | null;
+  savedUrl: string;
+  onPick: (file: File) => void;
+  onRemove: () => void;
+}) {
+  const src = previewUrl || resolveMediaUrl(savedUrl);
+  return (
+    <div className="kk-field">
+      <label className="kk-label">Logo</label>
+      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+        {src ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={src}
+            alt="Yayınevi logosu"
+            width={64}
+            height={64}
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 12,
+              objectFit: "contain",
+              border: "1px solid #e2e8f0",
+              background: "#fff",
+              flexShrink: 0,
+            }}
+          />
+        ) : (
+          <div
+            style={{
+              width: 64,
+              height: 64,
+              borderRadius: 12,
+              border: "1px dashed #cbd5e1",
+              background: "#f8fafc",
+              color: "#94a3b8",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 12,
+              flexShrink: 0,
+            }}
+          >
+            Logo yok
+          </div>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, alignItems: "flex-start" }}>
+          <input
+            ref={inputRef}
+            type="file"
+            accept="image/jpeg,image/png,image/webp,image/gif"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) onPick(file);
+            }}
+          />
+          <button type="button" className="kk-btn kk-btn-on-light" onClick={() => inputRef.current?.click()}>
+            {src ? "Logoyu değiştir" : "Logo ekle"}
+          </button>
+          {src && (
+            <button type="button" className="kk-btn kk-btn-on-light" onClick={onRemove}>
+              Logoyu kaldır
+            </button>
+          )}
+          <span style={{ fontSize: 12, color: "#64748b" }}>
+            PNG, JPG veya WebP. Kayıttan sonra listedeki logo da güncellenir.
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function unwrapList(data: unknown): ResourcePublisher[] {
   if (Array.isArray(data)) return data;
@@ -45,7 +131,11 @@ export default function YayinevleriPanel({ refreshKey = 0 }: { refreshKey?: numb
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [form, setForm] = useState<FormState>(EMPTY);
   const [saving, setSaving] = useState(false);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const [removeLogo, setRemoveLogo] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const logoInputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [deleteBlock, setDeleteBlock] = useState<{
     message: string;
@@ -64,8 +154,25 @@ export default function YayinevleriPanel({ refreshKey = 0 }: { refreshKey?: numb
     load();
   }, [load, refreshKey]);
 
+  useEffect(() => {
+    if (!logoFile) {
+      setLogoPreview(null);
+      return;
+    }
+    const url = URL.createObjectURL(logoFile);
+    setLogoPreview(url);
+    return () => URL.revokeObjectURL(url);
+  }, [logoFile]);
+
+  const resetLogoDraft = () => {
+    setLogoFile(null);
+    setRemoveLogo(false);
+    if (logoInputRef.current) logoInputRef.current.value = "";
+  };
+
   const openCreate = () => {
     setForm(EMPTY);
+    resetLogoDraft();
     setError(null);
     setDrawerOpen(true);
   };
@@ -78,7 +185,9 @@ export default function YayinevleriPanel({ refreshKey = 0 }: { refreshKey?: numb
       aciklama: p.aciklama || "",
       eslesme_anahtarlari: p.eslesme_anahtarlari || "",
       aktif_mi: p.aktif_mi,
+      logo_url: p.logo_url || "",
     });
+    resetLogoDraft();
     setError(null);
     setDrawerOpen(true);
   };
@@ -100,13 +209,33 @@ export default function YayinevleriPanel({ refreshKey = 0 }: { refreshKey?: numb
     const res = form.id
       ? await updatePublisher(form.id, payload)
       : await createPublisher(payload);
-    setSaving(false);
     if (!res.success) {
+      setSaving(false);
       setError(res.error || "Kaydedilemedi");
       return;
     }
+    const savedId = form.id || res.data?.id;
+    if (savedId && logoFile) {
+      const up = await uploadPublisherLogo(savedId, logoFile);
+      if (!up.success) {
+        setSaving(false);
+        setForm((prev) => ({ ...prev, id: savedId }));
+        setError(up.error || "Yayınevi kaydedildi, logo yüklenemedi");
+        return;
+      }
+    } else if (savedId && removeLogo) {
+      const up = await clearPublisherLogo(savedId);
+      if (!up.success) {
+        setSaving(false);
+        setForm((prev) => ({ ...prev, id: savedId }));
+        setError(up.error || "Yayınevi kaydedildi, logo kaldırılamadı");
+        return;
+      }
+    }
+    setSaving(false);
     setDrawerOpen(false);
-    notifyResourcesChanged({ type: "publisher" });
+    resetLogoDraft();
+    notifyResourcesChanged({ type: logoFile || removeLogo ? "publisher-logo" : "publisher" });
     load();
   };
 
@@ -245,13 +374,15 @@ export default function YayinevleriPanel({ refreshKey = 0 }: { refreshKey?: numb
               render: (p) => (
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   <label style={{ cursor: "pointer", fontSize: 13, color: "#0061a6" }}>
-                    Logo
+                    {p.logo_url ? "Logoyu değiştir" : "Logo"}
                     <input
+                      key={`${p.id}-${p.logo_url || "none"}`}
                       type="file"
-                      accept="image/*"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
                       hidden
                       onChange={(e) => {
                         const f = e.target.files?.[0];
+                        e.target.value = "";
                         if (f) handleLogo(p.id, f);
                       }}
                     />
@@ -307,6 +438,20 @@ export default function YayinevleriPanel({ refreshKey = 0 }: { refreshKey?: numb
               <button type="button" onClick={() => setDrawerOpen(false)}>×</button>
             </div>
             <div className="kk-drawer-body">
+              <PublisherLogoField
+                inputRef={logoInputRef}
+                previewUrl={logoPreview}
+                savedUrl={removeLogo ? "" : form.logo_url}
+                onPick={(file) => {
+                  setLogoFile(file);
+                  setRemoveLogo(false);
+                }}
+                onRemove={() => {
+                  setLogoFile(null);
+                  setRemoveLogo(true);
+                  if (logoInputRef.current) logoInputRef.current.value = "";
+                }}
+              />
               <div className="kk-field">
                 <label className="kk-label">Yayınevi Adı *</label>
                 <input className="kk-input" value={form.ad} onChange={(e) => setForm({ ...form, ad: e.target.value })} />

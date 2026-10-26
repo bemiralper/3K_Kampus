@@ -1,5 +1,9 @@
+from io import BytesIO
+
 from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from PIL import Image
 from rest_framework.test import APIClient
 
 from apps.egitim_tanimlari.models import Ders, SinifSeviyesi
@@ -87,6 +91,49 @@ class ResourcePublisherApiTest(TestCase):
         )
 
         self.assertEqual(res.status_code, 200)
+
+    def _jpeg(self, color, name='logo.jpg'):
+        buf = BytesIO()
+        Image.new('RGB', (24, 24), color).save(buf, format='JPEG')
+        return SimpleUploadedFile(name, buf.getvalue(), content_type='image/jpeg')
+
+    def test_logo_can_be_replaced_and_removed(self):
+        pub = ResourcePublisher.objects.create(kurum=self.kurum, ad='3-4-5', kisa_ad='345')
+        first = self.client.post(
+            f'{URL}{pub.id}/upload-logo/',
+            {'logo': self._jpeg('red', 'a.jpg')},
+            format='multipart',
+            **self.headers,
+        )
+        self.assertEqual(first.status_code, 200, first.data)
+        pub.refresh_from_db()
+        first_name = pub.logo.name
+        first_url = first.data['data']['logo_url']
+        self.assertTrue(first_name)
+        self.assertIn('v=', first_url)
+
+        second = self.client.post(
+            f'{URL}{pub.id}/upload-logo/',
+            {'logo': self._jpeg('blue', 'b.jpg')},
+            format='multipart',
+            **self.headers,
+        )
+        self.assertEqual(second.status_code, 200, second.data)
+        pub.refresh_from_db()
+        self.assertNotEqual(pub.logo.name, first_name)
+        self.assertNotEqual(second.data['data']['logo_url'], first_url)
+        self.assertFalse(pub.logo.storage.exists(first_name))
+
+        cleared = self.client.post(
+            f'{URL}{pub.id}/upload-logo/',
+            {'remove': '1'},
+            format='multipart',
+            **self.headers,
+        )
+        self.assertEqual(cleared.status_code, 200, cleared.data)
+        pub.refresh_from_db()
+        self.assertFalse(pub.logo)
+        self.assertEqual(cleared.data['data']['logo_url'], '')
 
     def test_delete_ok_when_unused(self):
         pub = ResourcePublisher.objects.create(

@@ -355,6 +355,18 @@ export const websiteAdminApi = {
     fd.append(field, file);
     return adminFetch<unknown>(`/${resource}/${id}/upload/`, { method: 'POST', body: fd });
   },
+  copySinav: (id: number, data: { tarih: string; saat?: string | null; saat_bitis?: string | null }) =>
+    adminFetch<SinavTakvim>(`/sinav-takvim/${id}/kopyala/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  reuseSinavImage: (id: number, kaynakId: number) =>
+    adminFetch<SinavTakvim>(`/sinav-takvim/${id}/gorsel-kopyala/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kaynak_id: kaynakId }),
+    }),
 };
 
 // ─── CMS v2 Admin + Public ───────────────────────────────────

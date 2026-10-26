@@ -1,5 +1,8 @@
 """Website views — public + admin CRUD."""
 import json
+import os
+
+from django.core.files.base import ContentFile
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -94,6 +97,18 @@ def _upload_image(request, instance, field_name, file_key, max_mb=5):
     setattr(instance, field_name, uploaded)
     instance.save()
     return None
+
+
+def _copy_sinav_gorsel(source, target):
+    """Sınav görselini yeni kayda kopyalar. Dosyalar birbirinden bağımsız kalır."""
+    if not source.gorsel or source.pk == target.pk:
+        return
+    with source.gorsel.open('rb') as handle:
+        payload = handle.read()
+    filename = os.path.basename(source.gorsel.name) or 'gorsel.jpg'
+    if target.gorsel:
+        target.gorsel.delete(save=False)
+    target.gorsel.save(filename, ContentFile(payload), save=True)
 
 
 # ── Public API ──
@@ -597,6 +612,79 @@ def api_admin_sinav_upload(request, pk):
     if upload_err:
         return upload_err
     return JsonResponse({'success': True, 'data': serialize_sinav(s, request)})
+
+
+def _time_from_copy(data, field_name, fallback):
+    """Alan JSON'da yoksa kaynak saati korunur; boş gönderildiyse saat silinir."""
+    if field_name not in data:
+        return fallback
+    raw = data[field_name]
+    if raw is None or raw == '':
+        return None
+    return SinavTakvim._meta.get_field(field_name).to_python(raw)
+
+
+@csrf_exempt
+def api_admin_sinav_copy(request, pk):
+    """Kayıtlı bir sınavı başka bir güne kopyalar. Görsel de yeni kayda taşınır."""
+    kurum, err = _admin_kurum(request)
+    if err:
+        return err
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    source = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
+    data = _parse_json(request)
+    if data is None:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+    if not data.get('tarih'):
+        return JsonResponse({'success': False, 'error': 'Yeni tarih zorunludur'}, status=400)
+    try:
+        tarih = SinavTakvim._meta.get_field('tarih').to_python(data['tarih'])
+        saat = _time_from_copy(data, 'saat', source.saat)
+        saat_bitis = _time_from_copy(data, 'saat_bitis', source.saat_bitis)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    clone = SinavTakvim(
+        kurum=kurum,
+        tur=source.tur,
+        tarih=tarih,
+        saat=saat,
+        saat_bitis=saat_bitis,
+        kapsam=source.kapsam,
+        baslik=source.baslik,
+        yayin_adi=source.yayin_adi,
+        aciklama=source.aciklama,
+        aktif=source.aktif,
+    )
+    clone.save()
+    _copy_sinav_gorsel(source, clone)
+    clone.refresh_from_db()
+    return JsonResponse({'success': True, 'data': serialize_sinav(clone, request)}, status=201)
+
+
+@csrf_exempt
+def api_admin_sinav_gorsel_copy(request, pk):
+    """Başka bir sınavın görselini bu kayda kopyalar. Yeniden dosya yüklemeye gerek kalmaz."""
+    kurum, err = _admin_kurum(request)
+    if err:
+        return err
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    target = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
+    data = _parse_json(request)
+    if data is None:
+        return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+    kaynak_id = data.get('kaynak_id')
+    if not kaynak_id:
+        return JsonResponse({'success': False, 'error': 'Görsel kaynağı seçilmelidir'}, status=400)
+    source = SinavTakvim.objects.filter(pk=kaynak_id, kurum=kurum).first()
+    if source is None:
+        return JsonResponse({'success': False, 'error': 'Kaynak sınav bulunamadı'}, status=404)
+    if not source.gorsel:
+        return JsonResponse({'success': False, 'error': 'Seçilen sınavda görsel yok'}, status=400)
+    _copy_sinav_gorsel(source, target)
+    target.refresh_from_db()
+    return JsonResponse({'success': True, 'data': serialize_sinav(target, request)})
 
 
 @csrf_exempt

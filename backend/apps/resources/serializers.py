@@ -70,14 +70,22 @@ class ResourcePublisherSerializer(serializers.ModelSerializer):
         read_only_fields = ['kurum_id', 'logo', 'created_at', 'updated_at']
 
     def get_logo_url(self, obj):
-        # Kitap kapakları gibi göreli /media/... — Next rewrite ile uyumlu
+        # Kitap kapakları gibi göreli /media/... — Next rewrite ile uyumlu.
+        # updated_at sorgu parametresi, aynı yayınevinin logosu değişince
+        # tarayıcının eski dosyayı göstermesini engeller.
         if not obj.logo:
             return ''
         try:
             from apps.resources.application.kapak import media_path_url
-            return media_path_url(obj.logo.name)
+            url = media_path_url(obj.logo.name)
         except (ValueError, AttributeError):
             return ''
+        updated = getattr(obj, 'updated_at', None)
+        if updated is not None and url:
+            stamp = int(updated.timestamp())
+            sep = '&' if '?' in url else '?'
+            return f'{url}{sep}v={stamp}'
+        return url
 
     def validate_ad(self, value):
         ad = re.sub(r'\s+', ' ', (value or '').strip())

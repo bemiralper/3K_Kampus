@@ -40,8 +40,12 @@ const EMPTY_FORM: FormState = {
   aciklama: '',
 };
 
-function formSnapshot(form: FormState, pendingImage: File | null) {
-  return JSON.stringify({ ...form, _pendingImage: pendingImage?.name ?? '' });
+function formSnapshot(form: FormState, pendingImage: File | null, reuseFromId: number | null = null) {
+  return JSON.stringify({
+    ...form,
+    _pendingImage: pendingImage?.name ?? '',
+    _reuse: reuseFromId ?? 0,
+  });
 }
 
 function examToForm(exam: SinavTakvim): FormState {
@@ -70,6 +74,13 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showUnsaved, setShowUnsaved] = useState(false);
   const [pendingTab, setPendingTab] = useState<SinavTabId | null>(null);
+  const [showAllExams, setShowAllExams] = useState(false);
+  const [reuseFromId, setReuseFromId] = useState<number | null>(null);
+  const [copyTarget, setCopyTarget] = useState<SinavTakvim | null>(null);
+  const [copyDate, setCopyDate] = useState('');
+  const [copySaat, setCopySaat] = useState('');
+  const [copySaatBitis, setCopySaatBitis] = useState('');
+  const [copying, setCopying] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const baselineRef = useRef('');
 
@@ -79,6 +90,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     const now = new Date();
     setMonth(now.getMonth());
     setYear(now.getFullYear());
+    setShowAllExams(false);
   }, [tab]);
 
   const filtered = useMemo(() => filterSinavByTab(sinavlar, tab), [sinavlar, tab]);
@@ -101,6 +113,28 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     return () => URL.revokeObjectURL(url);
   }, [pendingImage]);
 
+  const imageLibrary = useMemo(() => {
+    const seen = new Set<string>();
+    const items: { id: number; url: string; label: string; yayin: string }[] = [];
+    sinavlar.forEach(exam => {
+      const url = exam.gorsel_url || '';
+      if (!url) return;
+      const yayin = (exam.yayin_adi || '').trim();
+      const key = yayin ? yayin.toLocaleLowerCase('tr') : url;
+      if (seen.has(key)) return;
+      seen.add(key);
+      items.push({
+        id: exam.id,
+        url,
+        label: yayin || exam.baslik,
+        yayin: yayin.toLocaleLowerCase('tr'),
+      });
+    });
+    const current = form.yayin_adi.trim().toLocaleLowerCase('tr');
+    if (!current) return items;
+    return [...items].sort((a, b) => Number(b.yayin === current) - Number(a.yayin === current) || a.label.localeCompare(b.label, 'tr'));
+  }, [sinavlar, form.yayin_adi]);
+
   const byDate = useMemo(() => {
     const map: Record<string, SinavTakvim[]> = {};
     filtered.forEach(s => {
@@ -110,7 +144,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     return map;
   }, [filtered]);
 
-  const isDirty = () => formSnapshot(form, pendingImage) !== baselineRef.current;
+  const isDirty = () => formSnapshot(form, pendingImage, reuseFromId) !== baselineRef.current;
 
   const padDate = (d: number) => {
     const m = String(month + 1).padStart(2, '0');
@@ -132,6 +166,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     setEditId(0);
     setSelectedDate(dateKey);
     setPendingImage(null);
+    setReuseFromId(null);
     setForm(nextForm);
     baselineRef.current = formSnapshot(nextForm, null);
   };
@@ -141,6 +176,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     setEditId(exam.id);
     setSelectedDate(exam.tarih);
     setPendingImage(null);
+    setReuseFromId(null);
     setForm(nextForm);
     baselineRef.current = formSnapshot(nextForm, null);
   };
@@ -150,6 +186,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     setSelectedDate(null);
     setForm(EMPTY_FORM);
     setPendingImage(null);
+    setReuseFromId(null);
     baselineRef.current = '';
     setShowUnsaved(false);
     setPendingTab(null);
@@ -213,6 +250,12 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
           onMessage?.(up.error || 'Görsel yüklenemedi', 'error');
           return;
         }
+      } else if (reuseFromId && recordId && recordId > 0 && reuseFromId !== recordId) {
+        const reused = await websiteAdminApi.reuseSinavImage(recordId, reuseFromId);
+        if (!reused.success) {
+          onMessage?.(reused.error || 'Kayıtlı görsel kopyalanamadı', 'error');
+          return;
+        }
       }
 
       onMessage?.(editId === 0 ? 'Sınav eklendi' : 'Sınav güncellendi', 'success');
@@ -237,12 +280,57 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     onReload();
   };
 
+  const openCopy = (exam: SinavTakvim) => {
+    setCopyTarget(exam);
+    setCopyDate(exam.tarih);
+    setCopySaat(exam.saat || '');
+    setCopySaatBitis(exam.saat_bitis || '');
+  };
+
+  const submitCopy = async () => {
+    if (!copyTarget) return;
+    if (!copyDate) {
+      onMessage?.('Kopyanın tarihi seçilmelidir', 'error');
+      return;
+    }
+    setCopying(true);
+    try {
+      const res = await websiteAdminApi.copySinav(copyTarget.id, {
+        tarih: copyDate,
+        saat: copySaat || null,
+        saat_bitis: copySaatBitis || null,
+      });
+      if (!res.success) {
+        onMessage?.(res.error || 'Sınav kopyalanamadı', 'error');
+        return;
+      }
+      const [y, m] = copyDate.split('-').map(Number);
+      if (y && m) {
+        setYear(y);
+        setMonth(m - 1);
+      }
+      setShowAllExams(false);
+      setCopyTarget(null);
+      onMessage?.('Sınav seçilen güne kopyalandı', 'success');
+      onReload();
+    } finally {
+      setCopying(false);
+    }
+  };
+
   const dayExams = selectedDate ? byDate[selectedDate] || [] : [];
   const editingExam = editId && editId > 0 ? sinavlar.find(s => s.id === editId) : null;
-  const displayImage = previewUrl || resolveMediaUrl(editingExam?.gorsel_url) || null;
+  const reuseExam = reuseFromId ? sinavlar.find(s => s.id === reuseFromId) : null;
+  const displayImage = previewUrl
+    || (reuseExam ? resolveMediaUrl(reuseExam.gorsel_url) : null)
+    || resolveMediaUrl(editingExam?.gorsel_url)
+    || null;
   const g = WEBSITE_IMAGE_GUIDELINES.sinav;
 
   const turOptions = activeTab.types;
+  const monthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+  const monthExams = filtered.filter(exam => exam.tarih.startsWith(monthKey));
+  const listedExams = showAllExams ? filtered : monthExams;
 
   const prevMonth = () => {
     if (month === 0) { setMonth(11); setYear(y => y - 1); }
@@ -263,6 +351,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
         <div>
           <strong>YKS, 11. sınıf, LGS ve 7. sınıf takvimlerini ayrı yönetin</strong>
           Sekme seçin, boş bir güne tıklayın ve sınav bilgilerini kaydedin.
+          Aynı sınavı başka bir güne kopyalayabilir, görseli yeniden yüklemek yerine daha önce kullanılanlardan seçebilirsiniz.
           Görsel yalnızca ana sayfadaki sınav detay penceresinde görünür (1200×675 px, 16:9).
         </div>
       </div>
@@ -340,30 +429,50 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
 
       {filtered.length > 0 && (
         <div className="wam-exam-list" style={{ marginTop: '1.25rem' }}>
-          <h5 className="wam-exam-list-title">
-            {activeTab.listTitle} ({filtered.length})
-          </h5>
-          <div className="wam-cards-grid">
-            {filtered.map(exam => (
-              <button
-                key={exam.id}
-                type="button"
-                className="wam-exam-list-item"
-                onClick={() => openEdit(exam)}
-              >
-                {exam.gorsel_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={resolveMediaUrl(exam.gorsel_url) || ''} alt="" className="wam-item-thumb" />
-                ) : (
-                  <span className="wam-exam-list-badge" style={{ background: sinavTurColor(exam.tur) }}>{sinavTurBadge(exam.tur)}</span>
-                )}
-                <span className="wam-exam-list-text">
-                  <strong>{exam.baslik}</strong>
-                  <small>{exam.tarih} · {sinavTurLabel(exam.tur)}{exam.kapsam === 'turkiye_geneli' ? ' · TR Geneli' : ''}</small>
-                </span>
-              </button>
-            ))}
+          <div className="wam-exam-list-head">
+            <h5 className="wam-exam-list-title">
+              {showAllExams
+                ? `${activeTab.listTitle} (${filtered.length})`
+                : `${MONTH_NAMES[month]} ${year} · ${monthExams.length} sınav`}
+            </h5>
+            <button
+              type="button"
+              className="wam-btn wam-btn-ghost wam-btn-sm"
+              onClick={() => setShowAllExams(value => !value)}
+            >
+              {showAllExams ? 'Bu ayı göster' : `Tüm ${activeTab.label} (${filtered.length})`}
+            </button>
           </div>
+          {listedExams.length === 0 ? (
+            <p className="wam-field-hint">Bu ayda sınav yok. Takvimden bir gün seçerek ekleyin veya tüm listeyi açın.</p>
+          ) : (
+            <div className="wam-exam-cards">
+              {listedExams.map(exam => (
+                <div key={exam.id} className="wam-exam-list-item">
+                  <button type="button" className="wam-exam-list-open" onClick={() => openEdit(exam)}>
+                    {exam.gorsel_url ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={resolveMediaUrl(exam.gorsel_url) || ''} alt="" className="wam-item-thumb" />
+                    ) : (
+                      <span className="wam-exam-list-badge" style={{ background: sinavTurColor(exam.tur) }}>{sinavTurBadge(exam.tur)}</span>
+                    )}
+                    <span className="wam-exam-list-text">
+                      <strong>{exam.baslik}</strong>
+                      <small>{exam.tarih} · {sinavTurLabel(exam.tur)}{exam.kapsam === 'turkiye_geneli' ? ' · TR Geneli' : ''}</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="wam-exam-list-copy"
+                    title="Başka güne kopyala"
+                    onClick={() => openCopy(exam)}
+                  >
+                    Kopyala
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -405,6 +514,11 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
             <button type="button" className="wam-btn wam-btn-primary" disabled={saving} onClick={save}>
               {saving ? 'Kaydediliyor…' : 'Kaydet'}
             </button>
+            {editId !== null && editId > 0 && editingExam && (
+              <button type="button" className="wam-btn wam-btn-secondary" onClick={() => openCopy(editingExam)}>
+                Başka güne kopyala
+              </button>
+            )}
             {editId !== null && editId > 0 && (
               <button type="button" className="wam-btn wam-btn-danger" onClick={() => remove(editId)}>Sil</button>
             )}
@@ -473,18 +587,79 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
                 hidden
                 onChange={e => {
                   const f = e.target.files?.[0];
-                  if (f) setPendingImage(f);
+                  if (f) {
+                    setPendingImage(f);
+                    setReuseFromId(null);
+                  }
                   e.target.value = '';
                 }}
               />
               <button type="button" className="wam-btn wam-btn-secondary wam-btn-sm" onClick={() => fileRef.current?.click()}>
-                {displayImage ? 'Görseli Değiştir' : 'Görsel Seç'}
+                {displayImage ? 'Yeni dosya seç' : 'Görsel Seç'}
               </button>
               {pendingImage && <p className="wam-field-hint" style={{ marginTop: 6 }}>Kaydedince yüklenecek: {pendingImage.name}</p>}
+              {reuseExam && !pendingImage && (
+                <p className="wam-field-hint" style={{ marginTop: 6 }}>Kayıtlı görsel kullanılacak: {reuseExam.yayin_adi || reuseExam.baslik}</p>
+              )}
+            </div>
+          </div>
+          {imageLibrary.length > 0 && (
+            <div className="wam-gorsel-library">
+              <strong>Daha önce kullanılan görseller</strong>
+              <p>Aynı yayınevin görselini yeniden yüklemeden seçin. Yayın adı eşleşenler öne gelir.</p>
+              <div className="wam-gorsel-library-row">
+                {imageLibrary.map(item => (
+                  <button
+                    key={item.url}
+                    type="button"
+                    className={`wam-gorsel-thumb ${reuseFromId === item.id ? 'is-selected' : ''}`}
+                    title={item.label}
+                    onClick={() => {
+                      setReuseFromId(current => (current === item.id ? null : item.id));
+                      setPendingImage(null);
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={resolveMediaUrl(item.url) || ''} alt="" />
+                    <span>{item.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      </WamModal>
+
+      {copyTarget && (
+        <div
+          className="wam-modal-backdrop"
+          style={{ zIndex: 1200 }}
+          onClick={() => { if (!copying) setCopyTarget(null); }}
+          role="presentation"
+        >
+          <div className="wam-unsaved-dialog" style={{ textAlign: 'left' }} onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+            <h4>Başka güne kopyala</h4>
+            <p>
+              <strong>{copyTarget.baslik}</strong> seçilen tarihe kopyalanır. Başlık, yayın ve görsel aynen gelir;
+              tarihi ve saati değiştirebilirsiniz.
+              {modalOpen && isDirty() ? ' Kaydedilmemiş düzenlemeler kopyaya dahil edilmez; önce Kaydet’e basın.' : ''}
+            </p>
+            <WamInput label="Yeni tarih" type="date" value={copyDate} onChange={e => setCopyDate(e.target.value)} />
+            <div className="wam-form-grid">
+              <WamInput label="Başlangıç" type="time" value={copySaat} onChange={e => setCopySaat(e.target.value)} />
+              <WamInput label="Bitiş" type="time" value={copySaatBitis} onChange={e => setCopySaatBitis(e.target.value)} />
+            </div>
+            <div className="wam-unsaved-actions">
+              <button type="button" className="wam-btn wam-btn-primary" disabled={copying} onClick={submitCopy}>
+                {copying ? 'Kopyalanıyor…' : 'Kopyala'}
+              </button>
+              <button type="button" className="wam-btn wam-btn-ghost" disabled={copying} onClick={() => setCopyTarget(null)}>
+                Vazgeç
+              </button>
             </div>
           </div>
         </div>
-      </WamModal>
+      )}
 
       {/* Kaydedilmemiş değişiklik uyarısı */}
       {showUnsaved && (

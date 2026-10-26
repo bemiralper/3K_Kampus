@@ -423,6 +423,8 @@
   position: relative;
   aspect-ratio: 1;
   min-height: 72px;
+  min-width: 0;
+  overflow: hidden;
   border: 1px solid #e8edf3;
   border-radius: 12px;
   background: #fff;
@@ -838,26 +840,78 @@
 }
 
 /* ——— Exam list (admin calendar) ——— */
+.wam-exam-list-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
 .wam-exam-list-title {
-  margin: 0 0 0.75rem;
+  margin: 0;
   font-size: 14px;
   font-weight: 700;
   color: #334155;
 }
 
+.wam-exam-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 0.625rem;
+}
+
 .wam-exam-list-item {
   display: flex;
   align-items: center;
-  gap: 0.875rem;
-  width: 100%;
-  padding: 0.875rem 1rem;
+  gap: 0.35rem;
+  min-width: 0;
+  padding: 0.5rem 0.5rem 0.5rem 0.7rem;
   border: 1px solid #e8edf3;
   border-radius: 12px;
   background: #fff;
-  cursor: pointer;
   text-align: left;
   transition: border-color 0.15s, box-shadow 0.15s;
   font-family: inherit;
+}
+
+.wam-exam-list-open {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex: 1;
+  min-width: 0;
+  padding: 0.2rem 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+}
+
+.wam-exam-list .wam-item-thumb {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  background: #f8fafc;
+}
+
+.wam-exam-list-copy {
+  flex-shrink: 0;
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #0262a7;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0.35rem 0.55rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.wam-exam-list-copy:hover {
+  border-color: #0262a7;
+  background: #eff6ff;
 }
 
 .wam-exam-list-item:hover {
@@ -873,8 +927,12 @@
 }
 
 .wam-exam-list-text strong {
-  font-size: 14px;
+  display: block;
+  font-size: 13px;
   color: #0f172a;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .wam-exam-list-text small {
@@ -918,6 +976,65 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  max-width: 100%;
+}
+
+.wam-gorsel-library {
+  margin-top: 0.875rem;
+}
+
+.wam-gorsel-library strong {
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.wam-gorsel-library p {
+  margin: 0.25rem 0 0.5rem;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.wam-gorsel-library-row {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  padding-bottom: 0.25rem;
+}
+
+.wam-gorsel-thumb {
+  flex: 0 0 92px;
+  width: 92px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #fff;
+  padding: 6px;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.wam-gorsel-thumb img {
+  width: 100%;
+  height: 48px;
+  object-fit: contain;
+  display: block;
+  background: #f8fafc;
+  border-radius: 6px;
+}
+
+.wam-gorsel-thumb span {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  line-height: 1.2;
+  color: #475569;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wam-gorsel-thumb.is-selected {
+  border-color: #0262a7;
+  box-shadow: 0 0 0 2px rgba(2, 98, 167, 0.25);
 }
 
 /* ——— Admin LGS / YKS tabs ——— */

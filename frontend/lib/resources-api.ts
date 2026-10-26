@@ -521,6 +521,12 @@ export async function uploadPublisherLogo(id: number, file: File): Promise<ApiRe
   return apiPostForm<ResourcePublisher>(`/api/resources/publishers/${id}/upload-logo/`, form);
 }
 
+export async function clearPublisherLogo(id: number): Promise<ApiResponse<ResourcePublisher>> {
+  const form = new FormData();
+  form.append('remove', '1');
+  return apiPostForm<ResourcePublisher>(`/api/resources/publishers/${id}/upload-logo/`, form);
+}
+
 export interface PublisherMatchItem {
   book_id: number;
   book_ad: string;
