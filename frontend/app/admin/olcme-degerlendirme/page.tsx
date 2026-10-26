@@ -93,12 +93,17 @@ interface DeleteModalProps {
 function DeleteConfirmModal({ exam, busy, onConfirm, onCancel }: DeleteModalProps) {
   const [confirmText, setConfirmText] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
+  const triggerRef = useRef<HTMLElement | null>(null);
 
   useEffect(() => {
-    if (exam) {
-      setConfirmText('');
-      setTimeout(() => inputRef.current?.focus(), 100);
-    }
+    if (!exam) return;
+    triggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    setConfirmText('');
+    const timer = window.setTimeout(() => inputRef.current?.focus(), 100);
+    return () => {
+      window.clearTimeout(timer);
+      triggerRef.current?.focus();
+    };
   }, [exam]);
 
   useEffect(() => {
@@ -113,14 +118,14 @@ function DeleteConfirmModal({ exam, busy, onConfirm, onCancel }: DeleteModalProp
   const canDelete = confirmText.trim() === exam.name && !busy;
 
   return (
-    <div role="dialog" aria-modal="true" className={s.modalOverlay} onClick={onCancel}>
+    <div role="dialog" aria-modal="true" aria-labelledby="delete-exam-title" className={s.modalOverlay} onClick={onCancel}>
       <div className={s.modal} onClick={e => e.stopPropagation()}>
         <div className={s.modalHead}>
           <span className={s.modalHeadIcon}>
             <Icon name="trash" size={19} />
           </span>
           <div>
-            <h3 className={s.modalTitle}>Sınavı Listeden Kaldır</h3>
+            <h3 id="delete-exam-title" className={s.modalTitle}>Sınavı Listeden Kaldır</h3>
             <p className={s.modalSubtitle}>Sınav pasife alınır, veriler silinmez</p>
           </div>
         </div>
@@ -162,14 +167,14 @@ function DeleteConfirmModal({ exam, busy, onConfirm, onCancel }: DeleteModalProp
             className={`${s.modalInput} ${canDelete ? s.modalInputReady : ''}`}
             onKeyDown={e => { if (e.key === 'Enter' && canDelete) onConfirm(); }}
           />
+        </div>
 
-          <div className={s.modalFoot}>
-            <button onClick={onCancel} className={s.modalCancel}>Vazgeç</button>
-            <button onClick={onConfirm} disabled={!canDelete} className={s.modalConfirm}>
-              <Icon name={busy ? 'refresh' : 'trash'} size={14} />
-              {busy ? 'Kaldırılıyor…' : 'Listeden Kaldır'}
-            </button>
-          </div>
+        <div className={s.modalFoot}>
+          <button onClick={onCancel} className={s.modalCancel}>Vazgeç</button>
+          <button onClick={onConfirm} disabled={!canDelete} className={s.modalConfirm}>
+            <Icon name={busy ? 'refresh' : 'trash'} size={14} />
+            {busy ? 'Kaldırılıyor…' : 'Listeden Kaldır'}
+          </button>
         </div>
       </div>
     </div>
@@ -581,6 +586,7 @@ export default function OlcmeListPage() {
       {/* ── Tablo ────────────────────────────────────────────────────────── */}
       {!loading && exams.length > 0 && (
         <div className={s.tableCard}>
+          <p className={s.scrollHint}>Tablo sağa kayar. Tüm sütunlar bu alanda.</p>
           <div className={s.tableScroll}>
             <table className={s.table}>
               <thead>

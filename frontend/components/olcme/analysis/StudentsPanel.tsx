@@ -156,7 +156,7 @@ export default function StudentsPanel({
           examId={examId}
           examName={examName}
           examType={examType}
-          students={students}
+          students={students.filter(st => st.student_id)}
           uniqueSiniflar={uniqueSiniflar}
           rankingYear={rankingYear}
           onClose={() => setShowBulkNotify(false)}
@@ -200,12 +200,15 @@ export default function StudentsPanel({
           </thead>
           <tbody>
             {displayStudents.map((st, idx) => (
-              <tr key={st.answer_id}>
+              <tr key={st.answer_id} className={!st.student_id ? s.studentRowUnmatched : undefined}>
                 <td data-label="Sıra" style={{ color: '#94a3b8', fontSize: 12 }}>{alanViewFilter ? idx + 1 : st.kurum_ici_sira}</td>
                 <td data-label="">
                   <div className={s.studentListWho}>
                     <StudentListPhoto foto={st.profil_foto} name={st.student_name} />
-                    <span className={s.studentListName}>{st.student_name}</span>
+                    <span className={s.studentListName}>
+                      {st.student_name}
+                      {!st.student_id && <span className={s.unmatchedBadge}>Eşleşmedi</span>}
+                    </span>
                   </div>
                 </td>
                 <td data-label="Sınıf">{st.sinif || '—'}</td>

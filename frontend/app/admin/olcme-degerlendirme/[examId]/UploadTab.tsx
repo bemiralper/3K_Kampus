@@ -1014,6 +1014,29 @@ export default function UploadTab({ exam }: Props) {
     }
   };
 
+  const handleDeleteResultRow = async (row: DATParseResultRow) => {
+    const label = row.student_name || row.student_id || 'bu kayıt';
+    if (!confirm(`"${label}" optik kaydı listeden silinsin mi?\nKurumdaki öğrenci kaydı silinmez.`)) return;
+    setMatchingBusy(true);
+    try {
+      await uploadApi.deleteResultRow(exam.id, row.id);
+      setResults(prev => {
+        const next = prev.filter(r => r.id !== row.id);
+        setTotalRows(next.length);
+        return next;
+      });
+      if (matchDialogRow?.id === row.id) closeMatchDialog();
+      fetchSessions();
+      setError('');
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Kayıt silinemedi.';
+      setError(msg);
+      setTimeout(() => setError(''), 5000);
+    } finally {
+      setMatchingBusy(false);
+    }
+  };
+
   /* ── Reset ──────────────────────────────────────────────────────────────── */
   const resetAll = () => {
     setStep('upload');
@@ -1855,24 +1878,35 @@ export default function UploadTab({ exam }: Props) {
                         <span className={`${s.matchStatusChip} ${statusMeta.cls}`}>{statusMeta.label}</span>
                       </td>
                       <td style={{ textAlign: 'center', whiteSpace: 'nowrap' }}>
-                        {r.matched_student_id ? (
-                          <div className={s.matchRowActions}>
-                            <button type="button" className={s.matchActionBtn} onClick={() => openMatchDialog(r)}>
-                              Değiştir
+                        <div className={s.matchRowActions}>
+                          {r.matched_student_id ? (
+                            <>
+                              <button type="button" className={s.matchActionBtn} onClick={() => openMatchDialog(r)}>
+                                Değiştir
+                              </button>
+                              <button
+                                type="button"
+                                className={`${s.matchActionBtn} ${s.matchActionDanger}`}
+                                onClick={() => handleMatchStudent(r.id, null)}
+                              >
+                                Kaldır
+                              </button>
+                            </>
+                          ) : (
+                            <button type="button" className={s.matchActionPrimary} onClick={() => openMatchDialog(r)}>
+                              Eşleştir
                             </button>
-                            <button
-                              type="button"
-                              className={`${s.matchActionBtn} ${s.matchActionDanger}`}
-                              onClick={() => handleMatchStudent(r.id, null)}
-                            >
-                              Kaldır
-                            </button>
-                          </div>
-                        ) : (
-                          <button type="button" className={s.matchActionPrimary} onClick={() => openMatchDialog(r)}>
-                            Eşleştir
+                          )}
+                          <button
+                            type="button"
+                            className={`${s.matchActionBtn} ${s.matchActionDanger}`}
+                            onClick={() => handleDeleteResultRow(r)}
+                            disabled={matchingBusy}
+                            title="Optik kaydı listeden sil. Kurumdaki öğrenci kaydı durur."
+                          >
+                            Sil
                           </button>
-                        )}
+                        </div>
                       </td>
                       <td style={{ textAlign: 'center' }}>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
@@ -1915,7 +1949,9 @@ export default function UploadTab({ exam }: Props) {
               {visibleResults.length === 0 && (
                 <div className={s.resultsTableEmpty}>
                   <Icon name="checkCircle" size={22} />
-                  Eşleşmeyen kayıt kalmadı.
+                  {onlyUnmatched && results.length > 0
+                    ? 'Eşleşmeyen kayıt kalmadı.'
+                    : 'Bu yüklemede kayıt kalmadı.'}
                 </div>
               )}
             </div>

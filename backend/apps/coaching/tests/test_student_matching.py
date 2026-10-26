@@ -172,6 +172,24 @@ class MatchingApiCollisionTest(TestCase):
         self.sa2.refresh_from_db()
         self.assertEqual(self.sa2.student_id, self.arda.id)
 
+    def test_delete_result_row_keeps_student_record(self):
+        self.session.total_rows = 2
+        self.session.matched_count = 1
+        self.session.unmatched_count = 1
+        self.session.save(update_fields=['total_rows', 'matched_count', 'unmatched_count'])
+
+        res = self.client.delete(f'{self.base}/students/{self.sa2.id}/')
+        self.assertEqual(res.status_code, 204)
+        self.assertFalse(StudentAnswer.objects.filter(pk=self.sa2.id).exists())
+        self.assertTrue(StudentAnswer.objects.filter(pk=self.sa1.id).exists())
+        self.assertTrue(Ogrenci.objects.filter(pk=self.yilmaz.id).exists())
+        self.assertTrue(Ogrenci.objects.filter(pk=self.arda.id).exists())
+
+        self.session.refresh_from_db()
+        self.assertEqual(self.session.total_rows, 1)
+        self.assertEqual(self.session.matched_count, 1)
+        self.assertEqual(self.session.unmatched_count, 0)
+
     def test_session_results_hide_taken_in_top_suggestion(self):
         res = self.client.get(f'{self.base}/sessions/{self.session.id}/results/')
         self.assertEqual(res.status_code, 200)

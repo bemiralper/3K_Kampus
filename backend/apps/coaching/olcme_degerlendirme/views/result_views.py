@@ -1275,6 +1275,43 @@ def update_student_match(request, exam_pk, answer_pk):
     })
 
 
+@api_view(['DELETE'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def delete_result_row(request, exam_pk, answer_pk):
+    """Optik sonuç satırını eşleştirme listesinden siler.
+
+    Kurumdaki öğrenci kaydı durur. Bölüm skorları ve kayıtlı puan satırla
+    birlikte silinir; oturum sayaçları ve sınav puanları yeniden yazılır.
+
+    DELETE /exams/{exam_pk}/results/students/{answer_pk}/
+    """
+    exam, err = get_exam_or_response(request, exam_pk)
+    if err:
+        return err
+
+    try:
+        sa = StudentAnswer.objects.select_related('session').get(
+            pk=answer_pk, session__exam_id=exam.pk,
+        )
+    except StudentAnswer.DoesNotExist:
+        return Response({'error': 'Sonuç satırı bulunamadı.'}, status=404)
+
+    session = sa.session
+    with transaction.atomic():
+        sa.delete()
+        total = StudentAnswer.objects.filter(session=session).count()
+        matched = StudentAnswer.objects.filter(session=session, student__isnull=False).count()
+        session.total_rows = total
+        session.matched_count = matched
+        session.unmatched_count = total - matched
+        session.save(update_fields=['total_rows', 'matched_count', 'unmatched_count'])
+
+    from ..services.stored_scores import refresh_exam_scores
+    refresh_exam_scores(exam)
+    return Response(status=204)
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  ÖĞRENCİ ARAMA — Eşleştirme için öğrenci arama
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

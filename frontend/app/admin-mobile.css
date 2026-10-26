@@ -305,7 +305,7 @@
 
 @media (max-width: 576px) {
   .app-container.admin-mobile-shell .app-content {
-    padding: 10px;
+    padding: 12px;
   }
 
   .hero-text h1 {
@@ -400,10 +400,10 @@
   .app-container.admin-mobile-shell .sidebar-toggle-btn,
   .app-container.admin-mobile-shell .topbar-icon-btn,
   .app-container.admin-mobile-shell .toggle-btn {
-    width: 40px;
-    height: 40px;
-    min-width: 40px;
-    min-height: 40px;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 
   /* Kurum/şube bağlam şeridi */
@@ -505,7 +505,7 @@
 /* Tablet (768–991px) — mobil kabuk ama iki kolon sığar */
 @media (min-width: 768px) and (max-width: 991px) {
   .app-container.admin-mobile-shell .app-content {
-    padding: 16px;
+    padding: 20px;
   }
 
   .hero-header > .btn-hero,

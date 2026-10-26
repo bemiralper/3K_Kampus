@@ -2727,6 +2727,20 @@
   font-weight: 600;
   min-width: 0;
 }
+.studentRowUnmatched td {
+  background: #fffbeb;
+}
+.unmatchedBadge {
+  margin-left: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #92400e;
+  background: #fef3c7;
+  border-radius: 4px;
+  padding: 1px 6px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
 .studentListThumb,
 .studentListLogo {
   width: 32px;
@@ -3707,6 +3721,14 @@
 .karneChip {
   background: #eaf2fa;
   color: #014a7f;
+  font-size: 10px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.karneChipUnmatched {
+  background: #fef3c7;
+  color: #92400e;
   font-size: 10px;
   font-weight: 800;
   padding: 2px 7px;

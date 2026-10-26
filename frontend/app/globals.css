@@ -384,6 +384,7 @@ a {
 .app-container {
   display: flex;
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* Sidebar stilleri ./sidebar.css dosyasına taşındı */
@@ -394,6 +395,7 @@ a {
   margin-left: var(--sidebar-collapsed-width);
   width: calc(100% - var(--sidebar-collapsed-width));
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
   min-width: 0;

@@ -330,6 +330,54 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         p = exam.participants.get(student=self.in_class)
         self.assertEqual(p.seat_no, 1)
 
+    def test_copy_keeps_class_and_manual_participants(self):
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': 'Kaynak Sınav',
+                'exam_type': 'YKS_TYT',
+                'sinif_ids': [self.sinif_a.id],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 201, res.content[:400])
+        source = Exam.objects.get(id=res.json()['id'])
+        ExamParticipant.objects.create(
+            exam=source,
+            student=self.outsider,
+            source=ExamParticipant.Source.MANUAL,
+        )
+
+        copied = self.client.post(
+            f'{EXAMS_URL}{source.id}/copy/',
+            {'name': 'Kaynak Sınav (Kopya)'},
+            format='json', **self.headers,
+        )
+        self.assertEqual(copied.status_code, 201, copied.content[:400])
+        body = copied.json()
+        self.assertGreater(body['participant_count'], 0)
+        clone = Exam.objects.get(id=body['id'])
+        ids = set(clone.participants.values_list('student_id', flat=True))
+        self.assertIn(self.in_class.id, ids)
+        self.assertIn(self.outsider.id, ids)
+
+    def test_save_fills_empty_roster_from_existing_audience(self):
+        exam = Exam.objects.create(
+            name='Boş Kopya', exam_type='YKS_TYT',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        exam.siniflar.add(self.sinif_a)
+        res = self.client.patch(
+            f'{EXAMS_URL}{exam.id}/',
+            {'name': 'Boş Kopya'},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.assertTrue(exam.participants.filter(student=self.in_class).exists())
+        detail = self.client.get(f'{EXAMS_URL}{exam.id}/', **self.headers)
+        self.assertEqual(detail.status_code, 200, detail.content[:400])
+        self.assertGreater(detail.json()['participant_count'], 0)
+
     def test_create_multi_session_keeps_explicit_seating(self):
         res = self.client.post(
             EXAMS_URL,

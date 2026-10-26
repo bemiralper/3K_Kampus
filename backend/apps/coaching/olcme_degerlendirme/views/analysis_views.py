@@ -356,6 +356,33 @@ def _kutuphane_student_ids(student_ids, egitim_yili) -> set[int]:
     )
 
 
+_TR_UPPER = str.maketrans({'i': 'İ', 'ı': 'I'})
+_TR_LOWER = str.maketrans({'I': 'ı', 'İ': 'i'})
+
+
+def _tr_title(value: str) -> str:
+    """Optik formdaki büyük harf adı, kayıtlı öğrenci adıyla aynı düzene çevirir."""
+    words = []
+    for word in (value or '').split():
+        if not word:
+            continue
+        first = word[0].translate(_TR_UPPER).upper()
+        rest = word[1:].translate(_TR_LOWER).lower()
+        words.append(first + rest)
+    return ' '.join(words)
+
+
+def _display_student_name(answer) -> str:
+    """Eşleşmiş kayıtta sistemdeki ad; eşleşmeyende ham adın baş harf düzeni."""
+    student = getattr(answer, 'student', None)
+    if getattr(answer, 'student_id', None) and student:
+        return f'{student.ad} {student.soyad}'.strip()
+    raw = (getattr(answer, 'raw_student_name', None) or '').strip()
+    if raw:
+        return _tr_title(raw)
+    return (getattr(answer, 'raw_student_id', None) or '').strip()
+
+
 def _program_label(
     sinif_adi: str,
     has_kutuphane: bool,
@@ -439,8 +466,8 @@ def _latest_unmatched_answer_ids(exam) -> list[int]:
 def _get_session_answers(exam, session_id=None, *, include_unmatched=False):
     """Sınav veya belirli bir oturumdaki öğrenci cevapları.
 
-    Özet ve ortalamalar eşleşmiş satırlardan hesaplanır. Sıralama listesi
-    eşleşmemiş optik satırlarını da ister. Tüm oturumlar birlikte istendiğinde
+    Özet ve ortalamalar eşleşmiş satırlardan hesaplanır. Sıralama ve öğrenci
+    detay listesi eşleşmemiş optik satırlarını da ister. Tüm oturumlar birlikte istendiğinde
     aynı öğrencinin birden fazla yüklemede yer alması durumunda yalnızca en
     güncel yükleme sayılır (aksi halde çift sayım olur).
     """
@@ -1181,7 +1208,7 @@ def exam_analysis_students(request, exam_pk):
     student_id = request.query_params.get('student_id')
     ranking_year = _resolve_ranking_year(request, exam)
 
-    answers = list(_get_session_answers(exam, session_id))
+    answers = list(_get_session_answers(exam, session_id, include_unmatched=True))
     if not answers:
         return Response({'students': [], 'message': 'Sonuç yok.'})
 
@@ -1246,7 +1273,7 @@ def exam_analysis_students(request, exam_pk):
         student_list.append({
             'answer_id': a.id,
             'student_id': a.student_id,
-            'student_name': f'{a.student.ad} {a.student.soyad}' if a.student else (a.raw_student_name or a.raw_student_id),
+            'student_name': _display_student_name(a),
             'profil_foto': profil_foto,
             'raw_student_id': a.raw_student_id,
             'sinif': _program_label(sinif_adi, kutuphane, deneme, gunu_label),
@@ -1691,7 +1718,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     attempted = answer.total_correct + answer.total_wrong
     dogruluk_orani = round((answer.total_correct / attempted) * 100, 1) if attempted else 0
 
-    student_name = f'{answer.student.ad} {answer.student.soyad}' if answer.student else (answer.raw_student_name or answer.raw_student_id)
+    student_name = _display_student_name(answer)
     profil_foto, profil_foto_path = _student_photo_fields(answer.student)
 
     comparison = answer.comparison or {}
@@ -1740,6 +1767,32 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
                 ordered.index(mine) + 1 if scores and mine in ordered else 0
             )
         sinif_rank = puan_turleri_detail[pt_key]['sinif_ici_sira'] or sinif_rank
+
+    # Karne ortalaması eşleşmiş öğrencilerde kalır. Eşleşmeyen satırın kendi
+    # sırası, bu kaydı o havuza ekleyerek bulunur; aksi halde sıra 0 kalır.
+    if not answer.student_id:
+        if is_ayt and all_scores_data:
+            my_pt_score = all_scores_data[pt_key]['puan']
+            pool = list(ctx['pt_score_lists'].get(pt_key) or []) + [my_pt_score]
+            ordered = sorted(pool, reverse=True)
+            kurum_sira = ordered.index(my_pt_score) + 1
+            kurum_percentile = calculate_percentile(my_pt_score, pool)
+            total_students = len(pool)
+            if puan_turleri_detail:
+                for pt, d in all_scores_data.items():
+                    pt_pool = list(ctx['pt_score_lists'].get(pt) or []) + [d['puan']]
+                    pt_ordered = sorted(pt_pool, reverse=True)
+                    puan_turleri_detail[pt]['kurum_ici_sira'] = pt_ordered.index(d['puan']) + 1
+                    my_net = round(float(d.get('ayt_net') or 0), 2)
+                    net_pool = list((ctx.get('pt_net_lists') or {}).get(pt) or []) + [my_net]
+                    net_ordered = sorted(net_pool, reverse=True)
+                    puan_turleri_detail[pt]['net_kurum_ici_sira'] = net_ordered.index(my_net) + 1
+        else:
+            pool = list(all_nets) + [student_net]
+            ordered = sorted(pool, reverse=True)
+            kurum_sira = ordered.index(student_net) + 1
+            kurum_percentile = calculate_percentile(student_net, pool)
+            total_students = len(pool)
 
     gunu_label = ''
     if not sinif_adi and answer.student_id:

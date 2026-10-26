@@ -348,6 +348,36 @@ class ExamViewSet(viewsets.ModelViewSet):
         if exam.rooms.exists():
             place_unassigned(exam)
 
+    @staticmethod
+    def _copy_manual_participants(original, exam, session_map):
+        """Otomatik kitlenin dışında elle eklenen öğrencileri yeni oturumlara taşır."""
+        from ..models import ExamParticipant
+
+        existing = {
+            (student_id, session_id)
+            for student_id, session_id in ExamParticipant.objects.filter(exam=exam)
+            .values_list('student_id', 'exam_session_id')
+        }
+        rows = []
+        manuals = original.participants.filter(source=ExamParticipant.Source.MANUAL)
+        for participant in manuals.iterator():
+            new_session = session_map.get(participant.exam_session_id) if participant.exam_session_id else None
+            new_session_id = new_session.id if new_session else None
+            key = (participant.student_id, new_session_id)
+            if key in existing:
+                continue
+            rows.append(ExamParticipant(
+                exam=exam,
+                student_id=participant.student_id,
+                exam_session_id=new_session_id,
+                source=ExamParticipant.Source.MANUAL,
+                sinif_seviyesi_id=participant.sinif_seviyesi_id,
+                attendance=ExamParticipant.Attendance.PRESENT,
+            ))
+            existing.add(key)
+        if rows:
+            ExamParticipant.objects.bulk_create(rows)
+
     def _sync_to_calendar(self, exam, user_id):
         """Sınavı takvime senkronize et"""
         try:
@@ -1005,6 +1035,7 @@ class ExamViewSet(viewsets.ModelViewSet):
         ])
 
         # Oturum yapısı kopyalanır; tarih/saat yeni sınavda yeniden girilir.
+        session_map: dict[int, ExamSessionModel] = {}
         for sess in original.exam_sessions.order_by('order', 'id'):
             new_sess = ExamSessionModel.objects.create(
                 exam=exam,
@@ -1014,11 +1045,16 @@ class ExamViewSet(viewsets.ModelViewSet):
                 schedule_preference=sess.schedule_preference,
                 description=sess.description,
             )
+            session_map[sess.id] = new_sess
             old_names = list(sess.sections.values_list('name', flat=True))
             if old_names:
                 new_sess.sections.set(
                     ExamSection.objects.filter(exam=exam, name__in=old_names),
                 )
+
+        # Sınıf / seviye / paket kopyalandı; otomatik liste oturum kurallarına göre kurulur.
+        self._fill_session_roster(exam)
+        self._copy_manual_participants(original, exam, session_map)
 
         return Response(
             _fresh_exam_payload(exam),

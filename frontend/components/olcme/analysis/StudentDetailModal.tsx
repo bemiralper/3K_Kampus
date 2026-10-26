@@ -100,6 +100,7 @@ function KarneHeader({ detail }: { detail: StudentDetailResponse }) {
           <div className={s.karneStudentNameRow}>
             <span className={s.karneStudentName}>{detail.student_name}</span>
             <span className={s.karneHeroChips}>
+              {!detail.student_id && <span className={s.karneChipUnmatched}>Eşleşmedi</span>}
               {typeLabel && <span className={s.karneChip}>{typeLabel}</span>}
               {medal > 0 && (
                 <span className={s.karneChipRank} data-rank={medal}>

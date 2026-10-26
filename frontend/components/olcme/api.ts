@@ -664,6 +664,10 @@ export const uploadApi = {
   sessionResults: (examId: number, sessionId: number) =>
     request<DATParseResponse>(`${BASE}/${examId}/results/sessions/${sessionId}/results/`),
 
+  /** Optik sonuç satırını siler. Kurumdaki öğrenci kaydı durur. */
+  deleteResultRow: (examId: number, answerId: number) =>
+    request<void>(`${BASE}/${examId}/results/students/${answerId}/`, { method: 'DELETE' }),
+
   /** Manuel öğrenci eşleştirme */
   updateStudentMatch: (examId: number, answerId: number, studentId: number | null) =>
     request<{ id: number; matched_student_id: number | null; matched_student_name: string | null; match_score: number; match_method: string }>(

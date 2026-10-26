@@ -211,3 +211,49 @@ class OlcmeAnalysisSiniflessKayitTest(TestCase):
         self.assertTrue(data['has_class'])
         self.assertEqual(data['sinif'], '12-A')
         self.assertEqual(data['sinif_meta_label'], 'Sınıf')
+
+    def test_unmatched_student_listed_with_system_name_case(self):
+        unmatched = StudentAnswer.objects.create(
+            session=self.session,
+            student=None,
+            raw_student_id='OPT-9',
+            raw_student_name='İSMAİL IŞIK',
+            total_correct=10,
+            total_wrong=4,
+            total_empty=26,
+            total_net=Decimal('9.00'),
+        )
+        StudentSectionScore.objects.create(
+            student_answer=unmatched, section=self.section,
+            correct=10, wrong=4, empty=26, net=Decimal('9.00'),
+        )
+
+        res = self.client.get(f'{self.base}/students/', **self.headers)
+        self.assertEqual(res.status_code, 200)
+        rows = {row['answer_id']: row for row in res.json()['students']}
+        self.assertIn(unmatched.id, rows)
+        self.assertIsNone(rows[unmatched.id]['student_id'])
+        self.assertEqual(rows[unmatched.id]['student_name'], 'İsmail Işık')
+        self.assertEqual(rows[self.answer.id]['student_name'], 'Sınıfsız Öğrenci')
+        self.assertEqual(res.json()['total_students'], 2)
+        self.assertEqual(
+            {rows[self.answer.id]['kurum_ici_sira'], rows[unmatched.id]['kurum_ici_sira']},
+            {1, 2},
+        )
+
+        detail = self.client.get(
+            f'{self.base}/students/{unmatched.id}/detail/',
+            **self.headers,
+        )
+        self.assertEqual(detail.status_code, 200)
+        body = detail.json()
+        self.assertEqual(body['student_name'], 'İsmail Işık')
+        self.assertIsNone(body['student_id'])
+        self.assertEqual(body['kurum_ici_sira'], 2)
+
+        matched = self.client.get(
+            f'{self.base}/students/{self.answer.id}/detail/',
+            **self.headers,
+        ).json()
+        self.assertEqual(matched['student_name'], 'Sınıfsız Öğrenci')
+        self.assertEqual(matched['toplam_ogrenci'], 1)

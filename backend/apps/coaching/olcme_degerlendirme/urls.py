@@ -20,7 +20,7 @@ from .views.answer_key_views import AnswerKeyViewSet
 from .views.result_views import (
     upload_dat, parse_dat,
     list_results, list_sessions, delete_session,
-    update_student_booklet, update_student_match,
+    update_student_booklet, update_student_match, delete_result_row,
     session_results, search_students, suggest_students, rematch_unmatched,
     rematch_all_exams,
 )
@@ -201,6 +201,7 @@ urlpatterns = [
     path('exams/<int:exam_pk>/results/students/<int:answer_pk>/suggestions/', suggest_students, name='student-suggest'),
     path('exams/<int:exam_pk>/results/students/<int:answer_pk>/booklet/', update_student_booklet, name='student-booklet-update'),
     path('exams/<int:exam_pk>/results/students/<int:answer_pk>/match/', update_student_match, name='student-match-update'),
+    path('exams/<int:exam_pk>/results/students/<int:answer_pk>/', delete_result_row, name='result-row-delete'),
     path('exams/<int:exam_pk>/results/rematch/', rematch_unmatched, name='result-rematch'),
 
     path('exams/<int:exam_pk>/analysis/summary/', exam_analysis_summary, name='analysis-summary'),

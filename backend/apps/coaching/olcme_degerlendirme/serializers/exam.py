@@ -498,4 +498,10 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
             result = apply_roster_payload(instance, payload)
             if not result.get('ok'):
                 raise serializers.ValidationError({'roster': result.get('error')})
+        elif not instance.participants.exists() and (
+            instance.siniflar.exists() or instance.audiences.exists()
+        ):
+            # Kopyada liste kurulmadan kaydedilmiş sınav: kitle duruyorsa katılımcıları üret.
+            from ..views.exam_views import ExamViewSet
+            ExamViewSet._fill_session_roster(instance)
         return instance
