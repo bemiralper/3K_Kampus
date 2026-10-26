@@ -384,7 +384,7 @@ export default function SozlesmelerTab({
   if (!selectedSozlesme) {
     return (
       <div>
-        <div className="card-modern">
+        <div className="card-modern ot-sozlesme-panel">
           <div className="ot-toolbar">
             <div className="search-modern">
               <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2" aria-hidden="true">
@@ -431,7 +431,8 @@ export default function SozlesmelerTab({
               </div>
             ) : (
               <>
-                <div className="ot-scroll">
+                <div className="ot-sozlesme-list">
+                <div className="ot-scroll ot-sozlesme-table">
                 <table className="table-modern">
                   <thead>
                     <tr>
@@ -482,6 +483,52 @@ export default function SozlesmelerTab({
                     ))}
                   </tbody>
                 </table>
+                </div>
+                <div className="ot-sozlesme-cards">
+                  {pagedSozlesmeler.map((s) => {
+                    const ad = s.ogrenci ? `${s.ogrenci.ad} ${s.ogrenci.soyad}` : "-";
+                    const alt = [s.ogrenci?.ogrenci_no, s.paket_adi].filter(Boolean).join(" · ");
+                    const yuzde = Math.min(Math.round(s.odeme_yuzdesi), 100);
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        className="ot-sozlesme-card"
+                        onClick={() => onSelectSozlesme(s.id)}
+                      >
+                        <div className="ot-sozlesme-card-top">
+                          <OgrenciListAvatar ogrenci={s.ogrenci} />
+                          <div className="ot-sozlesme-card-id">
+                            <span className="cell-primary">{ad}</span>
+                            {alt && <span className="cell-secondary">{alt}</span>}
+                          </div>
+                          <DurumBadgeModern durum={s.durum} map={durumLabel} />
+                        </div>
+                        <div className="ot-sozlesme-card-money">
+                          <div>
+                            <span>Net tutar</span>
+                            <strong>{formatCurrency(s.net_tutar)}</strong>
+                          </div>
+                          <div>
+                            <span>Ödenen</span>
+                            <strong className="is-pos">{formatCurrency(s.toplam_odenen)}</strong>
+                          </div>
+                          <div>
+                            <span>Kalan</span>
+                            <strong className={s.kalan_borc > 0 ? "is-neg" : "is-pos"}>{formatCurrency(s.kalan_borc)}</strong>
+                          </div>
+                        </div>
+                        <div className="ot-sozlesme-card-foot">
+                          <div className="ot-sozlesme-bar" aria-hidden="true">
+                            <i style={{ width: `${yuzde}%`, background: s.odeme_yuzdesi >= 100 ? "var(--success, #059669)" : "var(--ot, #0061a6)" }} />
+                          </div>
+                          <span>%{Math.round(s.odeme_yuzdesi)}</span>
+                          <time>{formatDate(s.olusturma_tarihi)}</time>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
                 </div>
                 <div className="ot-pager">
                   <Pagination

@@ -1195,6 +1195,190 @@
   overflow-x: auto;
   max-width: 100%;
   min-width: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Sözleşme listesi: kart genişliği tabloya yetmezse (telefon, tablet,
+   daraltılmış pencere) sütunlar kesilmesin; kayıt kart olarak aksın. */
+.ot-sozlesme-panel {
+  container-type: inline-size;
+  container-name: otsoz;
+}
+
+.ot-sozlesme-list {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.ot-sozlesme-cards {
+  display: none;
+}
+
+.ot-sozlesme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--ot-line);
+  border-radius: 12px;
+  background: #fff;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.ot-sozlesme-card:hover {
+  background: #f7fbfe;
+}
+
+.ot-sozlesme-card:focus-visible {
+  outline: 2px solid var(--ot);
+  outline-offset: 2px;
+}
+
+.ot-sozlesme-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.ot-sozlesme-card-id {
+  flex: 1;
+  min-width: 0;
+}
+
+.ot-sozlesme-card-id .cell-primary,
+.ot-sozlesme-card-id .cell-secondary {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ot-sozlesme-card-top .badge-modern {
+  flex-shrink: 0;
+}
+
+.ot-sozlesme-card-money {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.ot-sozlesme-card-money > div {
+  min-width: 0;
+}
+
+.ot-sozlesme-card-money span {
+  display: block;
+  color: var(--ot-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.ot-sozlesme-card-money strong {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ot-sozlesme-card-money .is-pos { color: #047857; }
+.ot-sozlesme-card-money .is-neg { color: #b91c1c; }
+
+.ot-sozlesme-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--ot-muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ot-sozlesme-bar {
+  flex: 1;
+  min-width: 48px;
+  height: 6px;
+  border-radius: 3px;
+  background: #e6ebf1;
+  overflow: hidden;
+}
+
+.ot-sozlesme-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+}
+
+.ot-sozlesme-card-foot time {
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+@container otsoz (max-width: 1100px) {
+  .ot-sozlesme-table { display: none; }
+  .ot-sozlesme-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+}
+
+@container otsoz (min-width: 720px) and (max-width: 1100px) {
+  .ot-sozlesme-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container otsoz (max-width: 560px) {
+  .ot-toolbar {
+    align-items: stretch;
+  }
+  .ot-toolbar .search-modern,
+  .ot-toolbar .ot-select,
+  .ot-toolbar > .btn-modern.btn-primary {
+    flex: 1 1 100%;
+    width: 100%;
+    margin-left: 0;
+  }
+}
+
+/* Container sorgusu desteklenmese de telefon ve tablet aynı karta düşsün. */
+@media (max-width: 1100px) {
+  .ot-sozlesme-table { display: none; }
+  .ot-sozlesme-cards {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    padding: 12px;
+  }
+}
+
+@media (min-width: 720px) and (max-width: 1100px) {
+  .ot-sozlesme-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  /* globals .table-modern { display:block } satırı kartın dışına taşırıp kesiyor */
+  .ot-page .table-modern {
+    display: table;
+    overflow: visible;
+  }
 }
 
 .ot-pager {
