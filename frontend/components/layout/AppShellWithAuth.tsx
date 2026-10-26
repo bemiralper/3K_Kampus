@@ -9,6 +9,7 @@ import {
   isStudentUser,
   isCoachOnlyUser,
   isMuhasebeOnlyUser,
+  isTeacherPortalUser,
   assignedPortalCodes,
   needsPortalPicker,
   resolveActivePortal,
@@ -92,8 +93,9 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
   const isPrintRoute = PRINT_ROUTES.some(route => pathname.startsWith(route));
   const isCoachRoute = pathname.startsWith("/coach");
   const isMuhasebeRoute = pathname.startsWith("/muhasebe");
+  const isTeacherRoute = pathname === "/ogretmen" || pathname.startsWith("/ogretmen/");
   const isStudentRoute = pathname === "/ogrenci" || pathname.startsWith("/ogrenci/");
-  const isPortalRoute = isCoachRoute || isMuhasebeRoute;
+  const isPortalRoute = isCoachRoute || isMuhasebeRoute || isTeacherRoute;
 
   useEffect(() => {
     // Reset redirect flag on path change
@@ -215,6 +217,18 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
         return;
       }
 
+      if (isTeacherPortalUser(user) && !isTeacherRoute) {
+        hasRedirectedRef.current = true;
+        hardReplace("/ogretmen");
+        return;
+      }
+
+      if (isTeacherRoute && !isTeacherPortalUser(user)) {
+        hasRedirectedRef.current = true;
+        hardReplace(getDefaultHomePath(user));
+        return;
+      }
+
       if (
         assignedPortalCodes(user).length > 1 &&
         active === "admin" &&
@@ -240,7 +254,7 @@ export default function AppShellWithAuth({ children }: { children: ReactNode }) 
         clearContextGate();
       }
     }
-  }, [isAuthenticated, isLoading, isPortalRoute, isStudentRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, user]);
+  }, [isAuthenticated, isLoading, isPortalRoute, isStudentRoute, isTeacherRoute, isPublicRoute, isContextPickerRoute, isPrintRoute, pathname, user]);
 
   // Public sayfalar (landing vb.) auth kontrolü beklenmeden gösterilir
   if (isLoading && !isPrintRoute && !isPublicRoute) {

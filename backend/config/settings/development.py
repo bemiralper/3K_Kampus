@@ -5,6 +5,11 @@ from .base import *
 
 DEBUG = True
 
+# Yerel mobil istemci. Canlıda base ayarı kapalı kalır; MOBILE_IDENTITY_ENABLED=0 ile kapanır.
+MOBILE_IDENTITY_ENABLED = os.environ.get('MOBILE_IDENTITY_ENABLED', '1').lower() not in (
+    '0', 'false', 'no',
+)
+
 LMS_ENVIRONMENT = 'development'
 # Geliştirmede varsayılan lms_db — demo seed kapalı (ayrı demo DB kullanın)
 DEMO_DATABASE_ALLOWED = os.environ.get('DEMO_DATABASE_ALLOWED', '').lower() in ('1', 'true', 'yes')

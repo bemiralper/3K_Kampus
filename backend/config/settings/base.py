@@ -59,6 +59,7 @@ INSTALLED_APPS = [
     'apps.yedekleme',  # Platform geneli yedekleme ve geri yükleme
     'apps.sistem_yonetimi.apps.SistemYonetimiConfig',  # Sistem Yönetimi (System Center)
     'apps.dashboard.apps.DashboardConfig',
+    'apps.mobile_identity.apps.MobileIdentityConfig',
 ]
 
 # WhatsApp Business Cloud API (dev: empty defaults)
@@ -250,6 +251,16 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'shared.drf_exception_handler.api_exception_handler',
 }
 
+# Mobil kimlik. Varsayılan kapalı. Web SessionAuthentication buna bağlanmaz.
+# Açmak: MOBILE_IDENTITY_ENABLED=1. Geliştirme ve test ayarları ayrıca açar.
+MOBILE_IDENTITY_ENABLED = os.environ.get('MOBILE_IDENTITY_ENABLED', '0').lower() in (
+    '1', 'true', 'yes',
+)
+
+# Ders notu dosyası kurumun Google Drive ortak sürücüsünde durur. Anahtar repoda yoktur.
+GOOGLE_DRIVE_CREDENTIALS_FILE = os.environ.get('GOOGLE_DRIVE_CREDENTIALS_FILE', '')
+GOOGLE_DRIVE_SHARED_DRIVE_ID = os.environ.get('GOOGLE_DRIVE_SHARED_DRIVE_ID', '')
+
 # CORS (Frontend ile entegrasyon)
 CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
@@ -272,6 +283,8 @@ CORS_ALLOW_HEADERS = [
     "x-kurum-id",
     "x-sube-id",
     "x-egitimyili-id",
+    "x-portal",
+    "idempotency-key",
 ]
 
 # Static files (CSS, JavaScript, Images)

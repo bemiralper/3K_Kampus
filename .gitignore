@@ -80,6 +80,10 @@ frontend/legacy-templates/
 # Yedek dosyaları (yerel/docker)
 backend/private/backups/
 
+# Google Drive servis hesabı anahtarı
+secrets/*
+!secrets/.gitkeep
+
 # Geçici ekran görüntüleri ve test çıktıları
 .tmp-*/
 

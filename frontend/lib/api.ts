@@ -231,7 +231,7 @@ function readCookie(name: string): string | null {
   }
 }
 
-function getCsrfToken(): string | null {
+export function getCsrfToken(): string | null {
   // Django çerezi lms_csrftoken. Eski/yanlış csrftoken önce gelirse istek 401 olur.
   return readCookie("lms_csrftoken") || readCookie("csrftoken");
 }

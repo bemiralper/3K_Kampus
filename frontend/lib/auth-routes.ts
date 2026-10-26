@@ -134,10 +134,27 @@ export function isStudentUser(user: User | null): boolean {
   return normalizeRoleCode(user?.role_code) === "ogrenci";
 }
 
+/**
+ * Yalnızca öğretmen görevi olan site kullanıcısı.
+ * Yönetici, koç ve muhasebe kendi panellerinde kalır.
+ */
+export function isTeacherPortalUser(user: User | null): boolean {
+  if (!user || user.is_staff || user.is_superuser) return false;
+  if (isStudentUser(user) || needsPortalPicker(user)) return false;
+  if (hasActiveCoachProfile(user)) return false;
+  if (isMuhasebeRole(user) || hasMuhasebePortalPermissions(user)) return false;
+  const assigned = assignedPortalCodes(user);
+  if (assigned.some((code) => code !== "admin")) return false;
+  if (normalizeRoleCode(user.role_code) === "ogretmen") return true;
+  const admin = user.portals?.find((portal) => portal.code === "admin");
+  return normalizeRoleCode(admin?.role_code) === "ogretmen";
+}
+
 /** Giriş sonrası varsayılan ana sayfa yolu. */
 export function getDefaultHomePath(user: User | null): string {
   if (isStudentUser(user)) return "/ogrenci";
   if (needsPortalPicker(user)) return "/portal-sec";
+  if (isTeacherPortalUser(user)) return "/ogretmen";
   const active = resolveActivePortal(user);
   if (active) return portalHomePath(active);
   if (isCoachOnlyUser(user)) return "/coach/dashboard";

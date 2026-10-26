@@ -8,7 +8,7 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:800
 const API_PREFIXED_PATHS = new Set([
   'coaching', 'terms', 'academic', 'resources', 'student-resources',
   'legacy', 'ogrenci-kayit', 'communication', 'kimlik', 'admin',
-  'ozel-ders',
+  'ozel-ders', 'teacher', 'mobile', 'board',
 ]);
 
 function isTransientSocketError(error: unknown): boolean {

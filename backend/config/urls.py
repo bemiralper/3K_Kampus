@@ -17,6 +17,9 @@ urlpatterns = [
     
     # Auth URLs
     path('auth/', include('apps.auth_custom.urls')),
+    path('api/mobile/', include('apps.mobile_identity.urls')),
+    path('api/teacher/', include('apps.mobile_identity.teacher_urls')),
+    path('api/board/', include('apps.mobile_identity.board_urls')),
     
     # App URLs
     path('ogrenciler/yeni-kayit', lambda request: redirect(f"{settings.FRONTEND_URL}/ogrenciler/yeni-kayit", permanent=False)),
