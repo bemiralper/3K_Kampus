@@ -778,6 +778,7 @@ button.od-holiday-chip:hover {
   box-shadow: -8px 0 32px rgba(15, 23, 42, 0.16);
   transform: translateX(16px);
   animation: od-slide-in 0.18s ease forwards;
+  overflow: hidden;
 }
 
 .od-drawer.od-drawer-wide { width: min(640px, 100vw); }
@@ -836,12 +837,20 @@ button.od-holiday-chip:hover {
 .od-drawer-footer {
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 10px;
-  padding: 14px 20px;
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px max(12px, env(safe-area-inset-bottom));
   border-top: 1px solid var(--od-border);
   background: #f8fafc;
   flex-shrink: 0;
+}
+
+.od-drawer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
 }
 
 /* -------------------------------------------------------------------------

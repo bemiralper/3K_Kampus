@@ -1133,6 +1133,10 @@ export default function OgrenciOzelDersClient() {
     );
   }
 
+  const mevcutSablonlar = form.ders_id
+    ? lessons.filter((s) => s.aktif !== false && String(s.ders) === form.ders_id)
+    : [];
+
   return (
     <div className="od-scope od-ops">
       {toastNode}
@@ -1930,6 +1934,15 @@ export default function OgrenciOzelDersClient() {
                 </option>
               ))}
             </select>
+            {mevcutSablonlar.length > 0 && (
+              <p className="od-form-hint">
+                Bu dersin haftada {mevcutSablonlar.length} şablonu var (
+                {mevcutSablonlar
+                  .map((s) => `${GUN_LABELS[s.gun] || ''} ${s.baslangic.slice(0, 5)}`.trim())
+                  .join(', ')}
+                ). Yeni kayıt eskilerini silmez. Saati değiştirmek için kartı sürükleyin veya şablonu düzenleyin.
+              </p>
+            )}
           </div>
           <div className="od-form-group">
             <label>
@@ -1968,75 +1981,6 @@ export default function OgrenciOzelDersClient() {
             ? `${formatDateTr(detailOturum.session_date)} · ${detailOturum.start_time?.slice(0, 5)}–${detailOturum.end_time?.slice(0, 5)} · ${detailOturum.ogretmen_ad}`
             : ''
         }
-        footer={
-          detailOturum ? (
-            <>
-              {yoklamaActionButtons(detailOturum.durum).map((durum) => {
-                const label =
-                  durum === 'OGRETMEN_GELMEDI'
-                    ? 'Öğrt. gelmedi'
-                    : durum === 'OGRENCI_GELMEDI'
-                      ? 'Öğr. gelmedi'
-                      : OTURUM_DURUM_LABEL[durum] || durum;
-                const danger = durum === 'IPTAL';
-                const primary = durum === 'ISLENDI';
-                return (
-                  <button
-                    key={durum}
-                    type="button"
-                    className={`od-btn ${primary ? 'od-btn-primary' : danger ? 'od-btn-danger' : 'od-btn-secondary'}`}
-                    disabled={busyOturumId === detailOturum.id}
-                    onClick={() => void handleDurumChange(detailOturum, durum)}
-                  >
-                    {durum === 'ISLENDI' && <IconCheckCircle size={14} />}
-                    {durum === 'OGRETMEN_GELMEDI' && <IconUsers size={14} />}
-                    {durum === 'OGRENCI_GELMEDI' && <IconUser size={14} />}
-                    {durum === 'IPTAL' && <IconXCircle size={14} />}
-                    {durum === 'PLANLANDI' && <IconRefresh size={14} />}
-                    {label}
-                  </button>
-                );
-              })}
-              {rowActionsFor(detailOturum).canTelafi && (
-                <button
-                  type="button"
-                  className="od-btn od-btn-secondary"
-                  onClick={() => {
-                    openTelafi(detailOturum);
-                    setDetailOturum(null);
-                  }}
-                >
-                  <IconRotateCcw size={14} /> Telafi
-                </button>
-              )}
-              {rowActionsFor(detailOturum).canTelafi && (
-                <button
-                  type="button"
-                  className="od-btn od-btn-secondary"
-                  disabled={busyOturumId === detailOturum.id}
-                  onClick={() => void onVazgecTelafi(detailOturum)}
-                >
-                  <IconXCircle size={14} /> Telafiden vazgeç
-                </button>
-              )}
-              <div style={{ flex: 1 }} />
-              {detailOturum.source_slot && (
-                <button
-                  type="button"
-                  className="od-btn od-btn-secondary"
-                  onClick={() => {
-                    const slot = lessons.find((l) => l.id === detailOturum.source_slot);
-                    const sessionDate = detailOturum.session_date;
-                    setDetailOturum(null);
-                    if (slot) openDetail(slot, sessionDate);
-                  }}
-                >
-                  Şablonu düzenle
-                </button>
-              )}
-            </>
-          ) : null
-        }
       >
         {detailOturum && (
           <div className="od-form">
@@ -2056,6 +2000,70 @@ export default function OgrenciOzelDersClient() {
                 </>
               ) : null}
             </dl>
+            <div className="od-drawer-actions">
+              {yoklamaActionButtons(detailOturum.durum).map((durum) => {
+                const label =
+                  durum === 'OGRETMEN_GELMEDI'
+                    ? 'Öğrt. gelmedi'
+                    : durum === 'OGRENCI_GELMEDI'
+                      ? 'Öğr. gelmedi'
+                      : OTURUM_DURUM_LABEL[durum] || durum;
+                const danger = durum === 'IPTAL';
+                const primary = durum === 'ISLENDI';
+                return (
+                  <button
+                    key={durum}
+                    type="button"
+                    className={`od-btn od-btn-sm ${primary ? 'od-btn-primary' : danger ? 'od-btn-danger' : 'od-btn-secondary'}`}
+                    disabled={busyOturumId === detailOturum.id}
+                    onClick={() => void handleDurumChange(detailOturum, durum)}
+                  >
+                    {durum === 'ISLENDI' && <IconCheckCircle size={14} />}
+                    {durum === 'OGRETMEN_GELMEDI' && <IconUsers size={14} />}
+                    {durum === 'OGRENCI_GELMEDI' && <IconUser size={14} />}
+                    {durum === 'IPTAL' && <IconXCircle size={14} />}
+                    {durum === 'PLANLANDI' && <IconRefresh size={14} />}
+                    {label}
+                  </button>
+                );
+              })}
+              {rowActionsFor(detailOturum).canTelafi && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-sm od-btn-secondary"
+                  onClick={() => {
+                    openTelafi(detailOturum);
+                    setDetailOturum(null);
+                  }}
+                >
+                  <IconRotateCcw size={14} /> Telafi
+                </button>
+              )}
+              {rowActionsFor(detailOturum).canTelafi && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-sm od-btn-secondary"
+                  disabled={busyOturumId === detailOturum.id}
+                  onClick={() => void onVazgecTelafi(detailOturum)}
+                >
+                  <IconXCircle size={14} /> Telafiden vazgeç
+                </button>
+              )}
+              {detailOturum.source_slot && (
+                <button
+                  type="button"
+                  className="od-btn od-btn-sm od-btn-secondary"
+                  onClick={() => {
+                    const slot = lessons.find((l) => l.id === detailOturum.source_slot);
+                    const sessionDate = detailOturum.session_date;
+                    setDetailOturum(null);
+                    if (slot) openDetail(slot, sessionDate);
+                  }}
+                >
+                  Şablonu düzenle
+                </button>
+              )}
+            </div>
           </div>
         )}
       </Drawer>
