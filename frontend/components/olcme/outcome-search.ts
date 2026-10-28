@@ -115,8 +115,113 @@ export function flattenSubjectOutcomes(subjects: SubjectItem[]): OutcomeItem[] {
   return flat;
 }
 
-export function findOutcomeByText(input: string, outcomes: OutcomeItem[]): OutcomeItem | null {
+const PROCESS_LETTERS = 'abcçdefgğhıijklmnoöprsştuüvyz';
+const PREFIX_SUBJECT: Record<string, string> = {
+  MAT: 'MATEMATIK',
+  FIZ: 'FIZIK',
+  KIM: 'KIMYA',
+  BIY: 'BIYOLOJI',
+  TAR: 'TARIH',
+  COG: 'COGRAFYA',
+  FEL: 'FELSEFE',
+  TDE: 'TDE',
+  DKAB: 'DKAB',
+  DIN: 'DKAB',
+  FB: 'FEN',
+  FEN: 'FEN',
+  TUR: 'TURKCE',
+  SOS: 'SOSYAL',
+  ENG: 'INGILIZCE',
+  ING: 'INGILIZCE',
+  INK: 'INKILAP',
+};
+
+function foldOfficial(value: string): string {
+  return (value || '').trim().replace(/i/g, 'İ').replace(/ı/g, 'I').toUpperCase();
+}
+
+function asciiPrefix(value: string): string {
+  return (value || '')
+    .replace(/İ/g, 'I')
+    .replace(/ı/g, 'I')
+    .replace(/i/g, 'I')
+    .replace(/[çÇ]/g, 'C')
+    .replace(/[ğĞ]/g, 'G')
+    .replace(/[öÖ]/g, 'O')
+    .replace(/[şŞ]/g, 'S')
+    .replace(/[üÜ]/g, 'U')
+    .toUpperCase();
+}
+
+function prefixFitsSubject(prefix: string, subjectCode: string): boolean {
+  const key = asciiPrefix(prefix);
+  const expected = PREFIX_SUBJECT[key];
+  const actual = asciiPrefix(subjectCode);
+  if (!expected || !actual) return false;
+  if (actual === expected || actual === key) return true;
+  return actual.startsWith(key) || expected.startsWith(actual);
+}
+
+/** Maarif sayısal kaydı. MAT.11.3.1 → 11.23.1.1. maarif_numeric.numeric_outcome ile aynı kural. */
+function numericOutcome(code: string): string {
+  const fen = /^FB\.(\d+)\.(\d+)\.(\d+)\.(\d+)$/i.exec(code);
+  if (fen) return `${fen[1]}.${20 + Number(fen[2])}.${fen[3]}.${fen[4]}`;
+  const std = /^[A-ZÇĞİÖŞÜ]+\.(\d+)\.(\d+)\.(\d+)$/i.exec(code);
+  if (std) return `${std[1]}.${20 + Number(std[2])}.${std[3]}.1`;
+  return code;
+}
+
+function processIndex(letter: string): number | null {
+  const idx = PROCESS_LETTERS.indexOf(letter.toLocaleLowerCase('tr'));
+  return idx >= 0 ? idx + 1 : null;
+}
+
+/**
+ * Resmi Maarif koduysa aranacak kodlar. Değilse null.
+ * Backend official_stored_codes ile aynı sıra: yazılış, sonra sayısal kayıt.
+ */
+export function officialStoredCodes(input: string, subjectCode?: string): string[] | null {
+  const folded = foldOfficial(input).replace(/\.+$/, '');
+  if (!folded || /^\d+(?:\.\d+)+$/.test(folded)) return null;
+  const match = /^([A-ZÇĞİÖŞÜ]{2,12}(?:\.\d+){2,4})(?:\.([A-ZÇĞİÖŞÜ]))?(?:\s+\S.*)?$/.exec(folded);
+  if (!match) return null;
+  const head = match[1];
+  const letter = match[2];
+  if (subjectCode && !prefixFitsSubject(head.split('.')[0], subjectCode)) return [];
+  const official = letter ? `${head}.${letter.toLocaleLowerCase('tr')}` : head;
+  const codes = [official];
+  if (letter) {
+    const parent = numericOutcome(head);
+    const index = processIndex(letter);
+    if (parent !== head && index) codes.push(`${parent}.${index}`);
+  } else {
+    const converted = numericOutcome(head);
+    if (converted !== head) codes.push(converted);
+  }
+  const seen = new Set<string>();
+  return codes.filter(code => {
+    const key = code.replace(/\.+$/, '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function findOutcomeByText(
+  input: string,
+  outcomes: OutcomeItem[],
+  subjectCode?: string,
+): OutcomeItem | null {
   if (!input.trim()) return null;
+  const official = officialStoredCodes(input, subjectCode);
+  if (official) {
+    for (const code of official) {
+      const key = code.replace(/\.+$/, '').toLowerCase();
+      const hit = outcomes.find(o => (o.code || '').trim().replace(/\.+$/, '').toLowerCase() === key);
+      if (hit) return hit;
+    }
+    return null;
+  }
   const q = input.trim().replace(/\.+$/, '').toLowerCase();
 
   const byCodeExact = outcomes.find(o => (o.code || '').trim().replace(/\.+$/, '').toLowerCase() === q);

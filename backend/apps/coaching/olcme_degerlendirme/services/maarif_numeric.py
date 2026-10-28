@@ -89,6 +89,91 @@ def numeric_outcome(code: str, topic_code: str = '') -> str:
     return code
 
 
+_OFFICIAL_LEAD = re.compile(
+    r'^([A-ZÇĞİÖŞÜ]{2,12}(?:\.\d+){2,4})(?:\.([A-ZÇĞİÖŞÜ]))?(?:\s+\S.*)?$',
+)
+_ASCII_PREFIX = str.maketrans({
+    'İ': 'I', 'ı': 'I', 'I': 'I', 'i': 'I',
+    'Ç': 'C', 'ç': 'C', 'Ğ': 'G', 'ğ': 'G',
+    'Ö': 'O', 'ö': 'O', 'Ş': 'S', 'ş': 'S',
+    'Ü': 'U', 'ü': 'U',
+})
+# Katalog öneki → ders kodu. MAT.11.3.1 Matematik ağacında aranır, Tarih'te değil.
+_PREFIX_SUBJECT = {
+    'MAT': 'MATEMATIK',
+    'FIZ': 'FIZIK',
+    'KIM': 'KIMYA',
+    'BIY': 'BIYOLOJI',
+    'TAR': 'TARIH',
+    'COG': 'COGRAFYA',
+    'FEL': 'FELSEFE',
+    'TDE': 'TDE',
+    'DKAB': 'DKAB',
+    'DIN': 'DKAB',
+    'FB': 'FEN',
+    'FEN': 'FEN',
+    'TUR': 'TURKCE',
+    'SOS': 'SOSYAL',
+    'ENG': 'INGILIZCE',
+    'ING': 'INGILIZCE',
+    'INK': 'INKILAP',
+}
+
+
+def _fold_official(text: str) -> str:
+    return (text or '').strip().replace('i', 'İ').replace('ı', 'I').upper()
+
+
+def _ascii_prefix(value: str) -> str:
+    return (value or '').translate(_ASCII_PREFIX).upper()
+
+
+def prefix_fits_subject(prefix: str, subject_code: str) -> bool:
+    """MAT, Matematik dersine uyar; Tarih dersine uymaz."""
+    key = _ascii_prefix(prefix)
+    expected = _PREFIX_SUBJECT.get(key)
+    actual = _ascii_prefix(subject_code)
+    if not expected or not actual:
+        return False
+    if actual == expected or actual == key:
+        return True
+    return actual.startswith(key) or expected.startswith(actual)
+
+
+def official_stored_codes(query: str) -> list[str] | None:
+    """Resmi Maarif kodunun aranacak halleri.
+
+    None: noktalı sayı ya da serbest metin; normal eşleştirme sürer.
+    Liste: önce katalogdaki yazılış (MAT.8.1.1), sonra sayısal kayıt (11.23.1.1).
+    Sondaki kazanım cümlesi koda dahil edilmez.
+    """
+    folded = _fold_official(query).rstrip('.')
+    if not folded or re.fullmatch(r'\d+(?:\.\d+)+', folded):
+        return None
+    match = _OFFICIAL_LEAD.fullmatch(folded)
+    if not match:
+        return None
+    head, letter = match.group(1), match.group(2)
+    official = head + (f'.{letter.casefold()}' if letter else '')
+    codes = [official]
+    if letter:
+        parent = numeric_outcome(head)
+        if parent != head:
+            codes.append(numeric_sub(f'{head}.{letter.casefold()}', parent))
+    else:
+        converted = numeric_outcome(head)
+        if converted != head:
+            codes.append(converted)
+    seen: set[str] = set()
+    unique: list[str] = []
+    for code in codes:
+        key = code.strip().rstrip('.').lower()
+        if key and key not in seen:
+            seen.add(key)
+            unique.append(code.strip().rstrip('.'))
+    return unique
+
+
 def numeric_sub(code: str, outcome_numeric: str) -> str:
     code = (code or '').strip()
     m = _SUB_LETTER.search(code)

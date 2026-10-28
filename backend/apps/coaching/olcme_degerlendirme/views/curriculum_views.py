@@ -1542,6 +1542,46 @@ def _topic_affinity(query_norm: str, query_kw: set, query_stems: set, topic_name
     return 0
 
 
+def _match_exact_codes(topics, subject, codes: list[str]):
+    """Verilen kodlardan ilki birebir duran kazanımı döner."""
+    rank: dict[str, int] = {}
+    for code in codes:
+        key = (code or '').strip().rstrip('.').lower()
+        if key and key not in rank:
+            rank[key] = len(rank)
+    if not rank:
+        return None
+    best = None
+    for topic in topics:
+        if _topic_name_belongs_elsewhere(topic, subject):
+            continue
+        for outcome in topic.outcomes.all():
+            oc = (outcome.code or '').strip().rstrip('.').lower()
+            if oc in rank and (best is None or rank[oc] < best[0]):
+                best = (rank[oc], outcome, None)
+            for sub in outcome.sub_outcomes.all():
+                sc = (sub.code or '').strip().rstrip('.').lower()
+                if sc in rank and (best is None or rank[sc] < best[0]):
+                    best = (rank[sc], outcome, sub)
+    if best is None:
+        return None
+    _, outcome, sub = best
+    topic_name = ''
+    try:
+        topic_name = _topic_display_name(outcome.topic.name)
+    except Exception:
+        pass
+    return {
+        'outcome_id': outcome.id,
+        'sub_outcome_id': sub.id if sub is not None else None,
+        'outcome_code': (sub.code if sub is not None else outcome.code) or '',
+        'outcome_text': (sub.text if sub is not None else outcome.text) or '',
+        'topic_name': topic_name,
+        'match_score': 100,
+        'match_type': 'sub_outcome' if sub is not None else 'outcome',
+    }
+
+
 def _match_single_text(query: str, subject: Subject):
     """
     Tek bir metin girdisini Subject'in tüm konu/kazanım/alt kazanımlarıyla eşleştir.
@@ -1584,6 +1624,15 @@ def _match_single_text(query: str, subject: Subject):
         )
         .order_by('order')
     )
+    from ..services.maarif_numeric import official_stored_codes, prefix_fits_subject
+    official = official_stored_codes(query_stripped)
+    if official is not None:
+        # MAT.11.3.1 içindeki 11.3.1, 2018 kazanımına yapışmasın.
+        prefix = official[0].split('.', 1)[0]
+        if not prefix_fits_subject(prefix, getattr(subject, 'code', '') or ''):
+            return None
+        return _match_exact_codes(topics, subject, official)
+
     # İki parçalı başlık (21.1) asla 21.10.* çocuğuna veya ilk kazanıma düşmez.
     if query_is_code and _is_heading_code(query_stripped):
         heading = _match_heading_as_itself(

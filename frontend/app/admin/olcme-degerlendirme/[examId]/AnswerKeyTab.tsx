@@ -51,6 +51,12 @@ function normalizeAnswer(val: string): AnswerChoice {
   return normalizePastedAnswer(val) as AnswerChoice;
 }
 
+function subjectForRow(subjects: SubjectItem[], sections: ExamDetail['sections'], sectionId: number): SubjectItem | null {
+  const section = (sections ?? []).find(s => s.id === sectionId);
+  if (section?.subject == null) return null;
+  return subjects.find(s => Number(s.id) === Number(section.subject)) ?? null;
+}
+
 function outcomesForRow(subjects: SubjectItem[], sections: ExamDetail['sections'], sectionId: number): OutcomeItem[] {
   const section = (sections ?? []).find(s => s.id === sectionId);
   return flattenSubjectOutcomes(subjectsForSection(subjects, section?.subject ?? null));
@@ -284,6 +290,7 @@ export default function AnswerKeyTab({ exam }: Props) {
       const found = findOutcomeByText(
         lines[i],
         outcomesForRow(subjects, exam.sections, newRows[i].section_id),
+        subjectForRow(subjects, exam.sections, newRows[i].section_id)?.code,
       );
       // Orijinal yapıştırılan metni her zaman kaydet
       newRows[i] = {
