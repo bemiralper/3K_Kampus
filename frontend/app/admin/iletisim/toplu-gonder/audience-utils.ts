@@ -1,4 +1,5 @@
 import type {
+  AudienceCatalog,
   AudienceFilter,
   AudienceFilterGroup,
   AudienceFilterNode,
@@ -202,7 +203,30 @@ export function hasIncluded(query: AudienceFilter): boolean {
   return listedIncludes(query).length > 0;
 }
 
-export function querySummary(query: AudienceFilter): string {
+const SUMMARY_MAX = 180;
+
+function filterSummary(query: AudienceFilter, catalog?: AudienceCatalog | null): string {
+  const groups = (query.tree?.groups || [])
+    .map((group) => (group.filters || [])
+      .map((node) => {
+        const raw = Array.isArray(node.value) ? node.value : node.value == null || node.value === "" ? [] : [node.value];
+        if (!raw.length) return "";
+        const field = catalog?.fields?.find((item) => item.key === node.field);
+        const labels = raw.map((value) => {
+          const key = String(value);
+          return field?.options?.find((opt) => String(opt.value) === key)?.label || key;
+        });
+        const shown = labels.length > 2 ? `${labels.slice(0, 2).join(", ")} +${labels.length - 2}` : labels.join(", ");
+        return `${field?.label || node.field}: ${shown}`;
+      })
+      .filter(Boolean)
+      .join(" · "))
+    .filter(Boolean);
+  return groups.join(" veya ");
+}
+
+/** Kitlenin okunur özeti; kampanya başlığına da yazılır (title ≤ 200). */
+export function querySummary(query: AudienceFilter, catalog?: AudienceCatalog | null): string {
   if (query.label) return query.label;
   const types = (query.person_types || []).map((t) => {
     if (t === "ogrenci") return "öğrenciler";
@@ -210,8 +234,21 @@ export function querySummary(query: AudienceFilter): string {
     return "personeller";
   });
   const extras = listedIncludes(query).length;
+  const excluded = (query.excluded_ogrenci_ids?.length || 0)
+    + (query.excluded_veli_ids?.length || 0)
+    + (query.excluded_personel_ids?.length || 0);
   if (!types.length && extras) return `${extras} seçilen kişi`;
   const who = types.join(" + ") || "kişiler";
-  if (!hasAnyFilter(query) && !extras) return `Tüm ${who}`;
-  return extras ? `Seçilen ${who} + ${extras} kişi` : `Seçilen ${who}`;
+  const filters = filterSummary(query, catalog);
+  const base = !hasAnyFilter(query)
+    ? `Tüm ${who}`
+    : filters
+      ? `${who.charAt(0).toLocaleUpperCase("tr-TR")}${who.slice(1)} · ${filters}`
+      : `Seçilen ${who}`;
+  const tail = [
+    extras ? `+${extras} kişi` : "",
+    excluded ? `−${excluded} çıkarıldı` : "",
+  ].filter(Boolean).join(" ");
+  const text = tail ? `${base} ${tail}` : base;
+  return text.length > SUMMARY_MAX ? `${text.slice(0, SUMMARY_MAX - 1)}…` : text;
 }

@@ -107,6 +107,7 @@ RESOURCES = [
         resource_type=ResourceType.MEDIA,
         description='Gelir/gider belgeleri, dekontlar ve cari dosyaları.',
         config={'relative_to': 'media', 'path': 'finans'},
+        is_default=False,
         priority=46,
     ),
 ]

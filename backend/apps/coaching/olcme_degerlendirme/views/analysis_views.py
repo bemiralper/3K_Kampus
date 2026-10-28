@@ -11,6 +11,7 @@ Tüm analiz endpoint'leri:
   - exam_analysis_strategy    → Strateji önerisi (otomatik yorum)
 """
 import logging
+import math
 import os
 from collections import defaultdict
 
@@ -132,6 +133,14 @@ def _normalize_alan_kodu(alan_kodu: str | None) -> str | None:
 def _is_optional_philosophy_section(name: str) -> bool:
     folded = _fold_tr(name)
     return 'felsefe' in folded and 'secmeli' in folded
+
+
+def is_unattempted_optional_section(row: dict) -> bool:
+    """Seçmeli Felsefe, Din Kültürü'nün yerine çözülür; hiç işaretlenmediyse öğrencinin testi değildir."""
+    name = row.get('section_name') or row.get('name') or ''
+    if not _is_optional_philosophy_section(name):
+        return False
+    return not (int(row.get('correct') or 0) or int(row.get('wrong') or 0))
 
 
 def _section_name_key(name: str) -> str:
@@ -287,7 +296,7 @@ def student_alan_question_count(section_details) -> int:
     for row in _leaf_area_sections(section_details or []):
         if row.get('source') == 'tyt':
             continue
-        if row.get('alana_dahil') is False:
+        if row.get('alana_dahil') is False or is_unattempted_optional_section(row):
             continue
         total += int(row.get('question_count') or 0)
     return total
@@ -317,9 +326,24 @@ def _pick_strong_weak_areas(
     sec_map: dict | None = None,
     limit: int = 2,
 ) -> tuple[list, list]:
-    """Öğrencinin alanına göre güçlü / geliştirilecek dersleri seçer."""
-    candidates = _areas_for_student(sections, exam_type, alan_kodu, sec_map)
-    ranked = sorted(candidates, key=lambda x: x.get('net') or 0, reverse=True)
+    """Öğrencinin alanına göre güçlü / geliştirilecek dersleri seçer.
+
+    Ham nete göre sıralamak soru sayısı çok olan testi hep güçlü, 5 soruluk testi
+    hep zayıf gösterir; bu yüzden net/soru oranı esas alınır.
+    """
+    candidates = [
+        row for row in _areas_for_student(sections, exam_type, alan_kodu, sec_map)
+        if not is_unattempted_optional_section(row)
+    ]
+
+    def score(row):
+        net = float(row.get('net') or 0)
+        return (net / int(row['question_count']), net)
+
+    if candidates and all(int(row.get('question_count') or 0) > 0 for row in candidates):
+        ranked = sorted(candidates, key=score, reverse=True)
+    else:
+        ranked = sorted(candidates, key=lambda x: x.get('net') or 0, reverse=True)
     if not ranked:
         return [], []
     if len(ranked) == 1:
@@ -331,7 +355,59 @@ def _pick_strong_weak_areas(
 
 
 def _area_payload(rows: list) -> list[dict]:
-    return [{'name': row.get('section_name') or row.get('name') or '', 'net': row.get('net') or 0} for row in rows]
+    payload = []
+    for row in rows:
+        count = int(row.get('question_count') or 0)
+        net = row.get('net') or 0
+        item = {'name': row.get('section_name') or row.get('name') or '', 'net': net}
+        if count:
+            item['basari'] = math.floor(float(net) / count * 100 + 0.5)
+        if row.get('diff_kurum') is not None:
+            item['diff_kurum'] = row.get('diff_kurum')
+        payload.append(item)
+    return payload
+
+
+KARNE_HISTORY_LIMIT = 6
+
+
+def _karne_net_history(exam, answer) -> list[dict]:
+    """Bu sınav ve öncesindeki aynı türden sınavlar. Sonraki sınavlar eski karneye girmez."""
+    if not answer.student_id:
+        return []
+    qs = (
+        StudentAnswer.objects
+        .filter(
+            student_id=answer.student_id,
+            session__exam__exam_type=exam.exam_type,
+            session__exam__kurum_id=exam.kurum_id,
+            session__status='COMPLETED',
+        )
+        .order_by('-session__exam__exam_date', '-session__exam__created_at')
+    )
+    if exam.exam_date:
+        qs = qs.filter(session__exam__exam_date__lte=exam.exam_date)
+    rows = list(qs.values_list(
+        'id', 'session__exam_id', 'session__exam__name', 'session__exam__exam_date', 'total_net',
+    )[:KARNE_HISTORY_LIMIT * 2])
+    history: list[dict] = []
+    seen: set[int] = set()
+    for aid, exam_id, name, date, net in rows:
+        if exam_id in seen:
+            continue
+        seen.add(exam_id)
+        history.append({
+            'exam_id': exam_id,
+            'exam_name': name or '',
+            'exam_date': str(date) if date else None,
+            'toplam_net': _safe_float(net),
+            'is_current': exam_id == exam.id,
+        })
+        if len(history) >= KARNE_HISTORY_LIMIT:
+            break
+    if not any(row['is_current'] for row in history):
+        return []
+    return list(reversed(history))
 
 
 _TR_FOLD = str.maketrans('çğıöşüÇĞİÖŞÜ', 'cgiosuCGIOSU')
@@ -1798,7 +1874,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     if not sinif_adi and answer.student_id:
         gunu_label = _gunu_birlik_labels(exam, [answer.student_id]).get(answer.student_id, '')
 
-    return {
+    payload = {
         'answer_id': answer.id,
         'student_id': answer.student_id,
         'student_name': student_name,
@@ -1837,6 +1913,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'strong_areas': _area_payload(strong),
         'weak_areas': _area_payload(weak),
         'net_trend': net_trend,
+        'net_history': _karne_net_history(exam, answer),
         'dogruluk_orani': dogruluk_orani,
         'toplam_bos_potansiyel': total_bos_potansiyel,
         'referans_yil': ranking_data.get('referans_yil', 2026),
@@ -1867,6 +1944,10 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
             ),
         ),
     }
+    from apps.coaching.application.olcme_karne_pdf import karne_insights
+
+    payload['karne_insights'] = karne_insights(payload)
+    return payload
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

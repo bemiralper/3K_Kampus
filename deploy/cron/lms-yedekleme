@@ -4,14 +4,18 @@
 # Kurulum:
 #   sudo ./backend/scripts/install-backup-cron.sh
 #
-# Not: UI'daki saat/dakika (±1 dk) bu job her dakika çalıştığı için yakalanır.
-#      Yalnızca "Otomatik Yedekleme" açık ve sıklık Kapalı değilse yedek alınır.
+# Günlük iş paneldeki saatte bir kez veritabanı yedeği alır.
+# Medya (iletişim PDF’leri dahil) pazar 22:30’ta ayrı çalışır ve
+# günlük last_run kaydını ezmez.
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Her dakika — zamanlanmış yedek penceresi
-* * * * * lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups >> /var/log/lms/backups.log 2>&1
+# Her 5 dakika — saat gelmeden Django açılmaz
+*/5 * * * * lms /var/www/lms/backend/scripts/backup-cron-tick.sh >> /var/log/lms/backups.log 2>&1
 
-# Her gün 04:00 — 5 günden eski yedekler, log/hata kayıtları, süresi dolmuş sohbet ekleri
+# Pazar 22:30 — yalnızca medya kökü
+30 22 * * 0 lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups --kind selected --resources system.media --trigger weekly --skip-schedule-record >> /var/log/lms/backups.log 2>&1
+
+# Her gün 04:00 — 5 günden eski günlük yedek, 21 günden eski haftalık medya, süresi dolmuş sohbet ekleri
 0 4 * * * lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1

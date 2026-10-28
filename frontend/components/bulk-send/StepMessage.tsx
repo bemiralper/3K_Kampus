@@ -23,6 +23,7 @@ import {
 } from "@/lib/communication-api";
 
 import {
+  PREVIEW_ANCHOR_ID,
   attachmentMismatch,
   bodySnippet,
   isApprovedTemplate,
@@ -213,8 +214,15 @@ export default function StepMessage({ draft, attachments, onAttachmentsChange }:
           <header className="bss-panel-head">
             <div>
               <h3>Değişkenler</h3>
-              <p>Sağdaki önizleme yazdıkça güncellenir.</p>
+              <p>Önizleme yazdıkça güncellenir.</p>
             </div>
+            <button
+              type="button"
+              className="bss-link bss-preview-jump"
+              onClick={() => document.getElementById(PREVIEW_ANCHOR_ID)?.scrollIntoView({ behavior: "smooth", block: "start" })}
+            >
+              Önizlemeyi gör
+            </button>
           </header>
           {autoFields.length > 0 && (
             <div className="bss-auto">

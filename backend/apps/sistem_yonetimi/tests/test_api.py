@@ -35,6 +35,18 @@ class SistemYonetimiApiSmokeTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertTrue(len(res.json().get('items') or []) >= 1)
 
+    def test_dashboard_hides_resolved_errors(self):
+        from apps.sistem_yonetimi.domain.models import SystemErrorEvent
+        SystemErrorEvent.objects.create(
+            fingerprint='resolved-only',
+            message='eski',
+            error_type='ValueError',
+            status='resolved',
+        )
+        res = self.client.get('/sistem-yonetimi/api/dashboard/')
+        self.assertEqual(res.status_code, 200)
+        self.assertIsNone(res.json().get('last_error'))
+
     def test_collect_metrics_command(self):
         from django.core.management import call_command
         call_command('collect_system_metrics')

@@ -24,6 +24,8 @@ interface FilterBuilderProps {
   catalog: AudienceCatalog | null;
   personTypes: AudiencePersonType[];
   onChange: (query: AudienceFilter) => void;
+  /** Seçim penceresinin altında gösterilen canlı alıcı sayısı (null = hesaplanıyor). */
+  liveCount?: number | null;
 }
 
 /** Sık kullanılan alanlar her zaman düğme olarak durur. */
@@ -53,6 +55,7 @@ export default function FilterBuilder({
   catalog,
   personTypes,
   onChange,
+  liveCount,
 }: FilterBuilderProps) {
   const fields = (catalog?.fields || []).filter((field) =>
     field.person_types.some((type) => personTypes.includes(type)),
@@ -77,6 +80,7 @@ export default function FilterBuilder({
             fields={fields}
             showHead={stored.length > 1}
             onChange={onChange}
+            liveCount={liveCount}
           />
         </div>
       ))}
@@ -96,6 +100,7 @@ function FilterGroup({
   fields,
   showHead,
   onChange,
+  liveCount,
 }: {
   query: AudienceFilter;
   group: AudienceFilterGroup;
@@ -103,6 +108,7 @@ function FilterGroup({
   fields: AudienceCatalogField[];
   showHead: boolean;
   onChange: (query: AudienceFilter) => void;
+  liveCount?: number | null;
 }) {
   const [openKey, setOpenKey] = useState<string | null>(null);
   const nodes = group.filters || [];
@@ -157,6 +163,7 @@ function FilterGroup({
               empty={Boolean(node) && selected.length === 0}
               onOpenChange={(next) => (next ? setOpenKey(field.key) : closeField(field))}
               onChange={(next) => setValues(field.key, next)}
+              liveCount={liveCount}
             />
           );
         })}
@@ -214,6 +221,7 @@ function CheckboxMultiSelect({
   empty,
   onOpenChange,
   onChange,
+  liveCount,
 }: {
   label: string;
   options: Array<{ value: string | number; label: string }>;
@@ -222,6 +230,7 @@ function CheckboxMultiSelect({
   empty: boolean;
   onOpenChange: (open: boolean) => void;
   onChange: (next: string[]) => void;
+  liveCount?: number | null;
 }) {
   const [q, setQ] = useState("");
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -254,7 +263,6 @@ function CheckboxMultiSelect({
   };
 
   const allFilteredOn = filtered.length > 0 && filtered.every((opt) => selectedSet.has(String(opt.value)));
-  const showFoot = (filtered.length > 1 && !allFilteredOn) || selected.length > 0;
 
   if (!options.length) return null;
 
@@ -313,20 +321,25 @@ function CheckboxMultiSelect({
             );
           })}
         </div>
-        {showFoot && (
-          <div className="bs-pop-foot">
-            <span style={{ display: "flex", gap: 10 }}>
-              {filtered.length > 1 && !allFilteredOn && (
-                <button type="button" className="bs-counter-link" onClick={selectFiltered}>
-                  {q ? "Bulunanları seç" : "Tümünü seç"} ({filtered.length})
-                </button>
-              )}
-              {selected.length > 0 && (
-                <button type="button" className="bs-counter-link" onClick={() => onChange([])}>Temizle</button>
-              )}
-            </span>
-          </div>
-        )}
+        <div className="bs-pop-foot">
+          <span style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            {filtered.length > 1 && !allFilteredOn && (
+              <button type="button" className="bs-counter-link" onClick={selectFiltered}>
+                {q ? "Bulunanları seç" : "Tümünü seç"} ({filtered.length})
+              </button>
+            )}
+            {selected.length > 0 && (
+              <button type="button" className="bs-counter-link" onClick={() => onChange([])}>Temizle</button>
+            )}
+          </span>
+          <button type="button" className="bs-pop-done" onClick={close}>
+            {liveCount === undefined
+              ? "Tamam"
+              : liveCount === null
+                ? "Hesaplanıyor…"
+                : `Tamam · ${liveCount.toLocaleString("tr-TR")} kişi`}
+          </button>
+        </div>
       </AnchoredPopover>
     </div>
   );

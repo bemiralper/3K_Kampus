@@ -159,6 +159,7 @@ export default function StudentsPanel({
           students={students.filter(st => st.student_id)}
           uniqueSiniflar={uniqueSiniflar}
           rankingYear={rankingYear}
+          unmatchedCount={students.filter(st => !st.student_id).length}
           onClose={() => setShowBulkNotify(false)}
         />
       )}

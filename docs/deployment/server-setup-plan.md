@@ -432,8 +432,9 @@ sudo crontab -e -u lms
 # Takvim hatırlatmaları
 * * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py process_reminders >> /var/log/lms/reminders.log 2>&1
 
-# Yedekleme (zorunlu — UI ayarı tek başına yetmez; her dakika zaman penceresi kontrolü)
-* * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups >> /var/log/lms/backups.log 2>&1
+# Yedekleme (zorunlu — UI ayarı tek başına yetmez). Günlük iş veritabanıdır.
+*/5 * * * * /var/www/lms/backend/scripts/backup-cron-tick.sh >> /var/log/lms/backups.log 2>&1
+30 22 * * 0 cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups --kind selected --resources system.media --trigger weekly --skip-schedule-record >> /var/log/lms/backups.log 2>&1
 0 4 * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1
 ```
 

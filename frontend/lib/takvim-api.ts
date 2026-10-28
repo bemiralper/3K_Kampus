@@ -361,6 +361,21 @@ export async function fetchNotifications(
   return apiGet<AppNotification[]>(`${BASE}/bildirimler/${qs ? '?' + qs : ''}`);
 }
 
+export interface NotificationBadge {
+  unread_count: number;
+  newest_id: string | null;
+}
+
+/** Rozet ve ses için hafif sayaç. Liste gövdesi yalnız panel açılınca istenir. */
+export async function fetchNotificationBadge(
+  kaynak: 'diger' | 'gorev' | 'hepsi' = 'gorev',
+): Promise<ApiResponse<NotificationBadge>> {
+  const params = new URLSearchParams();
+  params.set('count_only', 'true');
+  params.set('kaynak', kaynak);
+  return apiGet<NotificationBadge>(`${BASE}/bildirimler/?${params.toString()}`);
+}
+
 export async function fetchNotificationSummary(): Promise<ApiResponse<NotificationSummary>> {
   return apiGet<NotificationSummary>(`${BASE}/bildirimler/ozet/`);
 }

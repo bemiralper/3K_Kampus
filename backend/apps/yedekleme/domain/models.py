@@ -161,7 +161,7 @@ class BackupSchedule(models.Model):
     minute = models.PositiveSmallIntegerField('Dakika', default=0)
     enabled = models.BooleanField('Aktif', default=False)
     kind = models.CharField(
-        'Yedek Türü', max_length=20, choices=BackupKind.choices, default=BackupKind.FULL,
+        'Yedek Türü', max_length=20, choices=BackupKind.choices, default=BackupKind.DATABASE,
     )
     resource_codes = models.JSONField('Seçili Kaynaklar', default=list, blank=True)
     max_artifacts = models.PositiveIntegerField('Maksimum Yedek', default=10)

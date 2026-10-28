@@ -108,35 +108,61 @@ export function ChatTimeline({
     anchor: { x: number; y: number };
   } | null>(null);
   const lastIdRef = useRef<string | null>(null);
-  const preserveRef = useRef<{ height: number; top: number } | null>(null);
+  const preserveRef = useRef<{ height: number; top: number; firstId: string | null } | null>(null);
 
   const lastMessage = messages[messages.length - 1];
+  /** Kullanıcı yukarıdayken gelen ve henüz görülmemiş mesaj sayısı. */
+  const [unseen, setUnseen] = useState(0);
+  const firstMessageId = messages[0]?.id ?? null;
 
   // Yeni mesaj geldiğinde yalnızca kullanıcı zaten dipteyse aşağı kay.
+  // Kendi gönderdiği mesajda her zaman aşağı iner.
   useEffect(() => {
     const lastId = lastMessage?.id ?? null;
     if (lastId === lastIdRef.current) return;
     const firstRender = lastIdRef.current === null;
     lastIdRef.current = lastId;
-    if (firstRender || atBottom) {
+    if (!lastMessage) return;
+    const own = lastMessage.direction === "OUTBOUND" && currentUserId != null
+      && lastMessage.sender_user_id === currentUserId;
+    if (firstRender || atBottom || own) {
       bottomRef.current?.scrollIntoView({ block: "end", behavior: firstRender ? "auto" : "smooth" });
+      setUnseen(0);
+    } else if (lastMessage.direction === "INBOUND") {
+      setUnseen((n) => n + 1);
     }
-  }, [lastMessage?.id, atBottom]);
+  }, [lastMessage, atBottom, currentUserId]);
 
-  // Eski mesajlar eklenince kaydırma konumu kaymasın.
+  useEffect(() => {
+    if (atBottom) setUnseen(0);
+  }, [atBottom]);
+
+  // Gönderilen mesaj (iyimser satır) eklendiğinde de aşağı in.
+  useEffect(() => {
+    if (pending.length) bottomRef.current?.scrollIntoView({ block: "end", behavior: "smooth" });
+  }, [pending.length]);
+
+  // Eski mesajlar eklenince kaydırma konumu kaymasın. Yalnız baştaki mesaj
+  // değiştiğinde uygulanır; aynı anda sona gelen canlı mesaj konumu bozmasın.
   useLayoutEffect(() => {
     const el = scrollRef.current;
     const saved = preserveRef.current;
-    if (!el || !saved) return;
+    if (!el || !saved || saved.firstId === firstMessageId) return;
     el.scrollTop = el.scrollHeight - saved.height + saved.top;
     preserveRef.current = null;
-  }, [messages.length]);
+  }, [firstMessageId]);
+
+  useEffect(() => {
+    if (!loadingOlder) preserveRef.current = null;
+  }, [loadingOlder]);
 
   const handleLoadOlder = useCallback(() => {
     const el = scrollRef.current;
-    if (el) preserveRef.current = { height: el.scrollHeight, top: el.scrollTop };
+    if (el) {
+      preserveRef.current = { height: el.scrollHeight, top: el.scrollTop, firstId: firstMessageId };
+    }
     onLoadOlder();
-  }, [onLoadOlder]);
+  }, [onLoadOlder, firstMessageId]);
 
   useEffect(() => {
     const sentinel = topSentinelRef.current;
@@ -335,9 +361,12 @@ export function ChatTimeline({
           type="button"
           className="chat-scroll-bottom"
           onClick={() => bottomRef.current?.scrollIntoView({ behavior: "smooth" })}
-          aria-label="En alta git"
+          aria-label={unseen > 0 ? `${unseen} yeni mesaj — en alta git` : "En alta git"}
         >
           <IconChevronDown size={20} />
+          {unseen > 0 ? (
+            <span className="chat-scroll-bottom-count">{unseen > 99 ? "99+" : unseen}</span>
+          ) : null}
         </button>
       ) : null}
 

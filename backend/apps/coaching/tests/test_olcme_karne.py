@@ -263,6 +263,35 @@ class OlcmeKarnePdfNotifyTest(TestCase):
         self.assertNotIn('{{sinav_tarihi}}', body)
         self.assertIn('14.03.2026', body)
 
+    def test_student_detail_net_history_stops_at_current_exam(self):
+        self.exam.exam_date = date(2026, 3, 14)
+        self.exam.save(update_fields=['exam_date'])
+        for name, day, net in (('Önceki TYT', date(2026, 2, 1), '15.00'), ('Sonraki TYT', date(2026, 4, 1), '30.00')):
+            other = Exam.objects.create(
+                name=name, exam_type='YKS_TYT', status=Exam.Status.RESULTS_UPLOADED,
+                kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili, exam_date=day,
+            )
+            session = ExamSession.objects.create(
+                exam=other, status=ExamSession.Status.COMPLETED, original_filename='x.dat',
+            )
+            StudentAnswer.objects.create(
+                session=session, student=self.ogrenci, raw_student_id='1001',
+                raw_student_name='Hamza Küçükyıldız', total_net=Decimal(net),
+            )
+
+        res = self.client.get(f'{self.base}/students/{self.answer.id}/detail/', **self.headers)
+        self.assertEqual(res.status_code, 200)
+        history = res.json()['net_history']
+        self.assertEqual([h['exam_name'] for h in history], ['Önceki TYT', 'DK TYT 2'])
+        self.assertEqual([h['toplam_net'] for h in history], [15.0, 18.0])
+        self.assertTrue(history[-1]['is_current'])
+
+        insights = res.json()['karne_insights']
+        self.assertTrue(insights['comment'][0].startswith('Hamza'))
+        self.assertIn('3,0 net arttı', ' '.join(insights['comment']))
+        self.assertEqual(insights['hidden_section_ids'], [])
+        self.assertIn('items', insights['focus'])
+
     def test_karne_uses_matching_session_datetime(self):
         other = ExamSection.objects.create(
             exam=self.exam, name='Matematik', order=2, question_start=41, question_end=80,
@@ -662,3 +691,185 @@ class KarnePdfAnswerGridTest(TestCase):
         self.assertIn('Fen Bilimleri', text)
         self.assertNotIn('101', text)
         self.assertNotIn('120', text)
+
+
+def _pdf_text(pdf: bytes) -> str:
+    try:
+        from pypdf import PdfReader
+    except ImportError:
+        from PyPDF2 import PdfReader
+    return ''.join((page.extract_text() or '') for page in PdfReader(io.BytesIO(pdf)).pages)
+
+
+class KarneOptionalSectionAndClassColumnsTest(SimpleTestCase):
+    """Çözülmeyen seçmeli Felsefe karneye girmez; sınıfı olmayanda sınıf sütunları çıkar."""
+
+    def _sections(self):
+        return [
+            {'section_id': 1, 'section_name': 'Sosyal Bilimler', 'is_sub_section': False,
+             'question_count': 20, 'correct': 14, 'wrong': 6, 'empty': 0, 'net': 12.5,
+             'kurum_avg_net': 10.41, 'diff_kurum': 2.1, 'verimlilik': 62},
+            {'section_id': 2, 'section_name': 'Din Kültürü', 'is_sub_section': True, 'parent_id': 1,
+             'question_count': 5, 'correct': 5, 'wrong': 0, 'empty': 0, 'net': 5,
+             'kurum_avg_net': 3.63, 'diff_kurum': 1.4, 'verimlilik': 100},
+            {'section_id': 3, 'section_name': 'Felsefe (Seçmeli)', 'is_sub_section': True, 'parent_id': 1,
+             'question_count': 5, 'correct': 0, 'wrong': 0, 'empty': 5, 'net': 0,
+             'kurum_avg_net': 0, 'diff_kurum': 0, 'verimlilik': 0},
+        ]
+
+    def test_unattempted_optional_not_counted_in_question_total(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import (
+            is_unattempted_optional_section,
+            student_alan_question_count,
+        )
+
+        rows = self._sections()
+        self.assertTrue(is_unattempted_optional_section(rows[2]))
+        self.assertFalse(is_unattempted_optional_section({**rows[2], 'correct': 1}))
+        self.assertEqual(student_alan_question_count(rows), 5)
+
+    def test_pdf_hides_unattempted_optional_and_class_columns(self):
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+
+        pdf = render_karne_pdf({
+            'exam_name': 'TYT',
+            'student_name': 'Test Öğrenci',
+            'toplam_net': 12.5,
+            'has_class': False,
+            'topic_blocks': [],
+            'section_details': self._sections(),
+            'answer_grids': [{
+                'section_id': 3,
+                'section_name': 'Felsefe (Seçmeli)',
+                'questions': [{'n': i, 'given': '', 'correct': 'A', 'result': 'empty'} for i in range(1, 6)],
+            }],
+        })
+        text = _pdf_text(pdf)
+        self.assertIn('Din Kültürü', text)
+        self.assertNotIn('Seçmeli', text)
+        self.assertNotIn('Sınıf Ort.', text)
+        self.assertNotIn('Sınıf Sırası', text)
+        self.assertIn('Kurum Farkı', text)
+
+
+class StrongWeakUsesSuccessRateTest(SimpleTestCase):
+    def test_short_test_with_full_score_beats_long_test_with_more_net(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _pick_strong_weak_areas
+
+        def sec(sid, name, net, count):
+            return {'section_id': sid, 'section_name': name, 'net': net, 'question_count': count,
+                    'correct': count, 'wrong': 0, 'is_sub_section': False}
+
+        strong, weak = _pick_strong_weak_areas([
+            sec(1, 'Türkçe', 33.75, 40),
+            sec(2, 'Matematik', 18.75, 30),
+            sec(3, 'Din Kültürü', 5, 5),
+            sec(4, 'Kimya', 5.75, 7),
+            sec(5, 'Coğrafya', 2.5, 5),
+            sec(6, 'Felsefe', 1.25, 5),
+        ], 'YKS_TYT', 'SAYISAL')
+        self.assertEqual([r['section_name'] for r in strong], ['Din Kültürü', 'Türkçe'])
+        self.assertEqual([r['section_name'] for r in weak], ['Felsefe', 'Coğrafya'])
+
+
+class KarneSummaryVisualsTest(SimpleTestCase):
+    """Özet grafikleri, değerlendirme, gelişim ve tekrar edilecek sorular."""
+
+    def _payload(self, **extra):
+        sections = []
+        for sid, name, count, correct, wrong, net, kurum in (
+            (1, 'Türkçe', 10, 8, 1, 7.75, 5.0),
+            (2, 'Matematik', 10, 5, 2, 4.5, 4.0),
+            (3, 'Fen Bilimleri', 10, 3, 3, 2.25, 3.0),
+        ):
+            sections.append({
+                'section_id': sid, 'section_name': name, 'is_sub_section': False,
+                'question_count': count, 'correct': correct, 'wrong': wrong,
+                'empty': count - correct - wrong, 'net': net, 'kurum_avg_net': kurum,
+                'diff_kurum': round(net - kurum, 2), 'verimlilik': net / count * 100,
+            })
+        data = {
+            'exam_name': 'Deneme 3',
+            'exam_type': 'YKS_TYT',
+            'student_name': 'Ali Veli',
+            'toplam_net': 14.5,
+            'kurum_avg_net': 12.0,
+            'total_correct': 16,
+            'total_wrong': 6,
+            'total_questions': 30,
+            'kurum_ici_sira': 4,
+            'toplam_ogrenci': 50,
+            'has_class': False,
+            'section_details': sections,
+            'strong_areas': [{'name': 'Türkçe', 'net': 7.75, 'basari': 78, 'diff_kurum': 2.75}],
+            'weak_areas': [{'name': 'Fen Bilimleri', 'net': 2.25, 'basari': 22, 'diff_kurum': -0.75}],
+            'net_history': [
+                {'exam_id': 1, 'exam_name': 'Deneme 1', 'exam_date': '2026-01-10', 'toplam_net': 10.0, 'is_current': False},
+                {'exam_id': 2, 'exam_name': 'Deneme 2', 'exam_date': '2026-02-10', 'toplam_net': 12.0, 'is_current': False},
+                {'exam_id': 3, 'exam_name': 'Deneme 3', 'exam_date': '2026-03-10', 'toplam_net': 14.5, 'is_current': True},
+            ],
+            'difficulty': {'bands': [
+                {'key': 'kolay', 'soru': 10, 'dogru': 8, 'yanlis': 1, 'bos': 1},
+                {'key': 'orta', 'soru': 10, 'dogru': 5, 'yanlis': 3, 'bos': 2},
+                {'key': 'zor', 'soru': 8, 'dogru': 3, 'yanlis': 2, 'bos': 3},
+            ]},
+            'answer_grids': [{
+                'section_id': 3, 'section_name': 'Fen Bilimleri',
+                'questions': [
+                    {'n': 1, 'given': 'A', 'correct': 'A', 'result': 'correct'},
+                    {'n': 2, 'given': 'B', 'correct': 'C', 'result': 'wrong'},
+                    {'n': 3, 'given': '', 'correct': 'D', 'result': 'empty'},
+                    {'n': 4, 'given': 'A', 'correct': 'B', 'result': 'wrong'},
+                    {'n': 5, 'given': 'C', 'correct': 'D', 'result': 'wrong'},
+                ],
+            }],
+            'topic_blocks': [],
+        }
+        data.update(extra)
+        return data
+
+    def test_ranges_compacts_consecutive_numbers(self):
+        from apps.coaching.application.olcme_karne_pdf import _ranges
+
+        self.assertEqual(_ranges([7, 1, 2, 3, 9, 10]), '1–3, 7, 9–10')
+
+    def test_comment_mentions_trend_priority_and_easy_misses(self):
+        from apps.coaching.application.olcme_karne_pdf import _comment_lines
+
+        text = ' '.join(_comment_lines(self._payload()))
+        self.assertIn('kurumda 50 öğrenci arasında 4. sırada', text)
+        self.assertIn('2,5 net arttı', text)
+        self.assertIn('en yüksek', text)
+        self.assertIn('Fen Bilimleri (%22)', text)
+        self.assertIn('2 kolay soruyu', text)
+
+    def test_pdf_has_new_summary_blocks(self):
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+
+        text = _pdf_text(render_karne_pdf(self._payload()))
+        for expected in (
+            'BOŞ', 'Cevap Dağılımı', 'Derslere Göre Başarı', 'Değerlendirme',
+            'Net Gelişimi', 'Tekrar Çözülecek Sorular', 'Yanlış: 2, 4–5', 'Boş: 3',
+            '2 soru iptal edildiği',
+        ):
+            self.assertIn(expected, text)
+
+    def test_single_exam_has_no_trend_chart(self):
+        from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
+
+        payload = self._payload(net_history=self._payload()['net_history'][-1:])
+        text = _pdf_text(render_karne_pdf(payload))
+        self.assertNotIn('Net Gelişimi', text)
+        self.assertIn('Değerlendirme', text)
+
+    def test_topic_blocks_drive_focus_list(self):
+        from apps.coaching.application.olcme_karne_pdf import _focus_items
+
+        title, _note, items = _focus_items(self._payload(topic_blocks=[{
+            'heading': 'Fen', 'tables': [{'title': 'Fizik', 'rows': [
+                {'name': 'Kuvvet', 'soru': 2, 'dogru': 2, 'yanlis': 0, 'bos': 0, 'basari': 100},
+                {'name': 'Enerji', 'soru': 2, 'dogru': 0, 'yanlis': 2, 'bos': 0, 'basari': 0},
+            ]}],
+        }]))
+        self.assertEqual(title, 'Çalışılacak Konular')
+        self.assertEqual([name for name, _ in items], ['Enerji'])

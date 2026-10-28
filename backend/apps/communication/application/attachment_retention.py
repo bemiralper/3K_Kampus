@@ -30,9 +30,9 @@ _PURGE_PREFIXES = (
 def _attachment_days() -> int:
     cfg = getattr(settings, 'DATA_RETENTION', {}) or {}
     try:
-        days = int(cfg.get('chat_attachment_days', 90))
+        days = int(cfg.get('chat_attachment_days', 30))
     except (TypeError, ValueError):
-        days = 90
+        days = 30
     return max(1, days)
 
 

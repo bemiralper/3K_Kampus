@@ -106,3 +106,11 @@ class SyncProgramDateRangeTest(TestCase):
         day_dates = [d['day_date'] for d in res.data['days']]
         self.assertEqual(day_dates, sorted(day_dates))
         self.assertEqual(len(day_dates), 7)
+
+    def test_prefetched_program_can_shift_without_stale_day_crash(self):
+        program = WeeklyProgram.objects.prefetch_related('days__blocks').get(pk=self.program.pk)
+        list(program.days.all())
+        result = sync_program_date_range(program, date(2026, 3, 9), date(2026, 3, 15))
+        self.assertEqual(result['day_count'], 7)
+        program.refresh_from_db()
+        self.assertEqual(program.total_block_count, 0)

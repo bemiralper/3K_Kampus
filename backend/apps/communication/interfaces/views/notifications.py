@@ -32,11 +32,26 @@ class NotificationSummaryView(CommunicationAPIView):
         unread_count = ConversationRepository.unread_count_for_queryset(unread_qs)
         unread_conversations = unread_qs.count()
 
-        cards = ConversationListSerializer(
-            unread_qs[:50],
-            many=True,
-            context={'request': request},
-        ).data
+        # Rozetler yalnızca sayıyı ister (`cards=0`); kart serileştirmesi atlanır.
+        want_cards = (request.query_params.get('cards') or '').strip() not in ('0', 'false')
+        cards = []
+        if want_cards:
+            from apps.communication.application.conversation_display import (
+                prefetch_linked_student_names,
+            )
+
+            rows = list(unread_qs[:50])
+            cards = ConversationListSerializer(
+                rows,
+                many=True,
+                context={
+                    'request': request,
+                    '_user_states': ConversationRepository.user_state_map(
+                        request.user, [c.id for c in rows],
+                    ),
+                    '_linked_names': prefetch_linked_student_names(rows),
+                },
+            ).data
 
         return Response({
             'unread_count': unread_count,

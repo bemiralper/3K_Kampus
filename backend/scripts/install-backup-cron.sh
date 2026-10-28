@@ -71,6 +71,11 @@ chown -R "$RUN_USER":"${LMS_RUN_GROUP:-www-data}" "$BACKUP_ROOT"
 chmod -R u+rwX,g+rwX "$BACKUP_ROOT"
 echo "Yedek depo: $BACKUP_ROOT (sahip: $RUN_USER)"
 
+tick="$APP_ROOT/backend/scripts/backup-cron-tick.sh"
+if [[ -f "$tick" ]]; then
+  chmod 755 "$tick"
+fi
+
 # Şablondaki yolları ortam değişkenleriyle özelleştir
 tmp="$(mktemp)"
 sed \
@@ -78,8 +83,7 @@ sed \
   -e "s|/etc/lms/env|$ENV_FILE|g" \
   -e "s|/var/www/lms/venv/bin/python|$VENV_PY|g" \
   -e "s|/var/log/lms/backups.log|$LOG_FILE|g" \
-  -e "s|^\(\* .* \)lms |\1${RUN_USER} |" \
-  -e "s|^\(0 4 .* \)lms |\1${RUN_USER} |" \
+  -e "s|^\([^#]*\) lms |\1 ${RUN_USER} |" \
   "$CRON_SRC" > "$tmp"
 
 # cron.d: dosya root'a ait, izin 644, satır sonunda boş satır olmalı
@@ -93,5 +97,5 @@ echo "  sudo cat $CRON_DST"
 echo "  sudo tail -f $LOG_FILE"
 echo "  sudo -u $RUN_USER bash -lc 'cd $APP_ROOT/backend && set -a && . $ENV_FILE && set +a && $VENV_PY manage.py run_scheduled_backups --force'"
 echo
-echo "UI: /admin/yedekleme → Otomatik Yedekleme (sıklık + saat) kaydedin."
-echo "Cron her dakika bakar; ayarlanan saat±1 dk içinde bir kez yedek alır."
+echo "UI: /admin/yedekleme → Otomatik Yedekleme. Tür veritabanı kalsın."
+echo "Cron 5 dakikada bir saati kontrol eder. Medya yedeği pazar 22:30’tadır."

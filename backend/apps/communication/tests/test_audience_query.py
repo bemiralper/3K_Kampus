@@ -285,6 +285,45 @@ class AudienceQueryScenarioTest(TestCase):
         self.assertEqual(quick['kutuphane_ogrenciler']['add_field'], 'ek_hizmet_turu')
         self.assertEqual(quick['kutuphane_ogrenciler']['add_value'], ['kutuphane'])
 
+    def test_catalog_kayit_turu_follows_registration_lookup(self):
+        """Kayıt türü, yeni kayıt formundaki güncel tanımdan gelir."""
+        from apps.communication.application.audience_catalog import build_audience_catalog
+        from apps.kurum.services.kayit_tanimlari_service import list_registration_types
+        from apps.ogrenci_kayit.domain.models import LookupOption
+
+        current = list(list_registration_types())
+        self.assertTrue(current)
+        LookupOption.objects.create(
+            category=current[0].category,
+            code='deneme_kulubu',
+            label='Deneme Kulübü',
+            order=20,
+        )
+        LookupOption.objects.create(
+            category=current[0].category,
+            code='eski_tur',
+            label='Kapanmış tür',
+            order=21,
+            is_active=False,
+        )
+
+        catalog = build_audience_catalog(
+            self.kurum.id,
+            user=self.admin,
+            sube_id=self.sube.id,
+            egitim_yili_id=self.year.id,
+        )
+        fields = {f['key']: f for f in catalog['fields']}
+        kayit = {o['value']: o['label'] for o in fields['kayit_turu']['options']}
+        self.assertEqual(kayit.get('deneme_kulubu'), 'Deneme Kulübü')
+        self.assertIn('asil', kayit)
+        self.assertNotIn('gunu_birlik', kayit)
+        self.assertNotIn('eski_tur', kayit)
+        giris = {o['value'] for o in fields['giris_turu']['options']}
+        self.assertIn('yeni_kayit', giris)
+        cinsiyet = {o['value'] for o in fields['cinsiyet']['options']}
+        self.assertEqual(cinsiyet, {'E', 'K'})
+
     def test_catalog_hides_other_branch_packages_and_services(self):
         from apps.egitim_paketleri.models import GrupDersi
         from apps.communication.application.audience_catalog import build_audience_catalog

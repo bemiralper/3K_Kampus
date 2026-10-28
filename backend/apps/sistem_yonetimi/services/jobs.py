@@ -26,9 +26,60 @@ def list_jobs_with_runs() -> list[dict]:
             'command': job.command,
             'cron_hint': job.cron_hint,
             'category': job.category,
-            'last_run': _run_json(last) if last else None,
+            'last_run': _run_json(last) if last else _observed_last_run(job.code),
         })
     return items
+
+
+def _observed_last_run(job_code: str) -> dict | None:
+    """Cron SystemJobRun yazmaz. Son gerçek iz (metrik, yedek veya log) gösterilir."""
+    from apps.sistem_yonetimi.config import get_config
+
+    seen_at = None
+    message = 'Cron izi; görev tablosunda ayrı satır yok'
+    if job_code == 'collect_metrics':
+        from apps.sistem_yonetimi.domain.models import SystemMetricSample
+        sample = SystemMetricSample.objects.order_by('-collected_at').only('collected_at').first()
+        seen_at = sample.collected_at if sample else None
+        message = 'Son metrik örneği'
+    elif job_code == 'backup_run':
+        try:
+            from apps.yedekleme.domain.models import BackupArtifact, BackupStatus
+            art = BackupArtifact.objects.filter(status=BackupStatus.COMPLETED).order_by('-finished_at').first()
+            seen_at = art.finished_at if art else None
+            message = art.filename if art else message
+        except Exception:
+            seen_at = None
+    else:
+        log_name = {
+            'backup_purge': 'backups.log',
+            'comm_queue': 'comm_queue.log',
+            'olcme_publish': 'olcme_publish.log',
+            'campaigns': 'comm_campaigns.log',
+            'payment_reminders': 'comm_payment_reminders.log',
+            'reminders': 'reminders.log',
+        }.get(job_code)
+        if log_name:
+            path = get_config()['log_dir'] / log_name
+            if path.is_file():
+                from datetime import datetime, timezone
+                seen_at = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc)
+                message = f'{log_name} güncellendi'
+    if not seen_at:
+        return None
+    iso = seen_at.isoformat()
+    return {
+        'id': None,
+        'job_code': job_code,
+        'status': 'completed',
+        'started_at': None,
+        'finished_at': iso,
+        'duration_ms': None,
+        'result_message': message,
+        'output': '',
+        'triggered_by_id': None,
+        'created_at': iso,
+    }
 
 
 def _run_json(run: SystemJobRun) -> dict:

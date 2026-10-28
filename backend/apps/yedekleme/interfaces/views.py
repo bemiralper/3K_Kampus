@@ -181,7 +181,7 @@ def _schedule_json(schedule: BackupSchedule) -> dict:
             ((getattr(settings, 'BACKUP_CONFIG', {}) or {}).get('retention') or {}).get('max_age_days') or 0
         ),
         'chat_attachment_days': int(
-            (getattr(settings, 'DATA_RETENTION', {}) or {}).get('chat_attachment_days') or 90
+            (getattr(settings, 'DATA_RETENTION', {}) or {}).get('chat_attachment_days') or 30
         ),
         'auto_delete_old': schedule.auto_delete_old,
         'encrypt': schedule.encrypt,

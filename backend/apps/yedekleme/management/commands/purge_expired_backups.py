@@ -5,8 +5,8 @@ from apps.yedekleme.engine.housekeeping import run_housekeeping
 
 class Command(BaseCommand):
     help = (
-        '5 günden eski yedekleri, eski log/hata kayıtlarını ve '
-        'süresi dolmuş sohbet eki dosyalarını siler.'
+        '5 günden eski günlük yedekleri, 21 günden eski haftalık medya yedeklerini, '
+        'eski log/hata kayıtlarını ve süresi dolmuş sohbet eki dosyalarını siler.'
     )
 
     def handle(self, *args, **options):

@@ -38,6 +38,7 @@ RESOURCES = [
         resource_type=ResourceType.MEDIA,
         description='cek_senet medya klasörü.',
         config={'relative_to': 'media', 'path': 'cek_senet'},
+        is_default=False,
         priority=52,
     ),
 ]

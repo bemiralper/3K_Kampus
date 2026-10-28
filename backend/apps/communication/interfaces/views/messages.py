@@ -85,11 +85,14 @@ class ConversationMessagesView(CommunicationAPIView):
 
         if after_id:
             # Artımlı canlı güncelleme: sadece bu id'den sonraki mesajlar.
-            msgs = list(MessageRepository.list_since(conversation_id, after_id=after_id, limit=100))
+            msgs, truncated = MessageRepository.list_since_window(
+                conversation_id, after_id=after_id, limit=100,
+            )
             return Response({
                 'messages': MessageSerializer(msgs, many=True, context=ctx).data,
                 'total': MessageRepository.count_by_conversation(conversation_id),
                 'has_more': False,
+                'has_more_after': truncated,
                 'incremental': True,
             })
 

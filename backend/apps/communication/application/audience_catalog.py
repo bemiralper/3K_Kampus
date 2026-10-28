@@ -96,6 +96,24 @@ def _other_branch_package_keys(kurum_id: int, sube_id: int | None) -> set[tuple]
     return keys
 
 
+def _lookup_opts(category_code: str, fallback, exclude_codes: set[str] | None = None) -> list[dict]:
+    """Aktif lookup seçenekleri. Tanım okunamazsa modeldeki sabit listeye düşer."""
+    skipped = exclude_codes or set()
+    try:
+        from apps.kurum.services.kayit_tanimlari_service import list_lookup_options
+
+        options = [
+            _opt(opt.code, opt.label)
+            for opt in list_lookup_options(category_code)
+            if opt.code not in skipped
+        ]
+    except Exception:
+        options = []
+    if options:
+        return options
+    return [_opt(code, label) for code, label in fallback if code not in skipped]
+
+
 def _field(
     key: str,
     label: str,
@@ -130,6 +148,7 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed) -> li
         OgrenciEkHizmet,
         OgrenciKayit,
     )
+    from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
     from apps.sinif.domain.models import Sinif
     from apps.sube.domain.models import Sube
 
@@ -207,8 +226,15 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed) -> li
         if code in turler_seen
     ]
 
-    kayit_opts = [_opt(code, label) for code, label in Ogrenci.KAYIT_TURU_CHOICES]
-    giris_opts = [_opt(code, label) for code, label in OgrenciKayit.GIRIS_TURU_CHOICES]
+    # Yeni kayıt formuyla aynı kaynak: Kurum Yönetimi lookup tanımları.
+    # Günü birlik türü yıllık kayıt formunda da yoktur.
+    kayit_opts = _lookup_opts(
+        'registration_type',
+        Ogrenci.KAYIT_TURU_CHOICES,
+        exclude_codes={GUNU_BIRLIK_CODE},
+    )
+    giris_opts = _lookup_opts('entry_type', OgrenciKayit.GIRIS_TURU_CHOICES)
+    cinsiyet_opts = _lookup_opts('gender', Ogrenci.CINSIYET_CHOICES)
 
     return [
         _field('sube_id', 'Şube', 'egitim', STUDENT_TYPES, [
@@ -233,10 +259,7 @@ def _education_fields(kurum_id, sube_id, egitim_yili_id, term_id, allowed) -> li
             _opt('aktif', 'Aktif'),
             _opt('pasif', 'Pasif'),
         ]),
-        _field('cinsiyet', 'Cinsiyet', 'egitim', STUDENT_TYPES, [
-            _opt('E', 'Erkek'),
-            _opt('K', 'Kadın'),
-        ]),
+        _field('cinsiyet', 'Cinsiyet', 'egitim', STUDENT_TYPES, cinsiyet_opts),
     ]
 
 

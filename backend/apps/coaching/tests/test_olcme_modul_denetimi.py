@@ -97,6 +97,51 @@ class AnswerKeyBulkImportTest(OlcmeModulFixture):
         self.assertEqual(again.status_code, 200, again.content[:400])
         self.assertTrue(AnswerKey.objects.filter(exam=self.exam, booklet='B').exists())
 
+    def test_editing_a_does_not_rewrite_existing_b_answers(self):
+        first = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',
+            {
+                'booklet': 'A',
+                'items': [
+                    {'question_number': n, 'correct_answer': 'E', 'b_question_number': n}
+                    for n in range(1, 11)
+                ],
+                'b_items': [
+                    {'question_number': n, 'correct_answer': 'C'}
+                    for n in range(1, 11)
+                ],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(first.status_code, 200, first.content[:400])
+        again = self._bulk([
+            {
+                'question_number': n,
+                'correct_answer': 'B' if n == 1 else 'E',
+                'b_question_number': n,
+            }
+            for n in range(1, 11)
+        ])
+        self.assertEqual(again.status_code, 200, again.content[:400])
+        b_key = AnswerKey.objects.get(exam=self.exam, booklet='B')
+        self.assertEqual(
+            list(b_key.items.order_by('question_number').values_list('correct_answer', flat=True)),
+            ['C'] * 10,
+        )
+
+        primary = AnswerKey.primary_for(self.exam)
+        item = primary.items.get(question_number=1)
+        res = self.client.patch(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/{primary.id}/update-item/',
+            {'item_id': item.id, 'correct_answer': 'A'},
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        self.assertEqual(
+            list(b_key.items.order_by('question_number').values_list('correct_answer', flat=True)),
+            ['C'] * 10,
+        )
+
     def test_b_key_derives_question_match_inside_parent_test(self):
         parent = ExamSection.objects.create(
             exam=self.exam, name='Temel Matematik', order=1,

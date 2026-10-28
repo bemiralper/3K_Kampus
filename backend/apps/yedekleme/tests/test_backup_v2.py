@@ -261,6 +261,39 @@ class SelectionFullTests(TestCase):
         self.assertIn('system.media', codes)
         self.assertNotIn('mod.table', codes)
 
+    def test_full_kind_drops_directory_inside_media_root(self):
+        BackupResource.objects.create(
+            code='ogrenci.files',
+            name='Öğrenci',
+            resource_type=ResourceType.MEDIA,
+            handler_key='file_directory',
+            config={'relative_to': 'media', 'path': 'ogrenci'},
+            is_active=True,
+            is_default=True,
+            priority=61,
+        )
+        codes = {r.code for r in resolve_resources(BackupKind.FULL)}
+        self.assertIn('system.media', codes)
+        self.assertNotIn('ogrenci.files', codes)
+
+    def test_selected_kind_keeps_directory_inside_media_root(self):
+        BackupResource.objects.create(
+            code='ogrenci.files',
+            name='Öğrenci',
+            resource_type=ResourceType.MEDIA,
+            handler_key='file_directory',
+            config={'relative_to': 'media', 'path': 'ogrenci'},
+            is_active=True,
+            is_default=True,
+            priority=61,
+        )
+        codes = {
+            r.code
+            for r in resolve_resources(BackupKind.SELECTED, ['system.media', 'ogrenci.files'])
+        }
+        self.assertIn('system.media', codes)
+        self.assertIn('ogrenci.files', codes)
+
 
 class TableHandlerTests(TestCase):
     def test_export_import_auth_user_roundtrip_counts(self):

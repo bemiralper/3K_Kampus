@@ -435,6 +435,36 @@ class OlcmePublishDispatchTest(TestCase):
         # Yalnızca veli seçilmişti; öğrenciye gitmemeli.
         self.assertEqual(dispatch.call_count, 1)
 
+    def test_bulk_queue_rejected_while_job_running(self):
+        """Cron işi çalışırken ikinci gönderim seçimi ezip paralel iş açmamalı."""
+        session = ExamSession.objects.create(
+            exam=self.exam, status=ExamSession.Status.COMPLETED, original_filename='x.dat',
+        )
+        first = StudentAnswer.objects.create(session=session, student=self.absent, raw_student_id='2')
+        second = StudentAnswer.objects.create(session=session, student=None, raw_student_id='3')
+        url = f'{EXAMS_URL}{self.exam.id}/analysis/students/notify-bulk-queue/'
+        res = self.client.post(url, {'answer_ids': [first.id]}, format='json', **self.headers)
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        campaign_id = res.json()['data']['campaign_id']
+
+        row = ExamScheduledDispatch.objects.get(exam=self.exam, kind=KIND_KARNE)
+        opts = dict(row.send_options)
+        opts['running_since'] = timezone.now().isoformat()
+        row.send_options = opts
+        row.is_enabled = False
+        row.save(update_fields=['send_options', 'is_enabled', 'updated_at'])
+
+        res = self.client.post(url, {'answer_ids': [second.id]}, format='json', **self.headers)
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        data = res.json()['data']
+        self.assertTrue(data['already'])
+        self.assertEqual(data['queued'], 0)
+        self.assertEqual(data['campaign_id'], campaign_id)
+
+        row.refresh_from_db()
+        self.assertFalse(row.is_enabled)
+        self.assertEqual(row.send_options['answer_ids'], [first.id])
+
     def test_send_now_api_requires_ready_answer_key(self):
         res = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/publish-dispatch/send-now/',

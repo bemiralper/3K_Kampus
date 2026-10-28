@@ -320,7 +320,8 @@ BACKUP_CONFIG = {
         'monthly': int(os.environ.get('BACKUP_RETENTION_MONTHLY', '12')),
         'manual': int(os.environ.get('BACKUP_RETENTION_MANUAL', '30')),
         'pre_restore': int(os.environ.get('BACKUP_RETENTION_PRE_RESTORE', '5')),
-        # 0 = yaş sınırı yok. Varsayılan: 5 günden eski her yedek silinir (GFS bunu uzatamaz).
+        # 0 = yaş sınırı yok. Günlük ve manuel yedek 5 günde silinir.
+        # Haftalık ve dosya yedeği bu tavana girmez: son 2 kopya, en fazla 21 gün.
         'max_age_days': int(os.environ.get('BACKUP_MAX_AGE_DAYS', '5')) or None,
     },
     'upload_max_bytes': int(os.environ.get('BACKUP_UPLOAD_MAX_BYTES', str(2 * 1024 ** 3))),
@@ -338,7 +339,7 @@ DATA_RETENTION = {
     'audit_days': int(os.environ.get('RETENTION_AUDIT_DAYS', '90')),
     'backup_log_days': int(os.environ.get('RETENTION_BACKUP_LOG_DAYS', '30')),
     'communication_log_days': int(os.environ.get('RETENTION_COMM_LOG_DAYS', '30')),
-    'chat_attachment_days': int(os.environ.get('RETENTION_CHAT_ATTACHMENT_DAYS', '90')),
+    'chat_attachment_days': int(os.environ.get('RETENTION_CHAT_ATTACHMENT_DAYS', '30')),
 }
 
 # Sistem Yönetimi (System Center)

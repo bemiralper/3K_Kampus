@@ -11,6 +11,29 @@ function isNativeCameraDevice() {
   return false;
 }
 
+const CROP_FRAME_FALLBACK = 280;
+const CROP_OUTPUT = 640;
+const CROP_MIN_ZOOM = 1;
+const CROP_MAX_ZOOM = 3;
+
+function clampCropOffset(
+  x: number,
+  y: number,
+  zoom: number,
+  nw: number,
+  nh: number,
+  frame: number,
+) {
+  if (!nw || !nh || !frame) return { x: 0, y: 0 };
+  const scale = Math.max(frame / nw, frame / nh) * zoom;
+  const maxX = Math.max(0, (nw * scale - frame) / 2);
+  const maxY = Math.max(0, (nh * scale - frame) / 2);
+  return {
+    x: Math.min(maxX, Math.max(-maxX, x)),
+    y: Math.min(maxY, Math.max(-maxY, y)),
+  };
+}
+
 function isAllowedImageFile(file: File) {
   if (!file.type || file.type === "application/octet-stream") {
     return /\.(jpe?g|png|webp|heic|heif)$/i.test(file.name);
@@ -63,7 +86,9 @@ export default function ProfilFotoUpload({
   const [showCropper, setShowCropper] = useState(false);
   const [cropImage, setCropImage] = useState<string | null>(null);
   const [cropPosition, setCropPosition] = useState({ x: 0, y: 0 });
-  const [cropScale, setCropScale] = useState(1);
+  const [cropScale, setCropScale] = useState(CROP_MIN_ZOOM);
+  const [imageSize, setImageSize] = useState({ w: 0, h: 0 });
+  const [frameSize, setFrameSize] = useState(CROP_FRAME_FALLBACK);
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
   const [cameraStream, setCameraStream] = useState<MediaStream | null>(null);
@@ -73,6 +98,17 @@ export default function ProfilFotoUpload({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const cropCanvasRef = useRef<HTMLCanvasElement>(null);
   const cropImageRef = useRef<HTMLImageElement>(null);
+  const cropAreaRef = useRef<HTMLDivElement>(null);
+
+  const placeCrop = useCallback((x: number, y: number, zoom = cropScale) => {
+    setCropPosition(clampCropOffset(x, y, zoom, imageSize.w, imageSize.h, frameSize));
+  }, [cropScale, imageSize.h, imageSize.w, frameSize]);
+
+  const applyZoom = useCallback((next: number) => {
+    const zoom = Math.min(CROP_MAX_ZOOM, Math.max(CROP_MIN_ZOOM, next));
+    setCropScale(zoom);
+    setCropPosition((pos) => clampCropOffset(pos.x, pos.y, zoom, imageSize.w, imageSize.h, frameSize));
+  }, [imageSize.h, imageSize.w, frameSize]);
 
   const openCropperForFile = async (file: File) => {
     if (file.size > 5 * 1024 * 1024) {
@@ -87,7 +123,8 @@ export default function ProfilFotoUpload({
       const dataUrl = await fileToCropDataUrl(file);
       setCropImage(dataUrl);
       setCropPosition({ x: 0, y: 0 });
-      setCropScale(1);
+      setCropScale(CROP_MIN_ZOOM);
+      setImageSize({ w: 0, h: 0 });
       setShowCropper(true);
       setShowOptions(false);
       setError(null);
@@ -217,7 +254,8 @@ export default function ProfilFotoUpload({
       stopCamera();
       setCropImage(dataUrl);
       setCropPosition({ x: 0, y: 0 });
-      setCropScale(1);
+      setCropScale(CROP_MIN_ZOOM);
+      setImageSize({ w: 0, h: 0 });
       setShowCropper(true);
     }
   };
@@ -251,6 +289,17 @@ export default function ProfilFotoUpload({
     };
   }, [cameraStream]);
 
+  useEffect(() => {
+    if (!showCropper) return;
+    const el = cropAreaRef.current;
+    if (!el) return;
+    const measure = () => setFrameSize(el.clientWidth || CROP_FRAME_FALLBACK);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [showCropper]);
+
   // Cropper handlers
   const handleCropMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -260,11 +309,8 @@ export default function ProfilFotoUpload({
 
   const handleCropMouseMove = useCallback((e: React.MouseEvent) => {
     if (!isDragging) return;
-    setCropPosition({
-      x: e.clientX - dragStart.x,
-      y: e.clientY - dragStart.y
-    });
-  }, [isDragging, dragStart]);
+    placeCrop(e.clientX - dragStart.x, e.clientY - dragStart.y);
+  }, [isDragging, dragStart, placeCrop]);
 
   const handleCropMouseUp = useCallback(() => {
     setIsDragging(false);
@@ -281,17 +327,13 @@ export default function ProfilFotoUpload({
     if (!isDragging) return;
     const t = e.touches[0];
     if (!t) return;
-    setCropPosition({
-      x: t.clientX - dragStart.x,
-      y: t.clientY - dragStart.y,
-    });
-  }, [isDragging, dragStart]);
+    placeCrop(t.clientX - dragStart.x, t.clientY - dragStart.y);
+  }, [isDragging, dragStart, placeCrop]);
 
   const handleCropWheel = useCallback((e: React.WheelEvent) => {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.1 : 0.1;
-    setCropScale(prev => Math.min(3, Math.max(0.5, prev + delta)));
-  }, []);
+    applyZoom(cropScale + (e.deltaY > 0 ? -0.1 : 0.1));
+  }, [applyZoom, cropScale]);
 
   const handleCropComplete = async () => {
     if (!cropImage || !cropCanvasRef.current || !cropImageRef.current) return;
@@ -300,32 +342,25 @@ export default function ProfilFotoUpload({
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const outputSize = 300; // Çıktı boyutu
+    const outputSize = CROP_OUTPUT;
     canvas.width = outputSize;
     canvas.height = outputSize;
 
     const img = cropImageRef.current;
-    const containerSize = 280; // Önizleme alanı boyutu
-    
-    // Resmin container'a sığması için ölçeklendirme hesabı
-    const baseScale = Math.max(containerSize / img.naturalWidth, containerSize / img.naturalHeight);
-    const finalScale = baseScale * cropScale;
-    
-    const scaledWidth = img.naturalWidth * finalScale;
-    const scaledHeight = img.naturalHeight * finalScale;
-    
-    // Merkez hesabı
-    const centerX = containerSize / 2;
-    const centerY = containerSize / 2;
-    
-    // Resmin sol üst köşesi (pozisyon ile birlikte)
-    const drawX = centerX - (scaledWidth / 2) + cropPosition.x;
-    const drawY = centerY - (scaledHeight / 2) + cropPosition.y;
-    
-    // Önizleme alanından çıktı boyutuna oran
-    const ratio = outputSize / containerSize;
-    
-    ctx.fillStyle = '#ffffff';
+    const nw = img.naturalWidth;
+    const nh = img.naturalHeight;
+    if (!nw || !nh) return;
+    const frame = cropAreaRef.current?.clientWidth || frameSize || CROP_FRAME_FALLBACK;
+    const zoom = Math.max(CROP_MIN_ZOOM, cropScale);
+    const placed = clampCropOffset(cropPosition.x, cropPosition.y, zoom, nw, nh, frame);
+    const scale = Math.max(frame / nw, frame / nh) * zoom;
+    const scaledWidth = nw * scale;
+    const scaledHeight = nh * scale;
+    const drawX = frame / 2 - scaledWidth / 2 + placed.x;
+    const drawY = frame / 2 - scaledHeight / 2 + placed.y;
+    const ratio = outputSize / frame;
+
+    ctx.fillStyle = '#0f172a';
     ctx.fillRect(0, 0, outputSize, outputSize);
     ctx.drawImage(
       img,
@@ -350,7 +385,8 @@ export default function ProfilFotoUpload({
     setShowCropper(false);
     setCropImage(null);
     setCropPosition({ x: 0, y: 0 });
-    setCropScale(1);
+    setCropScale(CROP_MIN_ZOOM);
+    setImageSize({ w: 0, h: 0 });
   };
 
   const isCell = variant === "cell";
@@ -387,10 +423,11 @@ export default function ProfilFotoUpload({
                   <line x1="12" y1="16" x2="12" y2="12" />
                   <line x1="12" y1="8" x2="12.01" y2="8" />
                 </svg>
-                Sürükleyerek konumlandır, kaydırarak yakınlaştır
+                Çerçeve karttaki fotoğrafla aynı. Fotoğraf kenarı boş kalmaz.
               </div>
               <div 
                 className="cropper-area"
+                ref={cropAreaRef}
                 onMouseDown={handleCropMouseDown}
                 onMouseMove={handleCropMouseMove}
                 onMouseUp={handleCropMouseUp}
@@ -406,19 +443,35 @@ export default function ProfilFotoUpload({
                     src={cropImage} 
                     alt="Kırpılacak resim"
                     draggable={false}
-                    style={{
-                      transform: `translate(${cropPosition.x}px, ${cropPosition.y}px) scale(${cropScale})`,
-                      cursor: isDragging ? 'grabbing' : 'grab',
+                    onLoad={(e) => {
+                      const el = e.currentTarget;
+                      setImageSize({ w: el.naturalWidth, h: el.naturalHeight });
+                      setCropPosition({ x: 0, y: 0 });
+                      setCropScale(CROP_MIN_ZOOM);
                     }}
+                    style={(() => {
+                      const scale = imageSize.w
+                        ? Math.max(frameSize / imageSize.w, frameSize / imageSize.h) * cropScale
+                        : 1;
+                      const sw = imageSize.w * scale;
+                      const sh = imageSize.h * scale;
+                      return {
+                        width: sw || undefined,
+                        height: sh || undefined,
+                        left: frameSize / 2 - sw / 2 + cropPosition.x,
+                        top: frameSize / 2 - sh / 2 + cropPosition.y,
+                        cursor: isDragging ? 'grabbing' : 'grab',
+                      };
+                    })()}
                   />
                 </div>
                 <div className="cropper-overlay">
-                  <div className="cropper-circle"></div>
+                  <div className="cropper-frame"></div>
                 </div>
               </div>
               <div className="cropper-zoom-control">
                 <button 
-                  onClick={() => setCropScale(prev => Math.max(0.5, prev - 0.1))}
+                  onClick={() => applyZoom(cropScale - 0.1)}
                   className="zoom-btn"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -429,15 +482,15 @@ export default function ProfilFotoUpload({
                 </button>
                 <input 
                   type="range" 
-                  min="0.5" 
-                  max="3" 
+                  min={CROP_MIN_ZOOM}
+                  max={CROP_MAX_ZOOM}
                   step="0.1" 
                   value={cropScale}
-                  onChange={(e) => setCropScale(parseFloat(e.target.value))}
+                  onChange={(e) => applyZoom(parseFloat(e.target.value))}
                   className="zoom-slider"
                 />
                 <button 
-                  onClick={() => setCropScale(prev => Math.min(3, prev + 0.1))}
+                  onClick={() => applyZoom(cropScale + 0.1)}
                   className="zoom-btn"
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -970,14 +1023,12 @@ export default function ProfilFotoUpload({
 
         .cropper-area {
           position: relative;
-          width: 280px;
-          height: 280px;
-          max-width: min(280px, 70vw);
-          max-height: min(280px, 70vw);
+          width: min(280px, 70vw);
+          height: min(280px, 70vw);
           margin: 0 auto;
-          border-radius: 50%;
+          border-radius: 22%;
           overflow: hidden;
-          background: #1f2937;
+          background: #0f172a;
           cursor: grab;
           isolation: isolate;
           touch-action: none;
@@ -990,23 +1041,15 @@ export default function ProfilFotoUpload({
         .cropper-image-container {
           position: absolute;
           inset: 0;
-          display: flex;
-          align-items: center;
-          justify-content: center;
           overflow: hidden;
         }
 
         .cropper-image-container img {
+          position: absolute;
           max-width: none;
           max-height: none;
-          width: auto;
-          height: auto;
-          min-width: 100%;
-          min-height: 100%;
-          object-fit: cover;
           user-select: none;
           pointer-events: none;
-          transition: transform 0.05s ease-out;
         }
 
         .cropper-overlay {
@@ -1015,11 +1058,11 @@ export default function ProfilFotoUpload({
           pointer-events: none;
         }
 
-        .cropper-circle {
+        .cropper-frame {
           position: absolute;
           inset: 0;
-          border-radius: 50%;
-          box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.8);
+          border-radius: 22%;
+          box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.85);
         }
 
         .cropper-zoom-control {

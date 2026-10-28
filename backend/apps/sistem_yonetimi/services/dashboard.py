@@ -10,7 +10,7 @@ from django.utils import timezone as dj_tz
 from apps.sistem_yonetimi.collectors.host import collect_host_metrics
 from apps.sistem_yonetimi.collectors.postgres import postgres_status
 from apps.sistem_yonetimi.collectors.storage import disk_usage_root, folder_breakdown, largest_subdirs
-from apps.sistem_yonetimi.collectors.systemd import tcp_probe, unit_status
+from apps.sistem_yonetimi.collectors.systemd import display_unit_status
 from apps.sistem_yonetimi.config import get_config
 from apps.sistem_yonetimi.domain.models import (
     SystemErrorEvent,
@@ -60,7 +60,7 @@ def build_dashboard() -> dict:
 
     services = []
     for svc in all_services():
-        st = unit_status(svc.unit)
+        st = display_unit_status(svc.unit)
         services.append({
             'code': svc.code,
             'label': svc.label,
@@ -70,7 +70,9 @@ def build_dashboard() -> dict:
 
     health = run_health_checks()
     running_jobs = SystemJobRun.objects.filter(status='running').count()
-    last_err = SystemErrorEvent.objects.order_by('-last_seen_at').first()
+    last_err = (
+        SystemErrorEvent.objects.filter(status='open').order_by('-last_seen_at').first()
+    )
 
     app_ok = True
     try:
@@ -151,7 +153,7 @@ def list_services_detail() -> list[dict]:
 
     rows = []
     for svc in all_services():
-        st = unit_status(svc.unit)
+        st = display_unit_status(svc.unit)
         mem = st.get('memory_bytes') or process_memory_rss(st.get('pid'))
         rows.append({
             'code': svc.code,

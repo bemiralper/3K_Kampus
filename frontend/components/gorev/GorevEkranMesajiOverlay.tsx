@@ -11,6 +11,7 @@ import {
   type AppNotification,
 } from '@/lib/takvim-api';
 import { playNotificationSound } from '@/lib/notification-sound';
+import { createCoalescedRefresh } from '@/lib/coalesced-refresh';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import { isGorevNotification } from '@/lib/gorev-notifications';
 import '@/components/gorev/gorev.css';
@@ -61,42 +62,45 @@ export default function GorevEkranMesajiOverlay() {
       const res = await fetchScreenNotifications(40);
       if (cancelled) return;
 
-      if (res.success && res.data?.length) {
-        const fresh = res.data.filter(n => !shownIdsRef.current.has(n.id));
-        if (fresh.length > 0) {
-          setQueue(prev => {
-            const merged = [...prev];
-            for (const n of fresh) {
-              if (!merged.some(m => m.id === n.id)) merged.push(n);
-            }
-            return merged;
-          });
-          if (!sessionStorage.getItem(SESSION_SOUND_KEY)) {
-            playNotificationSound();
-            sessionStorage.setItem(SESSION_SOUND_KEY, '1');
-          }
+      if (!res.success) {
+        if (attempt < 4) {
+          attempt += 1;
+          window.setTimeout(() => { void load(); }, 400 * attempt);
         }
         return;
       }
 
-      if (attempt < 4) {
-        attempt += 1;
-        setTimeout(load, 400 * attempt);
+      attempt = 0;
+      if (!res.data?.length) return;
+
+      const fresh = res.data.filter(n => !shownIdsRef.current.has(n.id));
+      if (fresh.length === 0) return;
+      setQueue(prev => {
+        const merged = [...prev];
+        for (const n of fresh) {
+          if (!merged.some(m => m.id === n.id)) merged.push(n);
+        }
+        return merged;
+      });
+      if (!sessionStorage.getItem(SESSION_SOUND_KEY)) {
+        playNotificationSound();
+        sessionStorage.setItem(SESSION_SOUND_KEY, '1');
       }
     };
 
-    load();
-    const pollId = setInterval(load, 45000);
-    const onFocus = () => {
-      attempt = 0;
-      void load();
+    const refresh = createCoalescedRefresh(() => load(), 2000);
+    refresh();
+    const pollId = setInterval(refresh, 45000);
+    const onVis = () => {
+      if (document.visibilityState === 'visible') refresh();
     };
-    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVis);
 
     return () => {
       cancelled = true;
       clearInterval(pollId);
-      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVis);
+      refresh.cancel();
     };
   }, [kurumLoading, activeKurum]);
 

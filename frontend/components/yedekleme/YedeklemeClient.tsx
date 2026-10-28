@@ -1071,8 +1071,9 @@ export default function YedeklemeClient() {
                     )}
                     <p className="yedekleme-help yedekleme-field--full">
                       {schedule.max_age_days
-                        ? `${schedule.max_age_days} günden eski yedekler her gece 04:00’te ve her başarılı otomatik yedekten sonra silinir. Aynı turda eski sistem logları, hata kayıtları ve ${schedule.chat_attachment_days || 90} günden eski sohbet eki dosyaları da temizlenir. Sohbet metni kalır.`
+                        ? `${schedule.max_age_days} günden eski günlük yedekler her gece 04:00’te ve her başarılı otomatik yedekten sonra silinir. Haftalık medya yedeği bu süreye girmez; son 2 kopya, en fazla 21 gün tutulur. Aynı turda eski sistem logları, hata kayıtları ve ${schedule.chat_attachment_days || 30} günden eski sohbet eki dosyaları da temizlenir. Sohbet metni kalır.`
                         : 'Yaş sınırı kapalı; yedekler yalnızca sayı sınırına göre silinir.'}
+                      {' '}Otomatik iş veritabanı yedeği olarak kalmalı. Medya, iletişim PDF’leri dahil, pazar 22:30 cron’u ile alınır. Türü Tam yedek yapmak her gece tüm medyayı yeniden paketler.
                       {' '}“Şimdi Çalıştır” bitene kadar bekler; yarıda kesilemez. Gelecekteki otomatik çalıştırmaları durdurmak için
                       {' '}<strong>Otomatiği Durdur</strong> veya sıklığı <strong>Kapalı</strong> yapıp kaydedin.
                     </p>

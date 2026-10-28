@@ -36,6 +36,9 @@ const FALLBACK_QUICK: AudienceQuickStart[] = [
   { key: "personel", label: "Tüm personel", person_types: ["personel"], hint: "Aktif çalışanlar" },
 ];
 
+/** Telefonda kaç hazır kitle kartı açık gelir; kalanı "Tüm hazır kitleler" ile açılır. */
+const MOBILE_TILE_COUNT = 4;
+
 const FALLBACK_TYPES = [
   { key: "ogrenci" as const, label: "Öğrenci" },
   { key: "veli" as const, label: "Veli" },
@@ -50,10 +53,12 @@ export default function StepAudience({
   onDeleteSaved,
   onOpenRecipients,
 }: Props) {
-  const { query, setQuery, personTypes, catalog, isCoach } = draft;
+  const { query, setQuery, personTypes, catalog, isCoach, preview, previewLoading } = draft;
   const [pickedLabels, setPickedLabels] = useState<Record<string, BulkRecipientHit>>({});
   const [saveName, setSaveName] = useState("");
   const [saveBusy, setSaveBusy] = useState(false);
+  const [tilesExpanded, setTilesExpanded] = useState(false);
+  const liveCount = previewLoading ? null : preview?.deliverable_count ?? 0;
 
   const quickStarts = useMemo(() => {
     const list = catalog?.quick_starts?.length ? catalog.quick_starts : FALLBACK_QUICK;
@@ -101,20 +106,33 @@ export default function StepAudience({
             <p>Bir kalıpla başlayın, aşağıda daraltın.</p>
           </div>
         </header>
-        <div className="bss-tiles" role="list">
-          {quickStarts.map((item) => (
-            <button
-              key={item.key}
-              type="button"
-              role="listitem"
-              className={`bss-tile${activeQuickKey === item.key ? " is-on" : ""}`}
-              onClick={() => setQuery(applyQuickStart(item.person_types, item.add_field, item.add_value))}
-            >
-              <strong>{item.label}</strong>
-              <span>{item.hint || item.person_types.map(personTypeLabel).join(" · ")}</span>
-            </button>
-          ))}
+        <div className={`bss-tiles${tilesExpanded ? " is-expanded" : ""}`} role="group" aria-label="Hazır kitleler">
+          {quickStarts.map((item, index) => {
+            const on = activeQuickKey === item.key;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                aria-pressed={on}
+                className={`bss-tile${on ? " is-on" : ""}${index >= MOBILE_TILE_COUNT && !on ? " is-extra" : ""}`}
+                onClick={() => setQuery(applyQuickStart(item.person_types, item.add_field, item.add_value))}
+              >
+                <strong>{item.label}</strong>
+                <span>{item.hint || item.person_types.map(personTypeLabel).join(" · ")}</span>
+              </button>
+            );
+          })}
         </div>
+        {quickStarts.length > MOBILE_TILE_COUNT && (
+          <button
+            type="button"
+            className="bss-link bss-tiles-more"
+            aria-expanded={tilesExpanded}
+            onClick={() => setTilesExpanded((value) => !value)}
+          >
+            {tilesExpanded ? "Daha az göster" : `Tüm hazır kitleler (${quickStarts.length})`}
+          </button>
+        )}
 
         {!isCoach && saved.length > 0 && (
           <div className="bss-saved">
@@ -136,7 +154,9 @@ export default function StepAudience({
                     type="button"
                     className="bss-saved-x"
                     aria-label={`${item.name} kitlesini sil`}
-                    onClick={() => void onDeleteSaved(item.id)}
+                    onClick={() => {
+                      if (window.confirm(`"${item.name}" kayıtlı kitlesi silinsin mi?`)) void onDeleteSaved(item.id);
+                    }}
                   >
                     ×
                   </button>
@@ -192,7 +212,13 @@ export default function StepAudience({
           )}
         </header>
         {personTypes.length > 0 ? (
-          <FilterBuilder query={query} catalog={catalog} personTypes={personTypes} onChange={setQuery} />
+          <FilterBuilder
+            query={query}
+            catalog={catalog}
+            personTypes={personTypes}
+            onChange={setQuery}
+            liveCount={liveCount}
+          />
         ) : (
           <p className="bss-hint">Filtre için önce bir kişi türü seçin.</p>
         )}
@@ -202,7 +228,7 @@ export default function StepAudience({
         <header className="bss-panel-head">
           <div>
             <h3>Tek tek kişi ekle</h3>
-            <p>Filtreye girmeyen kişileri isimle ekleyin. İsme tıklamak yeterli.</p>
+            <p>Filtreye girmeyen kişileri isimle ekleyin. Öğrenci adı yazınca velileri de listelenir.</p>
           </div>
           {included.length > 0 && <span className="bss-count-badge">{included.length} kişi</span>}
         </header>

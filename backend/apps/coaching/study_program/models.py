@@ -136,15 +136,25 @@ class WeeklyProgram(models.Model):
 
     # ── Aggregate helpers ──
     def refresh_stats(self):
-        """Gün verilerinden istatistikleri yeniden hesapla."""
-        days = self.days.all()
+        """Gün verilerinden istatistikleri yeniden hesapla.
+
+        Prefetch önbelleğindeki silinmiş günlerin pk'si boşalır; ilişki
+        sayımı o nesnelerde ValueError üretir. Hesap doğrudan tablodan yapılır.
+        """
+        if not self.pk:
+            return
+        cache = getattr(self, '_prefetched_objects_cache', None)
+        if isinstance(cache, dict):
+            cache.pop('days', None)
+        days = ProgramDay.objects.filter(program_id=self.pk)
         day_count = days.count() or 1
-        self.total_block_count    = sum(d.blocks.count() for d in days)
-        self.total_question_count = sum(
-            d.blocks.aggregate(s=models.Sum('question_count'))['s'] or 0
-            for d in days
+        agg = ProgramBlock.objects.filter(day__program_id=self.pk).aggregate(
+            blocks=models.Count('id'),
+            questions=models.Sum('question_count'),
         )
-        completed = sum(1 for d in days if d.completion_percent >= 100)
+        self.total_block_count = agg['blocks'] or 0
+        self.total_question_count = agg['questions'] or 0
+        completed = days.filter(completion_percent__gte=100).count()
         self.completion_percent = int(completed / day_count * 100)
         self.save(update_fields=['total_block_count', 'total_question_count', 'completion_percent', 'updated_at'])
 

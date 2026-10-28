@@ -1246,6 +1246,21 @@ html.bs-pop-lock .coach-content {
   border-top: 1px solid #f1f5f9;
   font-size: 0.8rem;
 }
+.bs-pop-done {
+  flex: none;
+  margin-left: auto;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: #0061a6;
+  color: #fff;
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.bs-pop-done:hover { background: #00518b; }
 .bs-pop-cat {
   font-size: 0.72rem;
   font-weight: 700;

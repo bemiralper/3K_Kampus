@@ -37,6 +37,20 @@ from ..interfaces.sube_context import get_exam_or_response
 logger = logging.getLogger(__name__)
 
 
+def booklet_b_has_answers(exam) -> bool:
+    """B kitapçığının kendi cevapları varsa A düzeltmesi onları yeniden kurmaz.
+
+    b_question_number çoğu sınavda aynı harfi eşleştirerek doldurulur; bu bağ
+    sorunun B kitapçığındaki gerçek yeri değildir. A şıkkı düzelince o bağla
+    B anahtarını baştan yazmak, doğru B cevaplarının üzerine yeni harfi basar
+    ve B kitapçığı netini düşürür.
+    """
+    return AnswerKeyItem.objects.filter(
+        answer_key__exam=exam,
+        answer_key__booklet='B',
+    ).exists()
+
+
 def rebuild_booklet_b_from_primary(exam) -> int:
     """
     A anahtarındaki b_question_number'dan B kitapçığını yeniden kur.
@@ -258,7 +272,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     if not b_items:
                         from ..services.booklet_align import align_b_question_numbers
                         align_b_question_numbers(exam, overwrite=True)
-                elif b_items and booklet in ('', 'A'):
+                elif b_items and booklet in ('', 'A') and not booklet_b_has_answers(exam):
                     rebuild_booklet_b_from_primary(exam)
                 elif booklet in ('', 'A'):
                     from ..services.booklet_align import align_b_question_numbers
@@ -426,7 +440,11 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
         scoring_changed = 'correct_answer' in request.data or 'is_cancelled' in request.data
         if scoring_changed:
-            if answer_key.booklet in ('', 'A') and answer_key.is_primary:
+            if (
+                answer_key.booklet in ('', 'A')
+                and answer_key.is_primary
+                and not booklet_b_has_answers(answer_key.exam)
+            ):
                 rebuild_booklet_b_from_primary(answer_key.exam)
             from ..services.exam_rescore import rescore_exam_results
             rescore_exam_results(answer_key.exam)

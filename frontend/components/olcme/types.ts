@@ -770,6 +770,13 @@ export interface StudentDetailSectionItem {
   alana_dahil?: boolean;
 }
 
+export interface StudentDetailArea {
+  name: string;
+  net: number;
+  basari?: number;
+  diff_kurum?: number;
+}
+
 export interface StudentDetailResponse {
   answer_id: number;
   student_id: number | null;
@@ -817,9 +824,17 @@ export interface StudentDetailResponse {
   kurum_avg_net: number;
   sinif_avg_net: number;
   section_details: StudentDetailSectionItem[];
-  strong_areas: { name: string; net: number }[];
-  weak_areas: { name: string; net: number }[];
+  strong_areas: StudentDetailArea[];
+  weak_areas: StudentDetailArea[];
   net_trend: { exam_id: number; exam_name: string; exam_date: string | null; toplam_net: number; section_nets: Record<string, number> }[];
+  net_history?: { exam_id: number; exam_name: string; exam_date: string | null; toplam_net: number; is_current: boolean }[];
+  karne_insights?: {
+    comment: string[];
+    focus: { title: string; note: string; items: { name: string; detail: string }[] };
+    unbanded_questions: number;
+    hidden_section_ids: number[];
+    hidden_grid_ids: number[];
+  };
   dogruluk_orani: number;
   toplam_bos_potansiyel: number;
   referans_yil: number;

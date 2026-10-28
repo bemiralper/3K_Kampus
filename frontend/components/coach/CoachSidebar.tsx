@@ -12,8 +12,7 @@ import {
   type CoachNavChildDef,
 } from "@/components/coach/coachNavItems";
 import { useCoachMenuOrder } from "@/hooks/useCoachMenuOrder";
-import { fetchKontrolBadge } from "@/lib/resources-api";
-import { fetchNotificationSummary } from "@/lib/communication-api";
+import { useCoachNavBadges } from "@/hooks/useCoachNavBadges";
 
 type CoachSidebarProps = {
   isOpen: boolean;
@@ -47,40 +46,12 @@ export default function CoachSidebar({
   const pathname = usePathname();
   const { reorder, getOrderedItems } = useCoachMenuOrder();
   const asideRef = useRef<HTMLElement | null>(null);
-  const [kontrolBadge, setKontrolBadge] = useState(0);
-  const [mesajlarBadge, setMesajlarBadge] = useState(0);
+  const { homework: kontrolBadge, messages: mesajlarBadge } = useCoachNavBadges();
   const [dragId, setDragId] = useState<string | null>(null);
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [dragPosition, setDragPosition] = useState<"before" | "after">("after");
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
   const [menuQuery, setMenuQuery] = useState("");
-
-  useEffect(() => {
-    const refreshMesajlar = () => {
-      fetchNotificationSummary()
-        .then((data) => setMesajlarBadge(data.unread_count ?? 0))
-        .catch(() => setMesajlarBadge(0));
-    };
-    fetchKontrolBadge().then((res) => {
-      if (res.success && res.data) setKontrolBadge(res.data.count ?? 0);
-    });
-    refreshMesajlar();
-
-    const id = setInterval(() => {
-      fetchKontrolBadge().then((res) => {
-        if (res.success && res.data) setKontrolBadge(res.data.count ?? 0);
-      });
-      refreshMesajlar();
-    }, 30_000);
-    const onRefresh = () => refreshMesajlar();
-    window.addEventListener('lms:notifications-refresh', onRefresh);
-    window.addEventListener('lms:communication-inbox', onRefresh);
-    return () => {
-      clearInterval(id);
-      window.removeEventListener('lms:notifications-refresh', onRefresh);
-      window.removeEventListener('lms:communication-inbox', onRefresh);
-    };
-  }, []);
 
   useEffect(() => {
     const el = asideRef.current;
@@ -323,25 +294,7 @@ type CoachBottomNavProps = {
 
 export function CoachBottomNav({ onMenuClick, menuOpen }: CoachBottomNavProps) {
   const pathname = usePathname();
-  const [badges, setBadges] = useState({ homework: 0, messages: 0 });
-  useEffect(() => {
-    const refresh = async () => {
-      const [homework, messages] = await Promise.all([fetchKontrolBadge(), fetchNotificationSummary()]);
-      setBadges({
-        homework: homework.success && homework.data ? homework.data.count ?? 0 : 0,
-        messages: messages.unread_count ?? 0,
-      });
-    };
-    refresh();
-    const id = window.setInterval(refresh, 30_000);
-    window.addEventListener("lms:notifications-refresh", refresh);
-    window.addEventListener("lms:communication-inbox", refresh);
-    return () => {
-      window.clearInterval(id);
-      window.removeEventListener("lms:notifications-refresh", refresh);
-      window.removeEventListener("lms:communication-inbox", refresh);
-    };
-  }, []);
+  const badges = useCoachNavBadges();
   const mobileItems = COACH_NAV_ITEMS.filter((item) =>
     MOBILE_BOTTOM_IDS.includes(item.id as (typeof MOBILE_BOTTOM_IDS)[number]),
   );

@@ -3849,7 +3849,8 @@
 }
 .karneSummary {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 6px;
   margin: 12px;
 }
@@ -4191,119 +4192,6 @@
   height: 10px;
   border-radius: 2px;
 }
-.karneBarStudent::before { background: #0262a7; }
-.karneBarSinif::before { background: #7c3aed; }
-.karneBarKurum::before { background: #d97706; }
-.karneBarList { margin: 0 12px 14px; }
-.karneCompareCard {
-  background: #f8fafc;
-  border: 1px solid #d6e4f0;
-  border-radius: 8px;
-  padding: 8px 10px 10px;
-  margin-bottom: 8px;
-}
-.karneBarName { font-weight: 800; color: #0f172a; font-size: 12px; margin-bottom: 4px; }
-.karneBarLine {
-  display: grid;
-  grid-template-columns: 52px minmax(0, 240px) 3.4em;
-  gap: 8px;
-  align-items: center;
-  margin-top: 3px;
-  font-size: 10px;
-  color: #64748b;
-}
-.karneBarLine strong {
-  text-align: right;
-  font-size: 11px;
-  white-space: nowrap;
-  font-variant-numeric: tabular-nums;
-}
-.karneBarTrack {
-  height: 5px;
-  max-width: 240px;
-  background: #eef2f7;
-  border-radius: 99px;
-  overflow: hidden;
-}
-.karneBarFill {
-  height: 100%;
-  border-radius: 99px;
-}
-.karneBarFillStudent { background: #0262a7; }
-.karneBarFillSinif { background: #7c3aed; }
-.karneBarFillKurum { background: #d97706; }
-.karneVerimList {
-  margin: 0 12px 14px;
-  border: 1px solid #dce5ef;
-  border-radius: 8px;
-  overflow: hidden;
-  background: #fff;
-}
-.karneVerimRow {
-  display: grid;
-  grid-template-columns: minmax(108px, 36%) 1fr 46px;
-  align-items: center;
-  gap: 10px;
-  min-height: 32px;
-  padding: 6px 12px;
-  border-top: 1px solid #eef2f6;
-}
-.karneVerimRow:first-child { border-top: none; }
-.karneVerimRowMain {
-  background: #eaf2fa;
-  box-shadow: inset 2.5px 0 0 #0262a7;
-}
-.karneVerimName {
-  font-size: 12px;
-  font-weight: 500;
-  color: #475569;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.karneVerimRowMain .karneVerimName {
-  font-weight: 800;
-  color: #0f172a;
-}
-.karneVerimRow:not(.karneVerimRowMain) .karneVerimName { padding-left: 12px; }
-.karneVerimTrack {
-  height: 6px;
-  background: #e8eef5;
-  border-radius: 99px;
-  overflow: hidden;
-}
-.karneVerimFill {
-  display: block;
-  height: 100%;
-  border-radius: 99px;
-  min-width: 2px;
-}
-.karneVerimPct {
-  font-size: 13px;
-  font-weight: 800;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.karneAreaPair {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-  margin: 0 12px 12px;
-}
-.karneAreaCard { border-radius: 6px; overflow: hidden; border: 1px solid #e2e8f0; }
-.karneAreaHead {
-  color: #fff;
-  font-size: 12px;
-  font-weight: 800;
-  padding: 6px 10px;
-  text-align: center;
-}
-.karneAreaStrong { background: #16a34a; }
-.karneAreaWeak { background: #dc2626; }
-.karneAreaBody { padding: 8px 10px; background: #f8fafc; min-height: 48px; }
-.karneAreaItem { font-size: 12px; color: #14532d; margin-bottom: 4px; }
-.karneAreaItemWeak { font-size: 12px; color: #7f1d1d; margin-bottom: 4px; }
-
 @media print {
   .karneToolbar { display: none !important; }
   .studentDetailModal {
@@ -4321,12 +4209,8 @@
 }
 
 @media (max-width: 720px) {
-  .karneSummary { grid-template-columns: repeat(3, 1fr); }
+  .karneSummary { grid-auto-flow: row; grid-template-columns: repeat(4, 1fr); }
   .karneRankSplit { grid-template-columns: 1fr; }
-  .karneVerimRow { grid-template-columns: minmax(88px, 42%) 1fr 42px; gap: 8px; }
-  .karneAreaPair { grid-template-columns: 1fr; }
-  .karneBarLine { grid-template-columns: 48px minmax(0, 1fr) 3.4em; }
-  .karneBarTrack { max-width: none; }
   .karneHero { grid-template-columns: 1fr; }
   .karneHeroId { grid-template-columns: 72px 1fr; }
   .karnePhotoWrap { width: 72px; height: 72px; }

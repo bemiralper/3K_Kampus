@@ -156,6 +156,33 @@ export function playNotificationSound() {
   }
 }
 
+const SHARED_SOUND_KEY = 'lms:notification-sound-keys';
+const SHARED_SOUND_TTL_MS = 10 * 60_000;
+
+/**
+ * Aynı bildirim birden çok sekmede yakalandığında ses bir kez çalınır.
+ * Anahtarlar kısa süre localStorage'da tutulur; daha önce çalınmış anahtar sessiz geçer.
+ */
+export function playNotificationSoundOnce(keys: string[]) {
+  if (!keys.length) return;
+  let fresh = keys;
+  try {
+    const now = Date.now();
+    const raw = localStorage.getItem(SHARED_SOUND_KEY);
+    const seen: Record<string, number> = raw ? JSON.parse(raw) : {};
+    const kept: Record<string, number> = {};
+    for (const [k, at] of Object.entries(seen)) {
+      if (typeof at === 'number' && now - at < SHARED_SOUND_TTL_MS) kept[k] = at;
+    }
+    fresh = keys.filter((k) => !(k in kept));
+    fresh.forEach((k) => { kept[k] = now; });
+    localStorage.setItem(SHARED_SOUND_KEY, JSON.stringify(kept));
+  } catch {
+    /* depolama yoksa yine de çal */
+  }
+  if (fresh.length) playNotificationSound();
+}
+
 export function isGorevNotification(baslik: string, url?: string | null): boolean {
   if (baslik.startsWith('Yeni Görev:') || baslik.startsWith('Görev:')) return true;
   if (baslik.startsWith('Yeni Bilgilendirme:') || baslik.startsWith('Bilgilendirme:')) return true;

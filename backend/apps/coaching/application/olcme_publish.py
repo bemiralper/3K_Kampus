@@ -648,7 +648,10 @@ def queue_karne_send(
         exam=exam, kind=KIND_KARNE,
         defaults={'status': ST_PENDING, 'is_enabled': False},
     )
-    if row.status == ST_PENDING and row.is_enabled and row.send_options:
+    opts = row.send_options if isinstance(row.send_options, dict) else {}
+    # Cron işi üstlenince is_enabled kapanır; çalışan işin seçimi ezilirse aynı karneler iki kez gider.
+    running = row.status == ST_PENDING and bool(opts.get('running_since'))
+    if running or (row.status == ST_PENDING and row.is_enabled and row.send_options):
         return {
             'queued': 0,
             'already': True,

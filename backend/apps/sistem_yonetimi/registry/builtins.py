@@ -31,6 +31,24 @@ def _register_services():
         ))
 
 
+def postgres_log_path(folder: Path | None = None) -> str:
+    """Sunucudaki küme sürümüne göre postgresql-*-main.log seç."""
+    root = folder or Path('/var/log/postgresql')
+    if root.is_dir():
+        logs = [p for p in root.glob('postgresql-*-main.log') if p.is_file()]
+        if logs:
+            return str(max(logs, key=lambda p: p.stat().st_mtime))
+    return '/var/log/postgresql/postgresql-16-main.log'
+
+
+def _log_file(log_dir: Path, *names: str) -> str:
+    for name in names:
+        path = log_dir / name
+        if path.is_file():
+            return str(path)
+    return str(log_dir / names[0])
+
+
 def _register_logs():
     cfg = get_config()
     log_dir = Path(cfg['log_dir'])
@@ -39,13 +57,18 @@ def _register_logs():
         ('gunicorn', 'Gunicorn access', str(log_dir / 'backend-access.log'), 'gunicorn'),
         ('nginx', 'Nginx error', '/var/log/nginx/error.log', 'nginx'),
         ('backup', 'Backup cron', str(log_dir / 'backups.log'), 'backup'),
-        ('scheduler', 'Ödeme hatırlatma', str(log_dir / 'payment_reminders.log'), 'scheduler'),
+        ('scheduler', 'Ödeme hatırlatma', _log_file(log_dir, 'comm_payment_reminders.log', 'payment_reminders.log'), 'scheduler'),
         ('whatsapp', 'İletişim kuyruğu', str(log_dir / 'comm_queue.log'), 'whatsapp'),
-        ('sms', 'Kampanya', str(log_dir / 'campaigns.log'), 'sms'),
-        ('mail', 'Hatırlatmalar', str(log_dir / 'reminders.log'), 'mail'),
+        ('sms', 'Kampanya', _log_file(log_dir, 'comm_campaigns.log', 'campaigns.log'), 'sms'),
+        ('mail', 'Takvim hatırlatmaları', _log_file(log_dir, 'reminders.log'), 'mail'),
+        ('sla', 'Sohbet SLA', str(log_dir / 'comm_sla.log'), 'whatsapp'),
+        ('olcme', 'Sınav yayın', str(log_dir / 'olcme_publish.log'), 'scheduler'),
+        ('metrics', 'Sistem metrik', str(log_dir / 'sistem_metrics.log'), 'system'),
+        ('purge', 'İletişim temizlik', str(log_dir / 'comm_purge.log'), 'system'),
+        ('archive', 'Kampanya arşiv', str(log_dir / 'comm_archive.log'), 'system'),
         ('api', 'API access log (HTTP 200=OK; ERROR=5xx)', str(log_dir / 'backend-access.log'), 'api'),
         ('security', 'Gunicorn error (security)', str(log_dir / 'backend-error.log'), 'security'),
-        ('postgres', 'PostgreSQL (varsa)', '/var/log/postgresql/postgresql-16-main.log', 'postgres'),
+        ('postgres', 'PostgreSQL (varsa)', postgres_log_path(), 'postgres'),
     ]
     for code, label, path, category in sources:
         register_log_source(LogSourceSpec(code=code, label=label, path=path, category=category))
@@ -145,11 +168,21 @@ def _register_health():
         check=queue_check('SMS', 'SMS'),
         category='comm',
     ))
+    def mail_check():
+        from django.conf import settings
+        backend = getattr(settings, 'EMAIL_BACKEND', '') or ''
+        host = (getattr(settings, 'EMAIL_HOST', '') or '').strip()
+        if any(token in backend for token in ('console', 'dummy', 'locmem')):
+            return {'status': 'warn', 'message': 'E-posta konsola yazılıyor, SMTP yok'}
+        if host:
+            return {'status': 'up', 'message': f'SMTP ayarlı ({host})'}
+        return {'status': 'unknown', 'message': 'SMTP sunucusu tanımlı değil'}
+
     register_health_check(HealthCheckSpec(
         code='mail',
         label='Mail',
         category='comm',
-        check=lambda: {'status': 'unknown', 'message': 'SMTP sağlık kontrolü yapılandırılmadı'},
+        check=mail_check,
     ))
 
 

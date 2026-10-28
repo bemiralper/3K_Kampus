@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import RecipientsModal from "@/app/admin/iletisim/toplu-gonder/RecipientsModal";
 import { hasAnyFilter, hasIncluded, querySummary } from "@/app/admin/iletisim/toplu-gonder/audience-utils";
 import "@/app/admin/iletisim/toplu-gonder/toplu-gonder.css";
+import { CommDialog } from "@/components/communication/CommDialog";
 import { CommToast, useCommToast } from "@/components/communication/CommToast";
 import CommunicationPageShell from "@/components/communication/CommunicationPageShell";
 import WhatsAppPhonePreview from "@/components/communication/WhatsAppPhonePreview";
@@ -28,8 +29,15 @@ import {
 import { CampaignSegmentBar, CampaignStatusBadge } from "./CampaignProgress";
 import StepAudience from "./StepAudience";
 import StepMessage from "./StepMessage";
-import StepReview from "./StepReview";
-import { campaignMessageReady, composePreview } from "./message-helpers";
+import StepReview, { type ScheduleMode } from "./StepReview";
+import {
+  PREVIEW_ANCHOR_ID,
+  QUIET_HOURS_LABEL,
+  campaignMessageReady,
+  composePreview,
+  isQuietHour,
+  scheduleError,
+} from "./message-helpers";
 import { type BulkSendMode, useBulkSendDraft } from "./useBulkSendDraft";
 import "./bulk-send.css";
 import "./studio.css";
@@ -58,7 +66,19 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [sent, setSent] = useState<CampaignItem | null>(null);
   const [replayed, setReplayed] = useState(false);
+  const [scheduleMode, setScheduleMode] = useState<ScheduleMode>("now");
+  const [scheduledAt, setScheduledAt] = useState("");
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const clientToken = useRef<string | null>(null);
+  const railRef = useRef<HTMLElement>(null);
+
+  const goToStep = (next: StepNo) => {
+    setStep(next);
+    const rail = railRef.current;
+    if (!rail) return;
+    const margin = parseFloat(getComputedStyle(rail).scrollMarginTop) || 0;
+    if (rail.getBoundingClientRect().top < margin) rail.scrollIntoView({ block: "start", behavior: "smooth" });
+  };
 
   const loadSaved = useCallback(async () => {
     try {
@@ -86,17 +106,27 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
   const deliverable = draft.preview?.deliverable_count ?? 0;
   const audienceTouched = draft.personTypes.length > 0 || hasIncluded(draft.query) || hasAnyFilter(draft.query);
   const messageReady = campaignMessageReady(draft.selectedTemplate, draft.variableValues, attachments);
-  const canSend = deliverable > 0 && messageReady && !submitting;
+  const scheduleProblem = scheduleMode === "later" ? scheduleError(scheduledAt) : null;
+  const canSend = deliverable > 0 && messageReady && !submitting && !draft.previewLoading && !scheduleProblem;
   const account = draft.accounts.find((item) => item.id === draft.accountId) || null;
   const previewText = composePreview(draft.selectedTemplate, draft.variableValues);
+  const summary = querySummary(draft.query, draft.catalog);
+  const sendAt = scheduleMode === "later" && !scheduleProblem ? new Date(scheduledAt) : null;
+  const sentScheduled = Boolean(
+    sent?.scheduled_at
+    && ["DRAFT", "CONFIRMED"].includes(sent.status)
+    && new Date(sent.scheduled_at).getTime() > Date.now(),
+  );
 
   const steps: Array<{ no: StepNo; label: string; hint: string; ok: boolean }> = useMemo(() => [
     {
       no: 1,
       label: "Kime",
-      hint: deliverable > 0
-        ? `${deliverable.toLocaleString("tr-TR")} kişi`
-        : audienceTouched ? "Alıcı yok" : "Kitle seçin",
+      hint: draft.previewLoading && audienceTouched
+        ? "Hesaplanıyor…"
+        : deliverable > 0
+          ? `${deliverable.toLocaleString("tr-TR")} kişi`
+          : audienceTouched ? "Alıcı yok" : "Kitle seçin",
       ok: deliverable > 0,
     },
     {
@@ -108,18 +138,21 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
     {
       no: 3,
       label: "Gönder",
-      hint: canSend ? "Hazır" : "Eksik var",
+      hint: canSend ? (scheduleMode === "later" ? "Zamanlanacak" : "Hazır") : "Eksik var",
       ok: canSend,
     },
-  ], [deliverable, audienceTouched, draft.selectedTemplate, messageReady, canSend]);
+  ], [deliverable, audienceTouched, draft.previewLoading, draft.selectedTemplate, messageReady, canSend, scheduleMode]);
 
   const resetAll = () => {
     draft.reset();
     setAttachments([]);
+    setScheduleMode("now");
+    setScheduledAt("");
     setStep(1);
   };
 
   const send = async () => {
+    setConfirmOpen(false);
     if (!canSend) return;
     if (!clientToken.current) clientToken.current = newCampaignClientToken();
     setSubmitting(true);
@@ -129,7 +162,7 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
         Object.entries(draft.variableValues).filter(([, value]) => (value || "").trim()),
       );
       const result = await createCampaign({
-        title: draft.title.trim() || querySummary(draft.query),
+        title: draft.title.trim() || summary,
         body: draft.selectedTemplate?.body_named || undefined,
         template_name: draft.templateName,
         template_language: draft.templateLanguage,
@@ -138,13 +171,18 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
         send_options: { template_context: templateContext },
         channel_config_id: draft.accountId || undefined,
         client_token: clientToken.current || undefined,
+        scheduled_at: sendAt ? sendAt.toISOString() : undefined,
       });
       setSent(result);
       setReplayed(!!result.idempotent_replay);
       clientToken.current = null;
       resetAll();
       showToast(
-        result.idempotent_replay ? "Bu gönderim zaten kuyruğa alınmıştı." : "Gönderim kuyruğa alındı.",
+        result.idempotent_replay
+          ? "Bu gönderim zaten kuyruğa alınmıştı."
+          : result.scheduled_at
+            ? "Gönderim zamanlandı."
+            : "Gönderim kuyruğa alındı.",
         "success",
       );
       window.scrollTo({ top: 0, behavior: "smooth" });
@@ -190,16 +228,21 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
             <header className="bss-panel-head">
               <div>
                 <h3>
-                  {sent.title || "Gönderim"} <CampaignStatusBadge status={sent.status} />
+                  {sent.title || "Gönderim"}{" "}
+                  {sentScheduled
+                    ? <span className="bs-badge tone-blue">Zamanlandı</span>
+                    : <CampaignStatusBadge status={sent.status} />}
                 </h3>
                 <p>
                   {replayed
                     ? "Bu gönderim daha önce kuyruğa alınmıştı; yeni kampanya açılmadı."
-                    : sent.status === "CONFIRMED"
-                      ? `Alıcılar kuyruğa alınıyor: ${sent.materialized_count ?? 0}/${sent.total_recipients}`
-                      : isCampaignActive(sent.status)
-                        ? "Mesajlar arka planda gönderiliyor; sayfa kendini yeniler."
-                        : "Gönderim tamamlandı."}
+                    : sentScheduled
+                      ? `${new Date(sent.scheduled_at!).toLocaleString("tr-TR", { dateStyle: "medium", timeStyle: "short" })} tarihinde gönderilecek. İptal etmek için Detay'a gidin.`
+                      : sent.status === "CONFIRMED"
+                        ? `Alıcılar kuyruğa alınıyor: ${sent.materialized_count ?? 0}/${sent.total_recipients}`
+                        : isCampaignActive(sent.status)
+                          ? "Mesajlar arka planda gönderiliyor; sayfa kendini yeniler."
+                          : "Gönderim tamamlandı."}
                 </p>
               </div>
               <span className="bss-sent-actions">
@@ -223,14 +266,14 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
           </section>
         )}
 
-        <nav className="bss-rail" aria-label="Gönderim adımları">
+        <nav ref={railRef} className="bss-rail" aria-label="Gönderim adımları">
           {steps.map((item) => (
             <button
               key={item.no}
               type="button"
               className={`bss-rail-step${step === item.no ? " is-active" : ""}${item.ok ? " is-ok" : ""}`}
               aria-current={step === item.no ? "step" : undefined}
-              onClick={() => setStep(item.no)}
+              onClick={() => goToStep(item.no)}
             >
               <span className="bss-rail-no" aria-hidden="true">{item.ok ? "✓" : item.no}</span>
               <span className="bss-rail-text">
@@ -252,7 +295,7 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
                   await createSavedAudience({
                     name,
                     query: draft.query,
-                    description: querySummary(draft.query),
+                    description: summary,
                   });
                   await loadSaved();
                   showToast("Kitle kaydedildi.", "success");
@@ -270,13 +313,24 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
               <StepReview
                 draft={draft}
                 attachments={attachments}
-                onGoToStep={setStep}
+                previewText={previewText}
+                scheduleMode={scheduleMode}
+                scheduledAt={scheduledAt}
+                onScheduleChange={(mode, value) => {
+                  setScheduleMode(mode);
+                  setScheduledAt(value);
+                }}
+                onGoToStep={goToStep}
                 onOpenRecipients={() => setShowRecipients(true)}
               />
             )}
           </main>
 
-          <aside className="bss-side" aria-label={step === 1 ? "Kitle özeti" : "Mesaj önizlemesi"}>
+          <aside
+            id={PREVIEW_ANCHOR_ID}
+            className="bss-side"
+            aria-label={step === 1 ? "Kitle özeti" : "Mesaj önizlemesi"}
+          >
             {step === 1 ? (
               <AudienceInsight draft={draft} onOpenRecipients={() => setShowRecipients(true)} />
             ) : (
@@ -306,11 +360,11 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
           </div>
           <p className="bss-bar-note">
             {step === 1
-              ? querySummary(draft.query)
+              ? summary
               : step === 2
                 ? draft.selectedTemplate?.name || "Şablon seçilmedi"
                 : canSend
-                  ? `${account ? accountLabel(account) : "Varsayılan hat"} üzerinden gönderilecek`
+                  ? `${account ? accountLabel(account) : "Varsayılan hat"} üzerinden ${sendAt ? formatSendAt(sendAt) : "hemen"} gönderilecek`
                   : "Eksikleri tamamlayın"}
           </p>
           <div className="bss-bar-actions">
@@ -318,14 +372,14 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
               <button
                 type="button"
                 className="bss-btn"
-                onClick={() => setStep((current) => (current === 3 ? 2 : 1))}
+                onClick={() => goToStep(step === 3 ? 2 : 1)}
                 disabled={submitting}
               >
                 Geri
               </button>
             )}
             {step < 3 ? (
-              <button type="button" className="bss-btn is-primary" onClick={() => setStep(step === 1 ? 2 : 3)}>
+              <button type="button" className="bss-btn is-primary" onClick={() => goToStep(step === 1 ? 2 : 3)}>
                 {step === 1 ? "Mesaja geç" : "Son kontrole geç"}
               </button>
             ) : (
@@ -333,12 +387,12 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
                 type="button"
                 className="bss-btn is-primary"
                 disabled={!canSend}
-                onClick={() => void send()}
+                onClick={() => setConfirmOpen(true)}
               >
                 {submitting
                   ? "Gönderiliyor…"
                   : deliverable > 0
-                    ? `${deliverable.toLocaleString("tr-TR")} kişiye gönder`
+                    ? `${deliverable.toLocaleString("tr-TR")} kişiye ${sendAt ? "zamanla" : "gönder"}`
                     : "Gönder"}
               </button>
             )}
@@ -355,9 +409,62 @@ export default function BulkSendStudio({ mode = "admin" }: Props) {
         />
       )}
 
+      <CommDialog
+        open={confirmOpen}
+        title={sendAt ? "Gönderimi zamanla" : "Gönderimi başlat"}
+        description="Gönderim başladıktan sonra iletilen mesajlar geri alınamaz."
+        onClose={() => setConfirmOpen(false)}
+        width={460}
+        footer={
+          <>
+            <button type="button" className="comm-btn-secondary" onClick={() => setConfirmOpen(false)}>
+              Vazgeç
+            </button>
+            <button
+              type="button"
+              className="comm-btn-primary"
+              disabled={!canSend}
+              onClick={() => void send()}
+            >
+              {`${deliverable.toLocaleString("tr-TR")} kişiye ${sendAt ? "zamanla" : "gönder"}`}
+            </button>
+          </>
+        }
+      >
+        <div className="bs">
+          <dl className="bss-confirm">
+            <div><dt>Kime</dt><dd>{deliverable.toLocaleString("tr-TR")} kişi · {summary}</dd></div>
+            {draft.preview && (
+              <div>
+                <dt>Dağılım</dt>
+                <dd>
+                  {[
+                    draft.preview.ogrenci_count ? `${draft.preview.ogrenci_count.toLocaleString("tr-TR")} öğrenci` : "",
+                    draft.preview.veli_count ? `${draft.preview.veli_count.toLocaleString("tr-TR")} veli` : "",
+                    draft.preview.personel_count ? `${draft.preview.personel_count.toLocaleString("tr-TR")} personel` : "",
+                  ].filter(Boolean).join(" · ") || "—"}
+                </dd>
+              </div>
+            )}
+            <div><dt>Şablon</dt><dd>{draft.selectedTemplate?.name || "—"}</dd></div>
+            <div><dt>Hat</dt><dd>{account ? accountLabel(account) : "Varsayılan"}</dd></div>
+            <div><dt>Zaman</dt><dd>{sendAt ? formatSendAt(sendAt) : "Hemen"}</dd></div>
+          </dl>
+          {isQuietHour(sendAt ?? new Date()) && (
+            <p className="bss-alert tone-warn">
+              Gönderim {QUIET_HOURS_LABEL} arasına denk geliyor. Sabah saatine zamanlamak daha uygun olabilir.
+            </p>
+          )}
+        </div>
+      </CommDialog>
+
       <CommToast toast={toast} />
     </CommunicationPageShell>
   );
+}
+
+function formatSendAt(at: Date): string {
+  return at.toLocaleString("tr-TR", { dateStyle: "medium", timeStyle: "short" });
 }
 
 /** 1. adımda sağ kolon: canlı kitle dağılımı. */
@@ -368,7 +475,8 @@ function AudienceInsight({
   draft: ReturnType<typeof useBulkSendDraft>;
   onOpenRecipients: () => void;
 }) {
-  const { preview, previewLoading, previewError, query } = draft;
+  const { preview, previewLoading, previewError, query, catalog, personTypes } = draft;
+  const touched = personTypes.length > 0 || hasIncluded(query) || hasAnyFilter(query);
   const deliverable = preview?.deliverable_count ?? 0;
   const matched = preview?.matched_count ?? 0;
   const unsuitable = preview?.unsuitable_count ?? 0;
@@ -394,7 +502,7 @@ function AudienceInsight({
             )}
             <span>kişiye gidecek</span>
           </div>
-          <p className="bss-side-sub">{querySummary(query)}</p>
+          <p className="bss-side-sub">{querySummary(query, catalog)}</p>
 
           {rows.length > 0 && (
             <ul className="bss-breakdown">
@@ -412,15 +520,21 @@ function AudienceInsight({
               )}
               {unsuitable > 0 && (
                 <li className="is-warn">
-                  <span>Gönderilmeyecek</span>
-                  <b>{unsuitable.toLocaleString("tr-TR")}</b>
+                  <button type="button" className="bss-breakdown-link" onClick={onOpenRecipients}>
+                    <span>Gönderilmeyecek</span>
+                    <b>{unsuitable.toLocaleString("tr-TR")}</b>
+                  </button>
                 </li>
               )}
             </ul>
           )}
 
           {deliverable === 0 && !previewLoading && (
-            <p className="bss-side-note">Hazır kitle seçin veya kişi türü işaretleyin.</p>
+            <p className="bss-side-note">
+              {touched
+                ? "Bu seçimde mesaj gidebilecek kişi yok. Filtreleri gevşetin veya kişi ekleyin."
+                : "Hazır kitle seçin veya kişi türü işaretleyin."}
+            </p>
           )}
           <button type="button" className="bss-btn is-block" onClick={onOpenRecipients}>
             Alıcı listesini aç

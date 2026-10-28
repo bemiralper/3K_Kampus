@@ -24,6 +24,7 @@ RESOURCES = [
         resource_type=ResourceType.MEDIA,
         description='Personel fotoğraf ve sözleşme dosyaları.',
         config={'relative_to': 'media', 'path': 'personel'},
+        is_default=False,
         priority=71,
     ),
 ]

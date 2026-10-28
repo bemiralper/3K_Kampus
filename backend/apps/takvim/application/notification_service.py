@@ -463,6 +463,9 @@ class AppNotificationService:
     def get_unread_count(self, user_id: int, kurum_id: int, kaynak: str = 'diger') -> int:
         return self.repo.get_unread_count(user_id, kurum_id, kaynak=kaynak)
 
+    def get_unread_badge(self, user_id: int, kurum_id: int, kaynak: str = 'diger') -> dict:
+        return self.repo.get_unread_badge(user_id, kurum_id, kaynak=kaynak)
+
     def mark_as_read(self, notification_id):
         self.repo.mark_as_read(notification_id)
 

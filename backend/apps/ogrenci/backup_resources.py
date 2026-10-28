@@ -27,7 +27,7 @@ RESOURCES = [
         resource_type=ResourceType.MEDIA,
         description='Öğrenci profil fotoğrafları.',
         config={'relative_to': 'media', 'path': 'ogrenci'},
-        is_default=True,
+        is_default=False,
         priority=61,
     ),
 ]

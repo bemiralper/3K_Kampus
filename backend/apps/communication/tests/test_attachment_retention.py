@@ -83,6 +83,31 @@ class ChatAttachmentRetentionTests(TestCase):
                 self.assertGreaterEqual(result['files_deleted'], 1)
                 self.assertGreaterEqual(result['orphans_deleted'], 1)
 
+    def test_default_window_is_thirty_days(self):
+        with tempfile.TemporaryDirectory() as td:
+            media = Path(td)
+            with override_settings(
+                MEDIA_ROOT=media,
+                DATA_RETENTION={'chat_attachment_days': 30},
+            ):
+                old = self._attach('eski.pdf', b'old')
+                recent = self._attach('yeni.pdf', b'new')
+                MessageAttachment.objects.filter(pk=old.pk).update(
+                    created_at=timezone.now() - timedelta(days=40),
+                )
+                MessageAttachment.objects.filter(pk=recent.pk).update(
+                    created_at=timezone.now() - timedelta(days=10),
+                )
+                old_path = media / old.file.name
+
+                purge_expired_chat_files()
+
+                old.refresh_from_db()
+                recent.refresh_from_db()
+                self.assertEqual(old.file.name, '')
+                self.assertFalse(old_path.exists())
+                self.assertTrue(recent.file.name)
+
     def test_shared_file_survives_while_a_newer_message_uses_it(self):
         with tempfile.TemporaryDirectory() as td:
             with override_settings(MEDIA_ROOT=Path(td)):

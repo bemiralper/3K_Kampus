@@ -7,10 +7,22 @@ from datetime import timedelta
 from pathlib import Path
 
 from django.conf import settings
+from django.db.models import Q
 from django.utils import timezone
 
-from apps.yedekleme.domain.models import BackupArtifact, BackupSchedule, BackupStatus, BackupTrigger
+from apps.yedekleme.domain.models import (
+    BackupArtifact,
+    BackupKind,
+    BackupSchedule,
+    BackupStatus,
+    BackupTrigger,
+)
 from apps.yedekleme.engine.storage import WORK_DIR_NAME, delete_file, local_root
+
+# Haftalık ve dosya yedekleri 5 günlük tavana girmez: son 2 kopya, en fazla 21 gün.
+LONG_LIVED = Q(trigger=BackupTrigger.WEEKLY) | Q(kind=BackupKind.FILES)
+MEDIA_MAX_AGE_DAYS = 21
+MEDIA_KEEP = 2
 
 
 class RetentionService:
@@ -19,14 +31,19 @@ class RetentionService:
         retention = (getattr(settings, 'BACKUP_CONFIG', {}) or {}).get('retention') or {}
         deleted = 0
 
-        # Yaş tavanı her zaman uygulanır. GFS (aylık 12, manuel 30) bu süreyi uzatamaz.
+        # Kısa yaş tavanı günlük/manuel kopyalar içindir. Haftalık medya bunu uzatır.
         max_age_days = retention.get('max_age_days')
         if max_age_days:
             cutoff = timezone.now() - timedelta(days=int(max_age_days))
             aged = BackupArtifact.objects.exclude(
                 status=BackupStatus.RUNNING,
-            ).filter(started_at__lt=cutoff)
+            ).exclude(LONG_LIVED).filter(started_at__lt=cutoff)
             deleted += self._delete_artifacts(aged)
+            media_cutoff = timezone.now() - timedelta(days=MEDIA_MAX_AGE_DAYS)
+            aged_media = BackupArtifact.objects.exclude(
+                status=BackupStatus.RUNNING,
+            ).filter(LONG_LIVED, started_at__lt=media_cutoff)
+            deleted += self._delete_artifacts(aged_media)
             deleted += self._purge_unreferenced_files(int(max_age_days))
 
         if not schedule.auto_delete_old:
@@ -34,6 +51,8 @@ class RetentionService:
 
         max_n = schedule.max_artifacts or 10
         completed = BackupArtifact.objects.filter(status=BackupStatus.COMPLETED)
+        completed_short = completed.exclude(LONG_LIVED)
+        completed_long = completed.filter(LONG_LIVED)
 
         # Korunacak id'lerin birleşimi — bir yedek herhangi bir sayı kuralına
         # uyuyorsa, yaş tavanının içindeyse silinmez.
@@ -47,14 +66,13 @@ class RetentionService:
         )
 
         keep_ids.update(
-            completed.exclude(trigger=BackupTrigger.PRE_RESTORE)
+            completed_short.exclude(trigger=BackupTrigger.PRE_RESTORE)
             .order_by('-started_at')
             .values_list('id', flat=True)[:max_n]
         )
 
         for trigger, key in [
             (BackupTrigger.DAILY, 'daily'),
-            (BackupTrigger.WEEKLY, 'weekly'),
             (BackupTrigger.MONTHLY, 'monthly'),
             (BackupTrigger.MANUAL, 'manual'),
         ]:
@@ -62,10 +80,14 @@ class RetentionService:
             if not limit:
                 continue
             keep_ids.update(
-                completed.filter(trigger=trigger)
+                completed_short.filter(trigger=trigger)
                 .order_by('-started_at')
                 .values_list('id', flat=True)[: int(limit)]
             )
+
+        keep_ids.update(
+            completed_long.order_by('-started_at').values_list('id', flat=True)[:MEDIA_KEEP]
+        )
 
         extras = completed.exclude(id__in=keep_ids)
         deleted += self._delete_artifacts(extras)

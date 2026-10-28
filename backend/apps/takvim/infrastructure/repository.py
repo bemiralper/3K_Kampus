@@ -401,6 +401,19 @@ class AppNotificationRepository:
         return AppNotificationRepository._apply_kaynak(qs, kaynak).count()
 
     @staticmethod
+    def get_unread_badge(user_id: int, kurum_id: int, kaynak: str = 'diger') -> dict:
+        """Rozet için sayaç ve en yeni id. Liste gövdesi dönmez."""
+        qs = AppNotification.objects.filter(
+            user_id=user_id, kurum_id=kurum_id, is_read=False,
+        )
+        qs = AppNotificationRepository._apply_kaynak(qs, kaynak)
+        newest_id = qs.order_by('-created_at').values_list('id', flat=True).first()
+        return {
+            'unread_count': qs.count(),
+            'newest_id': str(newest_id) if newest_id else None,
+        }
+
+    @staticmethod
     def get_by_id(notification_id) -> Optional[AppNotification]:
         try:
             return AppNotification.objects.get(id=notification_id)

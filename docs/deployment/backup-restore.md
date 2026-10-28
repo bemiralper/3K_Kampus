@@ -65,7 +65,8 @@ sudo ./backend/scripts/install-backup-cron.sh
 
 Bu işlem `/etc/cron.d/lms-yedekleme` dosyasını yazar:
 
-- Her dakika → `run_scheduled_backups` (UI’daki saat±1 dk penceresini yakalar)
+- Her 5 dakika → `backup-cron-tick.sh` (paneldeki saat gelmeden Django açılmaz; saat geçtiyse ve bugün alınmadıysa `run_scheduled_backups`)
+- Pazar 22:30 → yalnızca `system.media` (iletişim PDF’leri dahil). Günlük `last_run` kaydını ezmez.
 - Her gün 04:00 → `purge_expired_backups`
 
 ### Doğrulama
@@ -87,14 +88,15 @@ UI: **Yedekleme → Otomatik Yedekleme** → sıklık (Günlük/Haftalık/Aylık
 ### Manuel crontab (alternatif)
 
 ```cron
-* * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups >> /var/log/lms/backups.log 2>&1
+*/5 * * * * /var/www/lms/backend/scripts/backup-cron-tick.sh >> /var/log/lms/backups.log 2>&1
+30 22 * * 0 cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups --kind selected --resources system.media --trigger weekly --skip-schedule-record >> /var/log/lms/backups.log 2>&1
 0 4 * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1
 ```
 
 Docker (host cron örneği):
 
 ```cron
-* * * * * docker compose -f /path/to/docker-compose.dev.yml --env-file /path/to/.env.docker exec -T backend python manage.py run_scheduled_backups
+*/5 * * * * docker compose -f /path/to/docker-compose.dev.yml --env-file /path/to/.env.docker exec -T backend python manage.py run_scheduled_backups
 ```
 
 Manuel test / hemen çalıştır:

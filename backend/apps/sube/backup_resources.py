@@ -18,6 +18,7 @@ RESOURCES = [
         resource_type=ResourceType.MEDIA,
         description='Şube logo dosyaları.',
         config={'relative_to': 'media', 'path': 'sube_branding'},
+        is_default=False,
         priority=18,
     ),
 ]

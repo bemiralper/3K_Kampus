@@ -1083,18 +1083,44 @@ class MessageRepository:
         Teslim/okundu gibi durum güncellemeleri de bu artımlı yanıtla taşınır;
         istemci ayrı bir "son 40 mesajı yeniden çek" isteği yapmaz (FE-01).
         """
+        return MessageRepository.list_since_window(
+            conversation_id, after_id=after_id, limit=limit,
+        )[0]
+
+    @staticmethod
+    def list_since_window(conversation_id, *, after_id, limit: int = 100):
+        """`list_since` + yeni mesajların sınıra takılıp takılmadığı.
+
+        Yeni mesajlar ve durumu değişen eski mesajlar ayrı sınırlanır: çok sayıda
+        eski mesajın durumu değiştiğinde en yeni mesajlar yanıttan düşmesin.
+        Dönen ikinci değer True ise `after_id` sonrasında gösterilmeyen yeni
+        mesaj kalmıştır; istemci son sayfayı baştan yüklemelidir.
+        """
         anchor = Message.objects.filter(id=after_id).values('created_at')[:1]
+        related = ('reply_to', 'forwarded_from', 'sender_user')
+        base = MessageRepository.visible(conversation_id)
+        newer = list(
+            base.filter(created_at__gt=anchor)
+            .order_by('created_at')
+            .select_related(*related)
+            .prefetch_related(*MessageRepository.THREAD_PREFETCH)[: limit + 1]
+        )
+        truncated = len(newer) > limit
+        newer = newer[:limit]
         # "Durumu değişti" = oluşturulduktan en az 1 sn sonra güncellendi; aksi halde
         # auto_now farkı yüzünden her mesaj (anchor dahil) her seferinde dönerdi.
-        status_changed = Q(updated_at__gt=anchor) & Q(
-            updated_at__gt=F('created_at') + timedelta(seconds=1),
+        changed = list(
+            base.filter(
+                Q(created_at__lte=anchor)
+                & Q(updated_at__gt=anchor)
+                & Q(updated_at__gt=F('created_at') + timedelta(seconds=1)),
+            )
+            .order_by('-updated_at')
+            .select_related(*related)
+            .prefetch_related(*MessageRepository.THREAD_PREFETCH)[:limit]
         )
-        qs = MessageRepository.visible(conversation_id).filter(
-            Q(created_at__gt=anchor) | status_changed,
-        ).order_by('created_at')
-        return qs.select_related('reply_to', 'forwarded_from', 'sender_user').prefetch_related(
-            *MessageRepository.THREAD_PREFETCH,
-        )[:limit]
+        changed.sort(key=lambda m: m.created_at)
+        return changed + newer, truncated
 
     @staticmethod
     def list_around(conversation_id, *, anchor_id, before: int = 25, after: int = 25):
@@ -1220,6 +1246,10 @@ class MessageStatusEventRepository:
                         locked.failed_reason = explain_from_webhook_errors(errors)
                         update_fields.append('failed_reason')
             locked.save(update_fields=update_fields)
+            # Canlı akış sohbet damgasını izler; tikler açık ekranda hemen güncellensin.
+            Conversation.objects.filter(pk=locked.conversation_id).update(
+                updated_at=timezone.now(),
+            )
 
         # Çağıranın elindeki örneği de güncel tut
         message.status = locked.status

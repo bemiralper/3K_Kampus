@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import traceback
 
+from django.http import Http404
+
 
 class SystemErrorMiddleware:
     def __init__(self, get_response):
@@ -13,6 +15,9 @@ class SystemErrorMiddleware:
         return self.get_response(request)
 
     def process_exception(self, request, exception):
+        # 404 beklenen bir cevaptır; hata merkezine 500 diye yazılmaz.
+        if isinstance(exception, Http404):
+            return None
         # Avoid recursion if sistem_yonetimi itself fails during migrate
         path = getattr(request, 'path', '') or ''
         if path.startswith('/sistem-yonetimi/api/'):

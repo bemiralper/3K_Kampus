@@ -1,18 +1,20 @@
 """Ölçme — öğrenci sınav sonuç belgesi (karne) PDF.
 
-Belge dört bölümden oluşur:
+Belge üç bölümden oluşur:
 
-1. Künye + özet      — kimlik şeridi, temel göstergeler, sıralama, ders tablosu, zorluk bandı
-2. Karşılaştırma     — ders bazlı öğrenci/sınıf/kurum barları, verimlilik, güçlü-zayıf
-3. Kazanım analizi   — `topic_blocks` doluysa
-4. Cevap anahtarı    — `answer_grids` doluysa
+1. Özet             — künye, göstergeler, cevap dağılımı + ders radarı, değerlendirme,
+                      net gelişimi, sıralama, güçlü-zayıf alanlar
+2. Ders analizi     — ders tablosu, zorluk bandı, çalışılacak konular, cevaplar
+3. Kazanım analizi  — `topic_blocks` doluysa
 
-Dışa açık yüzey `render_karne_pdf`, `render_karne_pdf_many` ve `karne_filename`
-ile sınırlıdır; geri kalan her şey iç ayrıntıdır.
+Dışa açık yüzey `render_karne_pdf`, `render_karne_pdf_many`, `karne_filename` ve
+web önizlemesinin kullandığı `karne_insights` ile sınırlıdır; geri kalan her şey
+iç ayrıntıdır.
 """
 from __future__ import annotations
 
 import io
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -40,7 +42,7 @@ GOLD = '#B7862B'
 # Karşılaştırma barlarında kullanılan seri renkleri
 SERIES_STUDENT = BRAND
 SERIES_CLASS = VIOLET
-SERIES_KURUM = AMBER
+SERIES_KURUM = MUTED
 
 # Geriye dönük uyumluluk: eski sürüm bu adları modül düzeyinde tutuyordu.
 PRIMARY = BRAND
@@ -140,8 +142,9 @@ def _fmt_int(n):
 
 
 def _pct(n):
+    # Web önizlemesi Math.round kullanır; aynı yüzdeyi göstermek için buçuk yukarı yuvarlanır.
     try:
-        return f'%{int(round(float(n or 0)))}'
+        return f'%{math.floor(float(n or 0) + 0.5)}'
     except (TypeError, ValueError):
         return '—'
 
@@ -245,7 +248,9 @@ def _has_class_context(data) -> bool:
 
 def _ordered_sections(data) -> list[tuple[dict, bool]]:
     """Ana bölümleri kendi alt bölümleriyle birlikte sıralar."""
-    details = data.get('section_details') or []
+    from apps.coaching.olcme_degerlendirme.views.analysis_views import is_unattempted_optional_section
+
+    details = [sd for sd in data.get('section_details') or [] if not is_unattempted_optional_section(sd)]
     mains = [sd for sd in details if not sd.get('is_sub_section')]
     subs = [sd for sd in details if sd.get('is_sub_section')]
     ordered: list[tuple[dict, bool]] = []
@@ -315,15 +320,18 @@ def _build_styles(font: str, font_bold: str) -> dict[str, Any]:
         'alanNote': mk('KAlanNote', size=7.5, color=MUTED, align=0),
         'diffNote': mk('KDiffNote', size=8, color=INK_SOFT, align=0),
         # Tablolar
-        'th': mk('KTh', size=7, bold=True, color='#FFFFFF', align=1),
-        'thLeft': mk('KThLeft', size=7, bold=True, color='#FFFFFF', align=0),
-        'td': mk('KTd', size=7.5, color=INK, align=1),
-        'tdLeft': mk('KTdLeft', size=7.5, color=INK_SOFT, align=0),
-        'tdName': mk('KTdName', size=7.5, bold=True, color=INK, align=0),
-        'tdSub': mk('KTdSub', size=7.5, color=INK_SOFT, align=0, leftIndent=8),
-        'tdMuted': mk('KTdMuted', size=7.5, color=MUTED, align=1),
-        'tdPos': mk('KTdPos', size=7.5, bold=True, color=GREEN, align=1),
-        'tdNeg': mk('KTdNeg', size=7.5, bold=True, color=RED, align=1),
+        'th': mk('KTh', size=7.5, bold=True, color='#FFFFFF', align=1),
+        'thLeft': mk('KThLeft', size=7.5, bold=True, color='#FFFFFF', align=0),
+        'td': mk('KTd', size=8, color=INK, align=1),
+        'tdLeft': mk('KTdLeft', size=8, color=INK_SOFT, align=0),
+        'tdName': mk('KTdName', size=8, bold=True, color=INK, align=0),
+        'tdSub': mk('KTdSub', size=8, color=INK_SOFT, align=0, leftIndent=8),
+        'tdMuted': mk('KTdMuted', size=8, color=MUTED, align=1),
+        'tdPos': mk('KTdPos', size=8, bold=True, color=GREEN, align=1),
+        'tdNeg': mk('KTdNeg', size=8, bold=True, color=RED, align=1),
+        # Değerlendirme
+        'commentTitle': mk('KCommentTitle', size=9.5, bold=True, color=BRAND_DARK),
+        'comment': mk('KComment', size=8.5, color=INK, leading=12),
         # Karşılaştırma
         'cmpName': mk('KCmpName', size=8, bold=True, color=INK),
         'cmpLabel': mk('KCmpLabel', size=6.5, color=INK_SOFT),
@@ -333,9 +341,9 @@ def _build_styles(font: str, font_bold: str) -> dict[str, Any]:
         'cardName': mk('KCardName', size=6.5, color=INK_SOFT, align=1),
         'cardNote': mk('KCardNote', size=6.5, bold=True, color=AMBER, align=1),
         # Güçlü / zayıf
-        'areaHead': mk('KAreaHead', size=8, bold=True, color='#FFFFFF'),
-        'areaItem': mk('KAreaItem', size=8, color=INK, leading=11),
-        'areaEmpty': mk('KAreaEmpty', size=8, color=MUTED, align=1),
+        'areaHead': mk('KAreaHead', size=9, bold=True, color='#FFFFFF'),
+        'areaItem': mk('KAreaItem', size=8.5, color=INK, leading=11),
+        'areaEmpty': mk('KAreaEmpty', size=8.5, color=MUTED, align=0),
         # Cevap anahtarı
         'gridNum': mk('KGridNum', size=6.5, bold=True, color=INK_SOFT, align=1, leading=8),
         'gridAns': mk('KGridAns', size=7, bold=True, color=INK, align=1),
@@ -886,26 +894,22 @@ def _identity_strip(ctx: _Ctx, data: dict):
 # ── Gösterge şeridi ────────────────────────────────────────────────────────
 
 def _kpi_band(ctx: _Ctx, data: dict):
-    """Üst şerit: alan soru sayısı, doğru, yanlış, net, puan, kurum sırası."""
+    """Üst şerit: alan soru sayısı, doğru, yanlış, boş, net, puan, kurum sırası."""
     from reportlab.lib import colors
     from reportlab.platypus import Flowable
 
     is_ayt = data.get('exam_type') == 'YKS_AYT' and data.get('alan_net') is not None
     net_label = (data.get('net_etiket') or 'SAY NET') if is_ayt else 'NET'
     net_value = data.get('alan_net') if is_ayt else data.get('toplam_net')
-    try:
-        alan_soru = int(data.get('alan_soru') or 0)
-    except (TypeError, ValueError):
-        alan_soru = 0
-    if alan_soru <= 0:
-        try:
-            alan_soru = int(data.get('total_questions') or 0)
-        except (TypeError, ValueError):
-            alan_soru = 0
+    alan_soru = _question_total(data)
     tiles = [
         ('SORU', _fmt_int(alan_soru) if alan_soru else '—', '', INK),
         ('DOĞRU', _fmt_int(data.get('total_correct')), '', GREEN),
         ('YANLIŞ', _fmt_int(data.get('total_wrong')), '', RED),
+    ]
+    if data.get('exam_type') != 'YKS_AYT' and alan_soru:
+        tiles.append(('BOŞ', _fmt_int(_answer_counts(data)[2]), '', INK_SOFT))
+    tiles += [
         (net_label, _fmt(net_value, 2), '', BRAND),
         ('PUAN', _fmt(data.get('puan'), 2), '', BRAND),
         ('KURUM SIRASI', _fmt_int(data.get('kurum_ici_sira')), '', INK),
@@ -954,7 +958,7 @@ def _kpi_band(ctx: _Ctx, data: dict):
                     c.setFont(ctx.font_bold, suf_size)
                     c.drawString(x0 + val_w, 16, suffix)
                 c.setFillColor(colors.HexColor(MUTED))
-                c.setFont(ctx.font_bold, 6)
+                c.setFont(ctx.font_bold, 6.5)
                 c.drawCentredString(x + cw / 2, 6.5, label)
 
     return KpiRow()
@@ -1102,38 +1106,29 @@ def _ranking_table(ctx: _Ctx, data: dict):
         ]))
         return pair
 
-    def sinif_rank():
-        return _fmt_int(data.get('sinif_rank')) if has_class else '—'
-
-    rows = [[
-        Paragraph('Puan Türü', ctx.s('thLeft')),
-        Paragraph('Puan', th),
-        Paragraph('Kurum Ort.', th),
-        Paragraph('Sınıf Sırası', th),
-        Paragraph('Kurum Sırası', th),
-        Paragraph('Tahmini TR Sırası', th),
-    ]]
-    rows.append([
+    header = [Paragraph('Puan Türü', ctx.s('thLeft')), Paragraph('Puan', th), Paragraph('Kurum Ort.', th)]
+    values = [
         Paragraph(type_label, td_name),
         Paragraph(_fmt(data.get('puan'), 2), td),
         Paragraph(_fmt(data.get('kurum_avg_puan'), 2), td),
-        Paragraph(sinif_rank(), td),
+    ]
+    counts = [Paragraph('Katılım', ctx.s('tdLeft')), Paragraph('—', ctx.s('tdMuted')), Paragraph('—', ctx.s('tdMuted'))]
+    if has_class:
+        header.append(Paragraph('Sınıf Sırası', th))
+        values.append(Paragraph(_fmt_int(data.get('sinif_rank')), td))
+        counts.append(Paragraph(f"{_fmt_int(data.get('sinif_student_count'))} öğrenci", ctx.s('tdMuted')))
+    header += [Paragraph('Kurum Sırası', th), Paragraph('Tahmini TR Sırası', th)]
+    values += [
         Paragraph(_fmt_int(data.get('kurum_ici_sira')), td),
         Paragraph(_fmt_int(data.get('tahmini_siralama')), td),
-    ])
-    rows.append([
-        Paragraph('Katılım', ctx.s('tdLeft')),
-        Paragraph('—', ctx.s('tdMuted')),
-        Paragraph('—', ctx.s('tdMuted')),
-        Paragraph(
-            f"{_fmt_int(data.get('sinif_student_count'))} öğrenci" if has_class
-            else (data.get('sinif') or 'Sınıf tanımlı değil'),
-            ctx.s('tdMuted'),
-        ),
+    ]
+    counts += [
         Paragraph(f"{_fmt_int(data.get('toplam_ogrenci'))} öğrenci", ctx.s('tdMuted')),
         Paragraph('—', ctx.s('tdMuted')),
-    ])
-    widths = [ctx.page_w * x for x in (0.20, 0.14, 0.16, 0.16, 0.16, 0.18)]
+    ]
+    rows = [header, values, counts]
+    shares = (0.20, 0.14, 0.16, 0.16, 0.16, 0.18) if has_class else (0.24, 0.17, 0.19, 0.19, 0.21)
+    widths = [ctx.page_w * x for x in shares]
     tbl = Table(rows, colWidths=widths)
     tbl.setStyle(TableStyle(_hairline_table_style(ctx)))
     return tbl
@@ -1152,13 +1147,15 @@ def _performance_table(ctx: _Ctx, data: dict):
 
     th, td = ctx.s('th'), ctx.s('td')
     has_class = _has_class_context(data)
-    rows = [[
+    header = [
         Paragraph('Ders / Test', ctx.s('thLeft')),
         Paragraph('Soru', th), Paragraph('D', th), Paragraph('Y', th), Paragraph('B', th),
         Paragraph('Net', th), Paragraph('Başarı', th),
-        Paragraph('Sınıf Ort.', th), Paragraph('Fark', th),
-        Paragraph('Kurum Ort.', th), Paragraph('Fark', th),
-    ]]
+    ]
+    if has_class:
+        header += [Paragraph('Sınıf Ort.', th), Paragraph('Sınıf Farkı', th)]
+    header += [Paragraph('Kurum Ort.', th), Paragraph('Kurum Farkı', th)]
+    rows = [header]
 
     main_rows: list[int] = []
     group_rows: list[int] = []
@@ -1167,42 +1164,43 @@ def _performance_table(ctx: _Ctx, data: dict):
         if sd.get('source') == 'tyt' and not seen_tyt:
             seen_tyt = True
             group_rows.append(len(rows))
-            empty = [Paragraph('', td)] * 10
+            empty = [Paragraph('', td)] * (len(header) - 1)
             tyt_title = (data.get('linked_tyt_exam_name') or '').strip() or 'TYT'
             rows.append([Paragraph(tyt_title, ctx.s('tdName')), *empty])
 
         if is_main:
             main_rows.append(len(rows))
 
-        d_sinif, kind_s = _diff_text(sd.get('diff_sinif')) if has_class else ('—', 'neutral')
         d_kurum, kind_k = _diff_text(sd.get('diff_kurum'))
         verim = sd.get('verimlilik') or 0
-        verim_style = ctx.s('td').clone(f'Verim{len(rows)}')
-        verim_style.textColor = colors.HexColor(_verim_color(verim))
-        verim_style.fontName = ctx.font_bold
 
         def tone(kind):
             return ctx.s('tdPos') if kind == 'pos' else (ctx.s('tdNeg') if kind == 'neg' else ctx.s('tdMuted'))
 
-        rows.append([
+        row = [
             Paragraph(sd.get('section_name') or '', ctx.s('tdName') if is_main else ctx.s('tdSub')),
             Paragraph(str(sd.get('question_count') or 0), td),
             Paragraph(str(sd.get('correct') or 0), td),
             Paragraph(str(sd.get('wrong') or 0), td),
             Paragraph(str(sd.get('empty') or 0), td),
             Paragraph(_fmt(sd.get('net'), 2), td),
-            Paragraph(_pct(verim), verim_style),
-            Paragraph(_fmt(sd.get('sinif_avg_net'), 2) if has_class else '—', td if has_class else ctx.s('tdMuted')),
-            Paragraph(d_sinif, tone(kind_s)),
-            Paragraph(_fmt(sd.get('kurum_avg_net'), 2), td),
-            Paragraph(d_kurum, tone(kind_k)),
-        ])
+            _Pill.make(ctx, verim),
+        ]
+        if has_class:
+            d_sinif, kind_s = _diff_text(sd.get('diff_sinif'))
+            row += [Paragraph(_fmt(sd.get('sinif_avg_net'), 2), td), Paragraph(d_sinif, tone(kind_s))]
+        row += [Paragraph(_fmt(sd.get('kurum_avg_net'), 2), td), Paragraph(d_kurum, tone(kind_k))]
+        rows.append(row)
 
-    widths = [ctx.page_w * x for x in (
-        0.21, 0.065, 0.055, 0.055, 0.055, 0.075, 0.08, 0.095, 0.075, 0.095, 0.075,
-    )]
+    shares = (
+        (0.21, 0.065, 0.055, 0.055, 0.055, 0.075, 0.08, 0.095, 0.075, 0.095, 0.075)
+        if has_class else
+        (0.27, 0.075, 0.065, 0.065, 0.065, 0.09, 0.095, 0.13, 0.145)
+    )
+    widths = [ctx.page_w * x for x in shares]
     tbl = Table(rows, colWidths=widths, repeatRows=1)
     cmds = _hairline_table_style(ctx, zebra=False)
+    cmds.append(('ALIGN', (6, 1), (6, -1), 'CENTER'))
     for r in main_rows:
         cmds.append(('BACKGROUND', (0, r), (-1, r), colors.HexColor(BRAND_SOFT)))
     for r in group_rows:
@@ -1212,77 +1210,7 @@ def _performance_table(ctx: _Ctx, data: dict):
     return tbl
 
 
-# ── Karşılaştırma barları ──────────────────────────────────────────────────
-
-def _bar(value, cap, width, color, colors, Table, TableStyle, height=5):
-    pct = max(0.0, min(1.0, float(value or 0) / max(float(cap), 1)))
-    fill_w = max(1.2, width * max(pct, 0.012))
-    rest_w = max(0.8, width - fill_w)
-    t = Table([['', '']], colWidths=[fill_w, rest_w], rowHeights=[height])
-    t.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, 0), colors.HexColor(color)),
-        ('BACKGROUND', (1, 0), (1, 0), colors.HexColor('#EDF2F7')),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    t.hAlign = 'LEFT'
-    return t
-
-
-def _compare_card(ctx: _Ctx, sd: dict, *, with_class: bool = True):
-    from reportlab.lib import colors
-    from reportlab.platypus import Paragraph, Table, TableStyle
-
-    cap = max(float(sd.get('question_count') or 1), 1)
-    series = [('Öğrenci', float(sd.get('net') or 0), SERIES_STUDENT)]
-    if with_class:
-        series.append(('Sınıf', float(sd.get('sinif_avg_net') or 0), SERIES_CLASS))
-    series.append(('Kurum', float(sd.get('kurum_avg_net') or 0), SERIES_KURUM))
-
-    label_w, value_w = 42, 34
-    bar_w = ctx.page_w - label_w - value_w - 26
-    body = []
-    for label, value, color in series:
-        value_style = ctx.s('td').clone(f'Cmp{color}{label}')
-        value_style.textColor = colors.HexColor(color)
-        value_style.fontName = ctx.font_bold
-        value_style.alignment = 2
-        body.append([
-            Paragraph(label, ctx.s('cmpLabel')),
-            _bar(value, cap, bar_w, color, colors, Table, TableStyle),
-            Paragraph(_fmt(value, 2), value_style),
-        ])
-
-    inner = Table(body, colWidths=[label_w, bar_w, value_w])
-    inner.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('LEFTPADDING', (0, 0), (-1, -1), 0),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 2),
-        ('TOPPADDING', (0, 0), (-1, -1), 1.6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 1.6),
-    ]))
-
-    header = Paragraph(
-        f"{sd.get('section_name') or ''}  "
-        f"<font size=6.5 color='{MUTED}'>{_fmt_int(sd.get('question_count'))} soru</font>",
-        ctx.s('cmpName'),
-    )
-    card = Table([[header], [inner]], colWidths=[ctx.page_w])
-    card.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
-        ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
-        ('LINEBEFORE', (0, 0), (0, -1), 2, colors.HexColor(BRAND)),
-        ('LEFTPADDING', (0, 0), (-1, -1), 9),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 9),
-        ('TOPPADDING', (0, 0), (0, 0), 5),
-        ('BOTTOMPADDING', (0, 0), (0, 0), 2),
-        ('TOPPADDING', (0, 1), (0, 1), 2),
-        ('BOTTOMPADDING', (0, 1), (0, 1), 6),
-    ]))
-    return card
-
+# ── Gösterge ───────────────────────────────────────────────────────────────
 
 def _legend(ctx: _Ctx, items: list[tuple[str, str]]):
     """Renk açıklaması.
@@ -1326,87 +1254,142 @@ def _legend(ctx: _Ctx, items: list[tuple[str, str]]):
     return t
 
 
-# ── Verimlilik kartları ────────────────────────────────────────────────────
+# ── Ortak ölçüler ──────────────────────────────────────────────────────────
 
-def _efficiency_grid(ctx: _Ctx, data: dict):
-    """Tek panel, sabit satır yüksekliği. Ana ders koyu, alt test girintili."""
-    from reportlab.lib import colors
-    from reportlab.platypus import Flowable, Paragraph, Table, TableStyle
+_TINT = {GREEN: '#DCFCE7', AMBER: '#FEF3C7', RED: '#FEE2E2'}
 
-    ordered = _ordered_sections(data)
-    if not ordered:
+
+def _question_total(data) -> int:
+    """Öğrencinin çözdüğü soru sayısı: alan / seçmeli ayıklanmış toplam."""
+    for key in ('alan_soru', 'total_questions'):
+        try:
+            value = int(data.get(key) or 0)
+        except (TypeError, ValueError):
+            value = 0
+        if value > 0:
+            return value
+    return 0
+
+
+def _answer_counts(data) -> tuple[int, int, int]:
+    correct = int(data.get('total_correct') or 0)
+    wrong = int(data.get('total_wrong') or 0)
+    total = _question_total(data)
+    if total and data.get('exam_type') != 'YKS_AYT':
+        empty = max(0, total - correct - wrong)
+    else:
+        empty = int(data.get('total_empty') or 0)
+    return correct, wrong, empty
+
+
+def _rate(net, count) -> float | None:
+    try:
+        count = int(count or 0)
+        if count <= 0:
+            return None
+        return max(0.0, min(100.0, float(net or 0) / count * 100))
+    except (TypeError, ValueError):
         return None
 
-    name_w = ctx.page_w * 0.38
-    pct_w = 46
-    bar_w = ctx.page_w - name_w - pct_w
+
+def _leaf_sections(data) -> list[dict]:
+    """Alt dersler ve altı olmayan ana dersler. Bağlı TYT ve alan dışı satırlar hariç."""
+    ordered = _ordered_sections(data)
+    parents = {sd.get('parent_id') for sd, is_main in ordered if not is_main}
     rows = []
-    main_rows: list[int] = []
+    for sd, is_main in ordered:
+        if is_main and sd.get('section_id') in parents:
+            continue
+        if sd.get('source') == 'tyt' or sd.get('alana_dahil') is False:
+            continue
+        rows.append(sd)
+    return rows
 
-    class _Meter(Flowable):
-        def __init__(self, pct, color):
-            super().__init__()
-            self.pct = max(0.0, min(1.0, float(pct or 0) / 100))
-            self.color = color
-            self.height = 7
-            self._w = 0
 
-        def wrap(self, availWidth, availHeight):
-            self._w = availWidth
-            return availWidth, self.height
-
-        def draw(self):
-            c = self.canv
-            h = self.height
-            c.setFillColor(colors.HexColor('#E6EDF5'))
-            c.roundRect(0, 0, self._w, h, 2, fill=1, stroke=0)
-            fill_w = self._w * self.pct
-            if fill_w <= 0:
-                return
-            c.setFillColor(colors.HexColor(self.color))
-            c.saveState()
-            clip = c.beginPath()
-            clip.roundRect(0, 0, self._w, h, 2)
-            c.clipPath(clip, stroke=0)
-            c.rect(0, 0, max(fill_w, 2), h, fill=1, stroke=0)
-            c.restoreState()
-
-    for index, (sd, is_main) in enumerate(ordered):
-        verim = sd.get('verimlilik') or 0
-        tone = _verim_color(verim)
-        value_style = ctx.s('td').clone(f'EffPct{index}')
-        value_style.textColor = colors.HexColor(tone)
-        value_style.fontName = ctx.font_bold
-        value_style.alignment = 2
-        if is_main:
-            main_rows.append(index)
-        rows.append([
-            Paragraph(sd.get('section_name') or '', ctx.s('tdName') if is_main else ctx.s('tdSub')),
-            _Meter(verim, tone),
-            Paragraph(_pct(verim), value_style),
-        ])
-
-    tbl = Table(rows, colWidths=[name_w, bar_w, pct_w])
-    cmds = [
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BACKGROUND', (0, 0), (-1, -1), colors.white),
-        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor(LINE)),
-        ('LINEBELOW', (0, 0), (-1, -2), 0.3, colors.HexColor(LINE)),
-        ('LEFTPADDING', (0, 0), (0, -1), 10),
-        ('RIGHTPADDING', (0, 0), (0, -1), 6),
-        ('LEFTPADDING', (1, 0), (1, -1), 4),
-        ('RIGHTPADDING', (1, 0), (1, -1), 6),
-        ('LEFTPADDING', (2, 0), (2, -1), 0),
-        ('RIGHTPADDING', (2, 0), (2, -1), 10),
-        ('TOPPADDING', (0, 0), (-1, -1), 5),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+def _chart_sections(data) -> list[dict]:
+    """Radar eksenleri: ana testler; üçten azsa yaprak dersler."""
+    mains = [
+        sd for sd, is_main in _ordered_sections(data)
+        if is_main and sd.get('source') != 'tyt' and sd.get('alana_dahil') is not False
+        and int(sd.get('question_count') or 0) > 0
     ]
-    for row in main_rows:
-        cmds.append(('BACKGROUND', (0, row), (-1, row), colors.HexColor(BRAND_SOFT)))
-        cmds.append(('LINEBEFORE', (0, row), (0, row), 2.5, colors.HexColor(BRAND)))
-    tbl.setStyle(TableStyle(cmds))
-    tbl.hAlign = 'LEFT'
-    return tbl
+    if len(mains) >= 3:
+        return mains
+    return [sd for sd in _leaf_sections(data) if int(sd.get('question_count') or 0) > 0]
+
+
+def _clip(canv, text: str, font: str, size: float, max_w: float) -> str:
+    t = text or ''
+    if canv.stringWidth(t, font, size) <= max_w:
+        return t
+    while t and canv.stringWidth(t + '…', font, size) > max_w:
+        t = t[:-1]
+    return (t.rstrip() + '…') if t else '…'
+
+
+def _card(canv, colors, x, y, w, h, *, fill='#FFFFFF', radius=9):
+    canv.setFillColor(colors.HexColor(fill))
+    canv.setStrokeColor(colors.HexColor(LINE))
+    canv.setLineWidth(0.6)
+    canv.roundRect(x, y, w, h, radius, fill=1, stroke=1)
+
+
+def _card_title(canv, colors, ctx, x, y, text, size=8.5):
+    canv.setFillColor(colors.HexColor(INK))
+    canv.setFont(ctx.font_bold, size)
+    canv.drawString(x, y, text)
+
+
+def _short_date(value) -> str:
+    raw = str(value or '')[:10]
+    if len(raw) == 10 and raw[4] == '-':
+        return f'{raw[8:10]}.{raw[5:7]}.{raw[2:4]}'
+    return raw
+
+
+def _ranges(numbers: list[int]) -> str:
+    """[1, 2, 3, 7] → '1–3, 7'"""
+    out: list[str] = []
+    nums = sorted({int(n) for n in numbers})
+    i = 0
+    while i < len(nums):
+        j = i
+        while j + 1 < len(nums) and nums[j + 1] == nums[j] + 1:
+            j += 1
+        out.append(str(nums[i]) if i == j else f'{nums[i]}–{nums[j]}')
+        i = j + 1
+    return ', '.join(out)
+
+
+class _Pill:
+    """Tablo hücresinde renkli başarı etiketi."""
+
+    @staticmethod
+    def make(ctx: _Ctx, value):
+        from reportlab.lib import colors
+        from reportlab.platypus import Flowable
+
+        color = _verim_color(value)
+        text = _pct(value)
+
+        class Pill(Flowable):
+            def __init__(self):
+                super().__init__()
+                self.width = 36
+                self.height = 12
+
+            def wrap(self, availWidth, availHeight):
+                return self.width, self.height
+
+            def draw(self):
+                c = self.canv
+                c.setFillColor(colors.HexColor(_TINT.get(color, BRAND_SOFT)))
+                c.roundRect(0, 0, self.width, self.height, 6, fill=1, stroke=0)
+                c.setFillColor(colors.HexColor(color))
+                c.setFont(ctx.font_bold, 7.5)
+                c.drawCentredString(self.width / 2, 3.4, text)
+
+        return Pill()
 
 
 # ── Güçlü / zayıf alanlar ──────────────────────────────────────────────────
@@ -1415,26 +1398,36 @@ def _area_pair(ctx: _Ctx, data: dict):
     from reportlab.lib import colors
     from reportlab.platypus import Paragraph, Table, TableStyle
 
+    half = ctx.page_w / 2 - 5
+
     def card(title, items, tone):
-        rows = [[Paragraph(title, ctx.s('areaHead'))]]
+        head = ctx.s('areaHead').clone(f'AreaHead{title}')
+        head.textColor = colors.HexColor(tone)
+        rows = [[Paragraph(title, head), '', '']]
         if items:
             for item in items:
-                rows.append([Paragraph(
-                    f"<b>{item.get('name') or ''}</b>"
-                    f"<font color='{MUTED}'>  ·  {_fmt(item.get('net'), 2)} net</font>",
-                    ctx.s('areaItem'),
-                )])
+                basari = item.get('basari')
+                diff_text, kind = _diff_text(item.get('diff_kurum'))
+                diff_style = ctx.s('tdPos' if kind == 'pos' else ('tdNeg' if kind == 'neg' else 'tdMuted'))
+                rows.append([
+                    Paragraph(f"<b>{_xml_escape(item.get('name') or '')}</b>", ctx.s('areaItem')),
+                    _Pill.make(ctx, basari) if basari is not None else Paragraph(_fmt(item.get('net'), 2), ctx.s('td')),
+                    Paragraph(f'kurum {diff_text}' if diff_text != '—' else '', diff_style),
+                ])
         else:
-            rows.append([Paragraph('Kayıt yok', ctx.s('areaEmpty'))])
+            rows.append([Paragraph('Kayıt yok', ctx.s('areaEmpty')), '', ''])
 
-        t = Table(rows, colWidths=[ctx.page_w / 2 - 6])
+        t = Table(rows, colWidths=[half * 0.5, half * 0.22, half * 0.28])
         t.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(tone)),
+            ('SPAN', (0, 0), (-1, 0)),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(_TINT.get(tone, BRAND_SOFT))),
             ('BACKGROUND', (0, 1), (-1, -1), colors.white),
-            ('BOX', (0, 0), (-1, -1), 0.4, colors.HexColor(LINE)),
+            ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor(LINE)),
             ('LINEBELOW', (0, 1), (-1, -2), 0.3, colors.HexColor(LINE)),
+            ('ALIGN', (1, 1), (1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 9),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 9),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 6),
             ('TOPPADDING', (0, 0), (-1, -1), 5),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
         ]))
@@ -1450,11 +1443,554 @@ def _area_pair(ctx: _Ctx, data: dict):
     pair.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (0, 0), 0),
-        ('RIGHTPADDING', (0, 0), (0, 0), 6),
-        ('LEFTPADDING', (1, 0), (1, 0), 6),
+        ('RIGHTPADDING', (0, 0), (0, 0), 5),
+        ('LEFTPADDING', (1, 0), (1, 0), 5),
         ('RIGHTPADDING', (1, 0), (1, 0), 0),
+        ('TOPPADDING', (0, 0), (-1, -1), 0),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
     return pair
+
+
+# ── Özet görselleri ────────────────────────────────────────────────────────
+
+def _overview(ctx: _Ctx, data: dict):
+    """Solda cevap dağılımı halkası, sağda derslere göre başarı radarı."""
+    import math
+
+    from reportlab.lib import colors
+    from reportlab.platypus import Flowable
+
+    correct, wrong, empty = _answer_counts(data)
+    answered_total = correct + wrong + empty
+    axes = _chart_sections(data)
+    if not answered_total and not axes:
+        return None
+
+    class Overview(Flowable):
+        def __init__(self):
+            super().__init__()
+            self.width = ctx.page_w
+            self.height = 150
+
+        def wrap(self, availWidth, availHeight):
+            self.width = availWidth
+            return self.width, self.height
+
+        def draw(self):
+            c = self.canv
+            gap = 8
+            left_w = self.width * 0.37
+            right_x = left_w + gap
+            right_w = self.width - right_x
+            _card(c, colors, 0, 0, left_w, self.height)
+            _card(c, colors, right_x, 0, right_w, self.height)
+            self._donut(c, 0, left_w)
+            if len(axes) >= 3:
+                self._radar(c, right_x, right_w)
+            else:
+                self._bars(c, right_x, right_w)
+
+        def _donut(self, c, x, w):
+            h = self.height
+            _card_title(c, colors, ctx, x + 12, h - 20, 'Cevap Dağılımı')
+            total = answered_total or 1
+            r = 44
+            ring = 12
+            cx = x + 14 + r
+            cy = (h - 26) / 2 + 2
+            parts = [
+                ('Doğru', correct, GREEN),
+                ('Yanlış', wrong, RED),
+                ('Boş', empty, '#CBD5E1'),
+            ]
+            c.setFillColor(colors.HexColor('#EEF2F7'))
+            c.circle(cx, cy, r, fill=1, stroke=0)
+            start = 90.0
+            for _label, count, color in parts:
+                if count <= 0:
+                    continue
+                extent = -360.0 * count / total
+                c.setFillColor(colors.HexColor(color))
+                if abs(extent) >= 359.9:
+                    c.circle(cx, cy, r, fill=1, stroke=0)
+                else:
+                    c.wedge(cx - r, cy - r, cx + r, cy + r, start, extent, stroke=0, fill=1)
+                start += extent
+            c.setFillColor(colors.white)
+            c.circle(cx, cy, r - ring, fill=1, stroke=0)
+            soru = _question_total(data) or answered_total
+            c.setFillColor(colors.HexColor(INK))
+            c.setFont(ctx.font_bold, 17)
+            c.drawCentredString(cx, cy - 1, _fmt_int(soru))
+            c.setFillColor(colors.HexColor(MUTED))
+            c.setFont(ctx.font, 6.5)
+            c.drawCentredString(cx, cy - 11, 'soru')
+
+            lx = cx + r + 14
+            ly = cy + 22
+            for label, count, color in parts:
+                c.setFillColor(colors.HexColor(color))
+                c.roundRect(lx, ly - 1, 7, 7, 2, fill=1, stroke=0)
+                c.setFillColor(colors.HexColor(INK_SOFT))
+                c.setFont(ctx.font, 7.5)
+                c.drawString(lx + 11, ly, label)
+                c.setFillColor(colors.HexColor(INK))
+                c.setFont(ctx.font_bold, 10)
+                c.drawString(lx + 11, ly - 12, _fmt_int(count))
+                c.setFillColor(colors.HexColor(MUTED))
+                c.setFont(ctx.font, 6.5)
+                c.drawString(
+                    lx + 13 + c.stringWidth(_fmt_int(count), ctx.font_bold, 10), ly - 12,
+                    _pct(count * 100 / total),
+                )
+                ly -= 26
+
+        def _legend_right(self, c, x, w):
+            h = self.height
+            items = [('Öğrenci', BRAND), ('Kurum ort.', SERIES_KURUM)]
+            lx = x + w - 12
+            c.setFont(ctx.font, 7)
+            for label, color in reversed(items):
+                tw = c.stringWidth(label, ctx.font, 7)
+                lx -= tw
+                c.setFillColor(colors.HexColor(INK_SOFT))
+                c.drawString(lx, h - 20, label)
+                lx -= 11
+                c.setFillColor(colors.HexColor(color))
+                c.roundRect(lx, h - 21, 7, 7, 2, fill=1, stroke=0)
+                lx -= 10
+
+        def _radar(self, c, x, w):
+            h = self.height
+            _card_title(c, colors, ctx, x + 12, h - 20, 'Derslere Göre Başarı')
+            self._legend_right(c, x, w)
+            n = len(axes)
+            cx = x + w / 2
+            cy = (h - 26) / 2 + 4
+            radius = min(w * 0.24, (h - 80) / 2)
+
+            def point(i, pct):
+                ang = math.radians(90 - 360.0 * i / n)
+                rr = radius * max(0.0, min(100.0, pct)) / 100
+                return cx + rr * math.cos(ang), cy + rr * math.sin(ang)
+
+            c.setStrokeColor(colors.HexColor(LINE))
+            c.setLineWidth(0.5)
+            for ring in (25, 50, 75, 100):
+                pts = [point(i, ring) for i in range(n)]
+                path = c.beginPath()
+                path.moveTo(*pts[0])
+                for p in pts[1:]:
+                    path.lineTo(*p)
+                path.close()
+                c.drawPath(path, stroke=1, fill=0)
+            for i in range(n):
+                c.line(cx, cy, *point(i, 100))
+
+            student = [_rate(sd.get('net'), sd.get('question_count')) or 0 for sd in axes]
+            kurum = [_rate(sd.get('kurum_avg_net'), sd.get('question_count')) or 0 for sd in axes]
+
+            def polygon(values, color, alpha, width):
+                pts = [point(i, v) for i, v in enumerate(values)]
+                path = c.beginPath()
+                path.moveTo(*pts[0])
+                for p in pts[1:]:
+                    path.lineTo(*p)
+                path.close()
+                c.saveState()
+                c.setFillColor(colors.HexColor(color))
+                c.setFillAlpha(alpha)
+                c.setStrokeColor(colors.HexColor(color))
+                c.setLineWidth(width)
+                c.drawPath(path, stroke=1, fill=1)
+                c.restoreState()
+                return pts
+
+            polygon(kurum, SERIES_KURUM, 0.16, 0.8)
+            pts = polygon(student, BRAND, 0.2, 1.4)
+            c.setFillColor(colors.HexColor(BRAND))
+            for px, py in pts:
+                c.circle(px, py, 1.8, fill=1, stroke=0)
+
+            slot = w * 0.26
+            for i, sd in enumerate(axes):
+                ang = math.radians(90 - 360.0 * i / n)
+                lx = cx + (radius + 9) * math.cos(ang)
+                ly = cy + (radius + 9) * math.sin(ang)
+                cos = math.cos(ang)
+                name = _clip(c, sd.get('section_name') or '', ctx.font_bold, 7, slot)
+                rate = f"{_pct(student[i])}  ·  kurum {_pct(kurum[i])}"
+                if math.sin(ang) > 0.5:
+                    ly += 6
+                elif math.sin(ang) < -0.5:
+                    ly -= 6
+                else:
+                    ly -= 1
+                if cos > 0.3:
+                    draw = c.drawString
+                elif cos < -0.3:
+                    draw = c.drawRightString
+                else:
+                    draw = c.drawCentredString
+                c.setFillColor(colors.HexColor(INK))
+                c.setFont(ctx.font_bold, 7)
+                draw(lx, ly, name)
+                c.setFillColor(colors.HexColor(INK_SOFT))
+                c.setFont(ctx.font, 6.5)
+                draw(lx, ly - 8, rate)
+
+        def _bars(self, c, x, w):
+            h = self.height
+            _card_title(c, colors, ctx, x + 12, h - 20, 'Derslere Göre Başarı')
+            self._legend_right(c, x, w)
+            if not axes:
+                return
+            top = h - 38
+            row_h = min(30, (top - 10) / len(axes))
+            name_w = w * 0.3
+            bar_x = x + 12 + name_w
+            bar_w = w - name_w - 60
+            for i, sd in enumerate(axes):
+                y = top - i * row_h
+                student = _rate(sd.get('net'), sd.get('question_count')) or 0
+                kurum = _rate(sd.get('kurum_avg_net'), sd.get('question_count')) or 0
+                c.setFillColor(colors.HexColor(INK))
+                c.setFont(ctx.font_bold, 7.5)
+                c.drawString(x + 12, y - 8, _clip(c, sd.get('section_name') or '', ctx.font_bold, 7.5, name_w - 6))
+                for offset, value, color in ((0, student, BRAND), (9, kurum, SERIES_KURUM)):
+                    c.setFillColor(colors.HexColor('#EEF2F7'))
+                    c.roundRect(bar_x, y - 5 - offset, bar_w, 6, 3, fill=1, stroke=0)
+                    c.setFillColor(colors.HexColor(color))
+                    c.roundRect(bar_x, y - 5 - offset, max(3, bar_w * value / 100), 6, 3, fill=1, stroke=0)
+                    c.setFillColor(colors.HexColor(INK_SOFT))
+                    c.setFont(ctx.font, 6.5)
+                    c.drawString(bar_x + bar_w + 6, y - 4 - offset, _pct(value))
+
+    return Overview()
+
+
+def _comment_lines(data: dict) -> list[str]:
+    """Veliye ve öğrenciye sade dille özet. Veri yoksa cümle kurulmaz."""
+    lines: list[str] = []
+    names = (data.get('student_name') or '').split()
+    who = names[0] if names else 'Öğrenci'
+    is_ayt = data.get('exam_type') == 'YKS_AYT' and data.get('alan_net') is not None
+    net = float((data.get('alan_net') if is_ayt else data.get('toplam_net')) or 0)
+    soru = _question_total(data)
+    correct, wrong, empty = _answer_counts(data)
+
+    first = f'{who} {soru} soruda {_fmt(net, 2)} net yaptı' if soru else f'{who} {_fmt(net, 2)} net yaptı'
+    try:
+        rank, total = int(data.get('kurum_ici_sira') or 0), int(data.get('toplam_ogrenci') or 0)
+    except (TypeError, ValueError):
+        rank, total = 0, 0
+    if rank and total:
+        first += f'; kurumda {total} öğrenci arasında {rank}. sırada'
+    first += '.'
+    if not is_ayt and data.get('kurum_avg_net') not in (None, ''):
+        diff = net - float(data.get('kurum_avg_net') or 0)
+        if abs(diff) >= 0.5:
+            first += f" Kurum ortalamasının {_fmt(abs(diff), 1)} net {'üstünde' if diff > 0 else 'altında'}."
+    lines.append(first)
+
+    history = data.get('net_history') or []
+    if len(history) >= 2:
+        prev, cur = history[-2], history[-1]
+        delta = float(cur.get('toplam_net') or 0) - float(prev.get('toplam_net') or 0)
+        if abs(delta) < 0.5:
+            text = 'Bir önceki sınava göre neti aynı seviyede.'
+        else:
+            text = f"Bir önceki sınava göre {_fmt(abs(delta), 1)} net {'arttı' if delta > 0 else 'düştü'}."
+            nets = [float(h.get('toplam_net') or 0) for h in history]
+            if delta > 0 and len(history) >= 3 and nets[-1] >= max(nets):
+                text = text[:-1] + f'; son {len(history)} sınavın en yüksek neti.'
+        lines.append(text)
+
+    strong = [item for item in data.get('strong_areas') or [] if item.get('name')]
+    if strong:
+        parts = [
+            f"{item['name']} ({_pct(item['basari'])})" if item.get('basari') is not None else item['name']
+            for item in strong
+        ]
+        lines.append(f"En başarılı olduğu dersler {' ve '.join(parts)}.")
+
+    weak_names = {item.get('name') for item in data.get('weak_areas') or []}
+    strong_names = {item.get('name') for item in strong}
+    best = None
+    for sd in _leaf_sections(data):
+        try:
+            diff = float(sd.get('diff_kurum') or 0)
+        except (TypeError, ValueError):
+            continue
+        name = sd.get('section_name')
+        if diff >= 1 and name not in weak_names | strong_names and (best is None or diff > best[0]):
+            best = (diff, name)
+    if best:
+        lines.append(f'Kurum ortalamasını en çok geçtiği ders {best[1]}: {_fmt(best[0], 1)} net önde.')
+
+    weak = [item for item in data.get('weak_areas') or [] if item.get('name')]
+    if weak:
+        parts = [
+            f"{item['name']} ({_pct(item['basari'])})" if item.get('basari') is not None else item['name']
+            for item in weak
+        ]
+        lines.append(f"Öncelik {' ve '.join(parts)} olmalı.")
+
+    bands = {b.get('key'): b for b in (data.get('difficulty') or {}).get('bands') or []}
+    kolay = bands.get('kolay') or {}
+    missed = int(kolay.get('yanlis') or 0) + int(kolay.get('bos') or 0)
+    if missed:
+        lines.append(
+            f'Kurumun çoğunun doğru yaptığı {missed} kolay soruyu kaçırdı; en hızlı puan kazanılacak yer burası.'
+        )
+
+    if soru and empty >= max(5, soru * 0.1):
+        lines.append(f'{empty} soruyu boş bıraktı; süre yönetimi ve eksik konular birlikte ele alınmalı.')
+    elif wrong and correct and wrong / (correct + wrong) > 0.3:
+        lines.append('Yanlış oranı yüksek; emin olmadığı soruları boş bırakmak neti artırabilir.')
+    return lines[:6]
+
+
+def _comment_card(ctx: _Ctx, data: dict):
+    from reportlab.lib import colors
+    from reportlab.platypus import Paragraph, Table, TableStyle
+
+    lines = _comment_lines(data)
+    if not lines:
+        return None
+    rows = [[Paragraph('Değerlendirme', ctx.s('commentTitle'))]]
+    for line in lines:
+        rows.append([Paragraph(
+            f"<font color='{BRAND}'><b>•</b></font>&nbsp;&nbsp;{_xml_escape(line)}", ctx.s('comment'),
+        )])
+    t = Table(rows, colWidths=[ctx.page_w])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor(BRAND_SOFT)),
+        ('LINEBEFORE', (0, 0), (0, -1), 3, colors.HexColor(BRAND)),
+        ('LEFTPADDING', (0, 0), (-1, -1), 12),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 10),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 3),
+        ('TOPPADDING', (0, 1), (-1, -1), 1.5),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 1.5),
+        ('BOTTOMPADDING', (0, -1), (-1, -1), 8),
+    ]))
+    t.hAlign = 'LEFT'
+    return t
+
+
+def _trend_chart(ctx: _Ctx, data: dict):
+    """Aynı türdeki son sınavların neti. Tek sınav varsa çizilmez."""
+    from reportlab.lib import colors
+    from reportlab.platypus import Flowable
+
+    history = [h for h in data.get('net_history') or [] if h.get('toplam_net') is not None]
+    if len(history) < 2:
+        return None
+    nets = [float(h.get('toplam_net') or 0) for h in history]
+    delta = nets[-1] - nets[-2]
+
+    class Trend(Flowable):
+        def __init__(self):
+            super().__init__()
+            self.width = ctx.page_w
+            self.height = 118
+
+        def wrap(self, availWidth, availHeight):
+            self.width = availWidth
+            return self.width, self.height
+
+        def draw(self):
+            c = self.canv
+            w, h = self.width, self.height
+            _card(c, colors, 0, 0, w, h)
+            _card_title(c, colors, ctx, 12, h - 20, 'Net Gelişimi')
+            c.setFont(ctx.font, 7)
+            c.setFillColor(colors.HexColor(MUTED))
+            c.drawString(12 + c.stringWidth('Net Gelişimi', ctx.font_bold, 8.5) + 8, h - 20, f'Son {len(history)} sınav')
+
+            if abs(delta) >= 0.05:
+                tone = GREEN if delta > 0 else RED
+                chip = f"Önceki sınava göre {'+' if delta > 0 else '−'}{_fmt(abs(delta), 2)} net"
+                cw = c.stringWidth(chip, ctx.font_bold, 7) + 14
+                c.setFillColor(colors.HexColor(_TINT[tone]))
+                c.roundRect(w - 12 - cw, h - 24, cw, 13, 6.5, fill=1, stroke=0)
+                c.setFillColor(colors.HexColor(tone))
+                c.setFont(ctx.font_bold, 7)
+                c.drawString(w - 12 - cw + 7, h - 20, chip)
+
+            n = len(history)
+            slot = (w - 24) / n
+            left, right = 12 + slot / 2, w - 12 - slot / 2
+            bottom, top = 30, h - 42
+            lo, hi = min(nets), max(nets)
+            pad = max(2.0, (hi - lo) * 0.15)
+            lo, hi = lo - pad, hi + pad
+            step = (right - left) / (n - 1)
+
+            def pos(i, value):
+                return left + step * i, bottom + (value - lo) / (hi - lo) * (top - bottom)
+
+            c.setStrokeColor(colors.HexColor('#EEF2F7'))
+            c.setLineWidth(0.5)
+            for k in range(4):
+                y = bottom + (top - bottom) * k / 3
+                c.line(left, y, right, y)
+
+            pts = [pos(i, v) for i, v in enumerate(nets)]
+            area = c.beginPath()
+            area.moveTo(pts[0][0], bottom)
+            for p in pts:
+                area.lineTo(*p)
+            area.lineTo(pts[-1][0], bottom)
+            area.close()
+            c.saveState()
+            c.setFillColor(colors.HexColor(BRAND))
+            c.setFillAlpha(0.08)
+            c.drawPath(area, stroke=0, fill=1)
+            c.restoreState()
+
+            line = c.beginPath()
+            line.moveTo(*pts[0])
+            for p in pts[1:]:
+                line.lineTo(*p)
+            c.setStrokeColor(colors.HexColor(BRAND))
+            c.setLineWidth(1.6)
+            c.drawPath(line, stroke=1, fill=0)
+
+            slot -= 8
+            for i, (row, (px, py)) in enumerate(zip(history, pts)):
+                current = bool(row.get('is_current')) or i == n - 1
+                c.setFillColor(colors.white)
+                c.setStrokeColor(colors.HexColor(BRAND))
+                c.setLineWidth(1.4)
+                c.circle(px, py, 3.6 if current else 2.6, fill=1, stroke=1)
+                if current:
+                    c.setFillColor(colors.HexColor(BRAND))
+                    c.circle(px, py, 1.8, fill=1, stroke=0)
+                c.setFillColor(colors.HexColor(BRAND_DARK if current else INK))
+                c.setFont(ctx.font_bold, 8 if current else 7.5)
+                c.drawCentredString(px, py + 7, _fmt(nets[i], 2))
+
+                label = _clip(c, row.get('exam_name') or '', ctx.font_bold if current else ctx.font, 6.5, slot)
+                c.setFillColor(colors.HexColor(INK if current else INK_SOFT))
+                c.setFont(ctx.font_bold if current else ctx.font, 6.5)
+                c.drawCentredString(px, 17, label)
+                c.setFillColor(colors.HexColor(MUTED))
+                c.setFont(ctx.font, 6)
+                c.drawCentredString(px, 9, _short_date(row.get('exam_date')))
+
+    return Trend()
+
+
+# ── Çalışılacak konular ────────────────────────────────────────────────────
+
+def _focus_items(data: dict) -> tuple[str, str, list[tuple[str, str]]]:
+    """Kazanım verisi varsa en zayıf konular, yoksa ders ders tekrar edilecek sorular."""
+    topics = []
+    for block in data.get('topic_blocks') or []:
+        heading = (block.get('heading') or '').strip()
+        for table in block.get('tables') or []:
+            for row in table.get('rows') or []:
+                wrong = int(row.get('yanlis') or 0)
+                empty = int(row.get('bos') or 0)
+                if wrong + empty <= 0:
+                    continue
+                topics.append((
+                    float(row.get('basari') or 0), -(wrong + empty),
+                    (row.get('name') or '').strip(),
+                    heading or (table.get('title') or '').strip(),
+                    wrong, empty,
+                ))
+    if topics:
+        topics.sort(key=lambda t: (t[0], t[1]))
+        items = []
+        for _rate_v, _miss, name, section, wrong, empty in topics[:8]:
+            bits = [b for b in (section, f'{wrong} yanlış' if wrong else '', f'{empty} boş' if empty else '') if b]
+            items.append((name, ' · '.join(bits)))
+        return 'Çalışılacak Konular', 'Başarısı en düşük kazanımlar', items
+
+    items = []
+    for grid in _visible_answer_grids(data):
+        questions = grid.get('questions') or []
+        numbered = [(q.get('n') or q.get('q') or i + 1, q) for i, q in enumerate(questions)]
+        wrong = [n for n, q in numbered if q.get('result') == 'wrong']
+        empty = [
+            n for n, q in numbered
+            if q.get('result') not in ('wrong', 'correct') and (q.get('correct') or '').strip()
+        ]
+        if not wrong and not empty:
+            continue
+        parts = []
+        if wrong:
+            parts.append(f'Yanlış: {_ranges(wrong)}')
+        if empty:
+            parts.append(f'Boş: {_ranges(empty)}')
+        items.append((grid.get('section_name') or '', '   ·   '.join(parts)))
+    return 'Tekrar Çözülecek Sorular', 'Numaralar her testin kendi soru sırasıdır', items
+
+
+def _unbanded_question_count(data: dict) -> int:
+    """Zorluk gruplarına girmeyen soru: iptal ya da anahtarda karşılığı olmayan."""
+    if data.get('exam_type') == 'YKS_AYT':
+        return 0
+    bands = (data.get('difficulty') or {}).get('bands') or []
+    banded = sum(int(b.get('soru') or 0) for b in bands)
+    total = _question_total(data)
+    return total - banded if 0 < banded < total else 0
+
+
+def karne_insights(data: dict) -> dict:
+    """Web önizlemesinin PDF ile aynı metni göstermesi için hesaplanan özet."""
+    from apps.coaching.olcme_degerlendirme.views.analysis_views import is_unattempted_optional_section
+
+    title, note, items = _focus_items(data)
+    visible_grids = {id(grid) for grid in _visible_answer_grids(data)}
+    return {
+        'comment': _comment_lines(data),
+        'focus': {
+            'title': title,
+            'note': note,
+            'items': [{'name': name, 'detail': detail} for name, detail in items],
+        },
+        'unbanded_questions': _unbanded_question_count(data),
+        'hidden_section_ids': [
+            sd.get('section_id') for sd in data.get('section_details') or []
+            if is_unattempted_optional_section(sd)
+        ],
+        'hidden_grid_ids': [
+            grid.get('section_id') for grid in data.get('answer_grids') or []
+            if id(grid) not in visible_grids
+        ],
+    }
+
+
+def _focus_block(ctx: _Ctx, data: dict) -> list[Any]:
+    from reportlab.lib import colors
+    from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+
+    title, note, items = _focus_items(data)
+    if not items:
+        return []
+    rows = [
+        [Paragraph(_xml_escape(name), ctx.s('tdName')), Paragraph(_xml_escape(detail), ctx.s('tdLeft'))]
+        for name, detail in items
+    ]
+    t = Table(rows, colWidths=[ctx.page_w * 0.3, ctx.page_w * 0.7])
+    t.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.6, colors.HexColor(LINE)),
+        ('LINEBELOW', (0, 0), (-1, -2), 0.3, colors.HexColor(LINE)),
+        ('LINEBEFORE', (0, 0), (0, -1), 3, colors.HexColor(AMBER)),
+        ('ROWBACKGROUNDS', (0, 0), (-1, -1), [colors.white, colors.HexColor(SURFACE)]),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('LEFTPADDING', (0, 0), (-1, -1), 9),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 6),
+        ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+    ]))
+    t.hAlign = 'LEFT'
+    return [Spacer(1, 12), KeepTogether([_section_heading(ctx, title, note), Spacer(1, 5), t])]
 
 
 # ── Kazanım tabloları ──────────────────────────────────────────────────────
@@ -1513,12 +2049,25 @@ def _topic_tables(ctx: _Ctx, data: dict) -> list[Any]:
 
 # ── Cevap anahtarı ─────────────────────────────────────────────────────────
 
+def _visible_answer_grids(data: dict) -> list[dict]:
+    """Seçmeli felsefeye hiç cevap verilmediyse o ızgara gösterilmez."""
+    from apps.coaching.olcme_degerlendirme.views.analysis_views import _is_optional_philosophy_section
+
+    return [
+        grid for grid in data.get('answer_grids') or []
+        if not (
+            _is_optional_philosophy_section(grid.get('section_name') or '')
+            and not any((q.get('given') or '').strip() for q in grid.get('questions') or [])
+        )
+    ]
+
+
 def _answer_grids(ctx: _Ctx, data: dict) -> list[Any]:
     """Soru bazlı cevap ızgarası — doğru/yanlış/boş hücre zeminiyle ayrışır."""
     from reportlab.lib import colors
     from reportlab.platypus import Paragraph, Spacer, Table, TableStyle
 
-    grids = data.get('answer_grids') or []
+    grids = _visible_answer_grids(data)
     if not grids:
         return []
 
@@ -1782,6 +2331,15 @@ def _difficulty_block(ctx: _Ctx, data: dict) -> list[Any]:
         Spacer(1, 6),
         grid,
     ]
+    missing = _unbanded_question_count(data)
+    if missing:
+        flow += [
+            Spacer(1, 4),
+            Paragraph(
+                f'{missing} soru iptal edildiği ya da cevap anahtarında eşleşmediği için gruplara girmedi.',
+                ctx.s('alanNote'),
+            ),
+        ]
     note = (block.get('note') or '').strip()
     if note:
         callout = Table(
@@ -1806,7 +2364,8 @@ def _difficulty_block(ctx: _Ctx, data: dict) -> list[Any]:
 # ── Sayfa kurgusu ──────────────────────────────────────────────────────────
 
 def _summary_page(ctx: _Ctx, data: dict) -> list[Any]:
-    from reportlab.platypus import Spacer
+    """Birinci sayfa: veli ve öğrencinin telefonda ilk göreceği özet."""
+    from reportlab.platypus import KeepTogether, Spacer
 
     flow: list[Any] = []
     flow.append(_hero_header(ctx, data))
@@ -1816,57 +2375,52 @@ def _summary_page(ctx: _Ctx, data: dict) -> list[Any]:
     if note is not None:
         flow.append(Spacer(1, 4))
         flow.append(note)
-    flow.append(Spacer(1, 12))
+
+    for block in (_overview(ctx, data), _comment_card(ctx, data), _trend_chart(ctx, data)):
+        if block is not None:
+            flow.append(Spacer(1, 9))
+            flow.append(block)
 
     ref_year = data.get('referans_yil')
     note = f'Tahmini sıralama {ref_year} verilerine göre' if ref_year else ''
-    flow.append(_section_heading(ctx, 'Puan ve Sıralama', note))
-    flow.append(Spacer(1, 5))
-    flow.append(_ranking_table(ctx, data))
     flow.append(Spacer(1, 12))
-
-    flow.append(_section_heading(ctx, 'Ders / Test Performansı', 'Fark sütunları öğrencinin ortalamaya göre konumudur'))
-    flow.append(Spacer(1, 5))
-    flow.append(_performance_table(ctx, data))
-    flow.extend(_difficulty_block(ctx, data))
+    flow.append(KeepTogether([
+        _section_heading(ctx, 'Puan ve Sıralama', note),
+        Spacer(1, 5),
+        _ranking_table(ctx, data),
+    ]))
     return flow
 
 
-def _analysis_page(ctx: _Ctx, data: dict) -> list[Any]:
-    from reportlab.platypus import Spacer
+def _detail_page(ctx: _Ctx, data: dict) -> list[Any]:
+    """İkinci sayfa: ders tablosu ve analiz önce, ham cevaplar en sonda."""
+    from reportlab.platypus import KeepTogether, Spacer
 
-    flow: list[Any] = [_running_header(ctx, data, 'Performans Analizi'), Spacer(1, 10)]
-
-    mains = [sd for sd, is_main in _ordered_sections(data) if is_main]
-    if not mains:
-        mains = [sd for sd, _ in _ordered_sections(data)]
-    if mains:
-        has_class = _has_class_context(data)
-        legend_items = [(SERIES_STUDENT, 'Öğrenci')]
-        if has_class:
-            legend_items.append((SERIES_CLASS, 'Sınıf ortalaması'))
-        legend_items.append((SERIES_KURUM, 'Kurum ortalaması'))
-
-        flow.append(_section_heading(ctx, 'Net Karşılaştırması'))
-        flow.append(Spacer(1, 4))
-        flow.append(_legend(ctx, legend_items))
-        flow.append(Spacer(1, 5))
-        for sd in mains:
-            flow.append(_compare_card(ctx, sd, with_class=has_class))
-            flow.append(Spacer(1, 5))
-        flow.append(Spacer(1, 6))
-
-    grid = _efficiency_grid(ctx, data)
-    if grid is not None:
-        flow.append(_section_heading(ctx, 'Verimlilik', 'Net / soru'))
-        flow.append(Spacer(1, 5))
-        flow.append(grid)
+    flow: list[Any] = [_running_header(ctx, data, 'Ders Analizi'), Spacer(1, 10)]
+    if data.get('strong_areas') or data.get('weak_areas'):
+        flow.append(KeepTogether([
+            _section_heading(ctx, 'Güçlü ve Geliştirilecek Alanlar', 'Başarı = net / soru · kurum farkı net'),
+            Spacer(1, 5),
+            _area_pair(ctx, data),
+        ]))
         flow.append(Spacer(1, 12))
+    if _ordered_sections(data):
+        flow.append(_section_heading(ctx, 'Ders / Test Performansı', 'Fark sütunları öğrencinin ortalamaya göre konumudur'))
+        flow.append(Spacer(1, 5))
+        flow.append(_performance_table(ctx, data))
+    flow.extend(_difficulty_block(ctx, data))
+    flow.extend(_focus_block(ctx, data))
 
-    flow.append(_section_heading(ctx, 'Güçlü ve Geliştirilecek Alanlar'))
-    flow.append(Spacer(1, 5))
-    flow.append(_area_pair(ctx, data))
-    return flow
+    grids = _answer_grids(ctx, data)
+    if grids:
+        flow.append(Spacer(1, 12))
+        flow.append(KeepTogether([
+            _section_heading(ctx, 'Cevaplar', 'Öğrenci cevabı ve doğru cevap'),
+            Spacer(1, 5),
+            *grids[:5],
+        ]))
+        flow += grids[5:]
+    return flow if len(flow) > 2 else []
 
 
 def _topic_page(ctx: _Ctx, data: dict) -> list[Any]:
@@ -1877,17 +2431,6 @@ def _topic_page(ctx: _Ctx, data: dict) -> list[Any]:
         return []
     flow: list[Any] = [_running_header(ctx, data, 'Kazanım Analizi'), Spacer(1, 10)]
     flow += tables
-    return flow
-
-
-def _answer_page(ctx: _Ctx, data: dict) -> list[Any]:
-    from reportlab.platypus import Spacer
-
-    grids = _answer_grids(ctx, data)
-    if not grids:
-        return []
-    flow: list[Any] = [_running_header(ctx, data, 'Cevap Anahtarı'), Spacer(1, 10)]
-    flow += grids
     return flow
 
 
@@ -1965,8 +2508,7 @@ def render_karne_pdf_many(payloads: list[dict]) -> bytes:
     for index, data in enumerate(payloads):
         pages = [
             _summary_page(ctx, data),
-            _answer_page(ctx, data),
-            _analysis_page(ctx, data),
+            _detail_page(ctx, data),
             _topic_page(ctx, data),
         ]
 

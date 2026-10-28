@@ -129,11 +129,14 @@ class CommunicationEventsStreamView(CommunicationAPIView):
                     )
                     unread_count = int(totals['unread'] or 0)
                     unread_conversations = int(totals['conversations'] or 0)
-                    # Claim / SLA / status değişikliklerini de yakala
+                    # Claim / SLA / status / mesaj tiki değişikliklerini de yakala
                     agg = qs.order_by('-updated_at').values_list(
-                        'id', 'claim_version', 'status', 'unread_count_coach',
+                        'id', 'claim_version', 'status', 'unread_count_coach', 'updated_at',
                     )[:30]
-                    state = {str(i): f'{cv}:{st}:{uc}' for i, cv, st, uc in agg}
+                    state = {
+                        str(i): f'{cv}:{st}:{uc}:{ua.isoformat() if ua else ""}'
+                        for i, cv, st, uc, ua in agg
+                    }
                     fingerprint = '|'.join(f'{k}:{v}' for k, v in state.items())
 
                     if (
@@ -155,7 +158,11 @@ class CommunicationEventsStreamView(CommunicationAPIView):
                         yield _sse_event(event_name, {
                             'unread_count': unread_count,
                             'unread_conversations': unread_conversations,
-                            'conversation_ids': changed[:20],
+                            # 20'den fazlası boş liste olarak gider: istemci tüm listeyi tazeler.
+                            'conversation_ids': changed if len(changed) <= 20 else [],
+                            # İstemci yeniden bağlanınca aynı damgayı görürse
+                            # tüm listeyi boşuna yeniden yüklemez.
+                            'stamp': max_updated.isoformat() if max_updated else '',
                         })
                         last_unread = unread_count
                         last_conversations = unread_conversations

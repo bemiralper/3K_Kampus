@@ -330,6 +330,8 @@ export interface MessagesResponse {
   total: number;
   has_more: boolean;
   incremental?: boolean;
+  /** `after=` yanıtında sınıra takılan yeni mesaj kaldı — son sayfa baştan yüklenmeli. */
+  has_more_after?: boolean;
   /** Sohbette sabitlenmiş mesaj (varsa) — timeline üstünde şerit olarak gösterilir. */
   pinned_message?: MessageItem | null;
 }
@@ -649,11 +651,14 @@ export interface NotificationSummary {
 
 export async function fetchNotificationSummary(options?: {
   department?: string;
+  /** false: yalnız sayılar — rozetler kart listesini çekmez. */
+  cards?: boolean;
 }): Promise<NotificationSummary> {
   const search = new URLSearchParams();
   const kurumId = readContextId(STORAGE_KEYS.activeKurum);
   if (kurumId) search.set('kurum_id', kurumId);
   if (options?.department) search.set('department', options.department);
+  if (options?.cards === false) search.set('cards', '0');
   const qs = search.toString();
   return request<NotificationSummary>(`/notifications/summary/${qs ? `?${qs}` : ''}`);
 }
@@ -3057,8 +3062,13 @@ export function deleteConversation(conversationId: string): Promise<{ ok: boolea
   return chatMutation(`/conversations/${conversationId}/delete/`, 'DELETE');
 }
 
-export function markAllConversationsRead(): Promise<{ ok: boolean; updated: number }> {
-  return chatMutation('/conversations/read-all/', 'POST');
+export function markAllConversationsRead(department?: string): Promise<{
+  ok: boolean;
+  updated: number;
+  /** false: yönetici görünümü — koçların okunmamış sayacı korunur, yalnız bildirim kapanır. */
+  counters_reset?: boolean;
+}> {
+  return chatMutation('/conversations/read-all/', 'POST', department ? { department } : undefined);
 }
 
 export interface ChatMessageSearchHit {

@@ -136,8 +136,9 @@ location /api/communication/events/stream/ {
 # Takvim hatırlatmaları (mevcut)
 * * * * * cd /var/www/lms/backend && DJANGO_ENV=production /var/www/lms/venv/bin/python manage.py process_reminders >> /var/log/lms/reminders.log 2>&1
 
-# Yedekleme — UI saat/dakika penceresi için her dakika
-* * * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups >> /var/log/lms/backups.log 2>&1
+# Yedekleme — 5 dakikada bir saat kontrolü; medya pazar 22:30
+*/5 * * * * /var/www/lms/backend/scripts/backup-cron-tick.sh >> /var/log/lms/backups.log 2>&1
+30 22 * * 0 cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups --kind selected --resources system.media --trigger weekly --skip-schedule-record >> /var/log/lms/backups.log 2>&1
 0 4 * * * cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1
 ```
 

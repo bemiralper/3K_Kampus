@@ -47,6 +47,42 @@ class NotificationContextResponseTest(TestCase):
         self.assertTrue(res.json()['success'])
         self.assertEqual(res.json()['data']['unread_count'], 0)
 
+    def test_count_only_returns_badge_and_leaves_list_shape(self):
+        AppNotification.objects.create(
+            kurum_id=self.kurum.id,
+            user_id=self.user.id,
+            baslik='Yeni görev',
+            mesaj='Kontrol et',
+            url='/coach/gorevler/1',
+        )
+        AppNotification.objects.create(
+            kurum_id=self.kurum.id,
+            user_id=self.user.id,
+            baslik='Sohbet',
+            mesaj='Mesaj',
+            url='/coach/sohbetler',
+        )
+        self.client.force_login(self.user)
+        badge = self.client.get(
+            '/takvim/api/bildirimler/?count_only=true&kaynak=gorev',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+        )
+        self.assertEqual(badge.status_code, 200, badge.content)
+        body = badge.json()['data']
+        self.assertEqual(body['unread_count'], 1)
+        self.assertTrue(body['newest_id'])
+        self.assertNotIn('baslik', body)
+
+        listed = self.client.get(
+            '/takvim/api/bildirimler/?unread_only=true&kaynak=gorev&limit=30',
+            HTTP_X_KURUM_ID=str(self.kurum.id),
+        )
+        self.assertEqual(listed.status_code, 200, listed.content)
+        rows = listed.json()['data']
+        self.assertIsInstance(rows, list)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['baslik'], 'Yeni görev')
+
     def test_list_resolves_branch_from_conversation(self):
         sube = Sube.objects.create(kurum=self.kurum, ad='Kadıköy', kod='KDK')
         conv = Conversation.objects.create(

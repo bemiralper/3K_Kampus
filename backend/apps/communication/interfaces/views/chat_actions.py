@@ -153,11 +153,17 @@ class ConversationReadAllView(CommunicationAPIView):
         qs = filter_conversations_for_user(
             qs, request.user, kurum_id=kurum_id, sube_id=sube_id,
         )
+        # Portal (koçluk / muhasebe) yalnız kendi sohbetlerini okundu yapar.
+        department = str(
+            request.data.get('department') or request.query_params.get('department') or ''
+        ).strip()
+        if department:
+            qs = qs.filter(department=department)
         admin_peek = _has_full_inbox_access(request.user)
         updated = ConversationRepository.mark_all_read_bulk(
             qs, request.user, reset_counters=not admin_peek,
         )
-        return Response({'ok': True, 'updated': updated})
+        return Response({'ok': True, 'updated': updated, 'counters_reset': not admin_peek})
 
 
 class ConversationMessageSearchView(CommunicationAPIView):

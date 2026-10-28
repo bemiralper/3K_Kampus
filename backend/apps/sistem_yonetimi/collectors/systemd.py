@@ -98,6 +98,29 @@ def unit_status(unit: str) -> dict:
     }
 
 
+def display_unit_status(unit: str) -> dict:
+    """postgresql hedefinin PID'si 0 ise çalışan küme birimini göster."""
+    status = unit_status(unit)
+    if unit != 'postgresql' or not status.get('available') or status.get('pid'):
+        return status
+    code, out, _err = _run([
+        'systemctl', 'list-units', 'postgresql@*.service',
+        '--state=active', '--no-legend', '--no-pager',
+    ])
+    if code != 0 or not out:
+        return status
+    for line in out.splitlines():
+        name = (line.split() or [''])[0]
+        if not name.startswith('postgresql@'):
+            continue
+        instance = name[:-8] if name.endswith('.service') else name
+        resolved = unit_status(instance)
+        if resolved.get('pid'):
+            resolved['unit'] = instance
+            return resolved
+    return status
+
+
 def tcp_probe(host: str, port: int, timeout: float = 1.5) -> bool:
     import socket
     try:

@@ -80,7 +80,23 @@
 .bss-main { min-width: 0; }
 .bss-step { display: grid; gap: 14px; }
 
-.bss-side { position: sticky; top: 12px; min-width: 0; }
+/* Kabukların `overflow-x: hidden`ı kaydırmayan bir kaydırma kabı üretir ve
+   sticky kart + alt çubuk hiç yapışmaz. `clip` taşmayı yine keser, kap üretmez.
+   Yalnız bu sayfada; diğer sayfaların davranışı değişmesin diye `:has` ile. */
+.app-main:has(.bss),
+.app-content:has(.bss),
+.app-container.admin-mobile-shell .app-main:has(.bss),
+.app-container.admin-mobile-shell .app-content:has(.bss),
+.muhasebe-shell .muhasebe-main:has(.bss),
+.muhasebe-shell .muhasebe-content:has(.bss),
+.coach-main:has(.bss),
+.coach-content:has(.bss) {
+  overflow-x: clip;
+}
+
+.bss-rail { scroll-margin-top: calc(var(--topbar-height, 65px) + 12px); }
+
+.bss-side { position: sticky; top: calc(var(--topbar-height, 65px) + 12px); min-width: 0; }
 .bss-side-card {
   display: grid;
   gap: 12px;
@@ -124,6 +140,23 @@
 .bss-breakdown li b { font-variant-numeric: tabular-nums; font-weight: 700; }
 .bss-breakdown li.is-soft { background: #f1f5f9; color: var(--bs-muted); }
 .bss-breakdown li.is-warn { background: var(--bs-warn-bg); color: #92400e; }
+.bss-breakdown li:has(.bss-breakdown-link) { padding: 0; }
+.bss-breakdown-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: 0;
+  border-radius: inherit;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.bss-breakdown-link span { text-decoration: underline; text-underline-offset: 2px; }
 
 /* ---------- panel ---------- */
 .bss-panel {
@@ -323,6 +356,28 @@
   border-radius: 999px;
 }
 .bss-field.is-soft > span { color: var(--bs-muted); }
+.bss-field-note { font-size: 0.78rem; color: var(--bs-muted); }
+.bss-field-error { font-size: 0.78rem; font-weight: 600; color: var(--bs-bad); }
+
+.bss-message-text {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #f0fdf4;
+  border: 1px solid #dcfce7;
+  font-size: 0.88rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.bss-confirm { margin: 0 0 12px; display: grid; gap: 8px; }
+.bss-confirm > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 10px; }
+.bss-confirm dt { font-size: 0.78rem; font-weight: 700; color: var(--bs-muted, #64748b); }
+.bss-confirm dd { margin: 0; font-size: 0.88rem; overflow-wrap: anywhere; }
+
+.bss-tiles-more { justify-self: start; display: none; }
+.bss-preview-jump { display: none; }
 
 .bss-input,
 .bss-select,
@@ -657,6 +712,8 @@
 /* --- tablet: tek kolon, önizleme altta ortalanır --- */
 @media (max-width: 1099px) {
   .bss-body { grid-template-columns: minmax(0, 1fr); }
+  .bss-preview-jump { display: inline-flex; }
+  .bss-side { scroll-margin-top: calc(var(--topbar-height, 65px) + 12px); }
   .bss-side { position: static; }
   .bss-side-card {
     padding: 16px;
@@ -720,6 +777,9 @@
 @media (max-width: 599px) {
   .bss-panel { padding: 13px; border-radius: 12px; }
   .bss-tiles { grid-template-columns: 1fr; gap: 8px; }
+  .bss-tiles:not(.is-expanded) .bss-tile.is-extra { display: none; }
+  .bss-tiles-more { display: inline-flex; }
+  .bss-confirm > div { grid-template-columns: 1fr; gap: 2px; }
   .bss-grid2 { grid-template-columns: 1fr; }
   .bss-side-card { max-width: none; padding: 13px; }
 

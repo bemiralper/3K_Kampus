@@ -18,6 +18,7 @@ RESOURCES = [
         resource_type=ResourceType.MEDIA,
         description='Kurum logo ve favicon dosyaları.',
         config={'relative_to': 'media', 'path': 'kurum'},
+        is_default=False,
         priority=16,
     ),
 ]

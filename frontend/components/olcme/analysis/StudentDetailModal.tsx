@@ -3,6 +3,10 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { analysisApi } from '../api';
 import KarneNotifyModal from './KarneNotifyModal';
+import {
+  KarneAreaPair, KarneComment, KarneFocus, KarneOverview, KarneTrend, SuccessPill, answerCounts, questionTotal,
+} from './KarneVisuals';
+import v from './KarneVisuals.module.css';
 import type { StudentAnalysis, StudentDetailResponse, StudentDetailSectionItem } from '../types';
 import { resolveCoachPhotoUrl } from '@/lib/coach-media';
 import s from '../../../app/admin/olcme-degerlendirme/olcme.module.css';
@@ -17,16 +21,10 @@ function fmtInt(n: number | null | undefined) {
   return n.toLocaleString('tr-TR');
 }
 
-function verimColor(v: number) {
-  if (v >= 70) return '#16a34a';
-  if (v >= 40) return '#d97706';
-  return '#dc2626';
-}
-
 function diffLabel(n: number) {
   if (Math.abs(n) < 0.05) return { text: '—', cls: s.karneMuted };
-  if (n > 0) return { text: `+${n.toFixed(1)}`, cls: s.karnePos };
-  return { text: `−${Math.abs(n).toFixed(1)}`, cls: s.karneBelow };
+  if (n > 0) return { text: `+${fmt(n, 1)}`, cls: s.karnePos };
+  return { text: `−${fmt(Math.abs(n), 1)}`, cls: s.karneBelow };
 }
 
 function studentInitials(name: string) {
@@ -300,8 +298,10 @@ export default function StudentDetailModal({
 
   const sectionRows = (() => {
     if (!detail) return [] as { sd: StudentDetailSectionItem; main: boolean }[];
-    const mains = detail.section_details.filter(sd => !sd.is_sub_section);
-    const subs = detail.section_details.filter(sd => sd.is_sub_section);
+    const hidden = new Set(detail.karne_insights?.hidden_section_ids || []);
+    const visible = detail.section_details.filter(sd => !hidden.has(sd.section_id));
+    const mains = visible.filter(sd => !sd.is_sub_section);
+    const subs = visible.filter(sd => sd.is_sub_section);
     const rows: { sd: StudentDetailSectionItem; main: boolean }[] = [];
     mains.forEach(sd => {
       rows.push({ sd, main: true });
@@ -344,6 +344,22 @@ export default function StudentDetailModal({
   const tytRank = detail?.tyt_siralama;
 
   const hasClass = detail?.has_class ?? Boolean(detail?.sinif_student_count || detail?.sinif_rank);
+  const insights = detail?.karne_insights;
+  const hiddenGrids = new Set(insights?.hidden_grid_ids || []);
+  const answerGrids = (detail?.answer_grids || []).filter(grid => !hiddenGrids.has(grid.section_id));
+  const kpiTiles: [string, string, string][] = detail ? [
+    ['Soru', fmtInt(questionTotal(detail) || null), 'ink'],
+    ['Doğru', fmtInt(detail.total_correct), 'green'],
+    ['Yanlış', fmtInt(detail.total_wrong), 'red'],
+    ...(!isAyt && questionTotal(detail) ? [['Boş', fmtInt(answerCounts(detail).empty), 'muted'] as [string, string, string]] : []),
+    [
+      isAyt && detail.net_etiket ? detail.net_etiket : 'Net',
+      fmt(isAyt && detail.alan_net != null ? detail.alan_net : detail.toplam_net, 2),
+      'brand',
+    ],
+    ['Puan', fmt(detail.puan, 2), 'brand'],
+    ['Kurum Sırası', fmtInt(detail.kurum_ici_sira), 'ink'],
+  ] : [];
 
   return (
     <div className={s.matchDialogOverlay} ref={overlayRef} onClick={handleOverlayClick}>
@@ -398,18 +414,7 @@ export default function StudentDetailModal({
               <KarneHeader detail={detail} />
 
               <div className={s.karneSummary}>
-                {[
-                  ['Soru', fmtInt(detail.alan_soru || detail.total_questions), 'ink'],
-                  ['Doğru', fmtInt(detail.total_correct), 'green'],
-                  ['Yanlış', fmtInt(detail.total_wrong), 'red'],
-                  [
-                    isAyt && detail.net_etiket ? detail.net_etiket : 'Net',
-                    fmt(isAyt && detail.alan_net != null ? detail.alan_net : detail.toplam_net, 2),
-                    'brand',
-                  ],
-                  ['Puan', fmt(detail.puan, 2), 'brand'],
-                  ['Kurum Sırası', fmtInt(detail.kurum_ici_sira), 'ink'],
-                ].map(([label, value, tone]) => (
+                {kpiTiles.map(([label, value, tone]) => (
                   <div key={label} className={s.karneSummaryBox} data-tone={tone}>
                     <span className={s.karneSummaryValue} data-tone={tone}>{value}</span>
                     <span className={s.karneSummaryLabel}>{label}</span>
@@ -426,6 +431,10 @@ export default function StudentDetailModal({
                   öğrencinin alanına giren testlerdir. Tüm testler: {fmt(detail.toplam_net, 2)}. Alan dışı testler bu nete yazılmaz.
                 </p>
               )}
+
+              <KarneOverview detail={detail} rows={sectionRows} />
+              <KarneComment lines={insights?.comment || []} />
+              <KarneTrend history={detail.net_history || []} />
 
               <KarneSecHead
                 title="Puan ve Sıralama"
@@ -498,7 +507,7 @@ export default function StudentDetailModal({
                       <th style={{ textAlign: 'left' }}>Puan Türü</th>
                       <th>Puan</th>
                       <th>Kurum Ort.</th>
-                      <th>Sınıf Sırası</th>
+                      {hasClass && <th>Sınıf Sırası</th>}
                       <th>Kurum Sırası</th>
                       <th>Tahmini TR Sırası</th>
                     </tr>
@@ -509,7 +518,7 @@ export default function StudentDetailModal({
                         <td className={s.karneLeft}>{row.label}</td>
                         <td>{fmt(row.puan, 2)}</td>
                         <td>{fmt(row.avg, 2)}</td>
-                        <td>{i === 0 ? (hasClass && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—') : ''}</td>
+                        {hasClass && <td>{i === 0 && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—'}</td>}
                         <td>{row.kurumSira ? fmtInt(row.kurumSira) : '—'}</td>
                         <td>{row.tahmini ? fmtInt(row.tahmini) : '—'}</td>
                       </tr>
@@ -518,11 +527,7 @@ export default function StudentDetailModal({
                       <td className={s.karneLeft}>Katılım</td>
                       <td className={s.karneMuted}>—</td>
                       <td className={s.karneMuted}>—</td>
-                      <td className={s.karneMuted}>
-                        {hasClass
-                          ? `${fmtInt(detail.sinif_student_count)} öğrenci`
-                          : (detail.sinif || 'Sınıf tanımlı değil')}
-                      </td>
+                      {hasClass && <td className={s.karneMuted}>{fmtInt(detail.sinif_student_count)} öğrenci</td>}
                       <td className={s.karneMuted}>{fmtInt(detail.toplam_ogrenci)} öğrenci</td>
                       <td className={s.karneMuted}>—</td>
                     </tr>
@@ -530,59 +535,75 @@ export default function StudentDetailModal({
                 </table>
               </div>
               )}
+            </div>
 
-              <KarneSecHead title="Ders / Test Performansı" note="Fark sütunları öğrencinin ortalamaya göre konumudur" />
-              <div className={s.karneTableWrap}>
-                <table className={s.karneTable}>
-                  <thead>
-                    <tr>
-                      <th style={{ textAlign: 'left' }}>Ders / Test</th>
-                      <th>Soru</th><th>D</th><th>Y</th><th>B</th>
-                      <th>Net</th><th>Başarı</th>
-                      <th>Sınıf Ort.</th><th>Fark</th>
-                      <th>Kurum Ort.</th><th>Fark</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(() => {
-                      let tytHead = false;
-                      return sectionRows.map(({ sd, main }) => {
-                        const ds = hasClass ? diffLabel(sd.diff_sinif) : { text: '—', cls: s.karneMuted };
-                        const dk = diffLabel(sd.diff_kurum);
-                        const row = (
-                          <tr key={sd.section_id} className={main ? s.karneMainRow : undefined}>
-                            <td className={main ? s.karneLeft : s.karneSub}>{sd.section_name}</td>
-                            <td>{sd.question_count}</td>
-                            <td>{sd.correct}</td>
-                            <td>{sd.wrong}</td>
-                            <td>{sd.empty}</td>
-                            <td>{fmt(sd.net, 2)}</td>
-                            <td style={{ color: verimColor(sd.verimlilik), fontWeight: 700 }}>
-                              %{Math.round(sd.verimlilik)}
-                            </td>
-                            <td>{hasClass ? fmt(sd.sinif_avg_net, 2) : '—'}</td>
-                            <td className={ds.cls}>{ds.text}</td>
-                            <td>{fmt(sd.kurum_avg_net, 2)}</td>
-                            <td className={dk.cls}>{dk.text}</td>
-                          </tr>
-                        );
-                        if (sd.source === 'tyt' && !tytHead) {
-                          tytHead = true;
-                          return (
-                            <Fragment key={`tyt-${sd.section_id}`}>
-                              <tr className={s.karneMainRow}>
-                                <td className={s.karneLeft} colSpan={11}>{detail.linked_tyt_exam_name || 'TYT'}</td>
+            <div className={s.karnePage}>
+              <KarneRunHead title="Ders Analizi" detail={detail} />
+              {(detail.strong_areas?.length || detail.weak_areas?.length) ? (
+                <>
+                  <KarneSecHead title="Güçlü ve Geliştirilecek Alanlar" note="Başarı = net / soru · kurum farkı net" />
+                  <KarneAreaPair detail={detail} />
+                </>
+              ) : null}
+
+              {sectionRows.length > 0 && (
+                <>
+                  <KarneSecHead title="Ders / Test Performansı" note="Fark sütunları öğrencinin ortalamaya göre konumudur" />
+                  <div className={s.karneTableWrap}>
+                    <table className={s.karneTable}>
+                      <thead>
+                        <tr>
+                          <th style={{ textAlign: 'left' }}>Ders / Test</th>
+                          <th>Soru</th><th>D</th><th>Y</th><th>B</th>
+                          <th>Net</th><th>Başarı</th>
+                          {hasClass && <><th>Sınıf Ort.</th><th>Sınıf Farkı</th></>}
+                          <th>Kurum Ort.</th><th>Kurum Farkı</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          let tytHead = false;
+                          return sectionRows.map(({ sd, main }) => {
+                            const ds = diffLabel(sd.diff_sinif);
+                            const dk = diffLabel(sd.diff_kurum);
+                            const row = (
+                              <tr key={sd.section_id} className={main ? s.karneMainRow : undefined}>
+                                <td className={main ? s.karneLeft : s.karneSub}>{sd.section_name}</td>
+                                <td>{sd.question_count}</td>
+                                <td>{sd.correct}</td>
+                                <td>{sd.wrong}</td>
+                                <td>{sd.empty}</td>
+                                <td>{fmt(sd.net, 2)}</td>
+                                <td><SuccessPill value={sd.verimlilik || 0} /></td>
+                                {hasClass && (
+                                  <>
+                                    <td>{fmt(sd.sinif_avg_net, 2)}</td>
+                                    <td className={ds.cls}>{ds.text}</td>
+                                  </>
+                                )}
+                                <td>{fmt(sd.kurum_avg_net, 2)}</td>
+                                <td className={dk.cls}>{dk.text}</td>
                               </tr>
-                              {row}
-                            </Fragment>
-                          );
-                        }
-                        return row;
-                      });
-                    })()}
-                  </tbody>
-                </table>
-              </div>
+                            );
+                            if (sd.source === 'tyt' && !tytHead) {
+                              tytHead = true;
+                              return (
+                                <Fragment key={`tyt-${sd.section_id}`}>
+                                  <tr className={s.karneMainRow}>
+                                    <td className={s.karneLeft} colSpan={hasClass ? 11 : 9}>{detail.linked_tyt_exam_name || 'TYT'}</td>
+                                  </tr>
+                                  {row}
+                                </Fragment>
+                              );
+                            }
+                            return row;
+                          });
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
+              )}
 
               {detail.difficulty && detail.difficulty.bands.length > 0 ? (
                 <>
@@ -619,111 +640,37 @@ export default function StudentDetailModal({
                       );
                     })}
                   </div>
+                  {insights?.unbanded_questions ? (
+                    <p className={v.unbanded}>
+                      {insights.unbanded_questions} soru iptal edildiği ya da cevap anahtarında eşleşmediği için gruplara girmedi.
+                    </p>
+                  ) : null}
                   {detail.difficulty.note ? (
                     <p className={s.karneDifficultyNote}>{detail.difficulty.note}</p>
                   ) : null}
                 </>
               ) : null}
-            </div>
 
-            {!!detail.answer_grids?.length && (
-              <div className={s.karnePage}>
-                <KarneRunHead title="Cevap Anahtarı" detail={detail} />
-                <div className={s.karneBarLegend}>
-                  <span className={s.karneGridLegOk}>Doğru</span>
-                  <span className={s.karneGridLegBad}>Yanlış</span>
-                  <span className={s.karneGridLegEmpty}>Boş</span>
-                </div>
-                {(detail.answer_grids || []).map(grid => (
-                  <AnswerGrid key={grid.section_id} title={grid.section_name} questions={grid.questions} />
-                ))}
-              </div>
-            )}
+              {!!insights?.focus.items.length && (
+                <>
+                  <KarneSecHead title={insights.focus.title} note={insights.focus.note} />
+                  <KarneFocus items={insights.focus.items} />
+                </>
+              )}
 
-            <div className={s.karnePage}>
-              <KarneRunHead title="Performans Analizi" detail={detail} />
-              <KarneSecHead title="Net Karşılaştırması" />
-              <div className={s.karneBarLegend}>
-                <span className={s.karneBarStudent}>Öğrenci</span>
-                {hasClass && <span className={s.karneBarSinif}>Sınıf ortalaması</span>}
-                <span className={s.karneBarKurum}>Kurum ortalaması</span>
-              </div>
-              <div className={s.karneBarList}>
-                {sectionRows.filter(r => r.main).map(({ sd }) => {
-                  const cap = Math.max(sd.question_count || 1, 1);
-                  const lines = [
-                    { label: 'Öğrenci', value: sd.net, fill: s.karneBarFillStudent, color: '#0262a7' },
-                    ...(hasClass ? [{ label: 'Sınıf', value: sd.sinif_avg_net, fill: s.karneBarFillSinif, color: '#7c3aed' }] : []),
-                    { label: 'Kurum', value: sd.kurum_avg_net, fill: s.karneBarFillKurum, color: '#d97706' },
-                  ];
-                  return (
-                    <div key={`b-${sd.section_id}`} className={s.karneCompareCard}>
-                      <div className={s.karneBarName}>{sd.section_name}</div>
-                      {lines.map(line => (
-                        <div key={line.label} className={s.karneBarLine}>
-                          <span>{line.label}</span>
-                          <div className={s.karneBarTrack}>
-                            <div className={`${s.karneBarFill} ${line.fill}`} style={{ width: `${Math.min(100, (line.value / cap) * 100)}%` }} />
-                          </div>
-                          <strong style={{ color: line.color }}>{fmt(line.value, 1)}</strong>
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </div>
-
-              <KarneSecHead title="Verimlilik" note="Net / soru" />
-              <div className={s.karneVerimList}>
-                {sectionRows.map(({ sd, main }) => {
-                  const pct = Math.max(0, Math.min(100, sd.verimlilik || 0));
-                  return (
-                    <div
-                      key={`v-${sd.section_id}`}
-                      className={main ? `${s.karneVerimRow} ${s.karneVerimRowMain}` : s.karneVerimRow}
-                    >
-                      <span className={s.karneVerimName}>{sd.section_name}</span>
-                      <span className={s.karneVerimTrack}>
-                        <span
-                          className={s.karneVerimFill}
-                          style={{ width: `${pct}%`, background: verimColor(sd.verimlilik) }}
-                        />
-                      </span>
-                      <strong className={s.karneVerimPct} style={{ color: verimColor(sd.verimlilik) }}>
-                        %{Math.round(pct)}
-                      </strong>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <KarneSecHead title="Güçlü ve Geliştirilecek Alanlar" />
-              <div className={s.karneAreaPair}>
-                <div className={s.karneAreaCard}>
-                  <div className={`${s.karneAreaHead} ${s.karneAreaStrong}`}>Güçlü Alanlar</div>
-                  <div className={s.karneAreaBody}>
-                    {detail.strong_areas.length
-                      ? detail.strong_areas.map(a => (
-                        <div key={a.name} className={s.karneAreaItem}>
-                          <b>{a.name}</b> · {fmt(a.net, 2)} net
-                        </div>
-                      ))
-                      : <div className={s.karneMuted}>—</div>}
+              {answerGrids.length > 0 && (
+                <>
+                  <KarneSecHead title="Cevaplar" note="Öğrenci cevabı ve doğru cevap" />
+                  <div className={s.karneBarLegend}>
+                    <span className={s.karneGridLegOk}>Doğru</span>
+                    <span className={s.karneGridLegBad}>Yanlış</span>
+                    <span className={s.karneGridLegEmpty}>Boş</span>
                   </div>
-                </div>
-                <div className={s.karneAreaCard}>
-                  <div className={`${s.karneAreaHead} ${s.karneAreaWeak}`}>Geliştirilecek Alanlar</div>
-                  <div className={s.karneAreaBody}>
-                    {detail.weak_areas.length
-                      ? detail.weak_areas.map(a => (
-                        <div key={a.name} className={s.karneAreaItemWeak}>
-                          <b>{a.name}</b> · {fmt(a.net, 2)} net
-                        </div>
-                      ))
-                      : <div className={s.karneMuted}>—</div>}
-                  </div>
-                </div>
-              </div>
+                  {answerGrids.map(grid => (
+                    <AnswerGrid key={grid.section_id} title={grid.section_name} questions={grid.questions} />
+                  ))}
+                </>
+              )}
             </div>
 
             {!!detail.topic_blocks?.length && (
@@ -749,9 +696,7 @@ export default function StudentDetailModal({
                                 <td>{row.dogru}</td>
                                 <td>{row.yanlis}</td>
                                 <td>{row.bos}</td>
-                                <td style={{ color: verimColor(row.basari), fontWeight: 700 }}>
-                                  %{row.basari}
-                                </td>
+                                <td><SuccessPill value={row.basari} /></td>
                               </tr>
                             ))}
                           </tbody>

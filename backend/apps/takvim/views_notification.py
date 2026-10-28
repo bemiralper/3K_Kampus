@@ -105,13 +105,19 @@ def api_notification_list(request):
     if err:
         return err
 
-    unread_only = request.GET.get('unread_only') == 'true'
-    limit = min(int(request.GET.get('limit', 50)), 100)
     kaynak = request.GET.get('kaynak') or 'diger'
     if kaynak not in ('diger', 'gorev', 'hepsi'):
         kaynak = 'diger'
 
     service = AppNotificationService()
+    if request.GET.get('count_only') == 'true':
+        return JsonResponse({
+            'success': True,
+            'data': service.get_unread_badge(user_id, kurum_id, kaynak=kaynak),
+        })
+
+    unread_only = request.GET.get('unread_only') == 'true'
+    limit = min(int(request.GET.get('limit', 50)), 100)
     notifications = service.get_notifications(user_id, kurum_id, unread_only, limit, kaynak=kaynak)
 
     return JsonResponse({

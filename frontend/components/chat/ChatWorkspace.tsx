@@ -58,6 +58,16 @@ import "./chat.css";
 /** Mobilde aynı anda tek ekran gösterilir. */
 type MobilePane = "list" | "thread" | "info";
 
+/** Okundu isteğinin tekrarını önleyen anahtar: yeni mesaj gelince değişir. */
+function readKey(conv: ConversationListItem): string {
+  return `${conv.id}:${conv.last_message_at ?? ""}:${conv.unread_count_coach || 0}`;
+}
+
+function isPageActive(): boolean {
+  if (typeof document === "undefined") return true;
+  return document.visibilityState === "visible" && document.hasFocus();
+}
+
 interface Props {
   portal: InboxPortal;
   initialConversationId?: string | null;
@@ -111,6 +121,7 @@ export function ChatWorkspace({
   const [confirm, setConfirm] = useState<ConfirmState | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [online, setOnline] = useState(true);
+  const [pageActive, setPageActive] = useState(true);
 
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -232,6 +243,20 @@ export function ChatWorkspace({
     };
   }, []);
 
+  // ── Kullanıcı ekrana bakıyor mu (sekme görünür + pencere odakta) ──
+  useEffect(() => {
+    const update = () => setPageActive(isPageActive());
+    update();
+    document.addEventListener("visibilitychange", update);
+    window.addEventListener("focus", update);
+    window.addEventListener("blur", update);
+    return () => {
+      document.removeEventListener("visibilitychange", update);
+      window.removeEventListener("focus", update);
+      window.removeEventListener("blur", update);
+    };
+  }, []);
+
   // ── Adres çubuğunu seçili sohbetle eşitle (yenilemeden) ──
   // Drawer başka bir sayfanın (öğrenci detayı vb.) üstünde açılır; adresi bozmaz.
   useEffect(() => {
@@ -258,6 +283,9 @@ export function ChatWorkspace({
   }, [selectedId, isDrawer]);
 
   // ── Canlı güncelleme ──
+  // Satır istekleri dönerken liste değişmiş olabilir; güncel liste ref'ten okunur.
+  const listItemsRef = useRef(list.items);
+  listItemsRef.current = list.items;
   const onRealtime = useCallback(
     (payload?: { conversation_ids?: string[] }) => {
       const touched = payload?.conversation_ids;
@@ -269,13 +297,18 @@ export function ChatWorkspace({
         void Promise.allSettled(touched.map((id) => fetchChatConversation(id))).then((results) => {
           const rows = results.flatMap((r) => (r.status === "fulfilled" ? [r.value] : []));
           if (!rows.length) return;
-          const listIds = new Set(list.items.map((c) => c.id));
+          const listIds = new Set(listItemsRef.current.map((c) => c.id));
           list.patchMany(rows.filter((c) => listIds.has(c.id)));
           // Listede olmayan ama açık olan sohbetin satırı (24 saat penceresi, başlık) tazelensin.
           const selectedRow = rows.find((c) => c.id === selectedId && !listIds.has(c.id));
           if (selectedRow) setDetached(selectedRow);
-          // Listede hiç olmayan yeni bir sohbet geldiyse görünmesi için liste tazelenir.
-          if (rows.some((c) => !listIds.has(c.id) && c.id !== selectedId)) {
+          // Listede olmayan bir sohbet bu portala aitse görünmesi için liste tazelenir;
+          // başka departmanın veya arşivin değişikliği listeyi baştan yükletmez.
+          const archivedView = list.filters.quick === "archived";
+          const belongsHere = (c: ConversationListItem) =>
+            (!department || !c.department || c.department === department) &&
+            (c.status === "ARCHIVED") === archivedView;
+          if (rows.some((c) => !listIds.has(c.id) && c.id !== selectedId && belongsHere(c))) {
             void list.reload({ silent: true });
           }
         });
@@ -286,7 +319,7 @@ export function ChatWorkspace({
         void thread.refreshTail();
       }
     },
-    [list, selectedId, thread],
+    [list, selectedId, thread, department],
   );
 
   useCommunicationSSE({
@@ -329,12 +362,22 @@ export function ChatWorkspace({
     };
   }, [selectedId, infoOpen]);
 
+  // Okundu yalnızca kullanıcı sohbete bakarken işaretlenir; aynı durum için bir
+  // kez istenir (yönetici okuyunca koç sayacı sıfırlanmadığından döngü oluşmasın).
+  const readSentRef = useRef<string | null>(null);
+  const selectedConvId = selected?.id ?? null;
+  const selectedReadKey = selected ? readKey(selected) : null;
+  const selectedUnread = (selected?.unread_count_coach || 0) > 0;
   useEffect(() => {
-    if (!selected || (selected.unread_count_coach || 0) === 0) return;
-    void markConversationRead(selected.id)
+    if (!selectedConvId || !selectedReadKey || !selectedUnread || !pageActive) return;
+    if (readSentRef.current === selectedReadKey) return;
+    readSentRef.current = selectedReadKey;
+    void markConversationRead(selectedConvId)
       .then(applyConversation)
-      .catch(() => undefined);
-  }, [selected, applyConversation]);
+      .catch(() => {
+        if (readSentRef.current === selectedReadKey) readSentRef.current = null;
+      });
+  }, [selectedConvId, selectedReadKey, selectedUnread, pageActive, applyConversation]);
 
   // ── Hazır cevaplar ──
   useEffect(() => {
@@ -498,6 +541,8 @@ export function ChatWorkspace({
         const updated = unread
           ? await markConversationRead(conv.id)
           : await markConversationUnread(conv.id);
+        // Açık kalan sohbet "okunmadı" yapılınca hemen yeniden okundu sayılmasın.
+        if (!unread) readSentRef.current = readKey(updated);
         applyConversation(updated);
         if (!unread && selectedId === conv.id && !isDrawer) {
           setSelectedId(null);
@@ -550,18 +595,22 @@ export function ChatWorkspace({
   const markAllRead = useCallback(() => {
     setConfirm({
       title: "Tümünü okundu yap",
-      description: "Görünen tüm sohbetler okundu olarak işaretlenecek.",
+      description: "Bu ekrandaki tüm okunmamış sohbetler (filtreden bağımsız) okundu olarak işaretlenecek.",
       confirmLabel: "Okundu yap",
       onConfirm: () => {
-        void markAllConversationsRead()
+        void markAllConversationsRead(department)
           .then((res) => {
-            showToast(`${res.updated} sohbet okundu olarak işaretlendi.`);
+            showToast(
+              res.counters_reset === false
+                ? `${res.updated} sohbetin bildirimi kapatıldı. Yönetici görüntülemesi koçların okunmamış sayısını değiştirmez.`
+                : `${res.updated} sohbet okundu olarak işaretlendi.`,
+            );
             void list.reload({ silent: true });
           })
           .catch(() => showToast("İşlem tamamlanamadı."));
       },
     });
-  }, [list, showToast]);
+  }, [list, showToast, department]);
 
   // ── Mesaj aksiyonları ──
   const messageActions = useMemo(

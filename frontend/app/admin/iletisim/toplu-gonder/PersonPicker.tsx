@@ -131,7 +131,8 @@ export default function PersonPicker({
             clearSearch();
           }
         }}
-        placeholder="Ad, soyad veya telefon — öğrenci yazınca velisi de listelenir"
+        placeholder="Ad, soyad veya telefon ara"
+        title="Öğrenci adı yazınca velileri de listelenir"
         autoComplete="off"
       />
 

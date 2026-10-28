@@ -18,8 +18,10 @@ import {
 } from '@/lib/communication-api';
 import { coachBirthdayHref, isBirthdayNotificationUrl } from '@/lib/coach-birthdays';
 import { isGorevNotification } from '@/lib/gorev-notifications';
+import { createCoalescedRefresh } from '@/lib/coalesced-refresh';
 import {
   playNotificationSound,
+  playNotificationSoundOnce,
   unlockNotificationAudio,
   bindNotificationAudioUnlock,
   isNotificationSoundMuted,
@@ -41,6 +43,8 @@ interface Props {
    */
   pollInterval?: number;
 }
+
+const HIDDEN_POLL_MS = 30_000;
 
 function splitTitle(baslik: string): { kicker: string; title: string } {
   const idx = baslik.indexOf(':');
@@ -81,8 +85,15 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const initializedRef = useRef(false);
   const knownKeysRef = useRef<Set<string>>(new Set());
+  const waUnreadRef = useRef(0);
   const recentRef = useRef<AppNotification[]>([]);
   recentRef.current = recent;
+
+  // Portal (departman) değişince kart kümesi değişir; yeni küme sessizce taban alınır.
+  useEffect(() => {
+    initializedRef.current = false;
+    knownKeysRef.current = new Set();
+  }, [inboxPortal]);
 
   const load = useCallback(async () => {
     const [res, wa] = await Promise.all([
@@ -106,7 +117,11 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
       created_at: c.last_message_at || c.created_at || new Date().toISOString(),
       alici_tip: 'PERSONEL' as AppNotification['alici_tip'],
     }));
-    const waUnread = wa?.unread_conversations ?? wa?.unread_count ?? 0;
+    // WhatsApp özeti geçici olarak alınamazsa rozet son bilinen sayıda kalır.
+    const waUnread = wa
+      ? (wa.unread_conversations ?? wa.unread_count ?? 0)
+      : waUnreadRef.current;
+    waUnreadRef.current = waUnread;
 
     const baseRecent = (res.success && res.data ? (res.data.recent || []) : [])
       .filter((n) => !isGorevNotification(n));
@@ -121,15 +136,19 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     const merged = [...waItems, ...filteredBase].slice(0, 15);
 
     const unreadKeys = merged.filter((n) => !n.is_read).map(notifFingerprint);
-    if (initializedRef.current) {
+    // Kaynaklardan biri düştüyse eksik listeyle karşılaştırılmaz: sonraki başarılı
+    // yüklemede eski kartlar "yeni" sanılıp ses çalmasın.
+    const complete = res.success && wa !== null;
+    if (!complete) {
+      knownKeysRef.current = new Set([...knownKeysRef.current, ...unreadKeys]);
+    } else if (initializedRef.current) {
       const fresh = unreadKeys.filter((k) => !knownKeysRef.current.has(k));
-      if (fresh.length > 0) {
-        playNotificationSound();
-      }
+      playNotificationSoundOnce(fresh);
+      knownKeysRef.current = new Set(unreadKeys);
     } else {
       initializedRef.current = true;
+      knownKeysRef.current = new Set(unreadKeys);
     }
-    knownKeysRef.current = new Set(unreadKeys);
 
     const takvimUnread = res.success && res.data ? (res.data.unread_count || 0) : 0;
     const waDupInTakvim = baseRecent.filter(
@@ -175,22 +194,34 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     }, 120);
   };
 
+  const loadRef = useRef(load);
+  loadRef.current = load;
+
   useEffect(() => {
     bindNotificationAudioUnlock();
-    load();
-    const id = setInterval(load, pollInterval);
+    let lastPoll = Date.now();
+    const refresh = createCoalescedRefresh(() => {
+      lastPoll = Date.now();
+      return loadRef.current();
+    }, 1500);
+    refresh();
+    // Arka plandaki sekme daha seyrek yoklar; ses yine de (gecikmeli) çalabilsin diye durmaz.
+    const id = setInterval(() => {
+      const gap = document.visibilityState === 'hidden' ? HIDDEN_POLL_MS : pollInterval;
+      if (Date.now() - lastPoll >= gap - 50) refresh();
+    }, pollInterval);
     const onVis = () => {
-      if (document.visibilityState === 'visible') void load();
+      if (document.visibilityState === 'visible') refresh();
     };
-    const onRefresh = () => { void load(); };
     document.addEventListener('visibilitychange', onVis);
-    window.addEventListener('lms:notifications-refresh', onRefresh);
+    window.addEventListener('lms:notifications-refresh', refresh);
     return () => {
       clearInterval(id);
       document.removeEventListener('visibilitychange', onVis);
-      window.removeEventListener('lms:notifications-refresh', onRefresh);
+      window.removeEventListener('lms:notifications-refresh', refresh);
+      refresh.cancel();
     };
-  }, [load, pollInterval]);
+  }, [pollInterval]);
 
   useEffect(() => {
     const onClickOutside = (e: MouseEvent) => {
@@ -207,6 +238,8 @@ export default function NotificationBell({ pollInterval = 8000 }: Props) {
     const snapshot = recentRef.current;
     setUnreadCount(0);
     setRecent([]);
+    // Kalan (listeye sığmamış) bildirimler bir sonraki yüklemede ses çaldırmasın.
+    initializedRef.current = false;
     knownKeysRef.current = new Set();
 
     const convIds = new Set<string>();

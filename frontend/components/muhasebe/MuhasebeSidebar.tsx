@@ -12,7 +12,8 @@ import {
   type MuhasebeNavChildDef,
 } from "@/components/muhasebe/muhasebeNavItems";
 import { useMuhasebeMenuOrder } from "@/hooks/useMuhasebeMenuOrder";
-import { fetchNotificationSummary } from "@/lib/communication-api";
+import { fetchNotificationSummary, inboxPortalDepartment } from "@/lib/communication-api";
+import { createCoalescedRefresh } from "@/lib/coalesced-refresh";
 
 type MuhasebeSidebarProps = {
   isOpen: boolean;
@@ -91,19 +92,18 @@ export default function MuhasebeSidebar({
 
   useEffect(() => {
     const refreshMesajlar = () => {
-      fetchNotificationSummary()
-        .then((data) => setMesajlarBadge(data.unread_count ?? 0))
-        .catch(() => setMesajlarBadge(0));
+      fetchNotificationSummary({ department: inboxPortalDepartment("muhasebe"), cards: false })
+        .then((data) => setMesajlarBadge(data.unread_conversations ?? data.unread_count ?? 0))
+        .catch(() => undefined);
     };
-    refreshMesajlar();
-    const id = setInterval(refreshMesajlar, 30_000);
-    const onRefresh = () => refreshMesajlar();
-    window.addEventListener("lms:notifications-refresh", onRefresh);
-    window.addEventListener("lms:communication-inbox", onRefresh);
+    const refresh = createCoalescedRefresh(refreshMesajlar, 1500);
+    refresh();
+    const id = setInterval(refresh, 30_000);
+    window.addEventListener("lms:notifications-refresh", refresh);
     return () => {
       clearInterval(id);
-      window.removeEventListener("lms:notifications-refresh", onRefresh);
-      window.removeEventListener("lms:communication-inbox", onRefresh);
+      window.removeEventListener("lms:notifications-refresh", refresh);
+      refresh.cancel();
     };
   }, []);
 

@@ -123,6 +123,14 @@ export function useChatThread({ conversationId, onSent, onSessionClosed }: Optio
         ? await fetchConversationMessages(conversationId, { after: last.id })
         : await fetchConversationMessages(conversationId, { limit: PAGE_SIZE });
       if (conversationRef.current !== conversationId) return;
+      if (data.has_more_after) {
+        // Arada gösterilemeyen mesajlar var: boşluk bırakmamak için son sayfaya dön.
+        const latest = await fetchConversationMessages(conversationId, { limit: PAGE_SIZE });
+        if (conversationRef.current !== conversationId) return;
+        setMessages(latest.messages);
+        setHasMore(latest.has_more);
+        return;
+      }
       if (data.messages.length) {
         setMessages((prev) => mergeMessages(prev, data.messages));
       }

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { fetchKontrolBadge } from "@/lib/resources-api";
 import { fetchNotificationSummary } from "@/lib/communication-api";
+import { createCoalescedRefresh } from "@/lib/coalesced-refresh";
 import KurumLogo from "@/components/branding/KurumLogo";
 import { useSubmenuOrderMap } from "@/hooks/useMenuOrder";
 import { akademikSidebarChildren } from "@/lib/akademik-routes";
@@ -570,10 +571,11 @@ export default function Sidebar({
 
   const loadMesajlarBadge = useCallback(async () => {
     try {
-      const data = await fetchNotificationSummary();
-      setMesajlarBadgeCount(data.unread_count ?? 0);
+      // Zil ile aynı sayı: okunmamış sohbet adedi (mesaj adedi değil).
+      const data = await fetchNotificationSummary({ cards: false });
+      setMesajlarBadgeCount(data.unread_conversations ?? data.unread_count ?? 0);
     } catch {
-      setMesajlarBadgeCount(0);
+      /* geçici hata: rozet son bilinen değerde kalır */
     }
   }, []);
 
@@ -584,15 +586,14 @@ export default function Sidebar({
   }, [pathname, loadKontrolBadge]);
 
   useEffect(() => {
-    loadMesajlarBadge();
-    const interval = setInterval(loadMesajlarBadge, 30_000);
-    const onRefresh = () => { void loadMesajlarBadge(); };
-    window.addEventListener('lms:notifications-refresh', onRefresh);
-    window.addEventListener('lms:communication-inbox', onRefresh);
+    const refresh = createCoalescedRefresh(loadMesajlarBadge, 1500);
+    refresh();
+    const interval = setInterval(refresh, 30_000);
+    window.addEventListener('lms:notifications-refresh', refresh);
     return () => {
       clearInterval(interval);
-      window.removeEventListener('lms:notifications-refresh', onRefresh);
-      window.removeEventListener('lms:communication-inbox', onRefresh);
+      window.removeEventListener('lms:notifications-refresh', refresh);
+      refresh.cancel();
     };
   }, [loadMesajlarBadge]);
 
