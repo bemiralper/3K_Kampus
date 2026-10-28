@@ -4,7 +4,8 @@ from __future__ import annotations
 from datetime import date, timedelta
 from typing import Optional
 
-from django.db.models import Q
+from django.db import transaction
+from django.db.models import F, Q
 
 from apps.ozel_ders.domain.models import OzelDersTatilKarari
 from apps.ozel_ders.services.errors import OzelDersError
@@ -44,7 +45,7 @@ def list_resmi_tatiller_for_year(
 
     karar_map: dict[tuple[str, str], bool] = {}
     karar_by_date: dict[str, bool] = {}
-    for k in karar_qs:
+    for k in karar_qs.order_by(F('sube_id').asc(nulls_first=True), 'id'):
         karar_map[(k.holiday_key, k.tarih.isoformat())] = bool(k.ozel_ders_aktif)
         karar_by_date[k.tarih.isoformat()] = bool(k.ozel_ders_aktif)
 
@@ -178,17 +179,84 @@ def set_karar(
     if day < h.start or day > h.end:
         raise OzelDersError('Tarih bu tatil aralığında değil.', 'date_range')
 
-    obj, _ = OzelDersTatilKarari.objects.update_or_create(
-        kurum_id=kurum_id,
-        sube_id=sube_id,
-        holiday_key=holiday_key,
-        tarih=day,
-        defaults={'ozel_ders_aktif': bool(ozel_ders_aktif)},
-    )
+    with transaction.atomic():
+        obj, _ = OzelDersTatilKarari.objects.update_or_create(
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            holiday_key=holiday_key,
+            tarih=day,
+            defaults={'ozel_ders_aktif': bool(ozel_ders_aktif)},
+        )
+        sessions = apply_karar_to_sessions(kurum_id=kurum_id, sube_id=sube_id, day=day)
     return {
         'date': obj.tarih.isoformat(),
         'holiday_key': obj.holiday_key,
         'title': h.title,
         'ozel_ders_aktif': obj.ozel_ders_aktif,
         'mode': 'devam' if obj.ozel_ders_aktif else 'tatil',
+        'sessions': sessions,
     }
+
+
+def apply_karar_to_sessions(*, kurum_id: int, sube_id: Optional[int], day: date) -> dict:
+    """Karar sonrası o günün mevcut planlı derslerini kararla hizalar.
+
+    Tatil: planlı (işlenmemiş, kilitsiz) özel dersler kapanır.
+    Devam: yalnızca tatil kararıyla kapanmış dersler geri açılır, eksikler üretilir.
+    Öğrenci bazlı tatil / devam seçimlerine dokunulmaz.
+    """
+    from django.utils import timezone
+
+    from apps.ozel_ders.domain.models import BirebirDersOturumu, HakedisDurumu, OturumDurumu, OturumTuru
+    from apps.ozel_ders.services import closure_marks
+    from apps.ozel_ders.services.conflict_service import check_all_for_occurrence, is_holiday
+
+    base = BirebirDersOturumu.objects.filter(
+        kurum_id=kurum_id,
+        session_date=day,
+        durum=OturumDurumu.PLANLANDI,
+        oturum_turu=OturumTuru.OZEL,
+        source_slot__isnull=False,
+    )
+    if sube_id:
+        base = base.filter(sube_id=sube_id)
+
+    closed = reopened = created = 0
+    if is_holiday(kurum_id, sube_id, day):
+        qs = base.filter(is_active=True).exclude(
+            hakedis__durum__in=(HakedisDurumu.ONAYLANDI, HakedisDurumu.BORDOYA_ISLENDI),
+        )
+        for oturum in qs:
+            closure_marks.close_with_mark(oturum, closure_marks.TATIL_KARARI)
+            closed += 1
+        return {'closed': closed, 'reopened': 0, 'created': 0}
+
+    for oturum in base.filter(is_active=False, sebep_aciklama=closure_marks.TATIL_KARARI):
+        try:
+            check_all_for_occurrence(
+                ogretmen_id=oturum.ogretmen_id,
+                ogrenci_id=oturum.ogrenci_id,
+                oda_id=oturum.oda_id,
+                kurum_id=oturum.kurum_id,
+                sube_id=oturum.sube_id,
+                session_date=day,
+                start=oturum.start_time,
+                end=oturum.end_time,
+                exclude_id=oturum.id,
+                skip_holiday=False,
+            )
+        except OzelDersError:
+            continue
+        oturum.is_active = True
+        oturum.sebep_aciklama = ''
+        oturum.save(update_fields=['is_active', 'sebep_aciklama', 'updated_at'])
+        reopened += 1
+
+    if sube_id and day >= timezone.localdate():
+        from apps.ozel_ders.services.materialize_service import materialize_active_programs
+
+        result = materialize_active_programs(
+            kurum_id=kurum_id, sube_id=sube_id, start_date=day, end_date=day,
+        )
+        created = result.get('created') or 0
+    return {'closed': 0, 'reopened': reopened, 'created': created}

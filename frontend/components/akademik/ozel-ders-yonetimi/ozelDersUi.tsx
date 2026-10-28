@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { IconChevronDown, IconClose, IconInbox } from './icons';
 
@@ -46,7 +46,7 @@ export function FilterField({
 }: {
   label: string;
   children: ReactNode;
-  style?: React.CSSProperties;
+  style?: CSSProperties;
 }) {
   return (
     <div className="od-filter-field" style={style}>
@@ -421,7 +421,14 @@ export function feeStatus(oturum: {
   durum: string;
   telafi_durumu?: string;
   has_hakedis: boolean;
+  hakedis_durum?: string | null;
 }): { tone: BadgeTone; label: string } {
+  if (oturum.hakedis_durum === 'BORDOYA_ISLENDI') {
+    return { tone: 'purple', label: 'Bordroya İşlendi' };
+  }
+  if (oturum.hakedis_durum === 'ONAYLANDI') {
+    return { tone: 'success', label: 'Hakediş Onaylı' };
+  }
   if (['IPTAL', 'OGRENCI_GELMEDI', 'OGRETMEN_GELMEDI'].includes(oturum.durum)) {
     return { tone: 'secondary', label: 'Ücret Oluşmaz' };
   }
@@ -476,5 +483,72 @@ export function weekBlockColor(seed: number | string): string {
 }
 
 export function formatCurrency(value: number): string {
-  return `${value.toLocaleString('tr-TR', { maximumFractionDigits: 0 })} ₺`;
+  return `${value.toLocaleString('tr-TR', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ₺`;
+}
+
+/**
+ * Sayı alanı: yazarken serbest, odaktan çıkınca / Enter ile sınırlanıp kaydedilir.
+ * Her tuşta sınırlama "120" yazarken "1"i 15'e çevirdiği için kullanılır.
+ */
+export function DraftNumberInput({
+  value,
+  min,
+  max,
+  step,
+  fallback,
+  onCommit,
+  disabled,
+  className = 'od-input',
+  style,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  fallback: number;
+  onCommit: (n: number) => void;
+  disabled?: boolean;
+  className?: string;
+  style?: CSSProperties;
+}) {
+  const [text, setText] = useState(String(value));
+  const focused = useRef(false);
+  useEffect(() => {
+    if (!focused.current) setText(String(value));
+  }, [value]);
+
+  function commit() {
+    const raw = text.trim();
+    const n = raw === '' ? fallback : Math.round(Number(raw.replace(',', '.')));
+    const next = Number.isFinite(n) ? Math.max(min, Math.min(max, n)) : fallback;
+    setText(String(next));
+    if (next !== value) onCommit(next);
+  }
+
+  return (
+    <input
+      type="number"
+      className={className}
+      min={min}
+      max={max}
+      step={step}
+      value={text}
+      disabled={disabled}
+      style={style}
+      onFocus={() => {
+        focused.current = true;
+      }}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={() => {
+        focused.current = false;
+        commit();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        }
+      }}
+    />
+  );
 }

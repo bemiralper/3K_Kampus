@@ -11,9 +11,11 @@ import {
   fetchProgramlar,
   resolveDersLabel,
   syncProgramlar,
+  type BirebirOturum,
   type BirebirProgram,
   type PaketDersi,
 } from '@/lib/ozel-ders-api';
+import { TELAFI_AKTIF_GUN } from './oturumDurum';
 import { searchKutuphaneStudents, type KutuphaneStudentOption } from '@/lib/kutuphane-student-search';
 import { trIncludes } from '@/lib/text-format';
 import { akademikTabHref } from '@/lib/akademik-routes';
@@ -63,6 +65,7 @@ type StudentProgramGroup = {
   paketDersleri: PaketDersi[];
   slotCount: number;
   expectedHaftalik: number;
+  eksikAtama: number;
   needsSablon: boolean;
   durum: string;
   durum_display: string;
@@ -109,9 +112,24 @@ function groupProgramsByStudent(programs: BirebirProgram[]): StudentProgramGroup
     );
     const hasAktif = sorted.some((p) => p.durum === 'AKTIF');
     const paketDersleri = mergePaketDersleri(sorted);
-    const kotaToplam = paketDersleri.reduce((s, d) => s + (d.haftalik_adet || 0), 0);
-    const expectedHaftalik = kotaToplam > 0 ? kotaToplam : paketDersleri.length;
+    const expectedHaftalik = paketDersleri.reduce((s, d) => s + (d.haftalik_adet || 1), 0);
     const slotCount = sorted.reduce((s, p) => s + (p.slot_count || 0), 0);
+    const hasDersCounts = sorted.some((p) => p.guncel_slot_dersleri != null);
+    let eksikAtama: number;
+    if (hasDersCounts) {
+      const atanan = new Map<string, number>();
+      for (const p of sorted) {
+        for (const [dersId, n] of Object.entries(p.guncel_slot_dersleri || {})) {
+          atanan.set(dersId, (atanan.get(dersId) || 0) + n);
+        }
+      }
+      eksikAtama = paketDersleri.reduce(
+        (s, d) => s + Math.max((d.haftalik_adet || 1) - (atanan.get(String(d.id)) || 0), 0),
+        0,
+      );
+    } else {
+      eksikAtama = Math.max(expectedHaftalik - slotCount, 0);
+    }
     groups.push({
       ogrenci: primary.ogrenci,
       ogrenci_ad: primary.ogrenci_ad,
@@ -121,7 +139,8 @@ function groupProgramsByStudent(programs: BirebirProgram[]): StudentProgramGroup
       paketDersleri,
       slotCount,
       expectedHaftalik,
-      needsSablon: slotCount === 0 || (expectedHaftalik > 0 && slotCount < expectedHaftalik),
+      eksikAtama,
+      needsSablon: slotCount === 0 || eksikAtama > 0,
       durum: hasAktif ? 'AKTIF' : primary.durum,
       durum_display: hasAktif ? 'Aktif' : primary.durum_display,
       baslangic_tarihi: sorted.map((p) => p.baslangic_tarihi).sort()[0],
@@ -225,9 +244,11 @@ export default function OgrenciProgramlariClient() {
   });
   const [saving, setSaving] = useState(false);
   const didAutoSync = useRef(false);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
     if (!ready) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     setError('');
     try {
@@ -235,11 +256,11 @@ export default function OgrenciProgramlariClient() {
         egitim_yili_id: egitimYiliId || undefined,
         durum: durumFilter || undefined,
       });
-      setRows(data);
+      if (seq === loadSeq.current) setRows(data);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Yüklenemedi');
+      if (seq === loadSeq.current) setError(e instanceof Error ? e.message : 'Yüklenemedi');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [ready, egitimYiliId, durumFilter]);
 
@@ -253,19 +274,26 @@ export default function OgrenciProgramlariClient() {
       const today = dayjs().format('YYYY-MM-DD');
       const wStart = dayjs().startOf('week').format('YYYY-MM-DD');
       const wEnd = dayjs().endOf('week').format('YYYY-MM-DD');
-      const [activePrograms, todayOturumlar, wOturumlar, telafiPending, hakedisMonth] =
-        await Promise.all([
+      const settled = await Promise.allSettled([
           fetchProgramlar({ egitim_yili_id: egitimYiliId || undefined, durum: 'AKTIF' }),
           fetchOturumlar({ start_date: today, end_date: today, skip_materialize: 1 }),
           fetchOturumlar({ start_date: wStart, end_date: wEnd, skip_materialize: 1 }),
           fetchOturumlar({
             telafi_durumu: 'BEKLENIYOR',
-            start_date: dayjs().subtract(60, 'day').format('YYYY-MM-DD'),
+            start_date: dayjs().subtract(TELAFI_AKTIF_GUN, 'day').format('YYYY-MM-DD'),
             end_date: dayjs().add(30, 'day').format('YYYY-MM-DD'),
             skip_materialize: 1,
           }),
           fetchHakedis({ yil: dayjs().year(), ay: dayjs().month() + 1 }),
         ]);
+      const val = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+        r.status === 'fulfilled' ? r.value : fallback;
+      const activePrograms = val(settled[0], [] as BirebirProgram[]);
+      const todayOturumlar = val(settled[1], [] as BirebirOturum[]).filter((o) => o.durum !== 'IPTAL');
+      const wOturumlar = val(settled[2], [] as BirebirOturum[]).filter((o) => o.durum !== 'IPTAL');
+      const telafiPending = val(settled[3], [] as BirebirOturum[]);
+      const hakedisMonth = val(settled[4], [] as Awaited<ReturnType<typeof fetchHakedis>>);
+      const nowHm = dayjs().format('HH:mm');
 
       const teacherSet = new Set(wOturumlar.map((o) => o.ogretmen_ad).filter(Boolean));
       const premiumSet = new Set(
@@ -273,11 +301,14 @@ export default function OgrenciProgramlariClient() {
       );
       const todayEarnings = hakedisMonth
         .filter((h) => h.tarih === today)
+        .filter((h) => h.durum !== 'IPTAL')
         .reduce((sum, h) => sum + (h.tutar || 0), 0);
 
       setStats({
         todaySessions: todayOturumlar.length,
-        pendingAttendance: todayOturumlar.filter((o) => o.durum === 'PLANLANDI').length,
+        pendingAttendance: todayOturumlar.filter(
+          (o) => o.durum === 'PLANLANDI' && (o.end_time || '').slice(0, 5) <= nowHm,
+        ).length,
         todayEarnings,
         activeStudents: new Set(activePrograms.map((p) => p.ogrenci)).size,
         activeTeachers: teacherSet.size,
@@ -299,6 +330,7 @@ export default function OgrenciProgramlariClient() {
     didAutoSync.current = true;
     let cancelled = false;
     (async () => {
+      setSyncing(true);
       try {
         const r = await syncProgramlar(egitimYiliId);
         if (cancelled) return;
@@ -309,6 +341,8 @@ export default function OgrenciProgramlariClient() {
         }
       } catch {
         /* opsiyonel */
+      } finally {
+        setSyncing(false);
       }
     })();
     return () => {
@@ -431,7 +465,10 @@ export default function OgrenciProgramlariClient() {
                   <span className="op-stat-pill">
                     Bugün <strong>{stats.todaySessions}</strong> ders
                   </span>
-                  <span className={`op-stat-pill${stats.pendingAttendance > 0 ? ' is-warn' : ''}`}>
+                  <span
+                    className={`op-stat-pill${stats.pendingAttendance > 0 ? ' is-warn' : ''}`}
+                    title="Bugün saati geçmiş, yoklaması alınmamış dersler"
+                  >
                     Yoklama <strong>{stats.pendingAttendance}</strong>
                   </span>
                   <span className="op-stat-pill">
@@ -441,7 +478,7 @@ export default function OgrenciProgramlariClient() {
                     Öğretmen <strong>{stats.activeTeachers}</strong>
                   </span>
                   {stats.pendingTelafi > 0 && (
-                    <span className="op-stat-pill is-warn">
+                    <span className="op-stat-pill is-warn" title={`Son ${TELAFI_AKTIF_GUN} günde telafi bekleyen dersler`}>
                       Telafi <strong>{stats.pendingTelafi}</strong>
                     </span>
                   )}
@@ -627,7 +664,7 @@ export default function OgrenciProgramlariClient() {
                       {g.slotCount === 0
                         ? 'Öğretmen ve saat atanmadı'
                         : g.needsSablon
-                          ? `${Math.max(g.expectedHaftalik - g.slotCount, 0)} ders ataması eksik`
+                          ? `${g.eksikAtama} ders ataması eksik`
                           : 'Haftalık program hazır'}
                     </span>
                     <span className="op-card-cta">

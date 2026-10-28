@@ -21,6 +21,7 @@ import { useOzelDersMeta } from './useOzelDersMeta';
 import { useOzelDersToast } from './OzelDersToast';
 import { useDersDisplayPref } from './useDersDisplayPref';
 import {
+  DraftNumberInput,
   Badge,
   Collapsible,
   Drawer,
@@ -46,6 +47,7 @@ import HaftalikProgramShareButtons from './HaftalikProgramShareButtons';
 import {
   buildPeriods,
   durationBetween,
+  movedLessonTimes,
   timeToMinutes,
   type PeriodRow,
 } from './haftalikGridUtils';
@@ -537,25 +539,19 @@ export default function HaftalikSablonlariClient() {
 
   async function moveLesson(lesson: BirebirSlot, gun: number, period: PeriodRow) {
     if (moving) return;
+    const times = movedLessonTimes(lesson, period.baslangic);
+    if (!times) {
+      show('Ders bu saate taşınırsa gün sonunu aşıyor.', 'error');
+      return;
+    }
     const snapshot = lessons;
-    const nextLesson: BirebirSlot = {
-      ...lesson,
-      gun,
-      baslangic: period.baslangic,
-      bitis: period.bitis,
-      sure_dk: config.sureDk,
-    };
+    const nextLesson: BirebirSlot = { ...lesson, gun, ...times };
     // Optimistic: tabloyu unmount etmeden yerinde güncelle (scroll korunur)
     setLessons((prev) => prev.map((s) => (s.id === lesson.id ? nextLesson : s)));
     setMoving(true);
     restoreScroll();
     try {
-      await updateSlot(lesson.id, {
-        gun,
-        baslangic: period.baslangic,
-        bitis: period.bitis,
-        sure_dk: config.sureDk,
-      });
+      await updateSlot(lesson.id, { gun, ...times });
       show('Ders taşındı.');
       restoreScroll();
       void reloadLessons({ silent: true });
@@ -667,42 +663,39 @@ export default function HaftalikSablonlariClient() {
           </div>
           <div className="od-filter-field">
             <label>Ders (dk)</label>
-            <input
-              type="number"
-              className="od-input"
+            <DraftNumberInput
               min={15}
               max={180}
               step={5}
+              fallback={50}
               value={config.sureDk}
               disabled={!activeStudentGroup}
-              onChange={(e) => setSureDk(Number(e.target.value) || 50)}
+              onCommit={setSureDk}
               style={{ width: 72 }}
             />
           </div>
           <div className="od-filter-field">
             <label>Ara (dk)</label>
-            <input
-              type="number"
-              className="od-input"
+            <DraftNumberInput
               min={0}
               max={60}
               step={5}
+              fallback={0}
               value={config.araDk}
               disabled={!activeStudentGroup}
-              onChange={(e) => setAraDk(Number(e.target.value))}
+              onCommit={setAraDk}
               style={{ width: 72 }}
             />
           </div>
           <div className="od-filter-field">
             <label>Ders adedi</label>
-            <input
-              type="number"
-              className="od-input"
+            <DraftNumberInput
               min={1}
               max={16}
+              fallback={8}
               value={config.dersAdet}
               disabled={!activeStudentGroup}
-              onChange={(e) => setDersAdet(Number(e.target.value) || 8)}
+              onCommit={setDersAdet}
               style={{ width: 72 }}
             />
           </div>

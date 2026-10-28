@@ -9,6 +9,7 @@ from apps.ozel_ders.domain.models import BirebirHaftalikSlot, BirebirOgrenciProg
 from apps.ozel_ders.services.conflict_service import validate_slot_window
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.program_service import get_program
+from apps.ozel_ders.services.scope_guard import ensure_ders, ensure_oda, ensure_ogretmen
 from apps.ozel_ders.services.quota_service import (
     close_future_planlandi,
     consumed_quota_minutes,
@@ -100,6 +101,27 @@ def _sync_ders_plan_to_siblings(slot: BirebirHaftalikSlot) -> None:
         sync_future_sessions_for_slot(s)
 
 
+def _slot_window(s: BirebirHaftalikSlot) -> tuple[Optional[date], Optional[date]]:
+    program = s.program
+    return (
+        s.baslangic_tarihi or getattr(program, 'baslangic_tarihi', None),
+        s.bitis_tarihi or getattr(program, 'bitis_tarihi', None),
+    )
+
+
+def _windows_overlap(
+    a: tuple[Optional[date], Optional[date]],
+    b: tuple[Optional[date], Optional[date]],
+) -> bool:
+    a_start, a_end = a
+    b_start, b_end = b
+    if a_end and b_start and a_end < b_start:
+        return False
+    if b_end and a_start and b_end < a_start:
+        return False
+    return True
+
+
 def _check_template_conflicts(
     program: BirebirOgrenciProgrami,
     *,
@@ -110,11 +132,26 @@ def _check_template_conflicts(
     oda_id: Optional[int],
     exclude_id: Optional[int] = None,
     exclude_ids: Optional[list[int]] = None,
+    window: tuple[Optional[date], Optional[date]] = (None, None),
 ) -> None:
-    """Aynı program + diğer aktif program şablonlarıyla öğretmen/öğrenci/oda çakışması."""
+    """Aynı program + diğer aktif program şablonlarıyla öğretmen/öğrenci/oda çakışması.
+
+    Tarih pencereleri kesişmeyen (ör. bitmiş) slotlar çakışma sayılmaz.
+    """
+    from django.utils import timezone
+
     excluded = set(exclude_ids or [])
     if exclude_id:
         excluded.add(exclude_id)
+    today = timezone.localdate()
+    own_start = window[0] or program.baslangic_tarihi
+    own_end = window[1] or program.bitis_tarihi
+    own_window = (max(own_start, today) if own_start else today, own_end)
+
+    def clashes(s: BirebirHaftalikSlot) -> bool:
+        return _slot_overlap(baslangic, bitis, s.baslangic, s.bitis) and _windows_overlap(
+            own_window, _slot_window(s),
+        )
 
     # Aynı öğrencinin diğer program slotları
     other_slots = BirebirHaftalikSlot.objects.filter(
@@ -122,22 +159,22 @@ def _check_template_conflicts(
         gun=gun,
         program__ogrenci_id=program.ogrenci_id,
         program__durum='AKTIF',
-    ).exclude(program_id=program.id)
+    ).exclude(program_id=program.id).select_related('program')
     if excluded:
         other_slots = other_slots.exclude(pk__in=excluded)
     for s in other_slots:
-        if _slot_overlap(baslangic, bitis, s.baslangic, s.bitis):
+        if clashes(s):
             raise OzelDersError(
                 f'Öğrenci şablon çakışması (slot #{s.pk}).',
                 'student_template_conflict',
             )
 
     # Aynı program içi
-    same = program.slots.filter(aktif=True, gun=gun)
+    same = program.slots.filter(aktif=True, gun=gun).select_related('program')
     if excluded:
         same = same.exclude(pk__in=excluded)
     for s in same:
-        if _slot_overlap(baslangic, bitis, s.baslangic, s.bitis):
+        if clashes(s):
             raise OzelDersError(
                 f'Program içi saat çakışması (slot #{s.pk}).',
                 'program_slot_conflict',
@@ -150,13 +187,13 @@ def _check_template_conflicts(
         ogretmen_id=ogretmen_id,
         program__durum='AKTIF',
         program__kurum_id=program.kurum_id,
-    )
+    ).select_related('program')
     if excluded:
         teacher_slots = teacher_slots.exclude(pk__in=excluded)
     for s in teacher_slots:
         if s.program_id == program.id:
             continue
-        if _slot_overlap(baslangic, bitis, s.baslangic, s.bitis):
+        if clashes(s):
             raise OzelDersError(
                 f'Öğretmen şablon çakışması (slot #{s.pk}).',
                 'teacher_template_conflict',
@@ -169,13 +206,13 @@ def _check_template_conflicts(
             oda_id=oda_id,
             program__durum='AKTIF',
             program__kurum_id=program.kurum_id,
-        )
+        ).select_related('program')
         if excluded:
             room_slots = room_slots.exclude(pk__in=excluded)
         for s in room_slots:
             if s.program_id == program.id:
                 continue
-            if _slot_overlap(baslangic, bitis, s.baslangic, s.bitis):
+            if clashes(s):
                 raise OzelDersError(
                     f'Derslik şablon çakışması (slot #{s.pk}).',
                     'room_template_conflict',
@@ -207,12 +244,32 @@ def create_slot(
         raise OzelDersError('Ders seçimi zorunlu.', 'ders_id')
     if not data.get('ogretmen_id'):
         raise OzelDersError('Öğretmen seçimi zorunlu.', 'ogretmen_id')
+    data = dict(data)
+    data['ders_id'] = ensure_ders(data['ders_id'], kurum_id=kurum_id)
+    data['ogretmen_id'] = ensure_ogretmen(data['ogretmen_id'], kurum_id=kurum_id)
+    data['oda_id'] = ensure_oda(data.get('oda_id'), kurum_id=kurum_id)
 
     sure_dk = int(data.get('sure_dk') or 0)
     if not sure_dk:
         start_dt = datetime.combine(date.today(), baslangic)
         end_dt = datetime.combine(date.today(), bitis)
         sure_dk = max(int((end_dt - start_dt).total_seconds() // 60), 0)
+
+    # Boş (null) gönderilen plan alanları "değiştirme" demektir: kardeş slottan miras alınır.
+    # Aksi halde yeni slot aynı dersin diğer slotlarının pencere / kotasını silerdi.
+    inherited = _inherit_ders_plan(program, data['ders_id'])
+    plan_keys = [
+        k for k in ('baslangic_tarihi', 'bitis_tarihi', 'hedef_dakika')
+        if data.get(k) not in (None, '')
+    ]
+    baslangic_tarihi = data['baslangic_tarihi'] if 'baslangic_tarihi' in plan_keys else inherited.get('baslangic_tarihi')
+    bitis_tarihi = data['bitis_tarihi'] if 'bitis_tarihi' in plan_keys else inherited.get('bitis_tarihi')
+    if 'hedef_dakika' in plan_keys:
+        hedef_dakika = parse_hedef_dakika(data.get('hedef_dakika'))
+    else:
+        hedef_dakika = inherited.get('hedef_dakika')
+    if baslangic_tarihi and bitis_tarihi and bitis_tarihi < baslangic_tarihi:
+        raise OzelDersError('Bitiş tarihi başlangıçtan önce olamaz.', 'bitis_tarihi')
 
     _check_template_conflicts(
         program,
@@ -221,15 +278,8 @@ def create_slot(
         bitis=bitis,
         ogretmen_id=data['ogretmen_id'],
         oda_id=data.get('oda_id'),
+        window=(baslangic_tarihi, bitis_tarihi),
     )
-
-    inherited = _inherit_ders_plan(program, data['ders_id'])
-    baslangic_tarihi = data['baslangic_tarihi'] if 'baslangic_tarihi' in data else inherited.get('baslangic_tarihi')
-    bitis_tarihi = data['bitis_tarihi'] if 'bitis_tarihi' in data else inherited.get('bitis_tarihi')
-    if 'hedef_dakika' in data:
-        hedef_dakika = parse_hedef_dakika(data.get('hedef_dakika'))
-    else:
-        hedef_dakika = inherited.get('hedef_dakika')
 
     slot = BirebirHaftalikSlot.objects.create(
         program=program,
@@ -247,7 +297,7 @@ def create_slot(
     )
     from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
     sync_future_sessions_for_slot(slot)
-    if any(k in data for k in ('baslangic_tarihi', 'bitis_tarihi', 'hedef_dakika')):
+    if plan_keys:
         _sync_ders_plan_to_siblings(slot)
     return slot
 
@@ -268,13 +318,22 @@ def update_slot(
         )
     except BirebirHaftalikSlot.DoesNotExist:
         raise OzelDersError('Slot bulunamadı.', 'not_found', 404)
+    previous_ogretmen_id = slot.ogretmen_id
 
     gun = int(data['gun']) if 'gun' in data else slot.gun
+    if gun < 1 or gun > 7:
+        raise OzelDersError('Gün 1-7 arasında olmalı.', 'gun')
     baslangic = _parse_time(data['baslangic']) if 'baslangic' in data else slot.baslangic
     bitis = _parse_time(data['bitis']) if 'bitis' in data else slot.bitis
     validate_slot_window(baslangic, bitis)
-    ogretmen_id = data.get('ogretmen_id', slot.ogretmen_id)
-    oda_id = data['oda_id'] if 'oda_id' in data else slot.oda_id
+    ogretmen_id = (
+        ensure_ogretmen(data['ogretmen_id'], kurum_id=kurum_id)
+        if data.get('ogretmen_id') else slot.ogretmen_id
+    )
+    oda_id = ensure_oda(data['oda_id'], kurum_id=kurum_id) if 'oda_id' in data else slot.oda_id
+    if data.get('ders_id'):
+        data = dict(data)
+        data['ders_id'] = ensure_ders(data['ders_id'], kurum_id=kurum_id)
 
     _check_template_conflicts(
         slot.program,
@@ -284,6 +343,10 @@ def update_slot(
         ogretmen_id=ogretmen_id,
         oda_id=oda_id,
         exclude_id=slot.id,
+        window=(
+            data['baslangic_tarihi'] if 'baslangic_tarihi' in data else slot.baslangic_tarihi,
+            data['bitis_tarihi'] if 'bitis_tarihi' in data else slot.bitis_tarihi,
+        ),
     )
 
     slot.gun = gun
@@ -295,7 +358,7 @@ def update_slot(
         start_dt = datetime.combine(date.today(), baslangic)
         end_dt = datetime.combine(date.today(), bitis)
         slot.sure_dk = max(int((end_dt - start_dt).total_seconds() // 60), 0)
-    if 'ders_id' in data:
+    if data.get('ders_id'):
         slot.ders_id = data['ders_id']
     slot.ogretmen_id = ogretmen_id
     slot.oda_id = oda_id
@@ -307,9 +370,11 @@ def update_slot(
         slot.bitis_tarihi = data['bitis_tarihi']
     if 'hedef_dakika' in data:
         slot.hedef_dakika = parse_hedef_dakika(data.get('hedef_dakika'))
+    if slot.baslangic_tarihi and slot.bitis_tarihi and slot.bitis_tarihi < slot.baslangic_tarihi:
+        raise OzelDersError('Bitiş tarihi başlangıçtan önce olamaz.', 'bitis_tarihi')
     slot.save()
     from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
-    sync_future_sessions_for_slot(slot)
+    sync_future_sessions_for_slot(slot, previous_ogretmen_id=previous_ogretmen_id)
     if any(k in data for k in ('baslangic_tarihi', 'bitis_tarihi', 'hedef_dakika')):
         _sync_ders_plan_to_siblings(slot)
     return slot
@@ -425,6 +490,7 @@ def swap_slots(
         ogretmen_id=a.ogretmen_id,
         oda_id=a.oda_id,
         exclude_ids=both,
+        window=(a.baslangic_tarihi, a.bitis_tarihi),
     )
     # B → A'nın yeri
     _check_template_conflicts(
@@ -435,13 +501,24 @@ def swap_slots(
         ogretmen_id=b.ogretmen_id,
         oda_id=b.oda_id,
         exclude_ids=both,
+        window=(b.baslangic_tarihi, b.bitis_tarihi),
     )
 
+    from apps.ozel_ders.services.materialize_service import (
+        _rematerialize_slot_window,
+        release_followable_sessions,
+        sync_future_sessions_for_slot,
+    )
+
+    # İki slotun planlı dersleri önce serbest bırakılır; yoksa birbirinin eski
+    # yerini "dolu" görüp taşınamazlar.
+    release_followable_sessions([a, b])
     a.gun, a.baslangic, a.bitis, a.sure_dk = b_gun, b_start, b_end, b_sure
     b.gun, b.baslangic, b.bitis, b.sure_dk = a_gun, a_start, a_end, a_sure
     a.save()
     b.save()
-    from apps.ozel_ders.services.materialize_service import sync_future_sessions_for_slot
-    sync_future_sessions_for_slot(a)
-    sync_future_sessions_for_slot(b)
+    for slot in (a, b):
+        sync_future_sessions_for_slot(slot, rematerialize=False)
+    for slot in (a, b):
+        _rematerialize_slot_window(slot)
     return a, b

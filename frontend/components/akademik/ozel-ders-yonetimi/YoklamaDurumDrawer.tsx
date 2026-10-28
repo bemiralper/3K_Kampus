@@ -53,6 +53,7 @@ export default function YoklamaDurumDrawer({
   const [telafiDurumu, setTelafiDurumu] = useState<'GEREKMIYOR' | 'BEKLENIYOR'>('BEKLENIYOR');
   const [sendWhatsapp, setSendWhatsapp] = useState(false);
   const [localNotes, setLocalNotes] = useState('');
+  const [veliNotu, setVeliNotu] = useState('');
 
   useEffect(() => {
     if (!open) return;
@@ -61,6 +62,7 @@ export default function YoklamaDurumDrawer({
     setTelafiDurumu('BEKLENIYOR');
     setSendWhatsapp(defaultSendWhatsapp(durum));
     setLocalNotes(notes || '');
+    setVeliNotu('');
   }, [open, durum, notes]);
 
   const sebepRequired = needsSebep(durum);
@@ -74,6 +76,7 @@ export default function YoklamaDurumDrawer({
   const eventKey = ozelDersEventKey(durum, telafiDurumu);
   const template = eventKey ? OZEL_DERS_WHATSAPP_TEMPLATES[eventKey] : undefined;
   const usesEkBilgi = eventKey === 'ozel_ders.iptal';
+  const showVeliNotu = showWhatsapp && sendWhatsapp && usesEkBilgi;
 
   const previewText = useMemo(() => {
     if (!template) return '';
@@ -84,20 +87,21 @@ export default function YoklamaDurumDrawer({
       ders_adi: preview?.ders_adi || '…',
       ogretmen_ad: preview?.ogretmen_ad || '',
       sebep: sebepLabel(sebepKodu, sebepAciklama) || '…',
-      ek_bilgi: localNotes.trim(),
+      ek_bilgi: veliNotu.trim(),
       telafi_tarihi: preview?.telafi_tarihi || '',
       telafi_saati: preview?.telafi_saati || '',
     });
-  }, [template, preview, sebepKodu, sebepAciklama, localNotes]);
+  }, [template, preview, sebepKodu, sebepAciklama, veliNotu]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (sebepInvalid) return;
     const payload: SetOturumDurumPayload = {
       durum,
-      notes: localNotes.trim() || undefined,
+      notes: localNotes.trim(),
       send_whatsapp: sendWhatsapp,
     };
+    if (showVeliNotu && veliNotu.trim()) payload.veli_notu = veliNotu.trim();
     if (sebepRequired) {
       payload.sebep_kodu = sebepKodu;
       if (sebepAciklama.trim()) payload.sebep_aciklama = sebepAciklama.trim();
@@ -190,13 +194,25 @@ export default function YoklamaDurumDrawer({
           </label>
         )}
 
+        {showVeliNotu && (
+          <div className="od-form-group">
+            <label>Veliye ek bilgi</label>
+            <textarea
+              rows={2}
+              value={veliNotu}
+              onChange={(e) => setVeliNotu(e.target.value)}
+              placeholder="İsteğe bağlı; WhatsApp mesajına eklenir"
+            />
+          </div>
+        )}
+
         <div className="od-form-group">
-          <label>{usesEkBilgi && sendWhatsapp ? 'Ek bilgi (velilere gider)' : 'Not'}</label>
+          <label>İç not (veliye gitmez)</label>
           <textarea
             rows={2}
             value={localNotes}
             onChange={(e) => setLocalNotes(e.target.value)}
-            placeholder={usesEkBilgi && sendWhatsapp ? 'İsteğe bağlı ek cümle' : 'Opsiyonel'}
+            placeholder="Opsiyonel"
           />
         </div>
 

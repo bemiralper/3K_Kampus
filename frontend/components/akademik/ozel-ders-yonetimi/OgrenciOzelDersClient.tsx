@@ -13,6 +13,7 @@ import {
   setDersTatilKarar,
   createSlot,
   createTelafi,
+  withWarningText,
   vazgecTelafi,
   deleteSlot,
   endSlotEarly,
@@ -45,6 +46,7 @@ import { useDersDisplayPref } from './useDersDisplayPref';
 import SlotSureFields from './SlotSureFields';
 import { EMPTY_SLOT_SURE, formatSaatFromDakika, slotSureFromLesson, slotSurePayload } from './slotSure';
 import {
+  DraftNumberInput,
   Badge,
   Collapsible,
   Drawer,
@@ -93,11 +95,13 @@ import {
   buildPeriods,
   dateOnIsoWeek,
   durationBetween,
+  movedLessonTimes,
   formatDateTr,
   formatDurationDk,
   isoWeekday,
   startOfIsoWeek,
   timeToMinutes,
+  todayIso,
   type PeriodRow,
 } from './haftalikGridUtils';
 import SlotClockFields from './SlotClockFields';
@@ -111,6 +115,7 @@ type DersFilter =
   | 'islenen'
   | 'iptal'
   | 'telafi'
+  | 'telafi_bekliyor'
   | 'ek'
   | 'devamsiz';
 
@@ -120,6 +125,7 @@ const DERS_FILTER_VALUES: DersFilter[] = [
   'islenen',
   'iptal',
   'telafi',
+  'telafi_bekliyor',
   'ek',
   'devamsiz',
 ];
@@ -180,6 +186,7 @@ function oturumDisplayLabel(o: BirebirOturum): { label: string; tone: BadgeTone;
 function matchesDersFilter(o: BirebirOturum, f: DersFilter): boolean {
   if (f === 'all') return true;
   if (f === 'telafi') return o.oturum_turu === 'TELAFI';
+  if (f === 'telafi_bekliyor') return o.telafi_durumu === 'BEKLENIYOR';
   if (f === 'ek') return o.oturum_turu === 'EK';
   if (f === 'iptal') return o.durum === 'IPTAL';
   if (f === 'islenen') return o.durum === 'ISLENDI' || o.durum === 'ONLINE';
@@ -192,11 +199,12 @@ function matchesDersFilter(o: BirebirOturum, f: DersFilter): boolean {
 
 /** Bir oturuma hangi hızlı aksiyonların gösterileceğini belirler (backend geçiş kurallarıyla uyumlu). */
 function rowActionsFor(o: BirebirOturum): { canComplete: boolean; canCancel: boolean; canTelafi: boolean; canReopen: boolean } {
+  const allowed = new Set(yoklamaActionButtons(o));
   return {
-    canComplete: ['PLANLANDI', 'ONLINE'].includes(o.durum),
-    canCancel: ['PLANLANDI', 'ONLINE'].includes(o.durum),
+    canComplete: ['PLANLANDI', 'ONLINE'].includes(o.durum) && allowed.has('ISLENDI'),
+    canCancel: ['PLANLANDI', 'ONLINE'].includes(o.durum) && allowed.has('IPTAL'),
     canTelafi: o.telafi_durumu === 'BEKLENIYOR' && o.oturum_turu !== 'TELAFI',
-    canReopen: ['ISLENDI', 'IPTAL'].includes(o.durum),
+    canReopen: ['ISLENDI', 'IPTAL'].includes(o.durum) && allowed.has('PLANLANDI'),
   };
 }
 
@@ -208,6 +216,11 @@ const STAT_ICON: Record<string, React.ReactNode> = {
   ek: <IconPlus size={16} />,
   iptal: <IconXCircle size={16} />,
 };
+
+/** Süresiz dönemde ekranın gösterdiği aralık; programa yazılmaz. */
+function donemViewEnd(bas: string, bit: string): string {
+  return bit || dayjs(bas).add(4, 'month').format('YYYY-MM-DD');
+}
 
 export default function OgrenciOzelDersClient() {
   const pathname = usePathname();
@@ -244,6 +257,7 @@ export default function OgrenciOzelDersClient() {
   const zamanTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rematerializedWeeks = useRef(new Set<string>());
   const oturumEpoch = useRef(0);
+  const loadSeq = useRef(0);
   const oturumlarRef = useRef<BirebirOturum[]>([]);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek());
   const [weekLoading, setWeekLoading] = useState(false);
@@ -383,6 +397,7 @@ export default function OgrenciOzelDersClient() {
     [config],
   );
   const paketDersleri = useMemo(() => mergePaketDersleri(programs), [programs]);
+  const donemEnd = donem.baslangic ? donemViewEnd(donem.baslangic, donem.bitis) : donem.bitis;
   const primary = programs[0] || null;
 
   const loadAll = useCallback(async () => {
@@ -390,6 +405,8 @@ export default function OgrenciOzelDersClient() {
       setLoading(false);
       return;
     }
+    const seq = ++loadSeq.current;
+    oturumEpoch.current += 1;
     setLoading(true);
     setError('');
     rematerializedWeeks.current.clear();
@@ -399,6 +416,7 @@ export default function OgrenciOzelDersClient() {
         ogrenci_id: ogrenciId,
         durum: 'AKTIF',
       });
+      if (seq !== loadSeq.current) return;
       const sorted = [...progs].sort((a, b) => {
         if (a.durum !== b.durum) return a.durum === 'AKTIF' ? -1 : 1;
         return (b.slot_count || 0) - (a.slot_count || 0);
@@ -407,10 +425,11 @@ export default function OgrenciOzelDersClient() {
 
       const bas =
         sorted.map((p) => p.baslangic_tarihi).sort()[0] || dayjs().format('YYYY-MM-DD');
-      const bit = sorted.every((p) => p.bitis_tarihi)
+      const realBit = sorted.length && sorted.every((p) => p.bitis_tarihi)
         ? sorted.map((p) => p.bitis_tarihi!).sort().slice(-1)[0]
-        : dayjs(bas).add(4, 'month').format('YYYY-MM-DD');
-      setDonem({ baslangic: bas, bitis: bit || '' });
+        : '';
+      const bit = donemViewEnd(bas, realBit);
+      setDonem({ baslangic: bas, bitis: realBit });
 
       const p0 = sorted[0];
       if (p0) {
@@ -425,7 +444,7 @@ export default function OgrenciOzelDersClient() {
       const slotPromise = sorted.length
         ? Promise.all(sorted.map((p) => fetchSlots(p.id)))
         : Promise.resolve([] as BirebirSlot[][]);
-      const sumPromise = fetchOgrenciDonemOzeti(ogrenciId, bas, bit || undefined).catch((e) => {
+      const sumPromise = fetchOgrenciDonemOzeti(ogrenciId, bas, bit).catch((e) => {
         console.error(e);
         return null;
       });
@@ -448,11 +467,12 @@ export default function OgrenciOzelDersClient() {
         sumPromise,
         weekPromise,
       ]);
+      if (seq !== loadSeq.current) return;
       setLessons(slotLists.flat().filter((s) => s.aktif !== false));
       if (sum) setSummary(sum);
       setOturumlar(sortOturumlar(weekList));
 
-      const yearEnd = bit || dayjs(bas).add(4, 'month').format('YYYY-MM-DD');
+      const yearEnd = bit;
       const epoch = oturumEpoch.current;
       void fetchOturumlar({
         ogrenci_id: ogrenciId,
@@ -466,9 +486,9 @@ export default function OgrenciOzelDersClient() {
         })
         .catch((e) => console.error(e));
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Yüklenemedi');
+      if (seq === loadSeq.current) setError(e instanceof Error ? e.message : 'Yüklenemedi');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [ready, ogrenciId, egitimYiliId]);
 
@@ -479,17 +499,23 @@ export default function OgrenciOzelDersClient() {
   const refreshSummary = useCallback(
     async (bas: string, bit: string) => {
       if (!ogrenciId || !bas) return;
+      const seq = loadSeq.current;
+      const epoch = ++oturumEpoch.current;
       try {
-        const sum = await fetchOgrenciDonemOzeti(ogrenciId, bas, bit || undefined);
+        const end = donemViewEnd(bas, bit);
+        const sum = await fetchOgrenciDonemOzeti(ogrenciId, bas, end);
+        if (seq !== loadSeq.current) return;
         setSummary(sum);
         const oturumList = await fetchOturumlar({
           ogrenci_id: ogrenciId,
           start_date: bas,
-          end_date: bit || dayjs(bas).add(4, 'month').format('YYYY-MM-DD'),
+          end_date: end,
           skip_materialize: 1,
         });
+        if (seq !== loadSeq.current || epoch !== oturumEpoch.current) return;
         setOturumlar(sortOturumlar(oturumList));
       } catch (e) {
+        if (seq !== loadSeq.current) return;
         show(e instanceof Error ? e.message : 'Özet güncellenemedi', 'error');
       }
     },
@@ -502,6 +528,7 @@ export default function OgrenciOzelDersClient() {
       const end = addDaysIso(start, 6);
       const rematerialize = Boolean(opts?.rematerialize);
       if (rematerialize) setWeekLoading(true);
+      const seq = loadSeq.current;
       try {
         const list = await fetchOturumlar({
           ogrenci_id: ogrenciId,
@@ -509,6 +536,7 @@ export default function OgrenciOzelDersClient() {
           end_date: end,
           ...(rematerialize ? {} : { skip_materialize: 1 }),
         });
+        if (seq !== loadSeq.current) return;
         setOturumlar((prev) => {
           const others = prev.filter((o) => o.session_date < start || o.session_date > end);
           return sortOturumlar([...others, ...list]);
@@ -624,6 +652,11 @@ export default function OgrenciOzelDersClient() {
       return;
     }
     if (weekMoving) return;
+    const times = movedLessonTimes(slot, period.baslangic);
+    if (!times) {
+      show('Ders bu saate taşınırsa gün sonunu aşıyor.', 'error');
+      return;
+    }
     const prevOturumlar = oturumlar;
     const prevLessons = lessons;
     oturumEpoch.current += 1;
@@ -632,7 +665,7 @@ export default function OgrenciOzelDersClient() {
       sortOturumlar(
         prev.map((x) =>
           x.id === o.id
-            ? { ...x, session_date: date, start_time: period.baslangic, end_time: period.bitis }
+            ? { ...x, session_date: date, start_time: times.baslangic, end_time: times.bitis }
             : x,
         ),
       ),
@@ -640,18 +673,13 @@ export default function OgrenciOzelDersClient() {
     setLessons((prev) =>
       prev.map((s) =>
         s.id === slot.id
-          ? { ...s, gun, baslangic: period.baslangic, bitis: period.bitis, sure_dk: config.sureDk }
+          ? { ...s, gun, ...times }
           : s,
       ),
     );
     setWeekMoving(true);
     try {
-      await updateSlot(slot.id, {
-        gun,
-        baslangic: period.baslangic,
-        bitis: period.bitis,
-        sure_dk: config.sureDk,
-      });
+      await updateSlot(slot.id, { gun, ...times });
       show('Ders taşındı. İşlenmemiş oturumlar güncellendi.');
       await Promise.all([reloadSlots(), loadWeek(weekStart)]);
       void refreshSummary(donem.baslangic, donem.bitis);
@@ -893,7 +921,7 @@ export default function OgrenciOzelDersClient() {
     setDersGecmis(null);
     setDersGecmisLoading(true);
     try {
-      const data = await fetchDersGecmis(ogrenciId, ders.ders_id, donem.baslangic, donem.bitis);
+      const data = await fetchDersGecmis(ogrenciId, ders.ders_id, donem.baslangic, donemEnd);
       setDersGecmis(data);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Ders geçmişi yüklenemedi', 'error');
@@ -906,7 +934,7 @@ export default function OgrenciOzelDersClient() {
     if (!ogrenciId || !dersDetay) return;
     setDersGecmisBusy(true);
     try {
-      await downloadDersGecmisPdf(ogrenciId, dersDetay.ders_id, donem.baslangic, donem.bitis);
+      await downloadDersGecmisPdf(ogrenciId, dersDetay.ders_id, donem.baslangic, donemEnd);
       show('Ders geçmişi PDF indirildi.');
     } catch (err) {
       show(err instanceof Error ? err.message : 'PDF indirilemedi', 'error');
@@ -924,7 +952,7 @@ export default function OgrenciOzelDersClient() {
       show(res.message || (mode === 'devam' ? 'Ders devam edecek' : 'Ders tatil yapıldı'));
       await refreshSummary(donem.baslangic, donem.bitis);
       if (dersDetay && dersDetay.ders_id === dersId) {
-        const data = await fetchDersGecmis(ogrenciId, dersId, donem.baslangic, donem.bitis);
+        const data = await fetchDersGecmis(ogrenciId, dersId, donem.baslangic, donemEnd);
         setDersGecmis(data);
       }
     } catch (err) {
@@ -1024,12 +1052,12 @@ export default function OgrenciOzelDersClient() {
     if (!telafiFor) return;
     setSavingTelafi(true);
     try {
-      await createTelafi(telafiFor.id, {
+      const created = await createTelafi(telafiFor.id, {
         session_date: telafiForm.session_date,
         start_time: telafiForm.start_time,
         end_time: telafiForm.end_time,
       });
-      show('Telafi dersi oluşturuldu.');
+      show(withWarningText('Telafi dersi oluşturuldu.', created));
       setTelafiFor(null);
       await refreshSummary(donem.baslangic, donem.bitis);
     } catch (err) {
@@ -1452,17 +1480,13 @@ export default function OgrenciOzelDersClient() {
               </div>
               <div className="od-filter-field">
                 <label>Ders (dk)</label>
-                <input
-                  type="number"
-                  className="od-input"
+                <DraftNumberInput
                   min={15}
                   max={180}
+                  fallback={50}
                   value={config.sureDk}
-                  onChange={(e) => {
-                    const next = {
-                      ...config,
-                      sureDk: Math.max(15, Math.min(180, Number(e.target.value) || 50)),
-                    };
+                  onCommit={(n) => {
+                    const next = { ...config, sureDk: n };
                     setConfig(next);
                     persistZaman(next);
                   }}
@@ -1471,17 +1495,13 @@ export default function OgrenciOzelDersClient() {
               </div>
               <div className="od-filter-field">
                 <label>Ara (dk)</label>
-                <input
-                  type="number"
-                  className="od-input"
+                <DraftNumberInput
                   min={0}
                   max={60}
+                  fallback={0}
                   value={config.araDk}
-                  onChange={(e) => {
-                    const next = {
-                      ...config,
-                      araDk: Math.max(0, Math.min(60, Number(e.target.value) || 0)),
-                    };
+                  onCommit={(n) => {
+                    const next = { ...config, araDk: n };
                     setConfig(next);
                     persistZaman(next);
                   }}
@@ -1490,17 +1510,13 @@ export default function OgrenciOzelDersClient() {
               </div>
               <div className="od-filter-field">
                 <label>Adet</label>
-                <input
-                  type="number"
-                  className="od-input"
+                <DraftNumberInput
                   min={1}
                   max={16}
+                  fallback={8}
                   value={config.dersAdet}
-                  onChange={(e) => {
-                    const next = {
-                      ...config,
-                      dersAdet: Math.max(1, Math.min(16, Number(e.target.value) || 8)),
-                    };
+                  onCommit={(n) => {
+                    const next = { ...config, dersAdet: n };
                     setConfig(next);
                     persistZaman(next);
                   }}
@@ -1616,6 +1632,7 @@ export default function OgrenciOzelDersClient() {
               <option value="islenen">İşlendi</option>
               <option value="iptal">İptal</option>
               <option value="telafi">Telafi</option>
+              <option value="telafi_bekliyor">Telafi Bekliyor</option>
               <option value="ek">Ek Ders</option>
               <option value="devamsiz">Devamsız</option>
             </select>
@@ -2001,7 +2018,7 @@ export default function OgrenciOzelDersClient() {
               ) : null}
             </dl>
             <div className="od-drawer-actions">
-              {yoklamaActionButtons(detailOturum.durum).map((durum) => {
+              {yoklamaActionButtons(detailOturum).map((durum) => {
                 const label =
                   durum === 'OGRETMEN_GELMEDI'
                     ? 'Öğrt. gelmedi'
@@ -2269,8 +2286,12 @@ export default function OgrenciOzelDersClient() {
           <ul className="od-ders-timeline">
             {dersGecmis.kayitlar.map((row) => {
               const busy = tatilBusyKey === `${dersDetay?.ders_id}:${row.tarih}`;
+              const isFuture = row.durum_kod === 'PLANLANDI' && row.tarih > todayIso();
               return (
-              <li key={row.id} className={`od-ders-timeline-item tone-${row.durum_kod.toLowerCase()}${row.tatil_gun ? ' is-tatil' : ''}`}>
+              <li
+                key={row.id}
+                className={`od-ders-timeline-item tone-${row.durum_kod.toLowerCase()}${row.tatil_gun ? ' is-tatil' : ''}${isFuture ? ' is-future' : ''}`}
+              >
                 <div className="od-ders-timeline-when">
                   <strong>{row.tarih_label}</strong>
                   <span>{row.saat}</span>
@@ -2286,7 +2307,7 @@ export default function OgrenciOzelDersClient() {
                             ? 'warning'
                             : 'secondary'
                     }>
-                      {row.durum}
+                      {isFuture ? 'Yaklaşan' : row.durum}
                     </Badge>
                     <Badge tone={row.tur_kod === 'TELAFI' ? 'warning' : row.tur_kod === 'EK' ? 'purple' : 'secondary'}>
                       {row.tur}
@@ -2416,12 +2437,12 @@ export default function OgrenciOzelDersClient() {
           title="WhatsApp — Ders geçmişi"
           emptyMessage="Bu dönemde gönderilecek ders kaydı yok."
           loadPreview={() => previewDersGecmisWhatsApp(
-            ogrenciId, dersDetay.ders_id, donem.baslangic, donem.bitis,
+            ogrenciId, dersDetay.ders_id, donem.baslangic, donemEnd,
           )}
           send={(opts) => sendDersGecmisWhatsApp(ogrenciId, dersDetay.ders_id, {
             ...opts,
             start_date: donem.baslangic,
-            end_date: donem.bitis,
+            end_date: donemEnd,
           })}
           onClose={() => setDersGecmisNotifyOpen(false)}
           onToast={(msg, tone) => show(msg, tone === 'error' ? 'error' : 'success')}

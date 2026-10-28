@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import dayjs from 'dayjs';
 import 'dayjs/locale/tr';
 import {
@@ -49,6 +49,7 @@ export default function HakedisTakibiClient() {
   const { useKisaAd, setUseKisaAd } = useDersDisplayPref();
 
   const [yil, setYil] = useState(dayjs().year());
+  const [yilInput, setYilInput] = useState(String(dayjs().year()));
   const [ay, setAy] = useState(dayjs().month() + 1);
   const [durum, setDurum] = useState('TASLAK');
   const [rows, setRows] = useState<BirebirHakedis[]>([]);
@@ -56,16 +57,22 @@ export default function HakedisTakibiClient() {
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [busy, setBusy] = useState(false);
 
+  const loadSeq = useRef(0);
+
   const load = useCallback(async () => {
     if (!ready) return;
+    const seq = ++loadSeq.current;
     setLoading(true);
     try {
-      setRows(await fetchHakedis({ yil, ay, durum: durum || undefined }));
+      const data = await fetchHakedis({ yil, ay, durum: durum || undefined });
+      if (seq !== loadSeq.current) return;
+      setRows(data);
       setSelected(new Set());
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       show(e instanceof Error ? e.message : 'Yüklenemedi', 'error');
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [ready, yil, ay, durum, show]);
 
@@ -74,7 +81,9 @@ export default function HakedisTakibiClient() {
   }, [load]);
 
   const summary = useMemo(() => {
-    const total = rows.reduce((s, r) => s + (r.tutar || 0), 0);
+    const total = rows
+      .filter((r) => r.durum !== 'IPTAL')
+      .reduce((s, r) => s + (r.tutar || 0), 0);
     return {
       total,
       taslak: rows.filter((r) => r.durum === 'TASLAK').length,
@@ -134,7 +143,13 @@ export default function HakedisTakibiClient() {
       const ids = Array.from(selected);
       const results = await Promise.allSettled(ids.map((id) => approveHakedis(id)));
       const ok = results.filter((r) => r.status === 'fulfilled').length;
-      show(`${ok}/${ids.length} hakediş onaylandı.`);
+      const firstError = results.find((r): r is PromiseRejectedResult => r.status === 'rejected');
+      if (firstError) {
+        const reason = firstError.reason instanceof Error ? firstError.reason.message : 'Bilinmeyen hata';
+        show(`${ok}/${ids.length} hakediş onaylandı. Onaylanamayan: ${ids.length - ok} (${reason})`, 'error');
+      } else {
+        show(`${ok}/${ids.length} hakediş onaylandı.`);
+      }
       await load();
     } finally {
       setBusy(false);
@@ -142,6 +157,15 @@ export default function HakedisTakibiClient() {
   }
 
   async function onBordro() {
+    const donem = `${MONTHS[ay - 1]} ${yil}`;
+    if (
+      !window.confirm(
+        `${donem} dönemindeki TÜM onaylı hakedişler öğretmen bordrolarına aktarılacak.\n\n` +
+          'Aktarılan kayıtlar kilitlenir; bu işlem buradan geri alınamaz. Devam edilsin mi?',
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     try {
       const result = await bordroAktar(yil, ay);
@@ -155,10 +179,17 @@ export default function HakedisTakibiClient() {
   }
 
   async function onSeed() {
+    if (
+      !window.confirm(
+        'Kurumunuz için eksik varsayılan ücret kuralları oluşturulacak. Mevcut kurallar değiştirilmez. Devam edilsin mi?',
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     try {
-      const r = await seedUcretKurallari('global');
-      show(`${r.created} ücret kuralı seed edildi.`);
+      const r = await seedUcretKurallari('kurum');
+      show(r.created ? `${r.created} varsayılan ücret kuralı oluşturuldu.` : 'Eksik ücret kuralı yok.');
     } catch (e) {
       show(e instanceof Error ? e.message : 'Seed başarısız', 'error');
     } finally {
@@ -186,7 +217,7 @@ export default function HakedisTakibiClient() {
               {useKisaAd ? 'Kısa ad' : 'Uzun ad'}
             </button>
             <button type="button" className="od-btn od-btn-ghost od-btn-sm" onClick={onSeed} disabled={busy}>
-              <IconWand size={14} /> Ücret Kurallarını Seed Et
+              <IconWand size={14} /> Varsayılan Ücret Kuralları
             </button>
             <button type="button" className="od-btn od-btn-success" onClick={onBordro} disabled={busy}>
               <IconSend size={15} /> Bordroya Aktar
@@ -207,7 +238,20 @@ export default function HakedisTakibiClient() {
       <div className="od-filters">
         <div className="od-filter-field">
           <label>Yıl</label>
-          <input type="number" className="od-input" style={{ width: 90 }} value={yil} onChange={(e) => setYil(Number(e.target.value))} />
+          <input
+            type="number"
+            className="od-input"
+            style={{ width: 90 }}
+            min={2000}
+            max={2100}
+            value={yilInput}
+            onChange={(e) => {
+              setYilInput(e.target.value);
+              const n = Number(e.target.value);
+              if (Number.isInteger(n) && n >= 2000 && n <= 2100) setYil(n);
+            }}
+            onBlur={() => setYilInput(String(yil))}
+          />
         </div>
         <div className="od-filter-field">
           <label>Ay</label>
@@ -288,7 +332,7 @@ export default function HakedisTakibiClient() {
                       <td className="od-cell-primary">{r.ogretmen_ad}</td>
                       <td>{resolveDersLabel(r, useKisaAd)}</td>
                       <td className="od-cell-muted">{r.sure_dk} dk</td>
-                      <td className="od-cell-muted">{r.birim_ucret.toLocaleString('tr-TR')} ₺</td>
+                      <td className="od-cell-muted">{formatCurrency(r.birim_ucret)}</td>
                       <td className="od-price">{formatCurrency(r.tutar)}</td>
                       <td>
                         <Badge tone={hakedisDurumTone(r.durum)}>{r.durum_display}</Badge>

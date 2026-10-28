@@ -1,6 +1,8 @@
 """Onaylı birebir hakedişleri AylikHakedis.ozel_ders_hakedis_toplam alanına aktarır."""
 from __future__ import annotations
 
+import calendar
+from datetime import date
 from decimal import Decimal
 
 from django.db import transaction
@@ -25,13 +27,16 @@ def apply_approved_to_bordro(
         SozlesmeDurumu,
     )
 
+    if not (1 <= ay <= 12) or yil < 2000:
+        raise OzelDersError('Geçersiz yıl / ay.', 'period')
+
     qs = BirebirHakedis.objects.filter(
         oturum__kurum_id=kurum_id,
         oturum__sube_id=sube_id,
         durum=HakedisDurumu.ONAYLANDI,
         tarih__year=yil,
         tarih__month=ay,
-    ).select_related('oturum')
+    ).select_for_update(of=('self',)).select_related('oturum')
     if ogretmen_id:
         qs = qs.filter(ogretmen_id=ogretmen_id)
 
@@ -39,29 +44,28 @@ def apply_approved_to_bordro(
     for h in qs:
         by_teacher.setdefault(h.ogretmen_id, []).append(h)
 
+    ay_basi = date(yil, ay, 1)
+    ay_sonu = date(yil, ay, calendar.monthrange(yil, ay)[1])
+
     updated = 0
     linked = 0
     for teacher_id, items in by_teacher.items():
-        soz = (
-            PersonelSozlesme.objects.filter(
-                personel_id=teacher_id,
-                kurum_id=kurum_id,
-                durum=SozlesmeDurumu.AKTIF,
-            )
-            .filter(sube_id=sube_id)
-            .order_by('-id')
-            .first()
+        base = PersonelSozlesme.objects.filter(
+            personel_id=teacher_id,
+            kurum_id=kurum_id,
+            durum=SozlesmeDurumu.AKTIF,
         )
-        if not soz:
-            soz = (
-                PersonelSozlesme.objects.filter(
-                    personel_id=teacher_id,
-                    kurum_id=kurum_id,
-                    durum=SozlesmeDurumu.AKTIF,
-                )
-                .order_by('-id')
-                .first()
-            )
+        in_period = base.filter(baslangic_tarihi__lte=ay_sonu, bitis_tarihi__gte=ay_basi)
+        soz = None
+        for candidate in (
+            in_period.filter(sube_id=sube_id),
+            in_period.filter(sube__isnull=True),
+            base.filter(sube_id=sube_id),
+            base,
+        ):
+            soz = candidate.order_by('-id').first()
+            if soz:
+                break
         if not soz:
             raise OzelDersError(
                 f'Öğretmen #{teacher_id} için aktif sözleşme bulunamadı.',
@@ -78,7 +82,7 @@ def apply_approved_to_bordro(
                 'ders_basi_ucret': soz.ders_birim_ucret or Decimal('0.00'),
             },
         )
-        if bordro.durum in ('ONAYLANDI', 'ODENDI'):
+        if bordro.durum in ('ONAYLANDI', 'ODENDI', 'IPTAL'):
             raise OzelDersError(
                 f'Bordro kilitli ({teacher_id} {ay}/{yil}).',
                 'bordro_locked',

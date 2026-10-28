@@ -218,7 +218,7 @@ class YoklamaTelafiTests(TestCase):
         telafi, _ = oturum_service.create_telafi(
             kaynak.id,
             {
-                'session_date': (date.today() + timedelta(days=2)).isoformat(),
+                'session_date': date.today().isoformat(),
                 'start_time': '14:00',
                 'end_time': '15:00',
             },
@@ -244,7 +244,7 @@ class YoklamaTelafiTests(TestCase):
         telafi, _ = oturum_service.create_telafi(
             kaynak.id,
             {
-                'session_date': (date.today() + timedelta(days=2)).isoformat(),
+                'session_date': date.today().isoformat(),
                 'start_time': '14:00',
                 'end_time': '15:00',
             },
@@ -403,7 +403,7 @@ class YoklamaTelafiTests(TestCase):
         self.assertIn('gerçekleştirilmiştir', islendi)
 
     @patch('apps.ozel_ders.services.notify_service._send_to_veliler', return_value=1)
-    def test_yoklama_notes_passed_as_ek_bilgi(self, send):
+    def test_ic_not_veliye_gitmez_veli_notu_gider(self, send):
         o = self._oturum()
         with self.captureOnCommitCallbacks(execute=True):
             oturum_service.set_durum(
@@ -411,12 +411,27 @@ class YoklamaTelafiTests(TestCase):
                 kurum_id=self.kurum.id, sube_id=self.sube.id,
                 sebep_kodu=SebepKodu.KURUM,
                 telafi_durumu=TelafiDurumu.GEREKMIYOR,
-                notes='Velilerle görüşüldü',
+                notes='İç not: öğretmen geç bildirdi',
+                veli_notu='Velilerle görüşüldü',
                 send_whatsapp=True,
             )
         self.assertTrue(send.called)
         kwargs = send.call_args.kwargs
         self.assertEqual(kwargs.get('ek_bilgi'), 'Velilerle görüşüldü')
+
+    @patch('apps.ozel_ders.services.notify_service._send_to_veliler', return_value=1)
+    def test_ic_not_tek_basina_veliye_gitmez(self, send):
+        o = self._oturum()
+        with self.captureOnCommitCallbacks(execute=True):
+            oturum_service.set_durum(
+                o.id, OturumDurumu.IPTAL,
+                kurum_id=self.kurum.id, sube_id=self.sube.id,
+                sebep_kodu=SebepKodu.KURUM,
+                telafi_durumu=TelafiDurumu.GEREKMIYOR,
+                notes='İç not',
+                send_whatsapp=True,
+            )
+        self.assertEqual(send.call_args.kwargs.get('ek_bilgi'), '')
 
     def test_telafi_olusturulamaz_beklenmiyorsa(self):
         o = self._oturum()

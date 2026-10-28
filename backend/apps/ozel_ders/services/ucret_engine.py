@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, time
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 from apps.ozel_ders.domain.models import (
@@ -76,7 +76,7 @@ def _get_active_contract(ogretmen_id: int, day: date, kurum_id: int, sube_id: Op
         durum=SozlesmeDurumu.AKTIF,
         baslangic_tarihi__lte=day,
         bitis_tarihi__gte=day,
-    ).prefetch_related('mesai_saatleri', 'ders_ucretleri')
+    ).prefetch_related('mesai_saatleri', 'ders_ucretleri__brans')
     if sube_id:
         qs = qs.filter(Q(sube_id=sube_id) | Q(sube__isnull=True))
     return qs.order_by('-id').first()
@@ -123,28 +123,81 @@ def _is_outside_mesai(sozlesme, day: date, start: time) -> bool:
     return start >= mesai.bitis
 
 
-def _unit_rate(sozlesme) -> Decimal:
+def _norm(value) -> str:
+    return ' '.join(str(value or '').replace('İ', 'i').replace('I', 'ı').lower().split())
+
+
+def _row_matches_ders(row, ders) -> bool:
+    brans = getattr(row, 'brans', None)
+    if brans is None or ders is None:
+        return False
+    brans_ad, brans_kod = _norm(getattr(brans, 'ad', '')), _norm(getattr(brans, 'kod', ''))
+    ders_ad, ders_kod = _norm(getattr(ders, 'ad', '')), _norm(getattr(ders, 'kod', ''))
+    kisa = _norm(getattr(ders, 'kisa_ad', ''))
+    if brans_kod and brans_kod == ders_kod:
+        return True
+    if not brans_ad:
+        return False
+    return any(name and (name == brans_ad or name.startswith(brans_ad)) for name in (ders_ad, kisa))
+
+
+def _rate_row(sozlesme, ders=None):
+    """Oturumun dersine uyan ücret satırı; eşleşme yoksa branşsız satır.
+
+    Farklı ücretli birden fazla satır varsa ve hiçbiri derse uymuyorsa None döner —
+    yanlış branşın ücretiyle ödeme yapılmasın.
+    """
+    rows = [r for r in sozlesme.ders_ucretleri.all() if r.birim_ucret and r.birim_ucret > 0]
+    if not rows:
+        return None
+    for row in rows:
+        if _row_matches_ders(row, ders):
+            return row
+    generic = [r for r in rows if getattr(r, 'brans_id', None) is None and getattr(r, 'brans', None) is None]
+    if generic:
+        return generic[0]
+    if len({(Decimal(r.birim_ucret), r.ucret_tipi) for r in rows}) == 1:
+        return rows[0]
+    return None
+
+
+def _has_ambiguous_rates(sozlesme) -> bool:
+    if sozlesme.ders_birim_ucret and sozlesme.ders_birim_ucret > 0:
+        return False
+    return any(r.birim_ucret and r.birim_ucret > 0 for r in sozlesme.ders_ucretleri.all())
+
+
+def _unit_rate(sozlesme, ders=None) -> Decimal:
     if sozlesme.ders_birim_ucret and sozlesme.ders_birim_ucret > 0:
         return Decimal(sozlesme.ders_birim_ucret)
-    first = sozlesme.ders_ucretleri.first() if hasattr(sozlesme, 'ders_ucretleri') else None
-    if first and first.birim_ucret:
-        return Decimal(first.birim_ucret)
+    row = _rate_row(sozlesme, ders)
+    if row is not None:
+        return Decimal(row.birim_ucret)
     return Decimal('0.00')
 
 
-def _calc_amount(sozlesme, birim: Decimal, sure_dk: int) -> Decimal:
+def _ucret_tipi(sozlesme, ders=None) -> str:
     from apps.personel.domain.sozlesme_models import DersUcretTipi
 
-    tip = sozlesme.ders_ucret_tipi or DersUcretTipi.SAAT_BASI
-    if tip == DersUcretTipi.DERS_BASI:
+    if not (sozlesme.ders_birim_ucret and sozlesme.ders_birim_ucret > 0):
+        row = _rate_row(sozlesme, ders)
+        if row is not None and row.ucret_tipi in (DersUcretTipi.SAAT_BASI, DersUcretTipi.DERS_BASI):
+            return row.ucret_tipi
+    return sozlesme.ders_ucret_tipi or DersUcretTipi.SAAT_BASI
+
+
+def _calc_amount(sozlesme, birim: Decimal, sure_dk: int, ders=None) -> Decimal:
+    from apps.personel.domain.sozlesme_models import DersUcretTipi
+
+    if _ucret_tipi(sozlesme, ders) == DersUcretTipi.DERS_BASI:
         return birim
-    # Saat başı
     hours = Decimal(sure_dk) / Decimal('60')
-    return (birim * hours).quantize(Decimal('0.01'))
+    return (birim * hours).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
 
 def evaluate(oturum: BirebirDersOturumu) -> UcretSonuc:
     sure_dk = oturum.duration_minutes()
+    ders = getattr(oturum, 'ders', None)
     soz = _get_active_contract(
         oturum.ogretmen_id,
         oturum.session_date,
@@ -185,7 +238,7 @@ def evaluate(oturum: BirebirDersOturumu) -> UcretSonuc:
         return UcretSonuc(
             payable=False,
             tutar=Decimal('0.00'),
-            birim_ucret=_unit_rate(soz),
+            birim_ucret=_unit_rate(soz, ders),
             sure_dk=sure_dk,
             reason='ONLINE oturumlar bu kuralda ücretlendirilmiyor',
             mesai_modu=mesai_modu,
@@ -196,7 +249,7 @@ def evaluate(oturum: BirebirDersOturumu) -> UcretSonuc:
         return UcretSonuc(
             payable=False,
             tutar=Decimal('0.00'),
-            birim_ucret=_unit_rate(soz),
+            birim_ucret=_unit_rate(soz, ders),
             sure_dk=sure_dk,
             reason=f'Durum ücretlendirmeye uygun değil ({oturum.durum})',
             mesai_modu=mesai_modu,
@@ -207,7 +260,7 @@ def evaluate(oturum: BirebirDersOturumu) -> UcretSonuc:
         return UcretSonuc(
             payable=False,
             tutar=Decimal('0.00'),
-            birim_ucret=_unit_rate(soz),
+            birim_ucret=_unit_rate(soz, ders),
             sure_dk=sure_dk,
             reason='Kural: hiçbir zaman ücretlendirme',
             mesai_modu=mesai_modu,
@@ -219,26 +272,30 @@ def evaluate(oturum: BirebirDersOturumu) -> UcretSonuc:
             return UcretSonuc(
                 payable=False,
                 tutar=Decimal('0.00'),
-                birim_ucret=_unit_rate(soz),
+                birim_ucret=_unit_rate(soz, ders),
                 sure_dk=sure_dk,
                 reason='Mesai saatleri içinde — ücret yok',
                 mesai_modu=mesai_modu,
                 sozlesme_turu=sozlesme_turu,
             )
 
-    birim = _unit_rate(soz)
+    birim = _unit_rate(soz, ders)
     if birim <= 0:
         return UcretSonuc(
             payable=False,
             tutar=Decimal('0.00'),
             birim_ucret=birim,
             sure_dk=sure_dk,
-            reason='Birim ücret tanımlı değil',
+            reason=(
+                'Bu derse uyan ders ücreti satırı yok (sözleşmede farklı branş ücretleri var)'
+                if _has_ambiguous_rates(soz)
+                else 'Birim ücret tanımlı değil'
+            ),
             mesai_modu=mesai_modu,
             sozlesme_turu=sozlesme_turu,
         )
 
-    tutar = _calc_amount(soz, birim, sure_dk)
+    tutar = _calc_amount(soz, birim, sure_dk, ders)
     return UcretSonuc(
         payable=True,
         tutar=tutar,

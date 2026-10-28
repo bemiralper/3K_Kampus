@@ -4,6 +4,7 @@ from django.views.decorators.http import require_http_methods
 
 from apps.ozel_ders.interfaces.context import (
     error_response,
+    guard_bad_input,
     json_body,
     mandatory_ozel_ders_context,
     ozel_ders_api,
@@ -25,7 +26,13 @@ from apps.ozel_ders.services import ogrenci_ozel_ders_dashboard
 from apps.ozel_ders.services import student_lesson_summary
 from apps.ozel_ders.services import ders_rapor_pdf, ders_tatil_service, haftalik_program_pdf
 from apps.ozel_ders.services.errors import OzelDersError
-from shared.permissions import require_module_permission, user_has_permission
+from django.db import IntegrityError
+
+from shared.permissions import (
+    require_module_permission,
+    user_has_module_permission,
+    user_has_permission,
+)
 
 
 def _int_or_none(value):
@@ -730,7 +737,9 @@ def oturum_list_create(request):
             # yeniden üretmek sayfayı (özellikle Birebir Telafi) saniyelerce yavaşlatır.
             if request.GET.get('telafi_durumu') or request.GET.get('oturum_turu'):
                 skip_materialize = True
-            if start_date and end_date and not skip_materialize:
+            if start_date and end_date and not skip_materialize and user_has_module_permission(
+                request.user, 'ozel_ders', write=True,
+            ):
                 try:
                     materialize_service.materialize_active_programs(
                         kurum_id=ctx['kurum_id'],
@@ -740,7 +749,7 @@ def oturum_list_create(request):
                         user=request.user,
                         ogrenci_id=_int_or_none(request.GET.get('ogrenci_id')),
                     )
-                except OzelDersError:
+                except (OzelDersError, IntegrityError):
                     pass
             data = oturum_service.list_oturumlar(
                 kurum_id=ctx['kurum_id'],
@@ -808,6 +817,7 @@ def oturum_set_durum(request, oturum_id):
             sebep_aciklama=body.get('sebep_aciklama'),
             telafi_durumu=body.get('telafi_durumu'),
             send_whatsapp=send_wa,
+            veli_notu=body.get('veli_notu'),
             user=request.user,
         )
         return JsonResponse({'success': True, 'data': oturum_service.serialize_oturum(o)})
@@ -923,6 +933,7 @@ def hakedis_list(request):
 @csrf_exempt
 @require_module_permission('ozel_ders')
 @require_http_methods(['POST'])
+@guard_bad_input
 def hakedis_approve(request, hakedis_id):
     if not (
         user_has_permission(request.user, 'ozel_ders.manage')
@@ -944,6 +955,7 @@ def hakedis_approve(request, hakedis_id):
 @csrf_exempt
 @require_module_permission('ozel_ders')
 @require_http_methods(['POST'])
+@guard_bad_input
 def hakedis_cancel(request, hakedis_id):
     """İptal, onay kadar kritik bir işlem olduğu için aynı yetki barını kullanır."""
     if not (
@@ -966,6 +978,7 @@ def hakedis_cancel(request, hakedis_id):
 @csrf_exempt
 @require_module_permission('ozel_ders', manage_only=True)
 @require_http_methods(['POST'])
+@guard_bad_input
 def hakedis_bordro_aktar(request):
     ctx, err = mandatory_ozel_ders_context(request)
     if err:
@@ -1037,9 +1050,21 @@ def premium_kota(request, premium_paket_id):
                 'success': True,
                 'data': premium_kota_service.list_kota(premium_paket_id),
             })
+        from apps.egitim_paketleri.models import PremiumPaket
+
+        paket = PremiumPaket.objects.only('kurum_id').get(pk=premium_paket_id)
+        if paket.kurum_id is None and not getattr(request.user, 'is_superuser', False):
+            return JsonResponse(
+                {
+                    'success': False,
+                    'error': 'Bu paket tüm kurumlarla paylaşılan genel bir paket; kotasını yalnızca sistem yöneticisi değiştirebilir.',
+                    'code': 'global_paket',
+                },
+                status=403,
+            )
         body = json_body(request)
         rows = body.get('kotalar') or body.get('rows') or []
-        data = premium_kota_service.set_kota(premium_paket_id, rows)
+        data = premium_kota_service.set_kota(premium_paket_id, rows, kurum_id=ctx['kurum_id'])
         return JsonResponse({'success': True, 'data': data})
     except OzelDersError as exc:
         return error_response(exc)
@@ -1070,13 +1095,18 @@ def seed_ucret_kurallari(request):
     if err:
         return err
     body = json_body(request)
-    scope = body.get('scope', 'global')
+    scope = body.get('scope') or 'kurum'
     if scope == 'sube':
         created = ucret_engine.seed_default_rules(
             kurum_id=ctx['kurum_id'], sube_id=ctx['sube_id'],
         )
-    elif scope == 'kurum':
-        created = ucret_engine.seed_default_rules(kurum_id=ctx['kurum_id'], sube_id=None)
-    else:
+    elif scope == 'global':
+        if not getattr(request.user, 'is_superuser', False):
+            return JsonResponse(
+                {'success': False, 'error': 'Genel (tüm kurumlar) kurallar yalnızca sistem yöneticisi tarafından oluşturulabilir.'},
+                status=403,
+            )
         created = ucret_engine.seed_default_rules()
+    else:
+        created = ucret_engine.seed_default_rules(kurum_id=ctx['kurum_id'], sube_id=None)
     return JsonResponse({'success': True, 'data': {'created': created}})

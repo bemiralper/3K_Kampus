@@ -30,6 +30,8 @@ export function buildPeriods(
   const rows: PeriodRow[] = [];
   let cursor = timeToMinutes(startTime);
   for (let i = 1; i <= dersAdet; i += 1) {
+    // Gün sonunu aşan satır 23:59'a kırpılıp sıfır/yanlış süreli ders üretmesin.
+    if (cursor + sureDk > 24 * 60 - 1) break;
     const baslangic = minutesToTime(cursor);
     const bitis = minutesToTime(cursor + sureDk);
     rows.push({
@@ -52,6 +54,19 @@ export function matchLessonToPeriod<T extends { baslangic: string }>(
 ): PeriodRow | null {
   const start = (lesson.baslangic || '').slice(0, 5);
   return periods.find((p) => !p.isBreak && p.baslangic === start) ?? null;
+}
+
+/** Sürüklenen dersin kendi süresi korunarak hedef satıra yerleşimi; gün sonunu aşarsa null. */
+export function movedLessonTimes(
+  lesson: { baslangic: string; bitis: string; sure_dk?: number | null },
+  periodStart: string,
+): { baslangic: string; bitis: string; sure_dk: number } | null {
+  const sure =
+    lesson.sure_dk || durationBetween(lesson.baslangic, lesson.bitis) || 0;
+  if (sure <= 0) return null;
+  const start = timeToMinutes(periodStart.slice(0, 5));
+  if (start + sure > 24 * 60 - 1) return null;
+  return { baslangic: minutesToTime(start), bitis: minutesToTime(start + sure), sure_dk: sure };
 }
 
 export function shiftTime(start: string, minutes: number): string {

@@ -164,8 +164,12 @@ def _send_to_veliler(
     sent_by_user_id: Optional[int] = None,
     ek_bilgi: str = '',
     extra_ctx: Optional[dict] = None,
+    log_oturum: Optional[BirebirDersOturumu] = None,
 ) -> int:
+    """log_oturum: tekrar gönderim kontrolü ve geçmiş hangi derse yazılsın (varsayılan: oturum)."""
     from apps.ogrenci.application.veli_contact import list_outbound_veliler
+
+    log_id = (log_oturum or oturum).id
 
     sent = 0
     try:
@@ -177,14 +181,14 @@ def _send_to_veliler(
     for veli, _phone in pairs:
         if not ContactResolver.veli_allows_outbound(veli, OPT_IN_CATEGORY):
             continue
-        if _already_logged(oturum.id, event_key, veli.id):
+        if _already_logged(log_id, event_key, veli.id):
             continue
 
         ctx = _build_context(oturum, veli=veli, ek_bilgi=ek_bilgi)
         if extra_ctx:
             ctx.update(extra_ctx)
         body = _fallback_body(event_key, ctx)
-        source_ref = _source_ref(oturum.id, event_key, veli.id)
+        source_ref = _source_ref(log_id, event_key, veli.id)
 
         try:
             result = dispatch_event(
@@ -205,7 +209,7 @@ def _send_to_veliler(
 
             # Log even on soft failure so we don't spam; status visible in history
             BirebirOturumBildirimLog.objects.get_or_create(
-                oturum_id=oturum.id,
+                oturum_id=log_id,
                 event_key=event_key,
                 veli_id=veli.id,
                 defaults={'message': message},
@@ -219,7 +223,7 @@ def _send_to_veliler(
             )
             try:
                 BirebirOturumBildirimLog.objects.get_or_create(
-                    oturum_id=oturum.id,
+                    oturum_id=log_id,
                     event_key=event_key,
                     veli_id=veli.id,
                 )
@@ -233,8 +237,12 @@ def notify_yoklama(
     *,
     send_whatsapp: bool,
     sent_by_user_id: Optional[int] = None,
+    veli_notu: str = '',
 ) -> None:
-    """Yoklama durumuna göre veli bildirimi (opt-in kuralları set_durum tarafında)."""
+    """Yoklama durumuna göre veli bildirimi (opt-in kuralları set_durum tarafında).
+
+    Oturumun iç notu (notes) veliye gitmez; yalnızca açıkça yazılan veli_notu gider.
+    """
     if not send_whatsapp:
         return
 
@@ -258,7 +266,7 @@ def notify_yoklama(
             oturum,
             event_key,
             sent_by_user_id=sent_by_user_id,
-            ek_bilgi=(oturum.notes or '').strip(),
+            ek_bilgi=(veli_notu or '').strip(),
         )
 
     try:
@@ -272,6 +280,7 @@ def notify_telafi_planlandi(
     telafi: BirebirDersOturumu,
     *,
     sent_by_user_id: Optional[int] = None,
+    veli_notu: str = '',
 ) -> None:
     """Telafi planlandığında — mesajda mutlaka orijinal ders tarihi/saati."""
     extra = {
@@ -286,8 +295,9 @@ def notify_telafi_planlandi(
             kaynak,
             EVENT_TELAFI_PLANLANDI,
             sent_by_user_id=sent_by_user_id,
-            ek_bilgi=(telafi.notes or kaynak.notes or '').strip(),
+            ek_bilgi=(veli_notu or '').strip(),
             extra_ctx=extra,
+            log_oturum=telafi,
         )
 
     try:

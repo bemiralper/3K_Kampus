@@ -33,6 +33,8 @@ export type BirebirProgram = {
   durum_display: string;
   notlar: string;
   slot_count: number;
+  /** Süresi dolmamış aktif slot sayısı, ders_id → adet. */
+  guncel_slot_dersleri?: Record<string, number>;
   paket_dersleri?: PaketDersi[];
 };
 
@@ -115,6 +117,9 @@ export type BirebirOturum = {
   bildirimler?: OturumBildirim[];
   notes: string;
   has_hakedis: boolean;
+  hakedis_durum?: string | null;
+  /** Yalnızca oluşturma / öğretmen değişimi yanıtında; kayıtta tutulmaz. */
+  warnings?: string[];
 };
 
 export type SetOturumDurumPayload = {
@@ -124,6 +129,8 @@ export type SetOturumDurumPayload = {
   sebep_aciklama?: string;
   telafi_durumu?: string;
   send_whatsapp?: boolean;
+  /** Yalnızca WhatsApp "Ek bilgi" satırına gider; iç not (notes) veliye gönderilmez. */
+  veli_notu?: string;
 };
 
 export type BirebirHakedis = {
@@ -196,6 +203,25 @@ async function unwrap<T>(res: { success?: boolean; data?: T; error?: string }): 
     throw new Error(res?.error || 'İstek başarısız');
   }
   return res.data as T;
+}
+
+/** Sunucu uyarılarını (öğretmen çakışması, izin günü…) dönen kayda ekler. */
+async function unwrapWithWarnings(res: {
+  success?: boolean;
+  data?: BirebirOturum;
+  error?: string;
+  warnings?: unknown[];
+}): Promise<BirebirOturum> {
+  const data = await unwrap(res);
+  const warnings = (res.warnings || [])
+    .map((w) => (w && typeof w === 'object' ? String((w as { message?: unknown }).message || '') : String(w || '')))
+    .filter(Boolean);
+  return warnings.length ? { ...data, warnings } : data;
+}
+
+/** "Kaydedildi" mesajına sunucu uyarılarını ekler. */
+export function withWarningText(message: string, o: { warnings?: string[] } | null | undefined): string {
+  return o?.warnings?.length ? `${message} Uyarı: ${o.warnings.join(' · ')}` : message;
 }
 
 function withQuery(path: string, params?: Record<string, string | number | undefined>) {
@@ -795,7 +821,7 @@ export async function createOturum(body: Record<string, unknown>) {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  return unwrap(res);
+  return unwrapWithWarnings(res);
 }
 
 export async function setOturumDurum(
@@ -819,6 +845,11 @@ export async function changeOturumOgretmen(id: number, ogretmen_id: number) {
     method: 'POST',
     body: JSON.stringify({ ogretmen_id }),
   });
+  return unwrapWithWarnings(res);
+}
+
+export async function fetchOturum(id: number) {
+  const res = await apiFetch<BirebirOturum>(`${BASE}/oturumlar/${id}/`);
   return unwrap(res);
 }
 
@@ -827,7 +858,7 @@ export async function createTelafi(id: number, body: Record<string, unknown>) {
     method: 'POST',
     body: JSON.stringify(body),
   });
-  return unwrap(res);
+  return unwrapWithWarnings(res);
 }
 
 export async function vazgecTelafi(id: number) {
@@ -903,7 +934,7 @@ export async function suggestPremiumSlots(premiumPaketId: number) {
   return unwrap(res);
 }
 
-export async function seedUcretKurallari(scope: 'global' | 'kurum' | 'sube' = 'global') {
+export async function seedUcretKurallari(scope: 'global' | 'kurum' | 'sube' = 'kurum') {
   const res = await apiFetch<{ created: number }>(`${BASE}/ucret-kurallari/seed/`, {
     method: 'POST',
     body: JSON.stringify({ scope }),

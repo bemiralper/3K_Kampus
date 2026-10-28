@@ -21,6 +21,7 @@ from apps.ozel_ders.services.conflict_service import (
     iter_dates_for_weekday,
     list_holidays,
 )
+from apps.ozel_ders.services.closure_marks import is_marked
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.program_service import get_program
 from apps.ozel_ders.services.quota_service import (
@@ -62,6 +63,8 @@ def _taught_week_keys(slot_ids, start: date, end: date) -> set[tuple[int, date]]
     ).values_list('source_slot_id', 'session_date')
     return {(slot_id, _week_start(session_date)) for slot_id, session_date in rows}
 _FUTURE_SYNC_DAYS = 62
+# Eğitim yılı + kısa pay; daha uzun aralık tek istekte binlerce kayıt üretir.
+_MAX_MATERIALIZE_DAYS = 400
 
 
 def _oturum_can_follow_slot(oturum: BirebirDersOturumu, today: date | None = None) -> bool:
@@ -77,20 +80,29 @@ def _oturum_can_follow_slot(oturum: BirebirDersOturumu, today: date | None = Non
     return True
 
 
-def _apply_slot_fields(oturum: BirebirDersOturumu, slot: BirebirHaftalikSlot) -> bool:
-    """Şablon alanlarını oturuma yazar. Çakışmada False (oturum olduğu gibi kalır)."""
+def _apply_slot_fields(
+    oturum: BirebirDersOturumu,
+    slot: BirebirHaftalikSlot,
+    *,
+    keep_teacher: bool = False,
+) -> bool:
+    """Şablon alanlarını oturuma yazar. Çakışmada False (oturum olduğu gibi kalır).
+
+    keep_teacher: o tarihe elle atanmış yedek öğretmen şablon öğretmeniyle ezilmesin.
+    """
+    ogretmen_id = oturum.ogretmen_id if keep_teacher else slot.ogretmen_id
     changed = (
         oturum.start_time != slot.baslangic
         or oturum.end_time != slot.bitis
         or oturum.ders_id != slot.ders_id
-        or oturum.ogretmen_id != slot.ogretmen_id
+        or oturum.ogretmen_id != ogretmen_id
         or oturum.oda_id != slot.oda_id
     )
     if not changed:
         return False
     try:
         check_all_for_occurrence(
-            ogretmen_id=slot.ogretmen_id,
+            ogretmen_id=ogretmen_id,
             ogrenci_id=oturum.ogrenci_id,
             oda_id=slot.oda_id,
             kurum_id=oturum.kurum_id,
@@ -106,7 +118,7 @@ def _apply_slot_fields(oturum: BirebirDersOturumu, slot: BirebirHaftalikSlot) ->
     oturum.start_time = slot.baslangic
     oturum.end_time = slot.bitis
     oturum.ders_id = slot.ders_id
-    oturum.ogretmen_id = slot.ogretmen_id
+    oturum.ogretmen_id = ogretmen_id
     oturum.oda_id = slot.oda_id
     oturum.save(update_fields=[
         'start_time', 'end_time', 'ders_id', 'ogretmen_id', 'oda_id', 'updated_at',
@@ -124,11 +136,28 @@ def _planlandi_qs(slot: BirebirHaftalikSlot, today: date | None = None):
     )
 
 
+def release_followable_sessions(slots: list[BirebirHaftalikSlot]) -> int:
+    """Şablonu izleyen (işlem görmemiş, kilitsiz) planlı dersleri bugünden itibaren kapatır.
+
+    Ardından yapılan yeniden üretim aynı (slot, gün) kaydını yeni saatle geri açar.
+    """
+    today = timezone.localdate()
+    qs = BirebirDersOturumu.objects.filter(
+        source_slot_id__in=[s.id for s in slots],
+        is_active=True,
+        durum=OturumDurumu.PLANLANDI,
+        oturum_turu=OturumTuru.OZEL,
+        session_date__gte=today,
+    ).exclude(hakedis__durum__in=_LOCKED_HAKEDIS)
+    return qs.update(is_active=False, updated_at=timezone.now())
+
+
 def sync_future_sessions_for_slot(
     slot: BirebirHaftalikSlot,
     *,
     user=None,
     rematerialize: bool = True,
+    previous_ogretmen_id: int | None = None,
 ) -> dict:
     """
     Şablon değişince işlem görmemiş planlı oturumları hizalar.
@@ -178,7 +207,11 @@ def sync_future_sessions_for_slot(
             deactivated += 1
             continue
 
-        if _apply_slot_fields(oturum, slot):
+        keep_teacher = (
+            previous_ogretmen_id is not None
+            and oturum.ogretmen_id != previous_ogretmen_id
+        )
+        if _apply_slot_fields(oturum, slot, keep_teacher=keep_teacher):
             updated += 1
 
     trimmed = trim_excess_planlandi(
@@ -210,6 +243,7 @@ def _rematerialize_slot_window(slot: BirebirHaftalikSlot, *, user=None) -> int:
     start = slot.baslangic_tarihi or program.baslangic_tarihi or today
     horizon = today + timedelta(days=_FUTURE_SYNC_DAYS)
     end = min(slot.bitis_tarihi or program.bitis_tarihi or horizon, horizon)
+    start = max(start, end - timedelta(days=_MAX_MATERIALIZE_DAYS))
     if end < start:
         return 0
     result = materialize_program(
@@ -243,6 +277,11 @@ def materialize_program(
     end = _parse_date(end_date)
     if end < start:
         raise OzelDersError('Bitiş tarihi başlangıçtan önce olamaz.', 'date_range')
+    if (end - start).days > _MAX_MATERIALIZE_DAYS:
+        raise OzelDersError(
+            f'Tek seferde en fazla {_MAX_MATERIALIZE_DAYS} günlük ders üretilebilir.',
+            'date_range',
+        )
 
     # Clamp to program window
     if start < program.baslangic_tarihi:
@@ -315,11 +354,28 @@ def materialize_program(
                 if (
                     existing.durum == OturumDurumu.PLANLANDI
                     and existing.oturum_turu == OturumTuru.OZEL
+                    and not is_marked(existing)
                 ):
                     hedef = _hedef_for(slot)
                     sure = slot.resolved_sure_dk()
                     if hedef and _used_for(slot) + sure > hedef:
                         skipped_quota += 1
+                        continue
+                    try:
+                        warnings.extend(check_all_for_occurrence(
+                            ogretmen_id=slot.ogretmen_id,
+                            ogrenci_id=program.ogrenci_id,
+                            oda_id=slot.oda_id,
+                            kurum_id=kurum_id,
+                            sube_id=sube_id,
+                            session_date=day,
+                            start=slot.baslangic,
+                            end=slot.bitis,
+                            exclude_id=existing.id,
+                            skip_holiday=False,
+                        ))
+                    except OzelDersError:
+                        skipped_conflict += 1
                         continue
                     existing.is_active = True
                     existing.start_time = slot.baslangic
@@ -344,7 +400,9 @@ def materialize_program(
                 skipped_existing += 1
                 continue
             today = timezone.localdate()
-            if _oturum_can_follow_slot(existing, today) and _apply_slot_fields(existing, slot):
+            if _oturum_can_follow_slot(existing, today) and _apply_slot_fields(
+                existing, slot, keep_teacher=True,
+            ):
                 updated += 1
             else:
                 skipped_existing += 1

@@ -151,7 +151,9 @@ class SlotOturumSyncTests(TestCase):
         self.assertEqual(planned.ogretmen_id, self.ogretmen2.id)
         self.assertEqual(planned.ders_id, self.ders2.id)
 
-    def test_gun_degisince_gelecek_eski_gun_kapanir(self):
+    @patch('apps.ozel_ders.services.materialize_service.list_holidays', return_value=[])
+    @patch('apps.ozel_ders.services.materialize_service.is_holiday', return_value=False)
+    def test_gun_degisince_gelecek_eski_gun_kapanir(self, _is_holiday, _list_holidays):
         future = self._oturum(self._next_weekday(self.gun))
         new_gun = (self.gun % 7) + 1
 

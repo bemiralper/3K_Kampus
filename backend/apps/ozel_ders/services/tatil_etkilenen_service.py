@@ -290,6 +290,7 @@ def set_cevre_tatil(
             'date': target.isoformat(),
             'aktif': False,
             'kaynak_id': kaynak_id,
+            'sessions': _apply_to_sessions(kurum_id, target),
         }
 
     integration = CalendarIntegrationService()
@@ -337,4 +338,11 @@ def set_cevre_tatil(
         'date': target.isoformat(),
         'aktif': True,
         'kaynak_id': kaynak_id,
+        'sessions': _apply_to_sessions(kurum_id, target),
     }
+
+
+def _apply_to_sessions(kurum_id: int, day: date) -> dict:
+    from apps.ozel_ders.services.resmi_tatil_karar_service import apply_karar_to_sessions
+
+    return apply_karar_to_sessions(kurum_id=kurum_id, sube_id=None, day=day)

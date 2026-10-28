@@ -13,7 +13,9 @@ from apps.ozel_ders.domain.models import (
     OturumDurumu,
     OturumTuru,
     ProgramDurumu,
+    TelafiDurumu,
 )
+from apps.ozel_ders.services import closure_marks
 from apps.ozel_ders.services.conflict_service import (
     check_all_for_occurrence,
     is_holiday,
@@ -202,13 +204,40 @@ def set_ogrenci_ders_tatil(
                 if existing.durum in ATTENDED and existing.is_active:
                     skipped += 1
                     continue
-                if not existing.is_active or existing.durum == OturumDurumu.IPTAL:
-                    existing.is_active = True
-                    existing.durum = OturumDurumu.PLANLANDI
-                    existing.save(update_fields=['is_active', 'durum'])
-                    restored += 1
-                else:
+                if existing.is_active and existing.durum != OturumDurumu.IPTAL:
                     skipped += 1
+                    continue
+                if existing.durum not in (OturumDurumu.PLANLANDI, OturumDurumu.IPTAL):
+                    skipped += 1
+                    continue
+                if existing.durum == OturumDurumu.IPTAL and (
+                    existing.telafi_durumu != TelafiDurumu.GEREKMIYOR
+                    or existing.telafi_oturumlari.filter(is_active=True).exists()
+                ):
+                    # Telafi zinciri olan iptal dersi geri açılırsa çift ders / borç oluşur.
+                    skipped += 1
+                    continue
+                check_all_for_occurrence(
+                    ogretmen_id=existing.ogretmen_id,
+                    ogrenci_id=ogrenci_id,
+                    oda_id=existing.oda_id,
+                    kurum_id=kurum_id,
+                    sube_id=sube_id,
+                    session_date=day,
+                    start=existing.start_time,
+                    end=existing.end_time,
+                    exclude_id=existing.id,
+                    skip_holiday=False,
+                )
+                existing.is_active = True
+                existing.durum = OturumDurumu.PLANLANDI
+                existing.sebep_kodu = ''
+                existing.sebep_aciklama = ''
+                existing.telafi_durumu = TelafiDurumu.GEREKMIYOR
+                existing.save(update_fields=[
+                    'is_active', 'durum', 'sebep_kodu', 'sebep_aciklama', 'telafi_durumu', 'updated_at',
+                ])
+                restored += 1
                 continue
             check_all_for_occurrence(
                 ogretmen_id=slot.ogretmen_id,
@@ -256,8 +285,11 @@ def set_ogrenci_ders_tatil(
                     'İşlenmiş ders tatil yapılamaz.',
                     'attended',
                 )
-            oturum.is_active = False
-            oturum.save(update_fields=['is_active'])
+            if oturum.durum == OturumDurumu.PLANLANDI:
+                closure_marks.close_with_mark(oturum, closure_marks.OGRENCI_TATIL)
+            else:
+                oturum.is_active = False
+                oturum.save(update_fields=['is_active', 'updated_at'])
             skipped += 1
         label = 'Ders tatil olarak atlandı'
 

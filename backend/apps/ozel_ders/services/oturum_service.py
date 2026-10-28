@@ -10,6 +10,7 @@ from django.utils import timezone
 from apps.ozel_ders.domain.models import (
     BirebirDersOturumu,
     BirebirOgrenciProgrami,
+    HakedisDurumu,
     OturumDurumu,
     OturumTuru,
     ProgramDurumu,
@@ -19,9 +20,21 @@ from apps.ozel_ders.domain.models import (
 from apps.ozel_ders.services.conflict_service import check_all_for_occurrence
 from apps.ozel_ders.services.errors import OzelDersError
 from apps.ozel_ders.services.hakedis_service import sync_hakedis_for_oturum
+from apps.ozel_ders.services.scope_guard import (
+    ensure_ders,
+    ensure_oda,
+    ensure_ogrenci,
+    ensure_ogretmen,
+    ensure_oturum,
+    ensure_program,
+)
 
 
 PAYABLE_STATUSES = {OturumDurumu.ISLENDI, OturumDurumu.ONLINE}
+ATTENDANCE_STATUSES = PAYABLE_STATUSES | {
+    OturumDurumu.OGRETMEN_GELMEDI,
+    OturumDurumu.OGRENCI_GELMEDI,
+}
 REASON_REQUIRED = {
     OturumDurumu.OGRETMEN_GELMEDI,
     OturumDurumu.OGRENCI_GELMEDI,
@@ -160,6 +173,7 @@ def serialize_oturum(o: BirebirDersOturumu, *, include_bildirimler: bool = True)
         'notes': o.notes,
         'is_active': o.is_active,
         'has_hakedis': _has_active_hakedis(o),
+        'hakedis_durum': getattr(_hakedis_or_none(o), 'durum', None),
     }
     if include_bildirimler:
         from apps.ozel_ders.services.notify_service import serialize_bildirimler
@@ -169,13 +183,31 @@ def serialize_oturum(o: BirebirDersOturumu, *, include_bildirimler: bool = True)
     return data
 
 
-def _has_active_hakedis(o: BirebirDersOturumu) -> bool:
+def _hakedis_or_none(o: BirebirDersOturumu):
     from django.core.exceptions import ObjectDoesNotExist
     try:
-        h = o.hakedis
+        return o.hakedis
     except ObjectDoesNotExist:
-        return False
+        return None
+
+
+def _has_active_hakedis(o: BirebirDersOturumu) -> bool:
+    h = _hakedis_or_none(o)
     return h is not None and h.durum != 'IPTAL'
+
+
+def _active_telafi_child(o: BirebirDersOturumu) -> BirebirDersOturumu | None:
+    return (
+        o.telafi_oturumlari.filter(is_active=True)
+        .exclude(durum=OturumDurumu.IPTAL)
+        .order_by('-id')
+        .first()
+    )
+
+
+def lock_oturum(oturum_id) -> None:
+    """Aynı oturum üzerinde eşzamanlı yoklama / telafi işlemlerini sıraya sokar."""
+    list(BirebirDersOturumu.objects.select_for_update().filter(pk=oturum_id).values_list('pk', flat=True))
 
 
 def _parse_time(value) -> time:
@@ -309,6 +341,24 @@ def _create_oturum_record(
         if not data.get(key):
             raise OzelDersError(f'{key} zorunlu.', key)
 
+    data = dict(data)
+    data['ogrenci_id'] = ensure_ogrenci(data['ogrenci_id'], kurum_id=kurum_id)
+    data['ders_id'] = ensure_ders(data['ders_id'], kurum_id=kurum_id)
+    data['ogretmen_id'] = ensure_ogretmen(data['ogretmen_id'], kurum_id=kurum_id)
+    data['oda_id'] = ensure_oda(data.get('oda_id'), kurum_id=kurum_id)
+    data['program_id'] = ensure_program(
+        data.get('program_id'), kurum_id=kurum_id, sube_id=sube_id, ogrenci_id=data['ogrenci_id'],
+    )
+    data['replaces_oturum_id'] = ensure_oturum(
+        data.get('replaces_oturum_id'), kurum_id=kurum_id, sube_id=sube_id, ogrenci_id=data['ogrenci_id'],
+    )
+    oturum_turu = data.get('oturum_turu') or OturumTuru.OZEL
+    if oturum_turu not in OturumTuru.values:
+        raise OzelDersError('Geçersiz ders türü.', 'oturum_turu')
+    telafi_durumu = data.get('telafi_durumu') or TelafiDurumu.GEREKMIYOR
+    if telafi_durumu not in TelafiDurumu.values:
+        raise OzelDersError('Geçersiz telafi durumu.', 'telafi_durumu')
+
     session_date = _parse_date(data['session_date'])
     start = _parse_time(data['start_time'])
     end = _parse_time(data['end_time'])
@@ -335,9 +385,9 @@ def _create_oturum_record(
         ders_id=data['ders_id'],
         ogretmen_id=data['ogretmen_id'],
         oda_id=data.get('oda_id'),
-        oturum_turu=data.get('oturum_turu') or OturumTuru.OZEL,
+        oturum_turu=oturum_turu,
         durum=OturumDurumu.PLANLANDI,
-        telafi_durumu=data.get('telafi_durumu') or TelafiDurumu.GEREKMIYOR,
+        telafi_durumu=telafi_durumu,
         replaces_oturum_id=data.get('replaces_oturum_id'),
         notes=data.get('notes') or '',
         created_by=user if user and getattr(user, 'is_authenticated', False) else None,
@@ -386,9 +436,12 @@ def _resolve_telafi_durumu(
 ) -> str:
     if new_durum in (OturumDurumu.ISLENDI, OturumDurumu.ONLINE):
         return TelafiDurumu.GEREKMIYOR
+    if new_durum == OturumDurumu.IPTAL and oturum.oturum_turu == OturumTuru.TELAFI:
+        # İptal edilen telafinin borcu kaynak derse döner; ikinci bir borç açılmaz.
+        return TelafiDurumu.GEREKMIYOR
     if new_durum == OturumDurumu.OGRETMEN_GELMEDI:
         # Aktif telafi çocuğu varsa PLANLANDI/EDILDI korunabilir; yoksa BEKLENIYOR
-        child = oturum.telafi_oturumlari.filter(is_active=True).order_by('-id').first()
+        child = _active_telafi_child(oturum)
         if child:
             if child.durum in PAYABLE_STATUSES:
                 return TelafiDurumu.EDILDI
@@ -404,7 +457,7 @@ def _resolve_telafi_durumu(
                 'telafi_durumu',
             )
         # Zaten planlanmış çocuk varsa kullanıcı GEREKMIYOR dese bile ilişkiyi bozma
-        child = oturum.telafi_oturumlari.filter(is_active=True).order_by('-id').first()
+        child = _active_telafi_child(oturum)
         if child and telafi_durumu == TelafiDurumu.BEKLENIYOR:
             if child.durum in PAYABLE_STATUSES:
                 return TelafiDurumu.EDILDI
@@ -415,16 +468,51 @@ def _resolve_telafi_durumu(
     return oturum.telafi_durumu or TelafiDurumu.GEREKMIYOR
 
 
-def _mark_kaynak_telafi_edildi(telafi: BirebirDersOturumu) -> None:
-    """Telafi dersi işlenince kaynak zincirinde EDILDI."""
+def _ancestors(telafi: BirebirDersOturumu, limit: int = 10) -> list[BirebirDersOturumu]:
+    chain: list[BirebirDersOturumu] = []
+    seen = {telafi.id}
+    parent_id = telafi.replaces_oturum_id
+    while parent_id and parent_id not in seen and len(chain) < limit:
+        parent = BirebirDersOturumu.objects.filter(pk=parent_id).first()
+        if not parent:
+            break
+        chain.append(parent)
+        seen.add(parent.id)
+        parent_id = parent.replaces_oturum_id
+    return chain
+
+
+def _set_telafi_durumu(o: BirebirDersOturumu, value: str) -> None:
+    if o.telafi_durumu != value:
+        o.telafi_durumu = value
+        o.save(update_fields=['telafi_durumu', 'updated_at'])
+
+
+def _sync_kaynak_chain(telafi: BirebirDersOturumu) -> None:
+    """Telafi dersinin yoklamasına göre kaynak zincirini hizalar.
+
+    İşlendi → tüm üst dersler "telafi edildi".
+    İptal → borç doğrudan kaynağa döner ("telafi bekleniyor").
+    Planlandı / gelmedi → üst dersler "telafi planlandı" (borcu bu telafi taşır).
+    """
     if not telafi.replaces_oturum_id:
         return
-    kaynak = BirebirDersOturumu.objects.filter(pk=telafi.replaces_oturum_id).first()
-    if not kaynak:
+    chain = _ancestors(telafi)
+    if not chain:
         return
-    if kaynak.telafi_durumu != TelafiDurumu.EDILDI:
-        kaynak.telafi_durumu = TelafiDurumu.EDILDI
-        kaynak.save(update_fields=['telafi_durumu', 'updated_at'])
+    if telafi.durum in PAYABLE_STATUSES:
+        for parent in chain:
+            if parent.telafi_durumu in (TelafiDurumu.PLANLANDI, TelafiDurumu.BEKLENIYOR):
+                _set_telafi_durumu(parent, TelafiDurumu.EDILDI)
+        return
+    if telafi.durum == OturumDurumu.IPTAL:
+        parent = chain[0]
+        if parent.telafi_durumu in (TelafiDurumu.PLANLANDI, TelafiDurumu.EDILDI) and _active_telafi_child(parent) is None:
+            _set_telafi_durumu(parent, TelafiDurumu.BEKLENIYOR)
+        return
+    for parent in chain:
+        if parent.telafi_durumu == TelafiDurumu.EDILDI:
+            _set_telafi_durumu(parent, TelafiDurumu.PLANLANDI)
 
 
 @transaction.atomic
@@ -436,6 +524,7 @@ def create_telafi(
     sube_id: int,
     user=None,
 ) -> tuple[BirebirDersOturumu, list[dict]]:
+    lock_oturum(source_oturum_id)
     source = get_oturum(source_oturum_id, kurum_id=kurum_id, sube_id=sube_id)
     if source.telafi_durumu != TelafiDurumu.BEKLENIYOR:
         raise OzelDersError(
@@ -458,14 +547,19 @@ def create_telafi(
         'replaces_oturum_id': source.id,
         'notes': data.get('notes') or f'Telafi: oturum #{source.id}',
     }
+    if _active_telafi_child(source) is not None:
+        raise OzelDersError('Bu ders için zaten planlanmış bir telafi var.', 'telafi_exists')
     oturum, warnings = _create_oturum_record(payload, kurum_id=kurum_id, sube_id=sube_id, user=user)
 
     source.telafi_durumu = TelafiDurumu.PLANLANDI
     source.save(update_fields=['telafi_durumu', 'updated_at'])
 
-    user_id = getattr(user, 'id', None) if user else None
-    from apps.ozel_ders.services.notify_service import notify_telafi_planlandi
-    notify_telafi_planlandi(source, oturum, sent_by_user_id=user_id)
+    if data.get('send_whatsapp', True) is not False:
+        user_id = getattr(user, 'id', None) if user else None
+        from apps.ozel_ders.services.notify_service import notify_telafi_planlandi
+        notify_telafi_planlandi(
+            source, oturum, sent_by_user_id=user_id, veli_notu=data.get('veli_notu') or '',
+        )
 
     return oturum, warnings
 
@@ -487,13 +581,14 @@ def vazgec_telafi(
 ) -> BirebirDersOturumu:
     """Bekleyen telafi borcunu kapatır. Yoklama, sebep ve hakediş durur; çocuk oturum açılmaz."""
     del user
+    lock_oturum(oturum_id)
     oturum = get_oturum(oturum_id, kurum_id=kurum_id, sube_id=sube_id)
     if oturum.telafi_durumu != TelafiDurumu.BEKLENIYOR:
         raise OzelDersError(
             'Yalnızca telafi bekleyen derslerden vazgeçilebilir.',
             'telafi_durumu',
         )
-    if oturum.telafi_oturumlari.filter(is_active=True).exists():
+    if _active_telafi_child(oturum) is not None:
         raise OzelDersError(
             'Bu dersin planlanmış bir telafisi var. Önce o oturumu iptal edin.',
             'telafi_oturum',
@@ -540,8 +635,10 @@ def set_durum(
     sebep_aciklama: str | None = None,
     telafi_durumu: str | None = None,
     send_whatsapp: bool | None = None,
+    veli_notu: str | None = None,
     user=None,
 ) -> BirebirDersOturumu:
+    lock_oturum(oturum_id)
     oturum = get_oturum(oturum_id, kurum_id=kurum_id, sube_id=sube_id)
     if new_durum not in OturumDurumu.values:
         raise OzelDersError('Geçersiz durum.', 'durum')
@@ -553,13 +650,30 @@ def set_durum(
             'invalid_transition',
         )
 
-    if oturum.durum in PAYABLE_STATUSES and new_durum not in PAYABLE_STATUSES:
-        h = getattr(oturum, 'hakedis', None)
-        if h and h.durum == 'BORDOYA_ISLENDI':
+    if new_durum != oturum.durum:
+        h = _hakedis_or_none(oturum)
+        if h and h.durum == HakedisDurumu.BORDOYA_ISLENDI:
             raise OzelDersError(
                 'Bordroya işlenmiş oturumun durumu değiştirilemez.',
                 'bordro_locked',
             )
+        if h and h.durum == HakedisDurumu.ONAYLANDI:
+            raise OzelDersError(
+                'Bu dersin hakedişi onaylandı. Durumu değiştirmek için önce Hakediş Takibi’nden hakedişi iptal edin.',
+                'hakedis_locked',
+            )
+
+    if new_durum in ATTENDANCE_STATUSES and oturum.session_date > timezone.localdate():
+        raise OzelDersError(
+            'Henüz gerçekleşmemiş bir ders için yoklama girilemez.',
+            'future_session',
+        )
+
+    if new_durum in PAYABLE_STATUSES | {OturumDurumu.PLANLANDI} and _active_telafi_child(oturum) is not None:
+        raise OzelDersError(
+            'Bu dersin telafisi planlandı. Bu değişiklik için önce telafi dersini iptal edin.',
+            'telafi_exists',
+        )
 
     kod, aciklama = _validate_sebep(new_durum, sebep_kodu, sebep_aciklama)
     resolved_telafi = _resolve_telafi_durumu(oturum, new_durum, telafi_durumu)
@@ -573,8 +687,8 @@ def set_durum(
     oturum.save()
     sync_hakedis_for_oturum(oturum)
 
-    if new_durum in PAYABLE_STATUSES and oturum.oturum_turu == OturumTuru.TELAFI:
-        _mark_kaynak_telafi_edildi(oturum)
+    if oturum.oturum_turu == OturumTuru.TELAFI:
+        _sync_kaynak_chain(oturum)
 
     # WhatsApp varsayılanları
     if send_whatsapp is None:
@@ -592,6 +706,7 @@ def set_durum(
         oturum,
         send_whatsapp=bool(send_whatsapp),
         sent_by_user_id=getattr(user, 'id', None) if user else None,
+        veli_notu=veli_notu or '',
     )
 
     return get_oturum(oturum.id, kurum_id=kurum_id, sube_id=sube_id)
@@ -605,6 +720,10 @@ def change_teacher(
     kurum_id: int,
     sube_id: int,
 ) -> tuple[BirebirDersOturumu, list[dict]]:
+    if not ogretmen_id:
+        raise OzelDersError('Öğretmen seçimi zorunlu.', 'ogretmen_id')
+    ogretmen_id = ensure_ogretmen(ogretmen_id, kurum_id=kurum_id)
+    lock_oturum(oturum_id)
     oturum = get_oturum(oturum_id, kurum_id=kurum_id, sube_id=sube_id)
     if oturum.durum != OturumDurumu.PLANLANDI:
         raise OzelDersError('Sadece planlı oturumlarda öğretmen değiştirilebilir.', 'status')

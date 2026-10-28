@@ -4,6 +4,8 @@ export type SlotSureForm = {
   baslangic_tarihi: string;
   bitis_tarihi: string;
   hedef_saat: string;
+  /** Kayıttaki dakika; saat alanı değişmediyse yuvarlanmadan geri gönderilir. */
+  hedef_dakika_kayitli?: number | null;
 };
 
 export const EMPTY_SLOT_SURE: SlotSureForm = {
@@ -11,6 +13,10 @@ export const EMPTY_SLOT_SURE: SlotSureForm = {
   bitis_tarihi: '',
   hedef_saat: '',
 };
+
+function saatText(dk: number): string {
+  return String(Math.round((dk / 60) * 100) / 100);
+}
 
 export function slotSureFromLesson(lesson: {
   baslangic_tarihi?: string | null;
@@ -21,17 +27,24 @@ export function slotSureFromLesson(lesson: {
   return {
     baslangic_tarihi: lesson.baslangic_tarihi || '',
     bitis_tarihi: lesson.bitis_tarihi || '',
-    hedef_saat: dk ? String(Math.round((dk / 60) * 10) / 10) : '',
+    hedef_saat: dk ? saatText(dk) : '',
+    hedef_dakika_kayitli: dk ?? null,
   };
 }
 
 export function slotSurePayload(form: SlotSureForm) {
   const raw = form.hedef_saat.trim().replace(',', '.');
   const saat = raw === '' ? null : Number(raw);
+  const kayitli = form.hedef_dakika_kayitli;
+  const unchanged = kayitli != null && kayitli > 0 && raw === saatText(kayitli);
   return {
     baslangic_tarihi: form.baslangic_tarihi || null,
     bitis_tarihi: form.bitis_tarihi || null,
-    hedef_dakika: saat == null || Number.isNaN(saat) || saat <= 0 ? null : Math.round(saat * 60),
+    hedef_dakika: unchanged
+      ? kayitli
+      : saat == null || Number.isNaN(saat) || saat <= 0
+        ? null
+        : Math.round(saat * 60),
   };
 }
 
@@ -43,7 +56,7 @@ export function addWeeksToDate(start: string, weeks: number): string {
 export function formatSaatFromDakika(dk: number | null | undefined): string {
   if (!dk) return '';
   const saat = dk / 60;
-  return Number.isInteger(saat) ? String(saat) : saat.toFixed(1).replace('.', ',');
+  return Number.isInteger(saat) ? String(saat) : String(Math.round(saat * 100) / 100).replace('.', ',');
 }
 
 export function slotSureHint(form: SlotSureForm, opts: { gunLabel?: string; saat?: string }): string {

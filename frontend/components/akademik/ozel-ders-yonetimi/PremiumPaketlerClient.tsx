@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiFetch } from '@/lib/api';
 import {
   fetchPremiumKota,
@@ -28,6 +28,7 @@ export default function PremiumPaketlerClient() {
   >([{ ders_id: '', haftalik_adet: '1', varsayilan_sure_dk: '60' }]);
   const [suggestions, setSuggestions] = useState<Record<string, unknown>[]>([]);
   const [saving, setSaving] = useState(false);
+  const [kotaLoading, setKotaLoading] = useState(false);
   const [suggesting, setSuggesting] = useState(false);
 
   const loadPaketler = useCallback(async () => {
@@ -47,10 +48,17 @@ export default function PremiumPaketlerClient() {
     setPaketId((prev) => prev ?? (list[0] as PremiumPaketBrief)?.id ?? null);
   }, [ready]);
 
+  const paketRef = useRef<number | null>(null);
+  paketRef.current = paketId;
+
   const loadKota = useCallback(async () => {
     if (!paketId) return;
+    setKotalar([]);
+    setSuggestions([]);
+    setKotaLoading(true);
     try {
       const data = await fetchPremiumKota(paketId);
+      if (paketRef.current !== paketId) return;
       setKotalar(data);
       setSuggestions([]);
       setRows(
@@ -63,7 +71,10 @@ export default function PremiumPaketlerClient() {
           : [{ ders_id: '', haftalik_adet: '1', varsayilan_sure_dk: '60' }],
       );
     } catch (e) {
+      if (paketRef.current !== paketId) return;
       show(e instanceof Error ? e.message : 'Kota yüklenemedi', 'error');
+    } finally {
+      if (paketRef.current === paketId) setKotaLoading(false);
     }
   }, [paketId, show]);
 
@@ -78,6 +89,7 @@ export default function PremiumPaketlerClient() {
   async function onSave(e: React.FormEvent) {
     e.preventDefault();
     if (!paketId) return;
+    const target = paketId;
     setSaving(true);
     try {
       const payload = rows
@@ -87,8 +99,8 @@ export default function PremiumPaketlerClient() {
           haftalik_adet: Number(r.haftalik_adet || 1),
           varsayilan_sure_dk: Number(r.varsayilan_sure_dk || 60),
         }));
-      const data = await setPremiumKota(paketId, payload);
-      setKotalar(data);
+      const data = await setPremiumKota(target, payload);
+      if (paketRef.current === target) setKotalar(data);
       show('Kota kaydedildi.');
     } catch (err) {
       show(err instanceof Error ? err.message : 'Kayıt başarısız', 'error');
@@ -99,9 +111,11 @@ export default function PremiumPaketlerClient() {
 
   async function onSuggest() {
     if (!paketId) return;
+    const target = paketId;
     setSuggesting(true);
     try {
-      setSuggestions(await suggestPremiumSlots(paketId));
+      const data = await suggestPremiumSlots(target);
+      if (paketRef.current === target) setSuggestions(data);
     } catch (err) {
       show(err instanceof Error ? err.message : 'Öneri alınamadı', 'error');
     } finally {
@@ -136,6 +150,7 @@ export default function PremiumPaketlerClient() {
           <select
             className="od-select"
             value={paketId ?? ''}
+            disabled={saving}
             onChange={(e) => setPaketId(e.target.value ? Number(e.target.value) : null)}
           >
             <option value="">Paket seçin</option>
@@ -255,7 +270,7 @@ export default function PremiumPaketlerClient() {
                 <IconPlus size={13} /> Satır Ekle
               </button>
               <div style={{ flex: 1 }} />
-              <button type="submit" className="od-btn od-btn-primary" disabled={!paketId || saving}>
+              <button type="submit" className="od-btn od-btn-primary" disabled={!paketId || saving || kotaLoading}>
                 {saving ? 'Kaydediliyor…' : 'Kotayı Kaydet'}
               </button>
             </div>

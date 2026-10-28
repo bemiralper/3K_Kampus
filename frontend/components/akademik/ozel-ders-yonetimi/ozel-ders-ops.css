@@ -365,6 +365,12 @@
   background: #fff;
 }
 
+.od-ders-timeline-item.is-future {
+  background: #f8fafc;
+  border-style: dashed;
+  opacity: 0.85;
+}
+
 .od-ders-timeline-item.is-tatil {
   background: #fff7f4;
   border-color: #f3d0c7;

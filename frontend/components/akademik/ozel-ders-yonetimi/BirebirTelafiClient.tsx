@@ -5,6 +5,7 @@ import dayjs from 'dayjs';
 import 'dayjs/locale/tr';
 import {
   createTelafi,
+  withWarningText,
   fetchOturumlar,
   resolveDersLabel,
   vazgecTelafi,
@@ -22,13 +23,13 @@ import {
   IconRefresh,
   IconRotateCcw,
 } from './icons';
+import { TELAFI_AKTIF_GUN } from './oturumDurum';
 import './ozel-ders.css';
 import './telafi.css';
 
 dayjs.locale('tr');
 
 /** Güncel kuyruk. Daha eski bekleyenler ayrı, kapalı bölümde durur. */
-const TELAFI_AKTIF_GUN = 21;
 
 function splitQueue(rows: BirebirOturum[]) {
   const cutoff = dayjs().subtract(TELAFI_AKTIF_GUN, 'day').startOf('day');
@@ -129,6 +130,8 @@ export default function BirebirTelafiClient() {
     session_date: dayjs().add(1, 'day').format('YYYY-MM-DD'),
     start_time: '18:00',
     end_time: '19:00',
+    send_whatsapp: true,
+    veli_notu: '',
   });
 
   const load = useCallback(async () => {
@@ -200,8 +203,14 @@ export default function BirebirTelafiClient() {
     if (!sourceId) return;
     setSaving(true);
     try {
-      await createTelafi(sourceId, form);
-      show('Telafi dersi planlandı.');
+      const created = await createTelafi(sourceId, {
+        session_date: form.session_date,
+        start_time: form.start_time,
+        end_time: form.end_time,
+        send_whatsapp: form.send_whatsapp,
+        veli_notu: form.send_whatsapp ? form.veli_notu.trim() : '',
+      });
+      show(withWarningText('Telafi dersi planlandı.', created));
       setSourceId(null);
       await load();
     } catch (err) {
@@ -284,6 +293,8 @@ export default function BirebirTelafiClient() {
                       session_date: dayjs().add(1, 'day').format('YYYY-MM-DD'),
                       start_time: r.start_time.slice(0, 5),
                       end_time: r.end_time.slice(0, 5),
+                      send_whatsapp: true,
+                      veli_notu: '',
                     });
                   }}
                   onAsk={() => setAskId(r.id)}
@@ -343,6 +354,8 @@ export default function BirebirTelafiClient() {
                         session_date: dayjs().add(1, 'day').format('YYYY-MM-DD'),
                         start_time: r.start_time.slice(0, 5),
                         end_time: r.end_time.slice(0, 5),
+                        send_whatsapp: true,
+                        veli_notu: '',
                       });
                     }}
                     onAsk={() => setAskId(r.id)}
@@ -462,6 +475,25 @@ export default function BirebirTelafiClient() {
               />
             </div>
           </div>
+          <label className="od-checkbox-row">
+            <input
+              type="checkbox"
+              checked={form.send_whatsapp}
+              onChange={(e) => setForm((f) => ({ ...f, send_whatsapp: e.target.checked }))}
+            />
+            Veliye WhatsApp bildirimi gönder — Özel Ders Telafi Bilgilendirmesi
+          </label>
+          {form.send_whatsapp && (
+            <div className="od-form-group">
+              <label>Veliye ek bilgi</label>
+              <textarea
+                rows={2}
+                value={form.veli_notu}
+                onChange={(e) => setForm((f) => ({ ...f, veli_notu: e.target.value }))}
+                placeholder="İsteğe bağlı; WhatsApp mesajına eklenir"
+              />
+            </div>
+          )}
           <span className="od-form-hint">
             Ders, öğrenci ve öğretmen kaynak oturumdan otomatik devralınır.
           </span>

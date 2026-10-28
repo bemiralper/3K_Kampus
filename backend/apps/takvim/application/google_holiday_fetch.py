@@ -66,17 +66,38 @@ def _fetch_ics_http() -> str:
         raise primary_err
 
 
+STALE_CACHE_KEY = f'{CACHE_KEY}:stale'
+STALE_CACHE_TTL = 60 * 60 * 24 * 30
+FAIL_CACHE_KEY = f'{CACHE_KEY}:fail'
+# Erişilemeyen Google'a her tatil kontrolünde 25+30 sn beklenmesin.
+FAIL_CACHE_TTL = 60 * 10
+
+
 def fetch_ics(force: bool = False) -> str:
     if not force:
         cached = cache.get(CACHE_KEY)
         if cached:
             return cached
+        if cache.get(FAIL_CACHE_KEY):
+            stale = cache.get(STALE_CACHE_KEY)
+            if stale:
+                return stale
+            raise OSError('Google tatil ICS kısa süre önce alınamadı; tekrar deneme bekleniyor')
 
-    raw = _fetch_ics_http()
-    if 'BEGIN:VCALENDAR' not in raw:
-        raise ValueError('Google tatil ICS geçersiz yanıt')
+    try:
+        raw = _fetch_ics_http()
+        if 'BEGIN:VCALENDAR' not in raw:
+            raise ValueError('Google tatil ICS geçersiz yanıt')
+    except Exception:
+        cache.set(FAIL_CACHE_KEY, 1, FAIL_CACHE_TTL)
+        stale = None if force else cache.get(STALE_CACHE_KEY)
+        if stale:
+            return stale
+        raise
 
     cache.set(CACHE_KEY, raw, CACHE_TTL)
+    cache.set(STALE_CACHE_KEY, raw, STALE_CACHE_TTL)
+    cache.delete(FAIL_CACHE_KEY)
     return raw
 
 

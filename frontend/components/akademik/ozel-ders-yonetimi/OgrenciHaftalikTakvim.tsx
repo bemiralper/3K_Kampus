@@ -210,8 +210,11 @@ export default function OgrenciHaftalikTakvim({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement | null)?.tagName;
-      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+      if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const el = e.target as HTMLElement | null;
+      const tag = el?.tagName;
+      if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA' || el?.isContentEditable) return;
+      if (document.querySelector('[role="dialog"][aria-modal="true"]')) return;
       if (e.key === 'ArrowLeft') onPrevWeek();
       if (e.key === 'ArrowRight') onNextWeek();
     }

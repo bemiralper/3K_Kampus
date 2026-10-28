@@ -9,6 +9,8 @@ import {
   createOturum,
   createTelafi,
   ensureOturumlar,
+  fetchOturum,
+  withWarningText,
   fetchOturumlar,
   fetchProgramlar,
   fetchTatiller,
@@ -98,6 +100,22 @@ const DATE_PRESETS: { key: string; label: string; start: () => string; end: () =
   },
 ];
 
+function emptyCreateForm() {
+  return {
+    ders_turu: 'NORMAL' as 'NORMAL' | 'TELAFI',
+    telafi_kaynak_id: '',
+    session_date: dayjs().format('YYYY-MM-DD'),
+    start_time: '18:00',
+    end_time: '19:00',
+    ogrenci_id: '',
+    ogrenci_ad: '',
+    ders_id: '',
+    ogretmen_id: '',
+    oturum_turu: 'OZEL',
+    notes: '',
+  };
+}
+
 export default function BirebirOturumlarClient() {
   const searchParams = useSearchParams();
   const { meta, ready, egitimYiliId, error: metaError } = useOzelDersMeta();
@@ -127,6 +145,7 @@ export default function BirebirOturumlarClient() {
   const [createHoliday, setCreateHoliday] = useState<OzelDersTatil | null>(null);
   const [etkilenenDay, setEtkilenenDay] = useState<OzelDersTatil | null>(null);
   const [deeplinkApplied, setDeeplinkApplied] = useState(false);
+  const [listLoaded, setListLoaded] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -134,19 +153,7 @@ export default function BirebirOturumlarClient() {
   const [students, setStudents] = useState<KutuphaneStudentOption[]>([]);
   const [studentDersler, setStudentDersler] = useState<PaketDersi[]>([]);
   const [telafiCandidates, setTelafiCandidates] = useState<BirebirOturum[]>([]);
-  const [form, setForm] = useState({
-    ders_turu: 'NORMAL' as 'NORMAL' | 'TELAFI',
-    telafi_kaynak_id: '',
-    session_date: dayjs().format('YYYY-MM-DD'),
-    start_time: '18:00',
-    end_time: '19:00',
-    ogrenci_id: '',
-    ogrenci_ad: '',
-    ders_id: '',
-    ogretmen_id: '',
-    oturum_turu: 'OZEL',
-    notes: '',
-  });
+  const [form, setForm] = useState(emptyCreateForm);
 
   const [yoklamaTarget, setYoklamaTarget] = useState<{
     oturumId: number;
@@ -201,6 +208,7 @@ export default function BirebirOturumlarClient() {
       setRows(oturumlar);
       setHolidays(tatiller);
       setLoading(false);
+      setListLoaded(true);
       if (tatiller.length) {
         const entries = await Promise.all(
           tatiller.map(async (h) => {
@@ -293,15 +301,25 @@ export default function BirebirOturumlarClient() {
   }, [studentDersler, meta?.dersler]);
 
   useEffect(() => {
-    if (studentQ.trim().length < 2) {
+    if (studentQ.trim().length < 2 || (form.ogrenci_id && studentQ === form.ogrenci_ad)) {
       setStudents([]);
       return;
     }
+    let cancelled = false;
     const t = setTimeout(() => {
-      searchKutuphaneStudents(studentQ).then(setStudents).catch(() => setStudents([]));
+      searchKutuphaneStudents(studentQ)
+        .then((list) => {
+          if (!cancelled) setStudents(list);
+        })
+        .catch(() => {
+          if (!cancelled) setStudents([]);
+        });
     }, 250);
-    return () => clearTimeout(t);
-  }, [studentQ]);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [studentQ, form.ogrenci_id, form.ogrenci_ad]);
 
   useEffect(() => {
     if (!createOpen || !ready || !form.session_date) {
@@ -414,16 +432,17 @@ export default function BirebirOturumlarClient() {
   }
 
   useEffect(() => {
-    if (!ready || deeplinkApplied || !urlOturumId || loading) return;
+    if (!ready || deeplinkApplied || !urlOturumId || loading || !listLoaded) return;
+    setDeeplinkApplied(true);
     const hit = rows.find((r) => r.id === urlOturumId);
     if (hit) {
       openDetail(hit);
-      setDeeplinkApplied(true);
       return;
     }
-    // Liste yüklendi, oturum bulunamadı
-    setDeeplinkApplied(true);
-  }, [ready, deeplinkApplied, urlOturumId, rows, loading]);
+    fetchOturum(urlOturumId)
+      .then((o) => openDetail(o))
+      .catch(() => show('Bağlantıdaki ders bulunamadı.', 'error'));
+  }, [ready, deeplinkApplied, urlOturumId, rows, loading, listLoaded]);
 
   async function onCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -441,14 +460,14 @@ export default function BirebirOturumlarClient() {
           show('Telafi için kaynak ders seçin.', 'error');
           return;
         }
-        await createTelafi(Number(form.telafi_kaynak_id), {
+        const created = await createTelafi(Number(form.telafi_kaynak_id), {
           session_date: form.session_date,
           start_time: form.start_time,
           end_time: form.end_time,
         });
-        show('Telafi dersi oluşturuldu.');
+        show(withWarningText('Telafi dersi oluşturuldu.', created));
       } else {
-        await createOturum({
+        const created = await createOturum({
           session_date: form.session_date,
           start_time: form.start_time,
           end_time: form.end_time,
@@ -459,10 +478,12 @@ export default function BirebirOturumlarClient() {
           notes: form.notes || undefined,
           egitim_yili_id: egitimYiliId,
         });
-        show('Tek seferlik ders oluşturuldu.');
+        show(withWarningText('Tek seferlik ders oluşturuldu.', created));
       }
       setCreateOpen(false);
+      setForm(emptyCreateForm());
       setStudentQ('');
+      setStudents([]);
       await load();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Kayıt başarısız';
@@ -534,7 +555,7 @@ export default function BirebirOturumlarClient() {
       const updated = await changeOturumOgretmen(detail.id, Number(detailTeacher));
       setDetail(updated);
       setRows((prev) => prev.map((r) => (r.id === updated.id ? { ...r, ...updated } : r)));
-      show('Öğretmen güncellendi.');
+      show(withWarningText('Öğretmen güncellendi.', updated));
     } catch (e) {
       show(e instanceof Error ? e.message : 'Öğretmen değiştirilemedi', 'error');
     } finally {
@@ -556,7 +577,7 @@ export default function BirebirOturumlarClient() {
   }, [todayRows]);
 
   function renderTodayActions(r: BirebirOturum) {
-    const actions = yoklamaActionButtons(r.durum);
+    const actions = yoklamaActionButtons(r);
     if (actions.length === 0) return null;
     return (
       <div className="od-attend-actions">
@@ -628,7 +649,7 @@ export default function BirebirOturumlarClient() {
     return chips;
   }
 
-  const nextDurumlar = detail ? yoklamaActionButtons(detail.durum) : [];
+  const nextDurumlar = detail ? yoklamaActionButtons(detail) : [];
   const canChangeTeacher = detail ? detail.durum === 'PLANLANDI' : false;
   const telafiKaynak = telafiCandidates.find((c) => String(c.id) === form.telafi_kaynak_id) || null;
 
@@ -1023,7 +1044,16 @@ export default function BirebirOturumlarClient() {
                 <label>
                   Öğrenci <span className="req">*</span>
                 </label>
-                <input placeholder="Ad soyad ile arayın" value={studentQ} onChange={(e) => setStudentQ(e.target.value)} />
+                <input
+                  placeholder="Ad soyad ile arayın"
+                  value={studentQ}
+                  onChange={(e) => {
+                    setStudentQ(e.target.value);
+                    setForm((f) =>
+                      f.ogrenci_id ? { ...f, ogrenci_id: '', ogrenci_ad: '', ders_id: '' } : f,
+                    );
+                  }}
+                />
               </>
             )}
           </div>

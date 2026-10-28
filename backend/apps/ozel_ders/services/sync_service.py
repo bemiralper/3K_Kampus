@@ -9,7 +9,7 @@ import re
 from datetime import date
 from typing import Any, Optional
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import Q
 
 from apps.ozel_ders.domain.models import (
@@ -28,6 +28,18 @@ _PAKET_TURU_NORMALIZE = {
     'premium': 'premium',
     'premium_paketler': 'premium',
 }
+
+
+_LOCK_NS_OGRENCI = 7101
+_LOCK_NS_SUBE_SYNC = 7102
+
+
+def _advisory_xact_lock(namespace: int, key: int) -> None:
+    """Transaction sonuna kadar süren PostgreSQL kilidi — eşzamanlı senkron mükerrer program açmasın."""
+    if connection.vendor != 'postgresql' or not key:
+        return
+    with connection.cursor() as cursor:
+        cursor.execute('SELECT pg_advisory_xact_lock(%s, %s)', [namespace, int(key)])
 
 
 def normalize_paket_turu(paket_turu: Optional[str]) -> Optional[str]:
@@ -141,6 +153,7 @@ def ensure_program_for_package(
 
     if not all([ogrenci_id, kurum_id, sube_id, egitim_yili_id]):
         raise OzelDersError('Senkron için öğrenci/kurum/şube/yıl zorunlu.', 'sync_context')
+    _advisory_xact_lock(_LOCK_NS_OGRENCI, ogrenci_id)
 
     qs = BirebirOgrenciProgrami.objects.filter(
         kurum_id=kurum_id,
@@ -401,8 +414,15 @@ def deactivate_program_for_sozlesme_kalem(sozlesme, kalem, *, user=None) -> str:
         qs = qs.filter(ozel_ders_paket_id=kalem.kalem_id)
     else:
         qs = qs.filter(premium_paket_id=kalem.kalem_id)
-    updated = qs.update(durum=ProgramDurumu.PASIF, bitis_tarihi=date.today())
-    return 'deactivated' if updated else 'skipped'
+    from apps.ozel_ders.services.program_service import close_future_program_sessions
+
+    programs = list(qs)
+    for program in programs:
+        program.durum = ProgramDurumu.PASIF
+        program.bitis_tarihi = date.today()
+        program.save(update_fields=['durum', 'bitis_tarihi', 'updated_at'])
+        close_future_program_sessions(program)
+    return 'deactivated' if programs else 'skipped'
 
 
 def ensure_program_from_sozlesme(sozlesme, *, user=None) -> tuple[Optional[BirebirOgrenciProgrami], str]:
@@ -443,6 +463,7 @@ def sync_sube_programs(
 
     if not egitim_yili_id:
         raise OzelDersError('egitim_yili_id zorunlu.', 'egitim_yili_id')
+    _advisory_xact_lock(_LOCK_NS_SUBE_SYNC, sube_id)
 
     from apps.ogrenci.domain.models import OgrenciKayit
 

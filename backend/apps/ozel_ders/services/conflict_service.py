@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from typing import Optional
 
-from django.db.models import Q
+from django.db.models import F, Q
 
 from apps.ozel_ders.domain.models import BirebirDersOturumu, OturumDurumu
 from apps.ozel_ders.services.errors import OzelDersError
@@ -133,21 +133,48 @@ def _holiday_event_qs(kurum_id: int, sube_id: Optional[int]):
     return qs
 
 
+def _day_bounds(start: date, end: date) -> tuple[datetime, datetime]:
+    """Yerel saat diliminde [start 00:00, end 23:59:59] — naive datetime uyarısı ve UTC kayması olmasın."""
+    from django.utils import timezone
+
+    tz = timezone.get_current_timezone()
+    return (
+        timezone.make_aware(datetime.combine(start, time.min), tz),
+        timezone.make_aware(datetime.combine(end, time.max), tz),
+    )
+
+
+def _event_local_days(ev) -> tuple[date, date]:
+    """Etkinliğin yerel takvimde kapsadığı ilk ve son gün.
+
+    Tüm gün etkinliği gece yarısında (ertesi gün 00:00) bitiyorsa o gün dahil edilmez.
+    """
+    from django.utils import timezone
+
+    def local(value):
+        if timezone.is_aware(value):
+            return timezone.localtime(value)
+        return value
+
+    start = local(ev.baslangic)
+    end = local(ev.bitis) if ev.bitis else start
+    last = end.date()
+    if end > start and end.time() == time.min:
+        last = last - timedelta(days=1)
+    return start.date(), max(last, start.date())
+
+
 def _ozel_ders_aktif_on(kurum_id: int, sube_id: Optional[int], day: date) -> bool:
     """Kurum kararı: bu günde özel ders devam edecek mi?"""
     try:
         from apps.ozel_ders.domain.models import OzelDersTatilKarari
 
-        qs = OzelDersTatilKarari.objects.filter(
-            kurum_id=kurum_id,
-            tarih=day,
-            ozel_ders_aktif=True,
-        )
+        qs = OzelDersTatilKarari.objects.filter(kurum_id=kurum_id, tarih=day)
         if sube_id:
-            qs = qs.filter(Q(sube_id=sube_id) | Q(sube_id__isnull=True))
-        else:
-            qs = qs.filter(sube_id__isnull=True)
-        return qs.exists()
+            sube_kararlari = list(qs.filter(sube_id=sube_id).values_list('ozel_ders_aktif', flat=True))
+            if sube_kararlari:
+                return any(sube_kararlari)
+        return qs.filter(sube_id__isnull=True, ozel_ders_aktif=True).exists()
     except Exception:
         return False
 
@@ -171,11 +198,10 @@ def is_holiday(kurum_id: int, sube_id: Optional[int], day: date) -> bool:
     try:
         from apps.takvim.application.integration_service import KaynakModul
 
-        start_dt = datetime.combine(day, time.min)
-        end_dt = datetime.combine(day, time.max)
+        start_dt, end_dt = _day_bounds(day, day)
         events = list(
             _holiday_event_qs(kurum_id, sube_id)
-            .filter(baslangic__lte=end_dt, bitis__gte=start_dt)
+            .filter(baslangic__lte=end_dt, bitis__gt=start_dt)
             .only('kaynak_modul', 'kaynak_id', 'baslik')
         )
         if not events:
@@ -211,11 +237,10 @@ def list_holidays(
     try:
         from apps.takvim.application.integration_service import KaynakModul
 
-        start_dt = datetime.combine(start_date, time.min)
-        end_dt = datetime.combine(end_date, time.max)
+        start_dt, end_dt = _day_bounds(start_date, end_date)
         events = list(
             _holiday_event_qs(kurum_id, sube_id)
-            .filter(baslangic__lte=end_dt, bitis__gte=start_dt)
+            .filter(baslangic__lte=end_dt, bitis__gt=start_dt)
             .order_by('baslangic')
         )
         resmi_modul = KaynakModul.RESMI_TATIL
@@ -225,8 +250,9 @@ def list_holidays(
 
     by_day: dict[date, dict] = {}
     for ev in events:
-        day0 = max(ev.baslangic.date(), start_date)
-        day1 = min(ev.bitis.date(), end_date)
+        ev_first, ev_last = _event_local_days(ev)
+        day0 = max(ev_first, start_date)
+        day1 = min(ev_last, end_date)
         if day1 < day0:
             continue
         is_resmi = (ev.kaynak_modul or '') == resmi_modul
@@ -242,7 +268,7 @@ def list_holidays(
             by_day[cur] = {
                 'date': cur.isoformat(),
                 'title': ev.baslik or 'Tatil',
-                'bitis': ev.bitis.date().isoformat(),
+                'bitis': ev_last.isoformat(),
                 'holiday_key': (ev.kaynak_id or '') if (is_resmi or is_cevre) else '',
                 'source': source,
                 'ozel_ders_aktif': False,
@@ -280,7 +306,8 @@ def list_holidays(
             karar_qs = karar_qs.filter(Q(sube_id=sube_id) | Q(sube_id__isnull=True))
         else:
             karar_qs = karar_qs.filter(sube_id__isnull=True)
-        for k in karar_qs:
+        # Kurum geneli önce, şube kararı sonra — şube kararı geçerli olsun.
+        for k in karar_qs.order_by(F('sube_id').asc(nulls_first=True), 'id'):
             row = by_day.get(k.tarih)
             if not row:
                 continue
