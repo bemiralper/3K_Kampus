@@ -335,10 +335,13 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         )
         from ..views.curriculum_views import topic_is_bulk_dump
 
+        from ..services.exam_templates import companion_subject_ids_for_exam
+
         band = resolved_band(exam)
         linked_ids = set(
             exam.sections.exclude(subject_id=None).values_list('subject_id', flat=True)
         )
+        linked_ids.update(companion_subject_ids_for_exam(exam))
         if not linked_ids:
             return Response([])
         subjects = (
@@ -492,7 +495,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='bulk-assign-outcomes')
     def bulk_assign_outcomes(self, request, exam_pk=None, pk=None):
-        from ..views.curriculum_views import _match_single_text
+        from ..views.curriculum_views import match_text_for_section
 
         _, err = self._gate_exam(request, exam_pk)
         if err:
@@ -503,7 +506,11 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         if not isinstance(texts, list):
             return Response({'error': 'texts bir liste olmalıdır.'}, status=400)
 
-        items = list(answer_key.items.select_related('section', 'section__subject').order_by('question_number'))
+        items = list(
+            answer_key.items
+            .select_related('section', 'section__subject', 'section__exam')
+            .order_by('question_number')
+        )
         if not items:
             return Response({'error': 'Cevap anahtarında soru yok.'}, status=400)
 
@@ -533,7 +540,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     results.append(row)
                     continue
                 subject = item.section.subject if item.section else None
-                match = _match_single_text(text, subject) if subject else None
+                match = match_text_for_section(item.section, text) if item.section_id and subject else None
                 if match:
                     item.outcome_id = match['outcome_id']
                     item.sub_outcome_id = match.get('sub_outcome_id')

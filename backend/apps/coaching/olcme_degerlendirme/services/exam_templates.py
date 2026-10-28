@@ -34,6 +34,16 @@ _TEMPLATES: dict[str, list[tuple]] = {
         ('Fen Bilimleri',         121, 160, 3),
     ],
 
+    # 11. sınıf TG denemesi: 4 oturum × 30 soru.
+    # Sosyal: Tarih 10, Coğrafya 10, Felsefe 5, Din Kültürü 5.
+    # Fen: Fizik 10, Kimya 10, Biyoloji 10.
+    'AYT_11': [
+        ('Türk Dili',         1,  30, 0),
+        ('Sosyal Bilimler',  31,  60, 1),
+        ('Matematik',        61,  90, 2),
+        ('Fen Bilimleri',    91, 120, 3),
+    ],
+
     'LGS': [
         ('Türkçe',           1,  20, 0),
         ('İnkılap Tarihi',  21,  30, 1),
@@ -124,6 +134,20 @@ _SUB_SECTIONS: dict[str, dict[str, list[tuple]]] = {
             ('Fizik',                121, 134, 0),
             ('Kimya',               135, 147, 1),
             ('Biyoloji',            148, 160, 2),
+        ],
+    },
+
+    'AYT_11': {
+        'Sosyal Bilimler': [
+            ('Tarih',        31,  40, 0),
+            ('Coğrafya',     41,  50, 1),
+            ('Felsefe',      51,  55, 2),
+            ('Din Kültürü',  56,  60, 3),
+        ],
+        'Fen Bilimleri': [
+            ('Fizik',        91, 100, 0),
+            ('Kimya',       101, 110, 1),
+            ('Biyoloji',    111, 120, 2),
         ],
     },
 }
@@ -235,6 +259,7 @@ def _with_optional_philosophy(
 _DEFAULT_DURATIONS: dict[str, int] = {
     'YKS_TYT':     165,
     'YKS_AYT':     180,
+    'AYT_11':      165,
     'LGS':         155,
     'LGS_7':       155,
     'DENEME':      165,
@@ -315,6 +340,17 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
         'Kimya':                            ('KIMYA',     'Kimya',                  'YKS_AYT'),
         'Biyoloji':                         ('BIYOLOJI',  'Biyoloji',               'YKS_AYT'),
     },
+    'AYT_11': {
+        'Türk Dili':      ('TDE',       'Türk Dili ve Edebiyatı', 'YKS_AYT'),
+        'Tarih':          ('TARIH',     'Tarih',                  'YKS_AYT'),
+        'Coğrafya':       ('COGRAFYA',  'Coğrafya',               'YKS_AYT'),
+        'Felsefe':        ('FELSEFE',   'Felsefe',                'YKS_AYT'),
+        'Din Kültürü':    ('DKAB',      'Din Kültürü',            'YKS_AYT'),
+        'Matematik':      ('MATEMATIK', 'Matematik',              'YKS_AYT'),
+        'Fizik':          ('FIZIK',     'Fizik',                  'YKS_AYT'),
+        'Kimya':          ('KIMYA',     'Kimya',                  'YKS_AYT'),
+        'Biyoloji':       ('BIYOLOJI',  'Biyoloji',               'YKS_AYT'),
+    },
     'LGS': {
         'Türkçe':          ('TURKCE',    'Türkçe',          'LGS'),
         'İnkılap Tarihi':  ('INKILAP',   'İnkılap Tarihi',  'LGS'),
@@ -348,6 +384,14 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
 
 
 _SUBJECT_CODE_SUFFIXES = ('_TYT', '_AYT', '_LGS')
+
+# Kitapçıkta ayrı soru aralığı yok; kazanım resmi AYT'deki kardeş dersten de seçilir.
+# Matematik 30 soruluk tek blok — Geometri ayrı bölüm değil, aynı AYT dersi.
+_COMPANION_SUBJECT_CODES = {
+    'AYT_11': {
+        'Matematik': ('GEOMETRI',),
+    },
+}
 
 
 def _subject_has_curriculum(subject) -> bool:
@@ -438,6 +482,44 @@ def purge_empty_exam_type_stubs() -> int:
     return deleted
 
 
+def companion_subject_codes(exam_type: str | None, section_name: str | None) -> tuple[str, ...]:
+    """Bu bölümün kazanım listesine eklenecek kardeş ders kodları."""
+    return _COMPANION_SUBJECT_CODES.get(exam_type or '', {}).get(section_name or '', ())
+
+
+def companion_subjects_for_section(section, cache: dict | None = None) -> list:
+    """Bölümün kendi dersine ek olarak kazanım seçilebilen dersler."""
+    exam = getattr(section, 'exam', None)
+    exam_type = getattr(exam, 'exam_type', '') if exam is not None else ''
+    codes = companion_subject_codes(exam_type, getattr(section, 'name', ''))
+    if not codes:
+        return []
+    key = (exam_type, section.name)
+    if cache is not None and key in cache:
+        return cache[key]
+    from ..models.curriculum import Subject
+
+    found = {row.code: row for row in Subject.objects.filter(code__in=codes)}
+    rows = [found[code] for code in codes if code in found]
+    if cache is not None:
+        cache[key] = rows
+    return rows
+
+
+def companion_subject_ids_for_exam(exam) -> set[int]:
+    """Sınavda kullanılan kardeş derslerin id'leri (kazanım ağacı için)."""
+    mapping = _COMPANION_SUBJECT_CODES.get(getattr(exam, 'exam_type', '') or '', {})
+    if not mapping:
+        return set()
+    names = set(exam.sections.values_list('name', flat=True))
+    codes = [code for name, extras in mapping.items() if name in names for code in extras]
+    if not codes:
+        return set()
+    from ..models.curriculum import Subject
+
+    return set(Subject.objects.filter(code__in=codes).values_list('id', flat=True))
+
+
 def _felsefe_subject_for_exam(exam, sections: list):
     """Felsefe (Seçmeli) ayrı ders değil; Felsefe / Felsefe Grubu müfredatını paylaşır."""
     for section in sections:
@@ -455,7 +537,8 @@ def _felsefe_subject_for_exam(exam, sections: list):
     if sibling and _subject_has_curriculum(sibling.subject):
         return sibling.subject
 
-    exam_filter = 'YKS_AYT' if getattr(exam, 'exam_type', '') == 'YKS_AYT' else 'YKS_TYT'
+    exam_type = getattr(exam, 'exam_type', '')
+    exam_filter = 'YKS_AYT' if exam_type in ('YKS_AYT', 'AYT_11') else 'YKS_TYT'
     return _resolve_curriculum_subject('FELSEFE', 'Felsefe', exam_filter)
 
 
@@ -513,8 +596,10 @@ def _auto_link_subjects(exam, sections: list) -> None:
 
         subject = None
         if mapping:
-            code, display_name, _legacy_filter = mapping
-            subject = _resolve_curriculum_subject(code, display_name, default_filter)
+            code, display_name, mapped_filter = mapping
+            subject = _resolve_curriculum_subject(
+                code, display_name, mapped_filter or default_filter,
+            )
             if subject and not subject_allowed_for_exam(exam, subject):
                 subject = (
                     existing_by_name.get(_name_key(section_name))

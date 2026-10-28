@@ -15,6 +15,7 @@ from .scoring import (
     LGS_EXAM_TYPES,
     _lookup_db_coefficients,
     build_linked_tyt_index,
+    calculate_ayt11_score,
     calculate_ayt_score,
     calculate_lgs_score,
     calculate_tyt_score,
@@ -91,6 +92,12 @@ def _score_answer(exam, sec_nets, tyt_nets, year, coef):
                 'tyt_net': float(data.get('tyt_net') or 0),
             }
         return {'puan_turleri': pts, 'ranks': {}}
+    if exam_type == 'AYT_11':
+        data = calculate_ayt11_score(sec_nets)
+        return {
+            'puan': float(data['puan']),
+            'ham_puan': float(data['ham_puan']),
+        }
     if exam_type in LGS_EXAM_TYPES:
         kind = 'LGS_7' if exam_type == 'LGS_7' else 'LGS'
         data = calculate_lgs_score(

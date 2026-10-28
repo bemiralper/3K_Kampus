@@ -8,6 +8,7 @@
 export const EXAM_TYPES = [
   { value: 'YKS_TYT',     label: 'YKS – TYT (Temel Yeterlilik)' },
   { value: 'YKS_AYT',     label: 'YKS – AYT (Alan Yeterlilik)' },
+  { value: 'AYT_11',      label: '11. Sınıf AYT' },
   { value: 'LGS',         label: 'LGS (8. Sınıf)' },
   { value: 'LGS_7',       label: 'LGS (7. Sınıf)' },
   { value: 'DENEME',      label: 'Deneme Sınavı' },
@@ -1043,7 +1044,7 @@ export interface StudentExamResponse {
 }
 
 export type DevelopmentWindow = '1' | '3' | '5' | '10' | 'all' | 'custom';
-export type DevelopmentTypeGroup = 'TYT' | 'AYT' | 'LGS' | 'manuel';
+export type DevelopmentTypeGroup = 'TYT' | 'AYT' | 'AYT_11' | 'LGS' | 'manuel';
 export type DevelopmentStatus =
   | 'insufficient_data'
   | 'improving'

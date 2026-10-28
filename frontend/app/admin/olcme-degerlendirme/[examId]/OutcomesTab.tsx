@@ -101,6 +101,24 @@ function topicsForHomeSubject(home: SubjectItem | null, allSubjects: SubjectItem
   );
 }
 
+/** 11. sınıf matematiği tek blok; geometri kazanımları resmi AYT'deki Geometri dersinden gelir. */
+function topicsForSection(
+  examType: string,
+  sectionName: string,
+  home: SubjectItem | null,
+  tree: SubjectItem[],
+): TopicItem[] {
+  const topics = topicsForHomeSubject(home, tree);
+  if (examType !== 'AYT_11' || sectionName !== 'Matematik') return topics;
+  const extra = tree.find(subject => (subject.code || '').toUpperCase() === 'GEOMETRI');
+  if (!extra || extra.id === home?.id) return topics;
+  const seen = new Set(topics.map(topic => topic.id));
+  for (const topic of topicsForHomeSubject(extra, tree)) {
+    if (!seen.has(topic.id)) topics.push(topic);
+  }
+  return topics;
+}
+
 function firstOutcomeForImported(topics: TopicItem[], raw: string): OutcomeItem | null {
   const code = (raw || '').trim().replace(/\.+$/, '').toLowerCase();
   if (!code) return null;
@@ -289,7 +307,7 @@ export default function OutcomesTab({ exam }: Props) {
         if (sub.subject) {
           subject = subjectsTree.find(s => Number(s.id) === Number(sub.subject)) ?? null;
           if (subject) {
-            topics = topicsForHomeSubject(subject, subjectsTree);
+            topics = topicsForSection(exam.exam_type, sub.name, subject, subjectsTree);
             outcomes = flattenOutcomes(topics);
           }
         }
@@ -306,7 +324,7 @@ export default function OutcomesTab({ exam }: Props) {
         if (main.subject) {
           subject = subjectsTree.find(s => Number(s.id) === Number(main.subject)) ?? null;
           if (subject) {
-            topics = topicsForHomeSubject(subject, subjectsTree);
+            topics = topicsForSection(exam.exam_type, main.name, subject, subjectsTree);
             outcomes = flattenOutcomes(topics);
           }
         }

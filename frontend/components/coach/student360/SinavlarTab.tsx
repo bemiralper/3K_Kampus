@@ -62,15 +62,25 @@ function fmtPuan(n: number | null | undefined) {
 function typeShort(t: string, display?: string) {
   if (t === 'YKS_TYT') return 'TYT';
   if (t === 'YKS_AYT') return 'AYT';
+  if (t === 'AYT_11') return '11 AYT';
   if (t === 'DENEME') return 'Deneme';
   if (t === 'LGS') return 'LGS';
   if (t === 'LGS_7') return 'LGS 7';
   return display || t;
 }
 
+const EXAM_GROUP_LABEL: Record<DevelopmentTypeGroup, string> = {
+  TYT: 'TYT',
+  AYT: 'AYT',
+  AYT_11: '11 AYT',
+  LGS: 'LGS',
+  manuel: 'Manuel',
+};
+
 function examGroup(type: string): DevelopmentTypeGroup {
   if (type === 'YKS_TYT') return 'TYT';
   if (type === 'YKS_AYT') return 'AYT';
+  if (type === 'AYT_11') return 'AYT_11';
   if (type === 'LGS' || type === 'LGS_7') return 'LGS';
   return 'manuel';
 }
@@ -100,6 +110,7 @@ function sectionKey(name: string) {
     {
       turkce: 'turkce',
       turkdiliveedebiyati: 'edebiyat',
+      turkdili: 'edebiyat',
       tde: 'edebiyat',
       edebiyat: 'edebiyat',
       tarih: 'tarih',
@@ -147,7 +158,9 @@ function aytSectionAllowed(name: string, alan?: string | null) {
 
 function isLiseStudent(alan?: string | null, exams: StudentExamResult[] = []) {
   if (normalizeAlan(alan)) return true;
-  return exams.some((exam) => exam.exam_type === 'YKS_TYT' || exam.exam_type === 'YKS_AYT');
+  return exams.some((exam) => (
+    exam.exam_type === 'YKS_TYT' || exam.exam_type === 'YKS_AYT' || exam.exam_type === 'AYT_11'
+  ));
 }
 
 function trackAllowed(name: string, alan?: string | null) {
@@ -663,7 +676,7 @@ function OverviewPanel({
 }) {
   const groups = useMemo(() => {
     const present = Array.from(new Set(exams.map((e) => examGroup(e.exam_type))));
-    const order: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'LGS', 'manuel'];
+    const order: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'AYT_11', 'LGS', 'manuel'];
     return order.filter((g) => present.includes(g) && !(isLiseStudent(alan, exams) && g === 'LGS'));
   }, [exams]);
 
@@ -731,7 +744,7 @@ function OverviewPanel({
               className={group === g ? 'is-on' : undefined}
               onClick={() => onGroupChange(g)}
             >
-              {g === 'manuel' ? 'Manuel' : g}
+              {EXAM_GROUP_LABEL[g]}
             </button>
           ))}
         </div>
@@ -781,7 +794,7 @@ function OverviewPanel({
           </ol>
         </section>
         <section className="s360x-panel">
-          <h3>{group === 'manuel' ? 'Manuel' : group} ders ortalaması</h3>
+          <h3>{EXAM_GROUP_LABEL[group]} ders ortalaması</h3>
           <ul className="s360x-avgbars">
             {kpis.subjects.map((s) => (
               <li key={s.name}>
@@ -1233,6 +1246,7 @@ const DEV_GROUPS: { value: DevelopmentTypeGroup | ''; label: string }[] = [
   { value: '', label: 'Son sınav türü' },
   { value: 'TYT', label: 'TYT' },
   { value: 'AYT', label: 'AYT' },
+  { value: 'AYT_11', label: '11 AYT' },
   { value: 'LGS', label: 'LGS' },
   { value: 'manuel', label: 'Manuel' },
 ];
@@ -1327,7 +1341,7 @@ function GrowthPanel({
 }) {
   const visibleGroups = DEV_GROUPS.filter((g) => !(lise && g.value === 'LGS'));
   const [typeGroup, setTypeGroup] = useState<DevelopmentTypeGroup | ''>(() => {
-    const allGroups: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'LGS', 'manuel'];
+    const allGroups: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'AYT_11', 'LGS', 'manuel'];
     const groups = allGroups.filter((g) => !(lise && g === 'LGS'));
     return pickOverviewGroup(exams, groups.filter((g) => exams.some((e) => examGroup(e.exam_type) === g)));
   });

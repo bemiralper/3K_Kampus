@@ -7,6 +7,8 @@
 DEVELOPMENT_EXAM_TYPE_GROUPS = {
     'TYT': ('YKS_TYT',),
     'AYT': ('YKS_AYT',),
+    # 11. sınıf kendi kitapçığı ve 500'lük net puanı. ÖSYM AYT ile karışmaz.
+    'AYT_11': ('AYT_11',),
     'LGS': ('LGS', 'LGS_7'),
     'manuel': ('DENEME', 'KURUM_ICI', 'KONU_TARAMA', 'KAZANIM', 'OZEL'),
 }

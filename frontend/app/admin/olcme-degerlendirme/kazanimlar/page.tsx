@@ -940,7 +940,9 @@ export default function KazanimlarPage() {
               <strong>Format:</strong><br />
               <code>9.1. KONU ADI</code> → Konu<br />
               <code>9.1.1. Kazanım metni...</code> → Kazanım<br />
-              <code>9.1.1.1 Alt kazanım metni...</code> → Alt Kazanım
+              <code>9.1.1.1 Alt kazanım metni...</code> → Alt Kazanım<br />
+              <code>9.21.1.1 Kazanım metni...</code> → Maarif kazanımı<br />
+              <code>9.21.1.1.5 Açıklama metni...</code> → Maarif açıklaması
             </div>
             <textarea
               className={styles.bulkTextarea}

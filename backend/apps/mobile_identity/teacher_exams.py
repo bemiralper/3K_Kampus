@@ -12,6 +12,7 @@ from .teacher_read import _load_term, _placement_rows, _term_id
 _GROUP_ORDER = (
     'YKS_TYT',
     'YKS_AYT',
+    'AYT_11',
     'LGS',
     'LGS_7',
     'DENEME',
@@ -23,6 +24,7 @@ _GROUP_ORDER = (
 _GROUP_LABEL = {
     'YKS_TYT': 'TYT',
     'YKS_AYT': 'AYT',
+    'AYT_11': '11. Sınıf AYT',
     'LGS': 'LGS',
     'LGS_7': 'LGS 7',
     'DENEME': 'Deneme',
@@ -43,7 +45,8 @@ _FAMILY = {
     'kimya': {'kimya'},
     'biyoloji': {'biyoloji'},
     'turkce': {'turkce'},
-    'edebiyat': {'edebiyat'},
+    'edebiyat': {'edebiyat', 'turkdili'},
+    'turkdili': {'edebiyat', 'turkdili'},
     'tarih': {'tarih', 'tarih1', 'tarih2'},
     'cografya': {'cografya', 'cografya1', 'cografya2'},
     'felsefe': {'felsefe', 'felsefegrubu', 'felsefesecmeli'},
@@ -152,18 +155,64 @@ def _lesson_names(scope, term_id: int, student_id: int) -> tuple[object | None, 
     return student, names
 
 
+def _companion_topic_row(exam, title: str, row: dict, keys: set[str]) -> bool:
+    """11. sınıf matematiğinin içindeki geometri kazanımı, geometri öğretmenine görünür."""
+    if getattr(exam, 'exam_type', '') != 'AYT_11':
+        return False
+    if _stem(title) != 'matematik':
+        return False
+    if 'geometri' not in keys or 'matematik' in keys:
+        return False
+    return (row.get('subject_code') or '').upper() == 'GEOMETRI'
+
+
+def _companion_exam_stats(answer, keys: set[str]) -> dict | None:
+    """Geometri öğretmeni 30 soruluk matematik netini değil, geometri kazanımlarının netini görür."""
+    if 'geometri' not in keys or 'matematik' in keys:
+        return None
+    exam = answer.session.exam
+    if exam.exam_type != 'AYT_11':
+        return None
+    from apps.coaching.olcme_degerlendirme.services.topic_blocks import build_topic_blocks
+
+    correct = wrong = empty = questions = 0
+    blocks = build_topic_blocks(exam, answer.comparison or {}, answer.booklet or '')
+    for block in blocks:
+        heading = block.get('heading') or ''
+        for table in block.get('tables') or []:
+            title = table.get('title') or heading
+            for row in table.get('rows') or []:
+                if not _companion_topic_row(exam, title, row, keys):
+                    continue
+                correct += int(row.get('dogru') or 0)
+                wrong += int(row.get('yanlis') or 0)
+                empty += int(row.get('bos') or 0)
+                questions += int(row.get('soru') or 0)
+    if questions <= 0:
+        return None
+    return {
+        'net': _num(correct - wrong / 4),
+        'correct': correct,
+        'wrong': wrong,
+        'empty': empty,
+        'question_count': questions,
+    }
+
+
 def _topics(answer, keys: set[str]) -> list[dict]:
     from apps.coaching.olcme_degerlendirme.services.topic_blocks import build_topic_blocks
 
-    blocks = build_topic_blocks(answer.session.exam, answer.comparison or {}, answer.booklet or '')
+    exam = answer.session.exam
+    blocks = build_topic_blocks(exam, answer.comparison or {}, answer.booklet or '')
     rows = []
     for block in blocks:
         heading = block.get('heading') or ''
         for table in block.get('tables') or []:
             title = table.get('title') or heading
-            if _stem(title) not in keys and _stem(heading) not in keys:
-                continue
+            title_ok = _stem(title) in keys or _stem(heading) in keys
             for row in table.get('rows') or []:
+                if not title_ok and not _companion_topic_row(exam, title, row, keys):
+                    continue
                 question_count = int(row.get('soru') or 0)
                 if question_count <= 0:
                     continue
@@ -252,9 +301,12 @@ def student_exams(request, scope, student_id: int) -> dict:
             if not _section_matches(score.section, keys):
                 continue
             matched.append(score)
-        if not matched:
+        if matched:
+            buckets.setdefault(exam.exam_type, []).append((answer, matched))
             continue
-        buckets.setdefault(exam.exam_type, []).append((answer, matched))
+        stats = _companion_exam_stats(answer, keys)
+        if stats:
+            buckets.setdefault(exam.exam_type, []).append((answer, stats))
 
     groups = []
     for code, rows in buckets.items():
@@ -263,7 +315,18 @@ def student_exams(request, scope, student_id: int) -> dict:
         previous_net = None
         for answer, scores in rows:
             exam = answer.session.exam
-            net = _num(sum(float(score.net or 0) for score in scores))
+            if isinstance(scores, dict):
+                net = scores['net']
+                correct = scores['correct']
+                wrong = scores['wrong']
+                empty = scores['empty']
+                question_count = scores['question_count']
+            else:
+                net = _num(sum(float(score.net or 0) for score in scores))
+                correct = sum(int(score.correct or 0) for score in scores)
+                wrong = sum(int(score.wrong or 0) for score in scores)
+                empty = sum(int(score.empty or 0) for score in scores)
+                question_count = sum(int(score.section.question_count or 0) for score in scores)
             delta = None if previous_net is None else _num(net - previous_net)
             exams.append({
                 'id': exam.id,
@@ -271,10 +334,10 @@ def student_exams(request, scope, student_id: int) -> dict:
                 'date': exam.exam_date.isoformat() if exam.exam_date else None,
                 'net': net,
                 'delta': delta,
-                'correct': sum(int(score.correct or 0) for score in scores),
-                'wrong': sum(int(score.wrong or 0) for score in scores),
-                'empty': sum(int(score.empty or 0) for score in scores),
-                'question_count': sum(int(score.section.question_count or 0) for score in scores),
+                'correct': correct,
+                'wrong': wrong,
+                'empty': empty,
+                'question_count': question_count,
             })
             previous_net = net
         last = exams[-1]

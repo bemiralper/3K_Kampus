@@ -9,7 +9,12 @@ BAND_YKS = 'YKS'
 BAND_LGS = 'LGS'
 CURRICULUM_BANDS = (BAND_YKS, BAND_LGS)
 
-YKS_EXAM_TYPES = frozenset({'YKS_TYT', 'YKS_AYT', 'DENEME'})
+YKS_EXAM_TYPES = frozenset({'YKS_TYT', 'YKS_AYT', 'AYT_11', 'DENEME'})
+
+# 11. sınıf AYT ayrı müfredat açmaz; ders listesi resmi AYT ile aynıdır.
+_SUBJECT_FILTER_ALIASES = {
+    'AYT_11': ('ALL', 'YKS_AYT'),
+}
 LGS_EXAM_TYPES = frozenset({'LGS', 'LGS_7'})
 LOCKED_BAND_TYPES = YKS_EXAM_TYPES | LGS_EXAM_TYPES
 
@@ -28,6 +33,12 @@ _MEB_HEAD_RE = re.compile(r'(?<![0-9.])(5|6|7|8|9|10|11|12)(?:\.\d+)+')
 _PRIMARY_MEB_HEAD_RE = re.compile(r'(?<![0-9.])([1-4])(?:\.\d+)+')
 _PRIMARY_SUBJECT_RE = re.compile(r'hayat\s*bilgisi|ilk\s*okul|ilkokul', re.I)
 _TOPIC_PREFIX_SPLIT = re.compile(r'\s*[·•|:]\s*')
+
+
+def subject_filters_for_exam_type(exam_type: str | None) -> tuple[str, ...]:
+    """Ders süzgeci. 11. sınıf AYT, AYT derslerini (ALL + YKS_AYT) kullanır."""
+    key = exam_type or ''
+    return _SUBJECT_FILTER_ALIASES.get(key, ('ALL', key))
 
 
 def band_for_exam_type(exam_type: str | None) -> str:

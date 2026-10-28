@@ -157,7 +157,7 @@ def build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         ak.items
         .select_related(
             'section', 'section__parent_section', 'section__subject',
-            'outcome__topic', 'sub_outcome', 'sub_outcome__outcome__topic',
+            'outcome__topic__subject', 'sub_outcome', 'sub_outcome__outcome__topic__subject',
         )
         .order_by('section__order', 'question_number')
     )
@@ -193,13 +193,22 @@ def build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         parent_name = sec.parent_section.name if sec.parent_section_id else sec.name
         table_name = sec.name
         topic, outcome = row_hierarchy(item, label, code_texts_by_subject.get(sid))
+        bound_subject = None
+        if item.outcome_id and getattr(getattr(item.outcome, 'topic', None), 'subject', None):
+            bound_subject = item.outcome.topic.subject
+        subject_code = (
+            getattr(bound_subject, 'code', None)
+            or getattr(subject, 'code', None)
+            or ''
+        )
         block = blocks_map.setdefault(parent_name, OrderedDict())
         table = block.setdefault(table_name, OrderedDict())
-        row_key = (topic, outcome or label)
+        row_key = (topic, outcome or label, subject_code)
         row = table.setdefault(row_key, {
             'name': label,
             'topic': topic,
             'outcome': outcome,
+            'subject_code': subject_code,
             'soru': 0,
             'dogru': 0,
             'yanlis': 0,
@@ -226,6 +235,7 @@ def build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
                             'name': vals['name'],
                             'topic': vals.get('topic') or '',
                             'outcome': vals.get('outcome') or '',
+                            'subject_code': vals.get('subject_code') or '',
                             'soru': vals['soru'],
                             'dogru': vals['dogru'],
                             'yanlis': vals['yanlis'],

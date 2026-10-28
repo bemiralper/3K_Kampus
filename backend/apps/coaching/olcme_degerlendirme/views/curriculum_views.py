@@ -255,7 +255,8 @@ def subject_list(request):
             ),
         ).order_by('order', 'name')
         if exam_type and not band:
-            qs = qs.filter(exam_type_filter__in=['ALL', exam_type])
+            from ..services.curriculum_band import subject_filters_for_exam_type
+            qs = qs.filter(exam_type_filter__in=subject_filters_for_exam_type(exam_type))
         # Boş TYT/AYT/LGS kopyalarını listede gösterme — asıl müfredat kısa kodda.
         qs = qs.exclude(
             Q(code__endswith='_TYT') | Q(code__endswith='_AYT') | Q(code__endswith='_LGS'),
@@ -613,9 +614,10 @@ def bulk_text_import(request):
     }
 
     Ayrıştırma kuralları:
-      - X.Y.  → Konu  (2 parçalı numara + nokta)
-      - X.Y.Z.  → Kazanım  (3 parçalı numara)
-      - X.Y.Z.W  → Alt Kazanım  (4 parçalı numara)
+      - X.Y.  → Konu  (2 parçalı numara)
+      - X.Y.Z.  → Kazanım  (3 parçalı numara, 2018)
+      - X.Y.Z.W  → 2018 alt kazanım (üst kazanım 3 parçalıysa) ya da Maarif kazanımı
+      - X.Y.Z.W.V  → Açıklama / alt kazanım (Maarif süreç bileşeni)
     """
     ser = BulkTextImportSerializer(data=request.data)
     ser.is_valid(raise_exception=True)
@@ -816,15 +818,11 @@ def _parse_curriculum_text(text: str) -> list[dict]:
     Metin formatındaki müfredatı yapılandırılmış veriye dönüştürür.
 
     Ayrıştırma kuralları:
-      - Satır "X.Y." ile başlıyorsa → Konu (ör: 9.1. MANTIK)
-      - Satır "X.Y.Z." ile başlıyorsa → Kazanım (ör: 9.1.1. Mantıksal önermeleri...)
-      - Satır "X.Y.Z.W" ile başlıyorsa → Alt Kazanım (ör: 9.1.1.1 Önermeleri...)
-      - Büyük harfle başlayan ama numara olmayan satırlar → Konu başlığı olabilir
-
-    Kodlama desenleri:
-      Konu:        \\d+.\\d+.?\\s
-      Kazanım:     \\d+.\\d+.\\d+.?\\s
-      Alt Kazanım: \\d+.\\d+.\\d+.\\d+\\s
+      - X.Y. → Konu (ör: 9.1. MANTIK, 9.21. Sayılar)
+      - X.Y.Z. → Kazanım (ör: 9.1.1. Mantıksal önermeleri...)
+      - X.Y.Z.W → 2018 alt kazanımı (üst satır 3 parçalıysa) ya da Maarif kazanımı
+        (ör: 9.21.1.1 Gerçek sayıların üslü gösterimi...)
+      - X.Y.Z.W.V → Açıklama / alt kazanım (ör: 9.21.1.1.5 Üslü gösterimlerin...)
     """
     lines = text.strip().split('\n')
     topics = []
@@ -840,9 +838,13 @@ def _parse_curriculum_text(text: str) -> list[dict]:
     outcome_pattern = re.compile(
         r'^\s*(\d+\.\d+\.\d+)\.?\s+(.+)$'
     )
-    # Alt Kazanım: 9.2.1.1 Küme elemanlarını...
+    # 4 parçalı: 2018 alt kazanımı (9.2.1.1) ya da Maarif kazanımı (9.21.1.1)
     sub_outcome_pattern = re.compile(
         r'^\s*(\d+\.\d+\.\d+\.\d+)\s+(.+)$'
+    )
+    # Maarif açıklaması: 9.21.1.1.5 süreç bileşeni
+    deep_sub_pattern = re.compile(
+        r'^\s*((?:\d+\.){4,}\d+)\s+(.+)$'
     )
     # Başlık satırı (büyük harf, numarasız) — ör: "RUTİN OLMAYAN PROBLEMLER"
     heading_pattern = re.compile(r'^\s*[A-ZÇĞİÖŞÜ\s–\-]+$')
@@ -854,16 +856,50 @@ def _parse_curriculum_text(text: str) -> list[dict]:
         if not line:
             continue
 
-        # Alt kazanım mı? (4 parçalı numara)
-        m_sub = sub_outcome_pattern.match(line)
-        if m_sub:
-            code = m_sub.group(1)
-            text_val = m_sub.group(2).strip()
+        # Maarif açıklaması (5+ parça) → alt kazanım
+        m_deep = deep_sub_pattern.match(line)
+        if m_deep:
+            code = m_deep.group(1)
+            text_val = m_deep.group(2).strip()
+            parent_code = '.'.join(code.split('.')[:-1])
+            if (
+                current_outcome is None
+                or (current_outcome.get('code') or '') != parent_code
+            ):
+                current_outcome = {
+                    'code': parent_code,
+                    'text': parent_code,
+                    'sub_outcomes': [],
+                }
+                if current_topic is not None:
+                    current_topic['outcomes'].append(current_outcome)
             if current_outcome is not None:
                 current_outcome['sub_outcomes'].append({
                     'code': code,
                     'text': text_val,
                 })
+            continue
+
+        # 4 parçalı numara: 2018 alt kazanımı ya da Maarif kazanımı
+        m_sub = sub_outcome_pattern.match(line)
+        if m_sub:
+            code = m_sub.group(1)
+            text_val = m_sub.group(2).strip()
+            parent = (current_outcome or {}).get('code') or ''
+            parent_parts = [p for p in parent.split('.') if p]
+            if len(parent_parts) == 3 and code.startswith(parent + '.'):
+                current_outcome['sub_outcomes'].append({
+                    'code': code,
+                    'text': text_val,
+                })
+                continue
+            current_outcome = {
+                'code': code,
+                'text': text_val,
+                'sub_outcomes': [],
+            }
+            if current_topic is not None:
+                current_topic['outcomes'].append(current_outcome)
             continue
 
         # Kazanım mı? (3 parçalı numara)
@@ -1251,7 +1287,7 @@ def outcome_prose(text: str) -> str:
     return (stripped[match.end():] if match else stripped).strip()
 
 
-def text_belongs_to_other_subject(text: str, home_subject) -> bool:
+def text_belongs_to_other_subject(text: str, home_subject, allowed_subject_ids=()) -> bool:
     """Yapıştırılan metin başka bir dersin kazanımı mı?
 
     Kodlar dersler arasında meşru biçimde tekrar ettiği için yalnız metne
@@ -1266,23 +1302,52 @@ def text_belongs_to_other_subject(text: str, home_subject) -> bool:
     if not home_id or len(prose) < 12:
         return False
 
+    home_ids = {home_id, *[sid for sid in allowed_subject_ids if sid]}
     in_home = (
         Outcome.objects.filter(
-            topic__subject_id=home_id, text__iexact=prose, is_active=True,
+            topic__subject_id__in=home_ids, text__iexact=prose, is_active=True,
         ).exists()
         or SubOutcome.objects.filter(
-            outcome__topic__subject_id=home_id, text__iexact=prose, is_active=True,
+            outcome__topic__subject_id__in=home_ids, text__iexact=prose, is_active=True,
         ).exists()
     )
     if in_home:
         return False
 
     return (
-        Outcome.objects.exclude(topic__subject_id=home_id)
+        Outcome.objects.exclude(topic__subject_id__in=home_ids)
         .filter(text__iexact=prose, is_active=True).exists()
-        or SubOutcome.objects.exclude(outcome__topic__subject_id=home_id)
+        or SubOutcome.objects.exclude(outcome__topic__subject_id__in=home_ids)
         .filter(text__iexact=prose, is_active=True).exists()
     )
+
+
+def match_text_for_section(section, text: str):
+    """Önce bölümün kendi dersi, yoksa kitapçıkta ayrı bölümü olmayan kardeş ders."""
+    from ..services.exam_templates import companion_subjects_for_section
+
+    if section is None:
+        return None
+    home = getattr(section, 'subject', None)
+    if home is not None:
+        match = _match_single_text(text, home)
+        if match and match.get('outcome_id'):
+            return match
+    for extra in companion_subjects_for_section(section):
+        match = _match_single_text(text, extra)
+        if match and match.get('outcome_id'):
+            return match
+    return None
+
+
+def _section_allowed_subject_ids(section, cache: dict | None = None) -> set[int]:
+    from ..services.exam_templates import companion_subjects_for_section
+
+    home = getattr(section, 'subject', None) if section is not None else None
+    allowed = {home.id} if home is not None and home.id else set()
+    if section is not None:
+        allowed.update(row.id for row in companion_subjects_for_section(section, cache))
+    return allowed
 
 
 def _cached_match_single_text(cache: dict, text: str, subject):
@@ -1295,10 +1360,9 @@ def _cached_match_single_text(cache: dict, text: str, subject):
 def relink_dump_answer_key(answer_key) -> int:
     """Toplu Yükleme'ye düşmüş satırları gerçek müfredata geri bağla."""
     items = answer_key.items.select_related(
-        'outcome__topic', 'section', 'section__subject',
+        'outcome__topic', 'section', 'section__subject', 'section__exam',
     )
     updated = 0
-    match_cache: dict = {}
     for item in items:
         topic = getattr(getattr(item, 'outcome', None), 'topic', None)
         if not topic_is_bulk_dump(topic):
@@ -1306,8 +1370,8 @@ def relink_dump_answer_key(answer_key) -> int:
         text = (item.imported_outcome_text or '').strip()
         if not text and item.outcome_id:
             text = (item.outcome.text or '').strip()
-        subject = item.section.subject if item.section_id else None
-        match = _cached_match_single_text(match_cache, text, subject) if text and subject else None
+        section = item.section if item.section_id else None
+        match = match_text_for_section(section, text) if text and section and section.subject_id else None
         if match and match.get('outcome_id'):
             item.outcome_id = match['outcome_id']
             item.sub_outcome_id = match.get('sub_outcome_id')
@@ -1330,17 +1394,22 @@ def detach_polluted_text_binds(answer_key) -> int:
     """
     items = list(
         answer_key.items.select_related(
-            'outcome__topic__subject', 'section__subject',
+            'outcome__topic__subject', 'section__subject', 'section__exam',
         ).exclude(outcome_id=None)
     )
     updated = 0
+    allowed_cache: dict = {}
     for item in items:
         outcome = item.outcome
         if not outcome:
             continue
-        home = getattr(getattr(item, 'section', None), 'subject', None)
+        section = getattr(item, 'section', None)
+        home = getattr(section, 'subject', None)
+        allowed = _section_allowed_subject_ids(section, allowed_cache)
         stale = (not outcome.is_active) or (
-            home is not None and text_belongs_to_other_subject(outcome.text, home)
+            home is not None and text_belongs_to_other_subject(
+                outcome.text, home, allowed,
+            )
         )
         if not stale:
             continue
@@ -1368,14 +1437,19 @@ def detach_foreign_outcome_binds(answer_key) -> int:
     """Bölüm dersinin Subject FK'sı dışındaki kazanım bağını çöz."""
     items = list(
         answer_key.items.select_related(
-            'outcome__topic__subject', 'section__subject',
+            'outcome__topic__subject', 'section__subject', 'section__exam',
         ).exclude(outcome_id=None)
     )
     updated = 0
+    allowed_cache: dict = {}
     for item in items:
-        home = getattr(getattr(item, 'section', None), 'subject', None)
+        section = getattr(item, 'section', None)
+        home = getattr(section, 'subject', None)
         topic = getattr(getattr(item, 'outcome', None), 'topic', None)
         if not home or not topic:
+            continue
+        allowed = _section_allowed_subject_ids(section, allowed_cache)
+        if topic.subject_id in allowed and topic.subject_id != home.id:
             continue
         leaked = _topic_name_belongs_elsewhere(topic, home)
         if (topic.subject_id and topic.subject_id != home.id) or leaked:
@@ -1409,19 +1483,18 @@ def detach_false_heading_binds(answer_key) -> int:
 def relink_unbound_answer_key(answer_key) -> int:
     """Boş satırları yalnızca tam kazanım/alt kazanım kodu veya metniyle bağla."""
     items = list(
-        answer_key.items.select_related('section', 'section__subject')
+        answer_key.items.select_related('section', 'section__subject', 'section__exam')
         .filter(outcome_id__isnull=True)
     )
     updated = 0
-    match_cache: dict = {}
     for item in items:
         text = (item.imported_outcome_text or '').strip()
         if not text:
             continue
-        subject = item.section.subject if item.section_id else None
-        if not subject:
+        section = item.section if item.section_id else None
+        if not section or not section.subject_id:
             continue
-        match = _cached_match_single_text(match_cache, text, subject)
+        match = match_text_for_section(section, text)
         if not match or not match.get('outcome_id'):
             continue
         if match.get('match_type') not in ('outcome', 'sub_outcome'):

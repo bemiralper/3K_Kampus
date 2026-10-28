@@ -154,6 +154,7 @@ def _section_name_key(name: str) -> str:
     )
     return {
         'turkdiliveedebiyati': 'edebiyat',
+        'turkdili': 'edebiyat',
         'tde': 'edebiyat',
         'edebiyat': 'edebiyat',
         'tarih1': 'tarih1',
@@ -831,6 +832,7 @@ def _exam_type_short(exam_type: str) -> str:
     return {
         'YKS_TYT': 'TYT',
         'YKS_AYT': 'AYT',
+        'AYT_11': '11 AYT',
         'LGS': 'LGS',
         'LGS_7': 'LGS 7',
         'DENEME': 'Deneme',
@@ -940,7 +942,7 @@ def _build_scoring_nets(answer, exam) -> dict:
     AYT: Ana bölüm neti öncelikli. Alt bölüm neti sadece ana bölümle
          isim çakışması yoksa eklenir (ör: Fizik, Kimya, Biyoloji ayrı katsayılı).
     """
-    is_tyt = exam.exam_type in ('YKS_TYT', 'DENEME', 'LGS', 'LGS_7')
+    is_tyt = exam.exam_type in ('YKS_TYT', 'DENEME', 'LGS', 'LGS_7', 'AYT_11')
 
     result = {}
     for ss in answer.section_scores.all():
