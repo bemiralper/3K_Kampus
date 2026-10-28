@@ -313,7 +313,7 @@ function DeliveryGroups({ deliveries }: { deliveries: CampaignDelivery[] }) {
                   <time>{formatDateTime(d.sent_at)}</time>
                 </div>
                 {d.status === "FAILED" && d.failed_reason ? (
-                  <p className="err" title={d.failed_reason}>{d.failed_reason_short || d.failed_reason}</p>
+                  <p className="err">{d.failed_reason}</p>
                 ) : null}
                 {d.queue_note ? <p className="note">{d.queue_note}</p> : null}
               </li>

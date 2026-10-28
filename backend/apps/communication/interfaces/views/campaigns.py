@@ -165,7 +165,10 @@ def _queue_note(msg, item, raw_reason: str) -> str:
     if item is None:
         return 'Kuyruk kaydı yok — gönderimi yeniden başlatın.'
     if item.attempt_count:
-        detail = (raw_reason or item.last_error or '').strip()
+        from apps.communication.application.delivery_error import explain_delivery_failure
+
+        raw = (raw_reason or item.last_error or '').strip()
+        detail = explain_delivery_failure(raw) if raw else ''
         base = f'{item.attempt_count}/{item.max_attempts} deneme yapıldı, tekrar denenecek.'
         return f'{base} {detail}'.strip() if detail else base
     return 'Kuyrukta, sırası bekleniyor.'

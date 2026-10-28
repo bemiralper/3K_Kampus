@@ -27,6 +27,15 @@ _CODE_MAP: dict[int, str] = {
     132016: 'Şablon Meta tarafından devre dışı bırakılmış.',
     130429: 'Gönderim kotası doldu. Bir süre sonra tekrar deneyin.',
     368: 'WhatsApp hesabı geçici olarak engellenmiş. Meta İşletme yöneticisini kontrol edin.',
+    131049: (
+        'WhatsApp bu mesajı iletmedi. Kişi son zamanlarda kurum numarasıyla yazışmadığı '
+        'için Meta, şablon mesajını kısıtladı. Hemen yeniden denemek çoğu zaman yine '
+        'reddedilir. Kişi kuruma kendisi yazarsa mesaj gidebilir.'
+    ),
+    130472: (
+        'Bu numara Meta’nın geçici deneme grubunda. İşletmeden giden mesaj bilinçli '
+        'olarak düşürülüyor; numara yanlış değil. Bir süre sonra yeniden deneyin.'
+    ),
 }
 
 _SHORT_MAP: dict[int, str] = {
@@ -43,6 +52,8 @@ _SHORT_MAP: dict[int, str] = {
     132016: 'Şablon kapalı',
     130429: 'Kota doldu',
     368: 'Hesap engelli',
+    131049: 'WhatsApp iletmedi',
+    130472: 'Meta denemesinde',
 }
 
 _TITLE_MAP: dict[str, str] = {
@@ -56,6 +67,9 @@ _TITLE_MAP: dict[str, str] = {
     'rate limit hit': _CODE_MAP[130429],
     'spam rate limit hit': _CODE_MAP[130429],
     'business account has been locked': _CODE_MAP[131031],
+    'healthy ecosystem engagement': _CODE_MAP[131049],
+    'not delivered to maintain': _CODE_MAP[131049],
+    'part of an experiment': _CODE_MAP[130472],
 }
 
 
