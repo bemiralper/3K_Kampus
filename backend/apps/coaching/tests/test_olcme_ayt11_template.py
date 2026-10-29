@@ -276,7 +276,7 @@ class Ayt11TemplateTest(TestCase):
 
 
 class Tyt11TemplateTest(TestCase):
-    def test_booklet_matches_yks_tyt_without_optional_shift(self):
+    def test_booklet_includes_optional_philosophy_by_default(self):
         sections = get_template_sections('TYT_11', include_optional_philosophy=True)
         subs = get_template_sub_sections('TYT_11', include_optional_philosophy=True)
         self.assertEqual(
@@ -288,9 +288,20 @@ class Tyt11TemplateTest(TestCase):
                 ('Fen Bilimleri', 20),
             ],
         )
-        self.assertEqual(sections[-1]['question_end'], 120)
-        self.assertNotIn('Felsefe (Seçmeli)', {row['name'] for row in sections})
-        self.assertEqual(subs['Fen Bilimleri'][-1]['question_end'], 120)
+        self.assertEqual(sections[-1]['question_end'], 125)
+        sosyal = subs['Sosyal Bilimler']
+        self.assertEqual(
+            [row['name'] for row in sosyal],
+            ['Tarih', 'Coğrafya', 'Felsefe', 'Din Kültürü', 'Felsefe (Seçmeli)'],
+        )
+        phil = sosyal[-1]
+        self.assertEqual((phil['question_start'], phil['question_end']), (61, 65))
+        temel = next(row for row in sections if row['name'] == 'Temel Matematik')
+        self.assertEqual((temel['question_start'], temel['question_end']), (66, 105))
+        self.assertEqual(subs['Fen Bilimleri'][-1]['question_end'], 125)
+
+        plain = get_template_sections('TYT_11', include_optional_philosophy=False)
+        self.assertEqual(plain[-1]['question_end'], 120)
         self.assertEqual(get_default_duration('TYT_11'), 165)
 
         exam = Exam.objects.create(name='11 TYT', exam_type='TYT_11')
@@ -299,6 +310,10 @@ class Tyt11TemplateTest(TestCase):
         self.assertEqual(normalize_band('', 'TYT_11'), BAND_YKS)
         turkce = ExamSection.objects.get(exam=exam, name='Türkçe')
         self.assertEqual(turkce.subject.code, 'TURKCE')
+        secimli = ExamSection.objects.get(exam=exam, name='Felsefe (Seçmeli)')
+        self.assertEqual((secimli.question_start, secimli.question_end), (61, 65))
+        self.assertEqual(secimli.subject.code, 'FELSEFE')
+        self.assertEqual(secimli.parent_section.name, 'Sosyal Bilimler')
         self.assertEqual(turkce.subject.exam_type_filter, 'YKS_TYT')
         self.assertEqual(subject_filters_for_exam_type('TYT_11'), ('ALL', 'YKS_TYT'))
         self.assertEqual(group_for_exam_type('TYT_11'), 'TYT_11')
@@ -313,6 +328,29 @@ class Tyt11TemplateTest(TestCase):
         })
         self.assertEqual(full['puan'], 500.0)
         self.assertEqual(full['toplam_net'], 120.0)
+        elif_solak = calculate_tyt11_score({
+            'Türkçe': 24.50,
+            'Sosyal Bilimler': 5.75,
+            'Temel Matematik': 5.50,
+            'Fen Bilimleri': 2.50,
+        })
+        self.assertAlmostEqual(elif_solak['puan'], 257.05, places=2)
+        self.assertAlmostEqual(elif_solak['toplam_net'], 38.25, places=2)
+        negative_fen = calculate_tyt11_score({
+            'Türkçe': 23.25,
+            'Sosyal Bilimler': 2.50,
+            'Temel Matematik': 6.75,
+            'Fen Bilimleri': -2.00,
+        })
+        self.assertAlmostEqual(negative_fen['puan'], 233.36, places=2)
+        overridden = calculate_tyt11_score(
+            {'Türkçe': 10},
+            coefficients={
+                'Türkçe': 1, 'Sosyal Bilimler': 1,
+                'Temel Matematik': 1, 'Fen Bilimleri': 1, '_base': 100,
+            },
+        )
+        self.assertEqual(overridden['puan'], 110.0)
         half = calculate_score_for_exam(Exam(exam_type='TYT_11'), {'Türkçe': 40, 'Fen Bilimleri': 20})
-        self.assertEqual(half['puan'], 250.0)
+        self.assertAlmostEqual(half['puan'], 324.25, places=2)
         self.assertIsNone(estimate_ranking(half['puan'], 'TYT_11', 2025)['tahmini_siralama'])

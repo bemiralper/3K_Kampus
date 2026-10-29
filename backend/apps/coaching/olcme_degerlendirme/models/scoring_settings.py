@@ -37,6 +37,7 @@ class OlcmeKatsayiSeti(models.Model):
 
     class Kind(models.TextChoices):
         TYT = 'TYT', 'TYT'
+        TYT_11 = 'TYT_11', '11. Sınıf TYT'
         AYT_SAY = 'AYT_SAY', 'AYT Sayısal'
         AYT_EA = 'AYT_EA', 'AYT Eşit Ağırlık'
         AYT_SOZ = 'AYT_SOZ', 'AYT Sözel'

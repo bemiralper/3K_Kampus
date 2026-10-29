@@ -7,6 +7,7 @@ from .scoring import (
     AYT_SOZ_KATSAYILAR,
     LGS_7_KATSAYILAR,
     LGS_KATSAYILAR,
+    TYT_11_KATSAYILAR,
     TYT_KATSAYILAR,
     get_factory_coefficients,
 )
@@ -19,6 +20,7 @@ from ..models.scoring_settings import (
 
 KIND_FACTORY = {
     OlcmeKatsayiSeti.Kind.TYT: TYT_KATSAYILAR,
+    OlcmeKatsayiSeti.Kind.TYT_11: TYT_11_KATSAYILAR,
     OlcmeKatsayiSeti.Kind.AYT_SAY: AYT_SAY_KATSAYILAR,
     OlcmeKatsayiSeti.Kind.AYT_EA: AYT_EA_KATSAYILAR,
     OlcmeKatsayiSeti.Kind.AYT_SOZ: AYT_SOZ_KATSAYILAR,

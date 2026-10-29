@@ -5,7 +5,7 @@ import { puanAyarlariApi } from '../../../../components/olcme/api';
 import type { KatsayiKind, PuanAyarlari, PuanYilSeti } from '../../../../components/olcme/types';
 import s from '../olcme.module.css';
 
-const KIND_ORDER: KatsayiKind[] = ['TYT', 'AYT_SAY', 'AYT_EA', 'AYT_SOZ', 'LGS', 'LGS_7'];
+const KIND_ORDER: KatsayiKind[] = ['TYT', 'TYT_11', 'AYT_SAY', 'AYT_EA', 'AYT_SOZ', 'LGS', 'LGS_7'];
 
 function coeffEntries(coefficients: Record<string, number>) {
   const subjects = Object.keys(coefficients).filter(k => !k.startsWith('_'));
@@ -159,7 +159,7 @@ export default function PuanKatsayilariPage() {
           </div>
           <h1 className="hero-title">Puan Katsayıları</h1>
           <p className="hero-subtitle">
-            Kurumunuzun TYT / AYT / LGS puan tablolarını düzenleyin. LGS puanı başlangıç + her dersin net × katsayısıdır. Yeni denemeler varsayılan yılı alır; tek sınavda değiştirilebilir.
+            Kurumunuzun TYT, 11. sınıf TYT, AYT ve LGS puan tablolarını düzenleyin. 11. sınıf TYT, Okulizyon karnesindeki gibi başlangıç puanı artı dört ana dersin net × katsayısıdır. Yeni denemeler varsayılan yılı alır; tek sınavda değiştirilebilir.
           </p>
         </div>
       </div>
@@ -239,7 +239,7 @@ export default function PuanKatsayilariPage() {
                   marginBottom: 16, padding: '12px 14px', borderRadius: 10,
                   background: '#fffbeb', border: '1px solid #fde68a', color: '#92400e', fontSize: 13,
                 }}>
-                  TYT katsayıları Okulvizyon 2026 karnesine göredir. Tahmini Türkiye sırası ÖSYM 2026 ham puan dağılımından okunur. AYT katsayıları 2025 tablosudur.
+                  TYT ve 11. sınıf TYT katsayıları Okulizyon 2026 karnesine göredir. 11. sınıf TYT her yılda aynı formülle başlar ve buradan değiştirilebilir. Tahmini Türkiye sırası ÖSYM 2026 ham puan dağılımından okunur. AYT katsayıları 2025 tablosudur.
                 </div>
               )}
 

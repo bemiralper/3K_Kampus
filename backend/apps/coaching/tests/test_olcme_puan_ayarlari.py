@@ -11,6 +11,7 @@ from apps.coaching.olcme_degerlendirme.models import (
 )
 from apps.coaching.olcme_degerlendirme.services.scoring import (
     AYT_SAY_KATSAYILAR,
+    TYT_11_KATSAYILAR,
     TYT_KATSAYILAR,
     calculate_tyt_score,
 )
@@ -94,7 +95,7 @@ class OlcmePuanAyarlariTest(TestCase):
         self.assertEqual(body['default_puan_yili'], 2026)
         self.assertEqual(body['managed_years'], [2024, 2025, 2026])
         self.assertEqual(len(body['years']), 3)
-        self.assertEqual(OlcmeKatsayiSeti.objects.filter(kurum=self.kurum).count(), 18)
+        self.assertEqual(OlcmeKatsayiSeti.objects.filter(kurum=self.kurum).count(), 21)
 
         by_year = {y['year']: y for y in body['years']}
         self.assertTrue(by_year[2024]['is_published'])
@@ -121,6 +122,15 @@ class OlcmePuanAyarlariTest(TestCase):
         self.assertEqual(by_year[2025]['sets']['LGS']['coefficients']['_base'], 196.604)
         self.assertEqual(by_year[2025]['sets']['LGS_7']['coefficients']['Sosyal Bilgiler'], 1.731)
         self.assertNotIn('İnkılap Tarihi', by_year[2025]['sets']['LGS_7']['coefficients'])
+        self.assertEqual(by_year[2026]['sets']['TYT_11']['kind_display'], '11. Sınıf TYT')
+        self.assertEqual(
+            by_year[2026]['sets']['TYT_11']['coefficients'],
+            TYT_11_KATSAYILAR[2026],
+        )
+        self.assertEqual(
+            by_year[2024]['sets']['TYT_11']['coefficients'],
+            by_year[2026]['sets']['TYT_11']['coefficients'],
+        )
 
     def test_explicit_2025_default_is_kept(self):
         patch = self.client.patch(

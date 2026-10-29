@@ -21,7 +21,7 @@ export const EXAM_TYPES = [
 
 export type ExamTypeValue = typeof EXAM_TYPES[number]['value'];
 
-export const OPTIONAL_PHILOSOPHY_EXAM_TYPES = ['YKS_TYT', 'YKS_AYT', 'DENEME'] as const;
+export const OPTIONAL_PHILOSOPHY_EXAM_TYPES = ['YKS_TYT', 'TYT_11', 'YKS_AYT', 'DENEME'] as const;
 
 export function examSupportsOptionalPhilosophy(examType: string): boolean {
   return (OPTIONAL_PHILOSOPHY_EXAM_TYPES as readonly string[]).includes(examType);
@@ -1203,7 +1203,7 @@ export interface DevelopmentResponse {
   priorities: DevelopmentPriority[];
 }
 
-export type KatsayiKind = 'TYT' | 'AYT_SAY' | 'AYT_EA' | 'AYT_SOZ' | 'LGS' | 'LGS_7';
+export type KatsayiKind = 'TYT' | 'TYT_11' | 'AYT_SAY' | 'AYT_EA' | 'AYT_SOZ' | 'LGS' | 'LGS_7';
 
 export interface KatsayiSeti {
   kind: KatsayiKind;

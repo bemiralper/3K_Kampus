@@ -27,7 +27,8 @@ _TEMPLATES: dict[str, list[tuple]] = {
         ('Fen Bilimleri',   101, 120, 3),
     ],
 
-    # 11. sınıf Maarif TYT. Kitapçık resmi TYT oturumuyla aynıdır; ayrım katalogdadır.
+    # 11. sınıf Maarif TYT. Taban kitapçık resmi TYT oturumudur.
+    # Seçmeli felsefe varsayılan olarak eklenir: 61–65, Matematik ve Fen +5.
     'TYT_11': [
         ('Türkçe',           1,  40, 0),
         ('Sosyal Bilimler',  41, 60, 1),
@@ -188,6 +189,13 @@ _SHIFT_PARENTS = ('Temel Matematik', 'Fen Bilimleri')
 # Ana sosyal blok uzunluğu değişmez.
 _OPTIONAL_PHILOSOPHY_LAYOUT: dict[str, dict] = {
     'YKS_TYT': {
+        'after': 'Sosyal Bilimler',
+        'shift_parents': ('Temel Matematik', 'Fen Bilimleri'),
+        'social_end': 60,
+        'trailing_start': 121,
+        'count': 5,
+    },
+    'TYT_11': {
         'after': 'Sosyal Bilimler',
         'shift_parents': ('Temel Matematik', 'Fen Bilimleri'),
         'social_end': 60,
@@ -357,6 +365,7 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
         'Tarih':          ('TARIH',      'Tarih',           'YKS_TYT'),
         'Coğrafya':       ('COGRAFYA',   'Coğrafya',        'YKS_TYT'),
         'Felsefe':        ('FELSEFE',    'Felsefe',         'YKS_TYT'),
+        OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE', 'Felsefe',    'YKS_TYT'),
         'Din Kültürü':    ('DKAB',       'Din Kültürü',     'YKS_TYT'),
         'Matematik':      ('MATEMATIK',  'Matematik',       'YKS_TYT'),
         'Geometri':       ('GEOMETRI',   'Geometri',        'YKS_TYT'),

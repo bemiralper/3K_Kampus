@@ -102,7 +102,9 @@ def _score_answer(exam, sec_nets, tyt_nets, year, coef):
             'ham_puan': float(data['ham_puan']),
         }
     if exam_type == 'TYT_11':
-        data = calculate_tyt11_score(sec_nets)
+        data = calculate_tyt11_score(
+            sec_nets, year=year, coefficients=coef(year, 'TYT_11'),
+        )
         return {
             'puan': float(data['puan']),
             'ham_puan': float(data['ham_puan']),

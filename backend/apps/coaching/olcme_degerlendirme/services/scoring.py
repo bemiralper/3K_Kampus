@@ -23,10 +23,21 @@ TYT_KATSAYILAR = {
     2023: {'Türkçe': 2.89, 'Sosyal Bilimler': 3.02, 'Temel Matematik': 3.02, 'Fen Bilimleri': 3.06, '_base': 141.90},
     2024: {'Türkçe': 2.91, 'Sosyal Bilimler': 2.94, 'Temel Matematik': 2.93, 'Fen Bilimleri': 3.15, '_base': 144.953},
     2025: {'Türkçe': 2.83, 'Sosyal Bilimler': 2.99, 'Temel Matematik': 3.28, 'Fen Bilimleri': 2.53, '_base': 145.47},
-    # Okulvizyon ÇAP TYT 1 (2026) karnesinden tersine çözüldü. 120 net = 500.
+    # Okulizyon / Okulvizyon 2026 deneme karnesinden tersine çözüldü. 120 net = 500.
     # ÖSYM 2026 standart puan tablosu değil; deneme ham puanı bu katsayılarla çıkar.
     2026: {'Türkçe': 2.9084, 'Sosyal Bilimler': 2.9367, 'Temel Matematik': 2.9255, 'Fen Bilimleri': 3.1482, '_base': 144.945},
 }
+
+# 11. sınıf TYT denemesi Okulizyon karnesiyle aynı formülü kullanır.
+# Yıla göre değişmez; kurum puan katsayılarından düzenlenir.
+_TYT_11_ROW = {
+    'Türkçe': 2.9084,
+    'Sosyal Bilimler': 2.9367,
+    'Temel Matematik': 2.9255,
+    'Fen Bilimleri': 3.1482,
+    '_base': 144.945,
+}
+TYT_11_KATSAYILAR = {year: dict(_TYT_11_ROW) for year in (2024, 2025, 2026)}
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  AYT KATSAYILARI  (ÖSYM — yıllara göre, SAY puan türü)
@@ -196,6 +207,7 @@ def _normalize_section_name(name: str, context: str = 'tyt') -> str:
 
 FACTORY_TABLES = {
     'TYT': TYT_KATSAYILAR,
+    'TYT_11': TYT_11_KATSAYILAR,
     'AYT_SAY': AYT_SAY_KATSAYILAR,
     'AYT_EA': AYT_EA_KATSAYILAR,
     'AYT_SOZ': AYT_SOZ_KATSAYILAR,
@@ -438,7 +450,6 @@ def calculate_lgs_score(section_nets: dict, year: int = 2025, coefficients: dict
 
 
 AYT_11_MAX_SCORE = 500.0
-TYT_11_QUESTION_TOTAL = 120
 # Sayısal: Matematik 30 + Fizik 10 + Kimya 10 + Biyoloji 10.
 # Eşit ağırlık: Türk Dili 30 + Tarih 10 + Coğrafya 10 + Matematik 30.
 # Felsefe ve Din kültürü yalnız toplam nettedir.
@@ -479,18 +490,29 @@ def calculate_ayt11_score(section_nets: dict) -> dict:
     }
 
 
-def calculate_tyt11_score(section_nets: dict) -> dict:
-    """11. sınıf TYT. Üst ders netleri / 120 × 500. ÖSYM katsayısı uygulanmaz."""
-    toplam_net = sum(float(net or 0) for net in section_nets.values())
-    toplam_net = max(0.0, min(toplam_net, float(TYT_11_QUESTION_TOTAL)))
-    puan = round(toplam_net / TYT_11_QUESTION_TOTAL * AYT_11_MAX_SCORE, 2)
+def calculate_tyt11_score(section_nets: dict, year: int = 2026,
+                          coefficients: dict = None) -> dict:
+    """11. sınıf TYT. Okulizyon: başlangıç + dört ana ders neti × katsayı. OBP yok."""
+    coef = dict(coefficients) if coefficients else get_factory_coefficients('TYT_11', year)
+    base = float(coef['_base'])
+    toplam_net = 0.0
+    ham_puan = base
+    for section_name, net in (section_nets or {}).items():
+        net_val = float(net) if net else 0.0
+        normalized = _normalize_section_name(section_name, context='tyt')
+        k = float(coef.get(normalized, 0) or 0)
+        if k == 0:
+            continue
+        toplam_net += net_val
+        ham_puan += net_val * k
+    puan = max(base, min(ham_puan, AYT_11_MAX_SCORE))
     return {
-        'ham_puan': puan,
+        'ham_puan': round(ham_puan, 2),
         'toplam_net': round(toplam_net, 2),
-        'puan': puan,
+        'puan': round(puan, 2),
         'diploma_ek': 0.0,
         'max_puan': AYT_11_MAX_SCORE,
-        'referans_yil': None,
+        'referans_yil': year,
     }
 
 
@@ -511,7 +533,8 @@ def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
     if exam_type == 'AYT_11':
         return calculate_ayt11_score(section_nets)
     if exam_type == 'TYT_11':
-        return calculate_tyt11_score(section_nets)
+        coef = _lookup_db_coefficients(kurum_id, year, 'TYT_11')
+        return calculate_tyt11_score(section_nets, year=year, coefficients=coef)
     if exam_type == 'YKS_TYT':
         coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
         return calculate_tyt_score(section_nets, year=year, coefficients=coef)
