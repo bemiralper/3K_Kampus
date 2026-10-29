@@ -108,9 +108,9 @@ def _avg_triplet(section_avgs: dict | None, sec: dict, subs_map: dict) -> tuple 
     )
 
 
-def _pt_ranks(ranking_list: list[dict]) -> dict:
+def _pt_ranks(ranking_list: list[dict], pt_keys=PT_KEYS) -> dict:
     ranks: dict[str, dict] = {}
-    for pt in PT_KEYS:
+    for pt in pt_keys:
         scored = [
             r for r in ranking_list
             if ((r.get('puan_turleri') or {}).get(pt) or {}).get('puan') is not None
@@ -157,7 +157,13 @@ def tahmini_sira_label(ranking_year: int | None) -> str:
     return 'Tah.Sıra'
 
 
-def build_export_columns(*, is_ayt: bool, sections: list[dict] | None = None, ranking_year: int | None = None):
+def build_export_columns(
+    *,
+    is_ayt: bool,
+    sections: list[dict] | None = None,
+    ranking_year: int | None = None,
+    pt_keys=PT_KEYS,
+):
     from shared.export.style_manager import ExportColumn
 
     ordered = ordered_export_sections(sections)
@@ -176,7 +182,7 @@ def build_export_columns(*, is_ayt: bool, sections: list[dict] | None = None, ra
         cols.append(ExportColumn(key=_net_key(sid), label=f'{base} Net', type='decimal', width=7))
     cols.append(ExportColumn(key='toplam_net', label='T.Net', type='decimal', width=8))
     if is_ayt:
-        for pt in PT_KEYS:
+        for pt in pt_keys:
             cols.append(ExportColumn(key=f'puan_{pt.lower()}', label=f'{PT_LABELS[pt]} Puan', type='decimal', width=9))
             cols.append(ExportColumn(key=f'kurs_{pt.lower()}', label=f'{PT_LABELS[pt]} Kurs', type='integer', width=7))
             cols.append(ExportColumn(key=f'genel_{pt.lower()}', label=f'{PT_LABELS[pt]} Genel', type='integer', width=9))
@@ -200,10 +206,11 @@ def build_export_rows(
     avg_score: float | None = None,
     puan_turleri_avgs: dict | None = None,
     include_avg_row: bool = True,
+    pt_keys=PT_KEYS,
 ) -> list[dict]:
     ordered = ordered_export_sections(sections)
     subs_map = _subs_by_parent(sections or [])
-    ranks = _pt_ranks(ranking_list) if is_ayt else {}
+    ranks = _pt_ranks(ranking_list, pt_keys) if is_ayt else {}
     rows: list[dict] = []
 
     if include_avg_row and (section_avgs or avg_net is not None):
@@ -225,7 +232,7 @@ def build_export_rows(
             if trip:
                 avg_row[_d_key(sid)], avg_row[_y_key(sid)], avg_row[_net_key(sid)] = trip
             if is_ayt:
-                for pt in PT_KEYS:
+                for pt in pt_keys:
                     avg_row[f'puan_{pt.lower()}'] = (puan_turleri_avgs or {}).get(pt)
         rows.append(avg_row)
 
@@ -253,7 +260,7 @@ def build_export_rows(
                 row[_net_key(sid)] = net
         if is_ayt:
             pt = r.get('puan_turleri') or {}
-            for key in PT_KEYS:
+            for key in pt_keys:
                 info = pt.get(key) or {}
                 row[f'puan_{key.lower()}'] = info.get('puan')
                 row[f'kurs_{key.lower()}'] = ranks.get(key, {}).get(r.get('answer_id'))
@@ -319,6 +326,7 @@ def export_rankings_file(
     ranking_year: int | None,
     avg_net: float,
     avg_score: float,
+    pt_keys=PT_KEYS,
 ):
     rows = build_export_rows(
         ranking_list,
@@ -328,8 +336,11 @@ def export_rankings_file(
         avg_net=avg_net,
         avg_score=avg_score,
         puan_turleri_avgs=puan_turleri_avgs,
+        pt_keys=pt_keys,
     )
-    columns = build_export_columns(is_ayt=is_ayt, sections=sections, ranking_year=ranking_year)
+    columns = build_export_columns(
+        is_ayt=is_ayt, sections=sections, ranking_year=ranking_year, pt_keys=pt_keys,
+    )
     meta = build_export_meta(request, exam, report_title=f'{exam.name} — Sıralama Sonuçları', ranking_year=ranking_year)
     stats = build_export_stats(ranking_list, avg_net=avg_net, avg_score=avg_score, ranking_year=ranking_year)
     filename = f'{exam.name}_siralama'
@@ -340,6 +351,7 @@ def export_rankings_file(
         'sinif_avgs': sinif_avgs or {},
         'puan_turleri_avgs': puan_turleri_avgs or {},
         'is_ayt': is_ayt,
+        'pt_keys': tuple(pt_keys),
         'ranking_year': ranking_year,
         'exam_name': exam.name,
         'avg_net': avg_net,
@@ -355,7 +367,7 @@ def export_rankings_file(
 # Excel — PDF benzeri 3 satırlı başlık + grafik sayfası
 # ---------------------------------------------------------------------------
 
-def _header_groups(columns, sections: list[dict] | None, is_ayt: bool):
+def _header_groups(columns, sections: list[dict] | None, is_ayt: bool, pt_keys=PT_KEYS):
     """Excel 3 satırlı başlık için grup bilgisi."""
     sections = sections or []
     ordered = ordered_export_sections(sections)
@@ -393,7 +405,7 @@ def _header_groups(columns, sections: list[dict] | None, is_ayt: bool):
         i = j
     groups.append({'kind': 'single', 'keys': ['toplam_net'], 'top': 'T.Net', 'mid': '', 'bot': 'T.Net'})
     if is_ayt:
-        for pt in PT_KEYS:
+        for pt in pt_keys:
             groups.append({
                 'kind': 'pt',
                 'top': PT_LABELS[pt],
@@ -432,7 +444,10 @@ def _export_rankings_xlsx(rows, columns, *, meta, stats, filename, chart_ctx):
     header_row = ExcelExportService._write_letterhead(ws, meta, num_cols=num_cols)
     stats_end = ExcelExportService._write_stats(ws, stats, start_row=header_row, num_cols=num_cols)
 
-    groups = _header_groups(cols, chart_ctx.get('sections'), chart_ctx.get('is_ayt'))
+    groups = _header_groups(
+        cols, chart_ctx.get('sections'), chart_ctx.get('is_ayt'),
+        chart_ctx.get('pt_keys') or PT_KEYS,
+    )
     r0, r1, r2 = stats_end, stats_end + 1, stats_end + 2
 
     thin = Side(style='thin', color=sm.BORDER_COLOR_HEX)
@@ -705,7 +720,7 @@ def _chart_datasets(ctx: dict) -> list[tuple[str, list[tuple[str, float]], str]]
 
     pt_pairs = []
     if ctx.get('is_ayt'):
-        for pt in PT_KEYS:
+        for pt in ctx.get('pt_keys') or PT_KEYS:
             val = (ctx.get('puan_turleri_avgs') or {}).get(pt)
             if val is not None:
                 pt_pairs.append((PT_LABELS[pt], float(val)))

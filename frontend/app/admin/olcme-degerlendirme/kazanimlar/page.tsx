@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { curriculumApi } from '../../../../components/olcme/api';
 import type { SubjectItem, TopicItem, OutcomeItem, SubOutcomeItem } from '../../../../components/olcme/types';
 import { filterTopicsByQuery, codeQueryHits } from '../../../../components/olcme/outcome-search';
@@ -32,6 +32,8 @@ export default function KazanimlarPage() {
   const [examTypeFilter, setExamTypeFilter] = useState('');
   const [program, setProgram] = useState<(typeof PROGRAMS)[number]['id']>('program_2018');
   const [excelBusy, setExcelBusy] = useState(false);
+  const [pickedCodes, setPickedCodes] = useState<string[] | null>(null);
+  const excelInputRef = useRef<HTMLInputElement>(null);
   const [treeSearch, setTreeSearch] = useState('');
 
   // Ağaç açma/kapama durumları
@@ -101,6 +103,21 @@ export default function KazanimlarPage() {
   }, [program]);
 
   useEffect(() => { fetchSubjects(); }, [fetchSubjects]);
+  useEffect(() => { setPickedCodes(null); }, [program, examTypeFilter]);
+
+  const excelCodes = useMemo(() => {
+    const listed = subjects.map(subject => subject.code);
+    if (!pickedCodes) return listed;
+    return pickedCodes.filter(code => listed.includes(code));
+  }, [pickedCodes, subjects]);
+  const allExcelSubjects = subjects.length > 0 && excelCodes.length === subjects.length;
+  const excelScopeLabel = allExcelSubjects
+    ? 'Tüm dersler'
+    : excelCodes.length === 1
+      ? (subjects.find(subject => subject.code === excelCodes[0])?.display_name
+        || subjects.find(subject => subject.code === excelCodes[0])?.name
+        || '1 ders')
+      : `${excelCodes.length} ders`;
   useEffect(() => {
     if (selectedSubject?.id) fetchSubjectDetail(selectedSubject.id);
     // Sekme değişince açık dersin ağacı yenilensin. Seçim tıklaması ayrıca yükler.
@@ -453,14 +470,86 @@ export default function KazanimlarPage() {
           </div>
         </div>
         <div className={styles.headerActions}>
+          <details className={styles.excelPick}>
+            <summary className={styles.btnOutline}>Excel: {excelScopeLabel}</summary>
+            <div className={styles.excelPickPanel}>
+              <label className={styles.excelPickRow}>
+                <input
+                  type="checkbox"
+                  checked={allExcelSubjects}
+                  onChange={() => setPickedCodes(allExcelSubjects ? [] : null)}
+                />
+                Tüm dersler
+              </label>
+              {subjects.map(subject => {
+                const checked = excelCodes.includes(subject.code);
+                return (
+                  <label key={subject.id} className={styles.excelPickRow}>
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => {
+                        const next = checked
+                          ? excelCodes.filter(code => code !== subject.code)
+                          : [...excelCodes, subject.code];
+                        setPickedCodes(next.length === subjects.length ? null : next);
+                      }}
+                    />
+                    {subject.display_name || subject.name}
+                  </label>
+                );
+              })}
+            </div>
+          </details>
+          <input
+            ref={excelInputRef}
+            type="file"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            hidden
+            onChange={async event => {
+              const file = event.target.files?.[0];
+              event.target.value = '';
+              if (!file) return;
+              const label = PROGRAMS.find(item => item.id === program)?.label || 'seçili program';
+              const scope = allExcelSubjects
+                ? 'tüm dersler'
+                : subjects
+                  .filter(subject => excelCodes.includes(subject.code))
+                  .map(subject => subject.display_name || subject.name)
+                  .join(', ');
+              const ok = window.confirm(
+                `${label} — ${scope} bu dosyayla güncellensin mi?\n\nYalnız seçilen derslerin bu programdaki konuları değişir. Dosyada olup seçilmeyen dersler aynı kalır.`,
+              );
+              if (!ok) return;
+              setExcelBusy(true);
+              try {
+                const result = await curriculumApi.importCatalog(file, 'replace', false, program, excelCodes);
+                showToast(result.message || 'Excel yüklendi');
+                await fetchSubjects();
+                if (selectedSubject?.id) await fetchSubjectDetail(selectedSubject.id);
+              } catch (e: unknown) {
+                showToast(e instanceof Error ? e.message : 'Excel yüklenemedi', 'error');
+              } finally {
+                setExcelBusy(false);
+              }
+            }}
+          />
           <button
             type="button"
             className={styles.btnOutline}
-            disabled={excelBusy}
+            disabled={excelBusy || excelCodes.length === 0}
+            onClick={() => excelInputRef.current?.click()}
+          >
+            {excelBusy ? 'İşleniyor…' : 'Excel yükle'}
+          </button>
+          <button
+            type="button"
+            className={styles.btnOutline}
+            disabled={excelBusy || excelCodes.length === 0}
             onClick={async () => {
               setExcelBusy(true);
               try {
-                await curriculumApi.downloadOutcomesExcel(program);
+                await curriculumApi.downloadOutcomesExcel(program, excelCodes);
               } catch (e: unknown) {
                 showToast(e instanceof Error ? e.message : 'Excel indirilemedi', 'error');
               } finally {
@@ -468,7 +557,7 @@ export default function KazanimlarPage() {
               }
             }}
           >
-            {excelBusy ? 'Hazırlanıyor…' : 'Excel indir'}
+            Excel indir
           </button>
           <select
             className={styles.filterSelect}

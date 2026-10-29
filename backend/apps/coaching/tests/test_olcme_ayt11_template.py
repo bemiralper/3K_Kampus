@@ -7,8 +7,11 @@ from apps.coaching.olcme_degerlendirme.models.exam import Exam, ExamSection
 from apps.coaching.olcme_degerlendirme.services.curriculum_band import (
     BAND_YKS,
     band_is_locked,
+    curriculum_program_for_exam_type,
     normalize_band,
     subject_filters_for_exam_type,
+    topic_program,
+    topic_program_q,
 )
 from apps.coaching.olcme_degerlendirme.services.development_analysis import (
     group_for_exam_type,
@@ -28,6 +31,7 @@ from apps.coaching.olcme_degerlendirme.services.exam_templates import (
 from apps.coaching.olcme_degerlendirme.services.scoring import (
     calculate_ayt11_score,
     calculate_score_for_exam,
+    calculate_tyt11_score,
     estimate_ranking,
 )
 
@@ -88,29 +92,51 @@ class Ayt11TemplateTest(TestCase):
         fen_subs = list(fen.sub_sections.order_by('order'))
         self.assertEqual([s.name for s in fen_subs], ['Fizik', 'Kimya', 'Biyoloji'])
 
-    def test_score_scales_net_to_500_without_osym_weights(self):
-        full = {
-            'Türk Dili': 30,
-            'Sosyal Bilimler': 30,
-            'Matematik': 30,
-            'Fen Bilimleri': 30,
-        }
-        self.assertEqual(calculate_ayt11_score(full)['puan'], 500.0)
-        self.assertEqual(calculate_ayt11_score({name: 0 for name in full})['puan'], 0.0)
-        self.assertEqual(
-            calculate_ayt11_score({
-                'Türk Dili': 15,
-                'Sosyal Bilimler': 15,
-                'Matematik': 15,
-                'Fen Bilimleri': 15,
-            })['puan'],
-            250.0,
-        )
+    def test_score_say_and_ea_without_osym_weights(self):
+        only_math = calculate_ayt11_score({'Matematik': 30})
+        self.assertEqual(only_math['puan_turleri']['SAY']['puan'], 250.0)
+        self.assertEqual(only_math['puan_turleri']['SAY']['net'], 30.0)
+        self.assertEqual(only_math['puan_turleri']['EA']['puan'], 187.5)
+        self.assertEqual(only_math['puan'], 250.0)
+
+        full_say = {'Matematik': 30, 'Fizik': 10, 'Kimya': 10, 'Biyoloji': 10}
+        self.assertEqual(calculate_ayt11_score(full_say)['puan_turleri']['SAY']['puan'], 500.0)
+
+        full_ea = {'Türk Dili': 30, 'Tarih': 10, 'Coğrafya': 10, 'Matematik': 30}
+        self.assertEqual(calculate_ayt11_score(full_ea)['puan_turleri']['EA']['puan'], 500.0)
+
+        outside = calculate_ayt11_score({'Felsefe': 5, 'Din Kültürü': 5, 'Fen Bilimleri': 30})
+        self.assertEqual(outside['puan_turleri']['SAY']['puan'], 0.0)
+        self.assertEqual(outside['puan_turleri']['EA']['puan'], 0.0)
 
         exam = Exam(exam_type='AYT_11')
-        only_math = calculate_score_for_exam(exam, {'Matematik': 30})
-        self.assertEqual(only_math['puan'], 125.0)
-        self.assertIsNone(estimate_ranking(only_math['puan'], 'AYT_11', 2025)['tahmini_siralama'])
+        via_exam = calculate_score_for_exam(exam, {'Matematik': 30})
+        self.assertEqual(via_exam['puan_turleri']['SAY']['puan'], 250.0)
+        self.assertIsNone(estimate_ranking(via_exam['puan'], 'AYT_11', 2025)['tahmini_siralama'])
+
+    def test_rankings_export_has_say_and_ea_only(self):
+        from apps.coaching.application.olcme_rankings_export import (
+            build_export_columns,
+            build_export_rows,
+        )
+
+        keys = [c.key for c in build_export_columns(is_ayt=True, pt_keys=('SAY', 'EA'))]
+        self.assertIn('puan_say', keys)
+        self.assertIn('puan_ea', keys)
+        self.assertNotIn('puan_soz', keys)
+        default_keys = [c.key for c in build_export_columns(is_ayt=True)]
+        self.assertIn('puan_soz', default_keys)
+
+        rows = build_export_rows(
+            [
+                {'answer_id': 1, 'puan_turleri': {'SAY': {'puan': 300}, 'EA': {'puan': 200}}},
+                {'answer_id': 2, 'puan_turleri': {'SAY': {'puan': 100}, 'EA': {'puan': 400}}},
+            ],
+            is_ayt=True, include_avg_row=False, pt_keys=('SAY', 'EA'),
+        )
+        self.assertEqual([r['kurs_say'] for r in rows], [1, 2])
+        self.assertEqual([r['kurs_ea'] for r in rows], [2, 1])
+        self.assertNotIn('puan_soz', rows[0])
 
     def test_links_ayt_subjects_and_keeps_geometry_outcomes(self):
         exam = Exam.objects.create(name='11 bağ', exam_type='AYT_11')
@@ -136,7 +162,9 @@ class Ayt11TemplateTest(TestCase):
             code='GEOMETRI', name='Geometri', display_name='Geometri',
             exam_type_filter='YKS_AYT',
         )
-        topic = Topic.objects.create(subject=geo, name='Üçgenler', code='11.1', order=1)
+        topic = Topic.objects.create(
+            subject=geo, name='Üçgenler', code='11.1', order=1, program='maarif',
+        )
         outcome = Outcome.objects.create(
             topic=topic, code='11.1.1', text='Üçgende açı bağıntılarını uygular',
         )
@@ -151,3 +179,140 @@ class Ayt11TemplateTest(TestCase):
         self.assertEqual(detach_foreign_outcome_binds(key), 0)
         item.refresh_from_db()
         self.assertEqual(item.outcome_id, outcome.id)
+
+    def test_maarif_catalog_stays_off_yks_and_2018_stays_off_maarif(self):
+        subject = Subject.objects.create(
+            code='MATAYIR', name='Matematik', display_name='Matematik',
+            exam_type_filter='YKS_AYT',
+        )
+        maarif_topic = Topic.objects.create(
+            subject=subject, name='Fonksiyonlar', code='MAT.8.1',
+            program='maarif', order=1,
+        )
+        y2018_topic = Topic.objects.create(
+            subject=subject, name='Fonksiyonlar', code='9.1',
+            program='program_2018', order=2,
+        )
+        shared = 'Fonksiyonun tanım kümesini belirler'
+        maarif_out = Outcome.objects.create(
+            topic=maarif_topic, code='MAT.8.1.1', text=shared,
+        )
+        y2018_out = Outcome.objects.create(
+            topic=y2018_topic, code='9.1.1', text=shared,
+        )
+        maarif_exam = Exam.objects.create(name='11 Maarif', exam_type='AYT_11')
+        yks_exam = Exam.objects.create(name='YKS', exam_type='YKS_TYT')
+        lgs_exam = Exam.objects.create(name='LGS', exam_type='LGS')
+        maarif_sec = ExamSection.objects.create(
+            exam=maarif_exam, name='Matematik', subject=subject,
+            question_start=61, question_end=90, order=0,
+        )
+        yks_sec = ExamSection.objects.create(
+            exam=yks_exam, name='Temel Matematik', subject=subject,
+            question_start=61, question_end=100, order=0,
+        )
+        lgs_sec = ExamSection.objects.create(
+            exam=lgs_exam, name='Matematik', subject=subject,
+            question_start=51, question_end=70, order=0,
+        )
+
+        self.assertEqual(curriculum_program_for_exam_type('AYT_11'), 'maarif')
+        self.assertEqual(curriculum_program_for_exam_type('TYT_11'), 'maarif')
+        self.assertEqual(curriculum_program_for_exam_type('YKS_TYT'), 'program_2018')
+        self.assertEqual(curriculum_program_for_exam_type('YKS_AYT'), 'program_2018')
+        self.assertEqual(curriculum_program_for_exam_type('DENEME'), 'program_2018')
+        self.assertEqual(curriculum_program_for_exam_type('LGS'), '')
+
+        self.assertEqual(match_text_for_section(maarif_sec, shared)['outcome_id'], maarif_out.id)
+        self.assertEqual(match_text_for_section(yks_sec, shared)['outcome_id'], y2018_out.id)
+        self.assertIsNone(match_text_for_section(yks_sec, 'MAT.8.1.1'))
+        self.assertIsNone(match_text_for_section(maarif_sec, '9.1.1'))
+        self.assertIsNotNone(match_text_for_section(lgs_sec, shared))
+
+    def test_ortaokul_maarif_without_program_field_is_still_maarif(self):
+        """maarif_ortaokul program yazmaz; resmi ünite kodu yine Maarif sayılır."""
+        subject = Subject.objects.create(
+            code='MATORTA', name='Matematik', display_name='Matematik',
+            exam_type_filter='ALL',
+        )
+        orta = Topic.objects.create(
+            subject=subject, name='8. sınıf · Sayılar', code='MAT.8.1', order=1,
+        )
+        turkce = Topic.objects.create(
+            subject=subject, name='5. sınıf · Okuma', code='T.O.5', order=2,
+        )
+        y2018 = Topic.objects.create(
+            subject=subject, name='Sayılar', code='M.9.1', order=3,
+        )
+        self.assertEqual(orta.program, 'program_2018')
+        self.assertEqual(topic_program(orta), 'maarif')
+        self.assertEqual(topic_program(turkce), 'maarif')
+        self.assertEqual(topic_program(y2018), 'program_2018')
+        self.assertEqual(
+            set(Topic.objects.filter(topic_program_q('maarif'), subject=subject)),
+            {orta, turkce},
+        )
+        self.assertEqual(
+            list(Topic.objects.filter(topic_program_q('program_2018'), subject=subject)),
+            [y2018],
+        )
+
+        text = 'Tam sayılarla çarpma işlemini modeller'
+        orta_out = Outcome.objects.create(topic=orta, code='MAT.8.1.1', text=text)
+        maarif_exam = Exam.objects.create(name='11 TYT', exam_type='TYT_11')
+        yks_exam = Exam.objects.create(name='TYT', exam_type='YKS_TYT')
+        maarif_sec = ExamSection.objects.create(
+            exam=maarif_exam, name='Temel Matematik', subject=subject,
+            question_start=61, question_end=100, order=0,
+        )
+        yks_sec = ExamSection.objects.create(
+            exam=yks_exam, name='Temel Matematik', subject=subject,
+            question_start=61, question_end=100, order=0,
+        )
+        self.assertEqual(match_text_for_section(maarif_sec, text)['outcome_id'], orta_out.id)
+        self.assertEqual(match_text_for_section(maarif_sec, 'MAT.8.1.1')['outcome_id'], orta_out.id)
+        self.assertIsNone(match_text_for_section(yks_sec, text))
+        self.assertIsNone(match_text_for_section(yks_sec, 'MAT.8.1.1'))
+
+
+class Tyt11TemplateTest(TestCase):
+    def test_booklet_matches_yks_tyt_without_optional_shift(self):
+        sections = get_template_sections('TYT_11', include_optional_philosophy=True)
+        subs = get_template_sub_sections('TYT_11', include_optional_philosophy=True)
+        self.assertEqual(
+            [(row['name'], row['question_count']) for row in sections],
+            [
+                ('Türkçe', 40),
+                ('Sosyal Bilimler', 20),
+                ('Temel Matematik', 40),
+                ('Fen Bilimleri', 20),
+            ],
+        )
+        self.assertEqual(sections[-1]['question_end'], 120)
+        self.assertNotIn('Felsefe (Seçmeli)', {row['name'] for row in sections})
+        self.assertEqual(subs['Fen Bilimleri'][-1]['question_end'], 120)
+        self.assertEqual(get_default_duration('TYT_11'), 165)
+
+        exam = Exam.objects.create(name='11 TYT', exam_type='TYT_11')
+        create_sections_from_template(exam)
+        self.assertTrue(band_is_locked('TYT_11'))
+        self.assertEqual(normalize_band('', 'TYT_11'), BAND_YKS)
+        turkce = ExamSection.objects.get(exam=exam, name='Türkçe')
+        self.assertEqual(turkce.subject.code, 'TURKCE')
+        self.assertEqual(turkce.subject.exam_type_filter, 'YKS_TYT')
+        self.assertEqual(subject_filters_for_exam_type('TYT_11'), ('ALL', 'YKS_TYT'))
+        self.assertEqual(group_for_exam_type('TYT_11'), 'TYT_11')
+        self.assertEqual(types_for_group('TYT'), ('YKS_TYT',))
+        self.assertNotIn('TYT_11', types_for_group('manuel'))
+
+        full = calculate_tyt11_score({
+            'Türkçe': 40,
+            'Sosyal Bilimler': 20,
+            'Temel Matematik': 40,
+            'Fen Bilimleri': 20,
+        })
+        self.assertEqual(full['puan'], 500.0)
+        self.assertEqual(full['toplam_net'], 120.0)
+        half = calculate_score_for_exam(Exam(exam_type='TYT_11'), {'Türkçe': 40, 'Fen Bilimleri': 20})
+        self.assertEqual(half['puan'], 250.0)
+        self.assertIsNone(estimate_ranking(half['puan'], 'TYT_11', 2025)['tahmini_siralama'])

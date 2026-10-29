@@ -740,6 +740,54 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         self.assertEqual(campaign.messages.count(), 1)
         self.assertIn(self.in_class.id, campaign.recipient_filter_json['included_ogrenci_ids'])
 
+    def test_hatirlatma_send_appears_in_bulk_history(self):
+        from unittest.mock import patch
+
+        from apps.communication.application.communication_service import SendResult
+        from apps.communication.domain.enums import MessageDirection, RecipientType
+        from apps.communication.domain.models import Conversation, Message, OutboundCampaign
+
+        p = self._seed_hatirlatma_participant()
+        other = ExamParticipant.objects.create(exam=self.exam, student=self.classless_12)
+        self.in_class.telefon = '5551112233'
+        self.in_class.save(update_fields=['telefon'])
+        self.classless_12.telefon = '5559998877'
+        self.classless_12.save(update_fields=['telefon'])
+
+        def fake_dispatch(*_args, **_kwargs):
+            conv = Conversation.objects.create(
+                kurum=self.kurum, sube=self.sube, channel='WHATSAPP',
+                contact_phone='905551112233', contact_type=RecipientType.OGRENCI,
+                ogrenci=self.in_class,
+            )
+            msg = Message.objects.create(
+                conversation=conv, direction=MessageDirection.OUTBOUND,
+                body='Sınav bilgisi.', status='SENT',
+            )
+            return SendResult(success=True, message_id=str(msg.id))
+
+        with patch(
+            'apps.communication.application.notification_dispatcher.dispatch_event',
+            side_effect=fake_dispatch,
+        ) as dispatch:
+            res = self.client.post(
+                f'{EXAMS_URL}{self.exam.id}/hatirlatma/send/',
+                {
+                    'participant_ids': [p.id, other.id],
+                    'student_ids': [self.in_class.id],
+                    'veli_ids': [],
+                    'event_key': 'sinav.hatirlatma',
+                },
+                format='json', **self.headers,
+            )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.assertEqual(res.json()['sent'], 1)
+        self.assertEqual(dispatch.call_count, 1)
+        campaign = OutboundCampaign.objects.get(kurum=self.kurum)
+        self.assertEqual(campaign.title, 'Sınav bilgisi — API Sınav')
+        self.assertEqual(campaign.recipient_filter_json['origin'], 'sinav.hatirlatma')
+        self.assertEqual(campaign.recipient_filter_json['included_ogrenci_ids'], [self.in_class.id])
+
     def test_new_participant_defaults_present(self):
         res = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/participants/add/',

@@ -61,6 +61,7 @@ const WIZARD = [
 
 const TYPE_META: Record<string, { short: string; hint: string }> = {
   YKS_TYT: { short: 'TYT', hint: 'Temel yeterlilik' },
+  TYT_11: { short: '11 TYT', hint: 'Maarif · 120 soru' },
   YKS_AYT: { short: 'AYT', hint: 'Alan yeterlilik' },
   AYT_11: { short: '11 AYT', hint: '11. sınıf · 120 soru' },
   LGS: { short: 'LGS 8', hint: '8. sınıf liselere geçiş' },

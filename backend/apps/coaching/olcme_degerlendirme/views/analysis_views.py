@@ -197,9 +197,18 @@ def _ayt_pt_puan(row: dict, pt: str = 'SAY') -> float:
     return float(info.get('puan') or 0)
 
 
-def _assign_ayt_kurum_ranks(rows: list) -> None:
+def _ayt11_pt_key(alan_kodu: str | None) -> str:
+    """11. sınıf AYT sözel alan üretmez; sözel kayıt sayısal sıraya yazılır."""
+    pt = _ALAN_TO_PUAN_TURU.get(alan_kodu or '', 'SAY')
+    return pt if pt in ('SAY', 'EA') else 'SAY'
+
+
+AYT11_PT_KEYS = ('SAY', 'EA')
+
+
+def _assign_ayt_kurum_ranks(rows: list, pt_keys=('SAY', 'EA', 'SOZ')) -> None:
     """Yayınevi PDF gibi her puan türüne ayrı kurum sırası yaz; varsayılan sıra SAY."""
-    for pt in ('SAY', 'EA', 'SOZ'):
+    for pt in pt_keys:
         ordered = sorted(rows, key=lambda r: _ayt_pt_puan(r, pt), reverse=True)
         for idx, row in enumerate(ordered, 1):
             pts = row.get('puan_turleri')
@@ -833,6 +842,7 @@ def _exam_type_short(exam_type: str) -> str:
         'YKS_TYT': 'TYT',
         'YKS_AYT': 'AYT',
         'AYT_11': '11 AYT',
+        'TYT_11': '11 TYT',
         'LGS': 'LGS',
         'LGS_7': 'LGS 7',
         'DENEME': 'Deneme',
@@ -942,7 +952,7 @@ def _build_scoring_nets(answer, exam) -> dict:
     AYT: Ana bölüm neti öncelikli. Alt bölüm neti sadece ana bölümle
          isim çakışması yoksa eklenir (ör: Fizik, Kimya, Biyoloji ayrı katsayılı).
     """
-    is_tyt = exam.exam_type in ('YKS_TYT', 'DENEME', 'LGS', 'LGS_7', 'AYT_11')
+    is_tyt = exam.exam_type in ('YKS_TYT', 'TYT_11', 'DENEME', 'LGS', 'LGS_7')
 
     result = {}
     for ss in answer.section_scores.all():
@@ -998,6 +1008,31 @@ def _scores_from_block(exam, block, alan_kodu, ranking_year):
             }
         return score_data, _PUAN_TURU_TO_EXAM_TYPE[pt_key], puan_turleri, all_scores_data, pt_key
 
+    if exam.exam_type == 'AYT_11' and block.get('puan_turleri'):
+        pts = block.get('puan_turleri') or {}
+        pt_key = _ayt11_pt_key(alan_kodu)
+        chosen = pts.get(pt_key) or {}
+        score_data = {
+            'puan': float(chosen.get('puan') or 0),
+            'ham_puan': float(chosen.get('ham_puan') or 0),
+            'ayt_net': float(chosen.get('ayt_net') or 0),
+            'tyt_net': 0.0,
+        }
+        all_scores_data = {
+            pt: {
+                'puan': float((d or {}).get('puan') or 0),
+                'ham_puan': float((d or {}).get('ham_puan') or 0),
+                'ayt_net': float((d or {}).get('ayt_net') or 0),
+                'tyt_net': 0.0,
+            }
+            for pt, d in pts.items() if pt in ('SAY', 'EA')
+        }
+        puan_turleri = {
+            pt: {**data, 'tahmini_siralama': None, 'yuzdelik_dilim': None}
+            for pt, data in all_scores_data.items()
+        }
+        return score_data, 'AYT_11', puan_turleri, all_scores_data, pt_key
+
     score_data = {
         'puan': float(block.get('puan') or 0),
         'ham_puan': float(block.get('ham_puan') or 0),
@@ -1040,6 +1075,7 @@ def exam_analysis_summary(request, exam_pk):
     blocks = blocks_for_answers(exam, answers, ranking_year)
 
     is_ayt = exam.exam_type == 'YKS_AYT'
+    is_ayt11 = exam.exam_type == 'AYT_11'
 
     # Kayıtlı puan (TYT → TYT, AYT özeti → SAY)
     scores = []
@@ -1053,6 +1089,13 @@ def exam_analysis_summary(request, exam_pk):
                 for pt, row in pts.items()
             }
             ayt_all_scores.append(all_scores_data)
+            scores.append(float((pts.get('SAY') or {}).get('puan') or 0))
+        elif is_ayt11:
+            pts = block.get('puan_turleri') or {}
+            ayt_all_scores.append({
+                pt: {'puan': float((pts.get(pt) or {}).get('puan') or 0)}
+                for pt in AYT11_PT_KEYS
+            })
             scores.append(float((pts.get('SAY') or {}).get('puan') or 0))
         else:
             scores.append(float(block.get('puan') or 0))
@@ -1070,9 +1113,9 @@ def exam_analysis_summary(request, exam_pk):
 
     # AYT puan türleri istatistikleri
     puan_turleri = None
-    if is_ayt and ayt_all_scores:
+    if (is_ayt or is_ayt11) and ayt_all_scores:
         puan_turleri = {}
-        for pt in ('SAY', 'EA', 'SOZ'):
+        for pt in (('SAY', 'EA', 'SOZ') if is_ayt else AYT11_PT_KEYS):
             pt_scores = [s[pt]['puan'] for s in ayt_all_scores]
             puan_turleri[pt] = {
                 'ortalama': round(sum(pt_scores) / len(pt_scores), 2) if pt_scores else 0,
@@ -1386,6 +1429,16 @@ def exam_analysis_students(request, exam_pk):
             pt = _ALAN_TO_PUAN_TURU.get(row.get('alan'), 'SAY')
             mine = float(((row.get('puan_turleri') or {}).get(pt) or {}).get('puan') or 0)
             row['kurum_ici_yuzdelik'] = calculate_percentile(mine, pools[pt])
+    elif exam.exam_type == 'AYT_11':
+        pools = {pt: [] for pt in AYT11_PT_KEYS}
+        for row in student_list:
+            pts = row.get('puan_turleri') or {}
+            for pt in pools:
+                pools[pt].append(float((pts.get(pt) or {}).get('puan') or 0))
+        for row in student_list:
+            pt = _ayt11_pt_key(row.get('alan'))
+            mine = float(((row.get('puan_turleri') or {}).get(pt) or {}).get('puan') or 0)
+            row['kurum_ici_yuzdelik'] = calculate_percentile(mine, pools[pt])
 
     # student_id filtresi
     if student_id:
@@ -1393,6 +1446,8 @@ def exam_analysis_students(request, exam_pk):
 
     if is_ayt:
         _assign_ayt_kurum_ranks(student_list)
+    elif exam.exam_type == 'AYT_11':
+        _assign_ayt_kurum_ranks(student_list, AYT11_PT_KEYS)
     else:
         student_list.sort(key=lambda x: x['puan'], reverse=True)
         for idx, s in enumerate(student_list, 1):
@@ -1587,6 +1642,8 @@ def build_exam_payload_context(exam, ranking_year) -> dict:
             sinif_members[sinif_id].append(ogrenci_id)
 
     is_ayt = exam.exam_type == 'YKS_AYT'
+    is_ayt11 = exam.exam_type == 'AYT_11'
+    track_keys = ('SAY', 'EA', 'SOZ') if is_ayt else (AYT11_PT_KEYS if is_ayt11 else ())
     blocks = blocks_for_answers(exam, all_answers, ranking_year)
     kurum_scores: list = []
     pt_score_lists: dict[str, list] = {'SAY': [], 'EA': [], 'SOZ': []}
@@ -1595,16 +1652,16 @@ def build_exam_payload_context(exam, ranking_year) -> dict:
     answer_pt_net: dict[int, dict] = {}
     for other in all_answers:
         block = blocks.get(other.id) or {}
-        if is_ayt:
+        if track_keys:
             pts = block.get('puan_turleri') or {}
             kurum_scores.append(float((pts.get('SAY') or {}).get('puan') or 0))
             answer_pt_puan[other.id] = {
-                pt: float((pts.get(pt) or {}).get('puan') or 0) for pt in pt_score_lists
+                pt: float((pts.get(pt) or {}).get('puan') or 0) for pt in track_keys
             }
             answer_pt_net[other.id] = {
-                pt: round(float((pts.get(pt) or {}).get('ayt_net') or 0), 2) for pt in pt_net_lists
+                pt: round(float((pts.get(pt) or {}).get('ayt_net') or 0), 2) for pt in track_keys
             }
-            for pt in pt_score_lists:
+            for pt in track_keys:
                 pt_score_lists[pt].append(answer_pt_puan[other.id][pt])
                 pt_net_lists[pt].append(answer_pt_net[other.id][pt])
         else:
@@ -1712,6 +1769,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     # ── Genel bilgiler ────────────────────────────────────────────────────
     student_net = _safe_float(answer.total_net)
     is_ayt = exam.exam_type == 'YKS_AYT'
+    is_ayt11 = exam.exam_type == 'AYT_11'
     alan_kodu = _get_student_alan(answer.student, exam.egitim_yili)
     _mark_alan_inclusion(section_details, exam.exam_type, alan_kodu)
     alan_soru = student_alan_question_count(section_details) or int(exam.total_questions or 0)
@@ -1722,7 +1780,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     score_data, ranking_exam_type, _puan_turleri_ready, all_scores_data, pt_key = _scores_from_block(
         exam, block, alan_kodu, ranking_year,
     )
-    if is_ayt and all_scores_data:
+    if (is_ayt or is_ayt11) and all_scores_data:
         puan_turleri_detail = {
             pt: {
                 'puan': d['puan'],
@@ -1742,13 +1800,19 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         kurum_percentile = calculate_percentile(
             score_data['puan'], ctx['pt_score_lists'].get(pt_key) or [],
         )
+    elif is_ayt11 and pt_key:
+        alan_net = student_net
+        net_etiket = 'NET'
+        kurum_percentile = calculate_percentile(
+            score_data['puan'], ctx['pt_score_lists'].get(pt_key) or [],
+        )
     else:
         alan_net = student_net
         net_etiket = 'NET'
         kurum_percentile = calculate_percentile(student_net, all_nets)
 
     # Kurum sırası — AYT karnesinde öğrencinin kendi puan türü
-    if is_ayt:
+    if is_ayt or (is_ayt11 and all_scores_data and pt_key in (all_scores_data or {})):
         my_pt_score = all_scores_data[pt_key]['puan']
         sorted_pt_scores = sorted(ctx['pt_score_lists'].get(pt_key) or [], reverse=True)
         kurum_sira = sorted_pt_scores.index(my_pt_score) + 1 if my_pt_score in sorted_pt_scores else 0
@@ -1806,16 +1870,18 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
     kurum_scores = ctx['kurum_scores']
     pt_score_lists = ctx['pt_score_lists']
     kurum_avg_puan = round(sum(kurum_scores) / len(kurum_scores), 3) if kurum_scores else 0
+    pt_avg_keys = tuple(pt_score_lists) if is_ayt else (AYT11_PT_KEYS if is_ayt11 else ())
     puan_turleri_avgs = {
         pt: round(sum(vals) / len(vals), 3) if vals else 0
         for pt, vals in pt_score_lists.items()
-    } if is_ayt else {}
+        if pt in pt_avg_keys
+    }
 
-    if is_ayt and puan_turleri_detail:
+    if (is_ayt or is_ayt11) and puan_turleri_detail:
         for pt, d in all_scores_data.items():
             pt_est = estimate_ranking(
                 d['puan'], _PUAN_TURU_TO_EXAM_TYPE.get(pt, 'YKS_AYT'), ranking_year,
-            )
+            ) if is_ayt else {}
             sorted_pt = sorted(pt_score_lists.get(pt) or [], reverse=True)
             my_pt = d['puan']
             sorted_nets = sorted(ctx.get('pt_net_lists', {}).get(pt) or [], reverse=True)
@@ -1837,19 +1903,22 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
             ) if kayit and kayit.sinif_id else set()
             if member_ids:
                 classmates = [a for a in all_answers if a.student_id in member_ids]
-        for pt in ('SAY', 'EA', 'SOZ'):
+        for pt in pt_avg_keys:
+            if pt not in all_scores_data:
+                continue
             scores = [float((pt_map.get(a.id) or {}).get(pt) or 0) for a in classmates]
             mine = float((pt_map.get(answer.id) or {}).get(pt) or all_scores_data[pt]['puan'])
             ordered = sorted(scores, reverse=True)
             puan_turleri_detail[pt]['sinif_ici_sira'] = (
                 ordered.index(mine) + 1 if scores and mine in ordered else 0
             )
-        sinif_rank = puan_turleri_detail[pt_key]['sinif_ici_sira'] or sinif_rank
+        if pt_key in puan_turleri_detail:
+            sinif_rank = puan_turleri_detail[pt_key]['sinif_ici_sira'] or sinif_rank
 
     # Karne ortalaması eşleşmiş öğrencilerde kalır. Eşleşmeyen satırın kendi
     # sırası, bu kaydı o havuza ekleyerek bulunur; aksi halde sıra 0 kalır.
     if not answer.student_id:
-        if is_ayt and all_scores_data:
+        if (is_ayt or is_ayt11) and all_scores_data:
             my_pt_score = all_scores_data[pt_key]['puan']
             pool = list(ctx['pt_score_lists'].get(pt_key) or []) + [my_pt_score]
             ordered = sorted(pool, reverse=True)
@@ -1901,7 +1970,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'puan': score_data['puan'],
         'ham_puan': score_data['ham_puan'],
         'puan_turleri': puan_turleri_detail,
-        'alan_puan_turu': pt_key if is_ayt else None,
+        'alan_puan_turu': pt_key if (is_ayt or is_ayt11) else None,
         'tyt_siralama': _tyt_siralama_for(ctx.get('tyt_rank_index'), answer) if is_ayt else None,
         'tahmini_siralama': ranking_data.get('tahmini_siralama'),
         'yuzdelik_dilim': ranking_data.get('yuzdelik_dilim'),
@@ -2073,6 +2142,8 @@ def exam_analysis_rankings(request, exam_pk):
 
     # Kayıtlı puan
     is_ayt = exam.exam_type == 'YKS_AYT'
+    is_ayt11 = exam.exam_type == 'AYT_11'
+    pt_keys = ('SAY', 'EA', 'SOZ') if is_ayt else AYT11_PT_KEYS
     blocks = blocks_for_answers(exam, answers, ranking_year)
     profiles = _profiles_for_students(exam, [a.student_id for a in answers])
     from apps.ogrenci.services.kayit_turu import (
@@ -2101,7 +2172,7 @@ def exam_analysis_rankings(request, exam_pk):
         score_data, ranking_exam_type, puan_turleri_ready, _all_scores, pt_key = _scores_from_block(
             exam, blocks.get(a.id), alan_kodu, ranking_year,
         )
-        if is_ayt and puan_turleri_ready:
+        if (is_ayt or is_ayt11) and puan_turleri_ready:
             puan_turleri_r = {
                 pt: {
                     'puan': d['puan'],
@@ -2150,8 +2221,8 @@ def exam_analysis_rankings(request, exam_pk):
             'alan': alan_kodu,
         })
 
-    if is_ayt:
-        _assign_ayt_kurum_ranks(ranking_list)
+    if is_ayt or is_ayt11:
+        _assign_ayt_kurum_ranks(ranking_list, pt_keys)
         all_scores = [_ayt_pt_puan(r, 'SAY') for r in ranking_list]
     else:
         ranking_list.sort(key=lambda x: x['puan'], reverse=True)
@@ -2163,7 +2234,7 @@ def exam_analysis_rankings(request, exam_pk):
     total = len(ranking_list)
     for r in ranking_list:
         r['toplam_ogrenci'] = total
-        score_for_pct = _ayt_pt_puan(r, 'SAY') if is_ayt else r['puan']
+        score_for_pct = _ayt_pt_puan(r, 'SAY') if (is_ayt or is_ayt11) else r['puan']
         r['kurum_ici_yuzdelik'] = calculate_percentile(score_for_pct, all_scores)
 
     # Yüzdelik dilim dağılımı
@@ -2188,8 +2259,8 @@ def exam_analysis_rankings(request, exam_pk):
 
     # ── Kurs geneli puan türü ortalamaları ──
     puan_turleri_avgs = {}
-    if is_ayt:
-        for pt in ['SAY', 'EA', 'SOZ']:
+    if is_ayt or is_ayt11:
+        for pt in pt_keys:
             vals = [r['puan_turleri'][pt]['puan'] for r in ranking_list if r.get('puan_turleri') and pt in r['puan_turleri']]
             puan_turleri_avgs[pt] = round(sum(vals) / len(vals), 3) if vals else 0
 
@@ -2206,8 +2277,8 @@ def exam_analysis_rankings(request, exam_pk):
             sinif_section_collectors[sn][sec_id]['corrects'].append(sec_data['correct'])
             sinif_section_collectors[sn][sec_id]['wrongs'].append(sec_data['wrong'])
             sinif_section_collectors[sn][sec_id]['nets'].append(sec_data['net'])
-        if is_ayt and r.get('puan_turleri'):
-            for pt in ['SAY', 'EA', 'SOZ']:
+        if (is_ayt or is_ayt11) and r.get('puan_turleri'):
+            for pt in pt_keys:
                 if pt in r['puan_turleri']:
                     sinif_pt_collectors[sn][pt].append(r['puan_turleri'][pt]['puan'])
 
@@ -2255,7 +2326,7 @@ def exam_analysis_rankings(request, exam_pk):
                 export_list.sort(key=lambda r: r.get('puan') or 0, reverse=True)
         else:
             export_list.sort(
-                key=lambda r: _ayt_pt_puan(r, 'SAY') if is_ayt else (r.get('puan') or 0),
+                key=lambda r: _ayt_pt_puan(r, 'SAY') if (is_ayt or is_ayt11) else (r.get('puan') or 0),
                 reverse=True,
             )
         for idx, r in enumerate(export_list, 1):
@@ -2266,7 +2337,8 @@ def exam_analysis_rankings(request, exam_pk):
             export_list,
             exam=exam,
             request=request,
-            is_ayt=is_ayt,
+            is_ayt=is_ayt or is_ayt11,
+            pt_keys=pt_keys,
             sections=sections_info,
             section_avgs=section_avgs,
             sinif_avgs=sinif_avgs,

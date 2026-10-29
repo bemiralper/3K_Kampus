@@ -437,21 +437,53 @@ def calculate_lgs_score(section_nets: dict, year: int = 2025, coefficients: dict
     }
 
 
-AYT_11_QUESTION_TOTAL = 120
 AYT_11_MAX_SCORE = 500.0
+TYT_11_QUESTION_TOTAL = 120
+# Sayısal: Matematik 30 + Fizik 10 + Kimya 10 + Biyoloji 10.
+# Eşit ağırlık: Türk Dili 30 + Tarih 10 + Coğrafya 10 + Matematik 30.
+# Felsefe ve Din kültürü yalnız toplam nettedir.
+AYT_11_SAY_SECTIONS = ('Matematik', 'Fizik', 'Kimya', 'Biyoloji')
+AYT_11_EA_SECTIONS = ('Türk Dili', 'Tarih', 'Coğrafya', 'Matematik')
+AYT_11_SAY_QUESTIONS = 60
+AYT_11_EA_QUESTIONS = 80
+
+
+def _ceiling_track(section_nets: dict, names: tuple[str, ...], questions: int) -> dict:
+    net = sum(float(section_nets.get(name) or 0) for name in names)
+    net = max(0.0, min(net, float(questions)))
+    puan = round(net / questions * AYT_11_MAX_SCORE, 2)
+    rounded = round(net, 2)
+    return {
+        'puan': puan,
+        'ham_puan': puan,
+        'net': rounded,
+        'ayt_net': rounded,
+        'tyt_net': 0.0,
+    }
 
 
 def calculate_ayt11_score(section_nets: dict) -> dict:
     """
-    11. sınıf AYT denemesi.
-
-    Kitapçıkta ders katsayısı yok; tavan 500 ve 120 soru.
-    Puan = (üst ders netleri toplamı / 120) × 500.
-    ÖSYM TYT/AYT katsayısı uygulanmaz — soru dağılımı resmi sınavla aynı değil.
+    11. sınıf AYT: toplam net ayrı kalır. SAY ve EA kendi soru sayılarına göre 500'e ölçeklenir.
+    ÖSYM katsayısı uygulanmaz.
     """
+    say = _ceiling_track(section_nets, AYT_11_SAY_SECTIONS, AYT_11_SAY_QUESTIONS)
+    ea = _ceiling_track(section_nets, AYT_11_EA_SECTIONS, AYT_11_EA_QUESTIONS)
+    return {
+        'puan_turleri': {'SAY': say, 'EA': ea},
+        'puan': say['puan'],
+        'ham_puan': say['ham_puan'],
+        'diploma_ek': 0.0,
+        'max_puan': AYT_11_MAX_SCORE,
+        'referans_yil': None,
+    }
+
+
+def calculate_tyt11_score(section_nets: dict) -> dict:
+    """11. sınıf TYT. Üst ders netleri / 120 × 500. ÖSYM katsayısı uygulanmaz."""
     toplam_net = sum(float(net or 0) for net in section_nets.values())
-    toplam_net = max(0.0, min(toplam_net, float(AYT_11_QUESTION_TOTAL)))
-    puan = round(toplam_net / AYT_11_QUESTION_TOTAL * AYT_11_MAX_SCORE, 2)
+    toplam_net = max(0.0, min(toplam_net, float(TYT_11_QUESTION_TOTAL)))
+    puan = round(toplam_net / TYT_11_QUESTION_TOTAL * AYT_11_MAX_SCORE, 2)
     return {
         'ham_puan': puan,
         'toplam_net': round(toplam_net, 2),
@@ -478,6 +510,8 @@ def calculate_score_for_exam(exam, section_nets: dict, year: int = 2025,
 
     if exam_type == 'AYT_11':
         return calculate_ayt11_score(section_nets)
+    if exam_type == 'TYT_11':
+        return calculate_tyt11_score(section_nets)
     if exam_type == 'YKS_TYT':
         coef = _lookup_db_coefficients(kurum_id, year, 'TYT')
         return calculate_tyt_score(section_nets, year=year, coefficients=coef)
@@ -748,7 +782,7 @@ def estimate_ranking(puan: float, exam_type: str = 'YKS_TYT', ranking_year: int 
 
     NOT: Bu bir tahmindir, kesin değildir. Gerçek sıralama ÖSYM tarafından belirlenir.
     """
-    if exam_type == 'AYT_11':
+    if exam_type in ('AYT_11', 'TYT_11'):
         return {
             'tahmini_siralama': None,
             'yuzdelik_dilim': None,

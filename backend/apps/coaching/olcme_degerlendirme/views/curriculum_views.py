@@ -1252,13 +1252,15 @@ def topic_is_bulk_dump(topic) -> bool:
     )
 
 
-def _resolve_topic_for_import(subject, text):
+def _resolve_topic_for_import(subject, text, program: str = ''):
     """Girilen kodun gerçek konusunu bul; Toplu Yükleme asla dönmez."""
     query = (text or '').strip().rstrip('.')
     if not subject or not query:
         return None
     query_lower = query.lower()
-    topics = list(subject.topics.order_by('order'))
+    from ..services.curriculum_band import topic_program_q
+
+    topics = list(subject.topics.filter(topic_program_q(program)).order_by('order'))
     for topic in topics:
         if topic_is_bulk_dump(topic) or _topic_name_belongs_elsewhere(topic, subject):
             continue
@@ -1268,7 +1270,7 @@ def _resolve_topic_for_import(subject, text):
         parts = _dotted_parts(query_lower)
         if len(parts) >= 2 and topic_code == '.'.join(parts[:2]):
             return topic
-    match = _match_single_text(query, subject)
+    match = _match_single_text(query, subject, program=program)
     if match and match.get('outcome_id'):
         try:
             outcome = Outcome.objects.select_related('topic').get(pk=match['outcome_id'])
@@ -1287,7 +1289,7 @@ def outcome_prose(text: str) -> str:
     return (stripped[match.end():] if match else stripped).strip()
 
 
-def text_belongs_to_other_subject(text: str, home_subject, allowed_subject_ids=()) -> bool:
+def text_belongs_to_other_subject(text: str, home_subject, allowed_subject_ids=(), program: str = '') -> bool:
     """Yapıştırılan metin başka bir dersin kazanımı mı?
 
     Kodlar dersler arasında meşru biçimde tekrar ettiği için yalnız metne
@@ -1302,13 +1304,17 @@ def text_belongs_to_other_subject(text: str, home_subject, allowed_subject_ids=(
     if not home_id or len(prose) < 12:
         return False
 
+    from ..services.curriculum_band import topic_program_q
+
     home_ids = {home_id, *[sid for sid in allowed_subject_ids if sid]}
+    outcome_q = topic_program_q(program, 'topic__')
+    sub_q = topic_program_q(program, 'outcome__topic__')
     in_home = (
         Outcome.objects.filter(
-            topic__subject_id__in=home_ids, text__iexact=prose, is_active=True,
+            outcome_q, topic__subject_id__in=home_ids, text__iexact=prose, is_active=True,
         ).exists()
         or SubOutcome.objects.filter(
-            outcome__topic__subject_id__in=home_ids, text__iexact=prose, is_active=True,
+            sub_q, outcome__topic__subject_id__in=home_ids, text__iexact=prose, is_active=True,
         ).exists()
     )
     if in_home:
@@ -1316,10 +1322,17 @@ def text_belongs_to_other_subject(text: str, home_subject, allowed_subject_ids=(
 
     return (
         Outcome.objects.exclude(topic__subject_id__in=home_ids)
-        .filter(text__iexact=prose, is_active=True).exists()
+        .filter(outcome_q, text__iexact=prose, is_active=True).exists()
         or SubOutcome.objects.exclude(outcome__topic__subject_id__in=home_ids)
-        .filter(text__iexact=prose, is_active=True).exists()
+        .filter(sub_q, text__iexact=prose, is_active=True).exists()
     )
+
+
+def _program_for_section(section) -> str:
+    from ..services.curriculum_band import curriculum_program_for_exam_type
+
+    exam = getattr(section, 'exam', None) if section is not None else None
+    return curriculum_program_for_exam_type(getattr(exam, 'exam_type', None))
 
 
 def match_text_for_section(section, text: str):
@@ -1328,13 +1341,14 @@ def match_text_for_section(section, text: str):
 
     if section is None:
         return None
+    program = _program_for_section(section)
     home = getattr(section, 'subject', None)
     if home is not None:
-        match = _match_single_text(text, home)
+        match = _match_single_text(text, home, program=program)
         if match and match.get('outcome_id'):
             return match
     for extra in companion_subjects_for_section(section):
-        match = _match_single_text(text, extra)
+        match = _match_single_text(text, extra, program=program)
         if match and match.get('outcome_id'):
             return match
     return None
@@ -1350,10 +1364,10 @@ def _section_allowed_subject_ids(section, cache: dict | None = None) -> set[int]
     return allowed
 
 
-def _cached_match_single_text(cache: dict, text: str, subject):
-    key = (getattr(subject, 'pk', None), text)
+def _cached_match_single_text(cache: dict, text: str, subject, program: str = ''):
+    key = (getattr(subject, 'pk', None), program, text)
     if key not in cache:
-        cache[key] = _match_single_text(text, subject)
+        cache[key] = _match_single_text(text, subject, program=program)
     return cache[key]
 
 
@@ -1408,7 +1422,7 @@ def detach_polluted_text_binds(answer_key) -> int:
         allowed = _section_allowed_subject_ids(section, allowed_cache)
         stale = (not outcome.is_active) or (
             home is not None and text_belongs_to_other_subject(
-                outcome.text, home, allowed,
+                outcome.text, home, allowed, program=_program_for_section(section),
             )
         )
         if not stale:
@@ -1582,7 +1596,7 @@ def _match_exact_codes(topics, subject, codes: list[str]):
     }
 
 
-def _match_single_text(query: str, subject: Subject):
+def _match_single_text(query: str, subject: Subject, program: str = ''):
     """
     Tek bir metin girdisini Subject'in tüm konu/kazanım/alt kazanımlarıyla eşleştir.
     
@@ -1609,8 +1623,10 @@ def _match_single_text(query: str, subject: Subject):
     query_stems = _extract_stems(query_stripped)
     query_is_code = _is_dotted_code(query_stripped)
 
+    from ..services.curriculum_band import topic_program_q
+
     topics = list(
-        Topic.objects.filter(subject=subject)
+        Topic.objects.filter(topic_program_q(program), subject=subject)
         .prefetch_related(
             Prefetch(
                 'outcomes',
@@ -1891,6 +1907,9 @@ def match_outcomes(request, subject_pk):
     """
     subject = get_object_or_404(Subject, pk=subject_pk)
     texts = request.data.get('texts', [])
+    program = _curriculum_program(
+        request.data.get('program') if hasattr(request.data, 'get') else None
+    ) or _curriculum_program(request.query_params.get('program'))
     
     if not isinstance(texts, list):
         return Response(
@@ -1914,7 +1933,7 @@ def match_outcomes(request, subject_pk):
             })
             continue
         
-        match = _match_single_text(text_str, subject)
+        match = _match_single_text(text_str, subject, program=program)
         if match:
             results.append({
                 'input_text': text_str,
@@ -1972,11 +1991,16 @@ def curriculum_excel(request):
 
     program = _curriculum_program(request.query_params.get('program')) or Topic.Program.PROGRAM_2018
     label = Topic.Program(program).label
+    subject_codes = [
+        code.strip()
+        for code in (request.query_params.get('subjects') or '').split(',')
+        if code.strip()
+    ]
     wb = Workbook()
     ws = wb.active
     ws.title = label[:31]
     ws.append([
-        'Ders', 'Program', 'Konu kodu', 'Konu',
+        'Ders kodu', 'Ders', 'Program', 'Konu kodu', 'Konu',
         'Kazanım kodu', 'Kazanım', 'Alt kod', 'Alt metin',
     ])
     topics = (
@@ -1986,22 +2010,25 @@ def curriculum_excel(request):
         .prefetch_related('outcomes__sub_outcomes')
         .order_by('subject__order', 'subject__name', 'order', 'id')
     )
+    if subject_codes:
+        topics = topics.filter(subject__code__in=subject_codes)
     for topic in topics:
+        ders_kodu = _excel_text(topic.subject.code)
         ders = _excel_text(topic.subject.display_name or topic.subject.name)
         konu = _excel_text(topic.name)
         outcomes = [o for o in topic.outcomes.all() if o.is_active]
         if not outcomes:
-            ws.append([ders, label, topic.code, konu, '', '', '', ''])
+            ws.append([ders_kodu, ders, label, topic.code, konu, '', '', '', ''])
             continue
         for outcome in outcomes:
             kazanım = _excel_text(outcome.text)
             subs = [s for s in outcome.sub_outcomes.all() if s.is_active]
             if not subs:
-                ws.append([ders, label, topic.code, konu, outcome.code, kazanım, '', ''])
+                ws.append([ders_kodu, ders, label, topic.code, konu, outcome.code, kazanım, '', ''])
                 continue
             for sub in subs:
                 ws.append([
-                    ders, label, topic.code, konu,
+                    ders_kodu, ders, label, topic.code, konu,
                     outcome.code, kazanım, sub.code, _excel_text(sub.text),
                 ])
     buf = BytesIO()
@@ -2032,7 +2059,41 @@ def catalog_import(request):
     upload = request.FILES.get('file') or request.FILES.get('catalog')
     try:
         if upload and _is_xlsx_name(upload.name):
-            result = _import_okulizyon_upload(upload, mode=mode, dry_run=dry_run)
+            from ..services.curriculum_excel_import import (
+                import_outcomes_workbook,
+                outcomes_header_map,
+            )
+            path = _xlsx_as_temp(upload)
+            from openpyxl import load_workbook
+            wb = load_workbook(path, read_only=True, data_only=True)
+            try:
+                header = next(wb[wb.sheetnames[0]].iter_rows(values_only=True), None)
+            finally:
+                wb.close()
+            if outcomes_header_map(header):
+                if dry_run:
+                    raise ValueError('Kazanım tablosu önizlemesi yok. Yükleme dosyayı doğrudan yazar.')
+                program = _curriculum_program(
+                    request.data.get('program') if hasattr(request.data, 'get') else None
+                ) or _curriculum_program(request.query_params.get('program'))
+                raw_subjects = ''
+                if hasattr(request.data, 'get'):
+                    raw_subjects = request.data.get('subjects') or ''
+                raw_subjects = raw_subjects or request.query_params.get('subjects') or ''
+                subject_codes = [code.strip() for code in str(raw_subjects).split(',') if code.strip()]
+                stats = import_outcomes_workbook(
+                    path, program=program, subject_codes=subject_codes,
+                )
+                result = {
+                    'dry_run': False,
+                    'mode': mode,
+                    'source': 'outcomes-xlsx',
+                    'counts': stats,
+                    'imported': stats,
+                }
+            else:
+                upload.seek(0)
+                result = _import_okulizyon_upload(upload, mode=mode, dry_run=dry_run)
         else:
             payload = _read_catalog_payload(request, upload)
             result = import_catalog(payload, mode=mode, dry_run=dry_run)
@@ -2056,6 +2117,9 @@ def catalog_import(request):
             f"{imported.get('topics', 0)} konu, {imported.get('outcomes', 0)} kazanım, "
             f"{imported.get('sub_outcomes', 0)} alt kazanım"
         )
+        kept = imported.get('kept_topics') or 0
+        if kept:
+            message += f' {kept} konu ders kaydına bağlı olduğu için durdu.'
     return Response({**result, 'ok': True, 'message': message})
 
 

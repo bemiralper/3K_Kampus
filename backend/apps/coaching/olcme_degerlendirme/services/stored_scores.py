@@ -17,6 +17,7 @@ from .scoring import (
     build_linked_tyt_index,
     calculate_ayt11_score,
     calculate_ayt_score,
+    calculate_tyt11_score,
     calculate_lgs_score,
     calculate_tyt_score,
 )
@@ -95,6 +96,14 @@ def _score_answer(exam, sec_nets, tyt_nets, year, coef):
     if exam_type == 'AYT_11':
         data = calculate_ayt11_score(sec_nets)
         return {
+            'puan_turleri': data['puan_turleri'],
+            'ranks': {},
+            'puan': float(data['puan']),
+            'ham_puan': float(data['ham_puan']),
+        }
+    if exam_type == 'TYT_11':
+        data = calculate_tyt11_score(sec_nets)
+        return {
             'puan': float(data['puan']),
             'ham_puan': float(data['ham_puan']),
         }
@@ -117,8 +126,9 @@ def _apply_ranks(exam, answers, year_blocks, alan):
     cohort_ids = _latest_matched_ids(exam)
     cohort = [a for a in answers if a.id in cohort_ids]
     total = len(cohort)
-    if exam.exam_type == 'YKS_AYT':
-        for pt in ('SAY', 'EA', 'SOZ'):
+    if exam.exam_type in ('YKS_AYT', 'AYT_11'):
+        track_keys = ('SAY', 'EA') if exam.exam_type == 'AYT_11' else ('SAY', 'EA', 'SOZ')
+        for pt in track_keys:
             ordered = sorted(
                 cohort,
                 key=lambda a: year_blocks[a.id]['puan_turleri'][pt]['puan'],
@@ -128,6 +138,8 @@ def _apply_ranks(exam, answers, year_blocks, alan):
                 year_blocks[answer.id]['ranks'][pt] = idx
         for answer in cohort:
             pt_key = _ALAN_TO_PUAN_TURU.get(alan.get(answer.student_id), 'SAY')
+            if pt_key not in track_keys:
+                pt_key = 'SAY'
             chosen = year_blocks[answer.id]['puan_turleri'][pt_key]
             year_blocks[answer.id]['puan'] = chosen['puan']
             year_blocks[answer.id]['ham_puan'] = chosen['ham_puan']
@@ -270,10 +282,14 @@ def blocks_for_answers(exam, answers, year) -> dict[int, dict]:
 
     rows = load()
 
+    needs_pt = exam.exam_type == 'AYT_11'
+
     def missing(found):
         for answer_id in ids:
             block = (found.get(answer_id).by_year if found.get(answer_id) else None) or {}
             if year_key not in block:
+                return True
+            if needs_pt and not (block.get(year_key) or {}).get('puan_turleri'):
                 return True
         return False
 

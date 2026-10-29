@@ -69,7 +69,10 @@ def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False, refresh_inclusio
 
         Ogrenci.objects.select_for_update().filter(pk=sozlesme.ogrenci_id).exists()
         sozlesme.refresh_from_db()
-        snap = _snapshot_for(sozlesme, refresh_inclusions)
+        snap = _copy_snapshot(_snapshot_for(sozlesme, refresh_inclusions))
+        # Kataloga sonradan eklenen deneme buraya yazılmaz. Öğrencide zaten
+        # açık olan deneme görüntüye alınır; sonraki kayıt onu kapatmasın.
+        snap = _absorb_open_package_denemeler(sozlesme, snap)
         if not dry_run and sozlesme.erisim_kapsam_anlik != snap:
             sozlesme.erisim_kapsam_anlik = snap
             sozlesme.save(update_fields=['erisim_kapsam_anlik', 'updated_at'])
@@ -157,6 +160,154 @@ def _explicit_sets(sozlesme) -> tuple[set[tuple[str, int]], set[int]]:
 
 def _package_key(tur, pid) -> str:
     return f'{tur}:{int(pid)}'
+
+
+def _copy_snapshot(snap) -> dict:
+    out = {}
+    for key, spec in (snap or {}).items():
+        if not isinstance(spec, dict):
+            continue
+        out[key] = {
+            'ek': [int(i) for i in spec.get('ek') or []],
+            'deneme': [int(i) for i in spec.get('deneme') or []],
+            'yayin': [int(i) for i in spec.get('yayin') or []],
+        }
+    return out
+
+
+def _normalize_frozen_spec(spec) -> dict:
+    """Görüntüdeki deneme kimlikleri. Eski kayıtlarda deneme, ek hizmet sarmalayıcısında durabilir."""
+    from apps.egitim_paketleri.models import EkHizmet
+
+    ek = [int(i) for i in (spec or {}).get('ek') or []]
+    deneme = {int(i) for i in (spec or {}).get('deneme') or []}
+    yayin = [int(i) for i in (spec or {}).get('yayin') or []]
+    wrapper_ids = set()
+    if ek:
+        for ek_id, deneme_id in EkHizmet.objects.filter(
+            id__in=ek, deneme_paketi_id__isnull=False,
+        ).values_list('id', 'deneme_paketi_id'):
+            wrapper_ids.add(ek_id)
+            if deneme_id:
+                deneme.add(int(deneme_id))
+    return {
+        'ek': [i for i in ek if i not in wrapper_ids],
+        'deneme': sorted(deneme),
+        'yayin': yayin,
+    }
+
+
+def frozen_inclusions_for_package(ogrenci_id, egitim_yili_id, paket_turu, paket_id):
+    """Hak veren sözleşmede dondurulmuş dahil listesi.
+
+    Sözleşme bu paketi içeriyor ve görüntü yazılmışsa o listeyi döndür.
+    Görüntü yoksa None: çağıran güncel kataloğu kullanır.
+    """
+    from apps.odeme_takip.domain.models import Sozlesme
+
+    tur = _NORMALIZE.get(paket_turu or '', paket_turu)
+    if tur not in ('grup_dersi', 'premium') or not paket_id or not egitim_yili_id or not ogrenci_id:
+        return None
+    key = _package_key(tur, paket_id)
+    merged = None
+    saw_package = False
+    contracts = Sozlesme.objects.filter(
+        ogrenci_id=ogrenci_id,
+        egitim_yili_id=egitim_yili_id,
+        durum__in=GRANTING_DURUMLAR,
+    ).prefetch_related('kalemler')
+    for sozlesme in contracts:
+        paket, _ek = _explicit_sets(sozlesme)
+        if (tur, int(paket_id)) not in paket:
+            continue
+        saw_package = True
+        stored = sozlesme.erisim_kapsam_anlik or {}
+        spec = stored.get(key) if isinstance(stored, dict) else None
+        if not isinstance(spec, dict):
+            continue
+        normalized = _normalize_frozen_spec(spec)
+        if merged is None:
+            merged = normalized
+            continue
+        merged = {
+            'ek': sorted(set(merged['ek']) | set(normalized['ek'])),
+            'deneme': sorted(set(merged['deneme']) | set(normalized['deneme'])),
+            'yayin': sorted(set(merged['yayin']) | set(normalized['yayin'])),
+        }
+    if not saw_package or merged is None:
+        return None
+    return merged
+
+
+def _active_deneme_ids_for_package(ogrenci_id, egitim_yili_id, paket_turu, paket_id) -> set[int]:
+    from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+    tur = _NORMALIZE.get(paket_turu or '', paket_turu)
+    ids = set()
+    rows = OgrenciEkHizmet.objects.filter(
+        ogrenci_id=ogrenci_id,
+        aktif_mi=True,
+        egitim_yili_id=egitim_yili_id,
+        ek_hizmet__deneme_paketi_id__isnull=False,
+    ).select_related('ek_hizmet')
+    for row in rows:
+        if row.kaynak_paket_turu == 'bireysel':
+            continue
+        kaynak = _NORMALIZE.get(row.kaynak_paket_turu or '', row.kaynak_paket_turu or '')
+        if (kaynak, row.kaynak_paket_id) != (tur, int(paket_id)):
+            continue
+        if row.ek_hizmet.deneme_paketi_id:
+            ids.add(int(row.ek_hizmet.deneme_paketi_id))
+    return ids
+
+
+def displayed_deneme_ids_for_package(ogrenci_id, egitim_yili_id, paket_turu, paket_id, catalog_ids):
+    """Sözleşme ekranında ücretsiz görünecek denemeler.
+
+    Görüntü yoksa None: katalogdaki liste kullanılır.
+    Görüntü varsa yalnız sözleşmeye yazılmış veya öğrencide açık olan denemeler.
+    Gruba sonradan eklenen deneme burada görünmez.
+    """
+    frozen = frozen_inclusions_for_package(ogrenci_id, egitim_yili_id, paket_turu, paket_id)
+    if frozen is None:
+        return None
+    active = _active_deneme_ids_for_package(ogrenci_id, egitim_yili_id, paket_turu, paket_id)
+    return sorted(set(frozen['deneme']) | active)
+
+
+def _absorb_open_package_denemeler(sozlesme, snap: dict) -> dict:
+    """Bu paketten açılmış denemeyi görüntüye yaz. Katalog okunmaz."""
+    from apps.ogrenci.domain.models import OgrenciEkHizmet
+
+    if not sozlesme.ogrenci_id or not sozlesme.egitim_yili_id:
+        return snap
+    paket, _ek = _explicit_sets(sozlesme)
+    rows = OgrenciEkHizmet.objects.filter(
+        ogrenci_id=sozlesme.ogrenci_id,
+        aktif_mi=True,
+        egitim_yili_id=sozlesme.egitim_yili_id,
+        ek_hizmet__deneme_paketi_id__isnull=False,
+    ).select_related('ek_hizmet')
+    for row in rows:
+        if row.kaynak_paket_turu == 'bireysel':
+            continue
+        kaynak = _NORMALIZE.get(row.kaynak_paket_turu or '', row.kaynak_paket_turu or '')
+        if (kaynak, row.kaynak_paket_id) not in paket:
+            continue
+        deneme_id = row.ek_hizmet.deneme_paketi_id
+        if not deneme_id:
+            continue
+        key = _package_key(kaynak, row.kaynak_paket_id)
+        spec = snap.setdefault(key, _empty_spec())
+        deneme = {int(i) for i in spec.get('deneme') or []}
+        ek = {int(i) for i in spec.get('ek') or []}
+        deneme.add(int(deneme_id))
+        if row.ek_hizmet_id:
+            ek.add(int(row.ek_hizmet_id))
+        spec['deneme'] = sorted(deneme)
+        spec['ek'] = sorted(ek)
+        spec.setdefault('yayin', [int(i) for i in spec.get('yayin') or []])
+    return snap
 
 
 def _empty_spec() -> dict:

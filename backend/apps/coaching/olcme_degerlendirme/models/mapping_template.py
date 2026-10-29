@@ -16,6 +16,7 @@ class MappingTemplate(models.Model):
 
     EXAM_TYPE_CHOICES = [
         ('YKS_TYT',     'YKS – TYT'),
+        ('TYT_11',      '11. Sınıf TYT'),
         ('YKS_AYT',     'YKS – AYT'),
         ('AYT_11',      '11. Sınıf AYT'),
         ('LGS',         'LGS (8. Sınıf)'),

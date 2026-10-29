@@ -837,6 +837,9 @@ class ExamViewSet(viewsets.ModelViewSet):
             kurum_id=ctx['kurum_id'],
             sube_id=ctx['sube_id'],
         ).prefetch_related('sinif_seviyeleri')
+        ey_id = get_secili_egitim_yili_id(request)
+        if ey_id:
+            qs = qs.filter(egitim_yili_id=ey_id)
         seviye_id = request.query_params.get('seviye_id')
         if seviye_id:
             qs = qs.filter(sinif_seviyeleri__id=seviye_id).distinct()

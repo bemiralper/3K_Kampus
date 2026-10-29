@@ -29,22 +29,27 @@ export default function SinavRosterNotifyModal({
   const [mounted, setMounted] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const [waVeli, setWaVeli] = useState<number[]>(() =>
-    preview.students.flatMap(st =>
-      st.recipients
-        .filter(rec => rec.recipient_type === 'veli' && rec.veli_id && !rec.skip_reason)
-        .map(rec => rec.veli_id as number),
-    ),
+  const sendableVeliIds = preview.students.flatMap(st =>
+    st.recipients
+      .filter(rec => rec.recipient_type === 'veli' && rec.veli_id && !rec.skip_reason)
+      .map(rec => rec.veli_id as number),
   );
-  const [waStudent, setWaStudent] = useState(true);
+  const sendableStudentIds = preview.students
+    .filter(st => st.recipients.some(rec => rec.recipient_type === 'ogrenci' && !rec.skip_reason))
+    .map(st => st.student_id);
+  const [waVeli, setWaVeli] = useState<number[]>(sendableVeliIds);
+  const [waStudents, setWaStudents] = useState<number[]>(sendableStudentIds);
   const [previewRole, setPreviewRole] = useState<'veli' | 'ogrenci'>('veli');
 
   useEffect(() => { setMounted(true); }, []);
 
-  const sendableVeli = waVeli.length;
-  const sendable = sendableVeli + (waStudent ? preview.students.filter(st =>
-    st.recipients.some(r => r.recipient_type === 'ogrenci' && !r.skip_reason),
-  ).length : 0);
+  const allVelis = sendableVeliIds.length > 0 && sendableVeliIds.every(id => waVeli.includes(id));
+  const allStudents = sendableStudentIds.length > 0 && sendableStudentIds.every(id => waStudents.includes(id));
+  const sendable = waVeli.length + waStudents.filter(id => sendableStudentIds.includes(id)).length;
+
+  const toggleIds = (current: number[], ids: number[], on: boolean) => (
+    on ? Array.from(new Set([...current, ...ids])) : current.filter(id => !ids.includes(id))
+  );
 
   const send = async () => {
     setSending(true);
@@ -53,7 +58,7 @@ export default function SinavRosterNotifyModal({
       const res = await examApi.hatirlatmaSend(examId, {
         participant_ids: preview.students.map(st => st.participant_id),
         veli_ids: waVeli,
-        include_student: waStudent,
+        student_ids: waStudents,
         event_key: eventKey,
       });
       if (!res.sent) {
@@ -93,6 +98,26 @@ export default function SinavRosterNotifyModal({
 
         <div className="srn-body">
           <div className="srn-list">
+            <div className="srn-bulk">
+              <label>
+                <input
+                  type="checkbox"
+                  checked={allVelis}
+                  disabled={sendableVeliIds.length === 0}
+                  onChange={e => setWaVeli(toggleIds(waVeli, sendableVeliIds, e.target.checked))}
+                />
+                Tüm veliler
+              </label>
+              <label>
+                <input
+                  type="checkbox"
+                  checked={allStudents}
+                  disabled={sendableStudentIds.length === 0}
+                  onChange={e => setWaStudents(toggleIds(waStudents, sendableStudentIds, e.target.checked))}
+                />
+                Tüm öğrenciler
+              </label>
+            </div>
             {preview.students.length === 0 && (
               <div style={{ padding: 24, color: '#64748b', fontSize: 13 }}>
                 Gönderilecek katılımcı yok.
@@ -123,12 +148,28 @@ export default function SinavRosterNotifyModal({
                     </span>
                   </label>
                 ))}
+                {st.recipients.filter(rec => rec.recipient_type === 'ogrenci').map(rec => (
+                  <label key={`${st.participant_id}-ogrenci`} className="srn-rec">
+                    <input
+                      type="checkbox"
+                      disabled={!!rec.skip_reason}
+                      checked={!rec.skip_reason && waStudents.includes(st.student_id)}
+                      onChange={() => {
+                        setWaStudents(prev => (
+                          prev.includes(st.student_id)
+                            ? prev.filter(id => id !== st.student_id)
+                            : [...prev, st.student_id]
+                        ));
+                      }}
+                    />
+                    <span>
+                      {rec.display_name || 'Öğrenci'} {rec.telefon && `(${rec.telefon})`}
+                      {rec.skip_reason && <em> — {rec.skip_reason}</em>}
+                    </span>
+                  </label>
+                ))}
               </div>
             ))}
-            <label className="srn-rec" style={{ padding: '8px 22px 16px' }}>
-              <input type="checkbox" checked={waStudent} onChange={e => setWaStudent(e.target.checked)} />
-              Öğrenciye de gönder
-            </label>
           </div>
           <div className="srn-preview">
             {preview.supports_ogrenci !== false && (

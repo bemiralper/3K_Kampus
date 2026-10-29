@@ -10,7 +10,7 @@ import type {
   TopicItem,
   OutcomeItem,
 } from '../../../../components/olcme/types';
-import { topicDisplayName } from '../../../../components/olcme/curriculum-band';
+import { curriculumProgramForExam, topicDisplayName } from '../../../../components/olcme/curriculum-band';
 import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
 import {
   dottedParts,
@@ -95,9 +95,15 @@ function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   return '';
 }
 
-function topicsForHomeSubject(home: SubjectItem | null, allSubjects: SubjectItem[]): TopicItem[] {
+function topicsForHomeSubject(
+  home: SubjectItem | null,
+  allSubjects: SubjectItem[],
+  program = '',
+): TopicItem[] {
   return (home?.topics ?? []).filter(t =>
-    !isDumpTopic(t) && !topicNameBelongsElsewhere(t, home, allSubjects),
+    !isDumpTopic(t)
+    && (!program || !t.program || t.program === program)
+    && !topicNameBelongsElsewhere(t, home, allSubjects),
   );
 }
 
@@ -108,12 +114,13 @@ function topicsForSection(
   home: SubjectItem | null,
   tree: SubjectItem[],
 ): TopicItem[] {
-  const topics = topicsForHomeSubject(home, tree);
+  const program = curriculumProgramForExam(examType);
+  const topics = topicsForHomeSubject(home, tree, program);
   if (examType !== 'AYT_11' || sectionName !== 'Matematik') return topics;
   const extra = tree.find(subject => (subject.code || '').toUpperCase() === 'GEOMETRI');
   if (!extra || extra.id === home?.id) return topics;
   const seen = new Set(topics.map(topic => topic.id));
-  for (const topic of topicsForHomeSubject(extra, tree)) {
+  for (const topic of topicsForHomeSubject(extra, tree, program)) {
     if (!seen.has(topic.id)) topics.push(topic);
   }
   return topics;

@@ -331,13 +331,15 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             return err
 
         from ..services.curriculum_band import (
-            resolved_band, topic_display_name, topic_matches_band,
+            curriculum_program_for_exam_type,
+            resolved_band, topic_display_name, topic_matches_band, topic_program,
         )
         from ..views.curriculum_views import topic_is_bulk_dump
 
         from ..services.exam_templates import companion_subject_ids_for_exam
 
         band = resolved_band(exam)
+        program = curriculum_program_for_exam_type(exam.exam_type)
         linked_ids = set(
             exam.sections.exclude(subject_id=None).values_list('subject_id', flat=True)
         )
@@ -372,7 +374,11 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
             for topic in subj.topics.all():
                 if topic_is_bulk_dump(topic):
                     continue
-                if not topic_matches_band(topic, band):
+                own_program = topic_program(topic)
+                if program and own_program != program:
+                    continue
+                # Maarif sınavı kataloğun tamamını (5–12) görür; sınıf kırpılmaz.
+                if program != 'maarif' and not topic_matches_band(topic, band):
                     continue
                 outcomes_data = []
                 for outcome in topic.outcomes.all():
@@ -390,6 +396,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     'id': topic.id,
                     'code': topic.code,
                     'name': topic_display_name(topic.name),
+                    'program': own_program,
                     'outcomes': outcomes_data,
                 })
             result.append({
@@ -561,6 +568,7 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     from ..views.curriculum_views import (
                         _is_dotted_code,
                         _is_heading_code,
+                        _program_for_section,
                         _resolve_topic_for_import,
                         text_belongs_to_other_subject,
                         topic_is_bulk_dump,
@@ -569,14 +577,18 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     # Yanlış bölüme yapıştırılmış satır paylaşılan müfredata
                     # yazılmamalı: bir kez yazılınca o ders tüm kurumlarda
                     # başka dersin kazanımlarını göstermeye başlıyor.
-                    if text_belongs_to_other_subject(text, subject):
+                    if text_belongs_to_other_subject(
+                        text, subject, program=_program_for_section(item.section),
+                    ):
                         item.imported_outcome_text = text
                         item.save(update_fields=['imported_outcome_text'])
                         row['foreign_subject'] = True
                         results.append(row)
                         continue
 
-                    real_topic = _resolve_topic_for_import(subject, text)
+                    real_topic = _resolve_topic_for_import(
+                        subject, text, program=_program_for_section(item.section),
+                    )
                     if real_topic is None or topic_is_bulk_dump(real_topic):
                         item.imported_outcome_text = text
                         item.save(update_fields=['imported_outcome_text'])
@@ -630,11 +642,16 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                     })
                     matched_count += 1
                 else:
-                    from ..views.curriculum_views import text_belongs_to_other_subject
+                    from ..views.curriculum_views import (
+                        _program_for_section,
+                        text_belongs_to_other_subject,
+                    )
 
                     item.imported_outcome_text = text
                     item.save(update_fields=['imported_outcome_text'])
-                    if subject and text_belongs_to_other_subject(text, subject):
+                    if subject and text_belongs_to_other_subject(
+                        text, subject, program=_program_for_section(item.section),
+                    ):
                         row['foreign_subject'] = True
                 results.append(row)
 

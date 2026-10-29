@@ -294,7 +294,8 @@ export default function StudentDetailModal({
   };
 
   const isAyt = (detail?.exam_type || examType) === 'YKS_AYT';
-  const typeLabel = detail?.exam_type_label || (isAyt ? 'AYT' : 'TYT');
+  const isAyt11 = (detail?.exam_type || examType) === 'AYT_11';
+  const typeLabel = detail?.exam_type_label || (isAyt ? 'AYT' : isAyt11 ? '11 AYT' : 'TYT');
 
   const sectionRows = (() => {
     if (!detail) return [] as { sd: StudentDetailSectionItem; main: boolean }[];
@@ -315,6 +316,19 @@ export default function StudentDetailModal({
 
   const rankingRows = (() => {
     if (!detail) return [];
+    if (isAyt11 && detail.puan_turleri?.SAY && detail.puan_turleri?.EA) {
+      return (['SAY', 'EA'] as const).map(pt => ({
+        key: pt,
+        label: pt,
+        net: detail.puan_turleri![pt].ayt_net,
+        puan: detail.puan_turleri![pt].puan,
+        avg: detail.puan_turleri_avgs?.[pt] ?? detail.kurum_avg_puan ?? 0,
+        tahmini: null,
+        kurumSira: detail.puan_turleri![pt].kurum_ici_sira ?? null,
+        netSira: detail.puan_turleri![pt].net_kurum_ici_sira ?? null,
+        sinifSira: detail.puan_turleri![pt].sinif_ici_sira ?? null,
+      }));
+    }
     if (isAyt && detail.puan_turleri) {
       return (['SAY', 'EA', 'SOZ'] as const).map(pt => ({
         key: pt,
@@ -518,7 +532,7 @@ export default function StudentDetailModal({
                         <td className={s.karneLeft}>{row.label}</td>
                         <td>{fmt(row.puan, 2)}</td>
                         <td>{fmt(row.avg, 2)}</td>
-                        {hasClass && <td>{i === 0 && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—'}</td>}
+                        {hasClass && <td>{row.sinifSira ? fmtInt(row.sinifSira) : (i === 0 && detail.sinif_rank ? fmtInt(detail.sinif_rank) : '—')}</td>}
                         <td>{row.kurumSira ? fmtInt(row.kurumSira) : '—'}</td>
                         <td>{row.tahmini ? fmtInt(row.tahmini) : '—'}</td>
                       </tr>

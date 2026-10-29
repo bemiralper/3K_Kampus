@@ -61,6 +61,7 @@ function fmtPuan(n: number | null | undefined) {
 
 function typeShort(t: string, display?: string) {
   if (t === 'YKS_TYT') return 'TYT';
+  if (t === 'TYT_11') return '11 TYT';
   if (t === 'YKS_AYT') return 'AYT';
   if (t === 'AYT_11') return '11 AYT';
   if (t === 'DENEME') return 'Deneme';
@@ -71,6 +72,7 @@ function typeShort(t: string, display?: string) {
 
 const EXAM_GROUP_LABEL: Record<DevelopmentTypeGroup, string> = {
   TYT: 'TYT',
+  TYT_11: '11 TYT',
   AYT: 'AYT',
   AYT_11: '11 AYT',
   LGS: 'LGS',
@@ -79,6 +81,7 @@ const EXAM_GROUP_LABEL: Record<DevelopmentTypeGroup, string> = {
 
 function examGroup(type: string): DevelopmentTypeGroup {
   if (type === 'YKS_TYT') return 'TYT';
+  if (type === 'TYT_11') return 'TYT_11';
   if (type === 'YKS_AYT') return 'AYT';
   if (type === 'AYT_11') return 'AYT_11';
   if (type === 'LGS' || type === 'LGS_7') return 'LGS';
@@ -159,7 +162,7 @@ function aytSectionAllowed(name: string, alan?: string | null) {
 function isLiseStudent(alan?: string | null, exams: StudentExamResult[] = []) {
   if (normalizeAlan(alan)) return true;
   return exams.some((exam) => (
-    exam.exam_type === 'YKS_TYT' || exam.exam_type === 'YKS_AYT' || exam.exam_type === 'AYT_11'
+    exam.exam_type === 'YKS_TYT' || exam.exam_type === 'TYT_11' || exam.exam_type === 'YKS_AYT' || exam.exam_type === 'AYT_11'
   ));
 }
 
@@ -676,7 +679,7 @@ function OverviewPanel({
 }) {
   const groups = useMemo(() => {
     const present = Array.from(new Set(exams.map((e) => examGroup(e.exam_type))));
-    const order: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'AYT_11', 'LGS', 'manuel'];
+    const order: DevelopmentTypeGroup[] = ['TYT', 'TYT_11', 'AYT', 'AYT_11', 'LGS', 'manuel'];
     return order.filter((g) => present.includes(g) && !(isLiseStudent(alan, exams) && g === 'LGS'));
   }, [exams]);
 
@@ -1245,6 +1248,7 @@ const DEV_LEVEL: Record<string, string> = {
 const DEV_GROUPS: { value: DevelopmentTypeGroup | ''; label: string }[] = [
   { value: '', label: 'Son sınav türü' },
   { value: 'TYT', label: 'TYT' },
+  { value: 'TYT_11', label: '11 TYT' },
   { value: 'AYT', label: 'AYT' },
   { value: 'AYT_11', label: '11 AYT' },
   { value: 'LGS', label: 'LGS' },
@@ -1341,7 +1345,7 @@ function GrowthPanel({
 }) {
   const visibleGroups = DEV_GROUPS.filter((g) => !(lise && g.value === 'LGS'));
   const [typeGroup, setTypeGroup] = useState<DevelopmentTypeGroup | ''>(() => {
-    const allGroups: DevelopmentTypeGroup[] = ['TYT', 'AYT', 'AYT_11', 'LGS', 'manuel'];
+    const allGroups: DevelopmentTypeGroup[] = ['TYT', 'TYT_11', 'AYT', 'AYT_11', 'LGS', 'manuel'];
     const groups = allGroups.filter((g) => !(lise && g === 'LGS'));
     return pickOverviewGroup(exams, groups.filter((g) => exams.some((e) => examGroup(e.exam_type) === g)));
   });

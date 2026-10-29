@@ -37,7 +37,10 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
         Konu taraması ders başına bir kez yapılır: 120 soruluk anahtarda her
         satır için ayrı tarama yapmak sekmeyi gözle görülür biçimde yavaşlatır.
         """
-        from ..services.curriculum_band import topic_display_name
+        from ..services.curriculum_band import (
+            curriculum_program_for_exam_type,
+            topic_display_name,
+        )
         from ..views.curriculum_views import (
             _resolve_topic_for_import,
             topic_is_bulk_dump,
@@ -58,12 +61,14 @@ class AnswerKeyItemSerializer(serializers.ModelSerializer):
         if not text or not subject:
             return ''
 
+        exam = getattr(getattr(obj, 'section', None), 'exam', None)
+        program = curriculum_program_for_exam_type(getattr(exam, 'exam_type', None))
         cache = getattr(self, '_topic_title_cache', None)
         if cache is None:
             cache = self._topic_title_cache = {}
-        key = (subject.id, text.lower())
+        key = (subject.id, program, text.lower())
         if key not in cache:
-            resolved = _resolve_topic_for_import(subject, text)
+            resolved = _resolve_topic_for_import(subject, text, program=program)
             cache[key] = (
                 topic_display_name(resolved.name or '')
                 if resolved and not topic_is_bulk_dump(resolved)

@@ -191,6 +191,12 @@ export default function StudentsPanel({
                   <th style={{ textAlign: 'center', color: '#059669', fontSize: 11 }} title="Sözel net (Sosyal-1 + Sosyal-2). Alt satır puan.">SÖZ</th>
                 </>
               )}
+              {examType === 'AYT_11' && displayStudents.length > 0 && displayStudents[0].puan_turleri && (
+                <>
+                  <th style={{ textAlign: 'center', color: '#0262a7', fontSize: 11 }} title="Matematik + Fizik + Kimya + Biyoloji. Üst satır net, alt satır 500 üzerinden puan.">SAY</th>
+                  <th style={{ textAlign: 'center', color: '#7c3aed', fontSize: 11 }} title="Türk Dili + Tarih + Coğrafya + Matematik. Üst satır net, alt satır 500 üzerinden puan.">EA</th>
+                </>
+              )}
               <th style={{ textAlign: 'center' }}>Kurum Sıra</th>
               <th style={{ textAlign: 'center' }}>Tah. TR Sıra <InfoTip tip="tahminiSiralama" /></th>
               <th style={{ textAlign: 'center' }}>Yüzdelik <InfoTip tip="yuzdelikDilim" /></th>
@@ -234,6 +240,18 @@ export default function StudentsPanel({
                     <td data-label="SÖZ" style={{ textAlign: 'center', fontWeight: 700, color: '#059669', fontSize: 12 }} title={`Puan ${st.puan_turleri.SOZ.puan}`}>
                       {st.puan_turleri.SOZ.ayt_net.toFixed(2)}
                       <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.SOZ.puan}</div>
+                    </td>
+                  </>
+                )}
+                {examType === 'AYT_11' && st.puan_turleri?.SAY && st.puan_turleri?.EA && (
+                  <>
+                    <td data-label="SAY" style={{ textAlign: 'center', fontWeight: 700, color: '#0262a7', fontSize: 12 }} title={`Puan ${st.puan_turleri.SAY.puan}`}>
+                      {st.puan_turleri.SAY.ayt_net.toFixed(2)}
+                      <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.SAY.puan}</div>
+                    </td>
+                    <td data-label="EA" style={{ textAlign: 'center', fontWeight: 700, color: '#7c3aed', fontSize: 12 }} title={`Puan ${st.puan_turleri.EA.puan}`}>
+                      {st.puan_turleri.EA.ayt_net.toFixed(2)}
+                      <div style={{ fontSize: 10, fontWeight: 500, color: '#64748b' }}>{st.puan_turleri.EA.puan}</div>
                     </td>
                   </>
                 )}

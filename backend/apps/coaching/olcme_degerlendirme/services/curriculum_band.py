@@ -3,18 +3,22 @@ from __future__ import annotations
 
 import re
 
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 
 BAND_YKS = 'YKS'
 BAND_LGS = 'LGS'
 CURRICULUM_BANDS = (BAND_YKS, BAND_LGS)
 
-YKS_EXAM_TYPES = frozenset({'YKS_TYT', 'YKS_AYT', 'AYT_11', 'DENEME'})
+YKS_EXAM_TYPES = frozenset({'YKS_TYT', 'YKS_AYT', 'AYT_11', 'TYT_11', 'DENEME'})
 
-# 11. sınıf AYT ayrı müfredat açmaz; ders listesi resmi AYT ile aynıdır.
+# 11. sınıf denemeleri ayrı müfredat açmaz; ders listesi resmi YKS dersleridir.
+# Kazanım ağacı ise programla ayrılır (Maarif veya 2018).
 _SUBJECT_FILTER_ALIASES = {
     'AYT_11': ('ALL', 'YKS_AYT'),
+    'TYT_11': ('ALL', 'YKS_TYT'),
 }
+MAARIF_EXAM_TYPES = frozenset({'AYT_11', 'TYT_11'})
+PROGRAM_2018_EXAM_TYPES = frozenset({'YKS_TYT', 'YKS_AYT', 'DENEME'})
 LGS_EXAM_TYPES = frozenset({'LGS', 'LGS_7'})
 LOCKED_BAND_TYPES = YKS_EXAM_TYPES | LGS_EXAM_TYPES
 
@@ -36,9 +40,50 @@ _TOPIC_PREFIX_SPLIT = re.compile(r'\s*[·•|:]\s*')
 
 
 def subject_filters_for_exam_type(exam_type: str | None) -> tuple[str, ...]:
-    """Ders süzgeci. 11. sınıf AYT, AYT derslerini (ALL + YKS_AYT) kullanır."""
+    """Ders süzgeci. 11. sınıf denemeleri resmi YKS ders listesini kullanır."""
     key = exam_type or ''
     return _SUBJECT_FILTER_ALIASES.get(key, ('ALL', key))
+
+
+def curriculum_program_for_exam_type(exam_type: str | None) -> str:
+    """Kazanım aramasının programı. Boşsa sınıf kırpılmaz, iki program da aranır.
+
+    Maarif sınavları kataloğun tamamını (5–12) arar. YKS yalnız 2018 programıdır.
+    LGS kendi bandında kalır; bu fonksiyon onu kilitlemez.
+    """
+    if exam_type in MAARIF_EXAM_TYPES:
+        return 'maarif'
+    if exam_type in PROGRAM_2018_EXAM_TYPES:
+        return 'program_2018'
+    return ''
+
+
+# 5–8 Maarif kataloğu (maarif_ortaokul) program alanı yazılmadan, resmi ünite
+# koduyla yüklenir: MAT.8.1, DKAB.5.1, FB.5.1.1, T.D.5. 2018 ünite kodu
+# sayısaldır ya da tek harflidir (M.9.1); bu biçime girmez.
+MAARIF_TOPIC_CODE_PATTERN = (
+    r'^([A-ZÇĞİÖŞÜ]{2,}\.[0-9]+\.[0-9]+(\.[0-9]+)?|T\.[DOKY]\.[0-9]+)$'
+)
+_MAARIF_TOPIC_CODE_RE = re.compile(MAARIF_TOPIC_CODE_PATTERN)
+
+
+def topic_program(topic) -> str:
+    """Konunun gerçek programı; kayıtlı alan boş kalmış Maarif kodunu da tanır."""
+    stored = getattr(topic, 'program', '') or 'program_2018'
+    if stored == 'maarif' or _MAARIF_TOPIC_CODE_RE.match((getattr(topic, 'code', '') or '').strip()):
+        return 'maarif'
+    return stored
+
+
+def topic_program_q(program: str, prefix: str = ''):
+    """`topic_program` ile aynı ayrım, sorgu filtresi olarak. Boş program filtrelemez."""
+    if not program:
+        return Q()
+    maarif = (
+        Q(**{f'{prefix}program': 'maarif'})
+        | Q(**{f'{prefix}code__regex': MAARIF_TOPIC_CODE_PATTERN})
+    )
+    return maarif if program == 'maarif' else ~maarif
 
 
 def band_for_exam_type(exam_type: str | None) -> str:

@@ -339,6 +339,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
 
   const hasPT = rankings.some(r => r.puan_turleri);
   const isAyt = examType === 'YKS_AYT';
+  const isAyt11 = examType === 'AYT_11';
   const [fonts, logo] = await Promise.all([loadFonts(), loadLogoBase64()]);
 
   // Filtre + Sıralama
@@ -422,8 +423,8 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   const PFX = prefix.length;
 
   // ── Puan Türleri — her biri Puan|Kurs|Genel  → 3 sütun  ──
-  const showPT = isAyt && hasPT && columns.showPuanTurleri;
-  const ptList = showPT ? columns.visiblePuanTurleri : [];
+  const showPT = (isAyt || isAyt11) && hasPT && columns.showPuanTurleri;
+  const ptList = (showPT ? columns.visiblePuanTurleri : []).filter(pt => !isAyt11 || pt !== 'SOZ');
 
   // ── Suffix sütunları (toplamNet sonrası) ──
   // Suffix: [Toplam] [DYN|Net] ... [ptPuan ptKurs ptGenel]... [KurumPct] [TahSira] [TRPct]
@@ -667,7 +668,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
   registerFonts(doc, fonts);
 
-  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType === 'AYT_11' ? '11 AYT' : examType === 'LGS_7' ? 'LGS 7' : examType === 'LGS' ? 'LGS' : examType;
+  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'TYT_11' ? '11 TYT' : examType === 'YKS_AYT' ? 'AYT' : examType === 'AYT_11' ? '11 AYT' : examType === 'LGS_7' ? 'LGS 7' : examType === 'LGS' ? 'LGS' : examType;
   const startY = addPdfHeader(doc, logo, examName, `${tl} Sıralama (${sortHeaderLabel(effectiveSort)} sıralı)`, parts.join('  ·  '), { kurs: filtered.length });
 
   // Lookup setleri
@@ -807,7 +808,7 @@ export async function exportRankingsPdf(opts: RankingsPdfOptions) {
 
   // ═══ GRAFİK SAYFASI ═══
   if (columns.showCharts && body_secs.length > 0 && sectionAvgs) {
-    drawChartPage(doc, fonts, body_secs, sectionAvgs, sinifAvgs, avgScore, puanTurleriAvgs, isAyt, examName, tl, referansYil);
+    drawChartPage(doc, fonts, body_secs, sectionAvgs, sinifAvgs, avgScore, puanTurleriAvgs, isAyt || isAyt11, examName, tl, referansYil);
   }
 
   addPdfFooter(doc);
@@ -1013,6 +1014,10 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
 
   const hasPT = filtered.some(st => st.puan_turleri);
   const isAyt = examType === 'YKS_AYT';
+  const isAyt11 = examType === 'AYT_11';
+  const studentPts = isAyt11
+    ? (['SAY', 'EA'] as const)
+    : (isAyt && columns.showPuanTurleri ? columns.visiblePuanTurleri : []);
 
   const heads: string[] = ['#'];
   if (columns.showStudentId) heads.push('Ö.No');
@@ -1020,7 +1025,7 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
   if (columns.showSinif) heads.push('Sınıf');
   if (columns.showDYB) heads.push('D', 'Y', 'B');
   heads.push(isAyt ? 'Alan neti' : 'Net', 'Puan');
-  if (isAyt && hasPT && columns.showPuanTurleri) columns.visiblePuanTurleri.forEach(pt => heads.push(pt));
+  if (hasPT && studentPts.length) studentPts.forEach(pt => heads.push(pt));
   if (columns.showKurumYuzdelik) heads.push('Kurum %');
   if (columns.showTahminiSiralama) heads.push('Tah. Sıra');
   if (columns.showYuzdelikDilim) heads.push('TR %');
@@ -1033,8 +1038,8 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
     if (columns.showSinif) row.push(st.sinif || '—');
     if (columns.showDYB) row.push(String(st.total_correct), String(st.total_wrong), String(st.total_empty));
     row.push((st.alan_net ?? st.toplam_net).toFixed(2), String(st.puan));
-    if (isAyt && hasPT && columns.showPuanTurleri) {
-      columns.visiblePuanTurleri.forEach(pt => {
+    if (hasPT && studentPts.length) {
+      studentPts.forEach(pt => {
         const val = st.puan_turleri?.[pt as 'SAY' | 'EA' | 'SOZ']?.puan;
         row.push(val != null ? String(val) : '—');
       });
@@ -1053,12 +1058,12 @@ export async function exportStudentsPdf(opts: StudentsPdfOptions) {
   parts.push(`${filtered.length} öğrenci`);
 
   const doc = new jsPDF({
-    orientation: (isAyt && hasPT && columns.showPuanTurleri) ? 'landscape' : 'portrait',
+    orientation: (hasPT && studentPts.length) ? 'landscape' : 'portrait',
     unit: 'mm', format: 'a4',
   });
   registerFonts(doc, fonts);
 
-  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'YKS_AYT' ? 'AYT' : examType === 'AYT_11' ? '11 AYT' : examType === 'LGS_7' ? 'LGS 7' : examType === 'LGS' ? 'LGS' : examType;
+  const tl = examType === 'YKS_TYT' ? 'TYT' : examType === 'TYT_11' ? '11 TYT' : examType === 'YKS_AYT' ? 'AYT' : examType === 'AYT_11' ? '11 AYT' : examType === 'LGS_7' ? 'LGS 7' : examType === 'LGS' ? 'LGS' : examType;
   const startY = addPdfHeader(doc, logo, examName, `${tl} Öğrenci Listesi`, parts.join('  ·  '));
 
   autoTable(doc, {

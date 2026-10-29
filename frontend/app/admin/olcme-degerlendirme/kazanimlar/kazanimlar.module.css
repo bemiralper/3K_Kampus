@@ -87,6 +87,39 @@
   align-items: center;
   flex-wrap: wrap;
 }
+.excelPick {
+  position: relative;
+}
+.excelPick summary {
+  list-style: none;
+  cursor: pointer;
+}
+.excelPick summary::-webkit-details-marker {
+  display: none;
+}
+.excelPickPanel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  min-width: 240px;
+  max-height: 320px;
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+}
+.excelPickRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  font-size: 13px;
+  color: #0f172a;
+  cursor: pointer;
+}
 .filterSelect {
   padding: 8px 14px;
   border-radius: 10px;

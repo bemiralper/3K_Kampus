@@ -1,7 +1,7 @@
 'use client';
 
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { examApi, puanAyarlariApi } from '../../../../components/olcme/api';
 import { useOlcmePath } from '../../../../components/olcme/useOlcmePath';
 import {
@@ -230,7 +230,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   // ── Sınıf / deneme seçenekleri (düzenleme modunda gerekir) ──
   const [siniflar, setSiniflar] = useState<LookupItem[]>([]);
   const [sinifSeviyeleri, setSinifSeviyeleri] = useState<LookupItem[]>([]);
-  const [hizmetler, setHizmetler] = useState<LookupItem[]>([]);
   const [paketler, setPaketler] = useState<LookupItem[]>([]);
 
   // ── TYT Bağlantı State ──
@@ -255,12 +254,10 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     Promise.all([
       examApi.siniflar().catch(() => [] as LookupItem[]),
       examApi.sinifSeviyeleri().catch(() => [] as LookupItem[]),
-      examApi.denemeHizmetleri().catch(() => [] as LookupItem[]),
       examApi.denemePaketleri().catch(() => [] as LookupItem[]),
-    ]).then(([sf, sv, hz, pk]) => {
+    ]).then(([sf, sv, pk]) => {
       setSiniflar(sf);
       setSinifSeviyeleri(sv);
-      setHizmetler(hz);
       setPaketler(pk);
     });
   }, []);
@@ -280,7 +277,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     sinif_ids: exam.sinif_ids ?? [],
     sinif_seviyesi_ids: exam.sinif_seviyesi_ids ?? [],
     deneme_paketi_ids: exam.deneme_paketi_ids ?? [],
-    deneme_hizmeti: exam.deneme_hizmeti,
   });
   const [editForm, setEditForm] = useState(buildEditForm);
 
@@ -370,7 +366,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
         answer_key_publish_date: editForm.answer_key_publish_date || null,
         puan_yili: editForm.puan_yili === '' ? null : Number(editForm.puan_yili),
         sinif_ids: editForm.sinif_ids,
-        deneme_hizmeti: editForm.deneme_hizmeti,
         deneme_paketi: editForm.deneme_paketi_ids[0] ?? null,
         ...(audienceChanged ? {
           sinif_seviyesi_ids: editForm.sinif_seviyesi_ids,
@@ -427,6 +422,38 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 
   const ef = editForm;
   const setEf = (patch: Partial<typeof editForm>) => setEditForm(p => ({ ...p, ...patch }));
+
+  const audienceReq = useRef(0);
+  const [audienceCount, setAudienceCount] = useState<number | null>(null);
+  const [audienceLoading, setAudienceLoading] = useState(false);
+  const hasAudience = ef.sinif_ids.length + ef.sinif_seviyesi_ids.length + ef.deneme_paketi_ids.length > 0;
+
+  useEffect(() => {
+    if (!editing) return;
+    const req = ++audienceReq.current;
+    if (!hasAudience) {
+      setAudienceCount(0);
+      setAudienceLoading(false);
+      return;
+    }
+    setAudienceLoading(true);
+    const timer = window.setTimeout(() => {
+      examApi.previewParticipants({
+        sinif_ids: ef.sinif_ids,
+        sinif_seviyesi_ids: ef.sinif_seviyesi_ids,
+        deneme_paketi_ids: ef.deneme_paketi_ids,
+      }).then(data => {
+        if (req !== audienceReq.current) return;
+        setAudienceCount(data.count);
+      }).catch(() => {
+        if (req !== audienceReq.current) return;
+        setAudienceCount(null);
+      }).finally(() => {
+        if (req === audienceReq.current) setAudienceLoading(false);
+      });
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [editing, hasAudience, ef.sinif_ids, ef.sinif_seviyesi_ids, ef.deneme_paketi_ids]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
@@ -673,26 +700,27 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
               <InfoItem label="Seviye" value={seviyeNames || '—'} />
               <InfoItem label="Sınıflar" value={sinifNames || '—'} />
               <InfoItem label="Deneme paketi" value={paketNames || '—'} />
-              {exam.deneme_hizmeti && (
-                <InfoItem
-                  label="Deneme hizmeti"
-                  value={hizmetler.find(h => h.id === exam.deneme_hizmeti)?.ad ?? `#${exam.deneme_hizmeti}`}
-                />
-              )}
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
               <div className={r.heroCopy}>
                 <p style={{ margin: 0 }}>
-                  Sınıf, seviye ve deneme paketini dilediğiniz gibi birleştirin.
-                  Aynı öğrenci bir kez gelir. Seviye + paket birlikte seçilirse kesişim alınır;
-                  konu tarama için yalnız sınıf yeter. Kaydetmek otomatik katılımcı listesini bu kurallara göre günceller.
+                  {!hasAudience
+                    ? 'Sınıf, seviye veya deneme paketi seçin. Öğrenci sayısı burada görünür.'
+                    : audienceLoading
+                      ? 'Seçilen kitle sayılıyor…'
+                      : audienceCount == null
+                        ? 'Öğrenci sayısı alınamadı.'
+                        : `Bu seçim ${audienceCount} öğrenciyi kapsıyor. Aynı öğrenci bir kez sayılır. Seviye ve paket birlikteyse kesişim alınır.`}
                 </p>
               </div>
-              <div className={r.stats} style={{ minWidth: 0 }}>
-                <div className={r.stat}><span className={r.statValue}>{ef.sinif_ids.length}</span><span className={r.statLabel}>Sınıf</span></div>
-                <div className={r.stat}><span className={r.statValue}>{ef.sinif_seviyesi_ids.length}</span><span className={r.statLabel}>Seviye</span></div>
-                <div className={r.stat}><span className={r.statValue}>{ef.deneme_paketi_ids.length}</span><span className={r.statLabel}>Paket</span></div>
+              <div className={r.stats} style={{ minWidth: 0, maxWidth: 220 }}>
+                <div className={r.stat} aria-live="polite">
+                  <span className={r.statValue}>
+                    {!hasAudience ? '—' : audienceLoading ? '…' : (audienceCount ?? '—')}
+                  </span>
+                  <span className={r.statLabel}>Öğrenci</span>
+                </div>
               </div>
               <AudiencePicker
                 sinifSeviyeleri={sinifSeviyeleri}
@@ -705,16 +733,6 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                 onToggleSinif={id => toggleAudience('sinif_ids', id)}
                 onTogglePaket={id => toggleAudience('deneme_paketi_ids', id)}
               />
-              <div className={s.formGroup} style={{ maxWidth: 360 }}>
-                <label>Deneme hizmeti <span style={{ fontWeight: 400, color: '#94a3b8' }}>(isteğe bağlı)</span></label>
-                <select
-                  value={ef.deneme_hizmeti ?? ''}
-                  onChange={e => setEf({ deneme_hizmeti: e.target.value ? Number(e.target.value) : null })}
-                >
-                  <option value="">Seçilmedi</option>
-                  {hizmetler.map(h => <option key={h.id} value={h.id}>{h.ad}</option>)}
-                </select>
-              </div>
             </div>
           )}
         </div>

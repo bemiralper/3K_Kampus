@@ -277,6 +277,91 @@ class SozlesmeErisimSyncTests(TestCase):
             ).exists()
         )
 
+    def test_kataloga_sonradan_eklenen_deneme_acilmaz(self):
+        """Grup tanımına sonra eklenen deneme eski sözleşmeye ve ekrana yazılmaz."""
+        from apps.ogrenci_kayit.application.services import attach_grup_dersi_denemeler
+        from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
+            displayed_deneme_ids_for_package,
+        )
+
+        grup = GrupDersi.objects.create(
+            ad='Sayısal', kod='SAY3', kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+        )
+        grup.dahil_ek_hizmetler.add(self.kutuphane)
+        self.sozlesme.kalemler.all().delete()
+        self.sozlesme.paket_turu = 'grup_dersi'
+        self.sozlesme.paket_id = grup.id
+        self.sozlesme.paket_adi = 'Sayısal'
+        self.sozlesme.save(update_fields=['paket_turu', 'paket_id', 'paket_adi'])
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme, kalem_turu=KalemTuru.GRUP_DERSI,
+            kalem_id=grup.id, kalem_adi='Sayısal',
+            brut_tutar=240000, net_tutar=240000, kdv_dahil_tutar=240000,
+        )
+        sync_sozlesme_erisim(self.sozlesme)
+
+        deneme = Deneme.objects.create(
+            ad='11. Sınıf Deneme', kod='D11', kurum=self.kurum, sube=self.sube,
+            egitim_yili=self.ey, brut_fiyat=0,
+        )
+        grup.dahil_denemeler.add(deneme)
+        attach_grup_dersi_denemeler(
+            self.ogrenci, grup, self.ey, self.sozlesme.baslangic_tarihi,
+            kurum_id=self.kurum.id, sube_id=self.sube.id, egitim_yili_id=self.ey.id,
+        )
+        sync_sozlesme_erisim(self.sozlesme)
+
+        self.assertFalse(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet__deneme_paketi=deneme, aktif_mi=True,
+            ).exists()
+        )
+        shown = displayed_deneme_ids_for_package(
+            self.ogrenci.id, self.ey.id, 'grup_dersi', grup.id, [deneme.id],
+        )
+        self.assertEqual(shown, [])
+
+    def test_acik_deneme_sonraki_kayitta_kapanmaz(self):
+        """Görüntü denemeyi kaçırdıysa, öğrencide açık satır sonraki kayıtta kapanmaz."""
+        grup = GrupDersi.objects.create(
+            ad='Sayısal 2', kod='SAY4', kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+        )
+        self.sozlesme.kalemler.all().delete()
+        self.sozlesme.paket_turu = 'grup_dersi'
+        self.sozlesme.paket_id = grup.id
+        self.sozlesme.save(update_fields=['paket_turu', 'paket_id'])
+        SozlesmeKalemi.objects.create(
+            sozlesme=self.sozlesme, kalem_turu=KalemTuru.GRUP_DERSI,
+            kalem_id=grup.id, kalem_adi='Sayısal 2',
+            brut_tutar=100000, net_tutar=100000, kdv_dahil_tutar=100000,
+        )
+        sync_sozlesme_erisim(self.sozlesme)
+
+        deneme = Deneme.objects.create(
+            ad='Açık Deneme', kod='ACIK', kurum=self.kurum, sube=self.sube,
+            egitim_yili=self.ey, brut_fiyat=0,
+        )
+        ek = EkHizmet.objects.create(
+            ad='Deneme — Açık Deneme', kod='DNM_ACIK', hizmet_turu='deneme',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+            deneme_paketi=deneme, brut_fiyat=0, aktif_mi=True,
+        )
+        OgrenciEkHizmet.objects.create(
+            ogrenci=self.ogrenci, ek_hizmet=ek, aktif_mi=True, dahil_mi=True,
+            egitim_yili=self.ey, fiyat=0,
+            kaynak_paket_turu='grup_dersleri', kaynak_paket_id=grup.id,
+            baslangic_tarihi=self.sozlesme.baslangic_tarihi,
+        )
+        sync_sozlesme_erisim(self.sozlesme)
+        self.assertTrue(
+            OgrenciEkHizmet.objects.filter(
+                ogrenci=self.ogrenci, ek_hizmet=ek, aktif_mi=True,
+            ).exists()
+        )
+        self.sozlesme.refresh_from_db()
+        spec = (self.sozlesme.erisim_kapsam_anlik or {}).get(f'grup_dersi:{grup.id}') or {}
+        self.assertIn(deneme.id, spec.get('deneme') or [])
+
 
 class KalemCikarErisimKapatirTests(SozlesmeErisimSyncTests):
     """Sözleşmeden kalem çıkarılınca öğrencinin o hizmete erişimi de kapanır.

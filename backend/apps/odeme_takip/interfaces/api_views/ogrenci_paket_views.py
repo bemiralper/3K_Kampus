@@ -126,6 +126,16 @@ def ogrenci_paketleri(request, ogrenci_id):
             if ep.paket_turu in ('grup_dersi', 'premium')
             else ([], [], [])
         )
+        if ep.paket_turu in ('grup_dersi', 'premium'):
+            from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
+                displayed_deneme_ids_for_package,
+            )
+            # Sözleşme görüntüsü varsa yeşil tik kataloğu değil, öğrencinin hakkını gösterir.
+            frozen_deneme = displayed_deneme_ids_for_package(
+                ogrenci_id, egitim_yili_id, ep.paket_turu, ep.paket_id, dahil_deneme_ids,
+            )
+            if frozen_deneme is not None:
+                dahil_deneme_ids = frozen_deneme
         entry = {
             'id': ep.id,
             'paket_turu': ep.paket_turu,

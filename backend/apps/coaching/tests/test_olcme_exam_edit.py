@@ -66,6 +66,24 @@ class OlcmeExamEditAPITest(TestCase):
 
     # ── Sınıf ilişkisi ──────────────────────────────────────────────────────
 
+    def test_deneme_paketleri_sadece_secili_yili_listeler(self):
+        diger = EgitimYili.objects.create(baslangic_yil=2027, bitis_yil=2028, aktif_mi=False)
+        Deneme.objects.create(
+            ad='11. Sınıf Deneme', kod='D11', kurum=self.kurum, sube=self.sube,
+            egitim_yili=self.egitim_yili, brut_fiyat=0,
+        )
+        Deneme.objects.create(
+            ad='11. Sınıf Deneme', kod='D11B', kurum=self.kurum, sube=self.sube,
+            egitim_yili=diger, brut_fiyat=0,
+        )
+        Deneme.objects.create(
+            ad='Deneme', kod='ESKI', kurum=self.kurum, sube=self.sube,
+            egitim_yili=diger, brut_fiyat=0,
+        )
+        res = self.client.get(f'{EXAMS_URL}deneme-paketleri/', **self.headers)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual([row['ad'] for row in res.json()], ['11. Sınıf Deneme'])
+
     def test_sinif_ids_can_be_updated_after_creation(self):
         """Detay sayfasındaki sınıf seçimi kaydedilmeli."""
         res = self._patch({'sinif_ids': [self.sinif_a.id, self.sinif_b.id]})

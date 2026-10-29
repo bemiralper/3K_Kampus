@@ -831,7 +831,12 @@ def exam_hatirlatma_send(request, exam_pk):
     from apps.communication.application.bulk_dispatch import map_bulk
 
     ids = _int_list(request.data.get('participant_ids'))
-    include_student = bool(request.data.get('include_student'))
+    if 'student_ids' in request.data:
+        selected_students = set(_int_list(request.data.get('student_ids')))
+        include_all_students = False
+    else:
+        selected_students = None
+        include_all_students = bool(request.data.get('include_student'))
     selected_veli = set(_int_list(request.data.get('veli_ids')))
     sent = 0
     skipped = 0
@@ -868,7 +873,12 @@ def exam_hatirlatma_send(request, exam_pk):
                     sube_id=exam.sube_id,
                     sent_by_user_id=sent_by,
                 )))
-            elif item['recipient_type'] == 'ogrenci' and include_student:
+            elif item['recipient_type'] == 'ogrenci':
+                if selected_students is not None:
+                    if p.student_id not in selected_students:
+                        continue
+                elif not include_all_students:
+                    continue
                 if item['skip_reason']:
                     skipped += 1
                     continue
@@ -900,8 +910,8 @@ def exam_hatirlatma_send(request, exam_pk):
             skipped += 1
             if label:
                 errors.append(label)
-    if event.key == 'sinav.yoklama':
-        _record_sinav_yoklama_campaign(exam, request.user, linked)
+    if event.key in ('sinav.yoklama', HATIRLATMA_EVENT):
+        _record_sinav_notify_campaign(exam, request.user, linked, event.key)
     if event.key == HATIRLATMA_EVENT:
         for p, _label, _kind, _pid, _fn in jobs:
             if p.id in notified:
@@ -910,8 +920,8 @@ def exam_hatirlatma_send(request, exam_pk):
     return Response({'sent': sent, 'skipped': skipped, 'errors': errors})
 
 
-def _record_sinav_yoklama_campaign(exam, user, linked: list[tuple[str, str, int]]) -> None:
-    """Gönderilen yoklama mesajlarını toplu gönderim geçmişine bir kampanya olarak yazar."""
+def _record_sinav_notify_campaign(exam, user, linked: list[tuple[str, str, int]], event_key: str) -> None:
+    """Gönderilen sınav mesajlarını toplu gönderim geçmişine bir kampanya olarak yazar."""
     if not linked:
         return
     from apps.communication.application.campaign_service import CampaignStatsService
@@ -941,7 +951,9 @@ def _record_sinav_yoklama_campaign(exam, user, linked: list[tuple[str, str, int]
         channel=Channel.WHATSAPP,
         channel_config_id=channel_config_id,
         created_by=user if getattr(user, 'is_authenticated', False) else None,
-        title=f'Sınav yoklama — {exam.name}'[:200],
+        title=(
+            f"{'Sınav bilgisi' if event_key == HATIRLATMA_EVENT else 'Sınav yoklama'} — {exam.name}"
+        )[:200],
         body_template=body,
         status=CampaignStatus.QUEUED,
         total_recipients=len(messages),
@@ -949,7 +961,7 @@ def _record_sinav_yoklama_campaign(exam, user, linked: list[tuple[str, str, int]
         recipient_filter_json={
             'included_veli_ids': veli_ids,
             'included_ogrenci_ids': ogrenci_ids,
-            'origin': 'sinav.yoklama',
+            'origin': event_key,
             'exam_id': exam.id,
         },
     )

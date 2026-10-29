@@ -57,6 +57,7 @@ type PdfExportModalProps = RankingsProps | StudentsProps;
 export default function PdfExportModal(props: PdfExportModalProps) {
   const { mode, examName, examType, uniqueSiniflar, onClose } = props;
   const isAyt = examType === 'YKS_AYT';
+  const isAyt11 = examType === 'AYT_11';
 
   /* ── Portal root ── */
   const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
@@ -387,7 +388,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
           )}
 
           {/* ─── 4. PUAN TÜRLERİ (Sadece AYT) ─── */}
-          {mode === 'rankings' && isAyt && (
+          {mode === 'rankings' && (isAyt || isAyt11) && (
             <>
           <SectionTitle icon="🎯" title="Puan Türleri" />
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 20 }}>
@@ -398,7 +399,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
             />
             {columns.showPuanTurleri && (
               <div style={{ display: 'flex', gap: 12, marginLeft: 8 }}>
-                {(['SAY', 'EA', 'SOZ'] as const).map(pt => (
+                {(isAyt11 ? (['SAY', 'EA'] as const) : (['SAY', 'EA', 'SOZ'] as const)).map(pt => (
                   <CheckItem
                     key={pt}
                     label={pt}
@@ -419,7 +420,7 @@ export default function PdfExportModal(props: PdfExportModalProps) {
               <>
                 {columns.visibleSections ? columns.visibleSections.length : sections.length} alan/ders ·{' '}
                 {columns.showDYB ? 'D/Y/Net detaylı' : 'Sadece Net'} ·{' '}
-                {isAyt ? (columns.showPuanTurleri ? columns.visiblePuanTurleri.join('/') : 'Puan türleri gizli') : ''}{isAyt ? ' · ' : ''}
+                {(isAyt || isAyt11) ? (columns.showPuanTurleri ? (isAyt11 ? columns.visiblePuanTurleri.filter(pt => pt !== 'SOZ') : columns.visiblePuanTurleri).join('/') : 'Puan türleri gizli') : ''}{(isAyt || isAyt11) ? ' · ' : ''}
                 {columns.showTahminiSiralama ? 'Tah. sıralama ✓' : 'Tah. sıralama ✗'} ·{' '}
                 {alanFilter ? ALAN_LABELS[alanFilter] : 'Tüm alanlar'}
               </>

@@ -30,7 +30,7 @@ const typeBadge = (t: string) => {
   if (t === "DENEME") return s.badgeTeal;
   return s.badgeGray;
 };
-const typeLabel = (t: string) => (t === "YKS_TYT" ? "TYT" : t === "YKS_AYT" ? "AYT" : t === "AYT_11" ? "11 AYT" : t === "DENEME" ? "Deneme" : t);
+const typeLabel = (t: string) => (t === "YKS_TYT" ? "TYT" : t === "TYT_11" ? "11 TYT" : t === "YKS_AYT" ? "AYT" : t === "AYT_11" ? "11 AYT" : t === "DENEME" ? "Deneme" : t);
 
 const PALETTE = ["#0262a7", "#7c3aed", "#ea580c", "#059669", "#e11d48", "#0d9488", "#d97706", "#6366f1"];
 const barFill = (n: number, mx: number) => {

@@ -11,6 +11,7 @@ from .teacher_read import _load_term, _placement_rows, _term_id
 
 _GROUP_ORDER = (
     'YKS_TYT',
+    'TYT_11',
     'YKS_AYT',
     'AYT_11',
     'LGS',
@@ -23,6 +24,7 @@ _GROUP_ORDER = (
 )
 _GROUP_LABEL = {
     'YKS_TYT': 'TYT',
+    'TYT_11': '11. Sınıf TYT',
     'YKS_AYT': 'AYT',
     'AYT_11': '11. Sınıf AYT',
     'LGS': 'LGS',

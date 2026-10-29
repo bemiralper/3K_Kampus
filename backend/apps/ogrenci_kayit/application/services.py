@@ -242,6 +242,22 @@ def _attach_dahil_ek_hizmetler(ogrenci, dahil_ids, kaynak_turu, kaynak_id, egiti
 
 
 def _attach_dahil_denemeler(ogrenci, dahil_deneme_ids, kaynak_turu, kaynak_id, kurum_id, sube_id, egitim_yili, baslangic_tarihi):
+    """Pakete dahil denemeyi aç.
+
+    Sözleşmenin dondurulmuş listesi varsa katalogdaki yeni deneme açılmaz.
+    Liste, gruba sonradan eklenen denemeyi eski öğrenciye yazmaz.
+    """
+    from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
+        frozen_inclusions_for_package,
+    )
+
+    yil_id = getattr(egitim_yili, "id", None)
+    frozen = frozen_inclusions_for_package(
+        getattr(ogrenci, "id", None), yil_id, kaynak_turu, kaynak_id,
+    )
+    if frozen is not None:
+        allowed = set(frozen["deneme"])
+        dahil_deneme_ids = [i for i in dahil_deneme_ids if i in allowed]
     for deneme_paketi in Deneme.objects.filter(id__in=dahil_deneme_ids, aktif_mi=True):
         ek_hizmet = EkHizmet.objects.filter(
             deneme_paketi=deneme_paketi,

@@ -27,6 +27,14 @@ _TEMPLATES: dict[str, list[tuple]] = {
         ('Fen Bilimleri',   101, 120, 3),
     ],
 
+    # 11. sınıf Maarif TYT. Kitapçık resmi TYT oturumuyla aynıdır; ayrım katalogdadır.
+    'TYT_11': [
+        ('Türkçe',           1,  40, 0),
+        ('Sosyal Bilimler',  41, 60, 1),
+        ('Temel Matematik',  61, 100, 2),
+        ('Fen Bilimleri',   101, 120, 3),
+    ],
+
     'YKS_AYT': [
         ('TDE-Sosyal Bilimler-1',   1,  40, 0),
         ('Sosyal Bilimler-2',      41,  80, 1),
@@ -79,6 +87,24 @@ _TEMPLATES: dict[str, list[tuple]] = {
 _SUB_SECTIONS: dict[str, dict[str, list[tuple]]] = {
 
     'YKS_TYT': {
+        'Sosyal Bilimler': [
+            ('Tarih',        41, 45, 0),
+            ('Coğrafya',     46, 50, 1),
+            ('Felsefe',      51, 55, 2),
+            ('Din Kültürü',  56, 60, 3),
+        ],
+        'Temel Matematik': [
+            ('Matematik',    61, 90, 0),
+            ('Geometri',     91, 100, 1),
+        ],
+        'Fen Bilimleri': [
+            ('Fizik',       101, 107, 0),
+            ('Kimya',       108, 114, 1),
+            ('Biyoloji',    115, 120, 2),
+        ],
+    },
+
+    'TYT_11': {
         'Sosyal Bilimler': [
             ('Tarih',        41, 45, 0),
             ('Coğrafya',     46, 50, 1),
@@ -258,6 +284,7 @@ def _with_optional_philosophy(
 
 _DEFAULT_DURATIONS: dict[str, int] = {
     'YKS_TYT':     165,
+    'TYT_11':      165,
     'YKS_AYT':     180,
     'AYT_11':      165,
     'LGS':         155,
@@ -318,6 +345,18 @@ _SECTION_SUBJECT_MAP: dict[str, dict[str, tuple[str, str, str]]] = {
         'Coğrafya':       ('COGRAFYA',   'Coğrafya',        'YKS_TYT'),
         'Felsefe':        ('FELSEFE',    'Felsefe',         'YKS_TYT'),
         OPTIONAL_PHILOSOPHY_NAME: ('FELSEFE', 'Felsefe',    'YKS_TYT'),
+        'Din Kültürü':    ('DKAB',       'Din Kültürü',     'YKS_TYT'),
+        'Matematik':      ('MATEMATIK',  'Matematik',       'YKS_TYT'),
+        'Geometri':       ('GEOMETRI',   'Geometri',        'YKS_TYT'),
+        'Fizik':          ('FIZIK',      'Fizik',           'YKS_TYT'),
+        'Kimya':          ('KIMYA',      'Kimya',           'YKS_TYT'),
+        'Biyoloji':       ('BIYOLOJI',   'Biyoloji',        'YKS_TYT'),
+    },
+    'TYT_11': {
+        'Türkçe':         ('TURKCE',     'Türkçe',          'YKS_TYT'),
+        'Tarih':          ('TARIH',      'Tarih',           'YKS_TYT'),
+        'Coğrafya':       ('COGRAFYA',   'Coğrafya',        'YKS_TYT'),
+        'Felsefe':        ('FELSEFE',    'Felsefe',         'YKS_TYT'),
         'Din Kültürü':    ('DKAB',       'Din Kültürü',     'YKS_TYT'),
         'Matematik':      ('MATEMATIK',  'Matematik',       'YKS_TYT'),
         'Geometri':       ('GEOMETRI',   'Geometri',        'YKS_TYT'),

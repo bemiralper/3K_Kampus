@@ -7,6 +7,7 @@
 
 export const EXAM_TYPES = [
   { value: 'YKS_TYT',     label: 'YKS – TYT (Temel Yeterlilik)' },
+  { value: 'TYT_11',      label: '11. Sınıf TYT' },
   { value: 'YKS_AYT',     label: 'YKS – AYT (Alan Yeterlilik)' },
   { value: 'AYT_11',      label: '11. Sınıf AYT' },
   { value: 'LGS',         label: 'LGS (8. Sınıf)' },
@@ -443,6 +444,7 @@ export interface TopicItem {
   id: number;
   code?: string;
   name: string;
+  program?: string;
   outcomes: OutcomeItem[];
   outcome_count?: number;
 }
@@ -1044,7 +1046,7 @@ export interface StudentExamResponse {
 }
 
 export type DevelopmentWindow = '1' | '3' | '5' | '10' | 'all' | 'custom';
-export type DevelopmentTypeGroup = 'TYT' | 'AYT' | 'AYT_11' | 'LGS' | 'manuel';
+export type DevelopmentTypeGroup = 'TYT' | 'TYT_11' | 'AYT' | 'AYT_11' | 'LGS' | 'manuel';
 export type DevelopmentStatus =
   | 'insufficient_data'
   | 'improving'

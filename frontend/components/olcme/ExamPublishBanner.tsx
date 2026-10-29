@@ -7,10 +7,10 @@ import s from '../../app/admin/olcme-degerlendirme/olcme.module.css';
 import type { ExamPublishDispatch, ExamPublishStatus } from './types';
 import ExamPublishNotifyModal from './ExamPublishNotifyModal';
 
-function fmtShort(iso: string | null) {
-  if (!iso) return '—';
+function fmtWhen(iso: string | null) {
+  if (!iso) return '';
   return new Date(iso).toLocaleString('tr-TR', {
-    day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit',
+    day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit',
   });
 }
 
@@ -21,12 +21,26 @@ function toLocalInput(iso: string | null) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-function statusText(row: ExamPublishDispatch) {
-  if (row.status === 'sent') return `Gönderildi · ${row.sent_count}`;
-  if (row.status === 'cancelled') return 'Zamanlama iptal';
-  if (row.status === 'overdue_unread') return row.ready ? 'Saat geçti' : 'Saat geçti · hazır değil';
-  if (row.is_enabled && row.scheduled_at) return row.ready ? 'Zamanlı · açık' : 'Zamanlı · hazır değil';
-  return row.ready ? 'Manuel' : 'Hazır değil';
+function statusLine(row: ExamPublishDispatch) {
+  if (row.status === 'sent') {
+    const when = fmtWhen(row.sent_at);
+    return when ? `Gönderildi · ${row.sent_count} kişi · ${when}` : `Gönderildi · ${row.sent_count} kişi`;
+  }
+  if (row.status === 'overdue_unread') {
+    return row.ready ? 'Saat geçti, henüz gitmedi' : 'Saat geçti, belge hazır değil';
+  }
+  if (row.is_enabled && row.scheduled_at) {
+    return row.ready ? 'Saat gelince otomatik gidecek' : 'Planlı, belge henüz hazır değil';
+  }
+  if (row.scheduled_at) return 'Saat kayıtlı, otomatik gönderim kapalı';
+  return 'Zamanlama yok. Gönder ile şimdi yollanır.';
+}
+
+function statusColor(row: ExamPublishDispatch) {
+  if (row.status === 'sent') return '#15803d';
+  if (row.status === 'overdue_unread') return '#b45309';
+  if (row.is_enabled && row.scheduled_at) return '#0369a1';
+  return '#64748b';
 }
 
 function Row({
@@ -34,6 +48,7 @@ function Row({
   examName,
   label,
   kindLabel,
+  dateLabel,
   row,
   onChanged,
 }: {
@@ -41,123 +56,124 @@ function Row({
   examName: string;
   label: string;
   kindLabel: string;
+  dateLabel: string;
   row: ExamPublishDispatch;
   onChanged: (next: ExamPublishStatus) => void;
 }) {
   const [busy, setBusy] = useState('');
-  const [openTime, setOpenTime] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
   const [when, setWhen] = useState(toLocalInput(row.scheduled_at));
+  const [auto, setAuto] = useState(row.is_enabled);
   const [error, setError] = useState('');
 
-  useEffect(() => { setWhen(toLocalInput(row.scheduled_at)); }, [row.scheduled_at]);
+  useEffect(() => {
+    setWhen(toLocalInput(row.scheduled_at));
+    setAuto(row.is_enabled);
+  }, [row.scheduled_at, row.is_enabled]);
 
   const saveSchedule = async (enabled: boolean, at: string) => {
     if (enabled && !at) {
-      setError('Zamanlı gönderimi açmak için saat seçin');
-      setOpenTime(true);
+      setError('Otomatik gönderim için tarih ve saat seçin.');
       return;
     }
     setBusy('schedule');
     setError('');
     try {
       onChanged(await examApi.publishReschedule(examId, row.kind, at || null, enabled));
-      setOpenTime(false);
+      setEditing(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kaydedilemedi');
     } finally { setBusy(''); }
   };
 
-  const tone = row.status === 'overdue_unread'
-    ? '#b45309'
-    : row.status === 'sent'
-      ? '#15803d'
-      : row.is_enabled
-        ? '#0369a1'
-        : '#475569';
+  const clearSchedule = async () => {
+    if (!confirm(`${label} zamanlaması silinsin mi? ${dateLabel} de boşalır. Gönderilmiş mesajlar silinmez.`)) return;
+    await saveSchedule(false, '');
+  };
+
+  const sent = row.status === 'sent';
 
   return (
-    <div style={{ display: 'grid', gap: 4 }}>
-      <div className={s.publishRow}>
-        <span style={{ fontWeight: 650, color: '#334155' }}>{label}</span>
-        <span style={{ color: tone, minWidth: 0 }}>
-          {row.is_enabled ? fmtShort(row.scheduled_at) : (row.scheduled_at ? `Kapalı · ${fmtShort(row.scheduled_at)}` : 'Zamanlama yok')}
-          <span style={{ marginLeft: 6, color: '#94a3b8' }}>{statusText(row)}</span>
-        </span>
-        <span className={s.publishActions}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#475569' }}>
-            <input
-              type="checkbox"
-              checked={row.is_enabled}
-              disabled={busy !== '' || row.status === 'sent'}
-              onChange={e => {
-                const next = e.target.checked;
-                if (next && !when) {
-                  setOpenTime(true);
-                  setError('Zamanlı gönderimi açmak için saat seçin');
-                  return;
-                }
-                saveSchedule(next, when);
-              }}
-            />
-            Zamanlı
-          </label>
+    <div className={s.publishCard}>
+      <div className={s.publishCardTop}>
+        <div style={{ minWidth: 0 }}>
+          <div className={s.publishName}>{label}</div>
+          <div className={s.publishWhen}>{fmtWhen(row.scheduled_at) || 'Saat yok'}</div>
+          <div className={s.publishHint} style={{ color: statusColor(row) }}>{statusLine(row)}</div>
+          {row.last_error && <div className={s.publishError}>{row.last_error}</div>}
+          {row.campaign_id && (
+            <div style={{ marginTop: 4 }}>
+              <Link href={`/admin/iletisim/kampanyalar?campaign=${row.campaign_id}`} className={s.publishLink}>
+                Gönderim geçmişi
+              </Link>
+            </div>
+          )}
+        </div>
+        <div className={s.publishActions}>
+          <button
+            type="button"
+            className={s.publishBtn}
+            disabled={busy !== ''}
+            onClick={() => { setEditing(v => !v); setError(''); }}
+          >
+            {editing ? 'Vazgeç' : 'Düzenle'}
+          </button>
+          {row.scheduled_at && (
+            <button
+              type="button"
+              className={s.publishBtnDanger}
+              disabled={busy !== ''}
+              onClick={clearSchedule}
+            >
+              Sil
+            </button>
+          )}
           <button
             type="button"
             className="btn-modern btn-primary"
-            style={{ padding: '3px 8px', fontSize: 11, height: 26 }}
+            style={{ padding: '5px 12px', fontSize: 12 }}
             disabled={busy !== ''}
             onClick={() => { setPickerOpen(true); setError(''); }}
           >
             Gönder
           </button>
-          <button
-            type="button"
-            className="btn-modern btn-secondary"
-            style={{ padding: '3px 8px', fontSize: 11, height: 26 }}
-            disabled={busy !== ''}
-            onClick={() => setOpenTime(v => !v)}
-          >
-            Saat
-          </button>
-        </span>
-      </div>
-      {row.campaign_id && (
-        <div style={{ fontSize: 11, textAlign: 'right' }}>
-          <Link href={`/admin/iletisim/kampanyalar?campaign=${row.campaign_id}`} style={{ color: '#0262a7', fontWeight: 600 }}>
-            Gönderim geçmişi
-          </Link>
         </div>
-      )}
-      {openTime && (
-        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+      </div>
+      {editing && (
+        <div className={s.publishEdit}>
           <input
             type="datetime-local"
             value={when}
+            aria-label={`${label} tarih ve saat`}
             onChange={e => setWhen(e.target.value)}
-            style={{ padding: '3px 6px', fontSize: 12, borderRadius: 6, border: '1px solid #cbd5e1' }}
           />
-          <button
-            type="button"
-            className="btn-modern btn-secondary"
-            style={{ padding: '3px 8px', fontSize: 11, height: 26 }}
-            disabled={busy !== ''}
-            onClick={() => saveSchedule(false, '')}
-          >
-            Temizle
-          </button>
+          <label className={s.checkRow} style={{ margin: 0 }}>
+            <input
+              type="checkbox"
+              checked={auto && !sent}
+              disabled={sent || busy !== ''}
+              onChange={e => setAuto(e.target.checked)}
+            />
+            Saat gelince otomatik gönder
+          </label>
+          {sent && (
+            <span className={s.publishHint} style={{ marginTop: 0 }}>
+              Bu gönderim bitti. Yeni saat otomatik açılmaz.
+            </span>
+          )}
           <button
             type="button"
             className="btn-modern btn-primary"
-            style={{ padding: '3px 8px', fontSize: 11, height: 26 }}
+            style={{ padding: '5px 12px', fontSize: 12 }}
             disabled={busy !== ''}
-            onClick={() => saveSchedule(row.is_enabled, when)}
+            onClick={() => saveSchedule(sent ? false : auto, when)}
           >
-            Kaydet
+            {busy === 'schedule' ? 'Kaydediliyor…' : 'Kaydet'}
           </button>
         </div>
       )}
-      {error && <div style={{ fontSize: 11, color: '#b91c1c', textAlign: 'right' }}>{error}</div>}
+      {error && <div className={s.publishError}>{error}</div>}
       {pickerOpen && (
         <ExamPublishNotifyModal
           examId={examId}
@@ -198,50 +214,37 @@ export default function ExamPublishBanner({
   if (!data) return null;
   const rows = [
     data.karne
-      ? { label: 'Karne PDF', kindLabel: 'Karne PDF', row: data.karne } : null,
+      ? { label: 'Karne PDF', kindLabel: 'Karne PDF', dateLabel: 'Sonuç yayın tarihi', row: data.karne } : null,
     data.answer_key
-      ? { label: 'Cevap PDF', kindLabel: 'Cevap anahtarı PDF', row: data.answer_key } : null,
-  ].filter(Boolean) as { label: string; kindLabel: string; row: ExamPublishDispatch }[];
+      ? { label: 'Cevap PDF', kindLabel: 'Cevap anahtarı PDF', dateLabel: 'Cevap anahtarı yayın tarihi', row: data.answer_key } : null,
+  ].filter(Boolean) as { label: string; kindLabel: string; dateLabel: string; row: ExamPublishDispatch }[];
   if (!rows.length) return null;
 
   return (
-    <div style={{
-      marginTop: 12,
-      paddingTop: 10,
-      borderTop: '1px solid #eef2f7',
-      display: 'grid',
-      gap: 8,
-    }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' }}>
-        <div style={{ fontSize: 11, fontWeight: 650, color: '#94a3b8', letterSpacing: 0.3 }}>
-          WHATSAPP YAYIN
-        </div>
-        <Link
-          href="/admin/iletisim/bildirim-sablonlari?event=sinav.karne"
-          style={{ fontSize: 11, color: '#0262a7', textDecoration: 'none', fontWeight: 600 }}
-        >
-          Şablon: Bildirim şablonları → Sınav
+    <div className={s.publishBlock}>
+      <div className={s.publishHead}>
+        <div className={s.publishTitle}>WhatsApp yayın</div>
+        <Link href="/admin/iletisim/bildirim-sablonlari?event=sinav.karne" className={s.publishLink}>
+          Şablon
         </Link>
       </div>
-      <p style={{ margin: 0, fontSize: 11, color: '#64748b', lineHeight: 1.4 }}>
-        Zamanlı kutu işaretliyse saat gelince yoklamada gelen öğrencilere ve velilerine gider.
-        Kutu kapalıysa saat dolsa bile otomatik gitmez. Gönder aynı listeyi açar.
-        Sonuçlar İletişim → Gönderim Geçmişi’nde görünür.
-      </p>
-      {rows.map(item => (
-        <Row
-          key={item.row.kind}
-          examId={examId}
-          examName={examName || ''}
-          label={item.label}
-          kindLabel={item.kindLabel}
-          row={item.row}
-          onChanged={next => {
-            setData(next);
-            onExamDatesChanged?.();
-          }}
-        />
-      ))}
+      <div className={s.publishList}>
+        {rows.map(item => (
+          <Row
+            key={item.row.kind}
+            examId={examId}
+            examName={examName || ''}
+            label={item.label}
+            kindLabel={item.kindLabel}
+            dateLabel={item.dateLabel}
+            row={item.row}
+            onChanged={next => {
+              setData(next);
+              onExamDatesChanged?.();
+            }}
+          />
+        ))}
+      </div>
     </div>
   );
 }

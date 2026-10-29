@@ -412,6 +412,7 @@ export const examApi = {
   hatirlatmaSend: (examId: number, data: {
     participant_ids: number[];
     veli_ids: number[];
+    student_ids?: number[];
     include_student?: boolean;
     event_key?: string;
   }) =>
@@ -1251,8 +1252,10 @@ export const curriculumApi = {
     downloadBlob(blob, `kazanim-katalogu-${stamp}.json`);
   },
 
-  downloadOutcomesExcel: async (program: string) => {
-    const res = await fetch(`${CURRICULUM_BASE}/catalog/export-excel/?program=${encodeURIComponent(program)}`, {
+  downloadOutcomesExcel: async (program: string, subjectCodes?: string[]) => {
+    const params = new URLSearchParams({ program });
+    if (subjectCodes?.length) params.set('subjects', subjectCodes.join(','));
+    const res = await fetch(`${CURRICULUM_BASE}/catalog/export-excel/?${params}`, {
       credentials: 'include',
       headers: getContextHeaders(),
     });
@@ -1266,10 +1269,18 @@ export const curriculumApi = {
     downloadBlob(blob, name);
   },
 
-  importCatalog: async (file: File, mode: 'replace' | 'merge', dryRun = false) => {
+  importCatalog: async (
+    file: File,
+    mode: 'replace' | 'merge',
+    dryRun = false,
+    program?: string,
+    subjectCodes?: string[],
+  ) => {
     const form = new FormData();
     form.append('file', file);
     form.append('mode', mode);
+    if (program) form.append('program', program);
+    if (subjectCodes?.length) form.append('subjects', subjectCodes.join(','));
     if (dryRun) form.append('dry_run', '1');
     const res = await fetch(`${CURRICULUM_BASE}/catalog/import/`, {
       method: 'POST',

@@ -83,10 +83,10 @@ export default function SummaryPanel({ data, examType }: { data: AnalysisSummary
       </div>
 
       {/* AYT Puan Türleri (SAY / EA / SÖZ) */}
-      {examType !== 'YKS_TYT' && data.puan_turleri && (
+      {examType !== 'YKS_TYT' && examType !== 'TYT_11' && data.puan_turleri && (
         <div style={{ marginTop: 16 }}>
           <h4 style={{ margin: '0 0 10px', fontSize: 14, fontWeight: 600, color: '#334155' }}>
-            📐 AYT Puan Türleri
+            {examType === 'AYT_11' ? '11. Sınıf Puan Türleri' : 'AYT Puan Türleri'}
             {data.linked_tyt_exam && (
               <span style={{ fontWeight: 400, fontSize: 12, color: '#64748b', marginLeft: 8 }}>
                 (TYT bağlantılı: {data.linked_tyt_exam.name})
@@ -94,7 +94,7 @@ export default function SummaryPanel({ data, examType }: { data: AnalysisSummary
             )}
           </h4>
           <div className={s.analysisGrid3}>
-            {(['SAY', 'EA', 'SOZ'] as const).map(pt => {
+            {(['SAY', 'EA', 'SOZ'] as const).filter(pt => data.puan_turleri?.[pt]).map(pt => {
               const d = data.puan_turleri![pt];
               const label = pt === 'SOZ' ? 'SÖZ' : pt;
               const color = pt === 'SAY' ? '#0262a7' : pt === 'EA' ? '#7c3aed' : '#059669';

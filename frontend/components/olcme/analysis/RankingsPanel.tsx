@@ -61,7 +61,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
       return r.alan_net ?? r.toplam_net;
     }
     if (ptKey) return r.puan_turleri?.[ptKey]?.puan ?? r.puan;
-    if (examType === 'YKS_AYT') return r.puan_turleri?.SAY?.puan ?? r.puan;
+    if (examType === 'YKS_AYT' || examType === 'AYT_11') return r.puan_turleri?.SAY?.puan ?? r.puan;
     return r.puan;
   };
 
@@ -325,7 +325,7 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                     {g.name}
                   </th>
                 ))}
-                <th colSpan={examType === 'YKS_AYT' && displayRankings.length > 0 && displayRankings[0].puan_turleri ? 6 : 4} style={{ borderBottom: 'none' }}></th>
+                <th colSpan={(examType === 'YKS_AYT' || examType === 'AYT_11') && displayRankings.length > 0 && displayRankings[0].puan_turleri ? 6 : 4} style={{ borderBottom: 'none' }}></th>
               </tr>
             )}
             {/* Alt başlık satırı: alan/ders adları + D/Y/Net */}
@@ -365,6 +365,12 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                   <th style={{ textAlign: 'center', color: '#0262a7', fontSize: 10, whiteSpace: 'nowrap' }} title="Sayısal net (Matematik + Fen). Alt satır puan.">SAY</th>
                   <th style={{ textAlign: 'center', color: '#7c3aed', fontSize: 10, whiteSpace: 'nowrap' }} title="Eşit ağırlık neti (Sosyal-1 + Matematik). Alt satır puan.">EA</th>
                   <th style={{ textAlign: 'center', color: '#059669', fontSize: 10, whiteSpace: 'nowrap' }} title="Sözel net (Sosyal-1 + Sosyal-2). Alt satır puan.">SÖZ</th>
+                </>
+              )}
+              {examType === 'AYT_11' && displayRankings.length > 0 && displayRankings[0].puan_turleri && (
+                <>
+                  <th style={{ textAlign: 'center', color: '#0262a7', fontSize: 10, whiteSpace: 'nowrap' }} title="Matematik + Fizik + Kimya + Biyoloji. Üst satır net, alt satır puan.">SAY</th>
+                  <th style={{ textAlign: 'center', color: '#7c3aed', fontSize: 10, whiteSpace: 'nowrap' }} title="Türk Dili + Tarih + Coğrafya + Matematik. Üst satır net, alt satır puan.">EA</th>
                 </>
               )}
               <th style={{ textAlign: 'center' }}>Kurum %</th>
@@ -449,6 +455,18 @@ export default function RankingsPanel({ rankings, meta, rankingYear, onRankingYe
                     <td style={{ textAlign: 'center', fontWeight: 700, color: '#059669', fontSize: 10 }} title={`Puan ${r.puan_turleri.SOZ?.puan ?? ''}`}>
                       {r.puan_turleri.SOZ?.ayt_net?.toFixed(2)}
                       <div style={{ fontSize: 9, fontWeight: 500, color: '#64748b' }}>{r.puan_turleri.SOZ?.puan}</div>
+                    </td>
+                  </>
+                )}
+                {examType === 'AYT_11' && r.puan_turleri?.SAY && r.puan_turleri?.EA && (
+                  <>
+                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#0262a7', fontSize: 10 }} title={`Puan ${r.puan_turleri.SAY?.puan ?? ''}`}>
+                      {r.puan_turleri.SAY?.ayt_net?.toFixed(2)}
+                      <div style={{ fontSize: 9, fontWeight: 500, color: '#64748b' }}>{r.puan_turleri.SAY?.puan}</div>
+                    </td>
+                    <td style={{ textAlign: 'center', fontWeight: 700, color: '#7c3aed', fontSize: 10 }} title={`Puan ${r.puan_turleri.EA?.puan ?? ''}`}>
+                      {r.puan_turleri.EA?.ayt_net?.toFixed(2)}
+                      <div style={{ fontSize: 9, fontWeight: 500, color: '#64748b' }}>{r.puan_turleri.EA?.puan}</div>
                     </td>
                   </>
                 )}

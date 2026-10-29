@@ -6,6 +6,8 @@
 
 DEVELOPMENT_EXAM_TYPE_GROUPS = {
     'TYT': ('YKS_TYT',),
+    # 11. sınıf Maarif TYT, mezun TYT ortalamasıyla birleşmez.
+    'TYT_11': ('TYT_11',),
     'AYT': ('YKS_AYT',),
     # 11. sınıf kendi kitapçığı ve 500'lük net puanı. ÖSYM AYT ile karışmaz.
     'AYT_11': ('AYT_11',),
@@ -13,7 +15,7 @@ DEVELOPMENT_EXAM_TYPE_GROUPS = {
     'manuel': ('DENEME', 'KURUM_ICI', 'KONU_TARAMA', 'KAZANIM', 'OZEL'),
 }
 
-DEVELOPMENT_MAIN_ONLY_TYPES = ('YKS_TYT', 'DENEME', 'LGS', 'LGS_7')
+DEVELOPMENT_MAIN_ONLY_TYPES = ('YKS_TYT', 'TYT_11', 'DENEME', 'LGS', 'LGS_7')
 
 DEVELOPMENT_WINDOWS = ('1', '3', '5', '10', 'all')
 DEVELOPMENT_DEFAULT_WINDOW = '5'
