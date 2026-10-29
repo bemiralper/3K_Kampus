@@ -7,6 +7,7 @@ import Icon from '@/components/olcme/ui/Icon';
 import { formatInactiveSeats, parseInactiveSeats, seatNumbers } from '@/components/olcme/roster/seating';
 import { trFold } from '@/lib/text-format';
 import s from './salonlar.module.css';
+import TanimlarTabs from '@/components/olcme/TanimlarTabs';
 
 function places(capacity: number, inactive: number[] | undefined) {
   return seatNumbers({ capacity, inactive_seats: inactive }).length;
@@ -53,6 +54,7 @@ export default function SinavSalonlariPage() {
 
   return (
     <div className={s.page}>
+      <TanimlarTabs />
       {toast && <div className={s.toast} role="status">{toast}</div>}
 
       <header className={s.header}>

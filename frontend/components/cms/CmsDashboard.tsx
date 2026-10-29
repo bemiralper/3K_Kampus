@@ -98,7 +98,7 @@ export default function CmsDashboard({ onOpenPages, onOpenSeo, onNavigate, onMes
     { key: 'content', label: 'İçerik', hint: 'Duyuru / haber / blog' },
     { key: 'form_submissions', label: 'Başvurular', hint: 'Form yanıtları' },
     { key: 'contact_messages', label: 'Mesajlar', hint: 'İletişim formu' },
-    { key: 'sinav', label: 'Sınavlar', hint: 'Takvim kayıtları' },
+    { key: 'sinav', label: 'Sınavlar', hint: 'Muhasebe → Deneme Takvimi' },
   ];
 
   const healthEntries = (Object.keys(HEALTH_ITEMS) as HealthKey[]).map((key) => {

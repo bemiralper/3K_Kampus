@@ -545,6 +545,49 @@
   gap: 1rem 1.125rem;
 }
 
+.wam-gun-block {
+  margin: 1rem 0 0.25rem;
+}
+
+.wam-gun-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.wam-gun-head strong {
+  display: block;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.wam-gun-head p {
+  margin: 0.15rem 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.wam-gun-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.wam-gun-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
+@media (max-width: 720px) {
+  .wam-gun-row {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 @media (max-width: 640px) {
   .wam-form-grid {
     grid-template-columns: 1fr;

@@ -414,8 +414,13 @@ class WizardMetadataView(APIView):
             from apps.ogrenci_kayit.application.gunu_birlik import exam_options
             from shared.context import get_secili_egitim_yili_id
 
+            seviye_raw = request.query_params.get("sinif_seviyesi")
+            try:
+                seviye_id = int(seviye_raw) if seviye_raw else None
+            except (TypeError, ValueError):
+                seviye_id = None
             payload["sinavlar"] = exam_options(
-                kurum_id, sube_id, get_secili_egitim_yili_id(request),
+                kurum_id, sube_id, get_secili_egitim_yili_id(request), seviye_id,
             )
         return Response(payload)
 
@@ -480,20 +485,20 @@ class DirectRegistrationView(APIView):
         if sinif_seviyesi and sinif_seviyesi_requires_alan(sinif_seviyesi) and not enrollment_data.get("alan"):
             return Response({"detail": "alan zorunludur"}, status=status.HTTP_400_BAD_REQUEST)
 
-        # En az bir paket veya hizmet seçilmiş olmalı
+        # Günü birlik kayıtta paket yok. Deneme, listeden ayrıca seçilir.
+        walk = data.get("gunu_birlik") if isinstance(data.get("gunu_birlik"), dict) else {}
+        is_walk_in = bool(walk.get("kayit")) or bool(walk.get("exam_id"))
         selection = legacy_package_payload_to_selection(package_data)
-        validation_errors = validate_student_selection(selection)
+        validation_errors = validate_student_selection(selection, strict=not is_walk_in)
         if validation_errors:
             return Response(
                 {"detail": validation_errors[0]},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        walk = data.get("gunu_birlik") if isinstance(data.get("gunu_birlik"), dict) else {}
-        is_walk_in = bool(walk.get("exam_id"))
         walk_exam = None
         walk_session_id = None
-        if is_walk_in:
+        deneme_ucreti = None
+        if is_walk_in and walk.get("exam_id"):
             from apps.coaching.olcme_degerlendirme.models import Exam
 
             try:
@@ -508,6 +513,17 @@ class DirectRegistrationView(APIView):
             ).first()
             if walk_exam is None:
                 return Response({"detail": "Sınav bulunamadı"}, status=status.HTTP_400_BAD_REQUEST)
+            from ..application.sinav_uygunluk import exam_registration_error
+
+            registration_error = exam_registration_error(walk_exam, sinif_seviyesi)
+            if registration_error:
+                return Response({"detail": registration_error}, status=status.HTTP_400_BAD_REQUEST)
+            from ..application.deneme_ucret import parse_deneme_ucreti
+
+            try:
+                deneme_ucreti = parse_deneme_ucreti(walk.get("deneme_ucreti"))
+            except ValueError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
             with transaction.atomic():
@@ -529,6 +545,7 @@ class DirectRegistrationView(APIView):
                     giris_turu_code = giris_turu_opt.code if giris_turu_opt else "yeni_kayit"
 
                 # Öğrenci var mı kontrol et
+                was_walk_in = False
                 ogrenci = Ogrenci.objects.filter(
                     kurum_id=kurum_id,
                     tc_kimlik_no=student_data["tc_kimlik_no"],
@@ -562,6 +579,7 @@ class DirectRegistrationView(APIView):
                         ogrenci.sube_id = sube_id
                         updates.append('sube_id')
                     if (ogrenci.kayit_turu or '') == GUNU_BIRLIK_CODE:
+                        was_walk_in = not is_walk_in
                         ogrenci.kayit_turu = GUNU_BIRLIK_CODE if is_walk_in else (kayit_turu_code or 'asil')
                         ogrenci.ad = student_data['ad']
                         ogrenci.soyad = student_data['soyad']
@@ -619,7 +637,7 @@ class DirectRegistrationView(APIView):
                     egitim_yili=egitim_yili,
                 ).first()
 
-                if existing_kayit and not is_walk_in:
+                if existing_kayit and not is_walk_in and not was_walk_in:
                     return Response({"detail": "Bu öğrenci bu eğitim yılında zaten kayıtlı"}, status=status.HTTP_400_BAD_REQUEST)
 
                 # Kayıt oluştur — şube her zaman aktif bağlamdan (üst bar seçimi)
@@ -636,9 +654,7 @@ class DirectRegistrationView(APIView):
 
                 if existing_kayit:
                     kayit = existing_kayit
-                    if (ogrenci.kayit_turu or '') != GUNU_BIRLIK_CODE:
-                        skip_profile_writes = True
-                    else:
+                    if was_walk_in or (ogrenci.kayit_turu or '') == GUNU_BIRLIK_CODE:
                         kayit.sinif = sinif
                         kayit.sinif_seviyesi = sinif_seviyesi
                         kayit.alan = alan
@@ -648,6 +664,8 @@ class DirectRegistrationView(APIView):
                         kayit.giris_tarihi = enrollment_data.get("giris_tarihi") or kayit.giris_tarihi
                         kayit.referans = enrollment_data.get("referans") or kayit.referans
                         kayit.save()
+                    else:
+                        skip_profile_writes = True
                 else:
                     kayit = OgrenciKayit.objects.create(
                         ogrenci=ogrenci,
@@ -665,6 +683,10 @@ class DirectRegistrationView(APIView):
                         referans=enrollment_data.get("referans") or "",
                         kaydi_alan=request.user if request.user.is_authenticated else None,
                     )
+
+                if was_walk_in:
+                    from ..application.deneme_ucret import ensure_deneme_izi
+                    ensure_deneme_izi(ogrenci=ogrenci, kayit=kayit)
 
                 # Adres
                 if address_data.get("acik_adres") and not OgrenciAdres.objects.filter(
@@ -1007,12 +1029,17 @@ class DirectRegistrationView(APIView):
                         pass
 
                 message = "Kayıt başarıyla tamamlandı"
-                if is_walk_in:
-                    from apps.ogrenci_kayit.application.gunu_birlik import _attach
+                participant = None
+                seat = {'status': '', 'detail': ''}
+                if is_walk_in and walk_exam is None:
+                    message = "Tek deneme kaydı açıldı."
+                elif is_walk_in:
+                    from apps.ogrenci_kayit.application.gunu_birlik import _attach, assign_open_seat
 
-                    _, attach_err = _attach(
+                    participant, attach_err = _attach(
                         walk_exam, ogrenci, sinif_seviyesi.id, walk_session_id,
                     )
+                    seat = assign_open_seat(participant) if participant is not None else {'status': '', 'detail': ''}
                     if attach_err and attach_err != 'zaten':
                         raise ValueError(attach_err)
                     if attach_err == 'zaten':
@@ -1020,9 +1047,30 @@ class DirectRegistrationView(APIView):
                     elif skip_profile_writes:
                         message = "Kayıtlı öğrenci, sınava eklendi."
                     else:
-                        message = "Günü birlik kayıt açıldı ve sınava eklendi."
+                        message = "Tek deneme kaydı açıldı ve sınava eklendi."
+                    if deneme_ucreti is not None:
+                        from ..application.deneme_ucret import record_deneme_ucreti
 
-                return Response({
+                        try:
+                            record_deneme_ucreti(
+                                ogrenci=ogrenci,
+                                kayit=kayit,
+                                exam=walk_exam,
+                                tutar=deneme_ucreti,
+                                user=request.user,
+                                odeme_yontemi_id=walk.get('odeme_yontemi_id'),
+                                mali_hesap_id=walk.get('mali_hesap_id'),
+                            )
+                        except ValueError as exc:
+                            deneme_ucreti = None
+                            message = f'{message} {exc}'
+                        except Exception:
+                            import logging
+                            logging.getLogger(__name__).exception('Deneme ücreti yazılamadı')
+                            deneme_ucreti = None
+                            message = f'{message} Deneme ücreti kayda geçmedi.'
+
+                payload = {
                     "id": ogrenci.id,
                     "kayit_id": kayit.id,
                     "ad": ogrenci.ad,
@@ -1030,7 +1078,16 @@ class DirectRegistrationView(APIView):
                     "tam_ad": f"{ogrenci.ad} {ogrenci.soyad}".strip(),
                     "ogrenci_no": kayit.okul_no,
                     "message": message,
-                }, status=status.HTTP_201_CREATED)
+                }
+                if is_walk_in and walk_exam is not None:
+                    payload["exam_id"] = walk_exam.id
+                    payload["participant_id"] = participant.id if participant is not None else None
+                    payload["sinav_adi"] = walk_exam.name
+                    payload["sinif"] = getattr(sinif_seviyesi, "ad", "") or ""
+                    payload["seat_status"] = seat.get("status") or ""
+                    payload["seat_detail"] = seat.get("detail") or ""
+                    payload["deneme_ucreti"] = deneme_ucreti
+                return Response(payload, status=status.HTTP_201_CREATED)
 
         except KimlikConflictError as e:
             return Response(e.as_dict(), status=status.HTTP_409_CONFLICT)

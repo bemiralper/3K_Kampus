@@ -39,7 +39,12 @@ export default function LandingPageSections({ settings, data }: Props) {
           case 'duyurular':
             return wrap(<DuyurularSection duyurular={data.duyurular ?? []} />);
           case 'sinav-takvimi':
-            return wrap(<SinavTakvimiSection sinavlar={data.sinav_takvimi ?? []} />);
+            return wrap(
+              <SinavTakvimiSection
+                sinavlar={data.sinav_takvimi ?? []}
+                kurumAdi={data.kurum?.gorunen_ad || data.kurum?.ad || '3K Kampüs'}
+              />,
+            );
           case 'neden':
             return wrap(
               <NedenSection

@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { daireSablonApi } from '../../../../components/olcme/daire-dizisi/api';
 import type { DaireSablonOzet } from '../../../../components/olcme/daire-dizisi/types';
 import { getContextHeaders } from '@/lib/api';
+import TanimlarTabs from '@/components/olcme/TanimlarTabs';
 
 type OverlayCell = {
   alan_id: string;
@@ -168,6 +169,7 @@ export default function OptikOkumaPage() {
 
   return (
     <div style={{ display: 'grid', gap: 16, padding: 20 }}>
+      <TanimlarTabs />
       <header>
         <h1 style={{ marginBottom: 4 }}>Optik Okuma</h1>
         <p style={{ margin: 0, color: '#475569' }}>

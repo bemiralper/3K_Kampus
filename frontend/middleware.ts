@@ -46,5 +46,7 @@ export function middleware(_request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+  // Yedek yükleme (birkaç GB) bu eşleşmeye girerse Next gövdeyi bellekte kopyalar
+  // ve bağlantı kopar. Bakım sayfası bu tek uç için devreye girmez.
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/yedekleme/api/backups/upload|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
 };

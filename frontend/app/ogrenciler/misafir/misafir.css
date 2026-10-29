@@ -88,6 +88,206 @@
   color: #334155;
 }
 
+.deneme-page .ogrenci-list-card-header {
+  flex-wrap: nowrap;
+}
+
+.deneme-page .ogrenci-search-shell {
+  flex: 1 1 auto;
+  order: 0;
+}
+
+.deneme-count {
+  flex-shrink: 0;
+  min-height: 32px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  background: var(--ogl-surface-2, #f6f8fb);
+  border: 1px solid var(--ogl-border, #e3e8ef);
+  color: var(--ogl-text-2, #475569);
+  font-size: 12.5px;
+  font-weight: 650;
+}
+
+.deneme-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.deneme-row {
+  padding: 14px 18px 16px;
+  border-bottom: 1px solid var(--ogl-border, #e3e8ef);
+}
+
+.deneme-row:last-child {
+  border-bottom: none;
+}
+
+.deneme-row-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+}
+
+.deneme-row-top .cell-with-icon {
+  min-width: 0;
+}
+
+.deneme-row-side {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.deneme-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.deneme-phone {
+  flex-shrink: 0;
+  color: var(--ogl-text-2, #475569);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.deneme-pick-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.deneme-pick {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--ogl-border, #e3e8ef);
+  border-radius: 10px;
+  background: var(--ogl-surface-2, #f6f8fb);
+  text-align: left;
+  cursor: pointer;
+}
+
+.deneme-pick:hover {
+  border-color: #93c5e4;
+  background: #eef6fc;
+}
+
+.deneme-pick:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.ogrenci-belge-dropdown button.deneme-menu-danger {
+  color: #b91c1c;
+}
+
+.deneme-pick-name {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ogl-text, #0f172a);
+}
+
+.deneme-pick-meta {
+  font-size: 12.5px;
+  color: var(--ogl-text-3, #64748b);
+}
+
+.deneme-chip {
+  display: inline-flex;
+  margin-left: 6px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: #e8f1f9;
+  color: #00538f;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.deneme-kayit-dialog {
+  width: min(440px, 100%);
+}
+
+.deneme-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--ogl-text, #0f172a);
+}
+
+.deneme-field .deneme-select {
+  margin-bottom: 0;
+  font-weight: 500;
+}
+
+.deneme-dialog-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.deneme-dialog-text {
+  margin: 0 0 14px;
+  color: var(--ogl-text-2, #475569);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.deneme-select {
+  width: 100%;
+  height: 40px;
+  margin-bottom: 16px;
+  border: 1px solid var(--ogl-border-strong, #cbd5e1);
+  border-radius: 8px;
+  padding: 0 10px;
+  font: inherit;
+}
+
+.deneme-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+@media (max-width: 720px) {
+  .deneme-page .ogrenci-list-card-header {
+    flex-wrap: wrap;
+  }
+
+  .deneme-page .ogrenci-search-shell {
+    flex-basis: 100%;
+  }
+
+  .deneme-row {
+    padding: 14px;
+  }
+
+  .deneme-row-top {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .deneme-row-side {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
 @media (max-width: 900px) {
   .gb-form {
     grid-template-columns: 1fr 1fr;

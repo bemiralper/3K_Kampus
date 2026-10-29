@@ -20,6 +20,8 @@ const PAGE_TITLES: Record<string, string> = {
   "/muhasebe/bildirimler": "Bildirimler",
   "/muhasebe/ogrenci/liste": "Öğrenci Listesi",
   "/muhasebe/ogrenci/yeni-kayit": "Yeni Kayıt",
+  "/muhasebe/ogrenci/misafir": "Deneme Öğrencileri",
+  "/muhasebe/olcme-degerlendirme": "Ölçme & Değerlendirme",
   "/muhasebe/odeme-takip": "Sözleşme/Tahsilat",
   "/muhasebe/iletisim/sohbetler": "WhatsApp",
   "/muhasebe/iletisim/sablonlar": "WhatsApp Şablonları",
@@ -40,6 +42,22 @@ const PAGE_TITLES: Record<string, string> = {
 
 function resolvePageTitle(pathname: string): string {
   if (pathname.startsWith("/muhasebe/ogrenci/liste/")) return "Öğrenci Detayı";
+  if (pathname.startsWith("/muhasebe/ogrenci/misafir/yeni")) return "Tek deneme kayıt";
+  if (pathname.startsWith("/muhasebe/ogrenci/misafir")) return "Deneme Öğrencileri";
+  if (pathname.startsWith("/muhasebe/olcme-degerlendirme")) {
+    if (pathname.includes("/yeni")) return "Yeni Sınav";
+    if (pathname.includes("/deneme-takvimi")) return "Deneme Takvimi";
+    if (pathname.includes("/kazanimlar")) return "Konu & Kazanımlar";
+    if (pathname.includes("/ayarlar")) return "Puan Katsayıları";
+    if (pathname.includes("/oturum-gruplari")) return "Oturum grupları";
+    if (pathname.includes("/salonlar")) return "Sınav salonları";
+    if (pathname.includes("/daire-dizisi") || pathname.includes("/optik-formlar")) return "Optik Formlar";
+    if (pathname.includes("/optik-okuma")) return "Optik Okuma";
+    if (pathname.includes("/analiz")) return "Sonuç Analizi";
+    if (pathname.includes("/karsilastirma")) return "Karşılaştırma";
+    if (/\/olcme-degerlendirme\/\d+/.test(pathname)) return "Sınav";
+    return "Sınav Listesi";
+  }
   if (pathname.startsWith("/muhasebe/personel/") && !pathname.includes("gorevlendirmeler")) {
     if (/^\/muhasebe\/personel\/\d+/.test(pathname)) return "Personel Detayı";
   }

@@ -324,7 +324,9 @@ BACKUP_CONFIG = {
         # Haftalık ve dosya yedeği bu tavana girmez: son 2 kopya, en fazla 21 gün.
         'max_age_days': int(os.environ.get('BACKUP_MAX_AGE_DAYS', '5')) or None,
     },
-    'upload_max_bytes': int(os.environ.get('BACKUP_UPLOAD_MAX_BYTES', str(2 * 1024 ** 3))),
+    # Tam yedek (veritabanı + medya) birkaç GB olur. 2 GB sınır yüklemeyi daha
+    # Django'ya varmadan kesiyordu; üst sınır ortam değişkeniyle daraltılabilir.
+    'upload_max_bytes': int(os.environ.get('BACKUP_UPLOAD_MAX_BYTES', str(16 * 1024 ** 3))),
     'min_free_bytes': int(os.environ.get('BACKUP_MIN_FREE_BYTES', str(256 * 1024 * 1024))),
     'max_job_age_hours': int(os.environ.get('BACKUP_MAX_JOB_AGE_HOURS', '3')),
 }

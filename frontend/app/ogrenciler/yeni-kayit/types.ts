@@ -224,7 +224,7 @@ export type WizardData = {
   veliSecimi: 'self' | 'add' | null;
 };
 
-export type StepType = 'sinav' | 'kimlik' | 'kurumsal' | 'adres' | 'veli' | 'paket' | 'ozet';
+export type StepType = 'sinav' | 'ucret' | 'kimlik' | 'kurumsal' | 'adres' | 'veli' | 'paket' | 'ozet';
 
 // ═══ TC Kimlik Kontrol Yanıtları ═══
 

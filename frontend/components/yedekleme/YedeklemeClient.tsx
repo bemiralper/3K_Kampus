@@ -535,7 +535,10 @@ export default function YedeklemeClient() {
   const handleUploadBackup = async (file: File | null) => {
     if (!file) return;
     setBusyKey('upload');
-    setNotice(null);
+    setNotice({
+      type: 'info',
+      text: `${file.name} yükleniyor (${formatBytes(file.size)}). Büyük yedeklerde bu birkaç dakika sürebilir; sayfayı kapatmayın.`,
+    });
     const res = await uploadBackup(file);
     setBusyKey(null);
     if (res.success && res.data) {

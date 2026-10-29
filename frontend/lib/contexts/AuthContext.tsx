@@ -1,7 +1,7 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect, ReactNode, useCallback, useRef } from "react";
-import { useIdleTimeout, touchActivity } from "@/lib/hooks/useIdleTimeout";
+import { isIdleTimedOut, touchActivity, useIdleTimeout } from "@/lib/hooks/useIdleTimeout";
 
 // Use relative URLs to go through Next.js proxy (same origin = no CORS/cookie issues)
 // The proxy is configured in next.config.js to forward /api/* to backend
@@ -296,7 +296,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, [logout, user]);
 
-  useIdleTimeout(handleIdleLogout, !!user);
+  // Çıkıştan hemen önce ortak sayacı tekrar oku. Aralık dolmuşken diğer sekme
+  // işlem yaptıysa bu sekme oturumu kapatmasın. Sunucunun bildirdiği bitiş
+  // (3k:session-expired) bu kontrolden geçmez; handleIdleLogout doğrudan çağrılır.
+  useIdleTimeout(() => {
+    if (!isIdleTimedOut()) return;
+    void handleIdleLogout();
+  }, !!user);
 
   // Tek bir uç noktanın geçici 401'i (worker timeout, rapor widget'ı, yarış durumu)
   // tüm oturumu düşürmesin: çıkıştan önce /auth/api/me/ ile gerçekten bitmiş mi doğrula.

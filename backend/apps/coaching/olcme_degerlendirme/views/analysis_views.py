@@ -508,7 +508,7 @@ def _gunu_birlik_labels(exam, student_ids) -> dict[int, str]:
         if row.student_id in labels:
             continue
         seviye = (row.sinif_seviyesi.ad or '').strip() if row.sinif_seviyesi_id else ''
-        labels[row.student_id] = f'{seviye} · Günü birlik' if seviye else 'Günü birlik'
+        labels[row.student_id] = f'{seviye} · Tek deneme' if seviye else 'Tek deneme'
     return labels
 
 

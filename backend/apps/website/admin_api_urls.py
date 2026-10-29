@@ -20,6 +20,7 @@ urlpatterns = [
     path('sinav-takvim/', views.api_admin_sinav_takvim, name='admin_sinav_takvim'),
     path('sinav-takvim/<int:pk>/', views.api_admin_sinav_detail, name='admin_sinav_detail'),
     path('sinav-takvim/<int:pk>/upload/', views.api_admin_sinav_upload, name='admin_sinav_upload'),
+    path('sinav-takvim/<int:pk>/gorsel/', views.api_admin_sinav_gorsel_delete, name='admin_sinav_gorsel_delete'),
     path('sinav-takvim/<int:pk>/kopyala/', views.api_admin_sinav_copy, name='admin_sinav_copy'),
     path('sinav-takvim/<int:pk>/gorsel-kopyala/', views.api_admin_sinav_gorsel_copy, name='admin_sinav_gorsel_copy'),
     path('neden-kartlari/', views.api_admin_neden_kartlari, name='admin_neden_kartlari'),

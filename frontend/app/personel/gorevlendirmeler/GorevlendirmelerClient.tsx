@@ -6,7 +6,31 @@ import { useSearchParams } from "next/navigation";
 import { usePersonelPath } from "@/components/personel/PersonelPathProvider";
 import { useKurum } from "@/lib/contexts/KurumContext";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { resolveMediaUrl } from "@/lib/resolve-media-url";
 import AppDatePicker from "@/components/ui/AppDatePicker";
+
+function personInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "?";
+  const first = parts[0][0] ?? "";
+  const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? "") : (parts[0][1] ?? "");
+  return (first + last).toLocaleUpperCase("tr-TR");
+}
+
+function avatarTone(name: string) {
+  const tones = ["a", "b", "c", "d", "e", "f"] as const;
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) hash = (hash + name.charCodeAt(i)) % tones.length;
+  return tones[hash];
+}
+
+function roleTone(role: string | null) {
+  const value = (role || "").toLocaleLowerCase("tr-TR");
+  if (value.includes("öğretmen")) return "teacher";
+  if (value.includes("koç")) return "coach";
+  if (value.includes("yönetici") || value.includes("müdür")) return "lead";
+  return "other";
+}
 
 // Types
 interface Gorevlendirme {
@@ -347,24 +371,6 @@ export default function GorevlendirmelerClient() {
   const aktifCount = gorevlendirmeler.filter(g => g.aktif_mi).length;
   const personelCount = new Set(gorevlendirmeler.map((item) => item.personel_id)).size;
 
-  // Icons
-  const assignmentIcon = (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="8.5" cy="7" r="4" />
-      <line x1="20" y1="8" x2="20" y2="14" />
-      <line x1="23" y1="11" x2="17" y2="11" />
-    </svg>
-  );
-
-  const settingsIcon = (
-    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-      <circle cx="8.5" cy="7" r="4" />
-      <polyline points="17 11 19 13 23 9" />
-    </svg>
-  );
-
   // Get drawer title
   const getDrawerTitle = () => {
     return drawerMode === "create" ? "Yeni Görevlendirme" : "Görevlendirme Düzenle";
@@ -421,42 +427,57 @@ export default function GorevlendirmelerClient() {
           const first = items[0];
           const branches = Array.from(new Set(items.map((item) => item.gorev_sube_ad).filter(Boolean)));
           const hasRepeat = items.some((item) => repeatedDuty(item, items));
+          const photo = resolveMediaUrl(first.personel_fotograf);
           return (
             <article key={personelId} className="gv-person">
-              <div className="gv-person-id">
-                <Link href={`${personelHomeHref}/${personelId}`} className="gv-person-name">
-                  {first.personel_ad}
-                </Link>
-                <span className="gv-person-meta">
-                  {branches.join(" · ") || "Şube yok"}
-                  {" · "}
-                  {items.length} görev
+              <Link href={`${personelHomeHref}/${personelId}`} className="gv-person-id">
+                <span className={`gv-avatar tone-${avatarTone(first.personel_ad)}`}>
+                  {photo ? <img src={photo} alt="" /> : personInitials(first.personel_ad)}
                 </span>
-              </div>
+                <span className="gv-person-copy">
+                  <span className="gv-person-name">{first.personel_ad}</span>
+                  <span className="gv-person-meta">
+                    {branches.join(" · ") || "Şube yok"}
+                    {" · "}
+                    {items.length} görev
+                  </span>
+                </span>
+              </Link>
               <div className="gv-duties">
                 {items.map((item) => {
-                  const title = [item.rol_ad, item.brans_ad].filter(Boolean).join(" · ") || "Görev";
-                  const dates = [formatDate(item.gorev_baslangic), item.gorev_bitis ? formatDate(item.gorev_bitis) : ""]
-                    .filter(Boolean)
-                    .join(" – ");
+                  const start = item.gorev_baslangic ? formatDate(item.gorev_baslangic) : "";
+                  const end = item.gorev_bitis ? formatDate(item.gorev_bitis) : "";
+                  const dates = start && end ? `${start} – ${end}` : start || end || "Tarih yok";
                   return (
-                    <div key={item.id} className={`gv-duty${repeatedDuty(item, items) ? " is-duplicate" : ""}${item.aktif_mi ? "" : " is-passive"}`}>
+                    <div
+                      key={item.id}
+                      className={`gv-duty tone-${roleTone(item.rol_ad)}${repeatedDuty(item, items) ? " is-duplicate" : ""}${item.aktif_mi ? "" : " is-passive"}`}
+                    >
+                      <span className="gv-duty-mark" />
                       <div className="gv-duty-copy">
-                        <strong>{title}</strong>
-                        <span>{dates}{item.aktif_mi ? "" : " · Pasif"}</span>
+                        <strong>
+                          {item.rol_ad || "Görev"}
+                          {item.brans_ad ? <em>{item.brans_ad}</em> : null}
+                        </strong>
+                        <span>
+                          {dates}
+                          {item.aktif_mi ? null : <i className="gv-passive">Pasif</i>}
+                        </span>
                       </div>
-                      <button className="gv-row-action-btn" type="button" title="Düzenle" onClick={() => handleOpenEdit(item)}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                        </svg>
-                      </button>
-                      <button className="gv-row-action-btn gv-danger" type="button" title="Sil" onClick={() => handleDeleteClick(item)}>
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <polyline points="3 6 5 6 21 6" />
-                          <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                        </svg>
-                      </button>
+                      <div className="gv-duty-actions">
+                        <button className="gv-row-action-btn" type="button" title="Düzenle" onClick={() => handleOpenEdit(item)}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                        <button className="gv-row-action-btn gv-danger" type="button" title="Sil" onClick={() => handleDeleteClick(item)}>
+                          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                   );
                 })}
@@ -473,30 +494,42 @@ export default function GorevlendirmelerClient() {
 
   return (
     <div className="gv-section">
-      {/* Hero Header */}
-      <div className="gv-hero-header">
-        <div className="gv-hero-content">
-          <div className="gv-hero-icon">{settingsIcon}</div>
-          <div className="gv-hero-text">
-            <h1>Görevlendirmeler</h1>
-            <div className="gv-hero-breadcrumb">
-              <a href="/dashboard">Ana Sayfa</a>
-              <span>/</span>
-              <a href={personelHomeHref}>Personel</a>
-              <span>/</span>
-              <span>Görevlendirmeler</span>
-            </div>
+      <div className="gv-toolbar">
+        <div className="gv-stats">
+          <div className="gv-stat">
+            <strong>{personelCount}</strong>
+            <span>personel</span>
+          </div>
+          <div className="gv-stat">
+            <strong>{totalCount}</strong>
+            <span>görev</span>
+          </div>
+          <div className="gv-stat">
+            <strong>{aktifCount}</strong>
+            <span>aktif</span>
           </div>
         </div>
-        <button className="gv-btn-hero" onClick={handleOpenCreate} disabled={!selectedYilId}>
-          <span className="gv-btn-hero-icon">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+        <div className="gv-toolbar-actions">
+          <div className="gv-search">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="11" cy="11" r="8" />
+              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            </svg>
+            <input
+              type="text"
+              placeholder="İsim, rol veya branş"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <button className="gv-btn gv-btn-primary" onClick={handleOpenCreate} disabled={!selectedYilId}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="12" y1="5" x2="12" y2="19" />
               <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
-          </span>
-          <span>Yeni Görevlendirme</span>
-        </button>
+            Yeni görevlendirme
+          </button>
+        </div>
       </div>
 
       {/* Messages */}
@@ -513,56 +546,7 @@ export default function GorevlendirmelerClient() {
         </div>
       )}
 
-      {/* Quick Stats */}
-      <div className="gv-quick-stats">
-        <div className="gv-quick-stat">
-          <div className="gv-quick-stat-icon blue">{assignmentIcon}</div>
-          <div className="gv-quick-stat-info">
-            <h4>{totalCount}</h4>
-            <span>Toplam Görevlendirme</span>
-          </div>
-        </div>
-        <div className="gv-quick-stat">
-          <div className="gv-quick-stat-icon purple">{assignmentIcon}</div>
-          <div className="gv-quick-stat-info">
-            <h4>{personelCount}</h4>
-            <span>Personel</span>
-          </div>
-        </div>
-        <div className="gv-quick-stat">
-          <div className="gv-quick-stat-icon green">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          </div>
-          <div className="gv-quick-stat-info">
-            <h4>{aktifCount}</h4>
-            <span>Aktif Görevlendirme</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Content Card */}
       <div className="gv-card">
-        <div className="gv-card-header">
-          <h3>
-            {assignmentIcon} Görevlendirme Listesi
-          </h3>
-          <div className="gv-card-header-actions">
-            <div className="gv-search">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-              <input
-                type="text"
-                placeholder="Ara..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-              />
-            </div>
-          </div>
-        </div>
         <div className="gv-card-body">{renderTable()}</div>
       </div>
 

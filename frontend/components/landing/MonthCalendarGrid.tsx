@@ -2,19 +2,38 @@
 
 import { useEffect, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
-import { sinavTurBadge, sinavTurColor } from '@/lib/landing-theme';
-import SinavKapsamEtiketi from './SinavKapsamEtiketi';
+import { sinavTurBadge } from '@/lib/landing-theme';
 
 type MonthCalendarGridProps = {
   year: number;
   month: number;
-  byDate: Record<string, SinavTakvim[]>;
-  onDayClick: (dateKey: string, exams: SinavTakvim[]) => void;
+  exams: SinavTakvim[];
+  selectedId: number | null;
+  onSelect: (exam: SinavTakvim) => void;
 };
 
 const WEEKDAYS = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
 
-export default function MonthCalendarGrid({ year, month, byDate, onDayClick }: MonthCalendarGridProps) {
+export function chipTone(tur: string) {
+  switch (tur) {
+    case 'AYT':
+      return { bg: '#f4e9ff', fg: '#6d28d9' };
+    case 'S11':
+      return { bg: '#f3e8ff', fg: '#7c3aed' };
+    case 'S7':
+      return { bg: '#e7f6f2', fg: '#0f766e' };
+    case 'LGS':
+      return { bg: '#e7f1ff', fg: '#1d4e89' };
+    default:
+      return { bg: '#e7f2ff', fg: '#1d4f91' };
+  }
+}
+
+function clock(value?: string | null) {
+  return value ? value.slice(0, 5) : '';
+}
+
+export default function MonthCalendarGrid({ year, month, exams, selectedId, onSelect }: MonthCalendarGridProps) {
   const firstDay = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   let startOffset = firstDay.getDay() - 1;
@@ -24,85 +43,68 @@ export default function MonthCalendarGrid({ year, month, byDate, onDayClick }: M
   for (let i = 0; i < startOffset; i++) cells.push(null);
   for (let d = 1; d <= daysInMonth; d++) cells.push(d);
 
-  const padDate = (d: number) => {
-    const m = String(month + 1).padStart(2, '0');
-    const day = String(d).padStart(2, '0');
-    return `${year}-${m}-${day}`;
-  };
+  const padDate = (d: number) => `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-  // Sunucu ve tarayıcı gece yarısı farklı günde olabilir; bugün istemcide hesaplanır.
+  const byDate: Record<string, SinavTakvim[]> = {};
+  exams.forEach(exam => {
+    if (!byDate[exam.tarih]) byDate[exam.tarih] = [];
+    byDate[exam.tarih].push(exam);
+  });
+
   const [today, setToday] = useState<Date | null>(null);
   useEffect(() => setToday(new Date()), []);
   const isToday = (d: number) =>
     !!today && today.getFullYear() === year && today.getMonth() === month && today.getDate() === d;
 
+  const selectedDate = exams.find(exam => exam.id === selectedId)?.tarih;
+
   return (
     <div className="stk-cal">
       <div className="stk-weekdays">
-        {WEEKDAYS.map((w, i) => (
-          <span key={w} data-weekend={i > 4 ? 'true' : undefined}>{w}</span>
-        ))}
+        {WEEKDAYS.map(name => <span key={name}>{name}</span>)}
       </div>
       <div className="stk-grid">
-        {cells.map((day, i) => {
-          if (day === null) {
-            return <div key={`empty-${i}`} className="stk-day-blank" data-weekend={i % 7 >= 5 ? 'true' : undefined} aria-hidden />;
-          }
+        {cells.map((day, index) => {
+          if (day === null) return <div key={`pad-${index}`} className="stk-day-blank" />;
           const dateKey = padDate(day);
-          const exams = byDate[dateKey] || [];
-          const primary = exams[0];
-          const extra = exams.length - 1;
-          const color = primary ? sinavTurColor(primary.tur) : undefined;
+          const dayExams = byDate[dateKey] || [];
+          const shown = dayExams.slice(0, 2);
+          const extra = dayExams.length - shown.length;
           const todayCell = isToday(day);
-
-          const weekend = i % 7 >= 5;
-
+          const selectedCell = selectedDate === dateKey;
           return (
-            <button
+            <div
               key={dateKey}
-              type="button"
-              onClick={() => primary && onDayClick(dateKey, exams)}
-              disabled={!primary}
-              className={`stk-day${primary ? ' stk-day--exam' : ''}${todayCell ? ' stk-day--today' : ''}`}
-              data-weekend={weekend ? 'true' : undefined}
-              style={color ? { ['--stk-c' as string]: color } : undefined}
-              aria-label={
-                primary
-                  ? `${day}: ${exams
-                      .map(e => `${e.baslik} (${e.kapsam === 'yerel' ? 'Yerel' : 'Türkiye Geneli'})`)
-                      .join(', ')}`
-                  : undefined
-              }
+              className={`stk-day${selectedCell ? ' stk-day--on' : ''}${todayCell ? ' stk-day--today' : ''}`}
             >
-              <span className="stk-day-top">
-                <span className="stk-day-num">{day}</span>
-                {todayCell && <span className="stk-day-today">Bugün</span>}
-              </span>
-
-              {primary && (
-                <>
-                  <span className="stk-event">
-                    <span className="stk-day-kicker">
-                      <span className="stk-day-badge">{sinavTurBadge(primary.tur)}</span>
-                      <SinavKapsamEtiketi kapsam={primary.kapsam} compact />
-                      {extra > 0 && <span className="stk-day-more">+{extra}</span>}
-                    </span>
-                    <span className="stk-day-title" title={primary.baslik}>
-                      {primary.baslik}
-                    </span>
-                  </span>
-                  <span className="stk-dots" aria-hidden>
-                    {exams.slice(0, 3).map(exam => (
-                      <i
-                        key={exam.id}
-                        style={{ background: sinavTurColor(exam.tur) }}
-                        data-yerel={exam.kapsam === 'yerel' ? 'true' : undefined}
-                      />
-                    ))}
-                  </span>
-                </>
+              <span className="stk-day-num">{day}</span>
+              {shown.map(exam => {
+                const tone = chipTone(exam.tur);
+                const time = clock(exam.saat);
+                const publisher = (exam.yayin_adi || '').trim();
+                const name = exam.baslik.trim() || publisher;
+                return (
+                  <button
+                    key={exam.id}
+                    type="button"
+                    className="stk-chip"
+                    data-on={exam.id === selectedId ? 'true' : undefined}
+                    style={{ background: tone.bg, color: tone.fg }}
+                    onClick={() => onSelect(exam)}
+                  >
+                    <b className="stk-chip-meta">{sinavTurBadge(exam.tur)}{time ? ` · ${time}` : ''}</b>
+                    <span className="stk-chip-name">{name}</span>
+                    {publisher && publisher !== name && <span className="stk-chip-pub">{publisher}</span>}
+                    {exam.kapsam === 'turkiye_geneli' && <small>Türkiye Geneli</small>}
+                  </button>
+                );
+              })}
+              {extra > 0 && (
+                <button type="button" className="stk-more" onClick={() => onSelect(dayExams[shown.length])}>
+                  +{extra} sınav
+                </button>
               )}
-            </button>
+            </div>
           );
         })}
       </div>

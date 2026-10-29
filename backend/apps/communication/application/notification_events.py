@@ -691,6 +691,43 @@ NOTIFICATION_EVENTS: tuple[NotificationEvent, ...] = (
         }),
     ),
     NotificationEvent(
+        key='sinav.giris_belgesi',
+        module=MODULE_SINAV,
+        label='Sınav giriş belgesi (PDF)',
+        description=(
+            'Tek deneme kaydı sonunda seçilen öğrenciye veya veliye sınav giriş '
+            'belgesi PDF olarak gönderilir. Metin Bildirim Şablonları’ndan '
+            'değiştirilebilir. Gönderim sohbetlerde görünür.'
+        ),
+        recipients=(VELI, OGRENCI),
+        opt_in_category='duyuru',
+        has_document=True,
+        variables=(
+            'ogrenci_ad', 'veli_ad',
+            'sinav_adi', 'sinav_ad', 'sinav_tarihi', 'tarih',
+            'baslama_saati', 'bitis_saati', 'hazir_bulunma',
+            'sinav_salonu', 'sira_no', 'sure',
+        ),
+        meta_name_base='sinav_giris_belgesi',
+        default_bodies=MappingProxyType({
+            VELI: (
+                'Sayın velimiz, {{ogrenci_ad}} öğrencimizin "{{sinav_adi}}" '
+                'sınav giriş belgesi ektedir. Tarih: {{sinav_tarihi}}. '
+                'Saat: {{baslama_saati}}–{{bitis_saati}}. '
+                'Salon: {{sinav_salonu}}, sıra: {{sira_no}}. '
+                'Sınavdan 15 dakika önce ({{hazir_bulunma}}) hazır bulunulmalıdır. '
+                '{{kurum_ad}} ölçme birimi.'
+            ),
+            OGRENCI: (
+                'Merhaba {{ogrenci_ad}}, "{{sinav_adi}}" sınav giriş belgen ektedir. '
+                'Tarih: {{sinav_tarihi}}. Saat: {{baslama_saati}}–{{bitis_saati}}. '
+                'Salon: {{sinav_salonu}}, sıra: {{sira_no}}. '
+                'Sınavdan 15 dakika önce ({{hazir_bulunma}}) salonda hazır ol. '
+                '{{kurum_ad}} ölçme birimi.'
+            ),
+        }),
+    ),
+    NotificationEvent(
         key='sinav.cevap_anahtari',
         module=MODULE_SINAV,
         label='Sınav cevap anahtarı (PDF)',

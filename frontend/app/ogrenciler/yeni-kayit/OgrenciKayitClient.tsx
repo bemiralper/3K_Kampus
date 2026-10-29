@@ -18,13 +18,16 @@ import {
   StepType,
   RenewalState,
   TcCheckResponse,
+  GunuBirlikSinav,
 } from "./types";
 import { validateTcKimlik, hasWizardUserInput, clearResolvedWizardErrors } from "./utils";
-import { apiFetch } from "@/lib/api";
+import { apiFetch, getContextHeaders } from "@/lib/api";
+import { downloadPdfBlob } from "@/lib/download-file";
 import { ensureTelefonlar } from "@/components/ogrenci/VeliTelefonEditor";
 import { isKimlikConflictCode, useKimlikLookup } from "@/hooks/useKimlikLookup";
 import type { KimlikResolveResponse } from "@/lib/kimlik-api";
 import SinavStep from "./steps/SinavStep";
+import UcretStep from "./steps/UcretStep";
 import KimlikStep from "./steps/KimlikStep";
 import KurumsalStep from "./steps/KurumsalStep";
 import AdresStep from "./steps/AdresStep";
@@ -98,22 +101,9 @@ const STEPS: { id: StepType; label: string; icon: JSX.Element }[] = [
   },
 ];
 
-const SINAV_STEP: (typeof STEPS)[number] = {
-  id: "sinav",
-  label: "Sınav",
-  icon: (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <rect x="3" y="4" width="18" height="18" rx="2" />
-      <line x1="16" y1="2" x2="16" y2="6" />
-      <line x1="8" y1="2" x2="8" y2="6" />
-      <line x1="3" y1="10" x2="21" y2="10" />
-    </svg>
-  ),
-};
-
 function wizardSteps(mode: "standard" | "gunu_birlik") {
   if (mode !== "gunu_birlik") return STEPS;
-  return [SINAV_STEP, ...STEPS.filter((step) => step.id !== "ozet")];
+  return STEPS.filter((step) => step.id !== "paket" && step.id !== "ozet");
 }
 
 const initialData: WizardData = {
@@ -192,6 +182,15 @@ export default function OgrenciKayitClient({
   const [currentStep, setCurrentStep] = useState(0);
   const [examId, setExamId] = useState(initialExamId);
   const [sessionId, setSessionId] = useState("");
+  const [walkExams, setWalkExams] = useState<GunuBirlikSinav[]>([]);
+  const [walkExamsLoading, setWalkExamsLoading] = useState(false);
+  const [walkExamSeviye, setWalkExamSeviye] = useState<number | null>(null);
+  const [belgeBusy, setBelgeBusy] = useState<null | "download" | "print" | "whatsapp">(null);
+  const [belgeNote, setBelgeNote] = useState("");
+  const [belgeOgrenci, setBelgeOgrenci] = useState(true);
+  const [belgeVeli, setBelgeVeli] = useState(false);
+  const [denemeUcreti, setDenemeUcreti] = useState("");
+  const [ucretTouched, setUcretTouched] = useState(false);
   const [data, setData] = useState<WizardData>(initialData);
   const [metadata, setMetadata] = useState<MetadataResponse | null>(null);
   const [districts, setDistricts] = useState<DistrictOption[]>([]);
@@ -324,6 +323,77 @@ export default function OgrenciKayitClient({
       };
     });
   }, [activeEgitimYili?.id]);
+
+  const sinavStepActive = isWalkIn && steps[currentStep]?.id === "sinav";
+
+  useEffect(() => {
+    if (!isWalkIn) return;
+    const seviye = data.enrollment.sinif_seviyesi;
+    if (!seviye) {
+      setWalkExams([]);
+      setWalkExamSeviye(null);
+      return;
+    }
+    let cancel = false;
+    setWalkExamsLoading(true);
+    apiFetch<MetadataResponse>(`/api/ogrenci-kayit/metadata/?kapsam=gunu_birlik&sinif_seviyesi=${seviye}`)
+      .then((result) => {
+        if (cancel) return;
+        if (!result.success || !result.data) {
+          setWalkExams([]);
+          setWalkExamSeviye(seviye);
+          return;
+        }
+        setWalkExams(result.data.sinavlar || []);
+        setWalkExamSeviye(seviye);
+      })
+      .catch(() => {
+        if (!cancel) {
+          setWalkExams([]);
+          setWalkExamSeviye(seviye);
+        }
+      })
+      .finally(() => {
+        if (!cancel) setWalkExamsLoading(false);
+      });
+    return () => {
+      cancel = true;
+    };
+  }, [isWalkIn, data.enrollment.sinif_seviyesi, sinavStepActive]);
+
+  useEffect(() => {
+    if (!isWalkIn || walkExamSeviye == null) return;
+    if (walkExamSeviye !== data.enrollment.sinif_seviyesi) return;
+    if (walkExamsLoading) return;
+    if (examId && walkExams.some((item) => String(item.id) === examId)) return;
+    if (!examId && initialExamId && walkExams.some((item) => String(item.id) === initialExamId)) {
+      const exam = walkExams.find((item) => String(item.id) === initialExamId);
+      setExamId(initialExamId);
+      setSessionId(exam?.sessions.length === 1 ? String(exam.sessions[0].id) : "");
+      return;
+    }
+    if (examId) {
+      setExamId("");
+      setSessionId("");
+    }
+  }, [isWalkIn, walkExamSeviye, walkExams, walkExamsLoading, examId, initialExamId, data.enrollment.sinif_seviyesi]);
+
+  const ucretStepActive = isWalkIn && steps[currentStep]?.id === "ucret";
+  useEffect(() => {
+    if (!ucretStepActive || ucretTouched) return;
+    const tc = data.student.tc_kimlik_no;
+    if (!tc) return;
+    let cancel = false;
+    apiFetch<{ tutar: number | null }>(`/api/ogrenci-kayit/gunu-birlik/ucret/?tc=${encodeURIComponent(tc)}`)
+      .then((result) => {
+        if (cancel || !result.success || result.data?.tutar == null) return;
+        setDenemeUcreti(String(result.data.tutar));
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [ucretStepActive, ucretTouched, data.student.tc_kimlik_no]);
 
   // Aktif şube (üst bar) = kayıt şubesi
   const prevSubeRef = useRef<number | undefined>();
@@ -637,9 +707,22 @@ export default function OgrenciKayitClient({
           newErrors.sinav = "Sınav seçiniz";
           break;
         }
-        const exam = (metadata?.sinavlar || []).find((item) => String(item.id) === examId);
+        const exam = walkExams.find((item) => String(item.id) === examId);
         if (exam && exam.sessions.length > 1 && !sessionId) {
           newErrors.sinav = "Oturum seçiniz";
+        }
+        break;
+      }
+
+      case "ucret": {
+        const text = denemeUcreti.trim().replace(/\s/g, "").replace("₺", "").replace(/tl/gi, "");
+        if (text) {
+          const parts = text.split(",");
+          const whole = (parts[0] || "").replace(/\./g, "");
+          const fractionOk = parts.length === 1 || (parts.length === 2 && /^0+$/.test(parts[1] || ""));
+          if (parts.length > 2 || !fractionOk || !/^\d+$/.test(whole)) {
+            newErrors.ucret = "Deneme ücreti tam sayı olmalıdır";
+          }
         }
         break;
       }
@@ -768,16 +851,11 @@ export default function OgrenciKayitClient({
         enrollment: enrollmentPayload,
         address: data.address,
         guardians: data.guardians,
-        package: data.package,
+        package: isWalkIn
+          ? { paketler: [], ek_hizmet_ids: [], deneme_paketi_id: null, yayin_paketi_ids: [] }
+          : data.package,
         veliSecimi: data.veliSecimi,
-        ...(isWalkIn
-          ? {
-              gunu_birlik: {
-                exam_id: Number(examId),
-                exam_session_id: sessionId ? Number(sessionId) : null,
-              },
-            }
-          : {}),
+        ...(isWalkIn ? { gunu_birlik: { kayit: true } } : {}),
       };
 
       const result = await apiFetch<Record<string, unknown>>("/api/ogrenci-kayit/register/", {
@@ -810,6 +888,7 @@ export default function OgrenciKayitClient({
           payloadData.tam_ad ??
           `${data.student.ad} ${data.student.soyad}`.trim(),
         ogrenci_no: payloadData.ogrenci_no ?? data.enrollment.ogrenci_no,
+        telefon: payloadData.telefon ?? data.student.telefon,
       });
       markClean();
       setShowSuccessModal(true);
@@ -818,6 +897,112 @@ export default function OgrenciKayitClient({
       setErrors({ submit: error.message || "Kayıt sırasında bir hata oluştu" });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const loadGirisBelgesi = async () => {
+    const ogrenciId = registeredStudent?.id ?? registeredStudent?.ogrenci_id;
+    const belgeExamId = registeredStudent?.exam_id;
+    if (!ogrenciId || !belgeExamId) {
+      throw new Error("Giriş belgesi için kayıt bilgisi eksik.");
+    }
+    const response = await fetch(
+      `/api/ogrenci-kayit/gunu-birlik/giris-belgesi/?exam_id=${belgeExamId}&ogrenci_id=${ogrenciId}`,
+      { credentials: "include", headers: getContextHeaders() },
+    );
+    if (!response.ok) {
+      let detail = "Giriş belgesi alınamadı.";
+      try {
+        const body = await response.json();
+        detail = body.detail || body.error || detail;
+      } catch {
+        // PDF dışı hata gövdesi olmayabilir.
+      }
+      throw new Error(detail);
+    }
+    const blob = await response.blob();
+    const disposition = response.headers.get("Content-Disposition") || "";
+    const match = disposition.match(/filename="?([^";]+)"?/i);
+    return { blob, filename: match?.[1] || "sinav-giris-belgesi.pdf" };
+  };
+
+  const handleBelgeDownload = async () => {
+    setBelgeBusy("download");
+    setBelgeNote("");
+    try {
+      const { blob, filename } = await loadGirisBelgesi();
+      await downloadPdfBlob(blob, filename);
+    } catch (error) {
+      setBelgeNote(error instanceof Error ? error.message : "Giriş belgesi indirilemedi.");
+    } finally {
+      setBelgeBusy(null);
+    }
+  };
+
+  const handleBelgePrint = async () => {
+    setBelgeBusy("print");
+    setBelgeNote("");
+    try {
+      const { blob } = await loadGirisBelgesi();
+      const url = URL.createObjectURL(blob);
+      const iframe = document.createElement("iframe");
+      iframe.style.position = "fixed";
+      iframe.style.right = "0";
+      iframe.style.bottom = "0";
+      iframe.style.width = "0";
+      iframe.style.height = "0";
+      iframe.style.border = "0";
+      iframe.src = url;
+      iframe.onload = () => {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      };
+      document.body.appendChild(iframe);
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      setBelgeNote(error instanceof Error ? error.message : "Giriş belgesi yazdırılamadı.");
+    } finally {
+      setBelgeBusy(null);
+    }
+  };
+
+  const handleBelgeWhatsapp = async () => {
+    const ogrenciId = registeredStudent?.id ?? registeredStudent?.ogrenci_id;
+    const belgeExamId = registeredStudent?.exam_id;
+    if (!ogrenciId || !belgeExamId) {
+      setBelgeNote("Giriş belgesi için kayıt bilgisi eksik.");
+      return;
+    }
+    const alicilar = [
+      ...(belgeOgrenci ? ["ogrenci"] : []),
+      ...(belgeVeli ? ["veli"] : []),
+    ];
+    if (alicilar.length === 0) {
+      setBelgeNote("Öğrenci veya veli seçin.");
+      return;
+    }
+    setBelgeBusy("whatsapp");
+    setBelgeNote("");
+    try {
+      const result = await apiFetch<{ detail?: string; sent?: number }>(
+        "/api/ogrenci-kayit/gunu-birlik/giris-belgesi/whatsapp/",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            exam_id: Number(belgeExamId),
+            ogrenci_id: Number(ogrenciId),
+            alicilar,
+          }),
+        },
+      );
+      if (!result.success) {
+        throw new Error(result.error || "WhatsApp gönderilemedi.");
+      }
+      setBelgeNote(result.data?.detail || "Giriş belgesi WhatsApp ile gönderildi.");
+    } catch (error) {
+      setBelgeNote(error instanceof Error ? error.message : "WhatsApp gönderilemedi.");
+    } finally {
+      setBelgeBusy(null);
     }
   };
 
@@ -854,10 +1039,10 @@ export default function OgrenciKayitClient({
       {/* Header */}
       <div className="wizard-header">
         <div className="wizard-title">
-          <h1>{isWalkIn ? "Günü Birlik Kayıt" : "Yeni Öğrenci Kaydı"}</h1>
+          <h1>{isWalkIn ? "Tek deneme kayıt" : "Yeni Öğrenci Kaydı"}</h1>
           <p>
             {isWalkIn
-              ? "Deneme sınavı, kimlik, okul, adres, veli ve paket bilgilerini kaydedin"
+              ? "Öğrenci, adres ve veli bilgilerini girin. Deneme seçimi, listedeki Kayıt düğmesinden yapılır."
               : "Adım adım öğrenci kayıt işlemini tamamlayın"}
           </p>
         </div>
@@ -899,12 +1084,35 @@ export default function OgrenciKayitClient({
 
       {/* Step Content */}
       <div className="wizard-content">
+        {steps[currentStep]?.id === "ucret" && (
+          <UcretStep
+            value={denemeUcreti}
+            error={errors.ucret}
+            onChange={(value) => {
+              setUcretTouched(true);
+              setDenemeUcreti(value);
+              setErrors((prev) => {
+                if (!prev.ucret) return prev;
+                const next = { ...prev };
+                delete next.ucret;
+                return next;
+              });
+            }}
+          />
+        )}
+
         {steps[currentStep]?.id === "sinav" && (
           <SinavStep
-            exams={metadata.sinavlar || []}
+            exams={walkExams}
             examId={examId}
             sessionId={sessionId}
             error={errors.sinav}
+            loading={walkExamsLoading}
+            emptyMessage={
+              data.enrollment.sinif_seviyesi
+                ? "Bu sınıf seviyesi için tarihi gelmemiş deneme yok."
+                : "Önce sınıf seviyesi seçin."
+            }
             onChange={(nextExamId, nextSessionId) => {
               setExamId(nextExamId);
               setSessionId(nextSessionId);
@@ -994,13 +1202,14 @@ export default function OgrenciKayitClient({
       {showSuccessModal && registeredStudent && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 9999,
-          display: "flex", alignItems: "center", justifyContent: "center",
+          display: "flex", alignItems: "flex-start", justifyContent: "center",
           background: "rgba(0,0,0,0.5)", backdropFilter: "blur(4px)",
+          overflowY: "auto", padding: "24px 16px",
         }}>
           <div style={{
-            background: "#fff", borderRadius: 20, padding: 0, width: 460, maxWidth: "90vw",
+            background: "#fff", borderRadius: 20, padding: 0, width: 460, maxWidth: "100%",
             boxShadow: "0 25px 50px rgba(0,0,0,0.25)", overflow: "hidden",
-            animation: "modalSlideIn 0.3s ease-out",
+            animation: "modalSlideIn 0.3s ease-out", margin: "auto",
           }}>
             {/* Header — Başarı */}
             <div style={{
@@ -1017,11 +1226,13 @@ export default function OgrenciKayitClient({
                 </svg>
               </div>
               <h2 style={{ margin: 0, color: "#fff", fontSize: 20, fontWeight: 700 }}>
-                {isWalkIn ? "Sınava eklendi" : "Kayıt Başarılı!"}
+                {isWalkIn ? (registeredStudent.exam_id ? "Sınava eklendi" : "Öğrenci eklendi") : "Kayıt Başarılı!"}
               </h2>
               <p style={{ margin: "6px 0 0", color: "rgba(255,255,255,0.85)", fontSize: 14 }}>
                 {isWalkIn
-                  ? registeredStudent.message || "Öğrenci seçilen sınava eklendi."
+                  ? registeredStudent.exam_id
+                    ? registeredStudent.message || "Öğrenci seçilen sınava eklendi."
+                    : "Öğrenci deneme listesine eklendi. Denemeyi listedeki Kayıt düğmesinden seçin."
                   : "Öğrenci başarıyla sisteme kaydedildi"}
               </p>
             </div>
@@ -1046,19 +1257,121 @@ export default function OgrenciKayitClient({
                   {registeredStudent.ogrenci_no && (
                     <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>No: {registeredStudent.ogrenci_no}</div>
                   )}
+                  {(registeredStudent.sinif || registeredStudent.sinav_adi) && (
+                    <div style={{ fontSize: 13, color: "#374151", marginTop: 4 }}>
+                      {[registeredStudent.sinif, registeredStudent.sinav_adi].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
+                  {registeredStudent.telefon && (
+                    <div style={{ fontSize: 13, color: "#6b7280", marginTop: 2 }}>{registeredStudent.telefon}</div>
+                  )}
                 </div>
               </div>
+              {isWalkIn && registeredStudent.seat_detail && registeredStudent.seat_status !== "assigned" && (
+                <div style={{
+                  marginTop: 10, fontSize: 13, color: "#92400e", background: "#fffbeb",
+                  border: "1px solid #fde68a", borderRadius: 10, padding: "10px 12px",
+                }}>
+                  {registeredStudent.seat_detail}
+                </div>
+              )}
             </div>
 
             {/* Aksiyon Butonları */}
             <div style={{ padding: "8px 24px 24px", display: "flex", flexDirection: "column", gap: 10 }}>
+              {isWalkIn && registeredStudent.exam_id && (
+                <>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: "#6b7280" }}>Sınav giriş belgesi hazır</div>
+                  <button
+                    type="button"
+                    onClick={handleBelgeDownload}
+                    disabled={belgeBusy !== null}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 12, width: "100%",
+                      padding: "14px 18px", borderRadius: 12, border: "none",
+                      background: "linear-gradient(135deg, #0262a7 0%, #0380d4 100%)",
+                      color: "#fff", cursor: belgeBusy ? "wait" : "pointer", textAlign: "left",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>
+                        {belgeBusy === "download" ? "İndiriliyor…" : "Giriş belgesini indir"}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>PDF olarak kaydet</div>
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleBelgePrint}
+                    disabled={belgeBusy !== null}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 12, width: "100%",
+                      padding: "14px 18px", borderRadius: 12,
+                      border: "1px solid #e5e7eb", background: "#fff",
+                      color: "#374151", cursor: belgeBusy ? "wait" : "pointer", textAlign: "left",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>
+                        {belgeBusy === "print" ? "Hazırlanıyor…" : "Yazdır"}
+                      </div>
+                      <div style={{ fontSize: 12, color: "#9ca3af", marginTop: 2 }}>Belgeyi yazıcıya gönder</div>
+                    </div>
+                  </button>
+                  <div style={{
+                    display: "flex", gap: 16, padding: "4px 2px", fontSize: 14, color: "#374151",
+                  }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={belgeOgrenci}
+                        onChange={(event) => setBelgeOgrenci(event.target.checked)}
+                      />
+                      Öğrenci
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={belgeVeli}
+                        onChange={(event) => setBelgeVeli(event.target.checked)}
+                      />
+                      Veli
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleBelgeWhatsapp}
+                    disabled={belgeBusy !== null}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 12, width: "100%",
+                      padding: "14px 18px", borderRadius: 12, border: "none",
+                      background: "#128C7E", color: "#fff",
+                      cursor: belgeBusy ? "wait" : "pointer", textAlign: "left",
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontWeight: 700, fontSize: 14 }}>
+                        {belgeBusy === "whatsapp" ? "Gönderiliyor…" : "WhatsApp ile gönder"}
+                      </div>
+                      <div style={{ fontSize: 12, opacity: 0.85, marginTop: 2 }}>
+                        Seçilen alıcının sohbetine gider. Metin, Bildirim şablonlarındaki Sınav giriş belgesinden gelir.
+                      </div>
+                    </div>
+                  </button>
+                  {belgeNote && (
+                    <div style={{ fontSize: 13, color: "#374151", background: "#f8fafc", borderRadius: 10, padding: "10px 12px" }}>
+                      {belgeNote}
+                    </div>
+                  )}
+                </>
+              )}
               {/* Sözleşme Oluştur — Ana buton */}
               <button
                 type="button"
                 onClick={() => {
                   if (isWalkIn) {
                     markClean();
-                    requestNavigation("/ogrenciler/misafir", { hard: true });
+                    requestNavigation(ogrenciHref("misafir"), { hard: true });
                     return;
                   }
                   const ogrenciId = registeredStudent.id ?? registeredStudent.ogrenci_id;
@@ -1089,16 +1402,19 @@ export default function OgrenciKayitClient({
                 }}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, width: "100%",
-                  padding: "14px 18px", borderRadius: 12, border: "none",
-                  background: "linear-gradient(135deg, #0262a7 0%, #0380d4 100%)",
-                  color: "#fff", cursor: "pointer", textAlign: "left", transition: "transform 0.15s, box-shadow 0.15s",
-                  boxShadow: "0 4px 12px rgba(2,98,167,0.3)",
+                  padding: "14px 18px", borderRadius: 12,
+                  border: isWalkIn ? "1px solid #e5e7eb" : "none",
+                  background: isWalkIn ? "#fff" : "linear-gradient(135deg, #0262a7 0%, #0380d4 100%)",
+                  color: isWalkIn ? "#374151" : "#fff",
+                  cursor: "pointer", textAlign: "left", transition: "transform 0.15s, box-shadow 0.15s",
+                  boxShadow: isWalkIn ? "none" : "0 4px 12px rgba(2,98,167,0.3)",
                 }}
                 onMouseOver={e => { e.currentTarget.style.transform = "translateY(-1px)"; e.currentTarget.style.boxShadow = "0 6px 20px rgba(2,98,167,0.4)"; }}
                 onMouseOut={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 4px 12px rgba(2,98,167,0.3)"; }}
               >
                 <div style={{
-                  width: 40, height: 40, borderRadius: 10, background: "rgba(255,255,255,0.15)",
+                  width: 40, height: 40, borderRadius: 10,
+                  background: isWalkIn ? "#f3f4f6" : "rgba(255,255,255,0.15)",
                   display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                 }}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1110,10 +1426,10 @@ export default function OgrenciKayitClient({
                 </div>
                 <div>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>
-                    {isWalkIn ? "Misafir listesine dön" : "Sözleşme Oluştur"}
+                    {isWalkIn ? "Deneme öğrencilerine dön" : "Sözleşme Oluştur"}
                   </div>
                   <div style={{ fontSize: 12, opacity: 0.8, marginTop: 2 }}>
-                    {isWalkIn ? "Kayıtlı günü birlik öğrencileri görüntüle" : "Hemen ödeme planı ve sözleşme oluştur"}
+                    {isWalkIn ? "Listeden deneme kaydı açın" : "Hemen ödeme planı ve sözleşme oluştur"}
                   </div>
                 </div>
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ marginLeft: "auto" }}>
@@ -1122,19 +1438,27 @@ export default function OgrenciKayitClient({
               </button>
 
               {/* Öğrenci Detay */}
-              <button
-                type="button"
-                onClick={() => {
+              <a
+                href={(() => {
                   const ogrenciId = registeredStudent.id ?? registeredStudent.ogrenci_id;
-                  if (!ogrenciId) return;
+                  return ogrenciId ? ogrenciHref(String(ogrenciId)) : "#";
+                })()}
+                onClick={(event) => {
+                  const ogrenciId = registeredStudent.id ?? registeredStudent.ogrenci_id;
+                  if (!ogrenciId) {
+                    event.preventDefault();
+                    return;
+                  }
+                  event.preventDefault();
                   markClean();
-                  requestNavigation(`${ogrenciHref(String(ogrenciId))}?success=true`, { hard: true });
+                  window.location.assign(ogrenciHref(String(ogrenciId)));
                 }}
                 style={{
                   display: "flex", alignItems: "center", gap: 12, width: "100%",
                   padding: "14px 18px", borderRadius: 12,
                   border: "1px solid #e5e7eb", background: "#fff",
                   color: "#374151", cursor: "pointer", textAlign: "left", transition: "all 0.15s",
+                  textDecoration: "none",
                 }}
                 onMouseOver={e => { e.currentTarget.style.background = "#f9fafb"; e.currentTarget.style.borderColor = "#d1d5db"; }}
                 onMouseOut={e => { e.currentTarget.style.background = "#fff"; e.currentTarget.style.borderColor = "#e5e7eb"; }}
@@ -1155,7 +1479,7 @@ export default function OgrenciKayitClient({
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2" style={{ marginLeft: "auto" }}>
                   <polyline points="9 18 15 12 9 6" />
                 </svg>
-              </button>
+              </a>
 
               {/* Yeni Kayıt */}
               <button
@@ -1165,6 +1489,11 @@ export default function OgrenciKayitClient({
                   setRegisteredStudent(null);
                   setData(initialData);
                   setCurrentStep(0);
+                  setExamId("");
+                  setSessionId("");
+                  setDenemeUcreti("");
+                  setUcretTouched(false);
+                  setBelgeNote("");
                   setErrors({});
                   setRenewalState({ isRenewal: false });
                   clearWizardStorage();

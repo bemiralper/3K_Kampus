@@ -1,8 +1,10 @@
 export const ADMIN_OLCME_BASE = '/admin/olcme-degerlendirme';
 export const COACH_OLCME_BASE = '/coach/olcme-degerlendirme';
+export const MUHASEBE_OLCME_BASE = '/muhasebe/olcme-degerlendirme';
 
 export function getOlcmeBasePath(pathname?: string | null): string {
   if (pathname?.startsWith(COACH_OLCME_BASE)) return COACH_OLCME_BASE;
+  if (pathname?.startsWith(MUHASEBE_OLCME_BASE)) return MUHASEBE_OLCME_BASE;
   return ADMIN_OLCME_BASE;
 }
 

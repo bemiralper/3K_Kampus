@@ -1,6 +1,13 @@
+import { request as httpRequest } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { Readable } from 'node:stream';
 import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+
+// Bu eşiğin üstündeki multipart gövde belleğe alınmaz. V8 ArrayBuffer üst sınırı
+// ~4 GB; daha küçük dosyalar da frontend konteynerini şişirip bağlantıyı düşürür.
+const STREAM_MULTIPART_BYTES = 32 * 1024 * 1024;
 
 // Django URL yapısında bazı path'ler api/ prefix'i ile tanımlı (api/coaching/..., api/terms/...),
 // bazıları ise prefix'siz (auth/..., ogrenciler/api/..., personel/..., vb.).
@@ -61,6 +68,80 @@ const HOP_BY_HOP_HEADERS = new Set([
   'proxy-authorization',
 ]);
 
+function isLargeMultipart(method: string, contentType: string, contentLength: string | null): boolean {
+  if (!['POST', 'PUT', 'PATCH'].includes(method.toUpperCase())) return false;
+  if (!contentType.toLowerCase().includes('multipart/form-data')) return false;
+  if (!contentLength) return true;
+  const size = Number(contentLength);
+  return !Number.isFinite(size) || size > STREAM_MULTIPART_BYTES;
+}
+
+function outgoingHeaders(headers: Headers): Record<string, string | string[]> {
+  const out: Record<string, string | string[]> = {};
+  headers.forEach((value, key) => {
+    const lower = key.toLowerCase();
+    if (lower === 'host' || HOP_BY_HOP_HEADERS.has(lower)) return;
+    const prev = out[lower];
+    if (prev === undefined) out[lower] = value;
+    else if (Array.isArray(prev)) prev.push(value);
+    else out[lower] = [prev, value];
+  });
+  return out;
+}
+
+/**
+ * Büyük yedek zip'ini arrayBuffer() ile tutmadan Django'ya akıtır.
+ * undici fetch gövde zaman aşımı (~5 dk) uzun içe aktarmayı keser; node:http kesmez.
+ */
+function streamProxyToBackend(
+  url: string,
+  method: string,
+  headers: Headers,
+  body: ReadableStream<Uint8Array> | null,
+): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const target = new URL(url);
+    const isHttps = target.protocol === 'https:';
+    const reqFn = isHttps ? httpsRequest : httpRequest;
+    const req = reqFn(
+      {
+        protocol: target.protocol,
+        hostname: target.hostname,
+        port: target.port || (isHttps ? 443 : 80),
+        path: `${target.pathname}${target.search}`,
+        method,
+        headers: outgoingHeaders(headers),
+      },
+      (incoming) => {
+        const responseHeaders = new Headers();
+        for (const [key, value] of Object.entries(incoming.headers)) {
+          if (value === undefined) continue;
+          const lower = key.toLowerCase();
+          if (lower === 'transfer-encoding' || lower === 'connection' || lower === 'keep-alive') continue;
+          if (Array.isArray(value)) {
+            for (const item of value) responseHeaders.append(key, item);
+          } else {
+            responseHeaders.append(key, value);
+          }
+        }
+        resolve(new Response(Readable.toWeb(incoming) as ReadableStream, {
+          status: incoming.statusCode || 502,
+          statusText: incoming.statusMessage,
+          headers: responseHeaders,
+        }));
+      },
+    );
+    req.on('error', reject);
+    if (!body) {
+      req.end();
+      return;
+    }
+    const nodeBody = Readable.fromWeb(body);
+    nodeBody.on('error', (err) => req.destroy(err));
+    nodeBody.pipe(req);
+  });
+}
+
 /**
  * Büyük dosyayı (yedek zip’i birkaç GB) belleğe almadan ilet.
  * arrayBuffer() tüm gövdeyi Node’da tutar; 4 GB sunucuda OOM → nginx 502.
@@ -120,13 +201,16 @@ async function proxyRequest(request: NextRequest, path: string) {
   
   // Get content type to determine how to handle body
   const contentType = request.headers.get('content-type') || '';
-  
+  const contentLength = request.headers.get('content-length');
+  // Büyük yedek zip'i arrayBuffer() ile tutulamaz (V8 sınırı ~4 GB) ve süreci düşürür.
+  const streamMultipart = isLargeMultipart(request.method, contentType, contentLength);
+
   // Get request body for POST/PUT/PATCH/DELETE (silme sebebi vb. DELETE body ile gelir)
   let body: BodyInit | undefined;
-  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
+  if (!streamMultipart && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(request.method)) {
     // Check if it's a multipart form (file upload)
     if (contentType.includes('multipart/form-data')) {
-      // For multipart, we need to forward the raw body
+      // Küçük ekler (fotoğraf, PDF) mevcut yol: gövde bellekte iletilir.
       body = await request.arrayBuffer();
     } else {
       const text = await request.text();
@@ -162,7 +246,7 @@ async function proxyRequest(request: NextRequest, path: string) {
     headers.set('Accept', 'text/event-stream');
   }
 
-  console.log(`[API Proxy] ${request.method} ${url}`);
+  console.log(`[API Proxy] ${request.method} ${url}${streamMultipart ? ' (stream)' : ''}`);
   console.log(`[API Proxy] Forwarding cookies:`, headers.get('Cookie'));
 
   const fetchInit: RequestInit = {
@@ -176,7 +260,9 @@ async function proxyRequest(request: NextRequest, path: string) {
     !isEventStream && ['GET', 'HEAD'].includes(request.method.toUpperCase());
 
   try {
-    const response = await fetchBackend(url, fetchInit, safeRetry ? 1 : 0);
+    const response = streamMultipart
+      ? await streamProxyToBackend(url, request.method, headers, request.body)
+      : await fetchBackend(url, fetchInit, safeRetry ? 1 : 0);
 
     // Handle 204 No Content — NextResponse cannot have a body with status 204
     if (response.status === 204) {

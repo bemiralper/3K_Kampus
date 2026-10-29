@@ -54,6 +54,7 @@ export type OgrenciDetay = {
   cinsiyet_display: string;
   kayit_turu: string;
   kayit_turu_display: string;
+  deneme_sayisi?: number | null;
   telefon: string;
   whatsapp_uygun?: boolean;
   email: string;

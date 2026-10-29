@@ -37,7 +37,7 @@ const NAV: { id: CmsNavId; label: string; desc: string; needsPage?: boolean }[] 
   { id: 'dashboard', label: 'Özet', desc: 'Sağlık ve istatistik' },
   { id: 'site', label: 'Anasayfa & Hero', desc: 'Hero, iletişim, sosyal medya' },
   { id: 'sections', label: 'Anasayfa Bölümleri', desc: 'Neden 3K, ders formatları' },
-  { id: 'home-content', label: 'Sınav & SSS', desc: 'Deneme takvimi, yorum, SSS' },
+  { id: 'home-content', label: 'Yorum & SSS', desc: 'Öğrenci yorumu, sıkça sorulan sorular' },
   { id: 'pages', label: 'Sayfalar', desc: 'Oluştur / yayınla' },
   { id: 'builder', label: 'Sayfa düzenleyici', desc: 'Bloklarla tasarla', needsPage: true },
   { id: 'menus', label: 'Menü', desc: 'Header & footer' },

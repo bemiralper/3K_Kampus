@@ -24,6 +24,7 @@ export type MuhasebeNavChildDef = {
   href: string;
   label: string;
   matchPrefix?: string;
+  matchPrefixes?: string[];
   group?: string;
   /** Next.js client router yerine tam sayfa yükle (parallelRoutes atmasını önler). */
   hardNav?: boolean;
@@ -171,6 +172,71 @@ export const MUHASEBE_AKADEMIK_CHILDREN: MuhasebeNavChildDef[] = akademikSidebar
   matchPrefix: item.matchPrefix,
 }));
 
+export const MUHASEBE_OLCME_BASE = "/muhasebe/olcme-degerlendirme";
+
+const OLCME_ICON = (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2" />
+    <rect x="9" y="3" width="6" height="4" rx="1" />
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 14l2 2 4-4" />
+  </svg>
+);
+
+const OLCME_TANIMLAR = [
+  "kazanimlar",
+  "ayarlar",
+  "oturum-gruplari",
+  "salonlar",
+  "daire-dizisi",
+  "optik-okuma",
+  "optik-formlar",
+].map((segment) => `${MUHASEBE_OLCME_BASE}/${segment}`);
+
+export const MUHASEBE_OLCME_CHILDREN: MuhasebeNavChildDef[] = [
+  {
+    id: "olcme-liste",
+    href: MUHASEBE_OLCME_BASE,
+    label: "Sınav Listesi",
+    matchPrefix: MUHASEBE_OLCME_BASE,
+    group: "Sınavlar",
+  },
+  {
+    id: "olcme-yeni",
+    href: `${MUHASEBE_OLCME_BASE}/yeni`,
+    label: "Yeni Sınav Oluştur",
+    matchPrefix: `${MUHASEBE_OLCME_BASE}/yeni`,
+    group: "Sınavlar",
+  },
+  {
+    id: "olcme-takvim",
+    href: `${MUHASEBE_OLCME_BASE}/deneme-takvimi`,
+    label: "Deneme Takvimi",
+    matchPrefix: `${MUHASEBE_OLCME_BASE}/deneme-takvimi`,
+    group: "Sınavlar",
+  },
+  {
+    id: "olcme-analiz",
+    href: `${MUHASEBE_OLCME_BASE}/analiz`,
+    label: "Sonuç Analizi",
+    matchPrefix: `${MUHASEBE_OLCME_BASE}/analiz`,
+    group: "Analiz",
+  },
+  {
+    id: "olcme-karsilastirma",
+    href: `${MUHASEBE_OLCME_BASE}/karsilastirma`,
+    label: "Karşılaştırma",
+    matchPrefix: `${MUHASEBE_OLCME_BASE}/karsilastirma`,
+    group: "Analiz",
+  },
+  {
+    id: "olcme-tanimlar",
+    href: `${MUHASEBE_OLCME_BASE}/kazanimlar`,
+    label: "Tanımlar",
+    matchPrefixes: OLCME_TANIMLAR,
+    group: "Tanımlar",
+  },
+];
+
 const AKADEMIK_ICON = (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
     <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -218,6 +284,25 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
         <path strokeLinecap="round" strokeLinejoin="round" d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
       </svg>
     ),
+  },
+  {
+    id: "deneme-ogrencileri",
+    href: "/muhasebe/ogrenci/misafir",
+    label: "Deneme Öğrencileri",
+    matchPrefix: "/muhasebe/ogrenci/misafir",
+    icon: (
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+    ),
+  },
+  {
+    id: "olcme",
+    href: MUHASEBE_OLCME_BASE,
+    label: "Ölçme & Değerlendirme",
+    matchPrefix: MUHASEBE_OLCME_BASE,
+    icon: OLCME_ICON,
+    children: MUHASEBE_OLCME_CHILDREN,
   },
   {
     id: "odeme-takip",
@@ -351,6 +436,23 @@ export const MUHASEBE_NAV_ITEMS: MuhasebeNavItemDef[] = [
   },
 ];
 
+function childMatchScore(pathname: string, sibling: MuhasebeNavChildDef): number {
+  if (sibling.id === "tahsilat-raporlar" && !isTahsilatRaporlarFinansPath(pathname, MUHASEBE_FINANS_BASE)) {
+    return -1;
+  }
+  const prefixes = sibling.matchPrefixes?.length
+    ? sibling.matchPrefixes
+    : [sibling.matchPrefix || sibling.href];
+  let best = -1;
+  for (const prefix of prefixes) {
+    if (pathname === prefix || pathname.startsWith(`${prefix}/`)) {
+      if (prefix.length > best) best = prefix.length;
+    }
+  }
+  if (pathname === sibling.href && sibling.href.length > best) best = sibling.href.length;
+  return best;
+}
+
 export function isMuhasebeNavChildActive(
   pathname: string,
   child: MuhasebeNavChildDef,
@@ -360,21 +462,19 @@ export function isMuhasebeNavChildActive(
     let best: MuhasebeNavChildDef | null = null;
     let bestLen = -1;
     for (const sibling of siblings) {
-      const prefix = sibling.matchPrefix || sibling.href;
-      const matches =
-        pathname === sibling.href ||
-        pathname === prefix ||
-        pathname.startsWith(`${prefix}/`);
-      if (!matches) continue;
-      if (sibling.id === "tahsilat-raporlar") {
-        if (!isTahsilatRaporlarFinansPath(pathname, MUHASEBE_FINANS_BASE)) continue;
-      }
-      if (prefix.length > bestLen) {
+      const score = childMatchScore(pathname, sibling);
+      if (score > bestLen) {
         best = sibling;
-        bestLen = prefix.length;
+        bestLen = score;
       }
     }
     return best?.id === child.id;
+  }
+
+  if (child.matchPrefixes?.length) {
+    return child.matchPrefixes.some(
+      (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`),
+    );
   }
 
   const prefix = child.matchPrefix || child.href;
@@ -416,6 +516,12 @@ export function isMuhasebeNavActive(pathname: string, item: MuhasebeNavItemDef):
   }
   if (prefix === MUHASEBE_AKADEMIK_BASE) {
     return pathname.startsWith(MUHASEBE_AKADEMIK_BASE);
+  }
+  if (prefix === MUHASEBE_OLCME_BASE) {
+    return pathname.startsWith(MUHASEBE_OLCME_BASE);
+  }
+  if (prefix === "/muhasebe/ogrenci/misafir") {
+    return pathname.startsWith("/muhasebe/ogrenci/misafir");
   }
   return pathname.startsWith(prefix);
 }

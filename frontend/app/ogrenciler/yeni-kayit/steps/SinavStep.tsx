@@ -7,6 +7,9 @@ type SinavStepProps = {
   examId: string;
   sessionId: string;
   error?: string;
+  loading?: boolean;
+  emptyMessage?: string;
+  hint?: string;
   onChange: (examId: string, sessionId: string) => void;
 };
 
@@ -17,7 +20,16 @@ function formatDate(iso?: string | null) {
   return date.toLocaleDateString("tr-TR");
 }
 
-export default function SinavStep({ exams, examId, sessionId, error, onChange }: SinavStepProps) {
+export default function SinavStep({
+  exams,
+  examId,
+  sessionId,
+  error,
+  loading = false,
+  emptyMessage = "Bu sınıf seviyesi için tarihi gelmemiş deneme yok.",
+  hint = "İlk oturum geçse bile tarihi gelmemiş sonraki oturum listede kalır. Liste, deneme adımına her girişte yenilenir.",
+  onChange,
+}: SinavStepProps) {
   const exam = exams.find((item) => String(item.id) === examId);
   const sessions = exam?.sessions || [];
 
@@ -45,8 +57,10 @@ export default function SinavStep({ exams, examId, sessionId, error, onChange }:
           ))}
         </select>
         {error && <span className="wizard-error">{error}</span>}
-        {exams.length === 0 && (
-          <span className="wizard-error">Bu şube ve eğitim yılı için aktif sınav yok.</span>
+        {loading && <span style={{ color: "#6b7280", fontSize: 13 }}>Denemeler yükleniyor…</span>}
+        {!loading && exams.length === 0 && <span className="wizard-error">{emptyMessage}</span>}
+        {!loading && exams.length > 0 && hint && (
+          <span style={{ color: "#6b7280", fontSize: 13 }}>{hint}</span>
         )}
       </div>
 

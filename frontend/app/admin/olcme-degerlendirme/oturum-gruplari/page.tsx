@@ -6,6 +6,7 @@ import type { OturumOgrenciAyar, OturumSeviyeAyar } from '../../../../components
 import Icon from '../../../../components/olcme/ui/Icon';
 import s from './oturumGruplari.module.css';
 import { trFold } from '@/lib/text-format';
+import TanimlarTabs from '@/components/olcme/TanimlarTabs';
 
 type Pref = 'HAFTA_ICI' | 'HAFTA_SONU';
 
@@ -152,6 +153,7 @@ export default function OturumGruplariPage() {
 
   return (
     <div className={s.page}>
+      <TanimlarTabs />
       {toast && <div className={s.toast}>{toast}</div>}
 
       <header className={s.header}>

@@ -5,11 +5,15 @@ Katılım yalnız seçilen sınava yazılır.
 """
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import dataclass, field
 from io import BytesIO
 
 from django.db import transaction
+from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 from apps.egitim_tanimlari.models import SinifSeviyesi
 from apps.kimlik.application.enforcement import assert_identity_for_new_record
@@ -165,7 +169,7 @@ def excel_template() -> bytes:
 
     wb = Workbook()
     ws = wb.active
-    ws.title = 'Gunu birlik'
+    ws.title = 'Tek deneme'
     ws.append(['Ad', 'Soyad', 'TC', 'Telefon', 'Seviye'])
     ws.append(['Ayşe', 'Yılmaz', '12345678901', '05321112233', '12'])
     ws.append([])
@@ -192,9 +196,16 @@ def _blank_outcome(index: int, raw: dict) -> RowOutcome:
 def classify_rows(exam, raw_rows, seviyeler, *, exam_session_id=None) -> list[RowOutcome]:
     from apps.coaching.olcme_degerlendirme.models import ExamParticipant
 
+    from .sinav_uygunluk import ExamLevelGate, upcoming_sessions
+
     by_id, by_key = _seviye_index(seviyeler)
-    sessions = list(exam.exam_sessions.order_by('order', 'id'))
-    session_error = _session_error(sessions, exam_session_id)
+    all_sessions = list(exam.exam_sessions.order_by('order', 'id'))
+    sessions = upcoming_sessions(exam, sessions=all_sessions)
+    if all_sessions and not sessions:
+        session_error = 'Bu denemenin seçilebilir oturumu kalmadı.'
+    else:
+        session_error = _session_error(sessions, exam_session_id)
+    level_gate = ExamLevelGate(exam)
 
     outcomes: list[RowOutcome] = []
     seen: set[str] = set()
@@ -225,6 +236,8 @@ def classify_rows(exam, raw_rows, seviyeler, *, exam_session_id=None) -> list[Ro
             tcs.append(row.tc_kimlik_no)
         if not seviye:
             errors.append('Sınıf seviyesi bulunamadı.')
+        elif not level_gate.matches(seviye):
+            errors.append('Bu deneme seçilen sınıf seviyesine uygun değil.')
         if session_error:
             errors.append(session_error)
         if errors:
@@ -253,7 +266,7 @@ def classify_rows(exam, raw_rows, seviyeler, *, exam_session_id=None) -> list[Ro
         ogrenci = existing.get(row.tc_kimlik_no)
         if ogrenci is None:
             row.status = 'yeni'
-            row.message = 'Yeni günü birlik kayıt açılacak.'
+            row.message = 'Yeni tek deneme kaydı açılacak.'
             continue
         row.ogrenci_id = ogrenci.id
         row.ad = ogrenci.ad
@@ -272,7 +285,7 @@ def classify_rows(exam, raw_rows, seviyeler, *, exam_session_id=None) -> list[Ro
             continue
         if (ogrenci.kayit_turu or '') == GUNU_BIRLIK_CODE:
             row.status = 'mevcut_misafir'
-            row.message = 'Mevcut günü birlik kayıt bu sınava eklenecek.'
+            row.message = 'Mevcut tek deneme kaydı bu sınava eklenecek.'
         else:
             row.status = 'kayitli_ogrenci'
             row.message = 'Kayıtlı öğrenci, sınava eklenecek.'
@@ -303,7 +316,12 @@ def _attach(exam, student, seviye_id, exam_session_id):
     from apps.coaching.olcme_degerlendirme.models import ExamParticipant
     from apps.coaching.olcme_degerlendirme.services.exam_roster import add_manual_participant
 
-    sessions = list(exam.exam_sessions.order_by('order', 'id'))
+    from .sinav_uygunluk import upcoming_sessions
+
+    all_sessions = list(exam.exam_sessions.order_by('order', 'id'))
+    sessions = upcoming_sessions(exam, sessions=all_sessions)
+    if all_sessions and not sessions:
+        return None, 'Bu denemenin seçilebilir oturumu kalmadı.'
     err = _session_error(sessions, exam_session_id)
     if err:
         return None, err
@@ -383,7 +401,7 @@ def _apply_row(exam, row: RowOutcome, *, exam_session_id=None):
             aktif_mi=True,
         )
         row.status = 'yeni'
-        row.message = 'Günü birlik kayıt açıldı ve sınava eklendi.'
+        row.message = 'Tek deneme kaydı açıldı ve sınava eklendi.'
     else:
         if ogrenci.sube_id != exam.sube_id:
             row.status = 'hata'
@@ -400,7 +418,7 @@ def _apply_row(exam, row: RowOutcome, *, exam_session_id=None):
                 ogrenci.telefon = row.telefon
                 ogrenci.save(update_fields=['telefon', 'updated_at'])
             row.status = 'mevcut_misafir'
-            row.message = 'Mevcut günü birlik kayıt bu sınava eklendi.'
+            row.message = 'Mevcut tek deneme kaydı bu sınava eklendi.'
         else:
             row.status = 'kayitli_ogrenci'
             row.message = 'Kayıtlı öğrenci, sınava eklendi.'
@@ -441,14 +459,32 @@ def assert_no_yearly_enrollment(ogrenci_id: int) -> bool:
     return not OgrenciKayit.objects.filter(ogrenci_id=ogrenci_id).exists()
 
 
+def _deneme_izi_var():
+    from django.db.models import Exists, OuterRef
+
+    from apps.odeme_takip.domain.models import Sozlesme
+
+    from .deneme_ucret import MARKER
+
+    return Exists(
+        Sozlesme.objects.filter(ogrenci_id=OuterRef('pk'), notlar__contains=MARKER)
+    )
+
+
 def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
+    from django.db.models import Q
+
     from apps.coaching.olcme_degerlendirme.models import ExamParticipant
 
+    from .sinav_uygunluk import upcoming_sessions
+
+    today = timezone.localdate()
     qs = Ogrenci.objects.filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
-        kayit_turu=GUNU_BIRLIK_CODE,
         aktif_mi=True,
+    ).filter(
+        Q(kayit_turu=GUNU_BIRLIK_CODE) | _deneme_izi_var()
     ).order_by('-created_at', 'soyad', 'ad')
     text = (q or '').strip()
     if text:
@@ -461,24 +497,62 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
         )
     ogrenciler = list(qs[:500])
     ids = [o.id for o in ogrenciler]
+    numaralar = {}
+    seviye_ids = {}
+    seviye_adlari = {}
+    for kayit in (
+        OgrenciKayit.objects.filter(ogrenci_id__in=ids)
+        .select_related('sinif_seviyesi')
+        .order_by('id')
+    ):
+        numaralar[kayit.ogrenci_id] = kayit.okul_no or ''
+        if kayit.sinif_seviyesi_id:
+            seviye_ids[kayit.ogrenci_id] = kayit.sinif_seviyesi_id
+            seviye_adlari[kayit.ogrenci_id] = kayit.sinif_seviyesi.ad if kayit.sinif_seviyesi_id else ''
     sinavlar: dict[int, list] = {i: [] for i in ids}
     seen_pairs: set[tuple[int, int]] = set()
     parts = (
         ExamParticipant.objects.filter(student_id__in=ids)
-        .select_related('exam', 'sinif_seviyesi')
-        .order_by('-exam__exam_date', '-exam_id')
+        .select_related('exam', 'exam_session', 'sinif_seviyesi')
+        .prefetch_related('exam__exam_sessions')
+        .order_by('-exam__exam_date', '-exam_id', 'id')
     )
+    session_cache: dict[int, list] = {}
     for part in parts:
         key = (part.student_id, part.exam_id)
         if key in seen_pairs or not part.exam_id:
             continue
         seen_pairs.add(key)
+        exam = part.exam
+        if exam.id not in session_cache:
+            all_sessions = list(exam.exam_sessions.all())
+            upcoming = upcoming_sessions(exam, today=today, sessions=all_sessions)
+            open_exam = bool(upcoming) if all_sessions else bool(exam.exam_date and exam.exam_date >= today)
+            session_cache[exam.id] = (upcoming, open_exam)
+        upcoming, open_exam = session_cache[exam.id]
+        dated = [session.session_date for session in upcoming if session.session_date]
+        bookable = min(dated) if dated else exam.exam_date
+        current = part.exam_session
         seviye = part.sinif_seviyesi.ad if part.sinif_seviyesi_id else ''
         sinavlar[part.student_id].append({
-            'id': part.exam_id,
-            'name': part.exam.name,
-            'exam_date': part.exam.exam_date.isoformat() if part.exam.exam_date else None,
+            'id': exam.id,
+            'participant_id': part.id,
+            'name': exam.name,
+            'exam_date': bookable.isoformat() if bookable else (
+                exam.exam_date.isoformat() if exam.exam_date else None
+            ),
             'sinif_seviyesi': seviye,
+            'acik': open_exam,
+            'session_id': current.id if current is not None else None,
+            'session_name': current.name if current is not None else '',
+            'sessions': [
+                {
+                    'id': session.id,
+                    'name': session.name,
+                    'session_date': session.session_date.isoformat() if session.session_date else None,
+                }
+                for session in upcoming
+            ],
         })
     return [
         {
@@ -487,6 +561,12 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
             'soyad': ogrenci.soyad,
             'tc_kimlik_no': ogrenci.tc_kimlik_no or '',
             'telefon': ogrenci.telefon or '',
+            'ogrenci_no': numaralar.get(ogrenci.id) or '',
+            'sinif_seviyesi_id': seviye_ids.get(ogrenci.id),
+            'sinif_seviyesi': seviye_adlari.get(ogrenci.id) or '',
+            'kayit_turu': ogrenci.kayit_turu or '',
+            'kurum_kaydi': (ogrenci.kayit_turu or '') != GUNU_BIRLIK_CODE,
+            'deneme_sayisi': len(sinavlar.get(ogrenci.id, [])),
             'created_at': ogrenci.created_at.isoformat() if ogrenci.created_at else None,
             'sinavlar': sinavlar.get(ogrenci.id, []),
         }
@@ -494,22 +574,253 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
     ]
 
 
-def exam_options(kurum_id: int, sube_id: int, egitim_yili_id: int | None):
+def _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id):
+    from apps.coaching.olcme_degerlendirme.models import Exam, ExamParticipant
+
+    from .sinav_uygunluk import exam_is_open
+
+    exam = Exam.objects.filter(id=exam_id, kurum_id=kurum_id, sube_id=sube_id, is_active=True).first()
+    if exam is None:
+        raise ValueError('Sınav bulunamadı.')
+    if not exam_is_open(exam):
+        raise ValueError('Tarihi geçmiş denemede bu işlem yapılamaz.')
+    ogrenci = Ogrenci.objects.filter(
+        id=ogrenci_id, kurum_id=kurum_id, sube_id=sube_id, aktif_mi=True,
+    ).first()
+    if ogrenci is None:
+        raise ValueError('Öğrenci bulunamadı.')
+    participant = (
+        ExamParticipant.objects.filter(exam=exam, student=ogrenci)
+        .select_related('exam_session')
+        .order_by('id')
+        .first()
+    )
+    if participant is None:
+        raise ValueError('Bu öğrencinin bu sınavda kaydı yok.')
+    return exam, ogrenci, participant
+
+
+def register_deneme_kaydi(
+    *,
+    kurum_id,
+    sube_id,
+    ogrenci_id,
+    exam_id,
+    exam_session_id=None,
+    deneme_ucreti=None,
+    user=None,
+    odeme_yontemi_id=None,
+    mali_hesap_id=None,
+) -> dict:
+    """Listeden seçilen denemeye, kayıt sihirbazındaki gibi ekler."""
     from apps.coaching.olcme_degerlendirme.models import Exam
+
+    from .deneme_ucret import record_deneme_ucreti
+    from .sinav_uygunluk import exam_registration_error
+
+    try:
+        ogrenci_id = int(ogrenci_id)
+        exam_id = int(exam_id)
+    except (TypeError, ValueError):
+        raise ValueError('Öğrenci ve sınav seçin.')
+    if exam_session_id in ('', None):
+        exam_session_id = None
+    else:
+        try:
+            exam_session_id = int(exam_session_id)
+        except (TypeError, ValueError):
+            raise ValueError('Oturum bulunamadı.')
+
+    exam = Exam.objects.filter(
+        id=exam_id, kurum_id=kurum_id, sube_id=sube_id, is_active=True,
+    ).first()
+    if exam is None:
+        raise ValueError('Sınav bulunamadı.')
+    ogrenci = Ogrenci.objects.filter(
+        id=ogrenci_id, kurum_id=kurum_id, sube_id=sube_id, aktif_mi=True,
+    ).first()
+    if ogrenci is None:
+        raise ValueError('Öğrenci bulunamadı.')
+    kayit = (
+        OgrenciKayit.objects.filter(ogrenci=ogrenci)
+        .select_related('sinif_seviyesi')
+        .order_by('-id')
+        .first()
+    )
+    seviye = kayit.sinif_seviyesi if kayit is not None and kayit.sinif_seviyesi_id else None
+    if seviye is None:
+        raise ValueError('Sınıf seviyesi bulunamadı.')
+    registration_error = exam_registration_error(exam, seviye)
+    if registration_error:
+        raise ValueError(registration_error)
+
+    with transaction.atomic():
+        participant, attach_err = _attach(exam, ogrenci, seviye.id, exam_session_id)
+        if attach_err == 'zaten':
+            raise ValueError('Bu öğrenci zaten bu sınavda.')
+        if attach_err:
+            raise ValueError(attach_err)
+        seat = assign_open_seat(participant) if participant is not None else {'status': '', 'detail': ''}
+    ucret_uyari = ''
+    if deneme_ucreti is not None:
+        try:
+            record_deneme_ucreti(
+                ogrenci=ogrenci,
+                kayit=kayit,
+                exam=exam,
+                tutar=deneme_ucreti,
+                user=user,
+                odeme_yontemi_id=odeme_yontemi_id,
+                mali_hesap_id=mali_hesap_id,
+            )
+        except ValueError as exc:
+            ucret_uyari = str(exc)
+        except Exception:
+            logger.exception('Deneme ücreti yazılamadı')
+            ucret_uyari = 'Deneme ücreti kayda geçmedi.'
+    detail = seat.get('detail') or ''
+    if ucret_uyari:
+        detail = f'{detail} {ucret_uyari}'.strip()
+    return {
+        'ok': True,
+        'exam_id': exam.id,
+        'sinav_adi': exam.name,
+        'participant_id': participant.id if participant is not None else None,
+        'seat_status': seat.get('status') or '',
+        'seat_detail': detail,
+        'deneme_ucreti': None if ucret_uyari else deneme_ucreti,
+    }
+
+
+def change_deneme_oturumu(*, kurum_id, sube_id, ogrenci_id, exam_id, exam_session_id) -> dict:
+    from .sinav_uygunluk import upcoming_sessions
+
+    exam, _ogrenci, participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id)
+    try:
+        session_id = int(exam_session_id)
+    except (TypeError, ValueError):
+        raise ValueError('Oturum bulunamadı.')
+    target = next((item for item in upcoming_sessions(exam) if item.id == session_id), None)
+    if target is None:
+        raise ValueError('Bu oturum artık seçilemez.')
+    if participant.exam_session_id == target.id:
+        return {'ok': True, 'session_id': target.id, 'session_name': target.name, 'seat_status': 'assigned'}
+    from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+
+    clash = ExamParticipant.objects.filter(
+        exam=exam, student_id=ogrenci_id, exam_session=target,
+    ).exclude(pk=participant.pk).exists()
+    if clash:
+        raise ValueError('Öğrenci bu oturumda zaten kayıtlı.')
+    participant.exam_session = target
+    participant.room = None
+    participant.seat_no = None
+    participant.desk_no = ''
+    participant.save(update_fields=['exam_session', 'room', 'seat_no', 'desk_no', 'updated_at'])
+    seat = assign_open_seat(participant)
+    return {
+        'ok': True,
+        'session_id': target.id,
+        'session_name': target.name,
+        'seat_status': seat.get('status') or '',
+        'seat_detail': seat.get('detail') or '',
+    }
+
+
+def cancel_deneme_kaydi(*, kurum_id, sube_id, ogrenci_id, exam_id) -> dict:
+    from django.db.models.deletion import ProtectedError
+
+    from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+
+    from .deneme_ucret import void_deneme_ucreti
+
+    exam, ogrenci, _participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id)
+    try:
+        with transaction.atomic():
+            ExamParticipant.objects.filter(exam=exam, student=ogrenci).delete()
+            closed = void_deneme_ucreti(ogrenci=ogrenci, exam=exam)
+    except ProtectedError:
+        raise ValueError('Bu denemeye sonuç girildiği için kayıt iptal edilemedi.')
+    return {'ok': True, 'finans_iptal': closed}
+
+
+def assign_open_seat(participant) -> dict:
+    """Boş salon sırası varsa yalnız bu katılımcıyı yerleştirir.
+
+    Kayıt salon dolu diye düşmez. Sonuç kayıt cevabında ve belgede görünür.
+    """
+    if participant is None:
+        return {'status': 'none', 'detail': ''}
+    if participant.room_id and participant.seat_no:
+        return {'status': 'assigned', 'detail': ''}
+    try:
+        from apps.coaching.olcme_degerlendirme.services.exam_roster import (
+            assign_participant_to_room,
+            rooms_for_session,
+        )
+
+        rooms = rooms_for_session(participant.exam, participant.exam_session)
+        if not rooms:
+            return {
+                'status': 'no_room',
+                'detail': 'Bu oturumda salon tanımlı değil. Salon ve sıra sınav günü duyurulacak.',
+            }
+        last_error = ''
+        for room in rooms:
+            last_error = assign_participant_to_room(participant, room) or ''
+            if not last_error:
+                participant.refresh_from_db()
+                return {'status': 'assigned', 'detail': ''}
+        return {
+            'status': 'full',
+            'detail': last_error or 'Salonda boş sıra kalmadı. Sıra sınav günü duyurulacak.',
+        }
+    except Exception:
+        logger.exception('Günü birlik katılımcı sırası atanamadı: %s', getattr(participant, 'pk', None))
+        return {
+            'status': 'error',
+            'detail': 'Salon sırası şu an atanamadı. Yer bilgisi sınav günü duyurulacak.',
+        }
+
+
+def exam_options(kurum_id: int, sube_id: int, egitim_yili_id: int | None, sinif_seviyesi_id: int | None = None):
+    from apps.coaching.olcme_degerlendirme.models import Exam
+
+    from .sinav_uygunluk import exam_is_open, exam_matches_seviye, target_seviye_ids, upcoming_sessions
+
+    seviye = None
+    if sinif_seviyesi_id:
+        seviye = SinifSeviyesi.objects.filter(pk=sinif_seviyesi_id, aktif_mi=True).first()
+        if seviye is None:
+            return []
 
     qs = Exam.objects.filter(
         kurum_id=kurum_id, sube_id=sube_id, is_active=True,
     )
     if egitim_yili_id:
         qs = qs.filter(egitim_yili_id=egitim_yili_id)
+    qs = qs.prefetch_related(
+        'exam_sessions',
+        'audiences__deneme_paketi__sinif_seviyeleri',
+        'deneme_paketi__sinif_seviyeleri',
+        'siniflar',
+    ).order_by('exam_date', 'name', 'id')
     exams = []
-    for exam in qs.prefetch_related('exam_sessions').order_by('exam_date', 'name', 'id'):
+    for exam in qs:
+        if not exam_is_open(exam):
+            continue
+        if seviye is not None and not exam_matches_seviye(exam, seviye):
+            continue
+        sessions = upcoming_sessions(exam, sessions=list(exam.exam_sessions.all()))
+        dated = [session.session_date for session in sessions if session.session_date]
+        bookable = min(dated) if dated else exam.exam_date
         exams.append({
             'id': exam.id,
             'name': exam.name,
-            'exam_date': exam.exam_date.isoformat() if exam.exam_date else None,
+            'exam_date': bookable.isoformat() if bookable else None,
             'exam_type': exam.get_exam_type_display(),
             'status': exam.status,
+            'sinif_seviyesi_ids': sorted(target_seviye_ids(exam)),
             'sessions': [
                 {
                     'id': session.id,
@@ -517,7 +828,7 @@ def exam_options(kurum_id: int, sube_id: int, egitim_yili_id: int | None):
                     'session_date': session.session_date.isoformat() if session.session_date else None,
                     'schedule_preference_display': session.get_schedule_preference_display(),
                 }
-                for session in exam.exam_sessions.all()
+                for session in sessions
             ],
         })
     return exams

@@ -161,6 +161,29 @@ export type SinavTakvim = {
   id: number; tur: string; tarih: string;
   saat?: string | null; saat_bitis?: string | null;
   kapsam: string; baslik: string; yayin_adi?: string; aciklama: string; gorsel_url?: string | null;
+  grup_id?: string | null;
+};
+
+export type SinavGunWrite = {
+  id?: number;
+  tarih: string;
+  saat?: string | null;
+  saat_bitis?: string | null;
+};
+
+export type SinavTakvimWrite = {
+  tur: string;
+  kapsam: string;
+  baslik: string;
+  yayin_adi: string;
+  aciklama: string;
+  gunler: SinavGunWrite[];
+};
+
+export type SinavTakvimGroupSave = {
+  id: number;
+  grup_id?: string | null;
+  gunler: SinavTakvim[];
 };
 export type NedenKart = { id: number; ikon: string; baslik: string; aciklama: string; sira: number };
 export type BasariIstatistik = { id: number; etiket: string; deger: string; sira: number };
@@ -355,6 +378,20 @@ export const websiteAdminApi = {
     fd.append(field, file);
     return adminFetch<unknown>(`/${resource}/${id}/upload/`, { method: 'POST', body: fd });
   },
+  saveSinavGroup: (data: SinavTakvimWrite) =>
+    adminFetch<SinavTakvimGroupSave>('/sinav-takvim/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  updateSinavGroup: (id: number, data: SinavTakvimWrite) =>
+    adminFetch<SinavTakvimGroupSave>(`/sinav-takvim/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  removeSinavGroup: (id: number) =>
+    adminFetch<unknown>(`/sinav-takvim/${id}/?tum_gunler=1`, { method: 'DELETE' }),
   copySinav: (id: number, data: { tarih: string; saat?: string | null; saat_bitis?: string | null }) =>
     adminFetch<SinavTakvim>(`/sinav-takvim/${id}/kopyala/`, {
       method: 'POST',
@@ -367,6 +404,8 @@ export const websiteAdminApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ kaynak_id: kaynakId }),
     }),
+  removeSinavImage: (id: number) =>
+    adminFetch<SinavTakvim>(`/sinav-takvim/${id}/gorsel/`, { method: 'DELETE' }),
 };
 
 // ─── CMS v2 Admin + Public ───────────────────────────────────

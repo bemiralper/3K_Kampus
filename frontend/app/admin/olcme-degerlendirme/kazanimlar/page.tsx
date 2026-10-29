@@ -6,6 +6,7 @@ import type { SubjectItem, TopicItem, OutcomeItem, SubOutcomeItem } from '../../
 import { filterTopicsByQuery, codeQueryHits } from '../../../../components/olcme/outcome-search';
 import { trIncludes } from '@/lib/text-format';
 import styles from './kazanimlar.module.css';
+import TanimlarTabs from '@/components/olcme/TanimlarTabs';
 
 /* ── Yardımcı ─────────────────────────────────────────────────────────────── */
 const EXAM_TYPE_OPTIONS = [
@@ -437,6 +438,7 @@ export default function KazanimlarPage() {
 
   return (
     <div className={styles.container}>
+      <TanimlarTabs />
       {/* Toast */}
       {toast && (
         <div className={`${styles.toast} ${styles[toast.type]}`}>

@@ -43,6 +43,7 @@ interface SozlesmeItem {
   durum: string;
   paket_adi: string;
   paket_turu: string;
+  deneme_kaydi?: boolean;
   egitim_turu: string;
   brut_tutar: number;
   kdv_orani: number;
@@ -354,6 +355,29 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
         </div>
       </div>
 
+      {sozlesmeler.some((s) => s.deneme_kaydi && (s.paket_adi || s.net_tutar > 0)) && (
+        <div className="card-modern finans-card">
+          <div className="card-modern-header finans-card-header">
+            <h3>Deneme ücretleri</h3>
+          </div>
+          <div className="card-modern-body" style={{ padding: "16px 24px" }}>
+            {sozlesmeler.filter((s) => s.deneme_kaydi && (s.paket_adi || s.net_tutar > 0)).map((s) => (
+              <div key={s.id} style={{ display: "flex", justifyContent: "space-between", gap: 12, padding: "8px 0", borderBottom: "1px solid #f1f5f9" }}>
+                <span style={{ fontWeight: 650 }}>{s.paket_adi.replace(/^Deneme ücreti —\s*/, "") || "Deneme"}</span>
+                <span>
+                  {formatMoney(s.net_tutar)}
+                  {" · "}
+                  {s.durum === "iptal" ? "İptal" : s.toplam_odenen > 0 ? `${formatMoney(s.toplam_odenen)} alındı` : "Ücret yok"}
+                </span>
+              </div>
+            ))}
+            <p style={{ margin: "12px 0 0", color: "#64748b", fontSize: 13, lineHeight: 1.5 }}>
+              Ücret, nakit veya POS gibi seçilen hesaba gelir kaydı olarak işlenir ve kasa bakiyesine yansır. Sınav kaydı silinince bu gelir ve kasa hareketi de geri alınır.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* ═══ SÖZLEŞME SEÇİCİ (Birden fazla varsa) ═══ */}
       {sozlesmeler.length > 1 && (
         <div className="finans-sozlesme-selector">
@@ -386,8 +410,12 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
               <span className="finans-field-value">{aktifSozlesme.sozlesme_no}</span>
             </div>
             <div className="finans-sozlesme-field">
-              <span className="finans-field-label">Eğitim Paketi</span>
-              <span className="finans-field-value">{aktifSozlesme.paket_adi || "—"}</span>
+              <span className="finans-field-label">{aktifSozlesme.deneme_kaydi ? "Deneme" : "Eğitim Paketi"}</span>
+              <span className="finans-field-value">
+                {aktifSozlesme.deneme_kaydi
+                  ? (aktifSozlesme.paket_adi.replace(/^Deneme ücreti —\s*/, "") || "—")
+                  : (aktifSozlesme.paket_adi || "—")}
+              </span>
             </div>
             <div className="finans-sozlesme-field">
               <span className="finans-field-label">Eğitim Türü</span>

@@ -44,7 +44,7 @@ class SinavTemplateSeedTest(TestCase):
         self.assertIn(('sinav.hatirlatma', RecipientType.VELI), pairs)
         self.assertIn(('sinav.hatirlatma', RecipientType.OGRENCI), pairs)
         self.assertIn(('sinav.cevap_anahtari', RecipientType.OGRENCI), pairs)
-        self.assertEqual(len(drafts), 9)
+        self.assertEqual(len(drafts), 11)
         karne = next(d for d in drafts if d.event_key == 'sinav.karne')
         self.assertEqual(karne.header_json.get('type'), 'DOCUMENT')
 
@@ -57,8 +57,8 @@ class SinavTemplateSeedTest(TestCase):
             bind=True,
         )
         self.assertEqual(result['errors'], [])
-        self.assertEqual(len(result['created_app']), 9)
-        self.assertGreaterEqual(len(result['bound']), 9)
+        self.assertEqual(len(result['created_app']), 11)
+        self.assertGreaterEqual(len(result['bound']), 11)
         self.assertTrue(
             MessageTemplate.objects.filter(
                 kurum=self.kurum, name='Sınav bilgilendirmesi — Öğrenci',

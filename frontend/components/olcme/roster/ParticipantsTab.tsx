@@ -13,6 +13,7 @@ import RosterExportModal from './RosterExportModal';
 import OptikYazdirModal from './OptikYazdirModal';
 import SinavRosterNotifyModal from './SinavRosterNotifyModal';
 import p from './participants.module.css';
+import { useOlcmePath } from '../useOlcmePath';
 
 function scrollRoster(dir: 'up' | 'down') {
   const start = document.querySelector('[data-roster-page]');
@@ -150,6 +151,7 @@ function otherSessionLabel(hit: ParticipantSearchHit) {
 }
 
 export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
+  const { isMuhasebe } = useOlcmePath();
   const [rows, setRows] = useState<ExamParticipantRow[]>([]);
   const [rooms, setRooms] = useState<ExamRoomItem[]>([]);
   const [salonlar, setSalonlar] = useState<DenemeSalon[]>([]);
@@ -517,8 +519,8 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
               )}
             </div>
             <div className={p.actions}>
-              <Link href={`/ogrenciler/misafir/yeni?exam=${exam.id}`} className={p.act}>
-                Günü birlik ekle
+              <Link href={`${isMuhasebe ? '/muhasebe/ogrenci/misafir/yeni' : '/ogrenciler/misafir/yeni'}?exam=${exam.id}`} className={p.act}>
+                Tek deneme ekle
               </Link>
               <button type="button" className={p.act} onClick={() => setExportOpen(true)}>
                 <Icon name="download" size={14} />

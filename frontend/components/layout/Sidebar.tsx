@@ -102,14 +102,6 @@ const icons = {
       <path d="M9 15l2 2 4-4" />
     </svg>
   ),
-  assessment: (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
-      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
-      <rect x="9" y="3" width="6" height="4" rx="1" />
-      <path d="M9 14l2 2 4-4" />
-      <line x1="9" y1="12" x2="9" y2="12" />
-    </svg>
-  ),
   chevronDown: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polyline points="6 9 12 15 18 9" />
@@ -150,6 +142,8 @@ interface SubMenuItem {
   badge?: number; // Badge desteği
   /** Aktif state için href yerine kullanılacak önek (grup sayfaları) */
   matchPrefix?: string;
+  /** Birden fazla yol aynı menü öğesini aktif sayar */
+  matchPrefixes?: string[];
 }
 
 interface MenuItem {
@@ -207,7 +201,6 @@ const navItems: MenuItem[] = [
     children: [
       { label: "Öğrenci Listesi", href: "/ogrenciler" },
       { label: "Yeni Kayıt", href: "/ogrenciler/yeni-kayit" },
-      { label: "Misafir Öğrenciler", href: "/ogrenciler/misafir" },
     ],
   },
   {
@@ -257,25 +250,6 @@ const navItems: MenuItem[] = [
       { label: "Ödev Ver", href: "/admin/odev/ver", group: "Ödev Takibi" },
       { label: "Ödev Kontrol", href: "/admin/odev/kontrol", group: "Ödev Takibi" },
       { label: "Ödev Paketleri", href: "/admin/odev/paketler", group: "Ödev Takibi" },
-    ],
-  },
-  {
-    id: "olcme",
-    label: "Ölçme & Değerlendirme",
-    emoji: "",
-    icon: icons.assessment,
-    requiredPermissions: ["olcme.read", "olcme.write", "olcme.manage"],
-    children: [
-      { label: "Sınav Listesi", href: "/admin/olcme-degerlendirme", group: "Sınavlar" },
-      { label: "Yeni Sınav Oluştur", href: "/admin/olcme-degerlendirme/yeni", group: "Sınavlar" },
-      { label: "Sonuç Analizi", href: "/admin/olcme-degerlendirme/analiz", group: "Analiz" },
-      { label: "Karşılaştırma", href: "/admin/olcme-degerlendirme/karsilastirma", group: "Analiz" },
-      { label: "Konu & Kazanımlar", href: "/admin/olcme-degerlendirme/kazanimlar", group: "Tanımlar" },
-      { label: "Puan Katsayıları", href: "/admin/olcme-degerlendirme/ayarlar", group: "Tanımlar" },
-      { label: "Oturum grupları", href: "/admin/olcme-degerlendirme/oturum-gruplari", group: "Tanımlar" },
-      { label: "Sınav salonları", href: "/admin/olcme-degerlendirme/salonlar", group: "Tanımlar" },
-      { label: "Optik Formlar", href: "/admin/olcme-degerlendirme/daire-dizisi", group: "Tanımlar" },
-      { label: "Optik Okuma", href: "/admin/olcme-degerlendirme/optik-okuma", group: "Tanımlar" },
     ],
   },
   {
@@ -475,14 +449,22 @@ interface SidebarProps {
   onCloseMobile?: () => void;
 }
 
+function menuPrefixes(item: Pick<SubMenuItem, "href" | "matchPrefix" | "matchPrefixes">): string[] {
+  if (item.matchPrefixes && item.matchPrefixes.length > 0) return item.matchPrefixes;
+  return [item.matchPrefix || item.href];
+}
+
+function prefixMatches(pathname: string, prefix: string, href: string) {
+  return pathname === href || pathname === prefix || pathname.startsWith(`${prefix}/`);
+}
+
 /** Yol, menü öğesinin href veya matchPrefix'ine uyuyor mu? */
 function pathMatchesMenuItem(
   pathname: string | null | undefined,
-  item: Pick<SubMenuItem, "href" | "matchPrefix">,
+  item: Pick<SubMenuItem, "href" | "matchPrefix" | "matchPrefixes">,
 ): boolean {
   if (!pathname) return false;
-  const prefix = item.matchPrefix || item.href;
-  return pathname === prefix || pathname.startsWith(`${prefix}/`) || pathname === item.href;
+  return menuPrefixes(item).some(prefix => prefixMatches(pathname, prefix, item.href));
 }
 
 /**
@@ -497,16 +479,12 @@ function resolveActiveSubHref(
   let best: SubMenuItem | null = null;
   let bestLen = -1;
   for (const sibling of siblings) {
-    const prefix = sibling.matchPrefix || sibling.href;
-    const matches =
-      pathname === sibling.href ||
-      pathname === prefix ||
-      pathname.startsWith(`${prefix}/`);
-    if (!matches) continue;
-    const score = prefix.length;
-    if (score > bestLen) {
-      best = sibling;
-      bestLen = score;
+    for (const prefix of menuPrefixes(sibling)) {
+      if (!prefixMatches(pathname, prefix, sibling.href)) continue;
+      if (prefix.length > bestLen) {
+        best = sibling;
+        bestLen = prefix.length;
+      }
     }
   }
   return best?.href ?? null;
@@ -519,6 +497,16 @@ export default function Sidebar({
   onCloseMobile,
 }: SidebarProps) {
   const pathname = usePathname();
+  const [menuHint, setMenuHint] = useState<string | null>(null);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    const read = () => setMenuHint(root.dataset.menuHint || null);
+    read();
+    const observer = new MutationObserver(read);
+    observer.observe(root, { attributes: true, attributeFilter: ["data-menu-hint"] });
+    return () => observer.disconnect();
+  }, []);
   const { user } = useAuth();
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
   const [hoveredMenu, setHoveredMenu] = useState<string | null>(null);
@@ -727,7 +715,12 @@ export default function Sidebar({
   };
 
   const isSubmenuActive = (child: SubMenuItem, siblings: SubMenuItem[]): boolean => {
-    return resolveActiveSubHref(pathname, siblings) === child.href;
+    const hinted =
+      menuHint &&
+      /^\/ogrenciler\/\d+$/.test(pathname || "") &&
+      siblings.some((sibling) => sibling.href === menuHint);
+    const activeHref = hinted ? menuHint : resolveActiveSubHref(pathname, siblings);
+    return activeHref === child.href;
   };
 
   // Hover handler - tooltip

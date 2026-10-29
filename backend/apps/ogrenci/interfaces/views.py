@@ -701,6 +701,17 @@ def ogrenci_delete(request, pk):
     return redirect('ogrenci:ogrenci_listesi')
 
 
+def _deneme_sayisi(ogrenci_id: int) -> int:
+    from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+
+    return (
+        ExamParticipant.objects.filter(student_id=ogrenci_id)
+        .values('exam_id')
+        .distinct()
+        .count()
+    )
+
+
 @csrf_exempt
 @require_ogrenci_api
 def ogrenci_api(request, pk):
@@ -978,6 +989,7 @@ def ogrenci_api(request, pk):
         'cinsiyet_display': dict(ogrenci.CINSIYET_CHOICES).get(ogrenci.cinsiyet, '-'),
         'kayit_turu': kayit_turu_code,
         'kayit_turu_display': kayit_turu_display,
+        'deneme_sayisi': _deneme_sayisi(ogrenci.id) if kayit_turu_code == 'gunu_birlik' else None,
         'telefon': ogrenci.telefon or '',
         'whatsapp_uygun': bool(getattr(ogrenci, 'whatsapp_uygun', True)),
         'email': ogrenci.email or '',
@@ -1667,6 +1679,35 @@ def ogrenci_finans_ozet_api(request, pk):
             
             s_odenen = float(s.toplam_odenen)
             s_kalan = float(s.kalan_borc)
+            s_yuzde = float(s.odeme_yuzdesi)
+            deneme_kaydi = 'gunu_birlik_deneme_ucreti' in (s.notlar or '')
+            aktif_tahsil = [
+                th for th in tahsilat_list
+                if th['durum'] == TahsilatDurum.AKTIF and th['tahsilat_turu'] != TahsilatTuru.IADE
+            ]
+            # Ücret gelir kaydı ve kasa hareketi olarak yazılır. Sözleşme
+            # tahsilatı açılmaz; öğrenci kartı yine de tahsil edilmiş görünsün.
+            if (
+                deneme_kaydi
+                and s.durum == SozlesmeDurum.TAMAMLANDI
+                and not aktif_tahsil
+                and (s.net_tutar or 0) > 0
+            ):
+                s_odenen = float(s.net_tutar)
+                s_kalan = 0
+                s_yuzde = 100.0
+                tahsilat_list.append({
+                    'id': -s.id,
+                    'taksit_no': None,
+                    'tutar': s_odenen,
+                    'tahsilat_tarihi': str(s.baslangic_tarihi) if s.baslangic_tarihi else None,
+                    'tahsilat_turu': TahsilatTuru.NORMAL,
+                    'odeme_yontemi_ad': s.odeme_yontemi.ad if s.odeme_yontemi_id else '',
+                    'referans_no': '',
+                    'durum': TahsilatDurum.AKTIF,
+                    'iptal_nedeni': '',
+                    'aciklama': 'Deneme ücreti gelir kaydı olarak kasaya işlendi.',
+                })
             
             sozlesme_data = {
                 'id': s.id,
@@ -1674,6 +1715,7 @@ def ogrenci_finans_ozet_api(request, pk):
                 'durum': s.durum,
                 'paket_adi': s.paket_adi,
                 'paket_turu': s.paket_turu,
+                'deneme_kaydi': deneme_kaydi,
                 'egitim_turu': s.egitim_turu,
                 'egitim_yili': str(s.egitim_yili) if s.egitim_yili else '',
                 'baslangic_tarihi': str(s.baslangic_tarihi) if s.baslangic_tarihi else None,
@@ -1686,7 +1728,7 @@ def ogrenci_finans_ozet_api(request, pk):
                 'net_tutar': float(s.net_tutar or 0),
                 'toplam_odenen': s_odenen,
                 'kalan_borc': s_kalan,
-                'odeme_yuzdesi': float(s.odeme_yuzdesi),
+                'odeme_yuzdesi': s_yuzde,
                 'odeme_turu': s.odeme_turu,
                 'taksit_sayisi': s.taksit_sayisi,
                 'taksit_periyodu': s.taksit_periyodu if hasattr(s, 'taksit_periyodu') else '',
@@ -1718,8 +1760,8 @@ def ogrenci_finans_ozet_api(request, pk):
             # Genel toplamlar (sadece iptal/feshedilmemiş sözleşmeler)
             if s.durum not in [SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS]:
                 toplam_net_tutar += s.net_tutar or Decimal('0')
-                toplam_odenen += s.toplam_odenen
-                toplam_kalan += s.kalan_borc
+                toplam_odenen += Decimal(str(s_odenen))
+                toplam_kalan += Decimal(str(s_kalan))
                 vadesi_gecen_toplam += Decimal(str(s_vadesi_gecen))
                 vadesi_gecen_sayisi += s_vadesi_gecen_sayisi
         

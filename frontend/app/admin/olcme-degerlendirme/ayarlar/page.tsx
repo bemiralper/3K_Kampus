@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { puanAyarlariApi } from '../../../../components/olcme/api';
 import type { KatsayiKind, PuanAyarlari, PuanYilSeti } from '../../../../components/olcme/types';
 import s from '../olcme.module.css';
+import TanimlarTabs from '@/components/olcme/TanimlarTabs';
 
 const KIND_ORDER: KatsayiKind[] = ['TYT', 'TYT_11', 'AYT_SAY', 'AYT_EA', 'AYT_SOZ', 'LGS', 'LGS_7'];
 
@@ -138,6 +139,7 @@ export default function PuanKatsayilariPage() {
 
   return (
     <div className="section">
+      <TanimlarTabs />
       {toast && (
         <div style={{
           position: 'fixed', top: 20, right: 20, zIndex: 50,

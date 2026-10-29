@@ -243,6 +243,13 @@ class SinavTakvim(models.Model):
     aciklama = models.TextField('Açıklama', blank=True, default='')
     gorsel = models.ImageField('Görsel', upload_to=sinav_gorsel_upload_to, blank=True, null=True)
     aktif = models.BooleanField('Aktif', default=True)
+    grup_id = models.UUIDField(
+        'Gün grubu',
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text='Aynı sınavın birden fazla uygulama günü bu kimliği paylaşır.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

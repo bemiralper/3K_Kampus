@@ -606,9 +606,11 @@ def backup_upload_view(request):
     if not uploaded:
         return JsonResponse({'error': 'file alanı zorunlu (multipart)'}, status=400)
 
-    max_bytes = int((getattr(settings, 'BACKUP_CONFIG', {}) or {}).get('upload_max_bytes') or (2 * 1024 ** 3))
+    max_bytes = int((getattr(settings, 'BACKUP_CONFIG', {}) or {}).get('upload_max_bytes') or (16 * 1024 ** 3))
     if uploaded.size and uploaded.size > max_bytes:
-        return JsonResponse({'error': f'Dosya çok büyük (max {max_bytes} byte)'}, status=400)
+        limit_gb = max_bytes / (1024 ** 3)
+        limit_label = f'{limit_gb:.0f} GB' if limit_gb >= 1 else f'{max_bytes // (1024 ** 1024)} MB'
+        return JsonResponse({'error': f'Dosya çok büyük (en fazla {limit_label})'}, status=400)
 
     name = uploaded.name or 'backup.zip'
     if not (name.endswith('.zip') or name.endswith('.zip.enc') or name.endswith('.enc')):

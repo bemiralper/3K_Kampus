@@ -11,6 +11,8 @@ import OgrenciProfilKart from "./OgrenciProfilKart";
 import OgrenciBilgiDrawer from "./OgrenciBilgiDrawer";
 import { VeliTab, AkademikTab, SinavTab, FinansTab, RehberlikTab, IletisimTab, NotlarTab } from "./tabs";
 
+const GUEST_TAB_IDS = new Set(['veli', 'sinav', 'finans', 'notlar']);
+
 const ALL_TABS: TabConfig[] = [
   {
     id: 'veli',
@@ -93,25 +95,40 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const { listHref, portalHomeHref } = useOgrenciPath();
+  const { listHref, portalHomeHref, href: ogrenciHref } = useOgrenciPath();
+  const backHref = initialData.kayit_turu === 'gunu_birlik' ? ogrenciHref('misafir') : listHref;
+  const backLabel = initialData.kayit_turu === 'gunu_birlik' ? 'Deneme Öğrencileri' : 'Öğrenci Listesi';
   const perms = user?.permissions || [];
   const canViewNotes = PermissionChecks.hasAnyPermission(perms, [
     ModulePermissions.OGRENCI.NOTES,
     ModulePermissions.OGRENCI.MANAGE,
   ]);
   const canEditOgrenci = PermissionChecks.canWrite(perms, 'ogrenci');
-  const tabs = useMemo(
-    () => (canViewNotes ? ALL_TABS : ALL_TABS.filter((t) => t.id !== 'notlar')),
-    [canViewNotes],
-  );
+  const isGuest = initialData.kayit_turu === 'gunu_birlik';
+  const tabs = useMemo(() => {
+    const source = isGuest ? ALL_TABS.filter((t) => GUEST_TAB_IDS.has(t.id)) : ALL_TABS;
+    return canViewNotes ? source : source.filter((t) => t.id !== 'notlar');
+  }, [canViewNotes, isGuest]);
   const tabFromUrl = searchParams.get('tab') as TabType | null;
   const hasAkademikQuery = Boolean(searchParams.get('akademik'));
   const [activeTab, setActiveTab] = useState<TabType>(() => {
-    if (tabFromUrl && ALL_TABS.some((t) => t.id === tabFromUrl)) return tabFromUrl;
-    if (hasAkademikQuery) return 'akademik';
-    return 'veli';
+    if (tabFromUrl && tabs.some((t) => t.id === tabFromUrl)) return tabFromUrl;
+    if (hasAkademikQuery && tabs.some((t) => t.id === 'akademik')) return 'akademik';
+    return tabs[0]?.id || 'veli';
   });
   const [data, setData] = useState<OgrenciDetay>(initialData);
+
+  useEffect(() => {
+    const root = document.documentElement;
+    if (data.kayit_turu === 'gunu_birlik') {
+      root.dataset.menuHint = ogrenciHref('misafir');
+    } else {
+      delete root.dataset.menuHint;
+    }
+    return () => {
+      delete root.dataset.menuHint;
+    };
+  }, [data.kayit_turu, ogrenciHref]);
   const [showEditDrawer, setShowEditDrawer] = useState(searchParams.get('edit') === '1');
   const [editDrawerStep, setEditDrawerStep] = useState<'kisisel' | 'iletisim' | 'egitim'>('kisisel');
   const openEditDrawer = (step: 'kisisel' | 'iletisim' | 'egitim' = 'kisisel') => {
@@ -131,10 +148,12 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
       setActiveTab(t);
     } else if (t === 'notlar' && !canViewNotes) {
       setActiveTab('veli');
-    } else if (searchParams.get('akademik')) {
+    } else if (searchParams.get('akademik') && tabs.some((x) => x.id === 'akademik')) {
       setActiveTab('akademik');
+    } else if (!tabs.some((x) => x.id === activeTab)) {
+      setActiveTab(tabs[0]?.id || 'veli');
     }
-  }, [searchParams, tabs, canViewNotes]);
+  }, [searchParams, tabs, canViewNotes, activeTab]);
 
   useEffect(() => {
     if (activeTab === 'notlar' && !canViewNotes) {
@@ -185,13 +204,13 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
           <div className="breadcrumb">
             <Link href={portalHomeHref}>Ana Sayfa</Link>
             <span>/</span>
-            <Link href={listHref}>Öğrenci Listesi</Link>
+            <Link href={backHref}>{backLabel}</Link>
             <span>/</span>
             <span>{data.tam_ad}</span>
           </div>
         </div>
         <div className="page-header-right">
-          <Link href={listHref} className="btn-modern btn-secondary">
+          <Link href={backHref} className="btn-modern btn-secondary">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="19" y1="12" x2="5" y2="12" />
               <polyline points="12 19 5 12 12 5" />

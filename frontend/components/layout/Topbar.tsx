@@ -32,7 +32,7 @@ const breadcrumbMap: Record<string, string> = {
   ...akademikBreadcrumbMap(),
   ogrenciler: "Öğrenciler",
   "yeni-kayit": "Yeni Kayıt",
-  misafir: "Misafir Öğrenciler",
+  misafir: "Deneme Öğrencileri",
   personel: "Personel",
   gorevlendirmeler: "Görevlendirmeler",
   admin: "Yönetim",
@@ -69,6 +69,13 @@ const breadcrumbMap: Record<string, string> = {
   "odeme-yontemleri": "Ödeme Yöntemleri",
   "mali-hesaplar": "Mali Hesaplar",
   "odeme-takip": "Sözleşme/Tahsilat",
+  "olcme-degerlendirme": "Ölçme & Değerlendirme",
+  "deneme-takvimi": "Deneme Takvimi",
+  kazanimlar: "Konu & Kazanımlar",
+  "oturum-gruplari": "Oturum grupları",
+  "daire-dizisi": "Optik Formlar",
+  "optik-okuma": "Optik Okuma",
+  "optik-formlar": "Optik Formlar",
 };
 
 // ─── Quick Action Items ───
@@ -90,7 +97,7 @@ const allMenuItems = [
   ...akademikCommandPaletteItems(),
   { label: "Öğrenci Listesi", href: "/ogrenciler", section: "Öğrenci" },
   { label: "Yeni Kayıt", href: "/ogrenciler/yeni-kayit", section: "Öğrenci" },
-  { label: "Misafir Öğrenciler", href: "/ogrenciler/misafir", section: "Öğrenci" },
+  { label: "Deneme Öğrencileri", href: "/muhasebe/ogrenci/misafir", section: "Muhasebe" },
   { label: "Personel Tanımları", href: "/personel", section: "Personel" },
   { label: "Görevlendirmeler", href: "/personel/gorevlendirmeler", section: "Personel" },
   { label: "Koç Yönetimi", href: "/admin/coaching/coaches", section: "Koçluk" },
@@ -110,6 +117,16 @@ const allMenuItems = [
   { label: "Ödev Ver", href: "/admin/odev/ver", section: "Kaynak Yönetimi" },
   { label: "Ödev Kontrol", href: "/admin/odev/kontrol", section: "Kaynak Yönetimi" },
   { label: "Ödev Paketleri", href: "/admin/odev/paketler", section: "Kaynak Yönetimi" },
+  { label: "Sınav Listesi", href: "/muhasebe/olcme-degerlendirme", section: "Muhasebe" },
+  { label: "Yeni Sınav Oluştur", href: "/muhasebe/olcme-degerlendirme/yeni", section: "Muhasebe" },
+  { label: "Deneme Takvimi", href: "/muhasebe/olcme-degerlendirme/deneme-takvimi", section: "Muhasebe" },
+  { label: "Tanımlar", href: "/muhasebe/olcme-degerlendirme/kazanimlar", section: "Muhasebe" },
+  { label: "Konu & Kazanımlar", href: "/muhasebe/olcme-degerlendirme/kazanimlar", section: "Muhasebe" },
+  { label: "Puan Katsayıları", href: "/muhasebe/olcme-degerlendirme/ayarlar", section: "Muhasebe" },
+  { label: "Oturum grupları", href: "/muhasebe/olcme-degerlendirme/oturum-gruplari", section: "Muhasebe" },
+  { label: "Sınav salonları", href: "/muhasebe/olcme-degerlendirme/salonlar", section: "Muhasebe" },
+  { label: "Optik Formlar", href: "/muhasebe/olcme-degerlendirme/daire-dizisi", section: "Muhasebe" },
+  { label: "Optik Okuma", href: "/muhasebe/olcme-degerlendirme/optik-okuma", section: "Muhasebe" },
   { label: "Finans Tanımları", href: "/finans", section: "Finans" },
   { label: "Ödeme Yöntemleri", href: "/finans?tab=odeme-yontemleri", section: "Finans" },
   { label: "Mali Hesaplar", href: "/finans?tab=mali-hesaplar", section: "Finans" },
@@ -143,7 +160,7 @@ function Breadcrumb() {
       {displaySegments.map((segment, idx) => {
         const prev = displaySegments[idx - 1];
         const label = prev === "misafir" && segment === "yeni"
-          ? "Günü birlik kayıt"
+          ? "Tek deneme kayıt"
           : (breadcrumbMap[segment] || segment.replace(/-/g, " "));
         const isLast = idx === displaySegments.length - 1;
         return (

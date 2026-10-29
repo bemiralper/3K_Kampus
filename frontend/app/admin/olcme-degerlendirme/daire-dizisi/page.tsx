@@ -7,6 +7,7 @@ import OptikTanimlaYardim from '../../../../components/olcme/daire-dizisi/OptikT
 import { daireSablonApi, yaziciProfiliApi } from '../../../../components/olcme/daire-dizisi/api';
 import type { DaireSablonDetay, DaireSablonOzet, YaziciProfili } from '../../../../components/olcme/daire-dizisi/types';
 import s from '../../../../components/olcme/daire-dizisi/daireDizisi.module.css';
+import TanimlarTabs from '@/components/olcme/TanimlarTabs';
 
 export default function DaireDizisiPage() {
   const [forms, setForms] = useState<DaireSablonOzet[]>([]);
@@ -147,6 +148,7 @@ export default function DaireDizisiPage() {
 
   return (
     <div className={s.page}>
+      <TanimlarTabs />
       <header className={s.header}>
         <div className={s.headerTop}>
           <div>

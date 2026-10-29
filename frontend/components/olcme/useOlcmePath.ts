@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { COACH_OLCME_BASE, getOlcmeBasePath, olcmeHref } from '@/lib/olcme-routes';
+import { COACH_OLCME_BASE, MUHASEBE_OLCME_BASE, getOlcmeBasePath, olcmeHref } from '@/lib/olcme-routes';
 
 export function useOlcmePath() {
   const pathname = usePathname();
@@ -9,6 +9,7 @@ export function useOlcmePath() {
   return {
     base,
     isCoach: base === COACH_OLCME_BASE,
+    isMuhasebe: base === MUHASEBE_OLCME_BASE,
     href: (segment?: string) => olcmeHref(base, segment),
   };
 }

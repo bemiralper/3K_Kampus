@@ -43,6 +43,7 @@ SINAV_EVENT_KEYS: tuple[str, ...] = (
     'sinav.hatirlatma',
     'sinav.yoklama',
     'sinav.karne',
+    'sinav.giris_belgesi',
     'sinav.cevap_anahtari',
 )
 
@@ -54,6 +55,8 @@ _APP_NAME_BY_SLOT: dict[tuple[str, str], str] = {
     ('sinav.yoklama', RecipientType.OGRENCI): 'Sınav yoklama — Öğrenci',
     ('sinav.karne', RecipientType.VELI): 'Sınav karnesi — Veli',
     ('sinav.karne', RecipientType.OGRENCI): 'Sınav karnesi — Öğrenci',
+    ('sinav.giris_belgesi', RecipientType.VELI): 'Sınav giriş belgesi — Veli',
+    ('sinav.giris_belgesi', RecipientType.OGRENCI): 'Sınav giriş belgesi — Öğrenci',
     ('sinav.cevap_anahtari', RecipientType.VELI): 'Sınav cevap anahtarı — Veli',
     ('sinav.cevap_anahtari', RecipientType.OGRENCI): 'Sınav cevap anahtarı — Öğrenci',
 }
@@ -63,6 +66,7 @@ _CATEGORY_BY_EVENT: dict[str, str] = {
     'sinav.hatirlatma': TemplateCategory.DUYURU,
     'sinav.yoklama': TemplateCategory.DEVAMSIZLIK,
     'sinav.karne': TemplateCategory.KARNE,
+    'sinav.giris_belgesi': TemplateCategory.DUYURU,
     'sinav.cevap_anahtari': TemplateCategory.DUYURU,
 }
 

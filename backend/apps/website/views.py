@@ -1,8 +1,11 @@
 """Website views — public + admin CRUD."""
 import json
 import os
+import uuid
+from datetime import time
 
 from django.core.files.base import ContentFile
+from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -66,7 +69,7 @@ def _schema_migration_error_response(exc: Exception):
     }, status=503)
 
 
-def _require_auth(request, *, write: bool = False):
+def _require_auth(request, *, write: bool = False, extra_write_modules=()):
     from shared.permissions import user_has_module_permission, user_has_permission
 
     if not request.user.is_authenticated:
@@ -77,6 +80,10 @@ def _require_auth(request, *, write: bool = False):
         return None
     if user_has_permission(request.user, 'kurum.manage'):
         return None
+    if write:
+        for module in extra_write_modules:
+            if user_has_module_permission(request.user, module, write=True):
+                return None
     if not write:
         return None
     return JsonResponse({'success': False, 'error': 'Bu işlem için yetkiniz yok.'}, status=403)
@@ -198,10 +205,10 @@ def api_public_iletisim(request, kod):
 
 # ── Admin helpers ──
 
-def _admin_kurum(request):
+def _admin_kurum(request, *, extra_write_modules=()):
     """Kurumsal site yönetimi — oturumdaki veya mevcut kurum; otomatik oluşturma yok."""
     write = request.method not in ('GET', 'HEAD', 'OPTIONS')
-    err = _require_auth(request, write=write)
+    err = _require_auth(request, write=write, extra_write_modules=extra_write_modules)
     if err:
         return None, err
 
@@ -554,9 +561,186 @@ def api_admin_duyuru_upload(request, pk):
     return JsonResponse({'success': True, 'data': serialize_duyuru(d, request, include_content=True)})
 
 
+def _sinav_group(sinav):
+    """Aynı sınavın uygulama günleri. Grupsuz kayıt yalnızca kendisidir."""
+    if not sinav.grup_id:
+        return SinavTakvim.objects.filter(pk=sinav.pk, kurum_id=sinav.kurum_id)
+    return SinavTakvim.objects.filter(kurum_id=sinav.kurum_id, grup_id=sinav.grup_id)
+
+
+def _clear_sinav_gorsel(sinav):
+    """Sınavın görselini, aynı gruptaki her günden kaldırır."""
+    for member in _sinav_group(sinav):
+        if member.gorsel:
+            member.gorsel.delete(save=True)
+
+
+def _propagate_sinav_gorsel(source):
+    """Gruptaki diğer günlere görseli kopyalar. Tek günlük kayıtta iş yoktur."""
+    if not source.grup_id or not source.gorsel:
+        return
+    others = SinavTakvim.objects.filter(
+        kurum_id=source.kurum_id, grup_id=source.grup_id,
+    ).exclude(pk=source.pk)
+    for other in others:
+        _copy_sinav_gorsel(source, other)
+
+
+def _parse_clock(raw, field_name):
+    if raw is None or raw == '':
+        return None
+    return SinavTakvim._meta.get_field(field_name).to_python(raw)
+
+
+def _parse_gunler(raw_gunler):
+    if not isinstance(raw_gunler, list) or not raw_gunler:
+        raise ValueError('En az bir gün ekleyin')
+    parsed = []
+    seen = set()
+    for item in raw_gunler:
+        if not isinstance(item, dict) or not item.get('tarih'):
+            raise ValueError('Her günün tarihi seçilmelidir')
+        tarih = SinavTakvim._meta.get_field('tarih').to_python(item['tarih'])
+        saat = _parse_clock(item.get('saat'), 'saat')
+        saat_bitis = _parse_clock(item.get('saat_bitis'), 'saat_bitis')
+        if saat and saat_bitis and saat_bitis <= saat:
+            raise ValueError('Bitiş saati başlangıçtan sonra olmalıdır')
+        key = (
+            tarih.isoformat(),
+            saat.strftime('%H:%M') if saat else '',
+            saat_bitis.strftime('%H:%M') if saat_bitis else '',
+        )
+        if key in seen:
+            raise ValueError('Aynı tarih ve saat iki kez yazılamaz')
+        seen.add(key)
+        gun_id = item.get('id')
+        try:
+            gun_id = int(gun_id) if gun_id else None
+        except (TypeError, ValueError):
+            raise ValueError('Geçersiz gün') from None
+        parsed.append({
+            'id': gun_id,
+            'tarih': tarih,
+            'saat': saat,
+            'saat_bitis': saat_bitis,
+        })
+    ids = [gun['id'] for gun in parsed if gun['id']]
+    if len(ids) != len(set(ids)):
+        raise ValueError('Aynı gün iki kez gönderilemez')
+    parsed.sort(key=lambda gun: (gun['tarih'], gun['saat'] or time.min))
+    return parsed
+
+
+def _shared_sinav_values(data):
+    tur = data.get('tur') or 'LGS'
+    yayin = data.get('yayin_adi') or ''
+    baslik = (data.get('baslik') or '').strip() or f'{yayin or tur} Deneme Sınavı'
+    values = {
+        'tur': tur,
+        'kapsam': data.get('kapsam') or 'turkiye_geneli',
+        'baslik': baslik,
+        'yayin_adi': yayin,
+        'aciklama': data.get('aciklama') or '',
+    }
+    if 'aktif' in data:
+        values['aktif'] = bool(data.get('aktif'))
+    return values
+
+
+def _sinav_group_payload(request, rows):
+    rows = sorted(rows, key=lambda row: (row.tarih, row.saat or time.min))
+    primary = rows[0]
+    return {
+        'id': primary.id,
+        'grup_id': str(primary.grup_id) if primary.grup_id else None,
+        'gunler': [serialize_sinav(row, request) for row in rows],
+    }
+
+
+def _create_sinav_with_gunler(request, kurum, data):
+    try:
+        gunler = _parse_gunler(data.get('gunler'))
+        shared = _shared_sinav_values(data)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    grup_id = uuid.uuid4() if len(gunler) > 1 else None
+    rows = []
+    try:
+        with transaction.atomic():
+            for gun in gunler:
+                row = SinavTakvim(
+                    kurum=kurum,
+                    grup_id=grup_id,
+                    tarih=gun['tarih'],
+                    saat=gun['saat'],
+                    saat_bitis=gun['saat_bitis'],
+                    **shared,
+                )
+                row.full_clean()
+                row.save()
+                rows.append(row)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+    return JsonResponse({'success': True, 'data': _sinav_group_payload(request, rows)}, status=201)
+
+
+def _sync_sinav_gunler(request, anchor, data):
+    try:
+        gunler = _parse_gunler(data.get('gunler'))
+        shared = _shared_sinav_values(data)
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+
+    if anchor.grup_id:
+        member_ids = set(_sinav_group(anchor).values_list('id', flat=True))
+    else:
+        member_ids = {anchor.id}
+    for gun in gunler:
+        if gun['id'] and gun['id'] not in member_ids:
+            return JsonResponse({'success': False, 'error': 'Gün bu sınava ait değil'}, status=400)
+
+    try:
+        with transaction.atomic():
+            if len(gunler) > 1 and not anchor.grup_id:
+                anchor.grup_id = uuid.uuid4()
+                anchor.save(update_fields=['grup_id'])
+            members = list(_sinav_group(anchor))
+            by_id = {member.id: member for member in members}
+            keep = []
+            for gun in gunler:
+                if gun['id']:
+                    row = by_id[gun['id']]
+                else:
+                    row = SinavTakvim(kurum_id=anchor.kurum_id, grup_id=anchor.grup_id)
+                for key, value in shared.items():
+                    setattr(row, key, value)
+                row.tarih = gun['tarih']
+                row.saat = gun['saat']
+                row.saat_bitis = gun['saat_bitis']
+                row.grup_id = anchor.grup_id
+                row.full_clean()
+                row.save()
+                keep.append(row)
+            keep_ids = {row.id for row in keep}
+            donor = next((member for member in members if member.gorsel), None)
+            if donor is not None:
+                donor.refresh_from_db()
+                _propagate_sinav_gorsel(donor)
+            for member in members:
+                if member.id not in keep_ids:
+                    member.delete()
+    except Exception as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+
+    primary = keep[0]
+    primary.refresh_from_db()
+    rows = list(_sinav_group(primary))
+    return JsonResponse({'success': True, 'data': _sinav_group_payload(request, rows)})
+
+
 @csrf_exempt
 def api_admin_sinav_takvim(request):
-    kurum, err = _admin_kurum(request)
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
     if err:
         return err
     if request.method == 'GET':
@@ -566,6 +750,8 @@ def api_admin_sinav_takvim(request):
         data = _parse_json(request)
         if data is None:
             return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+        if isinstance(data.get('gunler'), list):
+            return _create_sinav_with_gunler(request, kurum, data)
         if not data.get('tarih'):
             return JsonResponse({'success': False, 'error': 'Tarih zorunludur'}, status=400)
         try:
@@ -591,9 +777,20 @@ def api_admin_sinav_takvim(request):
 
 @csrf_exempt
 def api_admin_sinav_detail(request, pk):
-    kurum, err = _admin_kurum(request)
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
     if err:
         return err
+    if request.method == 'DELETE' and request.GET.get('tum_gunler') == '1':
+        sinav = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
+        deleted, _ = _sinav_group(sinav).delete()
+        return JsonResponse({'success': True, 'message': 'Silindi', 'silinen': deleted})
+    if request.method in ('PUT', 'PATCH'):
+        data = _parse_json(request)
+        if data is None:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+        if isinstance(data.get('gunler'), list):
+            anchor = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
+            return _sync_sinav_gunler(request, anchor, data)
     return _generic_detail(
         request, SinavTakvim, serialize_sinav, pk, kurum,
         ['tur', 'tarih', 'saat', 'saat_bitis', 'kapsam', 'baslik', 'yayin_adi', 'aciklama', 'aktif'],
@@ -602,7 +799,7 @@ def api_admin_sinav_detail(request, pk):
 
 @csrf_exempt
 def api_admin_sinav_upload(request, pk):
-    kurum, err = _admin_kurum(request)
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
     if err:
         return err
     if request.method != 'POST':
@@ -611,7 +808,23 @@ def api_admin_sinav_upload(request, pk):
     upload_err = _upload_image(request, s, 'gorsel', 'gorsel')
     if upload_err:
         return upload_err
+    s.refresh_from_db()
+    _propagate_sinav_gorsel(s)
     return JsonResponse({'success': True, 'data': serialize_sinav(s, request)})
+
+
+@csrf_exempt
+def api_admin_sinav_gorsel_delete(request, pk):
+    """Kayıtlı görseli siler. Çok günlük sınavda her günden kalkar."""
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
+    if err:
+        return err
+    if request.method != 'DELETE':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    sinav = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
+    _clear_sinav_gorsel(sinav)
+    sinav.refresh_from_db()
+    return JsonResponse({'success': True, 'data': serialize_sinav(sinav, request)})
 
 
 def _time_from_copy(data, field_name, fallback):
@@ -627,7 +840,7 @@ def _time_from_copy(data, field_name, fallback):
 @csrf_exempt
 def api_admin_sinav_copy(request, pk):
     """Kayıtlı bir sınavı başka bir güne kopyalar. Görsel de yeni kayda taşınır."""
-    kurum, err = _admin_kurum(request)
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
     if err:
         return err
     if request.method != 'POST':
@@ -665,7 +878,7 @@ def api_admin_sinav_copy(request, pk):
 @csrf_exempt
 def api_admin_sinav_gorsel_copy(request, pk):
     """Başka bir sınavın görselini bu kayda kopyalar. Yeniden dosya yüklemeye gerek kalmaz."""
-    kurum, err = _admin_kurum(request)
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
     if err:
         return err
     if request.method != 'POST':
@@ -684,6 +897,7 @@ def api_admin_sinav_gorsel_copy(request, pk):
         return JsonResponse({'success': False, 'error': 'Seçilen sınavda görsel yok'}, status=400)
     _copy_sinav_gorsel(source, target)
     target.refresh_from_db()
+    _propagate_sinav_gorsel(target)
     return JsonResponse({'success': True, 'data': serialize_sinav(target, request)})
 
 

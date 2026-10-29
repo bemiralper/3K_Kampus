@@ -362,7 +362,7 @@ export default function OlcmeListPage() {
               {rematching ? 'Eşleştiriliyor…' : 'Toplu Eşleştir'}
             </button>
             {!isCoach && (
-              <Link href="/admin/olcme-degerlendirme/kazanimlar" className={s.action}>
+              <Link href={href('kazanimlar')} className={s.action}>
                 <Icon name="outcome" size={15} />
                 Kazanım Yönetimi
               </Link>

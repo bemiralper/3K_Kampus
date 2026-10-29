@@ -5,7 +5,6 @@ import {
   websiteAdminApi,
   invalidateLandingCache,
   type OgrenciYorumu,
-  type SinavTakvim,
   type SiteSettings,
   type SSSItem,
 } from '@/lib/website-api';
@@ -14,7 +13,6 @@ import {
   patchSectionVisibility,
   isSectionVisible,
 } from '@/lib/landing-section-order';
-import SinavCalendarAdmin from '@/components/website-admin/SinavCalendarAdmin';
 import ContentCrudPanel from '@/components/website-admin/ContentCrudPanel';
 
 type Props = {
@@ -56,7 +54,6 @@ function SectionVisibilityToggle({
 }
 
 export default function CmsHomeContent({ onMessage }: Props) {
-  const [sinavlar, setSinavlar] = useState<SinavTakvim[]>([]);
   const [yorumlar, setYorumlar] = useState<OgrenciYorumu[]>([]);
   const [sss, setSss] = useState<SSSItem[]>([]);
   const [settings, setSettings] = useState<SiteSettings | null>(null);
@@ -64,22 +61,20 @@ export default function CmsHomeContent({ onMessage }: Props) {
   const [savingVisibility, setSavingVisibility] = useState(false);
 
   const reload = useCallback(async () => {
-    const [sinavRes, yorumRes, sssRes, settingsRes] = await Promise.all([
-      websiteAdminApi.list<SinavTakvim>('sinav-takvim'),
+    const [yorumRes, sssRes, settingsRes] = await Promise.all([
       websiteAdminApi.list<OgrenciYorumu>('yorumlar'),
       websiteAdminApi.list<SSSItem>('sss'),
       websiteAdminApi.getSettings(),
     ]);
-    if (sinavRes.success && sinavRes.data) {
-      setSinavlar([...sinavRes.data].sort((a, b) => a.tarih.localeCompare(b.tarih)));
-    } else if (!sinavRes.success) {
-      onMessage(sinavRes.error || 'Sınav takvimi yüklenemedi', 'error');
-    }
     if (yorumRes.success && yorumRes.data) {
       setYorumlar([...yorumRes.data].sort((a, b) => a.sira - b.sira));
+    } else if (!yorumRes.success) {
+      onMessage(yorumRes.error || 'Yorumlar yüklenemedi', 'error');
     }
     if (sssRes.success && sssRes.data) {
       setSss([...sssRes.data].sort((a, b) => a.sira - b.sira));
+    } else if (!sssRes.success) {
+      onMessage(sssRes.error || 'Sıkça sorulan sorular yüklenemedi', 'error');
     }
     if (settingsRes.success && settingsRes.data) {
       setSettings(settingsRes.data);
@@ -114,8 +109,6 @@ export default function CmsHomeContent({ onMessage }: Props) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      <SinavCalendarAdmin sinavlar={sinavlar} onReload={reload} onMessage={onMessage} />
-
       <div>
         <SectionVisibilityToggle
           label="Öğrenci Yorumları"

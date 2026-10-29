@@ -15,6 +15,20 @@ def _media_url(request, field):
         return None
 
 
+def _versioned_media_url(request, field):
+    """Aynı dosya adıyla değişen görselin tarayıcı önbelleğini kırar."""
+    url = _media_url(request, field)
+    if not url or not getattr(field, 'name', None):
+        return url
+    try:
+        modified = int(field.storage.get_modified_time(field.name).timestamp())
+        size = field.size
+    except Exception:
+        return url
+    separator = '&' if '?' in url else '?'
+    return f'{url}{separator}v={modified}-{size}'
+
+
 def _resolve_landing_sections_hidden(settings) -> list:
     """Gizli bölüm listesi + eski boolean bayrakları birleştir."""
     hidden = list(settings.landing_sections_hidden or [])
@@ -140,7 +154,8 @@ def serialize_sinav(sinav, request):
         'baslik': sinav.baslik,
         'yayin_adi': sinav.yayin_adi or '',
         'aciklama': sinav.aciklama,
-        'gorsel_url': _media_url(request, sinav.gorsel),
+        'gorsel_url': _versioned_media_url(request, sinav.gorsel),
+        'grup_id': str(sinav.grup_id) if sinav.grup_id else None,
     }
 
 
