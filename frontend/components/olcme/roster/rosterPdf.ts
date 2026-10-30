@@ -7,9 +7,10 @@ import autoTable from 'jspdf-autotable';
 import { downloadJsPdf } from '@/lib/download-file';
 import type { PdfOrientation } from '@/app/ogrenciler/lib/ogrenciListPdfExport';
 import type { ExamParticipantRow, ExamRoomItem } from '../types';
-import { candidateSeats, formatInactiveSeats, inactiveSeatSet, seatNumbers } from './seating';
+import { candidateSeats, formatInactiveSeats, inactiveSeatSet } from './seating';
 import {
   ROSTER_KIND_TITLES,
+  groupRosterByRoom,
   participantExportValue,
   rosterColumnLabel,
   sortRosterRows,
@@ -119,16 +120,6 @@ function registerFonts(doc: jsPDF, fonts: { regular: string; bold: string }) {
   doc.addFileToVFS('Roboto-Bold.ttf', fonts.bold);
   doc.addFont('Roboto-Bold.ttf', 'Roboto', 'bold');
   doc.setFont('Roboto', 'normal');
-}
-
-function groupByRoom(rows: ExamParticipantRow[]): { title: string; items: ExamParticipantRow[] }[] {
-  const map = new Map<string, ExamParticipantRow[]>();
-  for (const row of rows) {
-    const key = row.room_name || 'Salon atanmadı';
-    map.set(key, [...(map.get(key) || []), row]);
-  }
-  return map.size ? [...map.entries()].map(([title, items]) => ({ title, items }))
-    : [{ title: 'Salon atanmadı', items: [] }];
 }
 
 function drawHeader(
@@ -310,12 +301,45 @@ function drawTablePage(
   });
 }
 
+type CardLine = { text: string; bold: boolean };
+
+function wrapText(doc: jsPDF, text: string, width: number): string[] {
+  const parts = doc.splitTextToSize(text, Math.max(8, width));
+  return Array.isArray(parts) ? parts : [String(parts)];
+}
+
+/** Sıra rozeti ve sayfa başlığındaki salon, kart metninde tekrarlanmaz. Diğer seçili sütunlar yazılır. */
+function seatingCardLines(
+  doc: jsPDF,
+  row: ExamParticipantRow,
+  keys: string[],
+  markAttendance: boolean,
+  textW: number,
+): CardLine[] {
+  const out: CardLine[] = [];
+  for (const key of keys) {
+    if (key === 'seat_no' || key === 'room_name') continue;
+    const raw = participantExportValue(row, key, markAttendance);
+    const bold = key === 'tam_ad';
+    let text = '';
+    if (CHECKBOX_KEYS.has(key)) text = `${rosterColumnLabel(key)} ${raw === '1' ? '✓' : '—'}`;
+    else if (raw) text = raw;
+    if (!text) continue;
+    doc.setFont('Roboto', bold ? 'bold' : 'normal');
+    doc.setFontSize(bold ? 9 : 7.5);
+    for (const part of wrapText(doc, text, textW)) out.push({ text: part, bold });
+  }
+  return out.length ? out : [{ text: '—', bold: false }];
+}
+
 function drawSeatingGrid(
   doc: jsPDF,
   startY: number,
   items: ExamParticipantRow[],
   seats: number[],
-  extraKeys: string[],
+  passive: Set<number>,
+  columnKeys: string[],
+  markAttendance: boolean,
 ) {
   const pw = doc.internal.pageSize.getWidth();
   const ph = doc.internal.pageSize.getHeight();
@@ -323,74 +347,95 @@ function drawSeatingGrid(
   const cols = pw > 200 ? 3 : 2;
   const gap = 3.5;
   const cardW = (tableW - gap * (cols - 1)) / cols;
-  const cardH = extraKeys.length ? 18 : 15;
+  const textW = cardW - 18;
   const bySeat = new Map<number, ExamParticipantRow>();
   let maxSeat = 0;
   for (const row of items) {
     const n = row.seat_no || 0;
-    if (n) {
+    if (n && !bySeat.has(n)) {
       bySeat.set(n, row);
       if (n > maxSeat) maxSeat = n;
     }
   }
   const plan = seats.length ? seats : Array.from({ length: Math.max(maxSeat, items.length) }, (_, i) => i + 1);
-  const slots: { seat: number; row: ExamParticipantRow | null }[] = plan.map(seat => ({
+  const slots: { seat: number; row: ExamParticipantRow | null; passive: boolean }[] = plan.map(seat => ({
     seat,
     row: bySeat.get(seat) || null,
+    passive: passive.has(seat),
   }));
   const placed = new Set(slots.map(s => s.row?.id).filter((id): id is number => id != null));
   items.forEach(row => {
     if (placed.has(row.id)) return;
-    const empty = slots.find(s => !s.row);
-    if (empty) empty.row = row;
-    else slots.push({ seat: row.seat_no || slots.length + 1, row });
+    slots.push({ seat: row.seat_no ?? 0, row, passive: false });
   });
 
   let y = startY;
-  slots.forEach((slot, i) => {
-    const col = i % cols;
-    if (col === 0 && i > 0) y += cardH + gap;
-    if (col === 0 && y + cardH > ph - 14) {
+  for (let i = 0; i < slots.length; i += cols) {
+    const rowSlots = slots.slice(i, i + cols);
+    const prepared = rowSlots.map(slot => {
+      if (slot.row) {
+        return { slot, lines: seatingCardLines(doc, slot.row, columnKeys, markAttendance, textW) };
+      }
+      return {
+        slot,
+        lines: [{ text: slot.passive ? 'Pasif' : 'Boş sıra', bold: false }] as CardLine[],
+      };
+    });
+    const lineCount = Math.max(1, ...prepared.map(item => item.lines.length));
+    const cardH = Math.max(15, 7 + lineCount * 3.6);
+    if (y + cardH > ph - 14) {
       doc.addPage();
       y = 16;
     }
-    const x = MARGIN + col * (cardW + gap);
-    const occupied = Boolean(slot.row);
-    doc.setFillColor(...(occupied ? WHITE : CARD_BG));
-    doc.setDrawColor(...LINE);
-    doc.setLineWidth(0.3);
-    doc.roundedRect(x, y, cardW, cardH, 1.2, 1.2, 'FD');
+    prepared.forEach((item, col) => {
+      const x = MARGIN + col * (cardW + gap);
+      const occupied = Boolean(item.slot.row);
+      doc.setFillColor(...(occupied ? WHITE : CARD_BG));
+      doc.setDrawColor(...LINE);
+      doc.setLineWidth(0.3);
+      doc.roundedRect(x, y, cardW, cardH, 1.2, 1.2, 'FD');
 
-    doc.setFillColor(...SEAT_BG);
-    doc.roundedRect(x + 1.4, y + 2.4, 11, 10, 1, 1, 'F');
-    doc.setFont('Roboto', 'bold');
-    doc.setFontSize(10);
-    doc.setTextColor(...PRIMARY);
-    doc.text(String(slot.seat), x + 7, y + 9.2, { align: 'center' });
-
-    const textX = x + 15;
-    const textW = cardW - 18;
-    if (slot.row) {
+      doc.setFillColor(...(item.slot.passive && !occupied ? LINE : SEAT_BG));
+      doc.roundedRect(x + 1.4, y + 2.4, 11, 10, 1, 1, 'F');
       doc.setFont('Roboto', 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(...DARK);
-      doc.text(slot.row.full_name || '—', textX, y + 6.6, { maxWidth: textW });
-      const bits = [
-        slot.row.sinif || slot.row.sinif_seviyesi,
-        extraKeys.includes('okul_no') && slot.row.okul_no ? `#${slot.row.okul_no}` : '',
-        extraKeys.includes('tc_kimlik_no') && slot.row.tc_kimlik_no ? slot.row.tc_kimlik_no : '',
-      ].filter(Boolean);
-      doc.setFont('Roboto', 'normal');
-      doc.setFontSize(7.5);
-      doc.setTextColor(...INK);
-      doc.text(bits.join('  ·  ') || '—', textX, y + 11.8, { maxWidth: textW });
-    } else {
-      doc.setFont('Roboto', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(...GRAY);
-      doc.text('Boş sıra', textX, y + 9);
-    }
-  });
+      doc.setFontSize(10);
+      doc.setTextColor(...(item.slot.passive && !occupied ? INK : PRIMARY));
+      doc.text(item.slot.seat > 0 ? String(item.slot.seat) : '—', x + 7, y + 9.2, { align: 'center' });
+
+      const textX = x + 15;
+      item.lines.forEach((line, lineIndex) => {
+        doc.setFont('Roboto', line.bold ? 'bold' : 'normal');
+        doc.setFontSize(line.bold ? 9 : 7.5);
+        doc.setTextColor(...(occupied ? (line.bold ? DARK : INK) : GRAY));
+        doc.text(line.text, textX, y + 6.2 + lineIndex * 3.6, { maxWidth: textW });
+      });
+    });
+    y += cardH + gap;
+  }
+}
+
+function drawSalonSignature(doc: jsPDF) {
+  const pageH = doc.internal.pageSize.getHeight();
+  const pageW = doc.internal.pageSize.getWidth();
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(8.5);
+  const duty = 'Salon görevlisi: ____________________';
+  const sign = 'İmza: ____________________';
+  const signW = doc.getTextWidth(sign);
+  const signX = MARGIN + doc.getTextWidth(duty) + 8;
+  const wraps = signX + signW > pageW - MARGIN;
+  const afterTable = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || 20;
+  let sigY = afterTable + 12;
+  if (sigY + (wraps ? 6 : 0) > pageH - 16) {
+    doc.addPage();
+    sigY = 18;
+  }
+  doc.setFont('Roboto', 'normal');
+  doc.setFontSize(8.5);
+  doc.setTextColor(...INK);
+  doc.text(duty, MARGIN, sigY);
+  if (wraps) doc.text(sign, MARGIN, sigY + 6);
+  else doc.text(sign, signX, sigY);
 }
 
 export async function renderRosterPdf(opts: {
@@ -411,7 +456,7 @@ export async function renderRosterPdf(opts: {
     examName, examDate, kind, rooms = [], columnKeys, sort, pageMode,
     orientation, markAttendance, branding, fileName,
   } = opts;
-  const sorted = sortRosterRows(opts.rows, sort);
+  const sorted = sortRosterRows(opts.rows, sort, rooms);
   const fonts = await loadFonts();
   const logo = await loadLogo(branding.logoUrl);
   const primary = hexToRgb(branding.temaRengi);
@@ -420,26 +465,27 @@ export async function renderRosterPdf(opts: {
   const doc = new jsPDF({ orientation, unit: 'mm', format: 'a4' });
   registerFonts(doc, fonts);
 
-  const byRoom = kind === 'oturma' || pageMode === 'room';
-  const groups = byRoom
-    ? groupByRoom(sorted)
-    : [{ title: 'Tüm salonlar', items: sorted }];
-  const oturmaExtra = columnKeys.filter(k => !['seat_no', 'tam_ad', 'room_name'].includes(k));
+  const groups = pageMode === 'room'
+    ? groupRosterByRoom(sorted, rooms)
+    : [{ title: 'Tüm salonlar', room: undefined, items: sorted }];
+  const sessionNames = [...new Set(sorted.map(row => (row.exam_session_name || '').trim()).filter(Boolean))];
+  const sessionLabel = sessionNames.length === 1 ? sessionNames[0] : '';
 
   groups.forEach((group, gi) => {
     if (gi > 0) doc.addPage();
-    const room = rooms.find(r => r.name === group.title);
-    const seats = room ? seatNumbers(room) : [];
-    const passive = room
-      ? candidateSeats(room).filter(n => inactiveSeatSet(room.inactive_seats).has(n))
+    const room = group.room ?? rooms.find(item => item.id != null && group.items.some(row => row.room_id === item.id));
+    const plan = room ? candidateSeats(room) : [];
+    const passiveSeats = room
+      ? plan.filter(n => inactiveSeatSet(room.inactive_seats).has(n))
       : [];
-    const passiveLabel = passive.length
-      ? (passive.length <= 12 ? formatInactiveSeats(passive) : `${passive.length} sıra`)
+    const assignable = plan.filter(n => !inactiveSeatSet(room?.inactive_seats).has(n));
+    const passiveLabel = passiveSeats.length
+      ? (passiveSeats.length <= 12 ? formatInactiveSeats(passiveSeats) : `${passiveSeats.length} sıra`)
       : '';
-    const seatLabel = seats.length
+    const seatLabel = assignable.length
       ? (room?.seat_gap
-        ? `${seats[0]}’den, ara ${room.seat_gap}`
-        : `${seats[0]}–${candidateSeats(room!).at(-1)}`)
+        ? `${assignable[0]}’den, ara ${room.seat_gap}`
+        : `${assignable[0]}–${assignable[assignable.length - 1]}`)
       : '';
     const seatMeta = [seatLabel, passiveLabel ? `pasif ${passiveLabel}` : ''].filter(Boolean).join(' · ');
     const startY = drawHeader(doc, primary, logo, {
@@ -448,28 +494,28 @@ export async function renderRosterPdf(opts: {
       roomName: group.title,
       meta: [
         examDate || '',
+        sessionLabel,
         `${group.items.length} öğrenci`,
-        kind === 'oturma' && seatMeta ? seatMeta : '',
+        kind === 'oturma' && pageMode === 'room' && sort === 'seat_asc' && seatMeta ? seatMeta : '',
       ].filter(Boolean),
     });
 
-    if (kind === 'oturma') {
-      drawSeatingGrid(doc, startY, group.items, seats, oturmaExtra);
+    if (kind === 'oturma' && pageMode === 'room' && sort === 'seat_asc') {
+      drawSeatingGrid(
+        doc,
+        startY,
+        group.items,
+        plan,
+        new Set(passiveSeats),
+        columnKeys,
+        markAttendance,
+      );
       return;
     }
 
     drawTablePage(doc, startY, columnKeys, group.items, markAttendance, primary);
 
-    if (kind === 'salon') {
-      const y = (doc as jsPDF & { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY || startY;
-      const pageH = doc.internal.pageSize.getHeight();
-      const sigY = Math.min(y + 12, pageH - 22);
-      doc.setFont('Roboto', 'normal');
-      doc.setFontSize(8.5);
-      doc.setTextColor(...INK);
-      doc.text('Salon görevlisi: ________________________________', MARGIN, sigY);
-      doc.text('İmza: ____________________', MARGIN + 92, sigY);
-    }
+    if (kind === 'salon') drawSalonSignature(doc);
   });
 
   addFooter(doc, brandLine || branding.kurumAd);

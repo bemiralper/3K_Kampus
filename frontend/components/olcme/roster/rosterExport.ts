@@ -56,22 +56,103 @@ export function rosterColumnLabel(key: string): string {
   return ROSTER_EXPORT_COLUMNS.find(c => c.key === key)?.label || key;
 }
 
+/** Tek listede salon sütunu yoksa öğrencinin salonu kaybolur. Sıra numarasının hemen ardına eklenir. */
+export function columnsForPageMode(keys: string[], pageMode: RosterPageMode): string[] {
+  if (pageMode !== 'single' || keys.includes('room_name')) return keys;
+  const next = [...keys];
+  const seatAt = next.indexOf('seat_no');
+  next.splice(seatAt >= 0 ? seatAt + 1 : 0, 0, 'room_name');
+  return next;
+}
+
+export function rosterExportStamp(date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+export function rosterFileBase(examName: string, kind: string, stamp: string): string {
+  const raw = `${examName}_${kind}_${stamp}`
+    .replace(/\s+/g, '_')
+    .replace(/[\\/:*?"<>|]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+  return (raw || `liste_${stamp}`).slice(0, 140);
+}
+
 function trCmp(a: string, b: string) {
   return a.localeCompare(b, 'tr', { sensitivity: 'base' });
 }
 
-export function sortRosterRows(rows: ExamParticipantRow[], sort: RosterExportSort): ExamParticipantRow[] {
+function cmpOkulNo(a: string, b: string): number {
+  const aa = (a || '').trim();
+  const bb = (b || '').trim();
+  if (!aa && !bb) return 0;
+  if (!aa) return 1;
+  if (!bb) return -1;
+  const na = /^(\d+)$/.exec(aa);
+  const nb = /^(\d+)$/.exec(bb);
+  if (na && nb) {
+    const diff = Number(na[1]) - Number(nb[1]);
+    if (diff !== 0) return diff;
+  }
+  return trCmp(aa, bb);
+}
+
+function roomIndexes(rooms: ExamRoomItem[]) {
+  const byId = new Map<number, number>();
+  const byName = new Map<string, number>();
+  rooms.forEach((room, index) => {
+    if (room.id != null) byId.set(room.id, index);
+    const name = (room.name || '').trim();
+    if (name && !byName.has(name)) byName.set(name, index);
+  });
+  return { byId, byName };
+}
+
+/** Ekrandaki blok sırası: salonu olmayanlar önce, sonra salonların kayıt sırası. */
+function roomRank(
+  row: ExamParticipantRow,
+  byId: Map<number, number>,
+  byName: Map<string, number>,
+): number {
+  const name = (row.room_name || '').trim();
+  if (row.room_id == null && !name) return -1;
+  if (row.room_id != null && byId.has(row.room_id)) return byId.get(row.room_id)!;
+  if (name && byName.has(name)) return byName.get(name)!;
+  return 100_000;
+}
+
+export function sortRosterRows(
+  rows: ExamParticipantRow[],
+  sort: RosterExportSort,
+  rooms: ExamRoomItem[] = [],
+): ExamParticipantRow[] {
+  const { byId, byName } = roomIndexes(rooms);
   const arr = [...rows];
+  const rank = (row: ExamParticipantRow) => roomRank(row, byId, byName);
   if (sort === 'name_asc') {
-    arr.sort((a, b) => trCmp(a.full_name, b.full_name) || (a.seat_no ?? 0) - (b.seat_no ?? 0));
+    arr.sort((a, b) => trCmp(a.full_name, b.full_name)
+      || (a.seat_no ?? 999999) - (b.seat_no ?? 999999)
+      || rank(a) - rank(b));
   } else if (sort === 'okul_no_asc') {
-    arr.sort((a, b) => trCmp(a.okul_no || '', b.okul_no || '') || trCmp(a.full_name, b.full_name));
+    arr.sort((a, b) => cmpOkulNo(a.okul_no || '', b.okul_no || '')
+      || trCmp(a.full_name, b.full_name)
+      || rank(a) - rank(b));
   } else {
     arr.sort((a, b) => {
-      const sa = a.seat_no ?? 9999;
-      const sb = b.seat_no ?? 9999;
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      if (ra >= 100_000) {
+        const byRoom = trCmp(a.room_name || '', b.room_name || '');
+        if (byRoom) return byRoom;
+      }
+      const sa = a.seat_no ?? 999999;
+      const sb = b.seat_no ?? 999999;
       if (sa !== sb) return sa - sb;
-      return trCmp(a.room_name || '', b.room_name || '') || trCmp(a.full_name, b.full_name);
+      return trCmp(a.full_name, b.full_name);
     });
   }
   return arr;
@@ -128,14 +209,92 @@ export function toExportRecord(
   return rec;
 }
 
-function groupByRoom(rows: ExamParticipantRow[]): { title: string; items: ExamParticipantRow[] }[] {
-  const map = new Map<string, ExamParticipantRow[]>();
+export type RosterRoomGroup = {
+  title: string;
+  room?: ExamRoomItem;
+  items: ExamParticipantRow[];
+};
+
+/** Satırlar sıralı gelmeli. Salon sayfaları ekrandaki salon sırasını izler, sıralama salonun içinde kalır. */
+export function groupRosterByRoom(
+  rows: ExamParticipantRow[],
+  rooms: ExamRoomItem[] = [],
+): RosterRoomGroup[] {
+  const byId = new Map<number, ExamParticipantRow[]>();
+  const unassigned: ExamParticipantRow[] = [];
+  const orphans = new Map<string, ExamParticipantRow[]>();
+
   for (const row of rows) {
-    const key = row.room_name || 'Salon atanmadı';
-    map.set(key, [...(map.get(key) || []), row]);
+    if (row.room_id != null) {
+      const list = byId.get(row.room_id) || [];
+      list.push(row);
+      byId.set(row.room_id, list);
+      continue;
+    }
+    const name = (row.room_name || '').trim();
+    if (!name) {
+      unassigned.push(row);
+      continue;
+    }
+    const list = orphans.get(name) || [];
+    list.push(row);
+    orphans.set(name, list);
   }
-  if (map.size === 0) return [{ title: 'Salon atanmadı', items: [] }];
-  return [...map.entries()].map(([title, items]) => ({ title, items }));
+
+  const groups: RosterRoomGroup[] = [];
+  if (unassigned.length) {
+    groups.push({ title: 'Salon atanmadı', items: unassigned });
+  }
+
+  const consumedOrphans = new Set<string>();
+  for (const room of rooms) {
+    if (room.id == null) continue;
+    const items = byId.get(room.id) || [];
+    byId.delete(room.id);
+    const named = orphans.get(room.name);
+    if (named?.length) {
+      items.push(...named);
+      consumedOrphans.add(room.name);
+    }
+    if (!items.length) continue;
+    groups.push({ title: room.name || 'Salon', room, items });
+  }
+
+  for (const [id, items] of byId) {
+    groups.push({ title: items[0]?.room_name || `Salon ${id}`, items });
+  }
+  for (const [name, items] of orphans) {
+    if (!consumedOrphans.has(name)) groups.push({ title: name, items });
+  }
+
+  const seen = new Map<string, number>();
+  for (const group of groups) {
+    const base = group.title || 'Salon';
+    const n = (seen.get(base) || 0) + 1;
+    seen.set(base, n);
+    if (n > 1) group.title = `${base} (${n})`;
+  }
+  if (!groups.length) groups.push({ title: 'Salon atanmadı', items: [] });
+  return groups;
+}
+
+function safeSheetName(raw: string, used: Set<string>): string {
+  const cleaned = (raw || 'Liste')
+    .replace(/[\\/*?:[\]]/g, ' ')
+    .replace(/'/g, '')
+    .replace(/\s+/g, ' ')
+    .trim() || 'Liste';
+  const base = cleaned.slice(0, 31);
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate.toLocaleLowerCase('tr-TR'))) {
+    const suffix = ` (${n})`;
+    candidate = `${base.slice(0, Math.max(1, 31 - suffix.length))}${suffix}`;
+    n += 1;
+    if (n > 50) break;
+  }
+  used.add(candidate.toLocaleLowerCase('tr-TR'));
+  return candidate;
 }
 
 function csvEscape(value: string): string {
@@ -153,16 +312,19 @@ export async function downloadRosterWorkbook(opts: {
   kind: RosterPdfKind;
   format: 'xlsx' | 'csv';
   rows: ExamParticipantRow[];
+  rooms?: ExamRoomItem[];
   columnKeys: string[];
   sort: RosterExportSort;
   pageMode: RosterPageMode;
   markAttendance: boolean;
+  stamp?: string;
 }) {
-  const { examName, kind, format, columnKeys, sort, pageMode, markAttendance } = opts;
-  const sorted = sortRosterRows(opts.rows, sort);
+  const { examName, kind, format, sort, pageMode, markAttendance, rooms = [] } = opts;
+  const columnKeys = columnsForPageMode(opts.columnKeys, pageMode);
+  const sorted = sortRosterRows(opts.rows, sort, rooms);
   const headers = columnKeys.map(rosterColumnLabel);
-  const stamp = new Date().toISOString().slice(0, 10);
-  const fileBase = `${examName}_${kind}_${stamp}`.replace(/\s+/g, '_');
+  const stamp = opts.stamp || rosterExportStamp();
+  const fileBase = rosterFileBase(examName, kind, stamp);
 
   const sheetRows = (items: ExamParticipantRow[]) =>
     items.map(row =>
@@ -174,7 +336,7 @@ export async function downloadRosterWorkbook(opts: {
 
   if (format === 'csv') {
     const lines: string[] = [];
-    const groups = pageMode === 'room' ? groupByRoom(sorted) : [{ title: '', items: sorted }];
+    const groups = pageMode === 'room' ? groupRosterByRoom(sorted, rooms) : [{ title: '', items: sorted }];
     for (const group of groups) {
       if (group.title) lines.push(csvEscape(group.title));
       lines.push(headers.map(csvEscape).join(';'));
@@ -192,11 +354,14 @@ export async function downloadRosterWorkbook(opts: {
 
   const XLSX = await import('xlsx');
   const wb = XLSX.utils.book_new();
-  const groups = pageMode === 'room' ? groupByRoom(sorted) : [{ title: ROSTER_KIND_TITLES[kind], items: sorted }];
+  const groups = pageMode === 'room'
+    ? groupRosterByRoom(sorted, rooms)
+    : [{ title: ROSTER_KIND_TITLES[kind], items: sorted }];
+  const usedSheets = new Set<string>();
   for (const group of groups) {
     const aoa = [headers, ...sheetRows(group.items)];
     const ws = XLSX.utils.aoa_to_sheet(aoa);
-    XLSX.utils.book_append_sheet(wb, ws, (group.title || 'Liste').slice(0, 31));
+    XLSX.utils.book_append_sheet(wb, ws, safeSheetName(group.title || 'Liste', usedSheets));
   }
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
   downloadBlob(
@@ -216,6 +381,7 @@ export async function downloadRosterPdf(opts: {
   pageMode: RosterPageMode;
   orientation: PdfOrientation;
   markAttendance: boolean;
+  stamp?: string;
   branding: {
     kurumAd: string;
     subeAd?: string;
@@ -223,10 +389,11 @@ export async function downloadRosterPdf(opts: {
     temaRengi?: string;
   };
 }) {
-  const stamp = new Date().toISOString().slice(0, 10);
+  const stamp = opts.stamp || rosterExportStamp();
   const { renderRosterPdf } = await import('./rosterPdf');
   await renderRosterPdf({
     ...opts,
-    fileName: `${opts.examName}_${opts.kind}_${stamp}.pdf`.replace(/\s+/g, '_'),
+    columnKeys: columnsForPageMode(opts.columnKeys, opts.pageMode),
+    fileName: `${rosterFileBase(opts.examName, opts.kind, stamp)}.pdf`,
   });
 }

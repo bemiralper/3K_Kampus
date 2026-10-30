@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import { brandingFromContext, getPdfHeaderLogo } from '@/lib/kurum-branding';
@@ -12,8 +12,11 @@ import {
   ROSTER_EXPORT_COLUMNS,
   ROSTER_KIND_OPTIONS,
   ROSTER_KIND_TITLES,
+  columnsForPageMode,
   downloadRosterPdf,
   downloadRosterWorkbook,
+  rosterExportStamp,
+  rosterFileBase,
   type RosterExportFormat,
   type RosterExportSort,
   type RosterPageMode,
@@ -25,6 +28,8 @@ interface Props {
   exam: ExamDetail;
   rows: ExamParticipantRow[];
   rooms?: ExamRoomItem[];
+  /** Seçim veya arama daralttıysa alt başlıkta gösterilir. */
+  scopeLabel?: string;
   onClose: () => void;
 }
 
@@ -34,7 +39,7 @@ const FORMAT_OPTIONS: { id: RosterExportFormat; label: string; ext: string }[] =
   { id: 'csv', label: 'CSV', ext: '.csv' },
 ];
 
-export default function RosterExportModal({ exam, rows, rooms, onClose }: Props) {
+export default function RosterExportModal({ exam, rows, rooms, scopeLabel, onClose }: Props) {
   const { activeKurum, activeSube } = useKurum();
   const branding = useMemo(
     () => brandingFromContext(activeKurum, activeSube),
@@ -50,13 +55,20 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
   const [markAttendance, setMarkAttendance] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const stamp = useMemo(() => rosterExportStamp(), []);
+  const pageModeRef = useRef(pageMode);
+  pageModeRef.current = pageMode;
 
   useEffect(() => { setPortalRoot(document.body); }, []);
 
   useEffect(() => {
-    setSelectedKeys([...DEFAULT_ROSTER_KEYS[kind]]);
+    setSelectedKeys(columnsForPageMode([...DEFAULT_ROSTER_KEYS[kind]], pageModeRef.current));
     setError('');
   }, [kind]);
+
+  useEffect(() => {
+    setSelectedKeys(prev => columnsForPageMode(prev, pageMode));
+  }, [pageMode]);
 
   const groupedColumns = useMemo(() => groupExportColumns(ROSTER_EXPORT_COLUMNS), []);
   const columnOrderMap = useMemo(() => {
@@ -66,9 +78,11 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
   }, [selectedKeys]);
 
   const formatMeta = FORMAT_OPTIONS.find(f => f.id === format)!;
-  const filePrefix = `${exam.name}_${kind}`.replace(/\s+/g, '_');
+  const filePrefix = rosterFileBase(exam.name, kind, stamp);
+  const roomLocked = pageMode === 'single';
 
   const toggleKey = (key: string) => {
+    if (roomLocked && key === 'room_name') return;
     setSelectedKeys(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
   };
 
@@ -87,6 +101,7 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
       const examDate = exam.exam_date
         ? new Date(exam.exam_date).toLocaleDateString('tr-TR')
         : undefined;
+      const applyAttendance = kind === 'yoklama' && markAttendance;
       if (format === 'pdf') {
         await downloadRosterPdf({
           examName: exam.name,
@@ -98,7 +113,8 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
           sort,
           pageMode,
           orientation,
-          markAttendance,
+          markAttendance: applyAttendance,
+          stamp,
           branding: {
             kurumAd: branding.gorunen_ad || exam.kurum_adi || activeKurum?.ad || 'Kurum',
             subeAd: exam.sube_adi || activeSube?.ad,
@@ -112,10 +128,12 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
           kind,
           format,
           rows,
+          rooms,
           columnKeys: selectedKeys,
           sort,
           pageMode,
-          markAttendance,
+          markAttendance: applyAttendance,
+          stamp,
         });
       }
       onClose();
@@ -140,7 +158,7 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
           <div>
             <h3 id="roster-export-title">Listeyi dışa aktar</h3>
             <p className="ogrenci-filter-drawer-subtitle">
-              {exam.name} · {rows.length} öğrenci
+              {exam.name}{scopeLabel ? ` · ${scopeLabel}` : ''} · {rows.length} öğrenci
             </p>
           </div>
           <button type="button" className="ogrenci-drawer-close" onClick={onClose} aria-label="Kapat">
@@ -226,6 +244,11 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
                     Tek liste
                   </button>
                 </div>
+                {roomLocked && (
+                  <p className="ogrenci-export-columns-hint" style={{ marginTop: 6 }}>
+                    Tek listede salon sütunu durur. Sıra sıralaması salonları karıştırmaz.
+                  </p>
+                )}
               </div>
 
               <div className="ogrenci-export-option-block">
@@ -294,11 +317,15 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
                   <button
                     type="button"
                     className="ogrenci-export-link-btn"
-                    onClick={() => setSelectedKeys(ROSTER_EXPORT_COLUMNS.map(c => c.key))}
+                    onClick={() => setSelectedKeys(columnsForPageMode(ROSTER_EXPORT_COLUMNS.map(c => c.key), pageMode))}
                   >
                     Tümünü seç
                   </button>
-                  <button type="button" className="ogrenci-export-link-btn" onClick={() => setSelectedKeys([])}>
+                  <button
+                    type="button"
+                    className="ogrenci-export-link-btn"
+                    onClick={() => setSelectedKeys(roomLocked ? ['room_name'] : [])}
+                  >
                     Temizle
                   </button>
                 </div>
@@ -314,6 +341,7 @@ export default function RosterExportModal({ exam, rows, rooms, onClose }: Props)
                           <label
                             key={col.key}
                             className={`ogrenci-export-column-chip${order ? ' selected' : ''}`}
+                            title={roomLocked && col.key === 'room_name' ? 'Tek listede salon sütunu kalır' : undefined}
                           >
                             <input
                               type="checkbox"

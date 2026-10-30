@@ -213,6 +213,17 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     return rows.filter(x => x.exam_session_id === sessionId);
   }, [rows, sessionId, sessions.length]);
 
+  const exportScope = useMemo(() => {
+    if (selected.length) {
+      const ids = new Set(selected);
+      const picked = visible.filter(row => ids.has(row.id));
+      if (picked.length) return { rows: picked, label: 'Seçilen' };
+    }
+    const query = findQ.trim();
+    if (query) return { rows: visible.filter(row => attendanceQueryMatches(row, query)), label: 'Arama sonucu' };
+    return { rows: visible, label: '' };
+  }, [selected, visible, findQ]);
+
   const roomsForView = useMemo(() => {
     if (sessions.length < 2 || sessionId == null) return rooms;
     return rooms.filter(rm => !rm.exam_session_id || rm.exam_session_id === sessionId);
@@ -808,7 +819,13 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
       </div>
 
       {exportOpen && (
-        <RosterExportModal exam={exam} rows={visible} rooms={rooms} onClose={() => setExportOpen(false)} />
+        <RosterExportModal
+          exam={exam}
+          rows={exportScope.rows}
+          rooms={roomsForView}
+          scopeLabel={exportScope.label}
+          onClose={() => setExportOpen(false)}
+        />
       )}
       {optikOpen && (
         <OptikYazdirModal
