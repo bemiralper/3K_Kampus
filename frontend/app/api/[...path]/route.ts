@@ -1,6 +1,7 @@
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { Readable } from 'node:stream';
+import type { ReadableStream as NodeWebReadableStream } from 'node:stream/web';
 import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
@@ -136,7 +137,9 @@ function streamProxyToBackend(
       req.end();
       return;
     }
-    const nodeBody = Readable.fromWeb(body);
+    // DOM ReadableStream ile Node stream/web aynı çalışma zamanı nesnesi;
+    // TypeScript 5.4 DOM lib'inde values / asyncIterator yok, derleme burada düşüyor.
+    const nodeBody = Readable.fromWeb(body as unknown as NodeWebReadableStream<Uint8Array>);
     nodeBody.on('error', (err) => req.destroy(err));
     nodeBody.pipe(req);
   });
