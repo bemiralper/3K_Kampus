@@ -102,6 +102,13 @@ const icons = {
       <path d="M9 15l2 2 4-4" />
     </svg>
   ),
+  assessment: (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2" />
+      <rect x="9" y="3" width="6" height="4" rx="1" />
+      <path d="M9 14l2 2 4-4" />
+    </svg>
+  ),
   chevronDown: (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
       <polyline points="6 9 12 15 18 9" />
@@ -201,6 +208,7 @@ const navItems: MenuItem[] = [
     children: [
       { label: "Öğrenci Listesi", href: "/ogrenciler" },
       { label: "Yeni Kayıt", href: "/ogrenciler/yeni-kayit" },
+      { label: "Deneme Öğrencileri", href: "/ogrenciler/misafir" },
     ],
   },
   {
@@ -250,6 +258,34 @@ const navItems: MenuItem[] = [
       { label: "Ödev Ver", href: "/admin/odev/ver", group: "Ödev Takibi" },
       { label: "Ödev Kontrol", href: "/admin/odev/kontrol", group: "Ödev Takibi" },
       { label: "Ödev Paketleri", href: "/admin/odev/paketler", group: "Ödev Takibi" },
+    ],
+  },
+  {
+    id: "olcme",
+    label: "Ölçme & Değerlendirme",
+    emoji: "",
+    icon: icons.assessment,
+    requiredPermissions: ["olcme.read", "olcme.write", "olcme.manage"],
+    children: [
+      { label: "Sınav Listesi", href: "/admin/olcme-degerlendirme", group: "Sınavlar" },
+      { label: "Yeni Sınav Oluştur", href: "/admin/olcme-degerlendirme/yeni", matchPrefix: "/admin/olcme-degerlendirme/yeni", group: "Sınavlar" },
+      { label: "Deneme Takvimi", href: "/admin/olcme-degerlendirme/deneme-takvimi", matchPrefix: "/admin/olcme-degerlendirme/deneme-takvimi", group: "Sınavlar" },
+      { label: "Sonuç Analizi", href: "/admin/olcme-degerlendirme/analiz", matchPrefix: "/admin/olcme-degerlendirme/analiz", group: "Analiz" },
+      { label: "Karşılaştırma", href: "/admin/olcme-degerlendirme/karsilastirma", matchPrefix: "/admin/olcme-degerlendirme/karsilastirma", group: "Analiz" },
+      {
+        label: "Tanımlar",
+        href: "/admin/olcme-degerlendirme/kazanimlar",
+        matchPrefixes: [
+          "/admin/olcme-degerlendirme/kazanimlar",
+          "/admin/olcme-degerlendirme/ayarlar",
+          "/admin/olcme-degerlendirme/oturum-gruplari",
+          "/admin/olcme-degerlendirme/salonlar",
+          "/admin/olcme-degerlendirme/daire-dizisi",
+          "/admin/olcme-degerlendirme/optik-okuma",
+          "/admin/olcme-degerlendirme/optik-formlar",
+        ],
+        group: "Tanımlar",
+      },
     ],
   },
   {
