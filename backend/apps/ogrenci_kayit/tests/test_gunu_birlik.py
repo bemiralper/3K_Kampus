@@ -425,6 +425,23 @@ class GunuBirlikTamKayitTests(TestCase):
         listed, _ = build_kayit_queryset(ctx, params)
         self.assertIn(ogrenci.id, set(listed.values_list('ogrenci_id', flat=True)))
 
+    def test_ana_liste_aramasi_deneme_ogrencisini_ayirir(self):
+        self.exam = Exam.objects.create(
+            name='Liste Deneme', exam_type='LGS',
+            exam_date=timezone.localdate() + timedelta(days=10),
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        payload = self._walk_payload()
+        payload['gunu_birlik'] = {'kayit': True}
+        payload['package'] = {}
+        res = self._register(payload)
+        self.assertEqual(res.status_code, 201, res.content)
+        listed = self.client.get('/ogrenciler/api/list/?q=Misafir', **self.headers)
+        self.assertEqual(listed.status_code, 200, listed.content)
+        body = listed.json()
+        self.assertEqual(body.get('total_count'), 0)
+        self.assertGreaterEqual(body.get('deneme_count') or 0, 1)
+
     def test_gunu_birlik_once_ogrenci_sonra_listeden_deneme(self):
         from apps.odeme_takip.domain.models import Sozlesme
         from apps.ogrenci_kayit.application.deneme_ucret import MARKER

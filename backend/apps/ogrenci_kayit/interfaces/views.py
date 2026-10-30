@@ -95,23 +95,41 @@ class TcCheckView(APIView):
         if not ogrenci:
             return Response({"found": False})
 
+        kayit_related = (
+            'sinif', 'sinif__sinif_seviyesi', 'sinif__alan',
+            'sinif_seviyesi', 'alan', 'egitim_yili',
+        )
+
         # Son kayıt bilgisi
         son_kayit = OgrenciKayit.objects.filter(
             ogrenci=ogrenci
-        ).select_related('sinif', 'sinif__sinif_seviyesi', 'egitim_yili').order_by('-egitim_yili__baslangic_yil').first()
+        ).select_related(*kayit_related).order_by('-egitim_yili__baslangic_yil').first()
 
         # Tüm kayıtlar (geçmiş yıllar)
         kayitlar = OgrenciKayit.objects.filter(
             ogrenci=ogrenci
-        ).select_related('sinif', 'sinif__sinif_seviyesi', 'egitim_yili').order_by('-egitim_yili__baslangic_yil')
+        ).select_related(*kayit_related).order_by('-egitim_yili__baslangic_yil')
+
+        def _seviye(k):
+            if k.sinif_id and k.sinif and k.sinif.sinif_seviyesi_id:
+                return k.sinif.sinif_seviyesi
+            return k.sinif_seviyesi
+
+        def _alan_adi(k):
+            if k.alan_id and k.alan:
+                return k.alan.ad
+            if k.sinif_id and k.sinif and k.sinif.alan_id and k.sinif.alan:
+                return k.sinif.alan.ad
+            return ""
 
         kayit_gecmisi = []
         for k in kayitlar:
+            seviye = _seviye(k)
             kayit_gecmisi.append({
                 "egitim_yili": f"{k.egitim_yili.baslangic_yil}-{k.egitim_yili.bitis_yil}",
-                "sinif_seviyesi": k.sinif.sinif_seviyesi.ad if k.sinif and k.sinif.sinif_seviyesi else "",
-                "sinif_seviyesi_kod": k.sinif.sinif_seviyesi.kod if k.sinif and k.sinif.sinif_seviyesi else "",
-                "alan": k.sinif.alan.ad if k.sinif and hasattr(k.sinif, 'alan') and k.sinif.alan else "",
+                "sinif_seviyesi": seviye.ad if seviye else "",
+                "sinif_seviyesi_kod": seviye.kod if seviye else "",
+                "alan": _alan_adi(k),
                 "aktif_mi": k.aktif_mi,
                 "giris_turu": k.giris_turu,
             })
@@ -158,8 +176,9 @@ class TcCheckView(APIView):
 
         # Sınıf seviyesi artırımı
         sonraki_seviye = None
-        if son_kayit and son_kayit.sinif and son_kayit.sinif.sinif_seviyesi:
-            current_kod = son_kayit.sinif.sinif_seviyesi.kod
+        son_seviye = _seviye(son_kayit) if son_kayit else None
+        if son_seviye:
+            current_kod = son_seviye.kod
             # Artırım haritası
             SINIF_ARTIRIM = {
                 "9": "10", "10": "11", "11": "12", "12": "Mezun",
@@ -176,12 +195,15 @@ class TcCheckView(APIView):
                         "has_alan": sinif_seviyesi_requires_alan(next_seviye),
                     }
 
-        # Aktif eğitim yılında kayıt var mı?
-        aktif_yil = EgitimYili.objects.filter(aktif_mi=True).first()
+        # Liste ile aynı yıl: üst çubuktaki eğitim yılı. Eski «ilk aktif yıl»
+        # kaydı başka yılda olan öğrenciyi de kilitliyordu.
+        from shared.context import get_secili_egitim_yili_id
+
+        yil_id = get_secili_egitim_yili_id(request)
         aktif_yilda_kayitli = False
-        if aktif_yil:
+        if yil_id:
             aktif_yilda_kayitli = OgrenciKayit.objects.filter(
-                ogrenci=ogrenci, egitim_yili=aktif_yil
+                ogrenci=ogrenci, egitim_yili_id=yil_id,
             ).exists()
 
         resolver = KimlikResolver(kurum_id=kurum_id, sube_id=sube_id)
@@ -205,9 +227,9 @@ class TcCheckView(APIView):
             },
             "son_kayit": {
                 "egitim_yili": f"{son_kayit.egitim_yili.baslangic_yil}-{son_kayit.egitim_yili.bitis_yil}" if son_kayit else "",
-                "sinif_seviyesi": son_kayit.sinif.sinif_seviyesi.ad if son_kayit and son_kayit.sinif and son_kayit.sinif.sinif_seviyesi else "",
-                "sinif_seviyesi_id": son_kayit.sinif.sinif_seviyesi.id if son_kayit and son_kayit.sinif and son_kayit.sinif.sinif_seviyesi else None,
-                "sinif_seviyesi_kod": son_kayit.sinif.sinif_seviyesi.kod if son_kayit and son_kayit.sinif and son_kayit.sinif.sinif_seviyesi else "",
+                "sinif_seviyesi": son_seviye.ad if son_seviye else "",
+                "sinif_seviyesi_id": son_seviye.id if son_seviye else None,
+                "sinif_seviyesi_kod": son_seviye.kod if son_seviye else "",
                 "aktif_mi": son_kayit.aktif_mi if son_kayit else False,
             } if son_kayit else None,
             "kayit_gecmisi": kayit_gecmisi,

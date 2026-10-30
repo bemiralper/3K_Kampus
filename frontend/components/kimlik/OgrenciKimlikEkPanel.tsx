@@ -50,8 +50,9 @@ export default function OgrenciKimlikEkPanel({ tcResult }: Props) {
 
       {tcResult.aktif_yilda_kayitli && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-          Bu öğrenci aktif eğitim yılında zaten kayıtlı. Yeni kayıt için farklı bir eğitim yılı seçin veya
-          mevcut kaydı güncelleyin.
+          {tcResult.ogrenci?.kayit_turu === "gunu_birlik"
+            ? "Bu öğrenci seçili yılda tek deneme kaydı. Düğme kaydı açar; kurum kaydında bilgileri forma alınır ve öğrenci listesine düşer."
+            : "Bu öğrenci seçili eğitim yılında kayıtlı. Öğrenci kaydını aç ile kaydı görüntüleyin."}
         </div>
       )}
 

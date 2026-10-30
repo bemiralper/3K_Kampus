@@ -87,6 +87,7 @@ type OgrenciResponse = {
   filter_mode?: "yillik" | "tum" | "tum_yillar";
   egitim_yili?: { id: number; yil_str: string } | null;
   all_years_count?: number;
+  deneme_count?: number;
   page?: number;
   page_size?: number;
   total_count?: number;
@@ -115,6 +116,7 @@ export default function OgrenciListesiPage() {
   const [filterMode, setFilterMode] = useState<"yillik" | "tum" | "tum_yillar">("tum");
   const [totalCount, setTotalCount] = useState(0);
   const [allYearsCount, setAllYearsCount] = useState<number | null>(null);
+  const [denemeCount, setDenemeCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchInput, setSearchInput] = useState(filters.q || "");
@@ -213,6 +215,7 @@ export default function OgrenciListesiPage() {
         setPasifOgrenci(data.filter_counts?.pasif ?? 0);
         setFilterMode(data.filter_mode || "tum");
         setAllYearsCount(data.all_years_count ?? null);
+        setDenemeCount(data.deneme_count ?? null);
       } else {
         setError(response.error || "Veri yüklenemedi");
       }
@@ -661,6 +664,20 @@ export default function OgrenciListesiPage() {
           >
             Tüm yıllarda ara
           </button>
+        </div>
+      )}
+
+      {denemeCount != null && denemeCount > 0 && searchQuery.trim() && (
+        <div className="ogl-notice ogl-notice--warn" role="status">
+          <span>
+            Öğrenci listesinde yok. Deneme öğrencilerinde <strong>{denemeCount}</strong> eşleşme var.
+          </span>
+          <Link
+            href={`${href("misafir")}?q=${encodeURIComponent(searchQuery.trim())}`}
+            className="ogl-btn ogl-btn--ghost ogl-btn--sm"
+          >
+            Deneme öğrencilerinde ara
+          </Link>
         </div>
       )}
 

@@ -284,18 +284,8 @@ class KimlikResolver:
                         'Veli öğrenci olarak kaydedilemez; farklı bir numara/TC girin.'
                     )
 
-        if context == self.CONTEXT_OGRENCI and tc:
-            ogrenci = Ogrenci.objects.filter(kurum_id=self.kurum_id, tc_kimlik_no=tc).first()
-            if ogrenci:
-                from apps.egitim_yili.domain.models import EgitimYili
-
-                aktif_yil = EgitimYili.objects.filter(aktif_mi=True).first()
-                if aktif_yil and OgrenciKayit.objects.filter(
-                    ogrenci=ogrenci,
-                    egitim_yili=aktif_yil,
-                ).exists():
-                    return True, 'Bu öğrenci aktif eğitim yılında zaten kayıtlı.'
-
+        # Aynı yıldaki kayıt düğmeyi kilitlemez. Sihirbaz kaydı açar veya
+        # tek deneme öğrencisini kurum kaydına çevirir. Yıl uyarısı tc-check'tedir.
         return False, ''
 
     def _kisi_payload(self, kisi: Kisi) -> dict:

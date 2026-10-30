@@ -295,6 +295,14 @@ def ogrenci_list_api(request):
         all_years_qs, _ = build_kayit_queryset(ctx, all_years_params, apply_durum=True)
         response_data['all_years_count'] = all_years_qs.count()
 
+        from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
+
+        deneme_params = {**params, 'all_years': True, 'kayit_turu': GUNU_BIRLIK_CODE}
+        deneme_qs, _ = build_kayit_queryset(ctx, deneme_params, apply_durum=True)
+        deneme_count = deneme_qs.count()
+        if deneme_count:
+            response_data['deneme_count'] = deneme_count
+
     return JsonResponse(response_data)
 
 

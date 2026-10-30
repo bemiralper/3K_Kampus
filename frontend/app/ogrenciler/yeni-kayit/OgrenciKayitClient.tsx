@@ -684,6 +684,13 @@ export default function OgrenciKayitClient({
 
   const handleUseExistingStudent = useCallback(
     (tcResult: TcCheckResponse, kimlikResult: KimlikResolveResponse | null) => {
+      const ogr = tcResult.ogrenci;
+      const upgradeDeneme = !isWalkIn && ogr?.kayit_turu === "gunu_birlik";
+      if (tcResult.aktif_yilda_kayitli && ogr?.id && !upgradeDeneme) {
+        markClean();
+        requestNavigation(ogrenciHref(String(ogr.id)), { hard: true });
+        return;
+      }
       handleRenewalDecision("renew", tcResult);
       const kisiId = kimlikResult?.kisi?.id || tcResult.ogrenci?.kisi_id;
       if (kisiId) {
@@ -694,7 +701,7 @@ export default function OgrenciKayitClient({
         setRenewalState((prev) => ({ ...prev, existingKisiId: kisiId, tcLocked: true }));
       }
     },
-    [handleRenewalDecision],
+    [handleRenewalDecision, isWalkIn, markClean, ogrenciHref, requestNavigation],
   );
 
   // Validasyon

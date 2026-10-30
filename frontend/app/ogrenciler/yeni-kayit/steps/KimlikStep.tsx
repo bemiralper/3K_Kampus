@@ -128,6 +128,10 @@ export default function KimlikStep({
     }
   };
 
+  const upgradeDeneme =
+    !registrationLocked && tcResult?.ogrenci?.kayit_turu === "gunu_birlik";
+  const openExisting = Boolean(tcResult?.aktif_yilda_kayitli) && !upgradeDeneme;
+
   return (
     <div className="wizard-step-content">
       <div className="step-header">
@@ -396,6 +400,7 @@ export default function KimlikStep({
         result={modalKimlik}
         context="ogrenci"
         loading={tcChecking || kimlik.checking}
+        applyLabel={openExisting ? "Öğrenci kaydını aç" : undefined}
         extraContent={<OgrenciKimlikEkPanel tcResult={tcResult} />}
         onApply={handleApplyExisting}
         onClose={() => kimlik.dismissForChangeNumber(data.student.telefon)}

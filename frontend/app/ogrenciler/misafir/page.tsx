@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { apiDelete, apiGet, apiPost, getContextHeaders } from "@/lib/api";
 import { useOgrenciPath } from "@/components/ogrenci/OgrenciPathProvider";
 import { downloadPdfBlob } from "@/lib/download-file";
@@ -98,8 +99,9 @@ function initials(ad: string, soyad: string) {
 
 export default function DenemeOgrencileriPage() {
   const { href: ogrenciHref, listHref } = useOgrenciPath();
+  const searchParams = useSearchParams();
   const [rows, setRows] = useState<DenemeOgrenci[]>([]);
-  const [q, setQ] = useState("");
+  const [q, setQ] = useState(() => searchParams.get("q") || "");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [busyKey, setBusyKey] = useState("");

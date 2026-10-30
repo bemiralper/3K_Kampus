@@ -75,6 +75,33 @@ class KimlikResolverTests(TestCase):
         self.assertIn('personel', tips)
         self.assertIn('veli', tips)
 
+    def test_enrolled_student_is_not_blocked(self):
+        from apps.egitim_yili.domain.models import EgitimYili
+        from apps.ogrenci.domain.models import OgrenciKayit
+
+        yil = EgitimYili.objects.create(baslangic_yil=2026, bitis_yil=2027, aktif_mi=True)
+        ogrenci = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            tc_kimlik_no='77777777777',
+            ad='Kayitli',
+            soyad='Ogrenci',
+            aktif_mi=True,
+        )
+        KisiService.link_ogrenci(ogrenci)
+        OgrenciKayit.objects.create(
+            ogrenci=ogrenci,
+            egitim_yili=yil,
+            kurum=self.kurum,
+            sube=self.sube,
+        )
+
+        resolver = KimlikResolver(kurum_id=self.kurum.id)
+        result = resolver.resolve(tc='77777777777', context='ogrenci')
+        self.assertTrue(result['found'])
+        self.assertFalse(result['engellenen'])
+        self.assertEqual(result['engellenen_mesaj'], '')
+
     def test_personel_phone_blocked_for_ogrenci_context(self):
         resolver = KimlikResolver(kurum_id=self.kurum.id)
         result = resolver.resolve(telefon='05321234567', context='ogrenci')
