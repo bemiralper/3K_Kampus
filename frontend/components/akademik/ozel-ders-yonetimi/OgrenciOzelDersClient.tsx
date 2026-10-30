@@ -159,6 +159,20 @@ function sortOturumlar(list: BirebirOturum[]): BirebirOturum[] {
   );
 }
 
+/**
+ * Yalnızca istenen tarih aralığını günceller.
+ * Dönem sorgusu açık haftayı (aralığın dışında kalan oturumları) silmesin.
+ */
+function mergeOturumlar(
+  prev: BirebirOturum[],
+  incoming: BirebirOturum[],
+  start: string,
+  end: string,
+): BirebirOturum[] {
+  const kept = prev.filter((o) => o.session_date < start || o.session_date > end);
+  return sortOturumlar([...kept, ...incoming]);
+}
+
 function oturumDisplayLabel(o: BirebirOturum): { label: string; tone: BadgeTone; extra?: string } {
   if (o.oturum_turu === 'TELAFI') return { label: 'Telafi', tone: 'info' };
   if (o.oturum_turu === 'EK') return { label: 'Ek Ders', tone: 'purple' };
@@ -260,6 +274,9 @@ export default function OgrenciOzelDersClient() {
   const loadSeq = useRef(0);
   const oturumlarRef = useRef<BirebirOturum[]>([]);
   const [weekStart, setWeekStart] = useState(() => startOfIsoWeek());
+  const weekStartRef = useRef(weekStart);
+  weekStartRef.current = weekStart;
+  const weekFetchGen = useRef(0);
   const [weekLoading, setWeekLoading] = useState(false);
   const [weekMoving, setWeekMoving] = useState(false);
   const [weekPdfBusy, setWeekPdfBusy] = useState(false);
@@ -472,8 +489,11 @@ export default function OgrenciOzelDersClient() {
       if (sum) setSummary(sum);
       setOturumlar(sortOturumlar(weekList));
 
+      // Dönem aralığı bu haftadan önce bitebilir. Yanıt tüm listeyi değiştirmesin;
+      // yalnızca kendi tarih aralığını yazsın, ekrandaki hafta kalsın.
       const yearEnd = bit;
       const epoch = oturumEpoch.current;
+      const weekGenAtStart = weekFetchGen.current;
       void fetchOturumlar({
         ogrenci_id: ogrenciId,
         start_date: bas,
@@ -481,8 +501,17 @@ export default function OgrenciOzelDersClient() {
         skip_materialize: 1,
       })
         .then((yearList) => {
-          if (epoch !== oturumEpoch.current) return;
-          setOturumlar(sortOturumlar(yearList));
+          if (seq !== loadSeq.current || epoch !== oturumEpoch.current) return;
+          setOturumlar((prev) => {
+            const merged = mergeOturumlar(prev, yearList, bas, yearEnd);
+            if (weekGenAtStart === weekFetchGen.current) return merged;
+            const openWeek = weekStartRef.current;
+            const openEnd = addDaysIso(openWeek, 6);
+            const freshWeek = prev.filter(
+              (o) => o.session_date >= openWeek && o.session_date <= openEnd,
+            );
+            return mergeOturumlar(merged, freshWeek, openWeek, openEnd);
+          });
         })
         .catch((e) => console.error(e));
     } catch (e) {
@@ -501,11 +530,14 @@ export default function OgrenciOzelDersClient() {
       if (!ogrenciId || !bas) return;
       const seq = loadSeq.current;
       const epoch = ++oturumEpoch.current;
+      const weekGenAtStart = weekFetchGen.current;
       try {
         const end = donemViewEnd(bas, bit);
         const sum = await fetchOgrenciDonemOzeti(ogrenciId, bas, end);
         if (seq !== loadSeq.current) return;
         setSummary(sum);
+        const openWeek = weekStartRef.current;
+        const weekEnd = addDaysIso(openWeek, 6);
         const oturumList = await fetchOturumlar({
           ogrenci_id: ogrenciId,
           start_date: bas,
@@ -513,7 +545,14 @@ export default function OgrenciOzelDersClient() {
           skip_materialize: 1,
         });
         if (seq !== loadSeq.current || epoch !== oturumEpoch.current) return;
-        setOturumlar(sortOturumlar(oturumList));
+        setOturumlar((prev) => {
+          const merged = mergeOturumlar(prev, oturumList, bas, end);
+          if (weekGenAtStart === weekFetchGen.current) return merged;
+          const freshWeek = prev.filter(
+            (o) => o.session_date >= openWeek && o.session_date <= weekEnd,
+          );
+          return mergeOturumlar(merged, freshWeek, openWeek, weekEnd);
+        });
       } catch (e) {
         if (seq !== loadSeq.current) return;
         show(e instanceof Error ? e.message : 'Özet güncellenemedi', 'error');
@@ -529,6 +568,7 @@ export default function OgrenciOzelDersClient() {
       const rematerialize = Boolean(opts?.rematerialize);
       if (rematerialize) setWeekLoading(true);
       const seq = loadSeq.current;
+      const gen = ++weekFetchGen.current;
       try {
         const list = await fetchOturumlar({
           ogrenci_id: ogrenciId,
@@ -536,11 +576,8 @@ export default function OgrenciOzelDersClient() {
           end_date: end,
           ...(rematerialize ? {} : { skip_materialize: 1 }),
         });
-        if (seq !== loadSeq.current) return;
-        setOturumlar((prev) => {
-          const others = prev.filter((o) => o.session_date < start || o.session_date > end);
-          return sortOturumlar([...others, ...list]);
-        });
+        if (seq !== loadSeq.current || gen !== weekFetchGen.current) return;
+        setOturumlar((prev) => mergeOturumlar(prev, list, start, end));
       } catch (e) {
         show(e instanceof Error ? e.message : 'Hafta yüklenemedi', 'error');
       } finally {
@@ -681,7 +718,7 @@ export default function OgrenciOzelDersClient() {
     try {
       await updateSlot(slot.id, { gun, ...times });
       show('Ders taşındı. İşlenmemiş oturumlar güncellendi.');
-      await Promise.all([reloadSlots(), loadWeek(weekStart)]);
+      await Promise.all([reloadSlots(), loadWeek(weekStart, { rematerialize: true })]);
       void refreshSummary(donem.baslangic, donem.bitis);
     } catch (err) {
       setOturumlar(prevOturumlar);
@@ -743,7 +780,7 @@ export default function OgrenciOzelDersClient() {
     try {
       await swapSlots(a.source_slot, b.source_slot);
       show('Dersler yer değiştirdi.');
-      await Promise.all([reloadSlots(), loadWeek(weekStart)]);
+      await Promise.all([reloadSlots(), loadWeek(weekStart, { rematerialize: true })]);
       void refreshSummary(donem.baslangic, donem.bitis);
     } catch (err) {
       setOturumlar(prevOturumlar);
@@ -796,7 +833,7 @@ export default function OgrenciOzelDersClient() {
       setCreateOpen(false);
       show('Ders programa eklendi. Takvimde geçmiş tarihler dahil görünür.');
       await reloadLessons();
-      await loadWeek(weekStart);
+      await loadWeek(weekStart, { rematerialize: true });
     } catch (err) {
       show(err instanceof Error ? err.message : 'Kayıt başarısız — çakışma olabilir.', 'error');
     } finally {
@@ -841,7 +878,7 @@ export default function OgrenciOzelDersClient() {
       setDetailLesson(null);
       setDetailEndDate(null);
       await reloadLessons();
-      await loadWeek(weekStart);
+      await loadWeek(weekStart, { rematerialize: true });
     } catch (err) {
       show(err instanceof Error ? err.message : 'Güncelleme başarısız.', 'error');
     } finally {
