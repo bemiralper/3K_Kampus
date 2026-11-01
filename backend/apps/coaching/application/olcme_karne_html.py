@@ -337,9 +337,6 @@ def _scope(data: dict) -> dict:
         'score_names': {r.get('section_name') for r in (score or tree['leaves'])},
         'hidden_grids': hidden_grids,
         'excluded_names': {r.get('section_name') for r in excluded},
-        # Üst test, çocuğundan biri alandaysa dahildir. Alan dışı testin
-        # kitapçık numarası tekrar listesine girmez.
-        'out_ids': {r.get('section_id') for r in current if r.get('alana_dahil') is False},
     }
 
 
@@ -531,7 +528,7 @@ def _ranking(data: dict) -> dict | None:
 def _retry(data: dict, scope: dict) -> list[dict]:
     out = []
     for g in data.get('answer_grids') or []:
-        if g.get('section_id') in scope['hidden_grids'] or g.get('section_id') in scope['out_ids']:
+        if g.get('section_id') in scope['hidden_grids']:
             continue
         qs = g.get('questions') or []
         wrong = [q.get('n') for q in qs if q.get('result') == 'wrong']
@@ -553,7 +550,7 @@ def _answer_rows(data: dict, scope: dict) -> list[dict]:
             cells.append({
                 'n': q.get('n'),
                 'given': q.get('given') or '·',
-                'fix': q.get('correct') or '',
+                'fix': q.get('correct') if res != 'correct' and q.get('correct') else '',
                 'cls': cls,
             })
         if cells:
@@ -651,23 +648,20 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
     difficulty = _difficulty(data, penalty)
     lessons = _lessons(scope)
     tyt_lessons = _lessons(scope['tyt'])
+    flat = all(not lesson['subs'] for lesson in lessons)
     ahead = data.get('kurum_ici_yuzdelik')
     net_label = 'net'
     if is_ayt and data.get('net_etiket') and data.get('net_etiket') != 'NET':
         net_label = data['net_etiket'].replace(' NET', '') + ' net'
 
     has_trend = len(history) >= 2
-    shown = [lesson for lesson in lessons if not lesson['out']] or lessons
-    cmp_source = scope['mains'] if len(scope['mains']) >= 3 else scope['leaves']
-    cmp_source = [m for m in cmp_source if m.get('alana_dahil') is not False] or cmp_source
     cmp_rows = [{
         'name': m.get('section_name') or '',
         'w': f"{_ratio(m.get('net'), m.get('question_count')) * 100:.0f}",
         'kw': f"{_ratio(m.get('kurum_avg_net'), m.get('question_count')) * 100:.0f}",
         'tone': _tone(_ratio(m.get('net'), m.get('question_count'))),
         'diff': _signed(m.get('diff_kurum')),
-    } for m in cmp_source]
-    ranking = _ranking(data)
+    } for m in (scope['mains'] if len(scope['mains']) >= 3 else scope['leaves'])]
     kurum_scale = None
     if not has_trend and soru:
         kurum_scale = {
@@ -709,10 +703,9 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'yuzdelik': poss_gen(round(_num(data.get('yuzdelik_dilim')))) if data.get('yuzdelik_dilim') is not None else '',
         'yil': data.get('referans_yil') or '',
         'comments': list((data.get('karne_insights') or {}).get('comment') or [])[:4],
-        'lessons': shown,
-        'flat': all(not lesson['subs'] for lesson in shown),
-        'has_out': any(lesson['out'] for lesson in shown),
-        'rank_on_cover': bool(scope['out_ids']) and ranking is not None,
+        'lessons': lessons,
+        'flat': flat,
+        'has_out': any(lesson['out'] for lesson in lessons),
         'tyt_lessons': tyt_lessons,
         'tyt_flat': all(not lesson['subs'] for lesson in tyt_lessons),
         'tyt_title': data.get('linked_tyt_exam_name') or 'TYT',
@@ -735,15 +728,10 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'penalty_text': f'{k} yanlış 1 doğruyu götürür' if k else 'yanlışlar neti düşürmez',
         'strong': data.get('strong_areas') or [],
         'weak': data.get('weak_areas') or [],
-        'ranking': ranking,
+        'ranking': _ranking(data),
         'sparks': _section_history(data, scope['mains'], history),
         'spark_count': len(history),
         'retry': _retry(data, scope),
-        'retry_note': (
-            {'SAY': 'sayısal puanına giren sorular', 'EA': 'eşit ağırlık puanına giren sorular',
-             'SOZ': 'sözel puanına giren sorular'}.get(alan_pt, '')
-            if scope['out_ids'] else ''
-        ),
         'outcomes': _outcome_blocks(blocks),
         'answers': _answer_rows(data, scope),
     }
@@ -769,7 +757,4 @@ def render_karne_pdf_html(payloads: list[dict]) -> bytes:
     from apps.communication.application.html_to_pdf import render_html_to_pdf
 
     document = render_karne_html(payloads)
-    return render_html_to_pdf(
-        document, timeout=60 + 3 * len(payloads), css_page_size=True,
-        ready_selector='body[data-fitted="1"]',
-    )
+    return render_html_to_pdf(document, timeout=60 + 3 * len(payloads), css_page_size=True)

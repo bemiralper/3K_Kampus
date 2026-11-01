@@ -29,16 +29,7 @@ const KarneHtmlFrame = forwardRef<KarneHtmlFrameHandle, { html: string; title: s
     const handleLoad = useCallback(() => {
       measure();
       const doc = frameRef.current?.contentDocument;
-      const again = () => requestAnimationFrame(measure);
-      doc?.fonts?.ready.then(again);
-      if (!doc?.body || doc.body.dataset.fitted === '1') return;
-      const obs = new MutationObserver(() => {
-        if (doc.body.dataset.fitted === '1') {
-          obs.disconnect();
-          again();
-        }
-      });
-      obs.observe(doc.body, { attributes: true, attributeFilter: ['data-fitted'] });
+      doc?.fonts?.ready.then(() => requestAnimationFrame(measure));
     }, [measure]);
 
     useEffect(() => {

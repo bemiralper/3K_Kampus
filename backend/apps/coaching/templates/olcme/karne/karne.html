@@ -64,12 +64,8 @@
     <section class="card say"><h2>Bu sınavda</h2><ul>{% for c in s.comments %}<li{% if forloop.counter == 4 %} data-fit="4"{% elif forloop.counter == 3 %} data-fit="5"{% endif %}>{{ c }}</li>{% endfor %}</ul></section>
     {% endif %}
 
-    {% if s.rank_on_cover %}
-    {% include "olcme/karne/ranking.html" %}
-    {% endif %}
-
     {% if s.lessons %}
-    <div class="lhead"><h2>Dersler</h2><span class="legend"><i class="good"></i>başarı (net ÷ soru)<b class="tick"></b>kurum ortalaması</span></div>
+    <div class="lhead"><h2>Dersler</h2><span class="legend"><i class="good"></i>başarı (net ÷ soru)<b class="tick"></b>kurum ortalaması{% if s.has_out %} · “puana girmez” testler de tam listelenir{% endif %}</span></div>
     {% include "olcme/karne/lessons.html" with lessons=s.lessons flat=s.flat %}
     {% endif %}
 
@@ -121,7 +117,7 @@
     <footer class="foot"><span>{{ s.kurum_ad }} · Ölçme ve Değerlendirme</span><span>Tahminler geçmiş yıl verilerine dayanır; kesin sonuç değildir.</span></footer>
   </div>
 
-  <div class="page flow" data-sheet="deep">
+  <div class="page flow">
     <header class="mini">
       <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
       <div class="mini-t">Derinlemesine</div>
@@ -188,8 +184,22 @@
       </div>
     </section>
 
-    {% if s.ranking and not s.rank_on_cover %}
-    {% include "olcme/karne/ranking.html" %}
+    {% if s.ranking %}
+    <section class="card rank">
+      <h2>Puan ve sıralama {% if s.ranking.year %}<small>{{ s.ranking.year }} verilerine göre tahmin</small>{% endif %}</h2>
+      <table class="tbl">
+        <thead><tr><th>Puan türü</th><th class="n">Puan</th><th class="n">Kurum ort.</th><th class="n">Net</th><th class="n">Kurum sırası</th><th class="n">Türkiye tahmini</th></tr></thead>
+        <tbody>
+          {% for r in s.ranking.rows %}
+          <tr class="{% if r.is_alan %}main{% endif %}"><td>{{ r.label }}</td><td class="n b">{{ r.puan }}</td><td class="n">{{ r.avg }}</td><td class="n">{{ r.net }}</td><td class="n">{{ r.kurum }}</td><td class="n">{{ r.turkiye }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if s.ranking.tyt %}
+      <div class="tyt"><span>Bağlı TYT · {{ s.ranking.tyt.name }}</span>
+        <b>{{ s.ranking.tyt.net }} net</b><b>{{ s.ranking.tyt.puan }} puan</b><span>Kurumda {{ s.ranking.tyt.kurum }}</span><span>Türkiye {{ s.ranking.tyt.turkiye }}</span></div>
+      {% endif %}
+    </section>
     {% endif %}
 
     {% if s.sparks %}
@@ -209,7 +219,7 @@
 
     {% if s.retry %}
     <section class="card">
-      <h2>Tekrar çözülecek sorular <small>kitapçıktaki soru numaraları{% if s.retry_note %} · {{ s.retry_note }}{% endif %}</small>
+      <h2>Tekrar çözülecek sorular <small>kitapçıktaki soru numaraları</small>
         <span class="legend"><i class="bad"></i>yanlış <i class="empty"></i>boş</span></h2>
       {% for r in s.retry %}
       <div class="rrow"><span class="gn">{{ r.name }}</span>
@@ -222,10 +232,10 @@
   </div>
 
   {% if s.outcomes or s.answers %}
-  <div class="page flow" data-sheet="map">
+  <div class="page flow">
     <header class="mini">
       <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
-      <div class="mini-t">{% if s.outcomes %}Kazanım haritası{% else %}Cevap anahtarı{% endif %}</div>
+      <div class="mini-t">{% if s.outcomes %}Kazanım haritası{% else %}Cevaplar{% endif %}</div>
     </header>
 
     {% if s.outcomes %}
@@ -247,7 +257,7 @@
 
     {% if s.answers %}
     <section class="card grid">
-      <h2>Cevap anahtarı <small>üstte soru no · ortada öğrencinin cevabı · altta doğru cevap</small></h2>
+      <h2>Cevaplar <small>üstte soru no · ortada öğrencinin cevabı · altta yeşil doğru cevap</small></h2>
       {% for g in s.answers %}
       <div class="grow"><span class="gn">{{ g.name }}</span>
         <div class="cells">{% for c in g.cells %}<span class="cell {{ c.cls }}"><em>{{ c.n }}</em><b>{{ c.given }}</b><u>{{ c.fix }}</u></span>{% endfor %}</div></div>
@@ -279,187 +289,7 @@
       var count = page.querySelector('.pcount');
       if (count) count.textContent = page.querySelectorAll('.focus li').length;
     });
-    paginate();
     document.body.dataset.fitted = '1';
-  }
-
-  function mm(page) { return page.getBoundingClientRect().width / 210; }
-  function room(page) { return page.getBoundingClientRect().bottom - 16 * mm(page); }
-  function blocks(page) {
-    return Array.prototype.filter.call(page.children, function (el) {
-      return !el.classList.contains('mini') && !el.classList.contains('foot');
-    });
-  }
-  function nextPage(page) {
-    var n = page.nextElementSibling;
-    if (n && n.dataset.sheet === page.dataset.sheet && n.dataset.made === '1') return n;
-    n = document.createElement('div');
-    n.className = 'page flow';
-    n.dataset.sheet = page.dataset.sheet;
-    n.dataset.made = '1';
-    var mini = page.querySelector('.mini');
-    var foot = page.querySelector('.foot');
-    if (mini) n.appendChild(mini.cloneNode(true));
-    if (foot) n.appendChild(foot.cloneNode(true));
-    page.parentNode.insertBefore(n, page.nextElementSibling);
-    return n;
-  }
-  function beforeFoot(page, node) { page.insertBefore(node, page.querySelector('.foot')); }
-  function splitRows(card, lim, dest) {
-    var body = card.querySelector(':scope > table > tbody');
-    if (!body || body.rows.length < 2) return false;
-    var move = Array.prototype.filter.call(body.rows, function (tr) {
-      return tr.getBoundingClientRect().bottom > lim;
-    });
-    if (!move.length || move.length === body.rows.length) return false;
-    var clone = card.cloneNode(true);
-    var fresh = clone.querySelector('tbody');
-    fresh.innerHTML = '';
-    move.forEach(function (tr) { fresh.appendChild(tr); });
-    var title = clone.querySelector('h2');
-    if (title && title.textContent.indexOf('devam') === -1) {
-      var mark = document.createElement('small');
-      mark.textContent = 'devam';
-      title.appendChild(mark);
-    }
-    beforeFoot(dest, clone);
-    return true;
-  }
-  function continued(title) {
-    var copy = title.cloneNode(true);
-    if (copy.textContent.indexOf('devam') === -1) {
-      var mark = document.createElement('small');
-      mark.textContent = 'devam';
-      copy.appendChild(mark);
-    }
-    return copy;
-  }
-  function splitCols(node, lim, dest) {
-    var cols = node.querySelector(':scope > .ocols');
-    if (!cols) return false;
-    var kids = Array.prototype.slice.call(cols.children);
-    var move = kids.filter(function (el) { return el.getBoundingClientRect().bottom > lim; });
-    if (!move.length || move.length === kids.length) {
-      var block = move[0] || kids[0];
-      if (!block) return false;
-      var rows = Array.prototype.slice.call(block.querySelectorAll(':scope > .orow'));
-      var rowMove = rows.filter(function (el) { return el.getBoundingClientRect().bottom > lim; });
-      if (!rowMove.length || rowMove.length === rows.length) return false;
-      var clone = node.cloneNode(false);
-      var title = node.querySelector(':scope > h2');
-      if (title) clone.appendChild(continued(title));
-      var box = cols.cloneNode(false);
-      var piece = block.cloneNode(false);
-      var head = block.querySelector(':scope > h3');
-      if (head) piece.appendChild(head.cloneNode(true));
-      rowMove.forEach(function (el) { piece.appendChild(el); });
-      box.appendChild(piece);
-      clone.appendChild(box);
-      beforeFoot(dest, clone);
-      return true;
-    }
-    var clone = node.cloneNode(false);
-    var title = node.querySelector(':scope > h2');
-    if (title) clone.appendChild(continued(title));
-    var box = cols.cloneNode(false);
-    move.forEach(function (el) { box.appendChild(el); });
-    clone.appendChild(box);
-    beforeFoot(dest, clone);
-    return true;
-  }
-  function splitKids(node, lim, dest) {
-    var kids = Array.prototype.filter.call(node.children, function (el) { return el.tagName !== 'H2'; });
-    if (kids.length < 2) return false;
-    var move = kids.filter(function (el) { return el.getBoundingClientRect().bottom > lim; });
-    if (!move.length || move.length === kids.length) return false;
-    var clone = node.cloneNode(false);
-    var title = node.querySelector(':scope > h2');
-    if (title) {
-      var copy = title.cloneNode(true);
-      if (copy.textContent.indexOf('devam') === -1) {
-        var mark = document.createElement('small');
-        mark.textContent = 'devam';
-        copy.appendChild(mark);
-      }
-      clone.appendChild(copy);
-    }
-    move.forEach(function (el) { clone.appendChild(el); });
-    beforeFoot(dest, clone);
-    return true;
-  }
-  function paginate() {
-    var queue = Array.prototype.slice.call(document.querySelectorAll('.page.flow'));
-    var seen = 0;
-    while (queue.length && seen++ < 40) {
-      var page = queue.shift();
-      var guard = 0;
-      while (guard++ < 12) {
-        var lim = room(page);
-        var offender = null;
-        var list = blocks(page);
-        for (var i = 0; i < list.length; i++) {
-          if (list[i].getBoundingClientRect().bottom > lim + 0.5) { offender = list[i]; break; }
-        }
-        if (!offender) break;
-        var head = page.querySelector('.mini');
-        var top = head ? head.getBoundingClientRect().bottom : page.getBoundingClientRect().top;
-        var alone = offender.getBoundingClientRect().top <= top + 4 && blocks(page).length === 1;
-        if (alone && !offender.querySelector('table, .lesson, .rrow, .grow, .oblock')) break;
-        var dest = nextPage(page);
-        if (queue[0] !== dest) queue.unshift(dest);
-        var moved = false;
-        if (offender.querySelector(':scope > table')) moved = splitRows(offender, lim, dest);
-        if (!moved && offender.querySelector(':scope > .ocols')) moved = splitCols(offender, lim, dest);
-        if (!moved && (offender.classList.contains('lessons') || offender.classList.contains('card'))) moved = splitKids(offender, lim, dest);
-        if (moved) continue;
-        if (alone) break;
-        var rest = [];
-        var take = false;
-        blocks(page).forEach(function (el) {
-          if (el === offender) take = true;
-          if (take) rest.push(el);
-        });
-        if (offender.classList.contains('lessons') && offender.previousElementSibling && offender.previousElementSibling.classList.contains('lhead')) {
-          rest.unshift(offender.previousElementSibling);
-        }
-        rest.forEach(function (el) { beforeFoot(dest, el); });
-      }
-    }
-    var packGuard = 0;
-    while (packGuard++ < 30) {
-      var pages = Array.prototype.slice.call(document.querySelectorAll('.page.flow'));
-      var movedAny = false;
-      for (var i = 0; i < pages.length - 1; i++) {
-        var page = pages[i];
-        var nxt = pages[i + 1];
-        if (!nxt || page.parentNode !== nxt.parentNode) continue;
-        var node = blocks(nxt)[0];
-        if (!node) continue;
-        var lead = node.classList.contains('lessons') && node.previousElementSibling
-          && node.previousElementSibling.classList.contains('lhead') ? node.previousElementSibling : null;
-        if (lead) beforeFoot(page, lead);
-        beforeFoot(page, node);
-        if (node.getBoundingClientRect().bottom > room(page) + 0.5) {
-          var first = blocks(nxt)[0];
-          nxt.insertBefore(node, first || nxt.querySelector('.foot'));
-          if (lead) nxt.insertBefore(lead, node);
-        } else {
-          movedAny = true;
-        }
-      }
-      if (!movedAny) break;
-    }
-    document.querySelectorAll('.page.flow').forEach(function (p) {
-      if (!blocks(p).length) p.remove();
-    });
-    document.querySelectorAll('.page.flow').forEach(function (page) {
-      var lim = room(page);
-      var spilled = blocks(page).some(function (el) { return el.getBoundingClientRect().bottom > lim + 1; });
-      if (spilled) {
-        page.style.overflow = 'visible';
-        page.style.height = 'auto';
-      }
-    });
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit); else fit();
 })();
