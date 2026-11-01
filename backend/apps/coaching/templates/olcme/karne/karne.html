@@ -225,7 +225,7 @@
   <div class="page flow" data-sheet="map">
     <header class="mini">
       <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
-      <div class="mini-t">{% if s.outcomes %}Kazanım haritası{% else %}Cevaplar{% endif %}</div>
+      <div class="mini-t">{% if s.outcomes %}Kazanım haritası{% else %}Cevap anahtarı{% endif %}</div>
     </header>
 
     {% if s.outcomes %}
@@ -247,7 +247,7 @@
 
     {% if s.answers %}
     <section class="card grid">
-      <h2>Cevaplar <small>üstte soru no · ortada öğrencinin cevabı · altta yeşil doğru cevap</small></h2>
+      <h2>Cevap anahtarı <small>üstte soru no · ortada öğrencinin cevabı · altta doğru cevap</small></h2>
       {% for g in s.answers %}
       <div class="grow"><span class="gn">{{ g.name }}</span>
         <div class="cells">{% for c in g.cells %}<span class="cell {{ c.cls }}"><em>{{ c.n }}</em><b>{{ c.given }}</b><u>{{ c.fix }}</u></span>{% endfor %}</div></div>
@@ -325,6 +325,48 @@
     beforeFoot(dest, clone);
     return true;
   }
+  function continued(title) {
+    var copy = title.cloneNode(true);
+    if (copy.textContent.indexOf('devam') === -1) {
+      var mark = document.createElement('small');
+      mark.textContent = 'devam';
+      copy.appendChild(mark);
+    }
+    return copy;
+  }
+  function splitCols(node, lim, dest) {
+    var cols = node.querySelector(':scope > .ocols');
+    if (!cols) return false;
+    var kids = Array.prototype.slice.call(cols.children);
+    var move = kids.filter(function (el) { return el.getBoundingClientRect().bottom > lim; });
+    if (!move.length || move.length === kids.length) {
+      var block = move[0] || kids[0];
+      if (!block) return false;
+      var rows = Array.prototype.slice.call(block.querySelectorAll(':scope > .orow'));
+      var rowMove = rows.filter(function (el) { return el.getBoundingClientRect().bottom > lim; });
+      if (!rowMove.length || rowMove.length === rows.length) return false;
+      var clone = node.cloneNode(false);
+      var title = node.querySelector(':scope > h2');
+      if (title) clone.appendChild(continued(title));
+      var box = cols.cloneNode(false);
+      var piece = block.cloneNode(false);
+      var head = block.querySelector(':scope > h3');
+      if (head) piece.appendChild(head.cloneNode(true));
+      rowMove.forEach(function (el) { piece.appendChild(el); });
+      box.appendChild(piece);
+      clone.appendChild(box);
+      beforeFoot(dest, clone);
+      return true;
+    }
+    var clone = node.cloneNode(false);
+    var title = node.querySelector(':scope > h2');
+    if (title) clone.appendChild(continued(title));
+    var box = cols.cloneNode(false);
+    move.forEach(function (el) { box.appendChild(el); });
+    clone.appendChild(box);
+    beforeFoot(dest, clone);
+    return true;
+  }
   function splitKids(node, lim, dest) {
     var kids = Array.prototype.filter.call(node.children, function (el) { return el.tagName !== 'H2'; });
     if (kids.length < 2) return false;
@@ -367,6 +409,7 @@
         if (queue[0] !== dest) queue.unshift(dest);
         var moved = false;
         if (offender.querySelector(':scope > table')) moved = splitRows(offender, lim, dest);
+        if (!moved && offender.querySelector(':scope > .ocols')) moved = splitCols(offender, lim, dest);
         if (!moved && (offender.classList.contains('lessons') || offender.classList.contains('card'))) moved = splitKids(offender, lim, dest);
         if (moved) continue;
         if (alone) break;
@@ -408,6 +451,14 @@
     }
     document.querySelectorAll('.page.flow').forEach(function (p) {
       if (!blocks(p).length) p.remove();
+    });
+    document.querySelectorAll('.page.flow').forEach(function (page) {
+      var lim = room(page);
+      var spilled = blocks(page).some(function (el) { return el.getBoundingClientRect().bottom > lim + 1; });
+      if (spilled) {
+        page.style.overflow = 'visible';
+        page.style.height = 'auto';
+      }
     });
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit); else fit();

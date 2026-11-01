@@ -196,12 +196,12 @@ h2 small { font:500 7.8pt 'Inter',system-ui,sans-serif; color:var(--muted); }
 
 .grid .grow { display:grid; grid-template-columns:22mm 1fr; gap:2mm; align-items:center; margin-bottom:1.6mm; }
 .gn { font-size:8pt; font-weight:700; }
-.cells { display:grid; grid-template-columns:repeat(40, 1fr); gap:.45mm; }
-.cell { height:9.4mm; border-radius:1mm; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:.5mm 0 .4mm;
+.cells { display:grid; grid-template-columns:repeat(20, 1fr); gap:.7mm .5mm; }
+.cell { height:11mm; border-radius:1mm; display:flex; flex-direction:column; align-items:center; justify-content:space-between; padding:.6mm 0 .5mm;
   background:color-mix(in srgb, var(--c) 13%, #fff); }
-.cell em { font:500 4.4pt 'Inter',system-ui,sans-serif; color:var(--muted); font-style:normal; line-height:1; }
-.cell b { font:700 7pt 'Inter',system-ui,sans-serif; line-height:1; color:color-mix(in srgb, var(--c) 80%, #000); }
-.cell u { font:700 5.2pt 'Inter',system-ui,sans-serif; line-height:1; color:#15803d; text-decoration:none; min-height:1.6mm; }
+.cell em { font:500 5.5pt 'Inter',system-ui,sans-serif; color:var(--muted); font-style:normal; line-height:1; }
+.cell b { font:700 8pt 'Inter',system-ui,sans-serif; line-height:1; color:color-mix(in srgb, var(--c) 80%, #000); }
+.cell u { font:700 8pt 'Inter',system-ui,sans-serif; line-height:1; color:#15803d; text-decoration:none; min-height:2.4mm; }
 .cell.empty { background:#f1f5f9; } .cell.empty b { color:#94a3b8; }
 
 .foot { margin-top:auto; padding-top:2mm; font-size:7pt; color:var(--muted); display:flex; justify-content:space-between; }

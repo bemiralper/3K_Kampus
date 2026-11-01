@@ -553,7 +553,7 @@ def _answer_rows(data: dict, scope: dict) -> list[dict]:
             cells.append({
                 'n': q.get('n'),
                 'given': q.get('given') or '·',
-                'fix': q.get('correct') if res != 'correct' and q.get('correct') else '',
+                'fix': q.get('correct') or '',
                 'cls': cls,
             })
         if cells:

@@ -212,6 +212,9 @@ class KarneContextTest(SimpleTestCase):
         self.assertEqual([l['name'] for l in say['lessons']], ['Matematik', 'Fen Bilimleri'])
         self.assertTrue(say['rank_on_cover'])
         self.assertEqual([r['name'] for r in say['retry']], ['Matematik', 'Fen Bilimleri'])
+        mat = next(g for g in say['answers'] if g['name'] == 'Matematik')
+        self.assertEqual(mat['cells'][0]['fix'], 'B')
+        self.assertIn('TDE-Sosyal Bilimler-1', [g['name'] for g in say['answers']])
         self.assertEqual(say['retry_note'], 'sayısal puanına giren sorular')
         self.assertEqual(
             [a['name'] for a in say['answers']],
