@@ -359,25 +359,56 @@
           if (list[i].getBoundingClientRect().bottom > lim + 0.5) { offender = list[i]; break; }
         }
         if (!offender) break;
+        var head = page.querySelector('.mini');
+        var top = head ? head.getBoundingClientRect().bottom : page.getBoundingClientRect().top;
+        var alone = offender.getBoundingClientRect().top <= top + 4 && blocks(page).length === 1;
+        if (alone && !offender.querySelector('table, .lesson, .rrow, .grow, .oblock')) break;
         var dest = nextPage(page);
         if (queue[0] !== dest) queue.unshift(dest);
-        if (offender.querySelector(':scope > table') && splitRows(offender, lim, dest)) continue;
-        if ((offender.classList.contains('lessons') || offender.classList.contains('card')) && splitKids(offender, lim, dest)) continue;
+        var moved = false;
+        if (offender.querySelector(':scope > table')) moved = splitRows(offender, lim, dest);
+        if (!moved && (offender.classList.contains('lessons') || offender.classList.contains('card'))) moved = splitKids(offender, lim, dest);
+        if (moved) continue;
+        if (alone) break;
         var rest = [];
         var take = false;
         blocks(page).forEach(function (el) {
           if (el === offender) take = true;
           if (take) rest.push(el);
         });
-        var head = page.querySelector('.mini');
-        var top = head ? head.getBoundingClientRect().bottom : page.getBoundingClientRect().top;
-        if (rest.length === blocks(page).length && offender.getBoundingClientRect().top <= top + 4) break;
         if (offender.classList.contains('lessons') && offender.previousElementSibling && offender.previousElementSibling.classList.contains('lhead')) {
           rest.unshift(offender.previousElementSibling);
         }
         rest.forEach(function (el) { beforeFoot(dest, el); });
       }
     }
+    var packGuard = 0;
+    while (packGuard++ < 30) {
+      var pages = Array.prototype.slice.call(document.querySelectorAll('.page.flow'));
+      var movedAny = false;
+      for (var i = 0; i < pages.length - 1; i++) {
+        var page = pages[i];
+        var nxt = pages[i + 1];
+        if (!nxt || page.parentNode !== nxt.parentNode) continue;
+        var node = blocks(nxt)[0];
+        if (!node) continue;
+        var lead = node.classList.contains('lessons') && node.previousElementSibling
+          && node.previousElementSibling.classList.contains('lhead') ? node.previousElementSibling : null;
+        if (lead) beforeFoot(page, lead);
+        beforeFoot(page, node);
+        if (node.getBoundingClientRect().bottom > room(page) + 0.5) {
+          var first = blocks(nxt)[0];
+          nxt.insertBefore(node, first || nxt.querySelector('.foot'));
+          if (lead) nxt.insertBefore(lead, node);
+        } else {
+          movedAny = true;
+        }
+      }
+      if (!movedAny) break;
+    }
+    document.querySelectorAll('.page.flow').forEach(function (p) {
+      if (!blocks(p).length) p.remove();
+    });
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit); else fit();
 })();

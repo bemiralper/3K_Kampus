@@ -12,12 +12,13 @@ h1,h2,h3,.v,.v2,.lv b,.donut-c b,.big,.exam { font-family:'Poppins','Inter',syst
 
 .page { width:210mm; background:#fff; margin:8mm auto; position:relative; padding:0 11mm 9mm;
   box-shadow:0 10px 40px rgba(15,23,42,.12); display:flex; flex-direction:column; gap:3.4mm; }
-.page.cover, .page.flow { height:296.5mm; overflow:hidden; }
+/* Sayfa kutusu A4'ten kısa kalır. Tam 297mm kutu + break-before,
+   Chromium'da bir dolu bir boş sayfa üretir; önizleme o boş sayfayı çizmez. */
+.page.cover, .page.flow { height:290mm; overflow:hidden; break-inside:avoid; }
 .page.flow > * { flex-shrink:0; }
 @media print {
   html { background:#fff; }
-  .page { margin:0; box-shadow:none; break-before:page; }
-  .student:first-child .page.cover { break-before:auto; }
+  .page { margin:0; box-shadow:none; break-before:auto; break-after:auto; }
   .tbl tr, .drow, .rrow, .grow, .spark, .lesson, .oblock { break-inside:avoid; }
   .card { break-inside:auto; }
 }
