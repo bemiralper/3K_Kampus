@@ -64,8 +64,12 @@
     <section class="card say"><h2>Bu sınavda</h2><ul>{% for c in s.comments %}<li{% if forloop.counter == 4 %} data-fit="4"{% elif forloop.counter == 3 %} data-fit="5"{% endif %}>{{ c }}</li>{% endfor %}</ul></section>
     {% endif %}
 
+    {% if s.rank_on_cover %}
+    {% include "olcme/karne/ranking.html" %}
+    {% endif %}
+
     {% if s.lessons %}
-    <div class="lhead"><h2>Dersler</h2><span class="legend"><i class="good"></i>başarı (net ÷ soru)<b class="tick"></b>kurum ortalaması{% if s.has_out %} · “puana girmez” testler de tam listelenir{% endif %}</span></div>
+    <div class="lhead"><h2>Dersler</h2><span class="legend"><i class="good"></i>başarı (net ÷ soru)<b class="tick"></b>kurum ortalaması</span></div>
     {% include "olcme/karne/lessons.html" with lessons=s.lessons flat=s.flat %}
     {% endif %}
 
@@ -184,22 +188,8 @@
       </div>
     </section>
 
-    {% if s.ranking %}
-    <section class="card rank">
-      <h2>Puan ve sıralama {% if s.ranking.year %}<small>{{ s.ranking.year }} verilerine göre tahmin</small>{% endif %}</h2>
-      <table class="tbl">
-        <thead><tr><th>Puan türü</th><th class="n">Puan</th><th class="n">Kurum ort.</th><th class="n">Net</th><th class="n">Kurum sırası</th><th class="n">Türkiye tahmini</th></tr></thead>
-        <tbody>
-          {% for r in s.ranking.rows %}
-          <tr class="{% if r.is_alan %}main{% endif %}"><td>{{ r.label }}</td><td class="n b">{{ r.puan }}</td><td class="n">{{ r.avg }}</td><td class="n">{{ r.net }}</td><td class="n">{{ r.kurum }}</td><td class="n">{{ r.turkiye }}</td></tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% if s.ranking.tyt %}
-      <div class="tyt"><span>Bağlı TYT · {{ s.ranking.tyt.name }}</span>
-        <b>{{ s.ranking.tyt.net }} net</b><b>{{ s.ranking.tyt.puan }} puan</b><span>Kurumda {{ s.ranking.tyt.kurum }}</span><span>Türkiye {{ s.ranking.tyt.turkiye }}</span></div>
-      {% endif %}
-    </section>
+    {% if s.ranking and not s.rank_on_cover %}
+    {% include "olcme/karne/ranking.html" %}
     {% endif %}
 
     {% if s.sparks %}

@@ -651,20 +651,23 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
     difficulty = _difficulty(data, penalty)
     lessons = _lessons(scope)
     tyt_lessons = _lessons(scope['tyt'])
-    flat = all(not lesson['subs'] for lesson in lessons)
     ahead = data.get('kurum_ici_yuzdelik')
     net_label = 'net'
     if is_ayt and data.get('net_etiket') and data.get('net_etiket') != 'NET':
         net_label = data['net_etiket'].replace(' NET', '') + ' net'
 
     has_trend = len(history) >= 2
+    shown = [lesson for lesson in lessons if not lesson['out']] or lessons
+    cmp_source = scope['mains'] if len(scope['mains']) >= 3 else scope['leaves']
+    cmp_source = [m for m in cmp_source if m.get('alana_dahil') is not False] or cmp_source
     cmp_rows = [{
         'name': m.get('section_name') or '',
         'w': f"{_ratio(m.get('net'), m.get('question_count')) * 100:.0f}",
         'kw': f"{_ratio(m.get('kurum_avg_net'), m.get('question_count')) * 100:.0f}",
         'tone': _tone(_ratio(m.get('net'), m.get('question_count'))),
         'diff': _signed(m.get('diff_kurum')),
-    } for m in (scope['mains'] if len(scope['mains']) >= 3 else scope['leaves'])]
+    } for m in cmp_source]
+    ranking = _ranking(data)
     kurum_scale = None
     if not has_trend and soru:
         kurum_scale = {
@@ -706,9 +709,10 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'yuzdelik': poss_gen(round(_num(data.get('yuzdelik_dilim')))) if data.get('yuzdelik_dilim') is not None else '',
         'yil': data.get('referans_yil') or '',
         'comments': list((data.get('karne_insights') or {}).get('comment') or [])[:4],
-        'lessons': lessons,
-        'flat': flat,
-        'has_out': any(lesson['out'] for lesson in lessons),
+        'lessons': shown,
+        'flat': all(not lesson['subs'] for lesson in shown),
+        'has_out': any(lesson['out'] for lesson in shown),
+        'rank_on_cover': bool(scope['out_ids']) and ranking is not None,
         'tyt_lessons': tyt_lessons,
         'tyt_flat': all(not lesson['subs'] for lesson in tyt_lessons),
         'tyt_title': data.get('linked_tyt_exam_name') or 'TYT',
@@ -731,7 +735,7 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'penalty_text': f'{k} yanlış 1 doğruyu götürür' if k else 'yanlışlar neti düşürmez',
         'strong': data.get('strong_areas') or [],
         'weak': data.get('weak_areas') or [],
-        'ranking': _ranking(data),
+        'ranking': ranking,
         'sparks': _section_history(data, scope['mains'], history),
         'spark_count': len(history),
         'retry': _retry(data, scope),

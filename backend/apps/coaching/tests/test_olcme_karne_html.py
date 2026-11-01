@@ -169,8 +169,9 @@ class KarneContextTest(SimpleTestCase):
             },
         ))
         self.assertEqual((ctx['correct'], ctx['wrong'], ctx['empty'], ctx['soru']), (20, 4, 16, 40))
-        self.assertEqual([l['name'] for l in ctx['lessons']], ['Matematik', 'Türk Dili'])
-        self.assertTrue(ctx['lessons'][1]['out'])
+        self.assertEqual([l['name'] for l in ctx['lessons']], ['Matematik'])
+        self.assertTrue(ctx['rank_on_cover'])
+        self.assertIn('Türk Dili', [r['name'] for r in ctx['table_rows']])
         self.assertEqual([l['name'] for l in ctx['tyt_lessons']], ['TYT · Türkçe'])
         self.assertIn('Türk Dili', [g['name'] for g in ctx['answers']])
         self.assertEqual(ctx['retry'], [])
@@ -201,11 +202,15 @@ class KarneContextTest(SimpleTestCase):
             return karne.build_karne_context(_tyt_payload(
                 exam_type='YKS_AYT', exam_type_label='AYT', alan_puan_turu=puan_turu,
                 net_etiket=etiket, section_details=sections, answer_grids=grids,
-                puan_turleri=None, topic_blocks=[],
+                puan_turleri={'SAY': {'puan': 400, 'ayt_net': 60, 'kurum_ici_sira': 1},
+                              'EA': {'puan': 300, 'ayt_net': 30}, 'SOZ': {'puan': 200, 'ayt_net': 10}},
+                topic_blocks=[],
                 karne_insights={'comment': [], 'hidden_section_ids': []},
             ))
 
         say = payload({'tde': False, 'sosyal': False, 'mat': True, 'fen': True}, 'SAY', 'SAY NET')
+        self.assertEqual([l['name'] for l in say['lessons']], ['Matematik', 'Fen Bilimleri'])
+        self.assertTrue(say['rank_on_cover'])
         self.assertEqual([r['name'] for r in say['retry']], ['Matematik', 'Fen Bilimleri'])
         self.assertEqual(say['retry_note'], 'sayısal puanına giren sorular')
         self.assertEqual(
@@ -214,10 +219,12 @@ class KarneContextTest(SimpleTestCase):
         )
 
         ea = payload({'tde': True, 'sosyal': False, 'mat': True, 'fen': False}, 'EA', 'EA NET')
+        self.assertEqual([l['name'] for l in ea['lessons']], ['TDE-Sosyal Bilimler-1', 'Matematik'])
         self.assertEqual([r['name'] for r in ea['retry']], ['TDE-Sosyal Bilimler-1', 'Matematik'])
         self.assertEqual(ea['retry_note'], 'eşit ağırlık puanına giren sorular')
 
         soz = payload({'tde': True, 'sosyal': True, 'mat': False, 'fen': False}, 'SOZ', 'SÖZ NET')
+        self.assertEqual([l['name'] for l in soz['lessons']], ['TDE-Sosyal Bilimler-1', 'Sosyal Bilimler-2'])
         self.assertEqual([r['name'] for r in soz['retry']], ['TDE-Sosyal Bilimler-1', 'Sosyal Bilimler-2'])
 
     def test_every_exam_type_lists_its_tests_and_its_score(self):
