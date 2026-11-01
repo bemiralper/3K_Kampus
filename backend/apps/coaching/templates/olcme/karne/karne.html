@@ -219,7 +219,7 @@
 
     {% if s.retry %}
     <section class="card">
-      <h2>Tekrar çözülecek sorular <small>kitapçıktaki soru numaraları</small>
+      <h2>Tekrar çözülecek sorular <small>kitapçıktaki soru numaraları{% if s.retry_note %} · {{ s.retry_note }}{% endif %}</small>
         <span class="legend"><i class="bad"></i>yanlış <i class="empty"></i>boş</span></h2>
       {% for r in s.retry %}
       <div class="rrow"><span class="gn">{{ r.name }}</span>

@@ -337,6 +337,9 @@ def _scope(data: dict) -> dict:
         'score_names': {r.get('section_name') for r in (score or tree['leaves'])},
         'hidden_grids': hidden_grids,
         'excluded_names': {r.get('section_name') for r in excluded},
+        # Üst test, çocuğundan biri alandaysa dahildir. Alan dışı testin
+        # kitapçık numarası tekrar listesine girmez.
+        'out_ids': {r.get('section_id') for r in current if r.get('alana_dahil') is False},
     }
 
 
@@ -528,7 +531,7 @@ def _ranking(data: dict) -> dict | None:
 def _retry(data: dict, scope: dict) -> list[dict]:
     out = []
     for g in data.get('answer_grids') or []:
-        if g.get('section_id') in scope['hidden_grids']:
+        if g.get('section_id') in scope['hidden_grids'] or g.get('section_id') in scope['out_ids']:
             continue
         qs = g.get('questions') or []
         wrong = [q.get('n') for q in qs if q.get('result') == 'wrong']
@@ -732,6 +735,11 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'sparks': _section_history(data, scope['mains'], history),
         'spark_count': len(history),
         'retry': _retry(data, scope),
+        'retry_note': (
+            {'SAY': 'sayısal puanına giren sorular', 'EA': 'eşit ağırlık puanına giren sorular',
+             'SOZ': 'sözel puanına giren sorular'}.get(alan_pt, '')
+            if scope['out_ids'] else ''
+        ),
         'outcomes': _outcome_blocks(blocks),
         'answers': _answer_rows(data, scope),
     }
