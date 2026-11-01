@@ -121,7 +121,7 @@
     <footer class="foot"><span>{{ s.kurum_ad }} · Ölçme ve Değerlendirme</span><span>Tahminler geçmiş yıl verilerine dayanır; kesin sonuç değildir.</span></footer>
   </div>
 
-  <div class="page flow">
+  <div class="page flow" data-sheet="deep">
     <header class="mini">
       <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
       <div class="mini-t">Derinlemesine</div>
@@ -222,7 +222,7 @@
   </div>
 
   {% if s.outcomes or s.answers %}
-  <div class="page flow">
+  <div class="page flow" data-sheet="map">
     <header class="mini">
       <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
       <div class="mini-t">{% if s.outcomes %}Kazanım haritası{% else %}Cevaplar{% endif %}</div>
@@ -279,7 +279,105 @@
       var count = page.querySelector('.pcount');
       if (count) count.textContent = page.querySelectorAll('.focus li').length;
     });
+    paginate();
     document.body.dataset.fitted = '1';
+  }
+
+  function mm(page) { return page.getBoundingClientRect().width / 210; }
+  function room(page) { return page.getBoundingClientRect().bottom - 16 * mm(page); }
+  function blocks(page) {
+    return Array.prototype.filter.call(page.children, function (el) {
+      return !el.classList.contains('mini') && !el.classList.contains('foot');
+    });
+  }
+  function nextPage(page) {
+    var n = page.nextElementSibling;
+    if (n && n.dataset.sheet === page.dataset.sheet && n.dataset.made === '1') return n;
+    n = document.createElement('div');
+    n.className = 'page flow';
+    n.dataset.sheet = page.dataset.sheet;
+    n.dataset.made = '1';
+    var mini = page.querySelector('.mini');
+    var foot = page.querySelector('.foot');
+    if (mini) n.appendChild(mini.cloneNode(true));
+    if (foot) n.appendChild(foot.cloneNode(true));
+    page.parentNode.insertBefore(n, page.nextElementSibling);
+    return n;
+  }
+  function beforeFoot(page, node) { page.insertBefore(node, page.querySelector('.foot')); }
+  function splitRows(card, lim, dest) {
+    var body = card.querySelector(':scope > table > tbody');
+    if (!body || body.rows.length < 2) return false;
+    var move = Array.prototype.filter.call(body.rows, function (tr) {
+      return tr.getBoundingClientRect().bottom > lim;
+    });
+    if (!move.length || move.length === body.rows.length) return false;
+    var clone = card.cloneNode(true);
+    var fresh = clone.querySelector('tbody');
+    fresh.innerHTML = '';
+    move.forEach(function (tr) { fresh.appendChild(tr); });
+    var title = clone.querySelector('h2');
+    if (title && title.textContent.indexOf('devam') === -1) {
+      var mark = document.createElement('small');
+      mark.textContent = 'devam';
+      title.appendChild(mark);
+    }
+    beforeFoot(dest, clone);
+    return true;
+  }
+  function splitKids(node, lim, dest) {
+    var kids = Array.prototype.filter.call(node.children, function (el) { return el.tagName !== 'H2'; });
+    if (kids.length < 2) return false;
+    var move = kids.filter(function (el) { return el.getBoundingClientRect().bottom > lim; });
+    if (!move.length || move.length === kids.length) return false;
+    var clone = node.cloneNode(false);
+    var title = node.querySelector(':scope > h2');
+    if (title) {
+      var copy = title.cloneNode(true);
+      if (copy.textContent.indexOf('devam') === -1) {
+        var mark = document.createElement('small');
+        mark.textContent = 'devam';
+        copy.appendChild(mark);
+      }
+      clone.appendChild(copy);
+    }
+    move.forEach(function (el) { clone.appendChild(el); });
+    beforeFoot(dest, clone);
+    return true;
+  }
+  function paginate() {
+    var queue = Array.prototype.slice.call(document.querySelectorAll('.page.flow'));
+    var seen = 0;
+    while (queue.length && seen++ < 40) {
+      var page = queue.shift();
+      var guard = 0;
+      while (guard++ < 12) {
+        var lim = room(page);
+        var offender = null;
+        var list = blocks(page);
+        for (var i = 0; i < list.length; i++) {
+          if (list[i].getBoundingClientRect().bottom > lim + 0.5) { offender = list[i]; break; }
+        }
+        if (!offender) break;
+        var dest = nextPage(page);
+        if (queue[0] !== dest) queue.unshift(dest);
+        if (offender.querySelector(':scope > table') && splitRows(offender, lim, dest)) continue;
+        if ((offender.classList.contains('lessons') || offender.classList.contains('card')) && splitKids(offender, lim, dest)) continue;
+        var rest = [];
+        var take = false;
+        blocks(page).forEach(function (el) {
+          if (el === offender) take = true;
+          if (take) rest.push(el);
+        });
+        var head = page.querySelector('.mini');
+        var top = head ? head.getBoundingClientRect().bottom : page.getBoundingClientRect().top;
+        if (rest.length === blocks(page).length && offender.getBoundingClientRect().top <= top + 4) break;
+        if (offender.classList.contains('lessons') && offender.previousElementSibling && offender.previousElementSibling.classList.contains('lhead')) {
+          rest.unshift(offender.previousElementSibling);
+        }
+        rest.forEach(function (el) { beforeFoot(dest, el); });
+      }
+    }
   }
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit); else fit();
 })();

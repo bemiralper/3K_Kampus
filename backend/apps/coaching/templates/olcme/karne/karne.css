@@ -1,5 +1,6 @@
-@page { size: A4; margin: 10mm 0 11mm; }
-@page cover { size: A4; margin: 0; }
+/* Tek sayfa kuralı. Kapak ile devam sayfasının kenar boşluğu farklı olursa
+   Chromium araya boş sayfa koyar; önizleme o sayfayı göstermez. */
+@page { size: A4; margin: 0; }
 :root { --ink:#0f172a; --muted:#64748b; --line:#e5e9f0; --soft:#f5f7fb;
   --good:#16a34a; --bad:#e5484d; --mid:#f59e0b; --empty:#cbd5e1; }
 .student { --brand:#0262a7; }
@@ -11,15 +12,14 @@ h1,h2,h3,.v,.v2,.lv b,.donut-c b,.big,.exam { font-family:'Poppins','Inter',syst
 
 .page { width:210mm; background:#fff; margin:8mm auto; position:relative; padding:0 11mm 9mm;
   box-shadow:0 10px 40px rgba(15,23,42,.12); display:flex; flex-direction:column; gap:3.4mm; }
-.page.cover { height:297mm; overflow:hidden; page:cover; }
-.page.flow { min-height:297mm; }
+.page.cover, .page.flow { height:296.5mm; overflow:hidden; }
+.page.flow > * { flex-shrink:0; }
 @media print {
   html { background:#fff; }
   .page { margin:0; box-shadow:none; break-before:page; }
   .student:first-child .page.cover { break-before:auto; }
-  .page.flow { min-height:0; padding-bottom:0; }
-  .page.flow .mini { padding-top:0; }
-  .card, .drow, .rrow, .grow, .spark, .tbl tr { break-inside:avoid; }
+  .tbl tr, .drow, .rrow, .grow, .spark, .lesson, .oblock { break-inside:avoid; }
+  .card { break-inside:auto; }
 }
 
 /* radial-gradient PDF'e resim olarak gömülür ve dosyayı büyütür; parıltı vektörel dairelerle verilir */

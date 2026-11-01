@@ -70,6 +70,7 @@ def render_html_to_pdf(
     landscape: bool = False,
     footer_template: str | None = None,
     css_page_size: bool = False,
+    ready_selector: str | None = None,
 ) -> bytes:
     """Tam HTML belgesini PDF baytlarına çevirir.
 
@@ -81,7 +82,7 @@ def render_html_to_pdf(
     try:
         return _render_html_playwright(
             html, timeout_ms=timeout * 1000, landscape=landscape, footer_template=footer_template,
-            css_page_size=css_page_size,
+            css_page_size=css_page_size, ready_selector=ready_selector,
         )
     except RuntimeError as exc:
         playwright_err = exc
@@ -102,6 +103,7 @@ def _render_html_playwright(
     landscape: bool = False,
     footer_template: str | None = None,
     css_page_size: bool = False,
+    ready_selector: str | None = None,
 ) -> bytes:
     try:
         from playwright.sync_api import sync_playwright
@@ -114,6 +116,8 @@ def _render_html_playwright(
         try:
             page = browser.new_page(viewport={'width': 1280, 'height': 1800})
             page.set_content(html, wait_until='networkidle', timeout=timeout_ms)
+            if ready_selector:
+                page.wait_for_selector(ready_selector, state='attached', timeout=timeout_ms)
             pdf_kwargs: dict = {
                 'format': 'A4',
                 'landscape': landscape,

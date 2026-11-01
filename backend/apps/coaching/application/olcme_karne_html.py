@@ -769,4 +769,7 @@ def render_karne_pdf_html(payloads: list[dict]) -> bytes:
     from apps.communication.application.html_to_pdf import render_html_to_pdf
 
     document = render_karne_html(payloads)
-    return render_html_to_pdf(document, timeout=60 + 3 * len(payloads), css_page_size=True)
+    return render_html_to_pdf(
+        document, timeout=60 + 3 * len(payloads), css_page_size=True,
+        ready_selector='body[data-fitted="1"]',
+    )
