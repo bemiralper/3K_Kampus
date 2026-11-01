@@ -11,7 +11,7 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST
 from django.views.decorators.csrf import csrf_exempt
-from django.db import models
+from django.db import models, transaction
 from datetime import datetime
 
 from apps.ogrenci.application.services import OgrenciService, sync_default_ogrenci_adres
@@ -38,15 +38,15 @@ def _json_str(data: dict, key: str, default: str = '') -> str:
 VELI_SMS_CATEGORIES = frozenset({'duyuru', 'devamsizlik', 'odeme'})
 
 
-def _sync_term_placement_from_kayit(ogrenci, sinif_id):
+def _sync_term_placement_from_kayit(ogrenci, sinif_id, *, egitim_yili_id=None):
     """Öğrenci detay sayfasından yapılan sınıf değişikliğini aktif döneme
     ait StudentClassPlacement kaydına da yansıtır.
 
     Eğitim Tanımları > Sınıflar sekmesindeki "Öğrenci" ataması dönem bazlı
     yerleşim (StudentClassPlacement) üzerinden çalışır; buradan (öğrenci
     detay sayfası) yapılan sınıf değişikliği de aynı tabloya yazılmazsa iki
-    ekran arasında tutarsızlık oluşur. Bu senkron en iyi çaba (best-effort)
-    prensibiyle çalışır — başarısız olsa da öğrenci güncellemesini bloklamaz.
+    ekran arasında tutarsızlık oluşur. Senkron atomik çalışır; yerleşim
+    hatasında öğrenci güncellemesi de geri alınır.
     """
     if not ogrenci.kurum_id or not ogrenci.sube_id:
         return
@@ -60,7 +60,7 @@ def _sync_term_placement_from_kayit(ogrenci, sinif_id):
         from apps.sinif.domain.models import Sinif
 
         aktif_donem = get_active_term_or_none(kurum_id=ogrenci.kurum_id, sube_id=ogrenci.sube_id)
-        if not aktif_donem:
+        if not aktif_donem or (egitim_yili_id and aktif_donem.egitim_yili_id != egitim_yili_id):
             return
 
         if sinif_id:
@@ -87,6 +87,7 @@ def _sync_term_placement_from_kayit(ogrenci, sinif_id):
         logger.exception(
             'Öğrenci #%s için dönem bazlı sınıf yerleşimi senkronize edilemedi', ogrenci.id,
         )
+        raise
 
 
 def _parse_bool(raw, *, default: bool = False) -> bool:
@@ -722,6 +723,7 @@ def _deneme_sayisi(ogrenci_id: int) -> int:
 
 @csrf_exempt
 @require_ogrenci_api
+@transaction.atomic
 def ogrenci_api(request, pk):
     """
     Öğrenci API - GET: Detay, PUT: Güncelle
@@ -778,26 +780,15 @@ def ogrenci_api(request, pk):
                 else:
                     update_data[field] = value
         
-        # Güncelle
-        updated_ogrenci, errors = service.update(pk, update_data)
-        
-        if errors:
-            return JsonResponse({'success': False, 'errors': errors}, status=400)
-
-        if 'adres' in update_data:
-            sync_default_ogrenci_adres(updated_ogrenci, update_data['adres'])
-
         # Yıllık kayıt — sınıf / seviye / okul güncellemesi
         kayit_updates = {}
-        if 'sinif_id' in data:
-            sinif_val = data.get('sinif_id')
-            kayit_updates['sinif_id'] = int(sinif_val) if sinif_val not in (None, '', 0) else None
-        if 'sinif_seviyesi_id' in data:
-            seviye_val = data.get('sinif_seviyesi_id')
-            kayit_updates['sinif_seviyesi_id'] = int(seviye_val) if seviye_val not in (None, '', 0) else None
-        if 'alan_id' in data:
-            alan_val = data.get('alan_id')
-            kayit_updates['alan_id'] = int(alan_val) if alan_val not in (None, '', 0) else None
+        try:
+            for field in ('sinif_id', 'sinif_seviyesi_id', 'alan_id'):
+                if field in data:
+                    value = data[field]
+                    kayit_updates[field] = int(value) if value not in (None, '', 0, '0') else None
+        except (TypeError, ValueError):
+            return JsonResponse({'success': False, 'error': 'Sınıf, seviye ve alan kimlikleri sayı olmalıdır.'}, status=400)
 
         school_requested = 'school_id' in data
         if school_requested:
@@ -814,10 +805,46 @@ def ogrenci_api(request, pk):
                     return JsonResponse({'success': False, 'errors': {'school_id': school_err}}, status=400)
                 kayit_updates['school_id'] = okul.id if okul else None
 
+        from shared.context import get_secili_egitim_yili_id
+        selected_year = get_secili_egitim_yili_id(request)
+        aktif_kayit = None
         if kayit_updates:
-            aktif_kayit = OgrenciKayit.objects.filter(
-                ogrenci_id=pk, aktif_mi=True,
-            ).order_by('-egitim_yili__baslangic_yil', '-created_at').first()
+            kayitlar = OgrenciKayit.objects.select_for_update().filter(
+                ogrenci_id=pk, kurum_id=ogrenci.kurum_id, sube_id=ogrenci.sube_id,
+            )
+            reactivating = not ogrenci.aktif_mi and _parse_bool(update_data.get('aktif_mi'), default=False)
+            if not reactivating:
+                kayitlar = kayitlar.filter(aktif_mi=True)
+            if selected_year:
+                kayitlar = kayitlar.filter(egitim_yili_id=selected_year)
+            elif kayitlar.count() > 1:
+                return JsonResponse({'success': False, 'error': 'Eğitim yılı seçilmelidir.'}, status=400)
+            aktif_kayit = kayitlar.first()
+            if not aktif_kayit:
+                return JsonResponse({'success': False, 'error': 'Seçili eğitim yılında aktif öğrenci kaydı bulunamadı.'}, status=400)
+            selected_year = aktif_kayit.egitim_yili_id
+            from apps.sinif.domain.models import Sinif
+            from apps.egitim_tanimlari.models import SinifSeviyesi, Alan
+            for field, model in [('sinif_id', Sinif), ('sinif_seviyesi_id', SinifSeviyesi), ('alan_id', Alan)]:
+                value = kayit_updates.get(field)
+                if not value:
+                    continue
+                qs = model.objects.filter(pk=value, kurum_id=ogrenci.kurum_id, sube_id=ogrenci.sube_id)
+                if field == 'sinif_id':
+                    qs = qs.filter(egitim_yili_id=selected_year)
+                if not qs.exists():
+                    return JsonResponse({'success': False, 'errors': {field: 'Seçim bu kurum/şube/eğitim yılına ait değil.'}}, status=400)
+
+        if 'aktif_mi' in update_data:
+            update_data['aktif_mi'] = _parse_bool(update_data['aktif_mi'], default=ogrenci.aktif_mi)
+        updated_ogrenci, errors = service.update(pk, update_data, egitim_yili_id=selected_year)
+        if errors:
+            transaction.set_rollback(True)
+            return JsonResponse({'success': False, 'errors': errors}, status=400)
+        if 'adres' in update_data:
+            sync_default_ogrenci_adres(updated_ogrenci, update_data['adres'])
+
+        if kayit_updates:
             if aktif_kayit:
                 update_fields = []
                 if 'sinif_id' in kayit_updates:
@@ -836,8 +863,12 @@ def ogrenci_api(request, pk):
                 if update_fields:
                     aktif_kayit.save(update_fields=update_fields)
 
-                if 'sinif_id' in kayit_updates:
-                    _sync_term_placement_from_kayit(ogrenci, kayit_updates['sinif_id'])
+                if 'sinif_id' in kayit_updates and updated_ogrenci.aktif_mi:
+                    try:
+                        _sync_term_placement_from_kayit(ogrenci, kayit_updates['sinif_id'], egitim_yili_id=selected_year)
+                    except Exception:
+                        transaction.set_rollback(True)
+                        return JsonResponse({'success': False, 'error': 'Sınıf yerleşimi güncellenemedi; değişiklikler geri alındı.'}, status=400)
 
         return JsonResponse({
             'success': True,
@@ -856,10 +887,12 @@ def ogrenci_api(request, pk):
         return value.strftime(format_str) if value else ''
     
     # Aktif kayıt bilgisini al (en güncel yıl kaydı)
-    aktif_kayit = OgrenciKayit.objects.filter(
-        ogrenci=ogrenci,
-        aktif_mi=True,
-    ).select_related(
+    from shared.context import get_secili_egitim_yili_id
+    kayitlar = OgrenciKayit.objects.filter(ogrenci=ogrenci, aktif_mi=True)
+    selected_year = get_secili_egitim_yili_id(request)
+    if selected_year:
+        kayitlar = kayitlar.filter(egitim_yili_id=selected_year)
+    aktif_kayit = kayitlar.select_related(
         'sinif', 'sinif__sinif_seviyesi', 'sinif_seviyesi', 'egitim_yili', 'alan', 'school'
     ).order_by('-egitim_yili__baslangic_yil', '-created_at').first()
     

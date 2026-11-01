@@ -218,6 +218,10 @@ const landingCache = new Map<
 >();
 
 /** Admin kaydı sonrası anasayfa önbelleğini temizle */
+export function clearLandingDataCache() {
+  landingCache.clear();
+}
+
 export async function invalidateLandingCache(kod = '3K') {
   landingCache.delete(kod);
   if (typeof window !== 'undefined') {

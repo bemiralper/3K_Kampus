@@ -160,6 +160,8 @@ def send_answer_key_notify(
     sent_by_user_id: int | None = None,
     student_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
+    excluded_student_ids: list[int] | None = None,
+    excluded_veli_ids: list[int] | None = None,
 ) -> dict:
     if not pdf_bytes or not pdf_bytes.startswith(b'%PDF'):
         raise ValueError('Geçersiz veya boş cevap anahtarı PDF.')
@@ -172,6 +174,8 @@ def send_answer_key_notify(
     if student_ids is not None:
         allowed = {int(x) for x in student_ids}
         participants = participants.filter(student_id__in=allowed)
+    excluded_students = set(excluded_student_ids or [])
+    excluded_velis = set(excluded_veli_ids or [])
     selected_veli = {int(x) for x in veli_ids} if veli_ids is not None else None
     from apps.communication.application.bulk_dispatch import map_bulk
 
@@ -191,7 +195,7 @@ def send_answer_key_notify(
             veliler = list(list_outbound_veliler(student))
             matched = [
                 (veli, phone) for veli, phone in veliler
-                if selected_veli is None or veli.id in selected_veli
+                if veli.id not in excluded_velis and (selected_veli is None or veli.id in selected_veli)
             ]
             if not matched:
                 skipped += 1
@@ -218,7 +222,7 @@ def send_answer_key_notify(
                     sent_by_user_id=sent_by_user_id,
                     fallback_body=body,
                 )))
-        if include_student:
+        if include_student and student.id not in excluded_students:
             phone_skip = ContactResolver.ogrenci_outbound_skip(
                 student, empty='Öğrenci telefonu bulunamadı',
             )

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { examApi } from './api';
 import s from '../../app/admin/olcme-degerlendirme/olcme.module.css';
-import type { ExamPublishDispatch, ExamPublishStatus } from './types';
+import type { ExamPublishDispatch, ExamPublishStatus, ExamRecipientOptions } from './types';
 import ExamPublishNotifyModal from './ExamPublishNotifyModal';
 
 function fmtWhen(iso: string | null) {
@@ -63,6 +63,10 @@ function Row({
   const [busy, setBusy] = useState('');
   const [editing, setEditing] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerMode, setPickerMode] = useState<'send' | 'schedule'>('send');
+  const [recipients, setRecipients] = useState<ExamRecipientOptions>(row.recipient_options || {
+    include_veli: true, include_student: true, excluded_student_ids: [], excluded_veli_ids: [],
+  });
   const [when, setWhen] = useState(toLocalInput(row.scheduled_at));
   const [auto, setAuto] = useState(row.is_enabled);
   const [error, setError] = useState('');
@@ -72,6 +76,12 @@ function Row({
     setAuto(row.is_enabled);
   }, [row.scheduled_at, row.is_enabled]);
 
+  useEffect(() => {
+    setRecipients(row.recipient_options || {
+      include_veli: true, include_student: true, excluded_student_ids: [], excluded_veli_ids: [],
+    });
+  }, [row.recipient_options]);
+
   const saveSchedule = async (enabled: boolean, at: string) => {
     if (enabled && !at) {
       setError('Otomatik gönderim için tarih ve saat seçin.');
@@ -80,7 +90,7 @@ function Row({
     setBusy('schedule');
     setError('');
     try {
-      onChanged(await examApi.publishReschedule(examId, row.kind, at || null, enabled));
+      onChanged(await examApi.publishReschedule(examId, row.kind, at || null, enabled, recipients));
       setEditing(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Kaydedilemedi');
@@ -101,6 +111,13 @@ function Row({
           <div className={s.publishName}>{label}</div>
           <div className={s.publishWhen}>{fmtWhen(row.scheduled_at) || 'Saat yok'}</div>
           <div className={s.publishHint} style={{ color: statusColor(row) }}>{statusLine(row)}</div>
+          <div className={s.publishHint}>
+            Alıcı: {row.recipient_options?.include_student !== false
+              ? row.recipient_options?.include_veli !== false ? 'Öğrenci ve veli' : 'Öğrenci'
+              : 'Veli'}
+            {((row.recipient_options?.excluded_student_ids.length || 0) + (row.recipient_options?.excluded_veli_ids.length || 0)) > 0
+              && ` · ${(row.recipient_options?.excluded_student_ids.length || 0) + (row.recipient_options?.excluded_veli_ids.length || 0)} kişi hariç`}
+          </div>
           {row.last_error && <div className={s.publishError}>{row.last_error}</div>}
           {row.campaign_id && (
             <div style={{ marginTop: 4 }}>
@@ -115,7 +132,15 @@ function Row({
             type="button"
             className={s.publishBtn}
             disabled={busy !== ''}
-            onClick={() => { setEditing(v => !v); setError(''); }}
+            onClick={() => {
+              setEditing(v => !v);
+              setWhen(toLocalInput(row.scheduled_at));
+              setAuto(row.is_enabled);
+              setRecipients(row.recipient_options || {
+                include_veli: true, include_student: true, excluded_student_ids: [], excluded_veli_ids: [],
+              });
+              setError('');
+            }}
           >
             {editing ? 'Vazgeç' : 'Düzenle'}
           </button>
@@ -134,7 +159,7 @@ function Row({
             className="btn-modern btn-primary"
             style={{ padding: '5px 12px', fontSize: 12 }}
             disabled={busy !== ''}
-            onClick={() => { setPickerOpen(true); setError(''); }}
+            onClick={() => { setPickerMode('send'); setPickerOpen(true); setError(''); }}
           >
             Gönder
           </button>
@@ -142,6 +167,18 @@ function Row({
       </div>
       {editing && (
         <div className={s.publishEdit}>
+          <label className={s.formGroup} style={{ margin: 0 }}>
+            <span>Kimlere gönderilsin?</span>
+            <select value={recipients.include_student ? recipients.include_veli ? 'both' : 'student' : 'veli'}
+              onChange={e => setRecipients(p => ({ ...p, include_student: e.target.value !== 'veli', include_veli: e.target.value !== 'student' }))}>
+              <option value="student">Öğrenci</option><option value="veli">Veli</option><option value="both">Öğrenci ve veli</option>
+            </select>
+          </label>
+          <button type="button" className={s.publishBtn} disabled={busy !== ''}
+            onClick={() => { setPickerMode('schedule'); setPickerOpen(true); }}>
+            Alıcıları düzenle ({recipients.excluded_student_ids.length + recipients.excluded_veli_ids.length} kişi hariç)
+          </button>
+          <span className={s.publishHint}>Seçimlerin uygulanması için Kaydet düğmesine basın.</span>
           <input
             type="datetime-local"
             value={when}
@@ -180,6 +217,8 @@ function Row({
           examName={examName}
           kind={row.kind}
           kindLabel={kindLabel}
+          initialSelection={recipients}
+          onSelectionSave={pickerMode === 'schedule' ? setRecipients : undefined}
           onClose={() => setPickerOpen(false)}
           onSent={async () => {
             try { onChanged(await examApi.publishDispatch(examId)); }

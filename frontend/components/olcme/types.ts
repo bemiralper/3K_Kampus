@@ -125,6 +125,13 @@ export interface ExamListItem {
   created_at: string;
 }
 
+export interface ExamRecipientOptions {
+  include_veli: boolean;
+  include_student: boolean;
+  excluded_student_ids: number[];
+  excluded_veli_ids: number[];
+}
+
 export interface ExamPublishDispatch {
   id: number;
   kind: 'karne' | 'answer_key';
@@ -139,6 +146,7 @@ export interface ExamPublishDispatch {
   ready: boolean;
   is_enabled: boolean;
   campaign_id: string | null;
+  recipient_options?: ExamRecipientOptions;
 }
 
 export interface ExamPublishStatus {

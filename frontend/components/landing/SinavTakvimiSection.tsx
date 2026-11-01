@@ -2,11 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
-import { sinavTurBadge } from '@/lib/landing-theme';
 import { SINAV_TABS, filterSinavByTab, sinavTabById, type SinavTabId } from '@/lib/sinav-takvim';
 import MonthCalendarGrid, { chipTone } from './MonthCalendarGrid';
 import SinavDetailModal from './SinavDetailModal';
-import SinavSecimKarti from './SinavSecimKarti';
+import SinavPoster from './SinavPoster';
 import './public-home.css';
 import './sinav-takvim.css';
 
@@ -21,10 +20,6 @@ const MONTH_SHORT = ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', '
 function isInMonth(tarih: string, year: number, month: number) {
   const [y, m] = tarih.split('-').map(Number);
   return y === year && m === month + 1;
-}
-
-function clock(value?: string | null) {
-  return value ? value.slice(0, 5) : '';
 }
 
 function currentMonthYear() {
@@ -93,7 +88,6 @@ export default function SinavTakvimiSection({ sinavlar, kurumAdi = '3K Kampüs' 
   const [detail, setDetail] = useState<SinavTakvim | null>(null);
 
   useEffect(() => {
-    setCalendar(currentMonthYear());
     setTurFilter('all');
     setOnlyNational(false);
   }, [tab]);
@@ -119,16 +113,14 @@ export default function SinavTakvimiSection({ sinavlar, kurumAdi = '3K Kampüs' 
   }, [examsInMonth]);
 
   useEffect(() => {
-    if (visible.some(exam => exam.id === selectedId)) return;
-    setSelectedId(visible[0]?.id ?? null);
+    if (selectedId !== null && !visible.some(exam => exam.id === selectedId)) setSelectedId(null);
   }, [visible, selectedId]);
 
-  const selected = visible.find(exam => exam.id === selectedId) || null;
   const isCurrentMonth = month === new Date().getMonth() && year === new Date().getFullYear();
 
   const chooseExam = (exam: SinavTakvim) => {
     setSelectedId(exam.id);
-    if (window.matchMedia('(max-width: 980px)').matches) setDetail(exam);
+    setDetail(exam);
   };
 
   const prevMonth = () => {
@@ -187,7 +179,7 @@ export default function SinavTakvimiSection({ sinavlar, kurumAdi = '3K Kampüs' 
           ))}
         </div>
 
-        <div className="stk-layout">
+        <div className="stk-layout stk-layout--calendar-only">
           <div className="stk-main">
             <div className="stk-calhead">
               <div className="stk-caltitle">
@@ -256,28 +248,22 @@ export default function SinavTakvimiSection({ sinavlar, kurumAdi = '3K Kampüs' 
                 {visible.length === 0 ? (
                   <p className="stk-empty">{MONTHS[month]} {year} ayında {activeTab.emptyMonth}</p>
                 ) : visible.map(exam => {
-                  const tone = chipTone(exam.tur);
                   const day = Number(exam.tarih.slice(8, 10));
                   return (
                     <button
                       key={exam.id}
                       type="button"
-                      className="stk-list-item"
+                      className="stk-list-item stk-list-item--poster"
                       data-on={exam.id === selectedId ? 'true' : 'false'}
+                      aria-label={`${exam.baslik}, ${exam.tarih} — detayları aç`}
                       onClick={() => chooseExam(exam)}
                     >
                       <time dateTime={exam.tarih}>
                         <b>{day}</b>
                         {MONTH_SHORT[month]}
                       </time>
-                      <span>
-                        <strong>{exam.baslik}</strong>
-                        <small>
-                          <em style={{ color: tone.fg }}>{sinavTurBadge(exam.tur)}</em>
-                          {clock(exam.saat) && <span>{clock(exam.saat)}{exam.saat_bitis ? `–${clock(exam.saat_bitis)}` : ''}</span>}
-                          {exam.yayin_adi && <span>{exam.yayin_adi}</span>}
-                        </small>
-                      </span>
+                      <SinavPoster url={exam.gorsel_url} className="stk-list-poster" />
+                      {exam.kapsam === 'turkiye_geneli' && <span className="stk-national">Türkiye Geneli</span>}
                     </button>
                   );
                 })}
@@ -296,17 +282,7 @@ export default function SinavTakvimiSection({ sinavlar, kurumAdi = '3K Kampüs' 
             )}
           </div>
 
-          <aside className="stk-side" aria-label="Seçilen sınav">
-            {selected ? (
-              <SinavSecimKarti
-                sinav={selected}
-                kurumAdi={kurumAdi}
-                onPosterClick={() => setDetail(selected)}
-              />
-            ) : (
-              <p className="stk-side-empty">Bu görünümde seçilecek sınav yok.</p>
-            )}
-          </aside>
+
         </div>
       </div>
 

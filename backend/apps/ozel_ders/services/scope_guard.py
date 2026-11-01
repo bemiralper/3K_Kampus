@@ -23,8 +23,12 @@ def ensure_ogrenci(ogrenci_id: Any, *, kurum_id: int) -> Optional[int]:
     from apps.ogrenci.domain.models import Ogrenci
 
     pk = _as_int(ogrenci_id, 'ogrenci_id')
-    if pk is not None and not Ogrenci.objects.filter(pk=pk, kurum_id=kurum_id).exists():
-        raise _deny('ogrenci_id')
+    if pk is not None:
+        student = Ogrenci.objects.filter(pk=pk, kurum_id=kurum_id).first()
+        if not student:
+            raise _deny('ogrenci_id')
+        if not student.aktif_mi:
+            raise OzelDersError('Pasif öğrenciye özel ders işlemi yapılamaz.', 'ogrenci_id')
     return pk
 
 

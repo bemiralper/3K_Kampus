@@ -38,7 +38,12 @@ def close_revoked_sozlesme_erisim(sozlesme, *, dry_run=False) -> dict:
     """İptal veya fesih sonrası, başka geçerli sözleşme kalmadıysa erişimi kapatır."""
     if not getattr(sozlesme, 'ogrenci_id', None) or sozlesme.durum in GRANTING_DURUMLAR:
         return {'closed_paket': [], 'closed_ek_hizmet': []}
-    return _close_stale_erisim(sozlesme, dry_run=dry_run)
+    from django.db import transaction
+    from apps.ozel_ders.services.sync_service import reconcile_contract_programs
+    with transaction.atomic():
+        result = _close_stale_erisim(sozlesme, dry_run=dry_run)
+        result['closed_programs'] = reconcile_contract_programs(sozlesme, dry_run=dry_run)
+        return result
 
 
 def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False, refresh_inclusions=None) -> dict:
@@ -106,6 +111,8 @@ def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False, refresh_inclusio
         _realign_ek_hizmet_years(sozlesme.ogrenci_id, access['ek_years'], result, dry_run=dry_run)
         closed = _close_stale_erisim(sozlesme, access=access, dry_run=dry_run)
         result.update(closed)
+        from apps.ozel_ders.services.sync_service import reconcile_contract_programs
+        result['closed_programs'] = reconcile_contract_programs(sozlesme, user=user, dry_run=dry_run)
     return result
 
 

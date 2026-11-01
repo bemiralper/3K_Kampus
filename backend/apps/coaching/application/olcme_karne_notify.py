@@ -390,6 +390,8 @@ def send_karne_notify_bulk(
     sent_by_user_id: int | None = None,
     sube_id: int | None = None,
     veli_ids: list[int] | None = None,
+    excluded_student_ids: list[int] | None = None,
+    excluded_veli_ids: list[int] | None = None,
 ) -> dict:
     """items: [{answer_id, karne, pdf_bytes, filename, sube_id?}]"""
     sent = 0
@@ -402,6 +404,8 @@ def send_karne_notify_bulk(
     from apps.communication.application.bulk_dispatch import map_bulk, queue_workers
 
     allowed_veli = {int(x) for x in veli_ids} if veli_ids is not None else None
+    excluded_students = set(excluded_student_ids or [])
+    excluded_velis = set(excluded_veli_ids or [])
     jobs: list[dict] = []
 
     for item in items:
@@ -411,13 +415,22 @@ def send_karne_notify_bulk(
         selected = [
             r.veli_id for r in preview.recipients
             if r.recipient_type == 'veli' and r.veli_id and not r.skip_reason
+            and r.veli_id not in excluded_velis
             and (allowed_veli is None or r.veli_id in allowed_veli)
         ] if include_veli else []
-        send_student = include_student and any(
+        send_student = include_student and karne.get('student_id') not in excluded_students and any(
             r.recipient_type == 'ogrenci' and not r.skip_reason
             for r in preview.recipients
         )
         if not selected and not send_student:
+            # Kullanıcının çıkardığı alıcılar teslimat hatası olarak gösterilmez.
+            excluded_by_user = any(
+                (r.recipient_type == 'veli' and r.veli_id in excluded_velis)
+                or (r.recipient_type == 'ogrenci' and r.ogrenci_id in excluded_students)
+                for r in preview.recipients
+            )
+            if excluded_by_user:
+                continue
             skipped += 1
             reason = summarize_preview(preview)['skip_reason'] or 'Alıcı yok'
             errors.append(f'{student_name}: {reason}')

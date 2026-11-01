@@ -26,7 +26,7 @@ function clock(value?: string | null) {
 
 type SinavCalendarAdminProps = {
   sinavlar: SinavTakvim[];
-  onReload: () => void;
+  onReload: () => void | Promise<void>;
   onMessage?: (msg: string, type?: 'success' | 'error') => void;
 };
 
@@ -132,9 +132,6 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   const modalOpen = editId !== null;
 
   useEffect(() => {
-    const now = new Date();
-    setMonth(now.getMonth());
-    setYear(now.getFullYear());
     setShowAllExams(false);
   }, [tab]);
 
@@ -281,6 +278,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   };
 
   const requestClose = () => {
+    if (saving || removingImage || removingLibraryId !== null) return;
     if (isDirty()) {
       setShowUnsaved(true);
       return;
@@ -306,9 +304,27 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   };
 
   const save = async () => {
+    if (saving) return;
     if (form.gunler.length === 0 || form.gunler.some(gun => !gun.tarih)) {
       onMessage?.('Her günün tarihi seçilmelidir', 'error');
       return;
+    }
+    const seen = new Set<string>();
+    for (const gun of form.gunler) {
+      if (gun.saat_bitis && !gun.saat) {
+        onMessage?.('Bitiş saati için başlangıç saatini de seçin', 'error');
+        return;
+      }
+      if (gun.saat && gun.saat_bitis && clock(gun.saat_bitis) <= clock(gun.saat)) {
+        onMessage?.('Bitiş saati başlangıçtan sonra olmalıdır', 'error');
+        return;
+      }
+      const key = `${gun.tarih}|${clock(gun.saat)}|${clock(gun.saat_bitis)}`;
+      if (seen.has(key)) {
+        onMessage?.('Aynı tarih ve saat iki kez yazılamaz', 'error');
+        return;
+      }
+      seen.add(key);
     }
     const baslik = form.baslik.trim() || `${form.yayin_adi || form.tur} Deneme Sınavı`;
     const payload: SinavTakvimWrite = {
@@ -338,32 +354,44 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
         return;
       }
       recordId = res.data.id;
+      // Kayıt başarılı, görsel başarısız olsa da sonraki deneme bu kaydı günceller.
+      const savedForm = { ...form, gunler: res.data.gunler.map(day => blankGun({
+        id: day.id, tarih: day.tarih, saat: day.saat || '', saat_bitis: day.saat_bitis || '',
+      })) };
+      setEditId(recordId);
+      setForm(savedForm);
+      baselineRef.current = formSnapshot(savedForm, null);
 
       if (pendingImage && recordId && recordId > 0) {
         const up = await websiteAdminApi.upload('sinav-takvim', recordId, pendingImage, 'gorsel');
         if (!up.success) {
-          onMessage?.(up.error || 'Görsel yüklenemedi', 'error');
+          await onReload();
+          onMessage?.(`Sınav kaydedildi; görsel yüklenemedi. ${up.error || 'Tekrar Kaydet’e basarak yeniden deneyebilirsiniz.'}`, 'error');
           return;
         }
       } else if (reuseFromId && recordId && recordId > 0 && reuseFromId !== recordId) {
         const reused = await websiteAdminApi.reuseSinavImage(recordId, reuseFromId);
         if (!reused.success) {
+          await onReload();
           onMessage?.(reused.error || 'Kayıtlı görsel kopyalanamadı', 'error');
           return;
         }
       }
 
       onMessage?.(editId === 0 ? 'Sınav eklendi' : 'Sınav güncellendi', 'success');
-      onReload();
+      await onReload();
       const next = pendingTab;
       closeForm();
       if (next) setTab(next);
+    } catch {
+      onMessage?.('İşlem tamamlanamadı. Kaydı kontrol edip tekrar deneyin.', 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const remove = async (id: number) => {
+    if (saving) return;
     const dayCount = editingExam ? examDays(editingExam, sinavlar).length : form.gunler.length;
     const question = dayCount > 1
       ? `Bu sınavın ${dayCount} günü birden silinsin mi?`
@@ -376,7 +404,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     }
     closeForm();
     onMessage?.('Sınav silindi', 'success');
-    onReload();
+    await onReload();
   };
 
   const dayExams = selectedDate ? byDate[selectedDate] || [] : [];
@@ -582,6 +610,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
                   <span className={s.num}>{d}</span>
                   {shown.map(exam => (
                     <span key={exam.id} className={s.chip} style={{ background: sinavTurColor(exam.tur) }}>
+                      {exam.gorsel_url && <img className={s.dayPoster} src={resolveMediaUrl(exam.gorsel_url) || ''} alt="" loading="lazy" />}
                       {exam.baslik}
                     </span>
                   ))}
@@ -746,6 +775,11 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
                   onChange={event => {
                     const file = event.target.files?.[0];
                     if (!file) return;
+                    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > g.maxMb * 1024 * 1024) {
+                      onMessage?.(`JPEG, PNG veya WebP görsel seçin; en fazla ${g.maxMb} MB olabilir.`, 'error');
+                      event.target.value = '';
+                      return;
+                    }
                     setPendingImage(file);
                     setReuseFromId(null);
                     setShowPicker(false);
@@ -774,7 +808,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
             <div className={s.dialogFoot}>
               <div className={s.footLeft}>
                 {editId !== null && editId > 0 && (
-                  <button type="button" className={s.danger} onClick={() => remove(editId)}>Sınavı sil</button>
+                  <button type="button" className={s.danger} onClick={() => remove(editId)} disabled={saving}>Sınavı sil</button>
                 )}
               </div>
               <div className={s.footRight}>

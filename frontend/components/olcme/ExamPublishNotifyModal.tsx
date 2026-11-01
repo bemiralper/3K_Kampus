@@ -7,7 +7,7 @@ import WhatsAppPhonePreview from '@/components/communication/WhatsAppPhonePrevie
 import '@/components/communication/communication.css';
 import { fetchCampaign, isCampaignActive, type CampaignItem } from '@/lib/communication-api';
 import { examApi } from './api';
-import type { ExamPublishPreview } from './types';
+import type { ExamPublishPreview, ExamRecipientOptions } from './types';
 import './roster/sinav-roster-notify.css';
 
 type Props = {
@@ -15,6 +15,8 @@ type Props = {
   examName: string;
   kind: 'karne' | 'answer_key';
   kindLabel: string;
+  initialSelection?: ExamRecipientOptions;
+  onSelectionSave?: (options: ExamRecipientOptions) => void;
   onClose: () => void;
   onSent: (sent: number, campaignId?: string | null) => void;
 };
@@ -24,6 +26,8 @@ export default function ExamPublishNotifyModal({
   examName,
   kind,
   kindLabel,
+  initialSelection,
+  onSelectionSave,
   onClose,
   onSent,
 }: Props) {
@@ -33,9 +37,11 @@ export default function ExamPublishNotifyModal({
   const [error, setError] = useState('');
   const [preview, setPreview] = useState<ExamPublishPreview | null>(null);
   const [excluded, setExcluded] = useState<Set<string>>(new Set());
-  const [waVeli, setWaVeli] = useState<number[]>([]);
-  const [includeVeli, setIncludeVeli] = useState(true);
-  const [includeStudent, setIncludeStudent] = useState(true);
+  const [excludedStudents, setExcludedStudents] = useState<Set<number>>(new Set(initialSelection?.excluded_student_ids || []));
+  const [excludedVelis, setExcludedVelis] = useState<Set<number>>(new Set(initialSelection?.excluded_veli_ids || []));
+  const [search, setSearch] = useState('');
+  const [includeVeli, setIncludeVeli] = useState(initialSelection?.include_veli ?? true);
+  const [includeStudent, setIncludeStudent] = useState(initialSelection?.include_student ?? true);
   const [campaignId, setCampaignId] = useState<string | null>(null);
   const [sentCount, setSentCount] = useState(0);
   const [live, setLive] = useState<CampaignItem | null>(null);
@@ -51,19 +57,7 @@ export default function ExamPublishNotifyModal({
         const data = await examApi.publishPreview(examId, kind);
         if (!cancelled) {
           setPreview(data);
-          const next = new Set<string>();
-          const velis: number[] = [];
-          for (const st of data.students) {
-            const key = rowKey(st.answer_id, st.student_id);
-            if (st.recipients.every(r => r.skip_reason)) next.add(key);
-            for (const rec of st.recipients) {
-              if (rec.recipient_type === 'veli' && rec.veli_id && !rec.skip_reason) {
-                velis.push(rec.veli_id);
-              }
-            }
-          }
-          setExcluded(next);
-          setWaVeli(velis);
+          setExcluded(new Set());
         }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Alıcı listesi yüklenemedi');
@@ -107,22 +101,22 @@ export default function ExamPublishNotifyModal({
 
   const selectedVeliIds = useMemo(() => {
     if (!includeVeli) return [];
-    const allowed = new Set(waVeli);
+
     const ids: number[] = [];
     for (const st of selectedStudents) {
       for (const rec of st.recipients) {
-        if (rec.recipient_type === 'veli' && rec.veli_id && !rec.skip_reason && allowed.has(rec.veli_id)) {
+        if (rec.recipient_type === 'veli' && rec.veli_id && !rec.skip_reason && !excludedVelis.has(rec.veli_id)) {
           ids.push(rec.veli_id);
         }
       }
     }
     return ids;
-  }, [selectedStudents, includeVeli, waVeli]);
+  }, [selectedStudents, includeVeli, excludedVelis]);
 
   const sendable = selectedVeliIds.length + (
     includeStudent
       ? selectedStudents.filter(st =>
-          st.recipients.some(r => r.recipient_type === 'ogrenci' && !r.skip_reason),
+          !excludedStudents.has(st.student_id || 0) && st.recipients.some(r => r.recipient_type === 'ogrenci' && !r.skip_reason),
         ).length
       : 0
   );
@@ -136,14 +130,30 @@ export default function ExamPublishNotifyModal({
     });
   };
 
+  const selection = (): ExamRecipientOptions => {
+    const students = new Set(excludedStudents);
+    const velis = new Set(excludedVelis);
+    for (const st of preview?.students || []) {
+      if (!excluded.has(rowKey(st.answer_id, st.student_id))) continue;
+      if (st.student_id) students.add(st.student_id);
+      for (const rec of st.recipients) if (rec.veli_id) velis.add(rec.veli_id);
+    }
+    return { include_veli: includeVeli, include_student: includeStudent,
+      excluded_student_ids: [...students], excluded_veli_ids: [...velis] };
+  };
+
+  const toggleRecipient = (id: number, type: string) => {
+    const setter = type === 'veli' ? setExcludedVelis : setExcludedStudents;
+    setter(prev => { const next = new Set(prev); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  };
+
   const send = async () => {
     if (!preview || (!includeVeli && !includeStudent) || sendable === 0) return;
     setSending(true);
     setError('');
     try {
       const res = await examApi.publishSendNow(examId, kind, {
-        include_veli: includeVeli,
-        include_student: includeStudent,
+        ...selection(),
         veli_ids: includeVeli ? selectedVeliIds : [],
         student_ids: selectedStudents
           .map(st => st.student_id)
@@ -181,8 +191,8 @@ export default function ExamPublishNotifyModal({
       <div className="srn-modal" role="dialog" aria-modal="true" aria-labelledby="epn-title">
         <div className="srn-header">
           <div>
-            <h3 id="epn-title">{kindLabel} — WhatsApp gönder</h3>
-            <p>{copy}</p>
+            <h3 id="epn-title">{kindLabel} — {onSelectionSave ? 'Alıcı seçimi' : 'WhatsApp gönder'}</h3>
+            <p>{onSelectionSave ? 'Zamanı geldiğinde uygun alıcılara gönderilir. İşareti kaldırılan kişiler bu gönderimden hariç tutulur.' : copy}</p>
           </div>
           <button type="button" className="btn-modern btn-secondary" onClick={onClose} disabled={sending}>
             Kapat
@@ -221,14 +231,32 @@ export default function ExamPublishNotifyModal({
           <div style={{ padding: 40, textAlign: 'center', color: '#64748b' }}>Alıcılar yükleniyor…</div>
         ) : (
           <>
-            <div className="srn-body">
+            <div className="epn-controls">
+              <div className="epn-modes" role="group" aria-label="Alıcı türü">
+                {[
+                  { label: 'Öğrenci', student: true, veli: false },
+                  { label: 'Veli', student: false, veli: true },
+                  { label: 'Her ikisi', student: true, veli: true },
+                ].map(mode => <button key={mode.label} type="button"
+                  aria-pressed={includeStudent === mode.student && includeVeli === mode.veli}
+                  disabled={sending}
+                  onClick={() => { setIncludeStudent(mode.student); setIncludeVeli(mode.veli); }}>
+                  {mode.label}
+                </button>)}
+              </div>
+              <input type="search" placeholder="Öğrenci veya veli ara…" aria-label="Alıcılarda ara"
+                value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <div className={onSelectionSave ? 'srn-body epn-selection-body' : 'srn-body'}>
               <div className="srn-list">
                 {preview?.students.length === 0 && (
                   <div style={{ padding: 24, color: '#64748b', fontSize: 13 }}>
-                    Gönderilecek öğrenci yok.
+                    {onSelectionSave
+                      ? 'Şu anda listelenecek alıcı yok. Gönderim saatinde uygun olan alıcılar, seçtiğiniz türe göre belirlenir.'
+                      : 'Gönderilecek öğrenci yok.'}
                   </div>
                 )}
-                {preview?.students.map(st => {
+                {preview?.students.filter(st => !search || `${st.full_name} ${st.recipients.map(r => r.display_name).join(' ')}`.toLocaleLowerCase('tr').includes(search.toLocaleLowerCase('tr'))).map(st => {
                   const key = rowKey(st.answer_id, st.student_id);
                   const blocked = st.recipients.every(r => r.skip_reason);
                   const checked = !blocked && !excluded.has(key);
@@ -241,62 +269,39 @@ export default function ExamPublishNotifyModal({
                           checked={checked}
                           onChange={() => toggleStudent(key)}
                         />
-                        <strong>{st.full_name}</strong>
+                        <strong>{st.full_name}</strong><small className="epn-family-hint">Grubu dahil et</small>
                       </label>
-                      {st.recipients.filter(rec => rec.recipient_type === 'veli').map(rec => (
-                        <label key={`${key}-${rec.veli_id || 'none'}`} className="srn-rec">
-                          <input
-                            type="checkbox"
-                            disabled={!rec.veli_id || !!rec.skip_reason || sending || !checked || !includeVeli}
-                            checked={!!rec.veli_id && includeVeli && waVeli.includes(rec.veli_id)}
-                            onChange={() => {
-                              if (!rec.veli_id) return;
-                              setWaVeli(p => (
-                                p.includes(rec.veli_id!)
-                                  ? p.filter(x => x !== rec.veli_id)
-                                  : [...p, rec.veli_id!]
-                              ));
-                            }}
-                          />
-                          <span>
-                            {rec.display_name || 'Veli'} {rec.telefon && `(${rec.telefon})`}
+                      {st.recipients.map((rec, index) => {
+                        const isVeli = rec.recipient_type === 'veli';
+                        const id = isVeli ? rec.veli_id : st.student_id;
+                        const included = isVeli ? includeVeli : includeStudent;
+                        const removed = isVeli ? excludedVelis : excludedStudents;
+                        return <label key={`${key}-${rec.recipient_type}-${id}-${index}`} className="srn-rec">
+                          <input type="checkbox"
+                            disabled={!id || !!rec.skip_reason || sending || !checked || !included}
+                            checked={!!id && included && checked && !rec.skip_reason && !removed.has(id)}
+                            onChange={() => { if (id) toggleRecipient(id, rec.recipient_type); }} />
+                          <span><b>{isVeli ? 'Veli' : 'Öğrenci'}</b> · {rec.display_name || st.full_name}
+                            {rec.telefon && ` (${rec.telefon})`}
                             {rec.skip_reason && <em> — {rec.skip_reason}</em>}
                           </span>
-                        </label>
-                      ))}
+                        </label>;
+                      })}
                     </div>
                   );
                 })}
-                <label className="srn-rec" style={{ padding: '8px 22px 4px' }}>
-                  <input
-                    type="checkbox"
-                    checked={includeVeli}
-                    onChange={e => setIncludeVeli(e.target.checked)}
-                    disabled={sending}
-                  />
-                  Velilere gönder
-                </label>
-                <label className="srn-rec" style={{ padding: '4px 22px 16px' }}>
-                  <input
-                    type="checkbox"
-                    checked={includeStudent}
-                    onChange={e => setIncludeStudent(e.target.checked)}
-                    disabled={sending}
-                  />
-                  Öğrencilere gönder
-                </label>
               </div>
-              <div className="srn-preview">
+              {!onSelectionSave && <div className="srn-preview">
                 <WhatsAppPhonePreview
                   text={preview?.preview_body || ''}
                   resolveVariables={false}
                   kurumName={examName}
                 />
-              </div>
+              </div>}
             </div>
             <div className="srn-footer">
               <div className="srn-footer-status">
-                <span className="srn-meta">{sendable} alıcı seçili</span>
+                <span className="srn-meta">{sendable} alıcı seçili{onSelectionSave && ' · güncel liste'}</span>
                 {sending && <SendProgress queued={sendable} total={sendable} sent={0} delivered={0} failed={0} active />}
               </div>
               <div style={{ display: 'flex', gap: 8 }}>
@@ -306,10 +311,10 @@ export default function ExamPublishNotifyModal({
                 <button
                   type="button"
                   className="btn-modern btn-primary"
-                  onClick={send}
-                  disabled={sending || sendable === 0 || (!includeVeli && !includeStudent)}
+                  onClick={onSelectionSave ? () => { onSelectionSave(selection()); onClose(); } : send}
+                  disabled={sending || (!onSelectionSave && sendable === 0) || (!includeVeli && !includeStudent)}
                 >
-                  {sending ? 'Gönderiliyor…' : `${sendable} alıcıya gönder`}
+                  {onSelectionSave ? 'Seçimi uygula' : sending ? 'Gönderiliyor…' : `${sendable} alıcıya gönder`}
                 </button>
               </div>
             </div>

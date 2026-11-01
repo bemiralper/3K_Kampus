@@ -7,6 +7,7 @@ import { BAND_LGS, BAND_YKS, bandIsLocked, bandLabel, resolveBand } from './curr
 import SubjectPicker, { subjectLabel } from './SubjectPicker';
 import t from './section-tree.module.css';
 import s from '../../app/admin/olcme-degerlendirme/olcme.module.css';
+import Icon from './ui/Icon';
 
 function errText(err: unknown, fallback: string) {
   return err instanceof Error && err.message ? err.message : fallback;
@@ -211,13 +212,14 @@ export default function ExamSectionsEditor({
   const total = mains.reduce((sum, m) => sum + (m.question_end - m.question_start + 1), 0);
 
   return (
-    <div className="card-modern" style={{ padding: 0, overflow: 'hidden' }}>
-      <div className="card-modern-header" style={{ padding: '16px 22px', borderBottom: '1px solid var(--border)' }}>
+    <details className={`card-modern ${t.disclosure}`} style={{ padding: 0, overflow: 'hidden' }}>
+      <summary className={`card-modern-header ${t.disclosureToggle}`}>
         <h3>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
           Bölümler ({mains.length} üst ders)
         </h3>
-      </div>
+        <Icon name="chevronDown" size={18} className={t.disclosureChevron} />
+      </summary>
       {error && (
         <div style={{ padding: '10px 22px', background: '#fef2f2', color: '#991b1b', fontSize: 12.5 }}>
           {error}
@@ -413,6 +415,6 @@ export default function ExamSectionsEditor({
           </div>
         )}
       </div>
-    </div>
+    </details>
   );
 }

@@ -66,6 +66,10 @@ def serialize_dispatch(row: ExamScheduledDispatch | None) -> dict | None:
         'last_error': row.last_error or '',
         'is_enabled': bool(getattr(row, 'is_enabled', False)),
         'campaign_id': str(row.campaign_id) if getattr(row, 'campaign_id', None) else None,
+        'recipient_options': {
+            'include_veli': True, 'include_student': True,
+            'excluded_student_ids': [], 'excluded_veli_ids': [],
+        } | ((row.send_options or {}).get('recipient_options') or {}),
         'ready': exam_is_graded(row.exam) if row.kind == KIND_KARNE else answer_key_ready(row.exam),
     }
 
@@ -135,17 +139,26 @@ def sync_dispatches_from_exam(exam: Exam) -> dict:
     }
 
 
+@transaction.atomic
 def set_schedule(
     exam: Exam,
     kind: str,
     *,
     is_enabled: bool,
     scheduled_at: datetime | None,
+    recipient_options: dict | None = None,
 ) -> ExamScheduledDispatch:
     if kind not in (KIND_KARNE, KIND_ANSWER_KEY):
         raise ValueError('Geçersiz gönderim türü.')
     if is_enabled and scheduled_at is None:
         raise ValueError('Zamanlı gönderimi açmak için tarih/saat gerekli.')
+
+    row, _ = ExamScheduledDispatch.objects.select_for_update().get_or_create(
+        exam=exam, kind=kind,
+        defaults={'status': ST_PENDING, 'is_enabled': False},
+    )
+    if (row.send_options or {}).get('running_since') and row.status == ST_PENDING:
+        raise ValueError('Gönderim devam ediyor; zamanlama şu anda değiştirilemez.')
 
     if kind == KIND_KARNE:
         exam.result_publish_date = scheduled_at
@@ -154,21 +167,20 @@ def set_schedule(
         exam.answer_key_publish_date = scheduled_at
         exam.save(update_fields=['answer_key_publish_date', 'updated_at'])
 
-    row, _ = ExamScheduledDispatch.objects.get_or_create(
-        exam=exam, kind=kind,
-        defaults={'status': ST_PENDING, 'is_enabled': False},
-    )
+    saved_recipients = (row.send_options or {}).get('recipient_options')
+    recipients = recipient_options if recipient_options is not None else saved_recipients
+    row.send_options = {'recipient_options': recipients} if recipients else {}
     row.scheduled_at = scheduled_at
     if row.status == ST_SENT:
         row.is_enabled = False
-        row.save(update_fields=['scheduled_at', 'is_enabled', 'updated_at'])
+        row.save(update_fields=['scheduled_at', 'is_enabled', 'send_options', 'updated_at'])
         return row
     row.is_enabled = bool(is_enabled and scheduled_at)
     row.status = ST_PENDING
     row.last_error = ''
     row.sent_at = None
     row.save(update_fields=[
-        'scheduled_at', 'is_enabled', 'status', 'last_error', 'sent_at', 'updated_at',
+        'scheduled_at', 'is_enabled', 'status', 'last_error', 'sent_at', 'send_options', 'updated_at',
     ])
     return row
 
@@ -380,6 +392,8 @@ def _send_karnes(
     include_student: bool = True,
     answer_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
+    excluded_student_ids: list[int] | None = None,
+    excluded_veli_ids: list[int] | None = None,
     ranking_year: int | None = None,
     on_chunk=None,
 ) -> dict:
@@ -437,6 +451,8 @@ def _send_karnes(
             sent_by_user_id=sent_by_user_id,
             sube_id=exam.sube_id,
             veli_ids=veli_ids,
+            excluded_student_ids=excluded_student_ids,
+            excluded_veli_ids=excluded_veli_ids,
         )
         sent += result.get('sent') or 0
         skipped += result.get('skipped') or 0
@@ -462,6 +478,8 @@ def _send_answer_keys(
     include_student: bool = True,
     student_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
+    excluded_student_ids: list[int] | None = None,
+    excluded_veli_ids: list[int] | None = None,
 ) -> dict:
     from apps.coaching.application.olcme_cevap_anahtari_notify import send_answer_key_notify
 
@@ -473,6 +491,8 @@ def _send_answer_keys(
         sent_by_user_id=sent_by_user_id,
         student_ids=student_ids,
         veli_ids=veli_ids,
+        excluded_student_ids=excluded_student_ids,
+        excluded_veli_ids=excluded_veli_ids,
     )
 
 
@@ -512,8 +532,11 @@ def fire_dispatch(
     include_student: bool = True,
     student_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
+    excluded_student_ids: list[int] | None = None,
+    excluded_veli_ids: list[int] | None = None,
     answer_ids: list[int] | None = None,
     ranking_year: int | None = None,
+    use_schedule_recipients: bool = True,
 ) -> dict:
     exam = row.exam
     exam.refresh_from_db()
@@ -525,7 +548,7 @@ def fire_dispatch(
             'error': row.last_error or 'Saat geçti — Hemen gönder veya yeniden zamanla.',
         }
     stored = row.send_options if isinstance(row.send_options, dict) else {}
-    if stored:
+    if stored and use_schedule_recipients:
         # Arka plan işi: seçim cron çalışırken satırdan okunur.
         if answer_ids is None and stored.get('answer_ids') is not None:
             answer_ids = [int(x) for x in stored['answer_ids']]
@@ -542,11 +565,20 @@ def fire_dispatch(
         if ranking_year is None and stored.get('ranking_year') is not None:
             ranking_year = int(stored['ranking_year'])
 
+    if use_schedule_recipients and stored.get('answer_ids') is None:
+        recipients = stored.get('recipient_options') or {}
+        include_veli = recipients.get('include_veli', include_veli)
+        include_student = recipients.get('include_student', include_student)
+        excluded_student_ids = recipients.get('excluded_student_ids', excluded_student_ids)
+        excluded_veli_ids = recipients.get('excluded_veli_ids', excluded_veli_ids)
+
     send_kwargs = {
         'sent_by_user_id': sent_by_user_id,
         'include_veli': include_veli,
         'include_student': include_student,
         'veli_ids': veli_ids,
+        'excluded_student_ids': excluded_student_ids,
+        'excluded_veli_ids': excluded_veli_ids,
     }
     if row.kind == KIND_KARNE:
         ready = exam_is_graded(exam)
@@ -609,6 +641,7 @@ def fire_dispatch(
     row.campaign_id = campaign.id
     row.is_enabled = False
     row.send_options = {
+        'recipient_options': (row.send_options or {}).get('recipient_options', {}),
         'students_total': int((row.send_options or {}).get('students_total') or 0),
         'students_done': int((row.send_options or {}).get('students_done') or 0),
     }
@@ -665,6 +698,7 @@ def queue_karne_send(
     )
     row.refresh_from_db()
     row.send_options = {
+        'recipient_options': opts.get('recipient_options', {}),
         'answer_ids': [int(x) for x in answer_ids],
         'include_veli': bool(include_veli),
         'include_student': bool(include_student),
@@ -699,6 +733,8 @@ def send_now(
     include_student: bool = True,
     student_ids: list[int] | None = None,
     veli_ids: list[int] | None = None,
+    excluded_student_ids: list[int] | None = None,
+    excluded_veli_ids: list[int] | None = None,
     answer_ids: list[int] | None = None,
 ) -> dict:
     if kind not in (KIND_KARNE, KIND_ANSWER_KEY):
@@ -726,6 +762,9 @@ def send_now(
         include_student=include_student,
         student_ids=student_ids,
         veli_ids=veli_ids,
+        excluded_student_ids=excluded_student_ids,
+        excluded_veli_ids=excluded_veli_ids,
+        use_schedule_recipients=False,
         answer_ids=answer_ids,
     )
 

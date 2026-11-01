@@ -1,6 +1,8 @@
 """
 Egitim Paketleri Service Layer
 """
+from django.db import transaction
+
 from apps.egitim_paketleri.infrastructure.repositories import (
     GrupDersiRepository, OzelDersRepository, DenemeRepository, EkHizmetRepository,
     PremiumPaketRepository, YayinPaketiRepository,
@@ -9,6 +11,33 @@ from apps.egitim_tanimlari.models import SinifSeviyesi, Alan, Ders
 from apps.egitim_yili.domain.models import EgitimYili
 from apps.kurum.domain.models import Kurum
 from apps.sube.domain.models import Sube
+
+
+def package_deletion_error(package, kind):
+    """Generic paket referanslarını da koru; geçmiş kayıtlar yetim bırakılmaz."""
+    from apps.ogrenci.domain.models import OgrenciEgitimPaketi
+    from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
+    from apps.ogrenci.interfaces.list_helpers import resolve_kalem_filter_turu
+    from apps.ozel_ders.domain.models import BirebirOgrenciProgrami
+
+    if not package.__class__.objects.select_for_update().filter(pk=package.pk).exists():
+        return {'error': 'Paket bulunamadı.'}
+    aliases = {
+        'grup_dersi': ['grup_dersi', 'grup_dersleri'], 'ozel_ders': ['ozel_ders', 'ozel_dersler'],
+        'premium': ['premium', 'premium_paketler'], 'deneme': ['deneme', 'denemeler'],
+        'yayin': ['yayin', 'yayin_paketleri'],
+    }[kind]
+    in_use = OgrenciEgitimPaketi.objects.filter(paket_turu__in=aliases, paket_id=package.pk).exists()
+    in_use |= Sozlesme.objects.filter(paket_turu__in=aliases, paket_id=package.pk, kurum_id=package.kurum_id).exists()
+    if not in_use:
+        lines = SozlesmeKalemi.objects.filter(kalem_id=package.pk, sozlesme__kurum_id=package.kurum_id).select_related('sozlesme')
+        in_use = any(resolve_kalem_filter_turu(line, line.sozlesme) == kind for line in lines)
+    if kind in ('ozel_ders', 'premium'):
+        field = 'ozel_ders_paket_id' if kind == 'ozel_ders' else 'premium_paket_id'
+        in_use |= BirebirOgrenciProgrami.objects.filter(**{field: package.pk}).exists()
+    if in_use:
+        return {'error': 'Bu paket öğrenci, sözleşme veya ders geçmişinde kullanılıyor; silmek yerine pasife alın.'}
+    return None
 
 
 class EkHizmetService:
@@ -48,6 +77,7 @@ class EkHizmetService:
         ek_hizmet = self.repository.update(ek_hizmet, data)
         return ek_hizmet, None
     
+    @transaction.atomic
     def delete(self, id):
         ek_hizmet = self.repository.get_by_id(id)
         if not ek_hizmet:
@@ -157,11 +187,14 @@ class GrupDersiService:
         grup_dersi = self.repository.update(grup_dersi, data)
         return grup_dersi, None
     
+    @transaction.atomic
     def delete(self, id):
         grup_dersi = self.repository.get_by_id(id)
         if not grup_dersi:
             return False, {'error': 'Grup dersi bulunamadı'}
         
+        if error := package_deletion_error(grup_dersi, 'grup_dersi'):
+            return False, error
         self.repository.delete(grup_dersi)
         return True, None
     
@@ -291,11 +324,14 @@ class OzelDersService:
         ozel_ders = self.repository.update(ozel_ders, data)
         return ozel_ders, None
     
+    @transaction.atomic
     def delete(self, id):
         ozel_ders = self.repository.get_by_id(id)
         if not ozel_ders:
             return False, {'error': 'Özel ders bulunamadı'}
         
+        if error := package_deletion_error(ozel_ders, 'ozel_ders'):
+            return False, error
         self.repository.delete(ozel_ders)
         return True, None
     
@@ -398,11 +434,14 @@ class DenemeService:
         deneme = self.repository.update(deneme, data)
         return deneme, None
     
+    @transaction.atomic
     def delete(self, id):
         deneme = self.repository.get_by_id(id)
         if not deneme:
             return False, {'error': 'Deneme bulunamadı'}
         
+        if error := package_deletion_error(deneme, 'deneme'):
+            return False, error
         self.repository.delete(deneme)
         return True, None
     
@@ -491,10 +530,13 @@ class PremiumPaketService:
         premium = self.repository.update(premium, data)
         return premium, None
 
+    @transaction.atomic
     def delete(self, id):
         premium = self.repository.get_by_id(id)
         if not premium:
             return False, {'error': 'Premium paket bulunamadı'}
+        if error := package_deletion_error(premium, 'premium'):
+            return False, error
         self.repository.delete(premium)
         return True, None
 
@@ -586,6 +628,7 @@ class YayinPaketiService:
         yayin = self.repository.update(yayin, data)
         return yayin, None
 
+    @transaction.atomic
     def delete(self, id):
         yayin = self.repository.get_by_id(id)
         if not yayin:
@@ -595,6 +638,8 @@ class YayinPaketiService:
             return False, {'error': 'Bu yayın paketi bir grup dersinde kullanılıyor, silinemez'}
         if yayin.dahil_oldugu_premium_paketler.exists():
             return False, {'error': 'Bu yayın paketi bir premium pakette kullanılıyor, silinemez'}
+        if error := package_deletion_error(yayin, 'yayin'):
+            return False, error
         self.repository.delete(yayin)
         return True, None
 

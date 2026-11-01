@@ -4,6 +4,7 @@ DDD Pattern - Infrastructure
 """
 import re
 from django.db.models import Q, Count, Prefetch
+from django.db import transaction
 from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
 
 
@@ -84,24 +85,31 @@ class OgrenciRepository:
         ogrenci = Ogrenci.objects.create(**data)
         return ogrenci
     
-    def update(self, pk, data):
+    @transaction.atomic
+    def update(self, pk, data, *, egitim_yili_id=None):
         """Öğrenci güncelle"""
-        ogrenci = self.get_by_id(pk)
+        ogrenci = Ogrenci.objects.select_for_update().filter(pk=pk).first()
         if ogrenci:
             aktif_mi_changed = 'aktif_mi' in data and data['aktif_mi'] != ogrenci.aktif_mi
+            if aktif_mi_changed and not data['aktif_mi']:
+                from apps.ogrenci.services.lifecycle import assert_can_deactivate
+                assert_can_deactivate(pk)
             for key, value in data.items():
                 setattr(ogrenci, key, value)
             ogrenci.save()
             if aktif_mi_changed:
-                self._sync_kayit_aktif_mi(pk, ogrenci.aktif_mi)
+                self._sync_kayit_aktif_mi(pk, ogrenci.aktif_mi, egitim_yili_id=egitim_yili_id)
                 if not ogrenci.aktif_mi:
                     self._deactivate_related(pk)
         return ogrenci
     
+    @transaction.atomic
     def delete(self, pk):
         """Öğrenci sil (soft delete - pasife al)"""
-        ogrenci = self.get_by_id(pk)
+        ogrenci = Ogrenci.objects.select_for_update().filter(pk=pk).first()
         if ogrenci:
+            from apps.ogrenci.services.lifecycle import assert_can_deactivate
+            assert_can_deactivate(pk)
             ogrenci.aktif_mi = False
             ogrenci.save(update_fields=['aktif_mi'])
             self._sync_kayit_aktif_mi(pk, False)
@@ -109,15 +117,18 @@ class OgrenciRepository:
             return True
         return False
 
-    def _sync_kayit_aktif_mi(self, ogrenci_id, aktif_mi):
+    def _sync_kayit_aktif_mi(self, ogrenci_id, aktif_mi, *, egitim_yili_id=None):
         """Öğrenci durumu ile yıllık kayıt aktif_mi alanını senkronize et.
 
         Liste ve filtreler OgrenciKayit.aktif_mi üzerinden okunur; pasife alma /
         yeniden aktifleştirme yalnızca öğrenci satırında kalırsa UI tutarsız kalır.
         """
         if aktif_mi:
+            kayitlar = OgrenciKayit.objects.filter(ogrenci_id=ogrenci_id)
+            if egitim_yili_id:
+                kayitlar = kayitlar.filter(egitim_yili_id=egitim_yili_id)
             kayit = (
-                OgrenciKayit.objects.filter(ogrenci_id=ogrenci_id)
+                kayitlar
                 .order_by('-egitim_yili__baslangic_yil', '-created_at')
                 .first()
             )
@@ -130,61 +141,9 @@ class OgrenciRepository:
             ).update(aktif_mi=False)
 
     def _deactivate_related(self, ogrenci_id):
-        """Pasife alınca sınıf yerleşimi, koç ve masa atamalarını kapat.
+        from apps.ogrenci.services.lifecycle import deactivate_student_links
+        deactivate_student_links(ogrenci_id)
 
-        Yeniden aktifleştirmede yerleşim/atamalar otomatik geri gelmez;
-        öğrenci gerektiğinde yeniden yerleştirilir.
-        """
-        try:
-            from apps.academic.domain.student_class_placement import StudentClassPlacement
-            StudentClassPlacement.objects.filter(
-                student_id=ogrenci_id, is_active=True,
-            ).update(is_active=False)
-        except Exception:
-            pass
-
-        try:
-            from apps.coaching.models import CoachStudentAssignment
-            from apps.coaching.services.coach_student_visibility import (
-                close_open_coach_assignments,
-            )
-            close_open_coach_assignments(
-                [ogrenci_id],
-                reason=CoachStudentAssignment.EndReason.OGRENCI_PASIF,
-            )
-        except Exception:
-            pass
-
-        try:
-            from django.utils import timezone
-            from apps.kutuphane.domain.models import (
-                AssignmentStatus,
-                Seat,
-                SeatAssignment,
-                SeatStatus,
-            )
-            active_seats = list(
-                SeatAssignment.objects.filter(
-                    ogrenci_id=ogrenci_id,
-                    durum=AssignmentStatus.ACTIVE,
-                ).values_list('seat_id', flat=True)
-            )
-            SeatAssignment.objects.filter(
-                ogrenci_id=ogrenci_id,
-                durum=AssignmentStatus.ACTIVE,
-            ).update(
-                durum=AssignmentStatus.ENDED,
-                sonlanma_tarihi=timezone.now(),
-                sonlanma_sebebi='Öğrenci pasife alındı',
-            )
-            if active_seats:
-                Seat.objects.filter(
-                    id__in=active_seats,
-                    durum=SeatStatus.OCCUPIED,
-                ).update(durum=SeatStatus.AVAILABLE)
-        except Exception:
-            pass
-    
     def hard_delete(self, pk):
         """Öğrenci kalıcı sil"""
         ogrenci = self.get_by_id(pk)

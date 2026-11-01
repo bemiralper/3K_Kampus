@@ -2,6 +2,7 @@
 Kurumsal web sitesi modelleri — kurum FK ile çok kiracılı.
 """
 from django.db import models
+from django.core.exceptions import ValidationError
 from django.utils.text import slugify
 
 
@@ -259,6 +260,13 @@ class SinavTakvim(models.Model):
 
     def __str__(self):
         return f'{self.tur} — {self.baslik}'
+
+    def clean(self):
+        super().clean()
+        if self.saat_bitis and not self.saat:
+            raise ValidationError({'saat': 'Bitiş saati için başlangıç saati de seçilmelidir.'})
+        if self.saat and self.saat_bitis and self.saat_bitis <= self.saat:
+            raise ValidationError({'saat_bitis': 'Bitiş saati başlangıçtan sonra olmalıdır.'})
 
 
 class NedenKart(models.Model):

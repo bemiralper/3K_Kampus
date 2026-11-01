@@ -12,14 +12,26 @@ h1,h2,h3,.v,.v2,.lv b,.donut-c b,.big,.exam { font-family:'Poppins','Inter',syst
 .page { width:210mm; background:#fff; margin:8mm auto; position:relative; padding:0 11mm 9mm;
   box-shadow:0 10px 40px rgba(15,23,42,.12); display:flex; flex-direction:column; gap:3.4mm; }
 .page.cover { height:297mm; overflow:hidden; page:cover; }
-.page.flow { min-height:297mm; }
+.page.flow { min-height:0; }
+.linked-tyt > .lhead { margin-bottom:3.4mm; }
 @media print {
   html { background:#fff; }
-  .page { margin:0; box-shadow:none; break-before:page; }
+  .page { margin:0; box-shadow:none; }
+  .page.cover { break-before:page; break-after:page; }
   .student:first-child .page.cover { break-before:auto; }
-  .page.flow { min-height:0; padding-bottom:0; }
+  /* Uzun flex/kart blokları sayfanın kalanını boş bırakmasın. */
+  .page.flow { display:block; min-height:0; padding-bottom:0; }
+  .page.flow > * { margin-bottom:3.4mm; }
   .page.flow .mini { padding-top:0; }
-  .card, .drow, .rrow, .grow, .spark, .tbl tr { break-inside:avoid; }
+  .linked-tyt { break-before:page; break-inside:avoid; }
+  .page.cover .card, .lesson, .hero, .duo, .pair,
+  .drow, .rrow, .grow, .spark, .orow, .tbl tr, svg { break-inside:avoid; }
+  h2, h3, .lhead, .mini, .ot, .tbl tr.group { break-after:avoid; }
+  .tbl thead { display:table-header-group; }
+  .page.flow .card { box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+  /* Tekrarlanan son alt bilgi tek başına boş bir PDF sayfasına taşmasın.
+     Kurum/öğrenci bilgileri kapak ve önceki bölümde zaten yer alır. */
+  .page.flow > .report-end { display:none; }
 }
 
 /* radial-gradient PDF'e resim olarak gömülür ve dosyayı büyütür; parıltı vektörel dairelerle verilir */
@@ -191,7 +203,8 @@ h2 small { font:500 7.8pt 'Inter',system-ui,sans-serif; color:var(--muted); }
 .orow { display:flex; justify-content:space-between; gap:2mm; font-size:7.5pt; padding:.45mm 0; break-inside:avoid; }
 .on { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .dots { display:flex; gap:.7mm; flex:none; align-items:center; }
-@media print { .card.omap { break-inside:auto; } }
+/* Harita cevapların altında parçalı başlamasın; uzun haritalar akmaya devam eder. */
+@media print { .card.omap { break-before:page; break-inside:auto; } }
 
 .grid .grow { display:grid; grid-template-columns:22mm 1fr; gap:2mm; align-items:center; margin-bottom:1.6mm; }
 .gn { font-size:8pt; font-weight:700; }

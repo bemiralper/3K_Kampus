@@ -19,7 +19,7 @@ export const WEBSITE_IMAGE_GUIDELINES = {
     label: 'Sınav görseli',
     size: '1200 × 675 px (16:9 yatay)',
     maxMb: 5,
-    hint: 'Yatay afiş veya yayın logosu. Görsel yalnızca sınav detay penceresinde gösterilir; takvimde görünmez. 16:9 oranında yükleyin, böylece pencerede bozulmadan görünür.',
+    hint: 'Yatay afiş veya yayın logosu. Takvimde küçük görsel olarak, tıklanınca detay penceresinde büyük gösterilir. 16:9 oranında yükleyin; görsel kırpılmadan gösterilir.',
     field: 'gorsel' as const,
     aspectRatio: '16 / 9' as const,
   },

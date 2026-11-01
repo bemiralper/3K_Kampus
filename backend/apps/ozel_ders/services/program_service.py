@@ -173,6 +173,9 @@ def update_program(program_id: int, data: dict[str, Any], *, kurum_id: int, sube
     except BirebirOgrenciProgrami.DoesNotExist:
         raise OzelDersError('Program bulunamadı.', 'not_found', 404)
 
+    if data.get('durum') == ProgramDurumu.AKTIF:
+        ensure_ogrenci(p.ogrenci_id, kurum_id=kurum_id)
+
     ensure_paketler(
         kurum_id=kurum_id,
         ogrenci_id=p.ogrenci_id,

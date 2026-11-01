@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import type { SinavTakvim } from '@/lib/website-api';
-import { sinavTurBadge } from '@/lib/landing-theme';
+import SinavPoster from './SinavPoster';
 
 type MonthCalendarGridProps = {
   year: number;
@@ -34,6 +34,7 @@ function clock(value?: string | null) {
 }
 
 export default function MonthCalendarGrid({ year, month, exams, selectedId, onSelect }: MonthCalendarGridProps) {
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set());
   const firstDay = new Date(year, month, 1);
   const daysInMonth = new Date(year, month + 1, 0).getDate();
   let startOffset = firstDay.getDay() - 1;
@@ -68,7 +69,8 @@ export default function MonthCalendarGrid({ year, month, exams, selectedId, onSe
           if (day === null) return <div key={`pad-${index}`} className="stk-day-blank" />;
           const dateKey = padDate(day);
           const dayExams = byDate[dateKey] || [];
-          const shown = dayExams.slice(0, 2);
+          const expanded = expandedDates.has(dateKey);
+          const shown = expanded ? dayExams : dayExams.slice(0, 2);
           const extra = dayExams.length - shown.length;
           const todayCell = isToday(day);
           const selectedCell = selectedDate === dateKey;
@@ -81,27 +83,29 @@ export default function MonthCalendarGrid({ year, month, exams, selectedId, onSe
               {shown.map(exam => {
                 const tone = chipTone(exam.tur);
                 const time = clock(exam.saat);
-                const publisher = (exam.yayin_adi || '').trim();
-                const name = exam.baslik.trim() || publisher;
                 return (
                   <button
                     key={exam.id}
                     type="button"
-                    className="stk-chip"
+                    className="stk-chip stk-chip--poster"
                     data-on={exam.id === selectedId ? 'true' : undefined}
                     style={{ background: tone.bg, color: tone.fg }}
+                    aria-label={`${exam.baslik}, ${exam.tarih}${time ? ` ${time}` : ''} — detayları aç`}
                     onClick={() => onSelect(exam)}
                   >
-                    <b className="stk-chip-meta">{sinavTurBadge(exam.tur)}{time ? ` · ${time}` : ''}</b>
-                    <span className="stk-chip-name">{name}</span>
-                    {publisher && publisher !== name && <span className="stk-chip-pub">{publisher}</span>}
-                    {exam.kapsam === 'turkiye_geneli' && <small>Türkiye Geneli</small>}
+                    <SinavPoster url={exam.gorsel_url} className="stk-chip-poster" />
+                    {exam.kapsam === 'turkiye_geneli' && <span className="stk-national">Türkiye Geneli</span>}
                   </button>
                 );
               })}
-              {extra > 0 && (
-                <button type="button" className="stk-more" onClick={() => onSelect(dayExams[shown.length])}>
-                  +{extra} sınav
+              {(extra > 0 || expanded) && (
+                <button type="button" className="stk-more" aria-expanded={expanded}
+                  onClick={() => setExpandedDates(previous => {
+                    const next = new Set(previous);
+                    if (next.has(dateKey)) next.delete(dateKey); else next.add(dateKey);
+                    return next;
+                  })}>
+                  {expanded ? 'Daha az' : `+${extra} sınav`}
                 </button>
               )}
             </div>

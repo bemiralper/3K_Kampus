@@ -127,11 +127,6 @@
       <div class="mini-t">Derinlemesine</div>
     </header>
 
-    {% if s.tyt_lessons %}
-    <div class="lhead"><h2>Bağlı TYT <small>{{ s.tyt_title }}</small></h2><span class="legend">aynı öğrencinin TYT sonucu, bütün testler</span></div>
-    {% include "olcme/karne/lessons.html" with lessons=s.tyt_lessons flat=s.tyt_flat %}
-    {% endif %}
-
     {% if s.table_rows %}
     <section class="card">
       <h2>Ders ders sonuçlar</h2>
@@ -156,6 +151,13 @@
           {% endfor %}
         </tbody>
       </table>
+    </section>
+    {% endif %}
+
+    {% if s.tyt_lessons %}
+    <section class="linked-tyt">
+    <div class="lhead"><h2>Bağlı TYT <small>{{ s.tyt_title }}</small></h2><span class="legend">aynı öğrencinin TYT sonucu, bütün testler</span></div>
+    {% include "olcme/karne/lessons.html" with lessons=s.tyt_lessons flat=s.tyt_flat %}
     </section>
     {% endif %}
 
@@ -225,8 +227,18 @@
   <div class="page flow">
     <header class="mini">
       <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
-      <div class="mini-t">{% if s.outcomes %}Kazanım haritası{% else %}Cevaplar{% endif %}</div>
+      <div class="mini-t">{% if s.answers %}Cevaplar{% else %}Kazanım haritası{% endif %}</div>
     </header>
+
+    {% if s.answers %}
+    <section class="card grid">
+      <h2>Cevaplar <small>üstte soru no · ortada öğrencinin cevabı · altta yeşil doğru cevap</small></h2>
+      {% for g in s.answers %}
+      <div class="grow"><span class="gn">{{ g.name }}</span>
+        <div class="cells">{% for c in g.cells %}<span class="cell {{ c.cls }}"><em>{{ c.n }}</em><b>{{ c.given }}</b><u>{{ c.fix }}</u></span>{% endfor %}</div></div>
+      {% endfor %}
+    </section>
+    {% endif %}
 
     {% if s.outcomes %}
     <section class="card omap">
@@ -245,17 +257,7 @@
     </section>
     {% endif %}
 
-    {% if s.answers %}
-    <section class="card grid">
-      <h2>Cevaplar <small>üstte soru no · ortada öğrencinin cevabı · altta yeşil doğru cevap</small></h2>
-      {% for g in s.answers %}
-      <div class="grow"><span class="gn">{{ g.name }}</span>
-        <div class="cells">{% for c in g.cells %}<span class="cell {{ c.cls }}"><em>{{ c.n }}</em><b>{{ c.given }}</b><u>{{ c.fix }}</u></span>{% endfor %}</div></div>
-      {% endfor %}
-    </section>
-    {% endif %}
-
-    <footer class="foot"><span>{{ s.kurum_ad }} · Ölçme ve Değerlendirme</span><span>{{ s.name }}</span></footer>
+    <footer class="foot report-end"><span>{{ s.kurum_ad }} · Ölçme ve Değerlendirme</span><span>{{ s.name }}</span></footer>
   </div>
   {% endif %}
 

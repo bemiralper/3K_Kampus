@@ -177,6 +177,7 @@ class SyncServiceTests(TestCase):
         self.assertEqual(action, 'noop')
 
     def test_sync_sube_programs_from_enrollment(self):
+        OgrenciKayit.objects.create(ogrenci=self.ogrenci, kurum=self.kurum, sube=self.sube, egitim_yili=self.ey, aktif_mi=True)
         OgrenciEgitimPaketi.objects.create(
             ogrenci=self.ogrenci,
             paket_turu='ozel_ders',

@@ -16,6 +16,7 @@ User = get_user_model()
 class OgrenciSubeIsolationAPITest(TestCase):
     def setUp(self):
         self.client = Client()
+        self.client.force_login(User.objects.create_superuser(username='sube_audit_admin', password='x'))
         self.kurum = Kurum.objects.create(ad='Ogr Sube Kurum', kod='OSK')
         self.sube_a = Sube.objects.create(kurum=self.kurum, ad='Şube A', kod='OSK-A')
         self.sube_b = Sube.objects.create(kurum=self.kurum, ad='Şube B', kod='OSK-B')

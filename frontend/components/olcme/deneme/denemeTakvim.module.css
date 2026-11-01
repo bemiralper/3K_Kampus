@@ -742,3 +742,6 @@
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.dayPoster { display:block; width:100%; height:42px; object-fit:contain; background:#fff; border-radius:4px; margin-bottom:3px; }
+@media(max-width:600px) { .dayPoster { height:28px; } }

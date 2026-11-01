@@ -307,13 +307,56 @@ def _chromium_available() -> bool:
 
 
 class KarneRealPdfTest(TestCase):
-    def test_three_a4_pages(self):
+    def test_outcome_map_starts_on_its_own_a4_page_after_answers(self):
         if not _chromium_available():
             self.skipTest('Chromium yok')
-        pdf = karne.render_karne_pdf_html([_tyt_payload()])
+        context = karne.build_karne_context(_tyt_payload())
+        context['tyt_lessons'] = context['lessons']
+        context['tyt_title'] = 'Bağlı deneme'
+        with patch.object(karne, 'build_karne_context', return_value=context):
+            pdf = karne.render_karne_pdf_html([_tyt_payload()])
         self.assertTrue(pdf.startswith(b'%PDF'))
-        self.assertEqual(len(re.findall(rb'/Type\s*/Page[^s]', pdf)), 3)
+        self.assertEqual(len(re.findall(rb'/Type\s*/Page[^s]', pdf)), 4)
         self.assertRegex(pdf, rb'/MediaBox \[0 0 59[45](\.\d+)? 84[12](\.\d+)?\]')
+        import io
+        from pypdf import PdfReader
+
+        pages = PdfReader(io.BytesIO(pdf)).pages
+        details = pages[1].extract_text()
+        self.assertIn('Ders ders sonuçlar', details)
+        self.assertNotIn('Bağlı TYT', details)
+        linked_tyt = pages[2].extract_text()
+        self.assertTrue(linked_tyt.lstrip().startswith('Bağlı TYT'))
+        self.assertIn('Türkçe', linked_tyt)
+        self.assertIn('Sosyal Bilimler', ' '.join(linked_tyt.split()))
+        self.assertIn('Cevaplar', linked_tyt)
+        self.assertNotIn('Kazanım haritası', details)
+        self.assertNotIn('Kazanım haritası', linked_tyt)
+        outcome_text = pages[3].extract_text()
+        self.assertTrue(outcome_text.lstrip().startswith('Kazanım haritası'))
+        self.assertIn('Paragraf', outcome_text)
+        self.assertIn('Bilgi Felsefesi', outcome_text)
+        self.assertNotIn('Ölçme ve Değerlendirme', outcome_text)
+        self.assertNotIn('Ayşe', outcome_text)
+
+    def test_long_table_keeps_all_rows_and_following_sections(self):
+        if not _chromium_available():
+            self.skipTest('Chromium yok')
+        import io
+        from pypdf import PdfReader
+
+        context = karne.build_karne_context(_tyt_payload())
+        row = next(r for r in context['table_rows'] if r['kind'] != 'group')
+        context['table_rows'] = [dict(row, name=f'RowMarker{i:03d}') for i in range(100)]
+        with patch.object(karne, 'build_karne_context', return_value=context):
+            pdf = karne.render_karne_pdf_html([_tyt_payload()])
+        pages = PdfReader(io.BytesIO(pdf)).pages
+        texts = [page.extract_text() for page in pages]
+        self.assertTrue(all(text.strip() for text in texts))
+        text = '\n'.join(texts)
+        positions = [text.index(f'RowMarker{i:03d}') for i in range(100)]
+        self.assertEqual(positions, sorted(positions))
+        self.assertGreater(text.index('Cevaplar'), positions[-1])
 
 
 class KarneHtmlEndpointTest(TestCase):

@@ -474,3 +474,118 @@ class OlcmePublishDispatchTest(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(res.json()['status'], ST_OVERDUE)
         self.assertFalse(res.json()['ok'])
+
+    def _save_recipients(self, kind, options):
+        return self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/publish-dispatch/reschedule/',
+            {'kind': kind, 'scheduled_at': self._due(-1).isoformat(),
+             'is_enabled': True, 'recipient_options': options},
+            format='json', **self.headers,
+        )
+
+    def test_schedule_recipient_preferences_survive_reload_and_cron(self):
+        self._grade()
+        options = {'include_veli': True, 'include_student': False,
+                   'excluded_student_ids': [self.present.id],
+                   'excluded_veli_ids': [OgrenciVeli.objects.get(ogrenci=self.present).id]}
+        res = self._save_recipients(KIND_KARNE, options)
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.assertEqual(res.json()['karne']['recipient_options'], options)
+        status = self.client.get(f'{EXAMS_URL}{self.exam.id}/publish-dispatch/', **self.headers)
+        self.assertEqual(status.json()['karne']['recipient_options'], options)
+        self.assertTrue(status.json()['answer_key']['recipient_options']['include_student'])
+        with patch('apps.coaching.application.olcme_publish._send_karnes',
+                   return_value={'sent': 1, 'skipped': 0, 'errors': []}) as send:
+            process_due(exam_id=self.exam.id)
+        self.assertFalse(send.call_args.kwargs['include_student'])
+        self.assertTrue(send.call_args.kwargs['include_veli'])
+        self.assertEqual(send.call_args.kwargs['excluded_veli_ids'], options['excluded_veli_ids'])
+        self.assertEqual(send.call_args.kwargs['excluded_student_ids'], [self.present.id])
+        row = ExamScheduledDispatch.objects.get(exam=self.exam, kind=KIND_KARNE)
+        self.assertEqual(row.send_options['recipient_options'], options)
+
+    def test_invalid_recipient_options_do_not_change_schedule(self):
+        for options in [
+            {'include_veli': False, 'include_student': False},
+            {'excluded_student_ids': ['invalid']},
+            {'excluded_veli_ids': [-1]},
+            {'include_student': 'invalid'},
+        ]:
+            with self.subTest(options=options):
+                res = self._save_recipients(KIND_KARNE, options)
+                self.assertEqual(res.status_code, 400)
+        self.exam.refresh_from_db()
+        self.assertIsNone(self.exam.result_publish_date)
+
+    def test_date_only_edit_preserves_recipients(self):
+        from apps.coaching.application.olcme_publish import set_schedule
+        options = {'include_veli': False, 'include_student': True,
+                   'excluded_student_ids': [self.present.id], 'excluded_veli_ids': []}
+        self._save_recipients(KIND_KARNE, options)
+        row = set_schedule(self.exam, KIND_KARNE, is_enabled=False, scheduled_at=self._due(60))
+        self.assertEqual(row.send_options['recipient_options'], options)
+
+    def test_running_schedule_cannot_be_overwritten(self):
+        self._save_recipients(KIND_KARNE, {'include_student': True})
+        row = ExamScheduledDispatch.objects.get(exam=self.exam, kind=KIND_KARNE)
+        row.send_options['running_since'] = timezone.now().isoformat()
+        row.save(update_fields=['send_options'])
+        before = row.send_options
+        res = self._save_recipients(KIND_KARNE, {'include_student': False})
+        self.assertEqual(res.status_code, 400)
+        row.refresh_from_db()
+        self.assertEqual(row.send_options, before)
+
+    def test_manual_selection_overrides_saved_schedule_preferences(self):
+        self._grade()
+        self._save_recipients(KIND_KARNE, {'include_student': False, 'include_veli': True})
+        with patch('apps.coaching.application.olcme_publish._send_karnes',
+                   return_value={'sent': 1, 'skipped': 0, 'errors': []}) as send:
+            send_now(self.exam, KIND_KARNE, include_student=True, include_veli=False,
+                     excluded_student_ids=[], excluded_veli_ids=[])
+        self.assertTrue(send.call_args.kwargs['include_student'])
+        self.assertFalse(send.call_args.kwargs['include_veli'])
+
+    def test_answer_key_recipient_exclusions_are_independent(self):
+        from types import SimpleNamespace
+        from apps.coaching.application.olcme_cevap_anahtari_notify import send_answer_key_notify
+        veli = OgrenciVeli.objects.get(ogrenci=self.present)
+        for students, velis, expected_type in [([self.present.id], [], ':veli:'), ([], [veli.id], ':ogrenci')]:
+            with self.subTest(expected_type=expected_type), patch(
+                'apps.coaching.application.olcme_cevap_anahtari_notify.dispatch_event',
+                return_value=SimpleNamespace(success=True),
+            ) as dispatch:
+                send_answer_key_notify(self.exam, b'%PDF-test', 'test.pdf',
+                                       excluded_student_ids=students, excluded_veli_ids=velis)
+                dispatch.assert_called_once()
+                self.assertIn(expected_type, dispatch.call_args.kwargs['source'].ref_id)
+
+    def test_karne_student_exclusion_keeps_guardian_selected(self):
+        from apps.coaching.application.olcme_karne_notify import (
+            KarneNotifyPreview, KarneNotifyRecipient, send_karne_notify_bulk,
+        )
+        veli = OgrenciVeli.objects.get(ogrenci=self.present)
+        preview = KarneNotifyPreview(exam_id=self.exam.id, answer_id=1,
+            exam_name=self.exam.name, student_name='Ada', recipients=[
+                KarneNotifyRecipient('ogrenci', self.present.id, None, 'Ada', '05321110001', 'Test'),
+                KarneNotifyRecipient('veli', self.present.id, veli.id, 'Anne', '05321110002', 'Test'),
+            ])
+        for excluded_students, excluded_velis, expected_student, expected_velis in [
+            ([self.present.id], [], False, [veli.id]),
+            ([], [veli.id], True, []),
+            ([self.present.id], [veli.id], False, []),
+        ]:
+            with self.subTest(student=expected_student), patch(
+                'apps.coaching.application.olcme_karne_notify.preview_karne_notify', return_value=preview,
+            ), patch('apps.coaching.application.olcme_karne_notify.send_karne_notify',
+                     return_value={'sent': 1, 'skipped': 0, 'errors': []}) as send:
+                send_karne_notify_bulk(kurum_id=self.kurum.id, exam_id=self.exam.id,
+                    items=[{'answer_id': 1, 'karne': {'student_id': self.present.id},
+                            'pdf_bytes': b'%PDF-test', 'filename': 'test.pdf'}],
+                    excluded_student_ids=excluded_students, excluded_veli_ids=excluded_velis)
+                if not expected_student and not expected_velis:
+                    send.assert_not_called()
+                    continue
+                send.assert_called_once()
+                self.assertEqual(send.call_args.kwargs['include_student'], expected_student)
+                self.assertEqual(send.call_args.kwargs['veli_ids'], expected_velis)

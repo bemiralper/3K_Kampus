@@ -15,7 +15,9 @@ from apps.kutuphane.domain.models import (
     Seat,
     SeatAssignment,
 )
-from apps.ogrenci.domain.models import Ogrenci
+from apps.ogrenci.domain.models import Ogrenci, OgrenciEkHizmet
+from apps.egitim_paketleri.models import EkHizmet
+from apps.egitim_yili.domain.models import EgitimYili
 from apps.personel.domain.models import Personel
 from apps.sube.domain.models import Sube
 
@@ -33,6 +35,13 @@ class KutuphaneCoachScopeTest(TestCase):
         self.other_student = Ogrenci.objects.create(
             kurum=self.kurum, sube=self.sube, ad='Ayşe', soyad='Diğer', aktif_mi=True,
         )
+
+        self.ey = EgitimYili.objects.create(baslangic_yil=2026, bitis_yil=2027, aktif_mi=True)
+        hizmet = EkHizmet.objects.create(kurum=self.kurum, sube=self.sube, egitim_yili=self.ey,
+            ad='Kütüphane', kod='KUT', hizmet_turu='kutuphane', brut_fiyat=0)
+        for student in (self.coach_student, self.other_student):
+            OgrenciEkHizmet.objects.create(ogrenci=student, ek_hizmet=hizmet,
+                egitim_yili=self.ey, aktif_mi=True, fiyat=0)
 
         self.coach_user = User.objects.create_user(
             username='kutuphane_coach', password='testpass123',

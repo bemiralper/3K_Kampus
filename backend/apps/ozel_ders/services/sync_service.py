@@ -153,6 +153,14 @@ def ensure_program_for_package(
 
     if not all([ogrenci_id, kurum_id, sube_id, egitim_yili_id]):
         raise OzelDersError('Senkron için öğrenci/kurum/şube/yıl zorunlu.', 'sync_context')
+    from apps.ogrenci.domain.models import Ogrenci
+    from apps.egitim_paketleri.models import OzelDers, PremiumPaket
+    student = Ogrenci.objects.select_for_update().filter(pk=ogrenci_id, kurum_id=kurum_id).first()
+    if student is None or not student.aktif_mi:
+        return None, 'noop'
+    catalog = OzelDers if tur == 'ozel_ders' else PremiumPaket
+    if not catalog.objects.select_for_update().filter(pk=paket_id, kurum_id=kurum_id, sube_id=sube_id).exists():
+        raise OzelDersError('Paket bu kurum ve şubeye ait değil veya silinmiş.', 'paket_id')
     _advisory_xact_lock(_LOCK_NS_OGRENCI, ogrenci_id)
 
     qs = BirebirOgrenciProgrami.objects.filter(
@@ -365,7 +373,11 @@ def iter_sozlesme_syncable_packages(sozlesme) -> list[tuple[str, int, str]]:
     return items
 
 
+@transaction.atomic
 def ensure_program_from_sozlesme_kalem(sozlesme, kalem, *, user=None) -> tuple[Optional[BirebirOgrenciProgrami], str]:
+    from apps.odeme_takip.application.services.sozlesme_erisim_sync import GRANTING_DURUMLAR
+    if sozlesme.durum not in GRANTING_DURUMLAR or not sozlesme.ogrenci.aktif_mi:
+        return None, 'noop'
     tur = _kalem_sync_kind(kalem, sozlesme)
     if tur not in SYNCABLE_PAKET_TURLERI or not getattr(kalem, 'kalem_id', None):
         return None, 'noop'
@@ -390,42 +402,87 @@ def ensure_program_from_sozlesme_kalem(sozlesme, kalem, *, user=None) -> tuple[O
 
 
 def deactivate_program_for_sozlesme_kalem(sozlesme, kalem, *, user=None) -> str:
-    tur = _kalem_sync_kind(kalem, sozlesme)
-    if tur not in SYNCABLE_PAKET_TURLERI or not getattr(kalem, 'kalem_id', None):
-        return 'noop'
+    """Kaldırılacak satırı hariç tut; diğer sözleşmelerin hakkını koru."""
+    closed = reconcile_contract_programs(sozlesme, excluded_kalem_id=kalem.pk, user=user)
+    return 'deactivated' if closed else 'skipped'
 
-    from apps.ogrenci.domain.models import OgrenciEgitimPaketi
 
-    OgrenciEgitimPaketi.objects.filter(
-        ogrenci_id=sozlesme.ogrenci_id,
-        paket_turu=tur,
-        paket_id=kalem.kalem_id,
-        aktif_mi=True,
-    ).update(aktif_mi=False)
-
-    qs = BirebirOgrenciProgrami.objects.filter(
-        kurum_id=sozlesme.kurum_id,
-        sube_id=sozlesme.sube_id,
-        egitim_yili_id=sozlesme.egitim_yili_id,
-        ogrenci_id=sozlesme.ogrenci_id,
-        durum=ProgramDurumu.AKTIF,
-    )
-    if tur == 'ozel_ders':
-        qs = qs.filter(ozel_ders_paket_id=kalem.kalem_id)
-    else:
-        qs = qs.filter(premium_paket_id=kalem.kalem_id)
+@transaction.atomic
+def deactivate_programs(programs, *, dry_run=False) -> int:
+    """Geçmiş ders/yoklama ve kilitli hakedişlere dokunmadan programı kapat."""
     from apps.ozel_ders.services.program_service import close_future_program_sessions
-
-    programs = list(qs)
-    for program in programs:
+    count = 0
+    for program in programs.select_for_update().filter(durum=ProgramDurumu.AKTIF):
+        count += 1
+        if dry_run:
+            continue
         program.durum = ProgramDurumu.PASIF
         program.bitis_tarihi = date.today()
         program.save(update_fields=['durum', 'bitis_tarihi', 'updated_at'])
         close_future_program_sessions(program)
-    return 'deactivated' if programs else 'skipped'
+    return count
 
 
+@transaction.atomic
+def reconcile_contract_programs(sozlesme, *, excluded_kalem_id=None, user=None, dry_run=False) -> int:
+    """Program hakkını aynı öğrenci/kurum/şube/yıldaki TÜM sözleşmelerden türet."""
+    from apps.odeme_takip.domain.models import Sozlesme
+    from apps.odeme_takip.application.services.sozlesme_erisim_sync import GRANTING_DURUMLAR
+    from apps.ogrenci.domain.models import Ogrenci
+
+    student = Ogrenci.objects.select_for_update().filter(pk=sozlesme.ogrenci_id).first()
+    _advisory_xact_lock(_LOCK_NS_OGRENCI, sozlesme.ogrenci_id)
+    desired = set()
+    student_active = bool(student and student.aktif_mi)
+    contracts = Sozlesme.objects.filter(
+        ogrenci_id=sozlesme.ogrenci_id, kurum_id=sozlesme.kurum_id,
+        sube_id=sozlesme.sube_id, egitim_yili_id=sozlesme.egitim_yili_id,
+        durum__in=GRANTING_DURUMLAR,
+    ).prefetch_related('kalemler')
+    if student_active:
+        for contract in contracts:
+            # İstisna yalnızca henüz silinmemiş kaleme uygulanır.
+            if excluded_kalem_id:
+                root = normalize_paket_turu(contract.paket_turu)
+                items = [(root, contract.paket_id, contract.paket_adi)] if root and contract.paket_id else []
+                items += [(_kalem_sync_kind(k, contract), k.kalem_id, k.kalem_adi)
+                          for k in contract.kalemler.all() if k.pk != excluded_kalem_id]
+            else:
+                items = iter_sozlesme_syncable_packages(contract)
+            for tur, pid, name in items:
+                if tur not in SYNCABLE_PAKET_TURLERI or not pid:
+                    continue
+                from apps.egitim_paketleri.models import OzelDers, PremiumPaket
+                catalog = OzelDers if tur == 'ozel_ders' else PremiumPaket
+                if not catalog.objects.filter(pk=pid, kurum_id=contract.kurum_id, sube_id=contract.sube_id).exists():
+                    continue
+                desired.add((tur, pid))
+                if not dry_run:
+                    ep_id = _ensure_ogrenci_egitim_paketi(
+                        ogrenci_id=contract.ogrenci_id, paket_turu=tur, paket_id=pid,
+                        paket_adi=name, baslangic=contract.baslangic_tarihi,
+                    )
+                    ensure_program_for_package(
+                        ogrenci_id=contract.ogrenci_id, kurum_id=contract.kurum_id,
+                        sube_id=contract.sube_id, egitim_yili_id=contract.egitim_yili_id,
+                        paket_turu=tur, paket_id=pid, ogrenci_egitim_paketi_id=ep_id,
+                        baslangic=contract.baslangic_tarihi, user=user,
+                    )
+    programs = BirebirOgrenciProgrami.objects.filter(
+        ogrenci_id=sozlesme.ogrenci_id, kurum_id=sozlesme.kurum_id,
+        sube_id=sozlesme.sube_id, egitim_yili_id=sozlesme.egitim_yili_id,
+    )
+    keep = Q(pk__in=[])
+    for tur, pid in desired:
+        keep |= Q(**{('ozel_ders_paket_id' if tur == 'ozel_ders' else 'premium_paket_id'): pid})
+    return deactivate_programs(programs.exclude(keep), dry_run=dry_run)
+
+
+@transaction.atomic
 def ensure_program_from_sozlesme(sozlesme, *, user=None) -> tuple[Optional[BirebirOgrenciProgrami], str]:
+    from apps.odeme_takip.application.services.sozlesme_erisim_sync import GRANTING_DURUMLAR
+    if sozlesme.durum not in GRANTING_DURUMLAR or not sozlesme.ogrenci.aktif_mi:
+        return None, 'noop'
     last_program = None
     last_action = 'noop'
     for tur, paket_id, paket_adi in iter_sozlesme_syncable_packages(sozlesme):
@@ -480,10 +537,7 @@ def sync_sube_programs(
             aktif_mi=True,
             paket_turu__in=list(SYNCABLE_PAKET_TURLERI),
         )
-        .filter(
-            Q(ogrenci_id__in=kayit_ogrenci_ids)
-            | Q(ogrenci__kurum_id=kurum_id, ogrenci__sube_id=sube_id)
-        )
+        .filter(ogrenci_id__in=kayit_ogrenci_ids, ogrenci__aktif_mi=True)
         .select_related('ogrenci')
         .order_by('id')
         .distinct()
@@ -491,6 +545,10 @@ def sync_sube_programs(
 
     summary = {'created': 0, 'updated': 0, 'skipped': 0, 'noop': 0}
     for ep in packages:
+        from apps.egitim_paketleri.models import OzelDers, PremiumPaket
+        catalog = OzelDers if ep.paket_turu == 'ozel_ders' else PremiumPaket
+        if not catalog.objects.filter(pk=ep.paket_id, kurum_id=kurum_id, sube_id=sube_id, egitim_yili_id=egitim_yili_id).exists():
+            continue
         _, action = ensure_program_for_package(
             ogrenci_id=ep.ogrenci_id,
             kurum_id=kurum_id,
@@ -512,7 +570,8 @@ def sync_sube_programs(
             kurum_id=kurum_id,
             sube_id=sube_id,
             egitim_yili_id=egitim_yili_id,
-            durum__in=[SozlesmeDurum.TASLAK, SozlesmeDurum.AKTIF, SozlesmeDurum.DONDURULMUS],
+            durum__in=[SozlesmeDurum.AKTIF, SozlesmeDurum.TAMAMLANDI, SozlesmeDurum.DONDURULMUS],
+            ogrenci__aktif_mi=True,
         )
         .prefetch_related('kalemler')
         .order_by('id')

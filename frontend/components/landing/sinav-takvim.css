@@ -702,3 +702,17 @@ button.stk-poster {
     line-clamp: 2;
   }
 }
+
+/* Afiş ve yayın logoları takvim hücresinde kırpılmadan görünür. */
+.stk-chip-poster { display:block; width:100%; height:64px; object-fit:contain; background:#fff; border-radius:5px; margin-bottom:3px; }
+@media(max-width:720px) { .stk-chip-poster { height:38px; border-radius:3px; } }
+
+.stk-layout--calendar-only { grid-template-columns:minmax(0,1fr); }
+.stk-chip--poster { position:relative; padding:3px; background:#fff !important; border:1px solid #e5edf4; border-radius:8px; gap:3px; }
+.stk-chip--poster .stk-chip-poster { height:76px; margin:0; border-radius:5px; }
+.stk-national { display:block; align-self:stretch; border-radius:4px; padding:3px 4px; background:#fff3e3; color:#9a4a0c; font-size:9px; font-weight:650; line-height:1.3; text-align:center; white-space:normal !important; }
+.stk-poster-placeholder { display:flex; align-items:center; justify-content:center; color:#94a3b8; background:#edf3f8; }
+.stk-list-item--poster { align-items:center; gap:16px; }
+.stk-list-poster { display:block; width:140px; height:80px; object-fit:contain; border:1px solid #e5edf4; border-radius:8px; background:#fff; }
+.stk-list-item--poster .stk-national { align-self:center; margin-left:auto; }
+@media(max-width:720px) { .stk-chip--poster .stk-chip-poster { height:48px; } .stk-chip--poster .stk-national { font-size:7px; padding:3px 1px; } .stk-chip--poster { padding:2px; } .stk-list-poster { width:100px; height:64px; } }

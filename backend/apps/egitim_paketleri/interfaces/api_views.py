@@ -63,6 +63,21 @@ def _require_paket_record(request, record):
     return ctx, None
 
 
+def _student_levels(student_ids, *, kurum_id, sube_id, egitim_yili_id):
+    """Seviye öğrencide değil, seçili yılın kayıt/sınıf satırındadır."""
+    from apps.ogrenci.domain.models import OgrenciKayit
+    rows = OgrenciKayit.objects.filter(
+        ogrenci_id__in=student_ids, kurum_id=kurum_id, sube_id=sube_id, aktif_mi=True,
+    ).select_related('sinif_seviyesi', 'sinif__sinif_seviyesi').order_by('-egitim_yili__baslangic_yil', '-id')
+    if egitim_yili_id:
+        rows = rows.filter(egitim_yili_id=egitim_yili_id)
+    levels = {}
+    for row in rows:
+        if row.ogrenci_id not in levels:
+            levels[row.ogrenci_id] = row.sinif_seviyesi or (row.sinif.sinif_seviyesi if row.sinif_id else None)
+    return levels
+
+
 @method_decorator(csrf_exempt, name='dispatch')
 class GrupDersiListCreateView(EgitimPaketleriPermissionMixin, View):
     """Grup Dersi List ve Create API"""
@@ -971,9 +986,13 @@ class EkHizmetSatisView(EgitimPaketleriPermissionMixin, View):
             if err := _paket_ctx_error_response(request):
                 return err
             
+            if ogrenci.kurum_id != kurum_id or ogrenci.sube_id != sube_id:
+                return JsonResponse({'success': False, 'error': 'Öğrenci bulunamadı'}, status=404)
+            if not ogrenci.aktif_mi:
+                return JsonResponse({'success': False, 'error': 'Pasif öğrenciye hizmet eklenemez.'}, status=400)
             if deneme_paketi_id:
                 try:
-                    deneme_paketi = Deneme.objects.get(id=deneme_paketi_id, aktif_mi=True)
+                    deneme_paketi = Deneme.objects.get(id=deneme_paketi_id, kurum_id=kurum_id, sube_id=sube_id, egitim_yili_id=egitim_yili_id, aktif_mi=True)
                 except Deneme.DoesNotExist:
                     return JsonResponse({'success': False, 'error': 'Deneme paketi bulunamadı'}, status=404)
                 
@@ -1005,6 +1024,10 @@ class EkHizmetSatisView(EgitimPaketleriPermissionMixin, View):
                 ek_hizmet = service.get_by_id(ek_hizmet_id)
                 if not ek_hizmet:
                     return JsonResponse({'success': False, 'error': 'Ek hizmet bulunamadı'}, status=404)
+                if ek_hizmet.kurum_id != kurum_id or ek_hizmet.sube_id != sube_id:
+                    return JsonResponse({'success': False, 'error': 'Ek hizmet bulunamadı'}, status=404)
+                if egitim_yili_id and ek_hizmet.egitim_yili_id != egitim_yili_id:
+                    return JsonResponse({'success': False, 'error': 'Ek hizmet seçili eğitim yılına ait değil.'}, status=400)
                 if not ek_hizmet.aktif_mi:
                     return JsonResponse({'success': False, 'error': 'Bu ek hizmet aktif değil'}, status=400)
                 satis_fiyat = int(fiyat) if fiyat is not None else ek_hizmet.brut_fiyat
@@ -1064,9 +1087,16 @@ class OgrenciEkHizmetListView(EgitimPaketleriPermissionMixin, View):
         except Ogrenci.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Öğrenci bulunamadı'}, status=404)
         
+        ctx, err = mandatory_paket_context(request)
+        if err:
+            return err
+        if ogrenci.kurum_id != ctx['kurum_id'] or ogrenci.sube_id != ctx['sube_id']:
+            return JsonResponse({'success': False, 'error': 'Öğrenci bulunamadı'}, status=404)
         hizmetler = OgrenciEkHizmet.objects.filter(
             ogrenci=ogrenci
         ).select_related('ek_hizmet', 'egitim_yili').order_by('-created_at')
+        if ctx['egitim_yili_id']:
+            hizmetler = hizmetler.filter(egitim_yili_id=ctx['egitim_yili_id'])
         
         return JsonResponse({
             'success': True,
@@ -1102,6 +1132,13 @@ class EkHizmetSatisIptalView(EgitimPaketleriPermissionMixin, View):
             kayit = OgrenciEkHizmet.objects.get(id=pk)
         except OgrenciEkHizmet.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Kayıt bulunamadı'}, status=404)
+        ctx, err = mandatory_paket_context(request)
+        if err:
+            return err
+        if (kayit.ogrenci.kurum_id != ctx['kurum_id'] or kayit.ogrenci.sube_id != ctx['sube_id']
+                or kayit.ek_hizmet.kurum_id != ctx['kurum_id'] or kayit.ek_hizmet.sube_id != ctx['sube_id']
+                or (ctx['egitim_yili_id'] and kayit.egitim_yili_id != ctx['egitim_yili_id'])):
+            return JsonResponse({'success': False, 'error': 'Kayıt bulunamadı'}, status=404)
         if kayit.dahil_mi:
             return JsonResponse({'success': False, 'error': 'Pakete dahil olan hizmetler iptal edilemez'}, status=400)
         kayit.aktif_mi = False
@@ -1119,10 +1156,10 @@ class OgrenciAraView(EgitimPaketleriPermissionMixin, View):
         if len(q) < 2:
             return JsonResponse({'success': True, 'data': []})
         
-        kurum_id, sube_id, _ = get_kurum_sube_context(request)
+        kurum_id, sube_id, egitim_yili_id = get_kurum_sube_context(request)
         if err := _paket_ctx_error_response(request):
             return err
-        ogrenciler = Ogrenci.objects.filter(aktif_mi=True).select_related('sinif_seviyesi')
+        ogrenciler = Ogrenci.objects.filter(aktif_mi=True)
         if kurum_id:
             ogrenciler = ogrenciler.filter(kurum_id=kurum_id)
         if sube_id:
@@ -1133,6 +1170,8 @@ class OgrenciAraView(EgitimPaketleriPermissionMixin, View):
             Q(ad__icontains=q) | Q(soyad__icontains=q) | Q(tc_kimlik_no__icontains=q)
         )[:20]
         
+        levels = _student_levels([o.pk for o in ogrenciler], kurum_id=kurum_id,
+            sube_id=sube_id, egitim_yili_id=egitim_yili_id)
         return JsonResponse({
             'success': True,
             'data': [
@@ -1140,7 +1179,7 @@ class OgrenciAraView(EgitimPaketleriPermissionMixin, View):
                     'id': o.id,
                     'tam_ad': o.tam_ad,
                     'tc_kimlik_no': o.tc_kimlik_no[:3] + '***' + o.tc_kimlik_no[-3:] if o.tc_kimlik_no and len(o.tc_kimlik_no) >= 6 else '',
-                    'sinif_seviyesi': o.sinif_seviyesi.ad if o.sinif_seviyesi else '',
+                    'sinif_seviyesi': levels[o.id].ad if levels.get(o.id) else '',
                 }
                 for o in ogrenciler
             ]
@@ -1154,18 +1193,22 @@ class UygunEkHizmetlerView(EgitimPaketleriPermissionMixin, View):
     def get(self, request, ogrenci_id):
         from apps.ogrenci.domain.models import Ogrenci, OgrenciEkHizmet
         try:
-            ogrenci = Ogrenci.objects.select_related('sinif_seviyesi').get(id=ogrenci_id)
+            ogrenci = Ogrenci.objects.get(id=ogrenci_id)
         except Ogrenci.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Öğrenci bulunamadı'}, status=404)
         
         kurum_id, sube_id, egitim_yili_id = get_kurum_sube_context(request)
         if err := _paket_ctx_error_response(request):
             return err
+        if ogrenci.kurum_id != kurum_id or ogrenci.sube_id != sube_id:
+            return JsonResponse({'success': False, 'error': 'Öğrenci bulunamadı'}, status=404)
+        seviye = _student_levels([ogrenci.id], kurum_id=kurum_id, sube_id=sube_id,
+                                  egitim_yili_id=egitim_yili_id).get(ogrenci.id)
         service = EkHizmetService()
         ek_hizmetler = service.get_active(kurum_id, sube_id, egitim_yili_id)
         
         mevcut_hizmet_ids = set(
-            OgrenciEkHizmet.objects.filter(ogrenci=ogrenci, aktif_mi=True).values_list('ek_hizmet_id', flat=True)
+            OgrenciEkHizmet.objects.filter(ogrenci=ogrenci, aktif_mi=True, egitim_yili_id=egitim_yili_id).values_list('ek_hizmet_id', flat=True)
         )
         
         uygun_hizmetler = []
@@ -1173,7 +1216,7 @@ class UygunEkHizmetlerView(EgitimPaketleriPermissionMixin, View):
             if h.id in mevcut_hizmet_ids:
                 continue
             hizmet_seviyeleri = set(h.sinif_seviyeleri.values_list('id', flat=True))
-            if hizmet_seviyeleri and ogrenci.sinif_seviyesi_id not in hizmet_seviyeleri:
+            if hizmet_seviyeleri and (seviye.id if seviye else None) not in hizmet_seviyeleri:
                 continue
             uygun_hizmetler.append({
                 'id': h.id, 'ad': h.ad, 'kod': h.kod,
@@ -1195,7 +1238,7 @@ class UygunEkHizmetlerView(EgitimPaketleriPermissionMixin, View):
             'data': {
                 'ogrenci': {
                     'id': ogrenci.id, 'tam_ad': ogrenci.tam_ad,
-                    'sinif_seviyesi': ogrenci.sinif_seviyesi.ad if ogrenci.sinif_seviyesi else '',
+                    'sinif_seviyesi': seviye.ad if seviye else '',
                 },
                 'uygun_hizmetler': uygun_hizmetler,
             }
@@ -1210,19 +1253,23 @@ class UygunDenemePaketleriView(EgitimPaketleriPermissionMixin, View):
         from apps.ogrenci.domain.models import Ogrenci, OgrenciEkHizmet
 
         try:
-            ogrenci = Ogrenci.objects.select_related('sinif_seviyesi').get(id=ogrenci_id)
+            ogrenci = Ogrenci.objects.get(id=ogrenci_id)
         except Ogrenci.DoesNotExist:
             return JsonResponse({'success': False, 'error': 'Öğrenci bulunamadı'}, status=404)
 
         kurum_id, sube_id, egitim_yili_id = get_kurum_sube_context(request)
         if err := _paket_ctx_error_response(request):
             return err
+        if ogrenci.kurum_id != kurum_id or ogrenci.sube_id != sube_id:
+            return JsonResponse({'success': False, 'error': 'Öğrenci bulunamadı'}, status=404)
+        seviye = _student_levels([ogrenci.id], kurum_id=kurum_id, sube_id=sube_id,
+                                  egitim_yili_id=egitim_yili_id).get(ogrenci.id)
         service = DenemeService()
         denemeler = service.get_active(kurum_id, sube_id, egitim_yili_id)
 
         mevcut_deneme_paketi_ids = set(
             OgrenciEkHizmet.objects.filter(
-                ogrenci=ogrenci, aktif_mi=True,
+                ogrenci=ogrenci, aktif_mi=True, egitim_yili_id=egitim_yili_id,
                 ek_hizmet__hizmet_turu='deneme',
                 ek_hizmet__deneme_paketi__isnull=False,
             ).values_list('ek_hizmet__deneme_paketi_id', flat=True)
@@ -1233,7 +1280,7 @@ class UygunDenemePaketleriView(EgitimPaketleriPermissionMixin, View):
             if d.id in mevcut_deneme_paketi_ids:
                 continue
             paket_seviyeleri = set(d.sinif_seviyeleri.values_list('id', flat=True))
-            if paket_seviyeleri and ogrenci.sinif_seviyesi_id not in paket_seviyeleri:
+            if paket_seviyeleri and (seviye.id if seviye else None) not in paket_seviyeleri:
                 continue
             uygun_paketler.append({
                 'id': d.id, 'ad': d.ad, 'kod': d.kod,
@@ -1250,7 +1297,7 @@ class UygunDenemePaketleriView(EgitimPaketleriPermissionMixin, View):
             'data': {
                 'ogrenci': {
                     'id': ogrenci.id, 'tam_ad': ogrenci.tam_ad,
-                    'sinif_seviyesi': ogrenci.sinif_seviyesi.ad if ogrenci.sinif_seviyesi else '',
+                    'sinif_seviyesi': seviye.ad if seviye else '',
                 },
                 'uygun_deneme_paketleri': uygun_paketler,
             }

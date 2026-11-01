@@ -32,6 +32,7 @@ import ExamPublishBanner from '../../../../components/olcme/ExamPublishBanner';
 import ExamHeader from '../../../../components/olcme/ui/ExamHeader';
 import Icon from '../../../../components/olcme/ui/Icon';
 import s from '../olcme.module.css';
+import d from './detail.module.css';
 
 /* ── Yardımcı ──────────────────────────────────────────────────────────────── */
 const labelOf = (list: readonly { readonly value: string; readonly label: string }[], v: string) =>
@@ -156,7 +157,7 @@ export default function ExamDetailPage() {
 
   /* ── Loading / Error ────────────────────────────────────────────────────── */
   if (loading) return (
-    <div className="section">
+    <div className={`section ${d.page}`}>
       <div className="card-modern" style={{ textAlign: 'center', padding: 80 }}>
         <div className="skeleton" style={{ width: 32, height: 32, borderRadius: '50%', margin: '0 auto 12px' }} />
         <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 14 }}>Yükleniyor…</p>
@@ -164,7 +165,7 @@ export default function ExamDetailPage() {
     </div>
   );
   if (error || !exam) return (
-    <div className="section">
+    <div className={`section ${d.page}`}>
       <div style={{ padding: '20px 24px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#991b1b' }}>
         <strong>Hata:</strong> {error || 'Sınav bulunamadı.'}
         <button className="btn-modern btn-secondary" style={{ marginLeft: 12 }}
@@ -176,7 +177,7 @@ export default function ExamDetailPage() {
   /* ═══════════ RENDER ═══════════ */
 
   return (
-    <div className="section">
+    <div className={`section ${d.page}`}>
 
       <ExamHeader
         exam={exam}
@@ -190,15 +191,16 @@ export default function ExamDetailPage() {
       {actionError && <ErrorBar message={actionError} onClose={() => setActionError('')} />}
 
       {/* ── Tab Nav ───────────────────────────────────────────────────────── */}
-      <div className={s.detailTabs}>
+      <nav className={d.tabs} aria-label="Sınav bölümleri">
         {TABS.map(t => (
           <button key={t.key} onClick={() => setActiveTab(t.key)}
-            className={`tab-modern ${activeTab === t.key ? 'active' : ''}`}>
+            aria-current={activeTab === t.key ? 'page' : undefined}
+            className={activeTab === t.key ? d.activeTab : d.tab}>
             <Icon name={t.icon} size={16} />
             {t.label}
           </button>
         ))}
-      </div>
+      </nav>
 
       {/* Tab İçerikleri */}
       {activeTab === 'genel' && <GeneralTab exam={exam} onRefresh={fetchExam} onExamUpdate={setExam} />}
@@ -458,11 +460,11 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   }, [editing, hasAudience, ef.sinif_ids, ef.sinif_seviyesi_ids, ef.deneme_paketi_ids]);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+    <div className={d.general}>
 
       {tabError && <ErrorBar message={tabError} onClose={() => setTabError('')} />}
 
-      <div className={s.infoSplit}>
+      <div className={d.infoSplit}>
         {/* ── Sınav Bilgileri ──────────────────────────────────────────── */}
         <div className="card-modern">
           <div className={`card-modern-header ${s.examCardHead}`}>
@@ -474,7 +476,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
               {!editing ? (
                 <button className="btn-modern btn-primary" onClick={handleStartEdit}
                   style={{ padding: '7px 18px', fontSize: 13 }}>
-                  ✏️ Düzenle
+                  <Icon name="edit" size={15} /> Düzenle
                 </button>
               ) : (
                 <>
@@ -484,21 +486,22 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   </button>
                   <button className="btn-modern btn-primary" onClick={handleSave} disabled={saving}
                     style={{ padding: '7px 18px', fontSize: 13 }}>
-                    {saving ? '⏳ Kaydediliyor…' : '💾 Kaydet'}
+                    <Icon name="save" size={15} /> {saving ? 'Kaydediliyor…' : 'Kaydet'}
                   </button>
                 </>
               )}
             </div>
           </div>
-          <div className={`card-modern-body ${s.cardBody}`}>
+          <div className={`card-modern-body ${d.cardBody}`}>
             {!editing ? (
-              <div className={s.infoGrid}>
+              <div className={d.infoGrid}>
                 <InfoItem label="Sınav Adı" value={exam.name} />
                 <InfoItem label="Sınav Türü" value={labelOf(EXAM_TYPES, exam.exam_type)} />
-                <div className={s.infoItem}>
-                  <span className={s.infoLabel}>Durum</span>
-                  <span className={s.infoValue}>
+                <div className={d.infoItem}>
+                  <span className={d.infoLabel}>Durum</span>
+                  <span className={d.infoValue}>
                     <select
+                      aria-label="Sınav durumu"
                       value={exam.status}
                       onChange={e => handleStatusChange(e.target.value)}
                       disabled={statusSaving}
@@ -522,9 +525,9 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   value={exam.puan_yili ? `${exam.puan_yili} YKS` : `Kurum varsayılanı (${kurumDefaultYear})`}
                 />
                 {examSupportsOptionalPhilosophy(exam.exam_type) && (
-                  <div className={s.infoItem}>
-                    <span className={s.infoLabel}>Felsefe (Seçmeli)</span>
-                    <span className={s.infoValue}>
+                  <div className={d.infoItem}>
+                    <span className={d.infoLabel}>Felsefe (Seçmeli)</span>
+                    <span className={d.infoValue}>
                       <label className={s.checkRow} style={{ margin: 0 }}>
                         <input
                           type="checkbox"
@@ -554,14 +557,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                 <InfoItem label="Sınav Tarihleri" value={sessionDateSummary(sessions)} />
                 <InfoItem label="Sonuç Yayın Tarihi" value={fmtDateTime(exam.result_publish_date)} />
                 <InfoItem label="Cevap Anahtarı Yayın Tarihi" value={fmtDateTime(exam.answer_key_publish_date)} />
-                <div style={{ gridColumn: '1 / -1' }}>
-                  <ExamPublishBanner
-                    examId={exam.id}
-                    examName={exam.name}
-                    refreshKey={`${exam.result_publish_date || ''}|${exam.answer_key_publish_date || ''}|${exam.status}`}
-                    onExamDatesChanged={onRefresh}
-                  />
-                </div>
+
               </div>
             ) : (
               <div className={s.formGrid}>
@@ -666,6 +662,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
           </div>
         </div>
 
+        <aside className={d.aside}>
         {/* ── Kurum Bilgileri ──────────────────────────────────────────── */}
         <div className="card-modern">
           <div className="card-modern-header">
@@ -674,8 +671,8 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
               Kurum Bilgileri
             </h3>
           </div>
-          <div className={`card-modern-body ${s.cardBody}`}>
-            <div className={s.infoGrid}>
+          <div className={`card-modern-body ${d.cardBody}`}>
+            <div className={d.infoGrid}>
               <InfoItem label="Kurum" value={exam.kurum_adi || '—'} />
               <InfoItem label="Şube" value={exam.sube_adi || '—'} />
               <InfoItem label="Eğitim Yılı" value={exam.egitim_yili_str || '—'} />
@@ -686,6 +683,19 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
             </div>
           </div>
         </div>
+          <section className="card-modern">
+            <div className="card-modern-header"><h3><Icon name="calendar" size={18} />Yayın ve paylaşım</h3></div>
+            <div className={`card-modern-body ${d.cardBody}`}>
+              <p className={d.sectionHint}>Karne ve cevap anahtarının gönderimlerini yönetin.</p>
+              <ExamPublishBanner
+                examId={exam.id}
+                examName={exam.name}
+                refreshKey={`${exam.result_publish_date || ''}|${exam.answer_key_publish_date || ''}|${exam.status}`}
+                onExamDatesChanged={onRefresh}
+              />
+            </div>
+          </section>
+        </aside>
       </div>
 
       {/* ── Kimler girecek (oluşturma sihirbazıyla aynı seçim) ────────── */}
@@ -696,9 +706,9 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
             Kimler girecek
           </h3>
         </div>
-        <div className={`card-modern-body ${s.cardBody}`}>
+        <div className={`card-modern-body ${d.cardBody}`}>
           {!editing ? (
-            <div className={s.infoGrid}>
+            <div className={d.infoGrid}>
               <InfoItem label="Seviye" value={seviyeNames || '—'} />
               <InfoItem label="Sınıflar" value={sinifNames || '—'} />
               <InfoItem label="Deneme paketi" value={paketNames || '—'} />
@@ -751,11 +761,11 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
             <button className="btn-modern btn-primary"
               onClick={() => setShowSessionForm(!showSessionForm)}
               style={{ padding: '6px 14px', fontSize: 12 }}>
-              {showSessionForm ? '✕ İptal' : '+ Oturum Ekle'}
+              <Icon name={showSessionForm ? 'close' : 'plus'} size={15} /> {showSessionForm ? 'İptal' : 'Oturum Ekle'}
             </button>
           </div>
         </div>
-        <div className={`card-modern-body ${s.cardBody}`}>
+        <div className={`card-modern-body ${d.cardBody}`}>
 
           {/* Yeni Oturum Formu */}
           {showSessionForm && (
@@ -858,7 +868,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
               Açıklama
             </h3>
           </div>
-          <div className={`card-modern-body ${s.cardBody}`}>
+          <div className={`card-modern-body ${d.cardBody}`}>
             <p style={{ margin: 0, fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
               {exam.description}
             </p>
@@ -1017,7 +1027,7 @@ function SessionCard({ session, index, onRemove, onUpdate }: {
         <div className={s.sessionCardActions}>
           <button className="btn-modern" onClick={startEdit}
             style={{ color: 'var(--primary)', fontSize: 12, padding: '4px 10px', background: 'none', border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer' }}>
-            ✏️ Düzenle
+            <Icon name="edit" size={14} /> Düzenle
           </button>
           <button className="btn-modern" onClick={() => onRemove(session.id)}
             style={{ color: 'var(--danger)', fontSize: 12, padding: '4px 10px', background: 'none', border: '1px solid #fecaca', borderRadius: 6, cursor: 'pointer' }}>
@@ -1047,9 +1057,9 @@ function SessionCard({ session, index, onRemove, onUpdate }: {
 
 function InfoItem({ label: lbl, value }: { label: string; value: string | number }) {
   return (
-    <div className={s.infoItem}>
-      <span className={s.infoLabel}>{lbl}</span>
-      <span className={s.infoValue}>{value}</span>
+    <div className={d.infoItem}>
+      <span className={d.infoLabel}>{lbl}</span>
+      <span className={d.infoValue}>{value}</span>
     </div>
   );
 }
@@ -1149,7 +1159,7 @@ function TytLinkCard({
           TYT-AYT Bağlantısı
         </h3>
       </div>
-      <div className={`card-modern-body ${s.cardBody}`}>
+      <div className={`card-modern-body ${d.cardBody}`}>
         {/* Bilgi kutusu */}
         <div style={{
           background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 10,

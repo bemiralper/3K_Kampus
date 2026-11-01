@@ -168,6 +168,28 @@ export default function ExamHeader({
           </div>
         </div>
       </div>
+      <div className={s.overview}>
+        <button className={s.metric} onClick={() => onTabChange('katilimcilar')}>
+          <span className={s.metricIcon}><Icon name="users" size={21} /></span>
+          <span><small>Katılımcı</small><strong>{exam.participant_count ?? '—'} <em>öğrenci</em></strong></span>
+          <Icon name="chevronRight" size={16} />
+        </button>
+        <button className={s.metric} onClick={() => onTabChange('cevap-anahtari')}>
+          <span className={s.metricIcon}><Icon name="answerKey" size={21} /></span>
+          <span><small>Sınav kapsamı</small><strong>{exam.total_questions ?? 0} <em>soru · {exam.section_count ?? 0} bölüm</em></strong></span>
+          <Icon name="chevronRight" size={16} />
+        </button>
+        <button className={s.metric} onClick={() => onTabChange('yukle')}>
+          <span className={s.metricIcon}><Icon name="upload" size={21} /></span>
+          <span><small>Yüklenen sonuç</small><strong>{exam.answer_count ?? 0} <em>öğrenci</em></strong></span>
+          <Icon name="chevronRight" size={16} />
+        </button>
+        <button className={`${s.metric} ${s.metricAccent}`} onClick={() => onTabChange('analiz')}>
+          <span className={s.metricIcon}><Icon name="chart" size={21} /></span>
+          <span><small>Sonuçları incele</small><strong>Analize git</strong></span>
+          <Icon name="chevronRight" size={16} />
+        </button>
+      </div>
     </header>
   );
 }

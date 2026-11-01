@@ -1,3 +1,22 @@
+.disclosureToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 60px;
+  padding: 16px 22px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.disclosureToggle::-webkit-details-marker { display: none; }
+.disclosureToggle::marker { content: ''; }
+.disclosureToggle:hover { background: #f8fafc; }
+.disclosureToggle:focus-visible { outline: 3px solid #60a5fa; outline-offset: -3px; }
+.disclosure:not([open]) > .disclosureToggle { border-bottom: 0; }
+.disclosureChevron { color: #64748b; }
+.disclosure[open] > .disclosureToggle .disclosureChevron { transform: rotate(180deg); }
+
 .tree {
   display: flex;
   flex-direction: column;

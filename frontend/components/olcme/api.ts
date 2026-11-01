@@ -53,6 +53,7 @@ import type {
   ExamPublishStatus,
   ExamPublishPreview,
   ExamPublishDispatch,
+  ExamRecipientOptions,
 } from './types';
 
 const BASE = '/api/coaching/olcme-degerlendirme/exams';
@@ -459,6 +460,8 @@ export const examApi = {
       student_ids?: number[];
       veli_ids?: number[];
       answer_ids?: number[];
+      excluded_student_ids?: number[];
+      excluded_veli_ids?: number[];
     },
   ) =>
     request<{
@@ -481,10 +484,11 @@ export const examApi = {
     kind: 'karne' | 'answer_key',
     scheduledAt: string | null,
     isEnabled = false,
+    recipientOptions?: ExamRecipientOptions,
   ) =>
     request<ExamPublishStatus>(`${BASE}/${examId}/publish-dispatch/reschedule/`, {
       method: 'POST',
-      body: JSON.stringify({ kind, scheduled_at: scheduledAt, is_enabled: isEnabled }),
+      body: JSON.stringify({ kind, scheduled_at: scheduledAt, is_enabled: isEnabled, recipient_options: recipientOptions }),
     }),
 
   answerKeyPdfMeta: (examId: number) =>

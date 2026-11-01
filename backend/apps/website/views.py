@@ -5,6 +5,7 @@ import uuid
 from datetime import time
 
 from django.core.files.base import ContentFile
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import JsonResponse
@@ -603,6 +604,8 @@ def _parse_gunler(raw_gunler):
         tarih = SinavTakvim._meta.get_field('tarih').to_python(item['tarih'])
         saat = _parse_clock(item.get('saat'), 'saat')
         saat_bitis = _parse_clock(item.get('saat_bitis'), 'saat_bitis')
+        if saat_bitis and not saat:
+            raise ValueError('Bitiş saati için başlangıç saati de seçilmelidir')
         if saat and saat_bitis and saat_bitis <= saat:
             raise ValueError('Bitiş saati başlangıçtan sonra olmalıdır')
         key = (
@@ -791,6 +794,19 @@ def api_admin_sinav_detail(request, pk):
         if isinstance(data.get('gunler'), list):
             anchor = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
             return _sync_sinav_gunler(request, anchor, data)
+        sinav = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
+        try:
+            for field_name in ('tur', 'tarih', 'saat', 'saat_bitis', 'kapsam', 'baslik', 'yayin_adi', 'aciklama', 'aktif'):
+                if field_name in data:
+                    raw = data[field_name]
+                    if field_name in ('saat', 'saat_bitis') and not raw:
+                        raw = None
+                    setattr(sinav, field_name, SinavTakvim._meta.get_field(field_name).to_python(raw))
+            sinav.full_clean()
+            sinav.save()
+        except (ValueError, TypeError, ValidationError) as exc:
+            return JsonResponse({'success': False, 'error': str(exc)}, status=400)
+        return JsonResponse({'success': True, 'data': serialize_sinav(sinav, request)})
     return _generic_detail(
         request, SinavTakvim, serialize_sinav, pk, kurum,
         ['tur', 'tarih', 'saat', 'saat_bitis', 'kapsam', 'baslik', 'yayin_adi', 'aciklama', 'aktif'],
@@ -805,6 +821,16 @@ def api_admin_sinav_upload(request, pk):
     if request.method != 'POST':
         return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
     s = get_object_or_404(SinavTakvim, pk=pk, kurum=kurum)
+    uploaded = request.FILES.get('gorsel')
+    if uploaded:
+        from PIL import Image, UnidentifiedImageError
+        try:
+            with Image.open(uploaded) as image:
+                image.verify()
+        except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+            return JsonResponse({'success': False, 'error': 'Geçerli bir görsel dosyası seçin.'}, status=400)
+        finally:
+            uploaded.seek(0)
     upload_err = _upload_image(request, s, 'gorsel', 'gorsel')
     if upload_err:
         return upload_err
@@ -869,6 +895,10 @@ def api_admin_sinav_copy(request, pk):
         aciklama=source.aciklama,
         aktif=source.aktif,
     )
+    try:
+        clone.full_clean()
+    except ValidationError as exc:
+        return JsonResponse({'success': False, 'error': str(exc)}, status=400)
     clone.save()
     _copy_sinav_gorsel(source, clone)
     clone.refresh_from_db()

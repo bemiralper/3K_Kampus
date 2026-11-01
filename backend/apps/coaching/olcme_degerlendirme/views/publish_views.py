@@ -6,6 +6,7 @@ from django.utils.dateparse import parse_datetime
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework import serializers
 
 from shared.permissions import OlcmeModulePermission
 
@@ -20,6 +21,20 @@ from apps.coaching.application.olcme_publish import (
 )
 from ..interfaces.sube_context import get_exam_or_response
 from . import CsrfExemptSessionAuthentication
+
+
+class RecipientOptionsSerializer(serializers.Serializer):
+    include_veli = serializers.BooleanField(default=True)
+    include_student = serializers.BooleanField(default=True)
+    excluded_student_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list)
+    excluded_veli_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), default=list)
+
+    def validate(self, attrs):
+        if not attrs['include_veli'] and not attrs['include_student']:
+            raise serializers.ValidationError('En az bir alıcı türü seçin.')
+        for key in ('excluded_student_ids', 'excluded_veli_ids'):
+            attrs[key] = sorted(set(attrs[key]))
+        return attrs
 
 
 def _parse_when(raw):
@@ -89,15 +104,19 @@ def exam_publish_send_now(request, exam_pk):
     if kind not in (KIND_KARNE, KIND_ANSWER_KEY):
         return Response({'error': 'kind karne veya answer_key olmalı.'}, status=400)
     try:
+        options = RecipientOptionsSerializer(data=request.data)
+        options.is_valid(raise_exception=True)
         result = send_now(
             exam,
             kind,
             sent_by_user_id=getattr(request.user, 'id', None),
-            include_veli=request.data.get('include_veli', True) is not False,
-            include_student=request.data.get('include_student', True) is not False,
+            include_veli=options.validated_data['include_veli'],
+            include_student=options.validated_data['include_student'],
             student_ids=_as_int_list(request.data.get('student_ids')),
             veli_ids=_as_int_list(request.data.get('veli_ids')),
             answer_ids=_as_int_list(request.data.get('answer_ids')),
+            excluded_student_ids=options.validated_data['excluded_student_ids'],
+            excluded_veli_ids=options.validated_data['excluded_veli_ids'],
         )
     except ValueError as exc:
         return Response({'error': str(exc)}, status=400)
@@ -124,7 +143,12 @@ def exam_publish_reschedule(request, exam_pk):
     else:
         is_enabled = raw_enabled is True or str(raw_enabled).lower() in ('1', 'true', 'yes')
     try:
-        set_schedule(exam, kind, is_enabled=is_enabled, scheduled_at=when)
+        options = None
+        if 'recipient_options' in request.data:
+            serializer = RecipientOptionsSerializer(data=request.data['recipient_options'])
+            serializer.is_valid(raise_exception=True)
+            options = serializer.validated_data
+        set_schedule(exam, kind, is_enabled=is_enabled, scheduled_at=when, recipient_options=options)
     except ValueError as exc:
         return Response({'error': str(exc)}, status=400)
     exam.refresh_from_db()

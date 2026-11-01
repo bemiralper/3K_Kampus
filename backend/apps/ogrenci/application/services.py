@@ -85,7 +85,7 @@ class OgrenciService:
         except Exception as e:
             return None, {'error': str(e)}
     
-    def update(self, pk, data):
+    def update(self, pk, data, *, egitim_yili_id=None):
         """Öğrenci güncelle"""
         errors = self._validate(data, is_update=True)
         if errors:
@@ -103,7 +103,7 @@ class OgrenciService:
                 return None, {'tc_kimlik_no': 'Bu TC Kimlik No başka bir öğrenciye ait'}
         
         try:
-            ogrenci = self.repository.update(pk, data)
+            ogrenci = self.repository.update(pk, data, egitim_yili_id=egitim_yili_id)
             return ogrenci, None
         except Exception as e:
             return None, {'error': str(e)}
