@@ -1,15 +1,27 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { daireSablonApi } from '../../../../components/olcme/daire-dizisi/api';
 import type { DaireSablonOzet } from '../../../../components/olcme/daire-dizisi/types';
 import { omrApi, type OmrJob, type OmrPage } from '../../../../components/olcme/omr/api';
 import { getContextHeaders } from '@/lib/api';
+import u from './upload.module.css';
 
-const box: React.CSSProperties = { border: '1px solid #d8dee8', borderRadius: 12, padding: 16, background: '#fff' };
-const field: React.CSSProperties = { display: 'grid', gap: 5, fontSize: 13, fontWeight: 600 };
-const input: React.CSSProperties = { minHeight: 38, border: '1px solid #cbd5e1', borderRadius: 8, padding: '8px 10px' };
-const button: React.CSSProperties = { border: 0, borderRadius: 8, padding: '10px 14px', background: '#1d4ed8', color: '#fff', fontWeight: 700, cursor: 'pointer' };
+const PAGE_STATUS: Record<OmrPage['status'], string> = {
+  PENDING: 'Bekliyor',
+  PROCESSING: 'İşleniyor',
+  REVIEW: 'İnceleme bekliyor',
+  READY: 'Onaylandı',
+  ERROR: 'Hata',
+};
+
+const JOB_STATUS: Record<OmrJob['status'], string> = {
+  PENDING: 'Bekliyor',
+  PROCESSING: 'İşleniyor',
+  REVIEW: 'İnceleme bekliyor',
+  CONFIRMED: 'Sonuçlara aktarıldı',
+  ERROR: 'Hata',
+};
 
 function AuthenticatedImage({ src, alt }: { src: string; alt: string }) {
   const [url, setUrl] = useState('');
@@ -35,8 +47,8 @@ function AuthenticatedImage({ src, alt }: { src: string; alt: string }) {
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [src]);
-  if (!src) return <div style={{ minHeight: 240, display: 'grid', placeItems: 'center' }}>Sayfa işlenmeyi bekliyor…</div>;
-  if (!url) return <div style={{ minHeight: 240, display: 'grid', placeItems: 'center' }}>Görsel yükleniyor…</div>;
+  if (!src) return <div className={u.imgWait}>Sayfa işlenmeyi bekliyor…</div>;
+  if (!url) return <div className={u.imgWait}>Görsel yükleniyor…</div>;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={url} alt={alt} style={{ width: '100%', display: 'block' }} />;
 }
@@ -60,68 +72,84 @@ function PageReview({ examId, job, page, onSaved }: {
   const [booklet, setBooklet] = useState(String(existing.kitapcik ?? page.decoded.kitapcik ?? ''));
   const [answers, setAnswers] = useState(() => answersText(page));
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
   const overlay = page.registration.overlay || [];
+  const ready = page.status === 'READY';
 
   const save = async () => {
     setBusy(true);
+    setError('');
     try {
       const answerMap = Object.fromEntries([...answers].map((value, index) => [String(index + 1), value.trim().toUpperCase()]));
       onSaved(await omrApi.review(examId, job.id, page.id, {
         approved: true,
         values: { tc, ogrenci_no: number, ad_soyad: name, kitapcik: booklet.toUpperCase(), cevaplar: answerMap },
       }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Kaydedilemedi.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <article style={{ ...box, display: 'grid', gap: 14 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12 }}>
-        <strong>Sayfa {page.sequence} · {page.original_filename}</strong>
-        <span>Güven %{Math.round(page.confidence * 100)} · {page.status}</span>
-      </div>
-      <div style={{ position: 'relative', maxWidth: 620, border: '1px solid #e2e8f0' }}>
-        <AuthenticatedImage src={page.image_url} alt={`Tarama sayfa ${page.sequence}`} />
-        <svg viewBox={`0 0 ${job.page_width_mm} ${job.page_height_mm}`} preserveAspectRatio="none" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
-          {overlay.map((cell, index) => (
-            <circle
-              key={`${cell.alan_id}-${index}`}
-              cx={cell.x_mm}
-              cy={cell.y_mm}
-              r={1.3}
-              fill="none"
-              stroke={cell.score >= 0.25 ? '#16a34a' : '#f59e0b'}
-              strokeWidth={0.28}
-            />
+    <article className={u.panel}>
+      <header className={u.panelHead}>
+        <h3>Sayfa {page.sequence} <small>{page.original_filename}</small></h3>
+        <span className={ready ? u.pillOk : page.status === 'ERROR' ? u.pillErr : u.pillWait}>
+          {PAGE_STATUS[page.status] ?? page.status} · güven %{Math.round(page.confidence * 100)}
+        </span>
+      </header>
+      <div className={u.omrGrid}>
+        <div className={u.omrImage}>
+          <AuthenticatedImage src={page.image_url} alt={`Tarama sayfa ${page.sequence}`} />
+          <svg viewBox={`0 0 ${job.page_width_mm} ${job.page_height_mm}`} preserveAspectRatio="none" className={u.omrOverlay}>
+            {overlay.map((cell, index) => (
+              <circle
+                key={`${cell.alan_id}-${index}`}
+                cx={cell.x_mm}
+                cy={cell.y_mm}
+                r={1.3}
+                fill="none"
+                stroke={cell.score >= 0.25 ? '#16a34a' : '#f59e0b'}
+                strokeWidth={0.28}
+              />
+            ))}
+          </svg>
+        </div>
+        <div className={u.omrForm}>
+          {[...page.critical_warnings, ...page.warnings].map((warning, index) => (
+            <p key={`${warning}-${index}`} className={page.critical_warnings.includes(warning) ? u.errText : u.warnLine}>{warning}</p>
           ))}
-        </svg>
+          <p className={page.match_preview?.student_id ? u.okLine : u.warnLine}>
+            {page.match_preview?.student_id
+              ? `Eşleşen öğrenci: ${page.match_preview.student_name} · %${Math.round((page.match_preview.score || 0) * 100)}`
+              : 'Öğrenci bulunamadı; TC, numara veya adı düzeltin.'}
+          </p>
+          {page.error_message && <p className={u.errText}>{page.error_message}</p>}
+          <div className={u.formRow}>
+            <label className={u.fieldLabel}>TC<input value={tc} onChange={e => setTc(e.target.value)} inputMode="numeric" /></label>
+            <label className={u.fieldLabel}>Öğrenci no<input value={number} onChange={e => setNumber(e.target.value)} /></label>
+            <label className={u.fieldLabel}>Ad soyad<input value={name} onChange={e => setName(e.target.value)} /></label>
+            <label className={u.fieldLabel}>Kitapçık<input value={booklet} maxLength={1} onChange={e => setBooklet(e.target.value)} /></label>
+          </div>
+          <label className={u.fieldLabel}>
+            Cevaplar ({answers.length} soru, boş için boşluk)
+            <textarea className={u.mono} value={answers} onChange={e => setAnswers(e.target.value)} rows={3} />
+          </label>
+          {error && <p className={u.errText}>{error}</p>}
+          <div>
+            <button type="button" className={ready ? u.btnGhost : u.btnPrimary} disabled={busy || page.status === 'ERROR'} onClick={save}>
+              {busy ? 'Kaydediliyor…' : ready ? 'Düzeltmeyi yeniden kaydet' : 'Kaydet ve onayla'}
+            </button>
+          </div>
+        </div>
       </div>
-      {[...page.critical_warnings, ...page.warnings].map((warning, index) => (
-        <div key={`${warning}-${index}`} style={{ color: page.critical_warnings.includes(warning) ? '#b91c1c' : '#92400e' }}>{warning}</div>
-      ))}
-      <div style={{ color: page.match_preview?.student_id ? '#166534' : '#92400e' }}>
-        {page.match_preview?.student_id
-          ? `Eşleşen öğrenci: ${page.match_preview.student_name} · %${Math.round((page.match_preview.score || 0) * 100)}`
-          : 'Öğrenci eşleşmesi bulunamadı; T.C., numara veya adı düzeltin.'}
-      </div>
-      {page.error_message && <div style={{ color: '#b91c1c' }}>{page.error_message}</div>}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
-        <label style={field}>T.C.<input style={input} value={tc} onChange={event => setTc(event.target.value)} /></label>
-        <label style={field}>Öğrenci no<input style={input} value={number} onChange={event => setNumber(event.target.value)} /></label>
-        <label style={field}>Ad soyad<input style={input} value={name} onChange={event => setName(event.target.value)} /></label>
-        <label style={field}>Kitapçık<input style={input} value={booklet} maxLength={1} onChange={event => setBooklet(event.target.value)} /></label>
-      </div>
-      <label style={field}>
-        Cevap dizisi (boş cevap için boşluk)
-        <textarea style={{ ...input, minHeight: 72, fontFamily: 'monospace' }} value={answers} onChange={event => setAnswers(event.target.value)} />
-      </label>
-      <div><button type="button" style={button} disabled={busy || page.status === 'ERROR'} onClick={save}>{busy ? 'Kaydediliyor…' : 'Düzeltmeleri kaydet ve onayla'}</button></div>
     </article>
   );
 }
 
-export default function OmrUploadPanel({ examId }: { examId: number }) {
+export default function OmrUploadPanel({ examId, onConfirmed }: { examId: number; onConfirmed?: () => void }) {
   const [templates, setTemplates] = useState<DaireSablonOzet[]>([]);
   const [templateId, setTemplateId] = useState<number | ''>('');
   const [files, setFiles] = useState<File[]>([]);
@@ -137,8 +165,9 @@ export default function OmrUploadPanel({ examId }: { examId: number }) {
     }).catch(err => setError(err instanceof Error ? err.message : 'Şablonlar yüklenemedi.'));
   }, []);
 
-  const allReviewed = useMemo(() => Boolean(job?.pages?.length)
-    && job?.pages?.every(page => page.status === 'READY'), [job]);
+  const pages = job?.pages ?? [];
+  const readyCount = pages.filter(page => page.status === 'READY').length;
+  const allReviewed = pages.length > 0 && readyCount === pages.length;
 
   const uploadAndProcess = async () => {
     if (!templateId || !files.length) return;
@@ -159,12 +188,14 @@ export default function OmrUploadPanel({ examId }: { examId: number }) {
     }
   };
 
-  const confirm = async () => {
+  const confirmJob = async () => {
     if (!job) return;
+    if (!confirm(`${pages.length} sayfa sınav sonuçlarına aktarılsın mı?`)) return;
     setBusy(true);
     setError('');
     try {
       setJob(await omrApi.confirm(examId, job.id));
+      onConfirmed?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Tarama onaylanamadı.');
     } finally {
@@ -172,40 +203,81 @@ export default function OmrUploadPanel({ examId }: { examId: number }) {
     }
   };
 
+  const reset = () => {
+    setJob(null);
+    setFiles([]);
+    setError('');
+  };
+
   return (
-    <section style={{ display: 'grid', gap: 16 }}>
-      <div style={box}>
-        <h3 style={{ marginTop: 0 }}>Optik tarama yükle</h3>
-        <p>PDF’nin her sayfası veya seçtiğiniz her JPG/PNG bir öğrenci olarak işlenir. Sonuçlara aktarılmadan önce aşağıda kontrol edilir.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(220px, 1fr) minmax(260px, 2fr)', gap: 12 }}>
-          <label style={field}>
-            Daire Dizisi şablonu
-            <select style={input} value={templateId} onChange={event => setTemplateId(Number(event.target.value))}>
-              {templates.map(template => <option key={template.id} value={template.id}>{template.ad}</option>)}
-            </select>
-          </label>
-          <label style={field}>
-            PDF / JPG / PNG
-            <input style={input} type="file" multiple accept=".pdf,.png,.jpg,.jpeg" onChange={event => setFiles(Array.from(event.target.files || []))} />
-          </label>
-        </div>
-        <div style={{ marginTop: 12 }}>
-          <button type="button" style={button} disabled={busy || !templateId || !files.length} onClick={uploadAndProcess}>
-            {busy ? 'İşleniyor…' : 'Yükle ve tara'}
-          </button>
-        </div>
-      </div>
-      {error && <div style={{ ...box, color: '#b91c1c' }}>{error}</div>}
-      {job && (
-        <div style={box}>
-          <strong>{job.sablon_adi}</strong> · {job.processed_pages}/{job.total_pages} sayfa · {job.status}
+    <>
+      {error && (
+        <div className={u.alertErr} role="alert">
+          <span>{error}</span>
+          <button type="button" onClick={() => setError('')} aria-label="Kapat">×</button>
         </div>
       )}
-      {job?.pages?.map(page => (
+
+      {!job && (
+        <section className={u.panel}>
+          <header className={u.panelHead}><h3>Taranmış optik formlar</h3></header>
+          <p className={u.help}>PDF’nin her sayfası ya da her JPG/PNG bir öğrenci sayılır. Sonuçlara aktarmadan önce her sayfayı kontrol edip onaylarsınız.</p>
+          <div className={u.formRow}>
+            <label className={u.fieldLabel}>
+              Daire dizisi şablonu
+              <select value={templateId} onChange={e => setTemplateId(Number(e.target.value))} disabled={busy}>
+                {templates.length === 0 && <option value="">Aktif şablon yok</option>}
+                {templates.map(template => <option key={template.id} value={template.id}>{template.ad}</option>)}
+              </select>
+            </label>
+            <label className={u.fieldLabel}>
+              Dosyalar
+              <input type="file" multiple accept=".pdf,.png,.jpg,.jpeg" onChange={e => setFiles(Array.from(e.target.files || []))} disabled={busy} />
+            </label>
+          </div>
+          <div className={u.panelFoot}>
+            <span className={u.muted}>{files.length ? `${files.length} dosya seçildi` : ''}</span>
+            <button type="button" className={u.btnPrimary} disabled={busy || !templateId || !files.length} onClick={uploadAndProcess}>
+              {busy ? 'İşleniyor…' : 'Yükle ve tara'}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {job && (
+        <section className={u.bar}>
+          <div className={u.summary}>
+            <p className={u.count}>
+              <b>{readyCount}</b>/{pages.length || job.total_pages} sayfa onaylandı
+              <span>{job.sablon_adi} · {JOB_STATUS[job.status] ?? job.status}{busy && job.processed_pages < job.total_pages ? ` · ${job.processed_pages}/${job.total_pages} işlendi` : ''}</span>
+            </p>
+            <div className={u.meter} aria-hidden>
+              <i style={{ width: `${pages.length ? Math.round((readyCount / pages.length) * 100) : 0}%` }} />
+            </div>
+          </div>
+          <div className={u.barActions}>
+            {job.status !== 'CONFIRMED' && (
+              <button type="button" className={u.btnPrimary} disabled={busy || !allReviewed} onClick={confirmJob}
+                title={allReviewed ? undefined : 'Önce tüm sayfaları onaylayın'}>
+                Sonuçlara aktar
+              </button>
+            )}
+            <button type="button" className={u.btnGhost} onClick={reset} disabled={busy}>Yeni tarama</button>
+          </div>
+        </section>
+      )}
+
+      {job?.status === 'CONFIRMED' && (
+        <div className={u.alertOk}>
+          <span>Tarama sonuçlara aktarıldı. &quot;Optik okuyucu dosyası&quot; sekmesindeki yüklemeler listesinden açabilirsiniz.</span>
+        </div>
+      )}
+
+      {pages.map(page => (
         <PageReview
           key={page.id}
           examId={examId}
-          job={job}
+          job={job!}
           page={page}
           onSaved={saved => setJob(current => current ? {
             ...current,
@@ -213,13 +285,6 @@ export default function OmrUploadPanel({ examId }: { examId: number }) {
           } : current)}
         />
       ))}
-      {job && job.status !== 'CONFIRMED' && (
-        <div style={box}>
-          <button type="button" style={button} disabled={busy || !allReviewed} onClick={confirm}>Onayla ve sınav sonuçlarına aktar</button>
-          {!allReviewed && <p style={{ marginBottom: 0 }}>Aktarım için tüm sayfaları inceleyip onaylayın.</p>}
-        </div>
-      )}
-      {job?.status === 'CONFIRMED' && <div style={{ ...box, color: '#166534' }}>OMR sonuçları oturum #{job.result_session_id} olarak aktarıldı.</div>}
-    </section>
+    </>
   );
 }

@@ -257,6 +257,10 @@ MOBILE_IDENTITY_ENABLED = os.environ.get('MOBILE_IDENTITY_ENABLED', '0').lower()
     '1', 'true', 'yes',
 )
 
+# Yeni HTML karne (önizleme + Chromium PDF). Kapalıyken eski ReportLab karnesi kullanılır.
+# HTML yolu hata verirse PDF yine eski karneye düşer. Açmak: OLCME_KARNE_HTML=1.
+OLCME_KARNE_HTML = os.environ.get('OLCME_KARNE_HTML', '0').lower() in ('1', 'true', 'yes')
+
 # Ders notu dosyası kurumun Google Drive ortak sürücüsünde durur. Anahtar repoda yoktur.
 GOOGLE_DRIVE_CREDENTIALS_FILE = os.environ.get('GOOGLE_DRIVE_CREDENTIALS_FILE', '')
 GOOGLE_DRIVE_SHARED_DRIVE_ID = os.environ.get('GOOGLE_DRIVE_SHARED_DRIVE_ID', '')

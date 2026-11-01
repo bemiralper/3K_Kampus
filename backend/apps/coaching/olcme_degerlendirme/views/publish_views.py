@@ -139,9 +139,11 @@ def exam_answer_key_pdf(request, exam_pk):
     if err:
         return err
     from apps.coaching.application.olcme_cevap_anahtari_pdf import (
+        answer_key_card_count,
         cevap_anahtari_filename,
         parse_copies,
         render_cevap_anahtari_pdf,
+        resolve_download_copies,
     )
 
     if request.method == 'GET':
@@ -159,12 +161,19 @@ def exam_answer_key_pdf(request, exam_pk):
                     if has_uploaded else cevap_anahtari_filename(exam)
                 ),
             })
-        copies = parse_copies(
+        requested = parse_copies(
             request.query_params.get('copies')
             or request.query_params.get('copies_per_page'),
         )
         booklet = (request.query_params.get('booklet') or '').strip().upper()
         booklets = [booklet] if booklet in ('A', 'B', 'C', 'D') else None
+        # Eski istemci "1 adet" + Tümü gönderirse yalnız A inmesin; A ve B birlikte basılsın.
+        need_pair = booklets is None and requested <= 1
+        copies = resolve_download_copies(
+            requested,
+            booklet_count=answer_key_card_count(exam) if need_pair else 1,
+            filtered=booklets is not None,
+        )
         if booklets:
             have = {
                 (value or '').strip().upper()

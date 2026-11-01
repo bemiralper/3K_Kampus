@@ -358,7 +358,7 @@ def preview_publish_recipients(exam: Exam, kind: str) -> dict:
 def _load_answer_key_pdf(exam: Exam) -> tuple[bytes, str]:
     from apps.coaching.application.olcme_cevap_anahtari_pdf import (
         cevap_anahtari_filename,
-        render_cevap_anahtari_pdf,
+        render_shared_cevap_anahtari_pdf,
     )
 
     if exam.answer_key_pdf:
@@ -369,7 +369,7 @@ def _load_answer_key_pdf(exam: Exam) -> tuple[bytes, str]:
             exam.answer_key_pdf.close()
         if data and data.startswith(b'%PDF'):
             return data, cevap_anahtari_filename(exam)
-    return render_cevap_anahtari_pdf(exam), cevap_anahtari_filename(exam)
+    return render_shared_cevap_anahtari_pdf(exam), cevap_anahtari_filename(exam)
 
 
 def _send_karnes(

@@ -1,16 +1,13 @@
 'use client';
 
 /**
- * Sınav detay başlığı.
- *
- * Eski yapıda başlık (hero-header) ve sayı kutuları (quick-stats) ayrı iki blok
- * hâlindeydi; sayılar sınavın hangi aşamada olduğunu göstermiyordu. Burada üçü
- * birleşti: kimlik + durum hattı + metrikler. Durum hattı sınavın yaşam
- * döngüsünü (taslak → cevap anahtarı → sonuç → tamamlandı) gösterir ve
- * tıklanınca ilgili sekmeyi açar.
+ * Sınav detay başlığı: kimlik, aşama etiketi ve sayılar tek satırda.
+ * Aşama etiketi (taslak → cevap anahtarı → sonuç → tamamlandı) tıklanınca
+ * ilgili sekmeyi açar.
  */
 import { EXAM_STATUS, EXAM_TYPES } from '../types';
 import type { ExamDetail, ExamStatusValue } from '../types';
+import { optionalQuestionCount } from '../section-ranges';
 import Icon from './Icon';
 import type { IconName } from './Icon';
 import s from './examHeader.module.css';
@@ -56,8 +53,12 @@ export default function ExamHeader({
   exam, busy = false, onBack, onTabChange, onToggleLock, onCopy, onDelete,
 }: Props) {
   const currentStep = STEPS.findIndex(st => st.value === exam.status);
+  const status = currentStep >= 0
+    ? { ...STEPS[currentStep], label: labelOf(EXAM_STATUS, STEPS[currentStep].value) }
+    : null;
   const dates = dateSummary(exam);
   const unmatched = exam.unmatched_count ?? 0;
+  const optionalCount = optionalQuestionCount(exam.sections);
 
   return (
     <header className={s.header}>
@@ -71,7 +72,20 @@ export default function ExamHeader({
         <div className={s.titleRow}>
           <div className={s.titleBlock}>
             <div style={{ minWidth: 0 }}>
-              <h1 className={s.title}>{exam.name}</h1>
+              <div className={s.titleLine}>
+                <h1 className={s.title}>{exam.name}</h1>
+                {status && (
+                  <button
+                    type="button"
+                    className={`${s.status} ${s[`status${currentStep}`] ?? ''}`}
+                    onClick={() => onTabChange(status.tab)}
+                    title={`Aşama ${currentStep + 1}/${STEPS.length} — ilgili sekmeyi aç`}
+                  >
+                    <Icon name={status.icon} size={12} strokeWidth={2.5} />
+                    {status.label}
+                  </button>
+                )}
+              </div>
               <div className={s.metaRow}>
                 <span className={s.metaItem}>
                   <Icon name="document" size={13} />
@@ -93,6 +107,19 @@ export default function ExamHeader({
                   <span className={s.metaItem}>
                     <Icon name="link" size={13} />
                     {exam.linked_tyt_exam_name}
+                  </span>
+                )}
+                <span className={s.metaItem}>
+                  <Icon name="layers" size={13} />
+                  {exam.total_questions ?? 0} soru
+                  {optionalCount > 0 ? ` + ${optionalCount} seçmeli` : ''} · {exam.section_count ?? 0} bölüm
+                  {(exam.session_count ?? 0) > 1 ? ` · ${exam.session_count} oturum` : ''}
+                </span>
+                {((exam.answer_count ?? 0) > 0 || (exam.matched_count ?? 0) > 0) && (
+                  <span className={unmatched > 0 ? `${s.metaItem} ${s.metaWarn}` : s.metaItem}>
+                    <Icon name="users" size={13} />
+                    {exam.matched_count ?? 0}{exam.answer_count ? `/${exam.answer_count}` : ''} eşleşen
+                    {unmatched > 0 ? ` · ${unmatched} eşleşmedi` : ''}
                   </span>
                 )}
                 {exam.is_locked && (
@@ -141,67 +168,6 @@ export default function ExamHeader({
           </div>
         </div>
       </div>
-
-      {/* Durum hattı — hangi aşamada olduğunu ve sıradaki adımı gösterir */}
-      <ol className={s.pipeline} aria-label="Sınav aşaması">
-        {STEPS.map((step, i) => {
-          const done = i < currentStep;
-          const current = i === currentStep;
-          return (
-            <li key={step.value} style={{ display: 'contents' }}>
-              <button
-                type="button"
-                className={`${s.step} ${done ? s.stepDone : ''}`}
-                onClick={() => onTabChange(step.tab)}
-                aria-current={current ? 'step' : undefined}
-                title={`${labelOf(EXAM_STATUS, step.value)} — ilgili sekmeyi aç`}
-              >
-                <span className={`${s.dot} ${done ? s.dotDone : ''} ${current ? s.dotCurrent : ''}`}>
-                  {(done || current) && <Icon name={done ? 'check' : step.icon} size={11} strokeWidth={3} />}
-                </span>
-                <span className={`${s.stepLabel} ${current ? s.stepLabelActive : ''}`}>
-                  {step.label}
-                </span>
-              </button>
-            </li>
-          );
-        })}
-      </ol>
-
-      {/* Şube burada gösterilmez: kullanıcı zaten aktif şube bağlamını kendisi seçiyor. */}
-      <div className={s.metrics}>
-        <Metric icon="document" label="Soru" value={exam.total_questions ?? 0} />
-        <Metric icon="layers" label="Bölüm" value={exam.section_count ?? 0} />
-        <Metric icon="calendar" label="Oturum" value={exam.session_count ?? 0} />
-        <Metric
-          icon="users"
-          label={unmatched > 0 ? `${unmatched} eşleşmedi` : 'Eşleşen öğrenci'}
-          labelWarn={unmatched > 0}
-          value={exam.matched_count ?? 0}
-          unit={exam.answer_count ? `/ ${exam.answer_count}` : undefined}
-        />
-      </div>
     </header>
-  );
-}
-
-function Metric({ icon, label, value, unit, labelWarn }: {
-  icon: IconName;
-  label: string;
-  value: number | string;
-  unit?: string;
-  labelWarn?: boolean;
-}) {
-  return (
-    <div className={s.metric}>
-      <span className={s.metricValue}>
-        {value}
-        {unit && <span className={s.metricUnit}>{unit}</span>}
-      </span>
-      <span className={`${s.metricLabel} ${labelWarn ? s.metricWarn : ''}`}>
-        <Icon name={icon} size={12} />
-        {label}
-      </span>
-    </div>
   );
 }

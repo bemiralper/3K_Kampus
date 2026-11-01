@@ -1,0 +1,298 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }}</title><style>{{ font_css }}{% include "olcme/karne/karne.css" %}</style>
+</head>
+<body>
+{% for s in students %}
+<article class="student" style="--brand:{{ s.theme }}">
+
+  <div class="page cover">
+    <header class="band">
+      {% if s.logo %}<img class="logo" src="{{ s.logo }}" alt="">{% else %}<span></span>{% endif %}
+      <div class="band-r">
+        <div class="eyebrow">Sınav Karnesi{% if s.exam_label %} · {{ s.exam_label }}{% endif %}</div>
+        <div class="exam">{{ s.exam_name }}</div>
+        <div class="when">{{ s.date }}</div>
+      </div>
+    </header>
+
+    <section class="ident">
+      <div class="photo">{% if s.photo %}<img src="{{ s.photo }}" alt="">{% else %}<span>{{ s.initials }}</span>{% endif %}</div>
+      <div>
+        <h1>{{ s.name }}</h1>
+        <div class="meta">{{ s.meta }}</div>
+      </div>
+    </section>
+
+    <section class="hero">
+      <div class="card hero-net">
+        <div class="donut">{{ s.donut }}
+          <div class="donut-c"><b>{{ s.net }}</b><small>{{ s.net_label }} / {{ s.soru }}</small></div>
+        </div>
+        <ul class="dyb">
+          <li><i class="sw good"></i>{{ s.correct }} doğru</li>
+          <li><i class="sw bad"></i>{{ s.wrong }} yanlış</li>
+          <li><i class="sw empty"></i>{{ s.empty }} boş</li>
+        </ul>
+      </div>
+      <div class="card stat">
+        <div class="k">{{ s.puan_label }}</div>
+        <div class="v">{{ s.puan }}</div>
+        {% if s.kurum_avg_puan %}<div class="s">Kurum ortalaması {{ s.kurum_avg_puan }}</div>{% endif %}
+        {% if s.delta %}
+        <div class="delta {% if s.delta.pos %}up{% else %}down{% endif %}">{% if s.delta.pos %}▲{% else %}▼{% endif %} {{ s.delta.text }} net<small>önceki sınava göre</small></div>
+        {% endif %}
+      </div>
+      <div class="card stat accent">
+        <div class="k">Kurumda</div>
+        {% if s.kurum_sira %}
+        <div class="v">{{ s.kurum_sira }}<span>. / {{ s.toplam_ogrenci }}</span></div>
+        {% else %}<div class="v">–</div>{% endif %}
+        {% if s.ahead %}<div class="s">Her 100 öğrenciden {{ s.ahead }} önünde</div>{% endif %}
+        {% if s.turkiye %}
+        <div class="k mt">Türkiye tahmini</div>
+        <div class="v2">~{{ s.turkiye }}</div>
+        <div class="s">{% if s.yuzdelik %}Adayların %{{ s.yuzdelik }} önünde · {% endif %}{{ s.yil }} verisi</div>
+        {% endif %}
+      </div>
+    </section>
+
+    {% if s.comments %}
+    <section class="card say"><h2>Bu sınavda</h2><ul>{% for c in s.comments %}<li{% if forloop.counter == 4 %} data-fit="4"{% elif forloop.counter == 3 %} data-fit="5"{% endif %}>{{ c }}</li>{% endfor %}</ul></section>
+    {% endif %}
+
+    {% if s.lessons %}
+    <div class="lhead"><h2>Dersler</h2><span class="legend"><i class="good"></i>başarı (net ÷ soru)<b class="tick"></b>kurum ortalaması{% if s.has_out %} · “puana girmez” testler de tam listelenir{% endif %}</span></div>
+    {% include "olcme/karne/lessons.html" with lessons=s.lessons flat=s.flat %}
+    {% endif %}
+
+    <section class="duo">
+      <div class="card">
+        {% if s.trend_svg %}
+        <h2>Gelişim <small>toplam net · son sınavlar</small></h2>
+        {{ s.trend_svg }}
+        {% elif s.kurum_scale %}
+        <h2>Kurumla karşılaştırma <small>{{ s.soru }} soru üzerinden</small></h2>
+        <div class="scale">
+          <div class="scale-bar"><i style="width:{{ s.kurum_scale.student }}%"></i><em style="left:{{ s.kurum_scale.avg }}%"></em></div>
+          <div class="scale-l"><span>Öğrenci <b>{{ s.kurum_scale.net }}</b> net</span><span><b class="tick"></b>Kurum ort. {{ s.kurum_scale.avg_net }}</span></div>
+          <div class="scale-d {% if s.kurum_scale.diff.pos %}pos{% else %}neg{% endif %}">Kurum ortalamasına göre <b>{{ s.kurum_scale.diff.text }} net</b></div>
+        </div>
+        {% endif %}
+        {% if s.cmp_rows %}
+        <div class="cmp-rows"{% if s.trend_svg %} data-fit="1"{% endif %}>
+          {% if s.trend_svg %}<h3>Kurum ortalamasına göre</h3>{% endif %}
+          {% for r in s.cmp_rows %}
+          <div class="sub">
+            <span class="sn">{{ r.name }}</span>
+            <span class="bar"><i class="{{ r.tone }}" style="width:{{ r.w }}%"></i><em style="left:{{ r.kw }}%"></em></span>
+            <span class="pill {% if r.diff.pos %}pos{% else %}neg{% endif %}">{{ r.diff.text }}</span>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% if s.kurum_scale %}<p class="hint mt">Gelişim grafiği, aynı türden ikinci sınavdan sonra görünür.</p>{% endif %}
+      </div>
+      <div class="card focus">
+        <h2>Puanını en hızlı artıracak <span class="pcount">{{ s.priorities|length }}</span> konu</h2>
+        {% if s.priorities %}
+        <ol>
+          {% for p in s.priorities %}
+          <li{% if forloop.counter == 5 %} data-fit="2"{% elif forloop.counter == 4 %} data-fit="3"{% endif %}><span class="num">{{ forloop.counter }}</span>
+            <div><b>{{ p.name }}</b><small>{{ p.detail }}</small></div>
+            <span class="gain">≈ +{{ p.gain }} net</span></li>
+          {% endfor %}
+        </ol>
+        {% else %}<p class="hint">Bu sınavda kayıp soru yok.</p>{% endif %}
+        {% if s.target %}
+        <div class="target">{{ s.target.label }} sorulardaki <b>{{ s.target.count }}</b> kayıp geri alınırsa
+          <b class="big">≈ {{ s.target.net }} net</b></div>
+        {% endif %}
+      </div>
+    </section>
+
+    <footer class="foot"><span>{{ s.kurum_ad }} · Ölçme ve Değerlendirme</span><span>Tahminler geçmiş yıl verilerine dayanır; kesin sonuç değildir.</span></footer>
+  </div>
+
+  <div class="page flow">
+    <header class="mini">
+      <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
+      <div class="mini-t">Derinlemesine</div>
+    </header>
+
+    {% if s.tyt_lessons %}
+    <div class="lhead"><h2>Bağlı TYT <small>{{ s.tyt_title }}</small></h2><span class="legend">aynı öğrencinin TYT sonucu, bütün testler</span></div>
+    {% include "olcme/karne/lessons.html" with lessons=s.tyt_lessons flat=s.tyt_flat %}
+    {% endif %}
+
+    {% if s.table_rows %}
+    <section class="card">
+      <h2>Ders ders sonuçlar</h2>
+      <table class="tbl">
+        <thead><tr><th>Ders</th><th class="n">Soru</th><th class="n">D</th><th class="n">Y</th><th class="n">B</th>
+          <th class="n">Net</th><th>Başarı</th><th class="n">Kurum ort.</th><th class="n">Fark</th></tr></thead>
+        <tbody>
+          {% for r in s.table_rows %}
+          {% if r.kind == 'group' %}
+          <tr class="group"><td colspan="9">{{ r.name }}</td></tr>
+          {% else %}
+          <tr class="{{ r.kind }}">
+            <td>{{ r.name }}{% if r.note %} <small class="out">{{ r.note }}</small>{% endif %}</td>
+            <td class="n">{{ r.soru }}</td>
+            <td class="n g">{{ r.d }}</td><td class="n r">{{ r.y }}</td><td class="n m">{{ r.b }}</td>
+            <td class="n b">{{ r.net }}</td>
+            <td><span class="pbar"><i class="{{ r.tone }}" style="width:{{ r.w }}%"></i></span><span class="pv">%{{ r.pct }}</span></td>
+            <td class="n">{{ r.avg }}</td>
+            <td class="n"><span class="pill {% if r.diff.pos %}pos{% else %}neg{% endif %}">{{ r.diff.text }}</span></td>
+          </tr>
+          {% endif %}
+          {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% endif %}
+
+    <section class="pair{% if not s.difficulty %} single{% endif %}">
+      {% if s.difficulty %}
+      <div class="card">
+        <h2>Soru zorluğuna göre</h2>
+        <p class="hint">{{ s.difficulty.hint }}</p>
+        {% for d in s.difficulty.rows %}
+        <div class="drow">
+          <span class="dl">{{ d.label }}<small>{{ d.soru }} soru</small></span>
+          <span class="stack"><i class="good" style="width:{{ d.w_dogru }}%"></i><i class="bad" style="width:{{ d.w_yanlis }}%"></i><i class="empty" style="width:{{ d.w_bos }}%"></i></span>
+          <span class="dv"><b class="g">{{ d.dogru }}</b> <b class="r">{{ d.yanlis }}</b> <b class="m">{{ d.bos }}</b></span>
+        </div>
+        {% endfor %}
+        {% if s.difficulty.note %}<p class="note">{{ s.difficulty.note }}</p>{% endif %}
+      </div>
+      {% endif %}
+      <div class="card">
+        <h2>Sınav davranışı</h2>
+        <div class="beh">
+          {{ s.accuracy_ring }}
+          <div><b>İşaretlediği her 100 sorudan {{ s.accuracy }} doğru.</b>
+            <small>{{ s.wrong }} yanlış, {{ s.lost_net }} neti götürdü ({{ s.penalty_text }}). {{ s.empty }} soru boş kaldı.</small></div>
+        </div>
+        <div class="areas">
+          <div><h3 class="g">Güçlü</h3>{% for a in s.strong %}<span class="chip good">{{ a.name }} %{{ a.basari }}</span>{% empty %}<span class="hint">—</span>{% endfor %}</div>
+          <div><h3 class="r">Destek gerekli</h3>{% for a in s.weak %}<span class="chip bad">{{ a.name }} %{{ a.basari }}</span>{% empty %}<span class="hint">—</span>{% endfor %}</div>
+        </div>
+      </div>
+    </section>
+
+    {% if s.ranking %}
+    <section class="card rank">
+      <h2>Puan ve sıralama {% if s.ranking.year %}<small>{{ s.ranking.year }} verilerine göre tahmin</small>{% endif %}</h2>
+      <table class="tbl">
+        <thead><tr><th>Puan türü</th><th class="n">Puan</th><th class="n">Kurum ort.</th><th class="n">Net</th><th class="n">Kurum sırası</th><th class="n">Türkiye tahmini</th></tr></thead>
+        <tbody>
+          {% for r in s.ranking.rows %}
+          <tr class="{% if r.is_alan %}main{% endif %}"><td>{{ r.label }}</td><td class="n b">{{ r.puan }}</td><td class="n">{{ r.avg }}</td><td class="n">{{ r.net }}</td><td class="n">{{ r.kurum }}</td><td class="n">{{ r.turkiye }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if s.ranking.tyt %}
+      <div class="tyt"><span>Bağlı TYT · {{ s.ranking.tyt.name }}</span>
+        <b>{{ s.ranking.tyt.net }} net</b><b>{{ s.ranking.tyt.puan }} puan</b><span>Kurumda {{ s.ranking.tyt.kurum }}</span><span>Türkiye {{ s.ranking.tyt.turkiye }}</span></div>
+      {% endif %}
+    </section>
+    {% endif %}
+
+    {% if s.sparks %}
+    <section class="card">
+      <h2>Ders bazında gelişim <small>son {{ s.spark_count }} sınav · ilk sınava göre fark</small></h2>
+      <div class="sparks">
+        {% for k in s.sparks %}
+        <div class="spark">
+          <div class="sh"><b>{{ k.name }}</b><span class="{% if k.delta.pos %}pos{% else %}neg{% endif %}">{{ k.delta.text }}</span></div>
+          {{ k.svg }}
+          <div class="sf">{{ k.first }} → <b>{{ k.last }}</b> <small>/ {{ k.soru }}</small></div>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if s.retry %}
+    <section class="card">
+      <h2>Tekrar çözülecek sorular <small>kitapçıktaki soru numaraları</small>
+        <span class="legend"><i class="bad"></i>yanlış <i class="empty"></i>boş</span></h2>
+      {% for r in s.retry %}
+      <div class="rrow"><span class="gn">{{ r.name }}</span>
+        <div class="qns">{% for n in r.wrong %}<span class="qn bad">{{ n }}</span>{% endfor %}{% for n in r.empty %}<span class="qn empty">{{ n }}</span>{% endfor %}</div></div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <footer class="foot"><span>{{ s.kurum_ad }} · Ölçme ve Değerlendirme</span><span>{{ s.name }}</span></footer>
+  </div>
+
+  {% if s.outcomes or s.answers %}
+  <div class="page flow">
+    <header class="mini">
+      <div><b>{{ s.name }}</b> · {{ s.exam_name }}</div>
+      <div class="mini-t">{% if s.outcomes %}Kazanım haritası{% else %}Cevaplar{% endif %}</div>
+    </header>
+
+    {% if s.outcomes %}
+    <section class="card omap">
+      <h2>Kazanım haritası <small>her nokta bir soru</small>
+        <span class="legend"><i class="good"></i>doğru <i class="bad"></i>yanlış <i class="empty"></i>boş</span></h2>
+      <div class="ocols">
+        {% for b in s.outcomes %}
+        <div class="oblock"><h3>{{ b.heading }}</h3>
+          {% for t in b.tables %}
+          {% if t.title %}<div class="ot">{{ t.title }}</div>{% endif %}
+          {% for r in t.rows %}<div class="orow"><span class="on">{{ r.name }}</span><span class="dots">{% for d in r.dots %}<i class="{{ d }}"></i>{% endfor %}</span></div>{% endfor %}
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    {% if s.answers %}
+    <section class="card grid">
+      <h2>Cevaplar <small>üstte soru no · ortada öğrencinin cevabı · altta yeşil doğru cevap</small></h2>
+      {% for g in s.answers %}
+      <div class="grow"><span class="gn">{{ g.name }}</span>
+        <div class="cells">{% for c in g.cells %}<span class="cell {{ c.cls }}"><em>{{ c.n }}</em><b>{{ c.given }}</b><u>{{ c.fix }}</u></span>{% endfor %}</div></div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <footer class="foot"><span>{{ s.kurum_ad }} · Ölçme ve Değerlendirme</span><span>{{ s.name }}</span></footer>
+  </div>
+  {% endif %}
+
+</article>
+{% endfor %}
+<script>
+(function () {
+  function overflows(page) {
+    var limit = page.querySelector('.foot').getBoundingClientRect().top + 0.5;
+    var items = page.querySelectorAll('.card, .card *');
+    for (var i = 0; i < items.length; i++) {
+      if (!items[i].closest('svg') && items[i].getBoundingClientRect().bottom > limit) return true;
+    }
+    return false;
+  }
+  function fit() {
+    document.querySelectorAll('.page.cover').forEach(function (page) {
+      var optional = Array.prototype.slice.call(page.querySelectorAll('[data-fit]'))
+        .sort(function (a, b) { return a.dataset.fit - b.dataset.fit; });
+      while (optional.length && overflows(page)) optional.shift().remove();
+      var count = page.querySelector('.pcount');
+      if (count) count.textContent = page.querySelectorAll('.focus li').length;
+    });
+    document.body.dataset.fitted = '1';
+  }
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(fit); else fit();
+})();
+</script>
+</body>
+</html>

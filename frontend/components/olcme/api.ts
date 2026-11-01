@@ -292,6 +292,29 @@ export const examApi = {
   removeParticipant: (examId: number, participantId: number) =>
     request<void>(`${BASE}/${examId}/participants/${participantId}/`, { method: 'DELETE' }),
 
+  missingParticipants: (examId: number) =>
+    request<{
+      count: number;
+      students: {
+        student_id: number;
+        full_name: string;
+        okul_no: string;
+        sinif: string;
+        sinif_seviyesi: string;
+        deneme_paketi: string;
+        profil_foto?: string | null;
+      }[];
+    }>(`${BASE}/${examId}/participants/missing/`),
+
+  addMissingParticipants: (examId: number, studentIds: number[], examSessionId?: number | null) =>
+    request<{ added: number; errors: string[] }>(`${BASE}/${examId}/participants/missing/`, {
+      method: 'POST',
+      body: JSON.stringify({
+        student_ids: studentIds,
+        exam_session_id: examSessionId ?? null,
+      }),
+    }),
+
   searchParticipants: (examId: number, q: string, examSessionId?: number | null) =>
     request<ParticipantSearchHit[]>(
       `${BASE}/${examId}/participants/search/?q=${encodeURIComponent(q)}${
@@ -784,6 +807,14 @@ export const analysisApi = {
   studentDetail: (examId: number, answerId: number, rankingYear?: number) => {
     const qs = rankingYear ? `?ranking_year=${rankingYear}` : '';
     return request<StudentDetailResponse>(`${BASE}/${examId}/analysis/students/${answerId}/detail/${qs}`);
+  },
+
+  /** Yeni karne belgesi (PDF ile aynı HTML). Sunucuda kapalıysa enabled=false. */
+  karneHtml: (examId: number, answerId: number, rankingYear?: number) => {
+    const qs = rankingYear ? `?ranking_year=${rankingYear}` : '';
+    return request<{ enabled: boolean; html?: string }>(
+      `${BASE}/${examId}/analysis/students/${answerId}/karne-html/${qs}`,
+    );
   },
 
   /** Sınıf/Şube analizi */

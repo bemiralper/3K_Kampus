@@ -205,7 +205,9 @@ export default function ExamDetailPage() {
       {activeTab === 'katilimcilar' && <ParticipantsTab exam={exam} />}
       {activeTab === 'cevap-anahtari' && <AnswerKeyTab exam={exam} />}
       {activeTab === 'kazanimlar' && <OutcomesTab exam={exam} />}
-      {activeTab === 'yukle' && <UploadTab exam={exam} />}
+      {activeTab === 'yukle' && (
+        <UploadTab exam={exam} onExamChange={() => { examApi.detail(examId).then(setExam).catch(() => {}); }} />
+      )}
       {activeTab === 'analiz' && <AnalysisTab exam={exam} />}
     </div>
   );

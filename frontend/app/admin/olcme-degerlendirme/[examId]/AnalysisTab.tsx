@@ -1,349 +1,195 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { analysisApi, puanAyarlariApi } from '../../../../components/olcme/api';
-import type {
-  ExamDetail,
-  AnalysisSummary,
-  AnalysisSectionItem,
-  StudentAnalysis,
-  ClassAnalysis,
-  RankingItem,
-  RankingSectionInfo,
-  QuestionAnalysis,
-  StrategyItem,
-  ComparisonItem,
-} from '../../../../components/olcme/types';
-
-/* ── Panel Bileşenleri ─────────────────────────────────────────────────── */
-import SummaryPanel from '../../../../components/olcme/analysis/SummaryPanel';
-import SectionsPanel from '../../../../components/olcme/analysis/SectionsPanel';
-import StudentsPanel from '../../../../components/olcme/analysis/StudentsPanel';
+import type { ExamDetail, StudentAnalysis } from '../../../../components/olcme/types';
 import StudentDetailModal from '../../../../components/olcme/analysis/StudentDetailModal';
-import ClassesPanel from '../../../../components/olcme/analysis/ClassesPanel';
-import RankingsPanel from '../../../../components/olcme/analysis/RankingsPanel';
-import QuestionsPanel from '../../../../components/olcme/analysis/QuestionsPanel';
-import StrategyPanel from '../../../../components/olcme/analysis/StrategyPanel';
-import ComparisonPanel from '../../../../components/olcme/analysis/ComparisonPanel';
+import AnalysisOverview from './AnalysisOverview';
+import AnalysisStudents from './AnalysisStudents';
+import AnalysisClasses from './AnalysisClasses';
+import AnalysisQuestions from './AnalysisQuestions';
+import { RANKED_EXAM_TYPES } from './analysis-utils';
+import a from './analysis.module.css';
 
-import s from '../olcme.module.css';
+type View = 'ozet' | 'ogrenciler' | 'siniflar' | 'sorular';
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  PROPS                                                                     */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+const VIEWS: { key: View; label: string }[] = [
+  { key: 'ozet', label: 'Özet' },
+  { key: 'ogrenciler', label: 'Öğrenciler' },
+  { key: 'siniflar', label: 'Sınıflar' },
+  { key: 'sorular', label: 'Sorular' },
+];
 
-interface Props {
-  exam: ExamDetail;
+export interface Resource<T> {
+  data: T | null;
+  loading: boolean;
+  error: string;
+  reload: () => void;
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  SUB-PANEL KEYS                                                            */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+function useResource<T>(enabled: boolean, key: string, fetcher: () => Promise<T>): Resource<T> {
+  const [state, setState] = useState<{ data: T | null; loading: boolean; error: string }>({ data: null, loading: false, error: '' });
+  const [nonce, setNonce] = useState(0);
+  const loadedKey = useRef<string | null>(null);
+  const reqId = useRef(0);
+  const fetchRef = useRef(fetcher);
+  fetchRef.current = fetcher;
 
-const PANELS = [
-  { key: 'ozet',       label: 'Genel Özet',      icon: '📊' },
-  { key: 'dersler',    label: 'Ders Analizi',     icon: '📚' },
-  { key: 'ogrenciler', label: 'Öğrenci Detay',    icon: '👤' },
-  { key: 'siniflar',   label: 'Sınıf/Şube',      icon: '🏫' },
-  { key: 'siralama',   label: 'Sıralama',         icon: '🏆' },
-  { key: 'sorular',    label: 'Madde Analizi',    icon: '🔬' },
-  { key: 'strateji',   label: 'Strateji',         icon: '💡' },
-  { key: 'karsilastirma', label: 'Karşılaştırma', icon: '📈' },
-] as const;
-type PanelKey = typeof PANELS[number]['key'];
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  MAIN COMPONENT                                                            */
-/* ═══════════════════════════════════════════════════════════════════════════ */
-
-export default function AnalysisTab({ exam }: Props) {
-  const [activePanel, setActivePanel] = useState<PanelKey>('ozet');
-  const [sessionFilter, setSessionFilter] = useState<number | undefined>(undefined);
-
-  // Data states
-  const [summary, setSummary] = useState<AnalysisSummary | null>(null);
-  const [sections, setSections] = useState<AnalysisSectionItem[]>([]);
-  const [students, setStudents] = useState<StudentAnalysis[]>([]);
-  const [classes, setClasses] = useState<ClassAnalysis[]>([]);
-  const [rankings, setRankings] = useState<RankingItem[]>([]);
-  const [rankingMeta, setRankingMeta] = useState<{ top_10_count: number; bottom_10_count: number; avg_score: number; referans_yil: number }>({ top_10_count: 0, bottom_10_count: 0, avg_score: 0, referans_yil: 2026 });
-  const [rankingSections, setRankingSections] = useState<RankingSectionInfo[]>([]);
-  const [rankingSectionAvgs, setRankingSectionAvgs] = useState<Record<string, { avg_correct: number; avg_wrong: number; avg_net: number }>>({});
-  const [rankingAvgNet, setRankingAvgNet] = useState<number>(0);
-  const [rankingPuanTurleriAvgs, setRankingPuanTurleriAvgs] = useState<Record<string, number>>({});
-  const [rankingSinifAvgs, setRankingSinifAvgs] = useState<Record<string, any>>({});
-  const [questions, setQuestions] = useState<QuestionAnalysis[]>([]);
-  const [strategies, setStrategies] = useState<StrategyItem[]>([]);
-  const [comparisons, setComparisons] = useState<ComparisonItem[]>([]);
-
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  // Sıralama yılı — sınav yılı veya kurum varsayılanı
-  const [rankingYear, setRankingYear] = useState<number>(exam.puan_yili ?? 2026);
-  const [managedYears, setManagedYears] = useState<number[]>([2024, 2025, 2026]);
-  const [kurumDefaultYear, setKurumDefaultYear] = useState<number>(2026);
-
-  // Student detail modal
-  const [selectedStudent, setSelectedStudent] = useState<StudentAnalysis | null>(null);
-  const [portalRoot, setPortalRoot] = useState<HTMLElement | null>(null);
-
-  // Question filter
-  const [questionSectionFilter, setQuestionSectionFilter] = useState<number | undefined>(undefined);
-
-  // Student search
-  const [studentSearch, setStudentSearch] = useState('');
-
-  /* ── PORTAL ROOT (TypeError fix) ──────────────────────────────────────── */
   useEffect(() => {
-    setPortalRoot(document.body);
-  }, []);
+    const k = `${key}#${nonce}`;
+    if (!enabled || loadedKey.current === k) return;
+    loadedKey.current = k;
+    const id = ++reqId.current;
+    setState(s => ({ ...s, loading: true, error: '' }));
+    fetchRef.current()
+      .then(data => {
+        if (id === reqId.current) setState({ data, loading: false, error: '' });
+      })
+      .catch((err: unknown) => {
+        if (id !== reqId.current) return;
+        loadedKey.current = null;
+        setState(s => ({ ...s, loading: false, error: err instanceof Error ? err.message : 'Veri yüklenemedi.' }));
+      });
+  }, [enabled, key, nonce]);
+
+  const reload = useCallback(() => setNonce(n => n + 1), []);
+  return { ...state, reload };
+}
+
+export default function AnalysisTab({ exam }: { exam: ExamDetail }) {
+  const [view, setView] = useState<View>('ozet');
+  const [sessionId, setSessionId] = useState<number | undefined>(undefined);
+  const [rankingYear, setRankingYear] = useState<number>(exam.puan_yili ?? new Date().getFullYear());
+  const [years, setYears] = useState<number[]>([]);
+  const [defaultYear, setDefaultYear] = useState<number | null>(exam.puan_yili ?? null);
+  const [classFilter, setClassFilter] = useState('');
+  const [selected, setSelected] = useState<StudentAnalysis | null>(null);
+  const showYear = RANKED_EXAM_TYPES.includes(exam.exam_type);
 
   useEffect(() => {
     puanAyarlariApi.get().then(d => {
-      setManagedYears(d.managed_years);
-      setKurumDefaultYear(d.default_puan_yili);
+      setYears(d.managed_years);
       if (!exam.puan_yili) {
         setRankingYear(d.default_puan_yili);
+        setDefaultYear(d.default_puan_yili);
       }
     }).catch(() => {});
   }, [exam.puan_yili]);
 
-  /* ── LOADERS ─────────────────────────────────────────────────────────────── */
+  const scope = `${exam.id}|${sessionId ?? ''}`;
+  const yearScope = `${scope}|${rankingYear}`;
 
-  const loadSummary = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.summary(exam.id, sessionFilter, rankingYear);
-      setSummary(data);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, rankingYear]);
+  const summary = useResource(true, yearScope, () => analysisApi.summary(exam.id, sessionId, rankingYear));
+  const sections = useResource(view === 'ozet', scope, () => analysisApi.sections(exam.id, sessionId).then(r => r.sections));
+  const comparison = useResource(view === 'ozet', String(exam.id), () => analysisApi.comparison(exam.id).then(r => r.comparisons));
+  const students = useResource(
+    view === 'ogrenciler' || view === 'siniflar',
+    yearScope,
+    () => analysisApi.students(exam.id, sessionId, undefined, rankingYear).then(r => r.students),
+  );
+  const questions = useResource(view === 'sorular', scope, () => analysisApi.questions(exam.id, sessionId).then(r => r.questions));
 
-  const loadSections = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.sections(exam.id, sessionFilter);
-      setSections(data.sections);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter]);
+  const sessions = summary.data?.sessions ?? [];
+  const yearOptions = years.length ? years : [rankingYear];
 
-  const loadStudents = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.students(exam.id, sessionFilter, undefined, rankingYear);
-      setStudents(data.students);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, rankingYear]);
+  const openClass = (name: string) => {
+    setClassFilter(name);
+    setView('ogrenciler');
+  };
 
-  const loadClasses = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.classes(exam.id, sessionFilter);
-      setClasses(data.classes);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter]);
-
-  const loadRankings = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.rankings(exam.id, sessionFilter, rankingYear);
-      setRankings(data.rankings);
-      setRankingMeta({ top_10_count: data.top_10_count, bottom_10_count: data.bottom_10_count, avg_score: data.avg_score, referans_yil: data.referans_yil });
-      setRankingSections(data.sections || []);
-      setRankingSectionAvgs(data.section_avgs || {});
-      setRankingAvgNet(data.avg_net || 0);
-      setRankingPuanTurleriAvgs(data.puan_turleri_avgs || {});
-      setRankingSinifAvgs(data.sinif_avgs || {});
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, rankingYear]);
-
-  const loadQuestions = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.questions(exam.id, sessionFilter, questionSectionFilter);
-      setQuestions(data.questions);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter, questionSectionFilter]);
-
-  const loadStrategies = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.strategy(exam.id, sessionFilter);
-      setStrategies(data.strategies);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id, sessionFilter]);
-
-  const loadComparisons = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await analysisApi.comparison(exam.id);
-      setComparisons(data.comparisons);
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [exam.id]);
-
-  /* ── PANEL DEĞİŞİMİNDE VERİ YÜKLE ────────────────────────────────────── */
-
-  useEffect(() => {
-    switch (activePanel) {
-      case 'ozet': loadSummary(); break;
-      case 'dersler': loadSections(); break;
-      case 'ogrenciler': loadStudents(); break;
-      case 'siniflar': loadClasses(); break;
-      case 'siralama': loadRankings(); break;
-      case 'sorular': loadQuestions(); break;
-      case 'strateji': loadStrategies(); break;
-      case 'karsilastirma': loadComparisons(); break;
-    }
-  }, [activePanel, loadSummary, loadSections, loadStudents, loadClasses, loadRankings, loadQuestions, loadStrategies, loadComparisons]);
-
-  /* ── Filtered students ────────────────────────────────────────────────── */
-  const filteredStudents = useMemo(() => {
-    if (!studentSearch.trim()) return students;
-    const q = studentSearch.toLowerCase();
-    return students.filter(st =>
-      st.student_name.toLowerCase().includes(q) ||
-      st.raw_student_id.toLowerCase().includes(q) ||
-      st.sinif.toLowerCase().includes(q)
+  if (summary.data && summary.data.katilim === 0 && !sessionId) {
+    return (
+      <div className={a.page}>
+        <div className={a.empty}>
+          <b>Henüz analiz edilecek sonuç yok.</b>
+          <span>&quot;Sonuç Yükle&quot; sekmesinden optik okuyucu dosyasını yükleyip okuyun.</span>
+        </div>
+      </div>
     );
-  }, [students, studentSearch]);
-
-  /* ═══════════════════════════════════════════════════════════════════════════ */
-  /*  RENDER                                                                    */
-  /* ═══════════════════════════════════════════════════════════════════════════ */
+  }
 
   return (
-    <div>
-      {/* ── Panel Navigasyon ─────────────────────────────────────────────── */}
-      <div className={s.analysisPanelNav}>
-        {PANELS.map(p => (
-          <button
-            key={p.key}
-            className={`${s.analysisPanelBtn} ${activePanel === p.key ? s.analysisPanelBtnActive : ''}`}
-            onClick={() => setActivePanel(p.key)}
-          >
-            <span>{p.icon}</span> {p.label}
-          </button>
-        ))}
+    <div className={a.page}>
+      <div className={a.topBar}>
+        <div className={a.seg} role="tablist" aria-label="Analiz görünümü">
+          {VIEWS.map(v => (
+            <button
+              key={v.key}
+              type="button"
+              role="tab"
+              aria-selected={view === v.key}
+              className={view === v.key ? a.segOn : a.segBtn}
+              onClick={() => setView(v.key)}
+            >
+              {v.label}
+            </button>
+          ))}
+        </div>
+        <div className={a.scope}>
+          {sessions.length > 1 && (
+            <label className={a.inline}>
+              Yükleme
+              <select value={sessionId ?? ''} onChange={e => setSessionId(e.target.value ? Number(e.target.value) : undefined)}>
+                <option value="">Tümü</option>
+                {sessions.map(ses => (
+                  <option key={ses.id} value={ses.id}>{ses.original_filename} · {ses.total_rows} kayıt</option>
+                ))}
+              </select>
+            </label>
+          )}
+          {showYear && (
+            <label className={a.inline} title="Tahmini Türkiye sırası ve yüzdelik bu yılın ÖSYM verisine göre hesaplanır.">
+              Puan yılı
+              <select value={rankingYear} onChange={e => setRankingYear(Number(e.target.value))}>
+                {yearOptions.map(y => (
+                  <option key={y} value={y}>{y}{y === defaultYear ? ' (varsayılan)' : ''}</option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
       </div>
 
-      {/* Oturum filtresi */}
-      {summary && summary.sessions && summary.sessions.length > 1 && (
-        <div className={s.analysisSessionFilter}>
-          <label>Oturum:</label>
-          <select
-            value={sessionFilter || ''}
-            onChange={e => setSessionFilter(e.target.value ? Number(e.target.value) : undefined)}
-          >
-            <option value="">Tüm Oturumlar</option>
-            {summary.sessions.map(sess => (
-              <option key={sess.id} value={sess.id}>{sess.original_filename} ({sess.total_rows} satır)</option>
-            ))}
-          </select>
-        </div>
+      {view === 'ozet' && (
+        <AnalysisOverview
+          exam={exam}
+          summary={summary}
+          sections={sections}
+          comparison={comparison}
+        />
       )}
-
-      {error && <div className={s.analysisError}>⚠️ {error}</div>}
-      {loading && <div className={s.analysisLoading}>Yükleniyor…</div>}
-
-      {/* ── Paneller ─────────────────────────────────────────────────────── */}
-      {!loading && activePanel === 'ozet' && summary && <SummaryPanel data={summary} examType={exam.exam_type} />}
-      {!loading && activePanel === 'dersler' && <SectionsPanel sections={sections} />}
-      {!loading && activePanel === 'ogrenciler' && (
-        <StudentsPanel
-          students={filteredStudents}
-          search={studentSearch}
-          onSearch={setStudentSearch}
-          onSelect={setSelectedStudent}
-          examName={exam.name}
-          examType={exam.exam_type}
-          examId={exam.id}
+      {view === 'ogrenciler' && (
+        <AnalysisStudents
+          exam={exam}
+          students={students}
+          sessionId={sessionId}
           rankingYear={rankingYear}
+          classFilter={classFilter}
+          onClassFilter={setClassFilter}
+          onSelect={setSelected}
         />
       )}
-      {!loading && activePanel === 'siniflar' && <ClassesPanel classes={classes} />}
-      {!loading && activePanel === 'siralama' && (
-        <RankingsPanel
-          rankings={rankings}
-          meta={rankingMeta}
-          rankingYear={rankingYear}
-          onRankingYearChange={(y: number) => { setRankingYear(y); }}
-          sections={rankingSections}
-          examId={exam.id}
-          sessionId={sessionFilter}
-          examName={exam.name}
-          examType={exam.exam_type}
-          sectionAvgs={rankingSectionAvgs}
-          avgNet={rankingAvgNet}
-          puanTurleriAvgs={rankingPuanTurleriAvgs}
-          sinifAvgs={rankingSinifAvgs}
-          years={managedYears}
-          defaultYear={exam.puan_yili ?? kurumDefaultYear}
+      {view === 'siniflar' && (
+        <AnalysisClasses
+          exam={exam}
+          students={students}
+          successThreshold={summary.data?.basari_esik ?? null}
+          onOpenClass={openClass}
         />
       )}
-      {!loading && activePanel === 'sorular' && (
-        <QuestionsPanel
-          questions={questions}
-          sections={exam.sections}
-          sectionFilter={questionSectionFilter}
-          onSectionFilter={setQuestionSectionFilter}
-        />
-      )}
-      {!loading && activePanel === 'strateji' && <StrategyPanel strategies={strategies} />}
-      {!loading && activePanel === 'karsilastirma' && <ComparisonPanel comparisons={comparisons} />}
+      {view === 'sorular' && <AnalysisQuestions exam={exam} questions={questions} />}
 
-      {/* ── Öğrenci Detay Modal (Portal — TypeError fix) ──────────────── */}
-      {selectedStudent && portalRoot && createPortal(
+      {selected && typeof document !== 'undefined' && createPortal(
         <StudentDetailModal
-          student={selectedStudent}
+          student={selected}
           examId={exam.id}
           examType={exam.exam_type}
           rankingYear={rankingYear}
-          onClose={() => setSelectedStudent(null)}
+          onClose={() => setSelected(null)}
         />,
-        portalRoot,
+        document.body,
       )}
     </div>
   );
 }
-

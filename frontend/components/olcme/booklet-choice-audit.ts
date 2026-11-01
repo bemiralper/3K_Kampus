@@ -31,15 +31,60 @@ export function normalizePastedAnswer(val: string): string {
   return '';
 }
 
-/** A kitapçığı yapıştırmasıyla aynı kurallar: yan yana harfler veya alt alta satırlar. */
-export function parsePastedAnswers(raw: string): string[] {
-  const text = raw.trim();
-  if (!text) return [];
-  const lines = text.split(/\n/).map(line => line.trim()).filter(Boolean);
-  if (lines.length === 1 && lines[0].length > 1 && !lines[0].includes('\t')) {
-    return lines[0].split('').map(ch => normalizePastedAnswer(ch));
+const NUMBERED_LINE = /^(\d{1,3})\s*[-.):\t ]\s*(\S+)$/;
+const COMPACT_CHAR = /^[A-EX-]$/;
+
+/**
+ * Yapıştırılan cevapları soru sırasına dizer.
+ *
+ * - Alt alta (Excel sütunu): her satır bir soru; boş hücre boş soru sayılır.
+ * - Yan yana: "ABCDE", "A B C D E" veya test test satırlar ("ABCDE…\nABCDE…").
+ * - Numaralı: "1 A", "1-A", "1.A", "1)A", "1<tab>A". `order` verilirse numara
+ *   o soruya oturur; verilmezse sıra korunur.
+ */
+export function parsePastedAnswers(raw: string, order?: readonly number[]): string[] {
+  const lines = raw.replace(/\r/g, '').split('\n').map(line => line.trim());
+  while (lines.length && !lines[0]) lines.shift();
+  while (lines.length && !lines[lines.length - 1]) lines.pop();
+  if (!lines.length) return [];
+
+  const filled = lines.filter(Boolean);
+  const numbered = filled.map(line => NUMBERED_LINE.exec(line.replace(/\t+/g, '\t')));
+  if (filled.length > 1 && numbered.every(m => m && normalizePastedAnswer(m[2]))) {
+    if (!order) return numbered.map(m => normalizePastedAnswer(m![2]));
+    const index = new Map(order.map((q, i) => [q, i]));
+    const out: string[] = new Array(order.length).fill('');
+    for (const m of numbered) {
+      const at = index.get(Number(m![1]));
+      if (at !== undefined) out[at] = normalizePastedAnswer(m![2]);
+    }
+    return out;
   }
-  return lines.map(line => normalizePastedAnswer(line.split('\t')[0] ?? ''));
+
+  const firstCell = (line: string) => line.split('\t').map(cell => cell.trim()).find(Boolean) ?? '';
+  const column = lines.every(line => {
+    if (!line) return true;
+    const cells = line.split('\t').map(cell => cell.trim()).filter(Boolean);
+    return cells.length === 1 && Boolean(normalizePastedAnswer(cells[0]));
+  });
+  if (column && (lines.length > 1 || filled[0].length > 1)) {
+    return lines.map(line => normalizePastedAnswer(firstCell(line)));
+  }
+
+  const out: string[] = [];
+  for (const line of filled) {
+    for (const part of line.split(/[\s,;\t]+/).filter(Boolean)) {
+      const word = normalizePastedAnswer(part);
+      if (word && part.length > 1) {
+        out.push(word);
+        continue;
+      }
+      for (const ch of part.toUpperCase()) {
+        if (COMPACT_CHAR.test(ch)) out.push(normalizePastedAnswer(ch));
+      }
+    }
+  }
+  return out;
 }
 
 export interface AuditGroup {

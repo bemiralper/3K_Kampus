@@ -1,6 +1,7 @@
 """Ölçme karnesi PDF indirme ve WhatsApp gönderimi."""
 from urllib.parse import quote
 
+from django.conf import settings
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import IsAuthenticated
@@ -13,6 +14,7 @@ from apps.coaching.application.olcme_karne_notify import (
     send_karne_notify_bulk,
     summarize_preview,
 )
+from apps.coaching.application.olcme_karne_html import render_karne_html
 from apps.coaching.application.olcme_karne_pdf import (
     karne_filename,
     render_karne_pdf,
@@ -61,6 +63,24 @@ def exam_karne_pdf(request, exam_pk, answer_pk):
     ranking_year = _resolve_ranking_year(request, exam)
     data = build_student_detail_payload(exam, answer, ranking_year, include_trend=False)
     return _pdf_response(render_karne_pdf(data), karne_filename(data))
+
+
+@api_view(['GET'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([IsAuthenticated])
+def exam_karne_html(request, exam_pk, answer_pk):
+    """Yeni karne önizlemesi. PDF ile aynı HTML; OLCME_KARNE_HTML kapalıysa enabled=False."""
+    if not getattr(settings, 'OLCME_KARNE_HTML', False):
+        return Response({'enabled': False})
+    exam, err = _get_exam_or_404(request, exam_pk)
+    if err:
+        return err
+    answer = _load_answer(exam, answer_pk)
+    if not answer:
+        return Response({'error': 'Öğrenci cevabı bulunamadı.'}, status=404)
+    ranking_year = _resolve_ranking_year(request, exam)
+    data = build_student_detail_payload(exam, answer, ranking_year, include_trend=False)
+    return Response({'enabled': True, 'html': render_karne_html([data])})
 
 
 @api_view(['GET'])

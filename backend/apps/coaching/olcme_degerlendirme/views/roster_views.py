@@ -27,9 +27,11 @@ from ..services.exam_roster import (
     replace_rooms,
     serialize_room,
     resolve_exam_candidates,
+    participant_student_ids,
     exam_seating_capacity_error,
     rooms_for_session,
     serialize_participant,
+    _profil_foto,
 )
 from ..services.exam_schedule_groups import attach_groups_to_candidates
 from ..views import CsrfExemptSessionAuthentication
@@ -212,6 +214,92 @@ def exam_audience(request, exam_pk):
         }
         for a in rows
     ])
+
+
+def _audience_scope(exam) -> tuple[list[int], list[int], list[int]]:
+    audiences = list(exam.audiences.all())
+    seviye_ids = [a.sinif_seviyesi_id for a in audiences if a.sinif_seviyesi_id]
+    paket_ids = [a.deneme_paketi_id for a in audiences if a.deneme_paketi_id]
+    sinif_ids = list(exam.siniflar.values_list('id', flat=True))
+    return sinif_ids, seviye_ids, paket_ids
+
+
+def _audience_student_ids(exam) -> set[int] | None:
+    """Seçim yoksa None. Varsa yalnız bu kurala uyan öğrenci kimlikleri."""
+    sinif_ids, seviye_ids, paket_ids = _audience_scope(exam)
+    if not sinif_ids and not seviye_ids and not paket_ids:
+        return None
+    recs = resolve_exam_candidates(
+        kurum_id=exam.kurum_id,
+        sube_id=exam.sube_id,
+        egitim_yili_id=exam.egitim_yili_id,
+        sinif_ids=sinif_ids,
+        seviye_ids=seviye_ids,
+        paket_ids=paket_ids,
+    )
+    return {rec.student_id for rec in recs}
+
+
+def _missing_student_rows(exam) -> list[dict]:
+    """Kitle kuralına uyup katılımcı listesinde olmayan öğrenciler."""
+    sinif_ids, seviye_ids, paket_ids = _audience_scope(exam)
+    recs = resolve_exam_candidates(
+        kurum_id=exam.kurum_id,
+        sube_id=exam.sube_id,
+        egitim_yili_id=exam.egitim_yili_id,
+        sinif_ids=sinif_ids,
+        seviye_ids=seviye_ids,
+        paket_ids=paket_ids,
+    )
+    present = participant_student_ids(exam)
+    missing = [r for r in recs if r.student_id not in present]
+    names: dict[int, str] = {}
+    paket_on_rows = {r.deneme_paketi_id for r in missing if r.deneme_paketi_id}
+    if paket_on_rows:
+        from apps.egitim_paketleri.models import Deneme
+        names = dict(Deneme.objects.filter(pk__in=paket_on_rows).values_list('id', 'ad'))
+    rows = []
+    for rec in missing:
+        item = rec.as_dict()
+        item['deneme_paketi'] = names.get(rec.deneme_paketi_id or 0, '')
+        rows.append(item)
+    return rows
+
+
+@api_view(['GET', 'POST'])
+@authentication_classes([CsrfExemptSessionAuthentication])
+@permission_classes([OlcmeModulePermission])
+def exam_participants_missing(request, exam_pk):
+    """Seçime uyup listede olmayanlar. POST yalnız bu kümeden ekler, salon atamaz."""
+    exam, err = get_exam_or_response(request, exam_pk)
+    if err:
+        return err
+    if request.method == 'GET':
+        rows = _missing_student_rows(exam)
+        return Response({'count': len(rows), 'students': rows})
+
+    wanted = _int_list(request.data.get('student_ids'))
+    allowed = {row['student_id'] for row in _missing_student_rows(exam)}
+    ids = [sid for sid in wanted if sid in allowed]
+    session_id = request.data.get('exam_session_id')
+    try:
+        session_id = int(session_id) if session_id not in (None, '') else None
+    except (TypeError, ValueError):
+        session_id = None
+    added = 0
+    errors: list[str] = []
+    with transaction.atomic():
+        for sid in ids:
+            _row, err_msg = add_manual_participant(exam, sid, exam_session=session_id)
+            if err_msg:
+                if _row is None:
+                    errors.append(err_msg)
+                continue
+            added += 1
+        if added:
+            from ..services.stored_scores import refresh_exam_scores
+            refresh_exam_scores(exam)
+    return Response({'added': added, 'errors': errors[:3]})
 
 
 @api_view(['GET', 'POST'])
@@ -576,19 +664,37 @@ def exam_participant_search(request, exam_pk):
         ExamParticipant.objects.filter(exam=exam)
         .select_related('exam_session', 'room')
     )
-    in_current = {
-        p.student_id for p in parts
+    current_by_student = {
+        p.student_id: p for p in parts
         if p.exam_session_id == session_id
     }
+    listed_ids = {p.student_id for p in parts}
     others_by_student: dict[int, list] = {}
     for p in parts:
-        if p.student_id in in_current:
+        if p.student_id in current_by_student:
             continue
         others_by_student.setdefault(p.student_id, []).append(p)
 
     qs = Ogrenci.objects.filter(
         aktif_mi=True, kurum_id=exam.kurum_id, sube_id=exam.sube_id,
-    ).exclude(pk__in=in_current).filter(Q_name(q))[:20]
+    ).filter(Q_name(q))
+    allowed = _audience_student_ids(exam)
+    if allowed is not None:
+        qs = qs.filter(pk__in=allowed | listed_ids)
+    students = list(qs.order_by('soyad', 'ad')[:20])
+    from apps.ogrenci.domain.models import OgrenciKayit
+    kayit_qs = OgrenciKayit.objects.filter(
+        ogrenci_id__in=[o.pk for o in students],
+        aktif_mi=True,
+        kurum_id=exam.kurum_id,
+        sube_id=exam.sube_id,
+    )
+    if exam.egitim_yili_id:
+        kayit_qs = kayit_qs.filter(egitim_yili_id=exam.egitim_yili_id)
+    kayitlar = {
+        k.ogrenci_id: k
+        for k in kayit_qs.select_related('sinif', 'sinif_seviyesi', 'sinif__sinif_seviyesi')
+    }
 
     def _other_payload(p):
         sess = p.exam_session
@@ -605,16 +711,30 @@ def exam_participant_search(request, exam_pk):
         }
 
     items = []
-    for o in qs:
+    for o in students:
+        current = current_by_student.get(o.id)
         others = others_by_student.get(o.id) or []
         primary = others[0] if others else None
+        kayit = kayitlar.get(o.id)
+        seviye = ''
+        if kayit is not None:
+            if kayit.sinif_id and getattr(kayit.sinif, 'sinif_seviyesi', None):
+                seviye = kayit.sinif.sinif_seviyesi.ad or ''
+            elif kayit.sinif_seviyesi_id:
+                seviye = getattr(kayit.sinif_seviyesi, 'ad', '') or ''
         items.append({
             'id': o.id,
             'full_name': f'{o.ad} {o.soyad}'.strip(),
             'ad': o.ad,
             'soyad': o.soyad,
-            'in_other_session': bool(primary),
-            'other_session': _other_payload(primary) if primary else None,
+            'profil_foto': _profil_foto(o),
+            'sinif_seviyesi': seviye,
+            'on_list': current is not None,
+            'participant_id': current.id if current else None,
+            'room_name': current.room.name if current and current.room_id else '',
+            'seat_no': current.seat_no if current else None,
+            'in_other_session': bool(primary) and current is None,
+            'other_session': _other_payload(primary) if primary and current is None else None,
             'other_session_count': len(others),
         })
     return Response(items)

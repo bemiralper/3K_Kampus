@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Fragment } from 'react';
 import { analysisApi } from '../api';
 import KarneNotifyModal from './KarneNotifyModal';
+import KarneHtmlFrame, { type KarneHtmlFrameHandle } from './KarneHtmlFrame';
 import {
   KarneAreaPair, KarneComment, KarneFocus, KarneOverview, KarneTrend, SuccessPill, answerCounts, questionTotal,
 } from './KarneVisuals';
@@ -246,8 +247,11 @@ export default function StudentDetailModal({
   const [detailError, setDetailError] = useState('');
   const [pdfBusy, setPdfBusy] = useState(false);
   const [showNotify, setShowNotify] = useState(false);
+  const [karneHtml, setKarneHtml] = useState<string | null>(null);
+  const [htmlLoading, setHtmlLoading] = useState(true);
   const overlayRef = useRef<HTMLDivElement>(null);
   const karneRef = useRef<HTMLDivElement>(null);
+  const frameRef = useRef<KarneHtmlFrameHandle>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -257,6 +261,18 @@ export default function StudentDetailModal({
       .then(data => { if (!cancelled) setDetail(data); })
       .catch(err => { if (!cancelled) setDetailError(err.message); })
       .finally(() => { if (!cancelled) setDetailLoading(false); });
+    return () => { cancelled = true; };
+  }, [examId, student.answer_id, rankingYear]);
+
+  // Yeni karne açıksa önizleme sunucu HTML'idir; hata veya kapalıysa aşağıdaki klasik karne kalır.
+  useEffect(() => {
+    let cancelled = false;
+    setHtmlLoading(true);
+    setKarneHtml(null);
+    analysisApi.karneHtml(examId, student.answer_id, rankingYear)
+      .then(res => { if (!cancelled) setKarneHtml(res.enabled && res.html ? res.html : null); })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setHtmlLoading(false); });
     return () => { cancelled = true; };
   }, [examId, student.answer_id, rankingYear]);
 
@@ -274,6 +290,10 @@ export default function StudentDetailModal({
   }, [onClose]);
 
   const printKarne = () => {
+    if (karneHtml) {
+      frameRef.current?.print();
+      return;
+    }
     const node = karneRef.current;
     if (!node) return;
     const printWin = window.open('', '_blank');
@@ -417,12 +437,16 @@ export default function StudentDetailModal({
           />
         )}
 
-        {detailLoading && (
+        {(detailLoading || htmlLoading) && (
           <div className={s.studentDetailLoading}>⏳ Sonuç belgesi yükleniyor…</div>
         )}
         {detailError && <div className={s.analysisError}>⚠️ {detailError}</div>}
 
-        {!detailLoading && !detailError && detail && (
+        {!detailLoading && !htmlLoading && !detailError && detail && karneHtml && (
+          <KarneHtmlFrame ref={frameRef} html={karneHtml} title={`${student.student_name} — Sınav Karnesi`} />
+        )}
+
+        {!detailLoading && !htmlLoading && !detailError && detail && !karneHtml && (
           <div className={s.karne} ref={karneRef}>
             <div className={s.karnePage}>
               <KarneHeader detail={detail} />

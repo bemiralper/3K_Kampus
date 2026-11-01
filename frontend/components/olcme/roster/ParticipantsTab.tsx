@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import Link from 'next/link';
 import { examApi } from '../api';
 import type { DenemeSalon, ExamDetail, ExamParticipantRow, ExamRoomItem, ExamSessionItem, ParticipantSearchHit, SeatingMode } from '../types';
@@ -12,24 +13,24 @@ import DenemeSalonCatalog from './DenemeSalonCatalog';
 import RosterExportModal from './RosterExportModal';
 import OptikYazdirModal from './OptikYazdirModal';
 import SinavRosterNotifyModal from './SinavRosterNotifyModal';
+import ExamYoklamaScreen from './ExamYoklamaScreen';
 import p from './participants.module.css';
 import { useOlcmePath } from '../useOlcmePath';
 
-function scrollRoster(dir: 'up' | 'down') {
-  const start = document.querySelector('[data-roster-page]');
-  let node: HTMLElement | null = start instanceof HTMLElement ? start.parentElement : null;
-  let scroller: HTMLElement | null = null;
-  while (node) {
-    const style = getComputedStyle(node);
-    if (/(auto|scroll)/.test(style.overflowY) && node.scrollHeight > node.clientHeight + 8) {
-      scroller = node;
-      break;
-    }
-    node = node.parentElement;
+function StudentFace({ foto }: { foto?: string | null }) {
+  const src = resolveCoachPhotoUrl(foto);
+  if (src) {
+    return (
+      <span className={p.face}>
+        <img src={src} alt="" />
+      </span>
+    );
   }
-  const target = scroller || document.scrollingElement;
-  if (!target) return;
-  target.scrollTo({ top: dir === 'up' ? 0 : target.scrollHeight, behavior: 'smooth' });
+  return (
+    <span className={`${p.face} ${p.faceEmpty}`} aria-hidden>
+      <img src="/img/3k-logo.png" alt="" />
+    </span>
+  );
 }
 
 function StudentPhoto({ foto, name }: { foto?: string | null; name: string }) {
@@ -150,6 +151,75 @@ function otherSessionLabel(hit: ParticipantSearchHit) {
   return `${day}${salon}${seat}${extra} — bu oturuma al`;
 }
 
+type Panel =
+  | { kind: 'add' }
+  | { kind: 'rooms' }
+  | { kind: 'seating' }
+  | { kind: 'actions' }
+  | { kind: 'student'; id: number }
+  | { kind: 'seat'; roomId: number; seatNo: number; roomName: string }
+  | { kind: 'missing' };
+
+type MissingStudent = {
+  student_id: number;
+  full_name: string;
+  okul_no: string;
+  sinif: string;
+  sinif_seviyesi: string;
+  deneme_paketi: string;
+  profil_foto?: string | null;
+};
+
+function Window({
+  title,
+  hint,
+  onClose,
+  children,
+  footer,
+  wide,
+}: {
+  title: string;
+  hint?: string;
+  onClose: () => void;
+  children: ReactNode;
+  footer?: ReactNode;
+  wide?: boolean;
+}) {
+  const [root, setRoot] = useState<HTMLElement | null>(null);
+  useEffect(() => { setRoot(document.body); }, []);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+  if (!root) return null;
+  return createPortal(
+    <div className={p.overlay} onClick={event => { if (event.target === event.currentTarget) onClose(); }}>
+      <div
+        className={wide ? `${p.window} ${p.windowWide}` : p.window}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="roster-window-title"
+      >
+        <header className={p.windowHead}>
+          <div>
+            <h3 id="roster-window-title">{title}</h3>
+            {hint ? <p>{hint}</p> : null}
+          </div>
+          <button type="button" className={p.windowClose} onClick={onClose} aria-label="Kapat">
+            <Icon name="close" size={18} />
+          </button>
+        </header>
+        <div className={p.windowBody}>{children}</div>
+        {footer ? <footer className={p.windowFoot}>{footer}</footer> : null}
+      </div>
+    </div>,
+    root,
+  );
+}
+
 export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   const { isMuhasebe } = useOlcmePath();
   const [rows, setRows] = useState<ExamParticipantRow[]>([]);
@@ -158,25 +228,31 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   const [sessions, setSessions] = useState<ExamSessionItem[]>([]);
   const [sessionId, setSessionId] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [toast, setToast] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
+  const setError = (text: string) => setToast(text ? { kind: 'err', text } : null);
+  const setOk = (text: string) => setToast({ kind: 'ok', text });
   const [q, setQ] = useState('');
   const [findQ, setFindQ] = useState('');
   const [hits, setHits] = useState<ParticipantSearchHit[]>([]);
-  const [seatPick, setSeatPick] = useState<{ roomId: number; seatNo: number } | null>(null);
   const [seatQ, setSeatQ] = useState('');
   const [seatHits, setSeatHits] = useState<ParticipantSearchHit[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
   const [seatingMode, setSeatingMode] = useState<SeatingMode>('shuffle');
   const [busy, setBusy] = useState('');
-  const [salonOpen, setSalonOpen] = useState(false);
+  const [panel, setPanel] = useState<Panel | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
   const [optikOpen, setOptikOpen] = useState(false);
   const [waOpen, setWaOpen] = useState(false);
   const [waEvent, setWaEvent] = useState<'sinav.hatirlatma' | 'sinav.yoklama'>('sinav.hatirlatma');
   const [waPreview, setWaPreview] = useState<Awaited<ReturnType<typeof examApi.hatirlatmaPreview>> | null>(null);
+  const [yoklama, setYoklama] = useState<{ focusId: number | null } | null>(null);
+  const [missing, setMissing] = useState<MissingStudent[]>([]);
+  const [missingPick, setMissingPick] = useState<number[]>([]);
+  const [missingQ, setMissingQ] = useState('');
+  const [roomTab, setRoomTab] = useState<'exam' | 'catalog'>('exam');
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const data = await examApi.participants(exam.id);
       setRows(data.participants);
@@ -187,8 +263,17 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
         if (prev && sess.some(x => x.id === prev)) return prev;
         return sess.length ? sess[0].id : null;
       });
+      try {
+        const gap = await examApi.missingParticipants(exam.id);
+        setMissing(gap.students);
+        return gap.students;
+      } catch {
+        setMissing([]);
+        return [] as MissingStudent[];
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Liste yüklenemedi.');
+      return [] as MissingStudent[];
     } finally {
       setLoading(false);
     }
@@ -196,13 +281,22 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { examApi.denemeSalonlari().then(setSalonlar).catch(() => {}); }, []);
+  useEffect(() => {
+    if (!toast || toast.kind === 'err') return;
+    const id = window.setTimeout(() => setToast(null), 3200);
+    return () => window.clearTimeout(id);
+  }, [toast]);
 
   const rememberSalon = async (room: ExamRoomItem) => {
     const name = room.name.trim();
-    if (!name) return;
+    if (!name) {
+      setError('Salon adı yazın.');
+      return;
+    }
     try {
       const saved = await examApi.saveDenemeSalon(name, Number(room.capacity) || 30, room.inactive_seats || []);
       setSalonlar(prev => [...prev.filter(s => s.id !== saved.id), saved].sort((a, b) => a.name.localeCompare(b.name, 'tr')));
+      setOk(`${name} salon listesine kaydedildi.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Salon kaydedilemedi.');
     }
@@ -242,30 +336,79 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   }, [visible]);
 
   const toggle = (id: number) =>
-    setSelected(p => (p.includes(id) ? p.filter(x => x !== id) : [...p, id]));
+    setSelected(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
 
-  const search = async (value: string) => {
+  const searchSeq = useRef(0);
+  const runSearch = async (value: string, apply: (list: ParticipantSearchHit[]) => void) => {
+    const seq = ++searchSeq.current;
+    if (value.trim().length < 2) { apply([]); return; }
+    let list: ParticipantSearchHit[] = [];
+    try { list = await examApi.searchParticipants(exam.id, value.trim(), sessionId); }
+    catch { list = []; }
+    if (seq === searchSeq.current) apply(list);
+  };
+
+  const search = (value: string) => {
     setQ(value);
-    if (value.trim().length < 2) { setHits([]); return; }
-    try { setHits(await examApi.searchParticipants(exam.id, value.trim(), sessionId)); }
-    catch { setHits([]); }
+    void runSearch(value, setHits);
   };
 
-  const searchSeat = async (value: string) => {
+  const searchSeat = (value: string) => {
     setSeatQ(value);
-    if (value.trim().length < 2) { setSeatHits([]); return; }
-    try { setSeatHits(await examApi.searchParticipants(exam.id, value.trim(), sessionId)); }
-    catch { setSeatHits([]); }
+    void runSearch(value, setSeatHits);
   };
 
-  const closeSeatPick = () => {
-    setSeatPick(null);
+  const placeOnSeat = async (row: ExamParticipantRow) => {
+    if (panel?.kind !== 'seat') return;
+    if (row.seat_locked && !confirm(`${row.full_name} için sınav mesajı gönderilmiş. Yeni sıraya alayım mı?`)) return;
+    const { roomId, seatNo } = panel;
+    setBusy('move');
+    setError('');
+    try {
+      await examApi.patchParticipant(exam.id, row.id, { room_id: roomId, seat_no: seatNo });
+      closePanel();
+      await load(true);
+      setOk(`${row.full_name} ${seatNo}. sıraya alındı.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Sıraya alınamadı.');
+    } finally { setBusy(''); }
+  };
+
+  const closePanel = () => {
+    setPanel(null);
     setSeatQ('');
     setSeatHits([]);
+    setQ('');
+    setHits([]);
+    setMissingQ('');
+    setMissingPick([]);
+    setRoomTab('exam');
   };
 
-  const openSeatPick = (roomId: number, seatNo: number) => {
-    setSeatPick({ roomId, seatNo });
+  const addMissing = async (ids: number[]) => {
+    const unique = [...new Set(ids)];
+    if (!unique.length) return;
+    if (unique.length > 30 && !confirm(`${unique.length} öğrenci listeye eklensin mi?`)) return;
+    setBusy('missing');
+    setError('');
+    try {
+      const byGroup = sessions.length > 1;
+      const res = await examApi.addMissingParticipants(exam.id, unique, byGroup ? null : sessionId);
+      setMissingPick([]);
+      const left = await load(true);
+      if (!left.length) setPanel(current => (current?.kind === 'missing' ? null : current));
+      if (res.errors[0]) setToast({ kind: 'warn', text: res.errors[0] });
+      else if (!res.added) setOk('Eklenecek öğrenci kalmadı.');
+      else setOk(byGroup
+        ? `${res.added} öğrenci, hafta içi / hafta sonu grubuna göre oturumuna eklendi.`
+        : `${res.added} öğrenci listeye eklendi.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Öğrenciler eklenemedi.');
+    } finally { setBusy(''); }
+  };
+
+  const openSeatPick = (roomId: number, seatNo: number, roomName: string) => {
+    setPanel({ kind: 'seat', roomId, seatNo, roomName });
     setSeatQ('');
     setSeatHits([]);
     setQ('');
@@ -277,9 +420,9 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     setError('');
     try {
       await examApi.addParticipant(exam.id, id, sessionId, seat);
-      setQ(''); setHits([]);
-      closeSeatPick();
-      await load();
+      closePanel();
+      await load(true);
+      setOk(seat ? `Öğrenci ${seat.seat_no}. sıraya oturtuldu.` : 'Öğrenci eklendi.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Eklenemedi.');
     } finally { setBusy(''); }
@@ -290,15 +433,17 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     setError('');
     try {
       await examApi.removeParticipant(exam.id, id);
-      setSelected(p => p.filter(x => x !== id));
-      await load();
+      setSelected(prev => prev.filter(x => x !== id));
+      setPanel(current => (current?.kind === 'student' && current.id === id ? null : current));
+      await load(true);
+      setOk('Öğrenci listeden çıkarıldı.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Silinemedi.');
     }
   };
 
-  const bulkAtt = async (attendance: 'present' | 'absent') => {
-    const targetIds = selected.length ? selected : visible.map(x => x.id);
+  const bulkAtt = async (attendance: 'present' | 'absent', ids: number[]) => {
+    const targetIds = ids;
     if (!targetIds.length) {
       setError('Toplu yoklama için katılımcı yok.');
       return;
@@ -315,7 +460,8 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
         participant_ids: targetIds,
         session_id: sessionId,
       });
-      await load();
+      await load(true);
+      setOk(`${targetIds.length} öğrencinin yoklaması kaydedildi.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Toplu yoklama kaydedilemedi.');
     } finally { setBusy(''); }
@@ -324,7 +470,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   const patchAtt = async (id: number, attendance: string) => {
     try {
       const row = await examApi.patchParticipant(exam.id, id, { attendance });
-      setRows(p => p.map(x => (x.id === id ? row : x)));
+      setRows(prev => prev.map(x => (x.id === id ? row : x)));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Yoklama kaydedilemedi.');
     }
@@ -338,7 +484,8 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
       const fresh = await examApi.participants(exam.id);
       setRows(fresh.participants);
       setRooms(fresh.rooms);
-      setError(data.warning || '');
+      if (data.warning) setToast({ kind: 'warn', text: data.warning });
+      else setOk('Salonlar kaydedildi.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Salonlar kaydedilemedi.');
     } finally { setBusy(''); }
@@ -364,8 +511,9 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
     setError('');
     try {
       const res = await examApi.seating(exam.id, seatingMode, onlyUnassigned, sessionId);
-      await load();
-      if (res.unplaced) setError(`${res.unplaced} öğrenci yerleştirilemedi.`);
+      await load(true);
+      if (res.unplaced) setToast({ kind: 'warn', text: `${res.unplaced} öğrenci yerleştirilemedi.` });
+      else setOk(onlyUnassigned ? 'Salonsuz öğrenciler yerleştirildi.' : 'Oturma düzeni kuruldu.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Yerleştirme yapılamadı.');
     } finally { setBusy(''); }
@@ -378,7 +526,8 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
       await examApi.patchParticipant(exam.id, participantId, {
         exam_session_id: Number(nextSessionId),
       });
-      await load();
+      await load(true);
+      setOk('Oturum güncellendi.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Oturum değiştirilemedi.');
     }
@@ -390,7 +539,8 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
       const row = await examApi.patchParticipant(exam.id, participantId, {
         room_id: roomId === '' ? null : Number(roomId),
       });
-      setRows(p => p.map(x => (x.id === participantId ? row : x)));
+      setRows(prev => prev.map(x => (x.id === participantId ? row : x)));
+      setOk(roomId ? 'Salon atandı.' : 'Salon kaldırıldı.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Salon atanamadı.');
     }
@@ -435,25 +585,83 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
   const findCount = findQ.trim()
     ? shownBlocks.reduce((n, block) => n + block.lines.length, 0)
     : 0;
-  const emptySeats = roomBlocks.reduce((n, b) => n + b.empty, 0);
+  const shownIds = useMemo(() => {
+    const ids: number[] = [];
+    for (const block of shownBlocks) {
+      for (const line of block.lines) {
+        if (line.type === 'student') ids.push(line.row.id);
+      }
+    }
+    return ids;
+  }, [shownBlocks]);
+  const allPicked = shownIds.length > 0 && shownIds.every(id => selected.includes(id));
+  const toggleShown = () => {
+    setSelected(prev => (
+      allPicked
+        ? prev.filter(id => !shownIds.includes(id))
+        : [...new Set([...prev, ...shownIds])]
+    ));
+  };
+  const detailRow = panel?.kind === 'student'
+    ? rows.find(row => row.id === panel.id) ?? null
+    : null;
+  const shownMissing = useMemo(() => {
+    const query = missingQ.trim().toLocaleLowerCase('tr');
+    if (!query) return missing;
+    return missing.filter(row => [row.full_name, row.okul_no, row.sinif, row.sinif_seviyesi, row.deneme_paketi]
+      .join(' ')
+      .toLocaleLowerCase('tr')
+      .includes(query));
+  }, [missing, missingQ]);
+
+  const roomChoices = (currentId: number | null) => roomsForView.filter(rm => rm.id).map(rm => {
+    const used = usedByRoom.get(rm.id!) || 0;
+    const slots = seatNumbers(rm).length;
+    return { rm, used, slots, full: used >= slots && currentId !== rm.id };
+  });
 
   if (loading) {
     return <p className={p.hint}>Katılımcı listesi yükleniyor…</p>;
   }
 
-  const showSalon = salonOpen || rooms.length === 0;
+  const guestHref = `${isMuhasebe ? '/muhasebe/ogrenci/misafir/yeni' : '/ogrenciler/misafir/yeni'}?exam=${exam.id}`;
+  const seatPanel = panel?.kind === 'seat' ? panel : null;
+  const seatQuery = seatQ.trim().toLocaleLowerCase('tr');
+  const seatGap = seatPanel
+    ? missing.filter(row => {
+      if (!seatQuery) return true;
+      return [row.full_name, row.okul_no, row.sinif, row.sinif_seviyesi, row.deneme_paketi]
+        .filter(Boolean)
+        .join(' ')
+        .toLocaleLowerCase('tr')
+        .includes(seatQuery);
+    })
+    : [];
+  const seatListed = seatPanel && seatQuery.length >= 2
+    ? visible.filter(row => [row.full_name, row.okul_no, row.sinif, row.room_name, row.seat_no ? String(row.seat_no) : '']
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase('tr')
+      .includes(seatQuery))
+    : [];
+  const listedStudentIds = new Set(visible.map(row => row.student_id));
+  const gapStudentIds = new Set(missing.map(row => row.student_id));
+  const seatNewHits = seatHits.filter(hit => !hit.on_list && !listedStudentIds.has(hit.id) && !gapStudentIds.has(hit.id));
 
   return (
-    <div className={p.page} data-roster-page>
-      {error && (
-        <div className={`${p.toast} mobile-above-nav`} role="alert">
-          <span>{error}</span>
-          <button type="button" onClick={() => setError('')} aria-label="Kapat">×</button>
+    <div className={p.page}>
+      {toast && (
+        <div
+          className={`${p.toast} ${toast.kind === 'ok' ? p.toastOk : ''} ${toast.kind === 'warn' ? p.toastWarn : ''}`}
+          role={toast.kind === 'err' ? 'alert' : 'status'}
+        >
+          <span>{toast.text}</span>
+          <button type="button" onClick={() => setToast(null)} aria-label="Kapat">×</button>
         </div>
       )}
 
       {sessions.length > 1 && (
-        <div className={p.sessions}>
+        <div className={p.sessions} role="tablist" aria-label="Oturum">
           {sessions.map(sess => {
             const count = rows.filter(x => x.exam_session_id === sess.id).length;
             const date = sess.session_date
@@ -464,6 +672,8 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
               <button
                 key={sess.id}
                 type="button"
+                role="tab"
+                aria-selected={sessionId === sess.id}
                 className={sessionId === sess.id ? p.sessionOn : p.session}
                 onClick={() => { setSessionId(sess.id); setSelected([]); }}
               >
@@ -472,7 +682,7 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
                   {sess.schedule_preference_display}
                   {date ? ` · ${date}` : ''}
                   {time ? ` · ${time}` : ''}
-                  {` · ${count}`}
+                  {` · ${count} kişi`}
                 </span>
               </button>
             );
@@ -480,343 +690,633 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
         </div>
       )}
 
-      <div className={p.stats}>
-        <div className={p.stat}><b>{visible.length}</b><span>Katılımcı</span></div>
-        <div className={p.stat}><b>{cap}</b><span>Kapasite</span></div>
-        <div className={p.stat}><b>{present}</b><span>Geldi</span></div>
-        <div className={p.stat}><b>{absent}</b><span>Gelmedi</span></div>
-        <div className={p.stat}><b>{unassigned}</b><span>Salonsuz</span></div>
-      </div>
+      <section className={p.status} aria-label="Özet">
+        <div><b>{visible.length}</b><span>Katılımcı</span></div>
+        <div><b>{cap}</b><span>Kapasite</span></div>
+        <div><b>{present}</b><span>Geldi</span></div>
+        <div><b>{absent}</b><span>Gelmedi</span></div>
+        <div><b>{unassigned}</b><span>Salonsuz</span></div>
+      </section>
 
-      <div className={p.workspace}>
-        <section className={`${p.panel} ${p.main}`}>
-          <div className={p.tools}>
-            <div className={p.toolsTop}>
-              <div>
-                <h3>Öğrenciler</h3>
-                <p>
-                  {findQ.trim()
-                    ? `${findCount} öğrenci listeleniyor. Geldi veya Gelmedi’yi satırdan işaretleyin.`
-                    : emptySeats
-                      ? `${emptySeats} boş sıra var.`
-                      : 'Salonu listeden seç. Mesaj giden sıra kilitli kalır.'}
-                </p>
-              </div>
+      {missing.length > 0 && (
+        <button type="button" className={p.missingBar} onClick={() => setPanel({ kind: 'missing' })}>
+          <span>{missing.length} öğrenci seçime uyuyor, listede yok.</span>
+          <b>Göster</b>
+        </button>
+      )}
+
+      {overflow && (
+        <p className={p.notice}>
+          {visible.length} öğrenci var, salon kapasitesi {cap}. Yerleştirmeden önce salon ekleyin.
+        </p>
+      )}
+
+      <section className={p.bar}>
+        <div className={p.search}>
+          <Icon name="search" size={16} />
+          <input
+            placeholder="İsim, numara veya sınıf ara"
+            value={findQ}
+            onChange={e => setFindQ(e.target.value)}
+            aria-label="Listede ara"
+          />
+          {findQ.trim() && (
+            <button type="button" className={p.clear} onClick={() => setFindQ('')}>Temizle</button>
+          )}
+        </div>
+        <div className={p.barActions}>
+          <button type="button" className={p.actPrimary} disabled={visible.length === 0} onClick={() => setYoklama({ focusId: null })}>
+            <Icon name="checkCircle" size={16} /> Yoklama
+          </button>
+          <button type="button" className={p.actPrimary} onClick={() => setPanel({ kind: 'add' })}>
+            <Icon name="plus" size={16} /> Öğrenci ekle
+          </button>
+          <button type="button" className={p.act} onClick={() => setPanel({ kind: 'rooms' })}>
+            <Icon name="building" size={16} /> Salonlar
+          </button>
+          <button type="button" className={p.act} onClick={() => setPanel({ kind: 'seating' })}>
+            <Icon name="layers" size={16} /> Oturma
+          </button>
+          <button type="button" className={p.act} onClick={() => setPanel({ kind: 'actions' })}>
+            <Icon name="more" size={16} /> İşlemler
+          </button>
+        </div>
+        {findQ.trim() && (
+          <p className={p.barNote}>{findCount} öğrenci listeleniyor.</p>
+        )}
+      </section>
+
+      {visible.length > 0 && (
+        <div className={p.pickBar}>
+          <label>
+            <input type="checkbox" checked={allPicked} onChange={toggleShown} />
+            <span>{allPicked ? 'Seçimi kaldır' : 'Görünenlerin tümünü seç'}</span>
+          </label>
+          {selected.length > 0 && (
+            <div className={p.pickActions}>
+              <b>{selected.length} seçili</b>
             </div>
-            <div className={p.findRow}>
-              <div className={p.search}>
-                <input
-                  placeholder="Yoklamada isim ara…"
-                  value={findQ}
-                  onChange={e => setFindQ(e.target.value)}
-                  aria-label="Yoklamada isim ara"
-                />
-              </div>
-              {findQ.trim() && (
-                <button type="button" className={p.textBtn} onClick={() => setFindQ('')}>Temizle</button>
-              )}
-            </div>
-            <div className={p.search}>
-              <input placeholder="Öğrenci ara ve ekle…" value={q} onChange={e => search(e.target.value)} />
-              {hits.length > 0 && (
-                <div className={p.hits}>
-                  {hits.map(h => (
-                    <button key={h.id} type="button" className={p.hit} onClick={() => addStudent(h.id)}>
-                      <span>{h.full_name}</span>
-                      {h.in_other_session && <span className={p.hitNote}>{otherSessionLabel(h)}</span>}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className={p.actions}>
-              <Link href={`${isMuhasebe ? '/muhasebe/ogrenci/misafir/yeni' : '/ogrenciler/misafir/yeni'}?exam=${exam.id}`} className={p.act}>
-                Tek deneme ekle
-              </Link>
-              <button type="button" className={p.act} onClick={() => setExportOpen(true)}>
-                <Icon name="download" size={14} />
-                <span className={p.full}>Dışa aktar</span>
-                <span className={p.short}>Aktar</span>
-              </button>
-              <button type="button" className={p.act} onClick={() => setOptikOpen(true)} disabled={visible.length === 0}>
-                <Icon name="document" size={14} />
-                <span className={p.full}>Optik yazdır</span>
-                <span className={p.short}>Optik</span>
-              </button>
-              <button type="button" className={p.actPrimary} onClick={() => openWa('sinav.hatirlatma')} disabled={busy === 'wa' || visible.length === 0}>
-                <span className={p.full}>Sınav bilgisi</span>
-                <span className={p.short}>Bilgi</span>
-              </button>
-              <button type="button" className={p.act} onClick={() => openWa('sinav.yoklama')} disabled={busy === 'wa' || absent === 0}>
-                <span className={p.full}>Yoklama bildir{absent > 0 ? ` (${absent})` : ''}</span>
-                <span className={p.short}>Yoklama{absent > 0 ? ` ${absent}` : ''}</span>
-              </button>
-              <button type="button" className={p.act} onClick={() => bulkAtt('present')} disabled={busy === 'bulk' || visible.length === 0}>
-                {selected.length ? 'Seçilenler geldi' : (<><span className={p.full}>Tümü geldi</span><span className={p.short}>Geldi</span></>)}
-              </button>
-              <button type="button" className={p.act} onClick={() => bulkAtt('absent')} disabled={busy === 'bulk' || visible.length === 0}>
-                {selected.length ? 'Seçilenler gelmedi' : (<><span className={p.full}>Tümü gelmedi</span><span className={p.short}>Gelmedi</span></>)}
-              </button>
-            </div>
+          )}
+        </div>
+      )}
+
+      {roomBlocks.length === 0 ? (
+        <div className={p.blank}>
+          <b>Liste boş</b>
+          <span>Öğrenci ekleyin ya da salonu hazırlayın. Salon kaydı, boş sıraları da açar.</span>
+          <div className={p.barActions}>
+            <button type="button" className={p.actPrimary} onClick={() => setPanel({ kind: 'add' })}>Öğrenci ekle</button>
+            <button type="button" className={p.act} onClick={() => setPanel({ kind: 'rooms' })}>Salon ekle</button>
           </div>
-
-          <div className={p.list}>
-            {roomBlocks.length === 0 ? (
-              <div className={p.blank}><b>Liste boş</b>Salon ekleyin veya öğrenci arayın.</div>
-            ) : findQ.trim() && shownBlocks.length === 0 ? (
-              <div className={p.blank}><b>Eşleşme yok</b>Ad, soyad, numara veya salonla tekrar deneyin.</div>
-            ) : shownBlocks.map(block => (
-              <div key={block.roomId ?? 'none'} className={p.block}>
-                <div className={p.blockHead}>
-                  <strong>{block.roomName}</strong>
-                  <span>
-                    {findQ.trim()
-                      ? `${block.lines.length} eşleşme`
-                      : `${block.filled} öğrenci${block.empty ? ` · ${block.empty} boş` : ''}`}
+        </div>
+      ) : findQ.trim() && shownBlocks.length === 0 ? (
+        <div className={p.blank}>
+          <b>Eşleşme yok</b>
+          <span>Ad, soyad, numara veya salonla tekrar deneyin.</span>
+        </div>
+      ) : shownBlocks.map(block => (
+        <section key={block.roomId ?? 'none'} className={p.roomCard}>
+          <header className={p.roomHead}>
+            <div>
+              <h3>{block.roomName}</h3>
+              <p>
+                {findQ.trim()
+                  ? `${block.lines.length} eşleşme`
+                  : `${block.filled} öğrenci${block.empty ? ` · ${block.empty} boş sıra` : ''}`}
+              </p>
+            </div>
+            {block.roomId === null && unassigned > 0 && !findQ.trim() && (
+              <button type="button" className={p.act} disabled={busy === 'fill'} onClick={() => seat(true)}>
+                {busy === 'fill' ? 'Yerleştiriliyor…' : 'Boş sıralara yerleştir'}
+              </button>
+            )}
+          </header>
+          <div>
+            {block.lines.filter(line => line.type === 'student').map(line => {
+              if (line.type !== 'student') return null;
+              const row = line.row;
+              return (
+                <div key={row.id} className={selected.includes(row.id) ? `${p.person} ${p.personOn}` : p.person}>
+                  <label className={p.check}>
+                    <input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggle(row.id)} aria-label={`${row.full_name} seç`} />
+                  </label>
+                  <span className={`${p.seat} ${row.seat_locked ? p.seatLocked : ''}`}>
+                    {row.seat_no ?? '·'}
+                    {row.seat_locked && <span className={p.lock}><Icon name="lock" size={9} /></span>}
                   </span>
-                  {block.roomId === null && unassigned > 0 && (
-                    <button type="button" className={p.textBtn} disabled={busy === 'fill'} onClick={() => seat(true)}>
-                      Boş sıralara yerleştir
-                    </button>
-                  )}
-                </div>
-                <div className={p.head} aria-hidden>
-                  <span /><span /><span>Öğrenci</span><span>Oturum</span><span>Salon</span><span>Geldi</span><span>Gelmedi</span><span />
-                </div>
-                {block.lines.map(line => {
-                  if (line.type === 'passive') {
-                    return (
-                      <div key={`p-${block.roomId}-${line.seat}`} className={p.passive}>
-                        <span className={`${p.seat} ${p.seatOff}`}>{line.seat}</span>
-                        <span className={p.photo} />
-                        <div className={p.passiveNote}>
-                          <b>Pasif sıra</b>
-                          <span>Bu numaraya öğrenci yerleştirilmez</span>
-                        </div>
-                      </div>
-                    );
-                  }
-                  if (line.type === 'empty') {
-                    const open = seatPick?.roomId === line.roomId && seatPick.seatNo === line.seat;
-                    return (
-                      <div key={`e-${line.roomId}-${line.seat}`} className={p.empty}>
-                        <span className={`${p.seat} ${p.seatEmpty}`}>{line.seat}</span>
-                        <span className={p.photo} />
-                        {open ? (
-                          <div className={p.search}>
-                            <input
-                              autoFocus
-                              placeholder="Ad veya soyad"
-                              value={seatQ}
-                              onChange={e => searchSeat(e.target.value)}
-                              onKeyDown={e => { if (e.key === 'Escape') closeSeatPick(); }}
-                              aria-label={`${block.roomName} sıra ${line.seat}`}
-                            />
-                            {seatHits.length > 0 && (
-                              <div className={p.hits}>
-                                {seatHits.map(h => (
-                                  <button key={h.id} type="button" className={p.hit} disabled={busy === 'add'}
-                                    onClick={() => addStudent(h.id, { room_id: line.roomId, seat_no: line.seat })}>
-                                    <span>{h.full_name}</span>
-                                  </button>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <button type="button" className={p.emptyAdd} onClick={() => openSeatPick(line.roomId, line.seat)}>
-                            <b>Boş sıra</b>
-                            <span>Öğrenci eklemek için tıklayın</span>
-                          </button>
-                        )}
-                        {open ? (
-                          <button type="button" className={p.remove} onClick={closeSeatPick}>Vazgeç</button>
-                        ) : <span />}
-                      </div>
-                    );
-                  }
-                  const row = line.row;
-                  return (
-                    <div key={row.id} className={p.person}>
-                      <label className={`${p.seat} ${row.seat_locked ? p.seatLocked : ''}`}>
-                        <input type="checkbox" checked={selected.includes(row.id)} onChange={() => toggle(row.id)} style={{ position: 'absolute', opacity: 0 }} />
-                        {row.seat_no ?? '·'}
-                        {row.seat_locked && <span className={p.lock}><Icon name="lock" size={9} /></span>}
-                      </label>
-                      <span className={p.photo}><StudentPhoto foto={row.profil_foto} name={row.full_name} /></span>
-                      <div className={p.who}>
-                        <div className={p.name} title={row.full_name}>
-                          {row.full_name}
-                          {row.seat_stale && <span className={p.stale}>Mesajı güncelle</span>}
-                        </div>
-                        <div className={p.meta}>
-                          {row.okul_no ? `#${row.okul_no} · ` : ''}
-                          {row.sinif || row.sinif_seviyesi || '—'}
-                          {row.telefon ? ` · ${row.telefon}` : ''}
-                          {row.source === 'manual' ? ' · Manuel' : ''}
-                        </div>
-                      </div>
-                      {sessions.length > 1 && (
-                        <select className={p.sessionPick} value={row.exam_session_id ?? ''} onChange={e => changeSession(row.id, e.target.value)} aria-label="Oturum">
-                          {sessions.map(sess => (
-                            <option key={sess.id} value={sess.id}>
-                              {sess.name}{sess.schedule_preference_display ? ` · ${sess.schedule_preference_display}` : ''}
-                            </option>
-                          ))}
-                        </select>
-                      )}
-                      <select className={p.salon} value={row.room_id ?? ''} onChange={e => assignRoom(row.id, e.target.value)} aria-label="Salon">
-                        <option value="">Salon seç</option>
-                        {roomsForView.filter(rm => rm.id).map(rm => {
-                          const used = usedByRoom.get(rm.id!) || 0;
-                          const slots = seatNumbers(rm).length;
-                          const full = used >= slots && row.room_id !== rm.id;
-                          return (
-                            <option key={rm.id} value={rm.id} disabled={full}>
-                              {rm.name} ({used}/{slots}{full ? ' dolu' : ''})
-                            </option>
-                          );
-                        })}
-                      </select>
-                      <label data-label="Geldi" className={`${p.mark} ${p.ok} ${row.attendance === 'present' ? p.markOn : ''}`}>
-                        <input type="checkbox" checked={row.attendance === 'present'} onChange={() => patchAtt(row.id, row.attendance === 'present' ? '' : 'present')} />
-                        <span className={p.short}>Geldi</span>
-                      </label>
-                      <label data-label="Gelmedi" className={`${p.mark} ${p.miss} ${row.attendance === 'absent' ? p.markOff : ''}`}>
-                        <input type="checkbox" checked={row.attendance === 'absent'} onChange={() => patchAtt(row.id, row.attendance === 'absent' ? '' : 'absent')} />
-                        <span className={p.short}>Gelmedi</span>
-                      </label>
-                      <button type="button" className={p.remove} onClick={() => remove(row.id)}>Çıkar</button>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <aside className={p.side}>
-          <section className={`${p.panel} ${p.salonPanel}`}>
-            <div className={p.sideHead}>
-              <h3>Salonlar</h3>
-              <button type="button" className={p.textBtn} onClick={() => setSalonOpen(v => !v)}>
-                {showSalon ? 'Gizle' : 'Düzenle'}
-              </button>
-            </div>
-            {showSalon && (
-              <div className={p.sideBody}>
-                <p className={p.hint}>
-                  Kapasite numaralı yer sayısıdır. Pasif sıralara öğrenci oturmaz. Kayıtlı salonu seçince ad, kapasite ve pasif sıralar dolar. Günü veya saati farklı oturumlara aynı salon tekrar eklenebilir.
-                </p>
-                <DenemeSalonCatalog salonlar={salonlar} onChange={next => { setSalonlar(next); setError(''); }} onError={setError} />
-                {rooms.map((room, i) => {
-                  const used = room.id ? (usedByRoom.get(room.id) || 0) : 0;
-                  return (
-                    <div key={room.id ?? `new-${i}`} className={p.room}>
-                      <label className={p.field}>
-                        <span>Kayıtlı salon</span>
-                        <select
-                          value={salonlar.find(s => s.name === room.name)?.id ?? ''}
-                          onChange={e => {
-                            const salon = salonlar.find(s => s.id === Number(e.target.value));
-                            if (!salon) return;
-                            setRooms(prev => prev.map((item, j) => j === i ? {
-                              ...item,
-                              name: salon.name,
-                              capacity: salon.capacity,
-                              inactive_seats: salon.inactive_seats || [],
-                            } : item));
-                          }}
-                        >
-                          <option value="">Seç veya yeni yaz</option>
-                          {salonlar.map(s => <option key={s.id} value={s.id}>{s.name} · {s.capacity}</option>)}
-                        </select>
-                      </label>
-                      <label className={p.field}>
-                        <span>Salon adı</span>
-                        <input value={room.name} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, name: e.target.value } : item))} />
-                      </label>
-                      {sessions.length > 1 && (
-                        <label className={p.field}>
-                          <span>Oturum</span>
-                          <select
-                            value={room.exam_session_id ?? ''}
-                            onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, exam_session_id: e.target.value ? Number(e.target.value) : null } : item))}
-                          >
-                            <option value="">Tüm oturumlar</option>
-                            {sessions.map(sess => (
-                              <option key={sess.id} value={sess.id}>{sess.name}{sess.schedule_preference_display ? ` · ${sess.schedule_preference_display}` : ''}</option>
-                            ))}
-                          </select>
-                        </label>
-                      )}
-                      <div className={p.roomGrid}>
-                        <label className={p.field}>
-                          <span>Kapasite</span>
-                          <input type="number" min={1} value={room.capacity} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, capacity: Number(e.target.value) || 1 } : item))} />
-                        </label>
-                        <label className={p.field}>
-                          <span>İlk sıra</span>
-                          <input type="number" min={1} value={room.seat_start ?? 1} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, seat_start: Math.max(1, Number(e.target.value) || 1) } : item))} />
-                        </label>
-                        <label className={p.field}>
-                          <span>Ara boşluk</span>
-                          <input type="number" min={0} value={room.seat_gap ?? 0} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, seat_gap: Math.max(0, Number(e.target.value) || 0) } : item))} />
-                        </label>
-                      </div>
-                      <PassiveSeatsField
-                        room={room}
-                        onChange={seats => setRooms(prev => prev.map((item, j) => j === i ? { ...item, inactive_seats: seats } : item))}
-                      />
-                      <div className={p.roomBar}>
-                        <span className={p.occ}>
-                          {used}/{seatNumbers(room).length}
-                          {candidateSeats(room).length - seatNumbers(room).length > 0
-                            ? ` · ${candidateSeats(room).length - seatNumbers(room).length} pasif`
-                            : ''}
-                        </span>
-                        <span>
-                          <button type="button" className={p.textBtn} onClick={() => rememberSalon(room)}>Listeye kaydet</button>
-                          <button type="button" className={p.remove} onClick={() => setRooms(prev => prev.filter((_, j) => j !== i))}>Sil</button>
-                        </span>
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className={p.actions}>
-                  <button type="button" className={p.act} onClick={() => setRooms(prev => [...prev, { name: `Salon ${prev.length + 1}`, capacity: 30, seat_start: 1, seat_gap: 0, order: prev.length }])}>+ Salon</button>
-                  <button type="button" className={p.actPrimary} disabled={busy === 'rooms'} onClick={() => saveRooms(rooms)}>
-                    {busy === 'rooms' ? 'Kaydediliyor…' : 'Salonları kaydet'}
+                  <span className={p.photo}><StudentPhoto foto={row.profil_foto} name={row.full_name} /></span>
+                  <button type="button" className={p.who} onClick={() => setPanel({ kind: 'student', id: row.id })}>
+                    <span className={p.name}>
+                      <span className={p.nameText}>{row.full_name}</span>
+                      {row.kayit_pasif && <span className={p.inactive}>Kaydı pasif</span>}
+                      {row.seat_stale && <span className={p.stale}>Mesajı güncelle</span>}
+                    </span>
+                    <span className={p.meta}>
+                      {[
+                        row.okul_no ? `#${row.okul_no}` : '',
+                        row.sinif || row.sinif_seviyesi || '',
+                        row.telefon || '',
+                        row.source === 'manual' ? 'Manuel' : '',
+                      ].filter(Boolean).join(' · ') || 'Ayrıntı'}
+                    </span>
                   </button>
+                  <div className={p.att}>
+                    <span className={row.attendance === 'present' ? p.attOn : row.attendance === 'absent' ? p.attOff : p.attIdle}>
+                      {row.attendance === 'present' ? 'Geldi' : row.attendance === 'absent' ? 'Gelmedi' : 'İşaretsiz'}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+            {block.lines.some(line => line.type === 'empty') && (
+              <div className={p.seatBank}>
+                <span>Boş sıralar</span>
+                <div>
+                  {block.lines.map(line => line.type === 'empty' ? (
+                    <button
+                      key={`e-${line.roomId}-${line.seat}`}
+                      type="button"
+                      className={p.chip}
+                      onClick={() => openSeatPick(line.roomId, line.seat, block.roomName)}
+                    >
+                      {line.seat}
+                    </button>
+                  ) : null)}
                 </div>
               </div>
             )}
-          </section>
+            {block.lines.some(line => line.type === 'passive') && (
+              <p className={p.passiveLine}>
+                Pasif sıralar: {block.lines.filter(line => line.type === 'passive').map(line => line.seat).join(', ')}
+              </p>
+            )}
+          </div>
+        </section>
+      ))}
 
-          <section className={`${p.panel} ${p.seatPanel}`}>
-            <div className={p.sideHead}><h3>Oturma</h3></div>
-            <div className={p.sideBody}>
-              <div className={p.modes}>
-                {([
-                  ['shuffle', 'Karışık'],
-                  ['cross', 'Çapraz'],
-                  ['sequential', 'Sıralı'],
-                ] as const).map(([mode, label]) => (
-                  <button key={mode} type="button" className={seatingMode === mode ? p.modeOn : p.mode} onClick={() => setSeatingMode(mode)}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <div className={p.actions}>
-                <button type="button" className={p.actPrimary} disabled={busy === 'fill' || unassigned === 0} onClick={() => seat(true)}>
-                  {busy === 'fill' ? 'Yerleştiriliyor…' : 'Atamasızlar'}
+      {panel?.kind === 'missing' && (
+        <Window
+          title="Listede olmayanlar"
+          hint="Sınıf seviyesi ve deneme paketine uyup listede olmayanlar. Eklenen öğrenci salonsuz kalır."
+          wide
+          onClose={closePanel}
+          footer={(
+            <button
+              type="button"
+              className={p.actPrimary}
+              disabled={busy === 'missing' || (missingPick.length === 0 && shownMissing.length === 0)}
+              onClick={() => addMissing(missingPick.length ? missingPick : shownMissing.map(row => row.student_id))}
+            >
+              {busy === 'missing'
+                ? 'Ekleniyor…'
+                : missingPick.length
+                  ? `Seçilen ${missingPick.length} öğrenciyi ekle`
+                  : 'Tümünü ekle'}
+            </button>
+          )}
+        >
+          <div className={p.search}>
+            <Icon name="search" size={16} />
+            <input
+              placeholder="Ad, numara veya sınıf"
+              value={missingQ}
+              onChange={event => setMissingQ(event.target.value)}
+              aria-label="Eksik öğrencilerde ara"
+            />
+          </div>
+          <div className={p.results}>
+            {shownMissing.map(row => (
+              <div key={row.student_id} className={p.missingRow}>
+                <label className={p.check}>
+                  <input
+                    type="checkbox"
+                    checked={missingPick.includes(row.student_id)}
+                    onChange={() => setMissingPick(prev => (
+                      prev.includes(row.student_id)
+                        ? prev.filter(id => id !== row.student_id)
+                        : [...prev, row.student_id]
+                    ))}
+                    aria-label={`${row.full_name} seç`}
+                  />
+                </label>
+                <StudentFace foto={row.profil_foto} />
+                <span className={p.resultText}>
+                  <b>{row.full_name}</b>
+                  <span>
+                    {[
+                      row.okul_no ? `#${row.okul_no}` : '',
+                      row.sinif || row.sinif_seviyesi || '',
+                      row.deneme_paketi || '',
+                    ].filter(Boolean).join(' · ') || '—'}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  className={p.act}
+                  disabled={busy === 'missing'}
+                  onClick={() => addMissing([row.student_id])}
+                >
+                  Ekle
                 </button>
-                <button type="button" className={p.act} disabled={busy === 'seat'} onClick={() => seat(false)}>Yeniden karıştır</button>
               </div>
+            ))}
+            {missing.length > 0 && shownMissing.length === 0 && <p className={p.hint}>Eşleşen öğrenci yok.</p>}
+          </div>
+        </Window>
+      )}
+
+      {panel?.kind === 'add' && (
+        <Window title="Öğrenci ekle" hint="Seçilen sınıf seviyesine uyan öğrenciler çıkar. Listede olan aramada işaretlenir." onClose={closePanel}>
+          <div className={p.search}>
+            <Icon name="search" size={16} />
+            <input
+              autoFocus
+              placeholder="Ad veya soyad"
+              value={q}
+              onChange={e => search(e.target.value)}
+              aria-label="Öğrenci ara"
+            />
+          </div>
+          <div className={p.results}>
+            {q.trim().length >= 2 && hits.length === 0 && <p className={p.hint}>Eşleşen öğrenci yok.</p>}
+            {hits.map(hit => hit.on_list ? (
+              <div key={hit.id} className={p.result}>
+                <StudentFace foto={hit.profil_foto} />
+                <span className={p.resultText}>
+                  <b>{hit.full_name}</b>
+                  <span>{hit.sinif_seviyesi || 'Bu oturumda'}</span>
+                </span>
+                <span className={p.listed}>Listede{hit.seat_no ? ` · sıra ${hit.seat_no}` : ''}</span>
+              </div>
+            ) : (
+              <button key={hit.id} type="button" className={p.result} disabled={busy === 'add'} onClick={() => addStudent(hit.id)}>
+                <StudentFace foto={hit.profil_foto} />
+                <span className={p.resultText}>
+                  <b>{hit.full_name}</b>
+                  <span>
+                    {[
+                      hit.sinif_seviyesi || '',
+                      hit.in_other_session ? otherSessionLabel(hit) : '',
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+          <Link href={guestHref} className={p.guest}>Kayıtlı değilse tek deneme öğrencisi ekle</Link>
+        </Window>
+      )}
+
+      {seatPanel && (
+        <Window
+          title={`${seatPanel.roomName} · sıra ${seatPanel.seatNo}`}
+          hint="Seçime uyup listede olmayanlar. Listede olan yalnız aramada çıkar."
+          onClose={closePanel}
+        >
+          <div className={p.search}>
+            <Icon name="search" size={16} />
+            <input
+              autoFocus
+              placeholder="Ad, numara veya sıra"
+              value={seatQ}
+              onChange={e => searchSeat(e.target.value)}
+              aria-label="Sıraya öğrenci ara"
+            />
+          </div>
+          <div className={p.results}>
+            {seatGap.length > 0 && <p className={p.hint}>Seçime uyuyor, listede yok</p>}
+            {seatGap.map(row => (
+              <button
+                key={row.student_id}
+                type="button"
+                className={p.result}
+                disabled={busy === 'add'}
+                onClick={() => addStudent(row.student_id, { room_id: seatPanel.roomId, seat_no: seatPanel.seatNo })}
+              >
+                <StudentFace foto={row.profil_foto} />
+                <span className={p.resultText}>
+                  <b>{row.full_name}</b>
+                  <span>
+                    {[
+                      row.okul_no ? `#${row.okul_no}` : '',
+                      row.sinif || row.sinif_seviyesi || '',
+                      row.deneme_paketi || '',
+                    ].filter(Boolean).join(' · ') || '—'}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {seatListed.length > 0 && <p className={p.hint}>Aramada listede olanlar</p>}
+            {seatListed.map(row => (
+              <button
+                key={row.id}
+                type="button"
+                className={p.result}
+                disabled={busy === 'move'}
+                onClick={() => placeOnSeat(row)}
+              >
+                <StudentFace foto={row.profil_foto} />
+                <span className={p.resultText}>
+                  <b>{row.full_name}</b>
+                  <span>
+                    {row.seat_no
+                      ? `${row.room_name || 'Salon'} · sıra ${row.seat_no}`
+                      : 'Salonsuz'}
+                  </span>
+                </span>
+                <span className={p.listed}>Listede</span>
+              </button>
+            ))}
+            {seatNewHits.map(hit => (
+              <button
+                key={hit.id}
+                type="button"
+                className={p.result}
+                disabled={busy === 'add'}
+                onClick={() => addStudent(hit.id, { room_id: seatPanel.roomId, seat_no: seatPanel.seatNo })}
+              >
+                <StudentFace foto={hit.profil_foto} />
+                <span className={p.resultText}>
+                  <b>{hit.full_name}</b>
+                  <span>
+                    {[
+                      hit.sinif_seviyesi || '',
+                      hit.in_other_session ? otherSessionLabel(hit) : '',
+                    ].filter(Boolean).join(' · ')}
+                  </span>
+                </span>
+              </button>
+            ))}
+            {seatGap.length === 0 && seatListed.length === 0 && seatNewHits.length === 0 && (
+              <p className={p.hint}>
+                {seatQuery.length >= 2 ? 'Eşleşen öğrenci yok.' : 'Seçime uyan eksik öğrenci yok.'}
+              </p>
+            )}
+          </div>
+        </Window>
+      )}
+
+      {panel?.kind === 'student' && detailRow && (
+        <Window title={detailRow.full_name} hint="Salon, oturum ve listeden çıkarma burada." onClose={closePanel}>
+          <div className={p.identity}>
+            <StudentPhoto foto={detailRow.profil_foto} name={detailRow.full_name} />
+            <div>
+              <b>{detailRow.full_name}</b>
+              <span>
+                {[
+                  detailRow.okul_no ? `#${detailRow.okul_no}` : '',
+                  detailRow.sinif || detailRow.sinif_seviyesi || '',
+                  detailRow.telefon || '',
+                ].filter(Boolean).join(' · ') || '—'}
+              </span>
             </div>
-          </section>
-        </aside>
-      </div>
+          </div>
+          <button
+            type="button"
+            className={p.actPrimary}
+            onClick={() => { closePanel(); setYoklama({ focusId: detailRow.id }); }}
+          >
+            {detailRow.attendance === 'present' ? 'Geldi' : detailRow.attendance === 'absent' ? 'Gelmedi' : 'İşaretsiz'} · yoklamada aç
+          </button>
+          {detailRow.seat_locked && (
+            <p className={p.hint}>Bu sıraya mesaj gönderildiği için yer kilitli. Yeniden karıştırınca yerinde kalır.</p>
+          )}
+          {detailRow.seat_stale && (
+            <p className={p.hint}>Sıra değişti. Öğrenciye giden sınav mesajını güncelleyin.</p>
+          )}
+          {detailRow.kayit_pasif && (
+            <p className={p.hint}>Bu öğrencinin bu yıl için aktif kaydı yok. Sınava girmeyecekse listeden çıkarın.</p>
+          )}
+          {sessions.length > 1 && (
+            <label className={p.field}>
+              <span>Oturum</span>
+              <select value={detailRow.exam_session_id ?? ''} onChange={e => changeSession(detailRow.id, e.target.value)}>
+                {sessions.map(sess => (
+                  <option key={sess.id} value={sess.id}>
+                    {sess.name}{sess.schedule_preference_display ? ` · ${sess.schedule_preference_display}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label className={p.field}>
+            <span>Salon</span>
+            <select value={detailRow.room_id ?? ''} onChange={e => assignRoom(detailRow.id, e.target.value)}>
+              <option value="">Salon seç</option>
+              {roomChoices(detailRow.room_id).map(({ rm, used, slots, full }) => (
+                <option key={rm.id} value={rm.id} disabled={full}>
+                  {rm.name} ({used}/{slots}{full ? ' dolu' : ''})
+                </option>
+              ))}
+            </select>
+          </label>
+          <button type="button" className={p.remove} onClick={() => remove(detailRow.id)}>Listeden çıkar</button>
+        </Window>
+      )}
+
+      {panel?.kind === 'rooms' && (
+        <Window
+          title="Salonlar"
+          hint="Kapasite, öğrencinin oturacağı sıra sayısıdır. Pasif sıraya kimse yerleşmez. Kaydetmeden liste değişmez."
+          wide
+          onClose={closePanel}
+          footer={roomTab === 'exam' ? (
+            <>
+              <button
+                type="button"
+                className={p.act}
+                onClick={() => {
+                  setRooms(prev => [...prev, { name: `Salon ${prev.length + 1}`, capacity: 30, seat_start: 1, seat_gap: 0, order: prev.length }]);
+                  setOk('Salon forma eklendi. Kalıcı olması için Salonları kaydet.');
+                }}
+              >
+                Salon ekle
+              </button>
+              <button type="button" className={p.actPrimary} disabled={busy === 'rooms'} onClick={() => saveRooms(rooms)}>
+                {busy === 'rooms' ? 'Kaydediliyor…' : 'Salonları kaydet'}
+              </button>
+            </>
+          ) : undefined}
+        >
+          <div className={p.tabs} role="tablist" aria-label="Salon görünümü">
+            <button type="button" role="tab" aria-selected={roomTab === 'exam'} className={roomTab === 'exam' ? p.tabOn : p.tab} onClick={() => setRoomTab('exam')}>
+              Bu sınavın salonları
+            </button>
+            <button type="button" role="tab" aria-selected={roomTab === 'catalog'} className={roomTab === 'catalog' ? p.tabOn : p.tab} onClick={() => setRoomTab('catalog')}>
+              Kayıtlı salonlar
+            </button>
+          </div>
+          {roomTab === 'catalog' && (
+            <DenemeSalonCatalog
+              salonlar={salonlar}
+              onChange={setSalonlar}
+              onError={setError}
+              onNotice={setOk}
+            />
+          )}
+          {roomTab === 'exam' && rooms.length === 0 && <p className={p.hint}>Bu sınava henüz salon eklenmedi.</p>}
+          {roomTab === 'exam' && rooms.map((room, i) => {
+            const used = room.id ? (usedByRoom.get(room.id) || 0) : 0;
+            return (
+              <div key={room.id ?? `new-${i}`} className={p.roomForm}>
+                <label className={p.field}>
+                  <span>Kayıtlı salon</span>
+                  <select
+                    value={salonlar.find(s => foldTr(s.name.trim()) === foldTr(room.name.trim()))?.id ?? ''}
+                    onChange={e => {
+                      const salon = salonlar.find(s => s.id === Number(e.target.value));
+                      if (!salon) return;
+                      setRooms(prev => prev.map((item, j) => j === i ? {
+                        ...item,
+                        name: salon.name,
+                        capacity: salon.capacity,
+                        inactive_seats: salon.inactive_seats || [],
+                      } : item));
+                    }}
+                  >
+                    <option value="">Seç veya yeni yaz</option>
+                    {salonlar.map(s => <option key={s.id} value={s.id}>{s.name} · {s.capacity}</option>)}
+                  </select>
+                </label>
+                <label className={p.field}>
+                  <span>Salon adı</span>
+                  <input value={room.name} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, name: e.target.value } : item))} />
+                </label>
+                {sessions.length > 1 && (
+                  <label className={p.field}>
+                    <span>Oturum</span>
+                    <select
+                      value={room.exam_session_id ?? ''}
+                      onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, exam_session_id: e.target.value ? Number(e.target.value) : null } : item))}
+                    >
+                      <option value="">Tüm oturumlar</option>
+                      {sessions.map(sess => (
+                        <option key={sess.id} value={sess.id}>{sess.name}{sess.schedule_preference_display ? ` · ${sess.schedule_preference_display}` : ''}</option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <div className={p.roomGrid}>
+                  <label className={p.field}>
+                    <span>Kapasite</span>
+                    <input type="number" min={1} value={room.capacity} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, capacity: Number(e.target.value) || 1 } : item))} />
+                  </label>
+                  <label className={p.field}>
+                    <span>İlk sıra</span>
+                    <input type="number" min={1} value={room.seat_start ?? 1} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, seat_start: Math.max(1, Number(e.target.value) || 1) } : item))} />
+                  </label>
+                  <label className={p.field}>
+                    <span>Ara boşluk</span>
+                    <input type="number" min={0} value={room.seat_gap ?? 0} onChange={e => setRooms(prev => prev.map((item, j) => j === i ? { ...item, seat_gap: Math.max(0, Number(e.target.value) || 0) } : item))} />
+                  </label>
+                </div>
+                <PassiveSeatsField
+                  room={room}
+                  onChange={seats => setRooms(prev => prev.map((item, j) => j === i ? { ...item, inactive_seats: seats } : item))}
+                />
+                <div className={p.roomBar}>
+                  <span className={p.occ}>
+                    {used}/{seatNumbers(room).length} dolu
+                    {candidateSeats(room).length - seatNumbers(room).length > 0
+                      ? ` · ${candidateSeats(room).length - seatNumbers(room).length} pasif`
+                      : ''}
+                  </span>
+                  <span className={p.roomLinks}>
+                    <button type="button" className={p.textBtn} onClick={() => rememberSalon(room)}>Listeye kaydet</button>
+                    <button
+                      type="button"
+                      className={p.remove}
+                      onClick={() => {
+                        const seated = room.id ? rows.filter(r => r.room_id === room.id).length : 0;
+                        if (seated && !confirm(`${room.name} salonunda ${seated} öğrenci oturuyor. Kaydedince bu öğrenciler salonsuz kalır. Salonu çıkarayım mı?`)) return;
+                        setRooms(prev => prev.filter((_, j) => j !== i));
+                        setOk('Salon formdan çıkarıldı. Kalıcı olması için Salonları kaydet.');
+                      }}
+                    >
+                      Sil
+                    </button>
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </Window>
+      )}
+
+      {panel?.kind === 'seating' && (
+        <Window
+          title="Oturma"
+          hint="Kilitli sıralar yerinde kalır. Mesaj gönderilmiş öğrencinin sırası değişmez."
+          onClose={closePanel}
+        >
+          <div className={p.modes}>
+            {([
+              ['shuffle', 'Karışık', 'Sıralar rastgele dağılır.'],
+              ['cross', 'Çapraz', 'Aynı sınıf yan yana gelmesin.'],
+              ['sequential', 'Sıralı', 'Soyad sırasıyla yerleşir.'],
+            ] as const).map(([mode, label, note]) => (
+              <button key={mode} type="button" className={seatingMode === mode ? p.modeOn : p.mode} onClick={() => setSeatingMode(mode)}>
+                <b>{label}</b>
+                <span>{note}</span>
+              </button>
+            ))}
+          </div>
+          <div className={p.stack}>
+            <button type="button" className={p.actPrimary} disabled={busy === 'fill' || unassigned === 0} onClick={() => seat(true)}>
+              {busy === 'fill' ? 'Yerleştiriliyor…' : 'Yalnız salonsuzları yerleştir'}
+            </button>
+            <button type="button" className={p.act} disabled={busy === 'seat'} onClick={() => seat(false)}>
+              {busy === 'seat' ? 'Karıştırılıyor…' : 'Tüm oturmayı yeniden kur'}
+            </button>
+          </div>
+          {!rooms.length && <p className={p.hint}>Önce salon ekleyip kaydedin.</p>}
+        </Window>
+      )}
+
+      {panel?.kind === 'actions' && (
+        <Window title="İşlemler" hint={selected.length ? `${selected.length} öğrenci seçili. İşlem onlara uygulanır.` : 'Seçim yoksa listedeki herkese uygulanır.'} onClose={closePanel}>
+          <div className={p.stack}>
+            <button type="button" className={p.actionItem} onClick={() => { setPanel(null); setExportOpen(true); }}>
+              <b>Dışa aktar</b>
+              <span>Listeyi PDF veya Excel olarak indir</span>
+            </button>
+            <button type="button" className={p.actionItem} disabled={visible.length === 0} onClick={() => { setPanel(null); setOptikOpen(true); }}>
+              <b>Optik yazdır</b>
+              <span>Seçilen ya da listedeki öğrencilerin formunu bas</span>
+            </button>
+            <button type="button" className={p.actionItem} disabled={busy === 'wa' || visible.length === 0} onClick={() => { setPanel(null); void openWa('sinav.hatirlatma'); }}>
+              <b>Sınav bilgisi gönder</b>
+              <span>Salon ve sıra WhatsApp ile gider</span>
+            </button>
+          </div>
+        </Window>
+      )}
+
+      {yoklama && (
+        <ExamYoklamaScreen
+          title={exam.name}
+          subtitle={[
+            exam.exam_date
+              ? new Date(`${exam.exam_date}T00:00:00`).toLocaleDateString('tr-TR', { day: 'numeric', month: 'long', year: 'numeric' })
+              : '',
+            sessions.length > 1 ? (sessions.find(sess => sess.id === sessionId)?.name || '') : '',
+          ].filter(Boolean).join(' · ') || 'Bu oturum'}
+          groups={roomBlocks
+            .map(block => ({
+              name: block.roomName,
+              rows: block.lines.flatMap(line => (line.type === 'student' ? [line.row] : [])),
+            }))
+            .filter(group => group.rows.length > 0)}
+          focusId={yoklama.focusId}
+          paused={waOpen}
+          onClose={() => setYoklama(null)}
+          onMark={patchAtt}
+          onAllPresent={() => { void bulkAtt('present', visible.map(row => row.id)); }}
+          onAllAbsent={() => { void bulkAtt('absent', visible.map(row => row.id)); }}
+          marking={busy === 'bulk'}
+          onNotify={() => { void openWa('sinav.yoklama'); }}
+        />
+      )}
 
       {exportOpen && (
         <RosterExportModal
@@ -843,17 +1343,13 @@ export default function ParticipantsTab({ exam }: { exam: ExamDetail }) {
           preview={waPreview}
           onClose={() => setWaOpen(false)}
           onSent={(sent, errors) => {
-            setError(sent
-              ? `${sent} mesaj kuyruğa alındı.${errors.length ? ` ${errors[0]}` : ''}`
-              : (errors[0] || 'Gönderilemedi.'));
-            load();
+            if (sent && errors.length) setToast({ kind: 'warn', text: `${sent} mesaj kuyruğa alındı. ${errors[0]}` });
+            else if (sent) setOk(`${sent} mesaj kuyruğa alındı.`);
+            else setError(errors[0] || 'Gönderilemedi.');
+            load(true);
           }}
         />
       )}
-      <div className={p.jumps}>
-        <button type="button" className={p.jump} onClick={() => scrollRoster('up')} aria-label="Sayfanın başına git">↑</button>
-        <button type="button" className={p.jump} onClick={() => scrollRoster('down')} aria-label="Sayfanın sonuna git">↓</button>
-      </div>
     </div>
   );
 }

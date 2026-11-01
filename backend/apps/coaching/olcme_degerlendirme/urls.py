@@ -8,6 +8,7 @@ from .views.exam_views import ExamViewSet, exam_list_pdf
 from .views.roster_views import (
     preview_participants, exam_audience, exam_participants,
     exam_participant_add, exam_participant_detail, exam_participant_search,
+    exam_participants_missing,
     exam_participants_bulk_attendance,
     exam_rooms, exam_seating, exam_roster_export, deneme_salonlari, deneme_salon_detail,
     exam_hatirlatma_preview, exam_hatirlatma_send,
@@ -36,6 +37,7 @@ from .views.analysis_views import (
     exam_analysis_comparison,
 )
 from .views.karne_views import (
+    exam_karne_html,
     exam_karne_pdf,
     exam_karneler_pdf,
     exam_karne_notify_preview,
@@ -169,6 +171,7 @@ urlpatterns = [
     path('exams/<int:exam_pk>/audience/', exam_audience, name='exam-audience'),
     path('exams/<int:exam_pk>/participants/', exam_participants, name='exam-participants'),
     path('exams/<int:exam_pk>/participants/search/', exam_participant_search, name='exam-participant-search'),
+    path('exams/<int:exam_pk>/participants/missing/', exam_participants_missing, name='exam-participants-missing'),
     path('exams/<int:exam_pk>/participants/add/', exam_participant_add, name='exam-participant-add'),
     path('exams/<int:exam_pk>/participants/bulk-attendance/', exam_participants_bulk_attendance, name='exam-participants-bulk-attendance'),
     path('exams/<int:exam_pk>/participants/<int:participant_pk>/', exam_participant_detail, name='exam-participant-detail'),
@@ -216,6 +219,7 @@ urlpatterns = [
     path('exams/<int:exam_pk>/analysis/students/notify-bulk-queue/', exam_karne_notify_bulk_queue, name='analysis-karne-notify-bulk-queue'),
     path('exams/<int:exam_pk>/analysis/students/notify-bulk/', exam_karne_notify_bulk_send, name='analysis-karne-notify-bulk-send'),
     path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/karne-pdf/', exam_karne_pdf, name='analysis-karne-pdf'),
+    path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/karne-html/', exam_karne_html, name='analysis-karne-html'),
     path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/notify-preview/', exam_karne_notify_preview, name='analysis-karne-notify-preview'),
     path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/notify/', exam_karne_notify_send, name='analysis-karne-notify-send'),
     path('exams/<int:exam_pk>/analysis/students/<int:answer_pk>/detail/', exam_analysis_student_detail, name='analysis-student-detail'),

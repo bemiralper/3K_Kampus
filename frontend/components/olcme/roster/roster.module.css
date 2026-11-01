@@ -761,6 +761,17 @@
   cursor: pointer;
 }
 
+.salonRow input,
+.salonRow .salonSave,
+.salonRow .ghost {
+  min-height: 40px;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.salonRow .salonSave,
+.salonRow .ghost { padding: 0 14px; }
+
 .salonSave:disabled,
 .ghost:disabled {
   opacity: 0.55;

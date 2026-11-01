@@ -15,65 +15,49 @@ import { pickPrimaryAnswerKey } from '../../../../components/olcme/answer-key';
 import {
   dottedParts,
   filterTopicsByQuery,
-  isHeadingCode,
   topicNameBelongsElsewhere,
 } from '../../../../components/olcme/outcome-search';
-import { leafSectionForQuestion } from '../../../../components/olcme/section-ranges';
-import s from '../olcme.module.css';
+import {
+  leafExamSections,
+  leafSectionForQuestion,
+  optionalSectionIds,
+} from '../../../../components/olcme/section-ranges';
+import k from './outcomes.module.css';
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Yardımcı Tipler & Fonksiyonlar                                           */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+/**
+ * Satır durumu:
+ *  linked    — kazanıma bağlı (kayıtlı)
+ *  topic     — konu başlığı kodu (21.5) bilerek konuya bağlı (kayıtlı)
+ *  suggested — girilen kod müfredatta bulundu ama henüz kaydedilmedi
+ *  missed    — girilen kod/metin müfredatta yok
+ *  none      — hiçbir şey girilmemiş
+ */
+type RowState = 'linked' | 'topic' | 'suggested' | 'missed' | 'none';
+type Filter = 'all' | 'missing' | 'suggested';
 
-/** Soru‐kazanım satırı (UI state) */
 interface OutcomeRow {
   item_id: number;
   question_number: number;
   correct_answer: string;
   is_cancelled: boolean;
   section_id: number;
-  section_name: string;
-  // Orijinal import edilen kazanım metni
-  imported_outcome_text: string;
-  // Mevcut eşleşmiş kazanım
+  imported: string;
   outcome_id: number | null;
   sub_outcome_id: number | null;
   outcome_code: string;
   outcome_text: string;
-  // Konu bilgisi (outcome → topic)
   topic_name: string;
-  // Eşleştirme puanı (0”100)
-  match_score: number;
+  state: RowState;
 }
 
-/** Alt ders bilgisi (sub_section + bağlı Subject) */
-interface SubSectionInfo {
+interface SectionInfo {
   section: ExamSection;
   subject: SubjectItem | null;
   topics: TopicItem[];
-  outcomes: OutcomeItem[];
 }
 
-/** Düz outcome listesi oluştur: Subject → Topic → Outcome */
-function flattenOutcomes(topics: TopicItem[]): OutcomeItem[] {
-  const flat: OutcomeItem[] = [];
-  for (const topic of topics) {
-    for (const o of (topic.outcomes ?? [])) {
-      flat.push({ ...o, sub_outcome_id: null });
-      for (const sub of o.sub_outcomes ?? []) {
-        flat.push({
-          id: o.id,
-          code: sub.code,
-          text: sub.text,
-          sub_outcome_id: sub.id,
-        });
-      }
-    }
-  }
-  return flat;
-}
+const DONE: RowState[] = ['linked', 'topic'];
 
-/** Konu bilgisini outcome'dan bul */
 function isDumpTopic(topic: TopicItem): boolean {
   return (topic.name || '').trim() === 'Toplu Yükleme' || (topic.code || '').trim().toUpperCase() === 'TOPLU';
 }
@@ -95,11 +79,7 @@ function findTopicForOutcome(topics: TopicItem[], outcomeId: number): string {
   return '';
 }
 
-function topicsForHomeSubject(
-  home: SubjectItem | null,
-  allSubjects: SubjectItem[],
-  program = '',
-): TopicItem[] {
+function topicsForHomeSubject(home: SubjectItem | null, allSubjects: SubjectItem[], program = ''): TopicItem[] {
   return (home?.topics ?? []).filter(t =>
     !isDumpTopic(t)
     && (!program || !t.program || t.program === program)
@@ -108,12 +88,7 @@ function topicsForHomeSubject(
 }
 
 /** 11. sınıf matematiği tek blok; geometri kazanımları resmi AYT'deki Geometri dersinden gelir. */
-function topicsForSection(
-  examType: string,
-  sectionName: string,
-  home: SubjectItem | null,
-  tree: SubjectItem[],
-): TopicItem[] {
+function topicsForSection(examType: string, sectionName: string, home: SubjectItem | null, tree: SubjectItem[]): TopicItem[] {
   const program = curriculumProgramForExam(examType);
   const topics = topicsForHomeSubject(home, tree, program);
   if (examType !== 'AYT_11' || sectionName !== 'Matematik') return topics;
@@ -142,7 +117,6 @@ function firstOutcomeForImported(topics: TopicItem[], raw: string): OutcomeItem 
     if (under && queryParts.length >= 3) return under;
   }
   const needle = (raw || '').trim().toLowerCase();
-  if (!needle) return null;
   for (const t of topics) {
     if (isDumpTopic(t)) continue;
     const hit = (t.outcomes ?? []).find(o => (o.text || '').trim().toLowerCase() === needle);
@@ -151,339 +125,252 @@ function firstOutcomeForImported(topics: TopicItem[], raw: string): OutcomeItem 
   return null;
 }
 
-function codeIsUnder(code: string, parent: string): boolean {
-  const child = dottedParts(code);
-  const root = dottedParts(parent);
-  return root.length > 0 && child.length > root.length && root.every((p, i) => child[i] === p);
+const norm = (v: string) => (v || '').trim().replace(/\.+$/, '').toLocaleLowerCase('tr');
+
+/** Girilen metin bağlı kazanımı anlatmıyorsa (farklı kod yapıştırılmış) gösterilir. */
+function importedDiffers(row: OutcomeRow): boolean {
+  if (!row.imported || row.state !== 'linked') return false;
+  const imp = norm(row.imported);
+  return imp !== norm(row.outcome_code) && !norm(row.outcome_text).includes(imp);
 }
-
-function topicNameFromCode(topics: TopicItem[], raw: string): string {
-  const code = (raw || '').trim().replace(/\.+$/, '').toLowerCase();
-  if (!code) return '';
-  const parent = dottedParts(code).slice(0, 2).join('.');
-  for (const t of topics) {
-    if (isDumpTopic(t)) continue;
-    const topicCode = (t.code || '').trim().replace(/\.+$/, '').toLowerCase();
-    if (topicCode && (topicCode === code || topicCode === parent)) {
-      return withoutGrade(t.name);
-    }
-    for (const o of t.outcomes ?? []) {
-      const oc = (o.code || '').trim().replace(/\.+$/, '').toLowerCase();
-      if (oc === code || codeIsUnder(oc, code)) return withoutGrade(t.name);
-    }
-  }
-  return '';
-}
-
-/** Eşleştirme puanı hesapla (0‐100):
- *  100 = tam code eşleşmesi
- *   90 = tam text eşleşmesi
- *   80 = code başlangıcı eşleşmesi
- *   70 = code kısmi eşleşme
- *   60 = text kısmi eşleşme
- *    0 = eşleşme yok
- */
-function calcMatchScore(inputCode: string, inputText: string, outcome: OutcomeItem): number {
-  if (!outcome) return 0;
-  const ic = (inputCode || '').trim().toLowerCase();
-  const it = (inputText || '').trim().toLowerCase();
-  const oc = outcome.code.toLowerCase();
-  const ot = outcome.text.toLowerCase();
-
-  // code tam eşleşme
-  if (ic && ic === oc) return 100;
-  // text tam eşleşme
-  if (it && it === ot) return 90;
-  // code ile tam eşleşme (giriş metni = outcome code)
-  if (it && it === oc) return 95;
-  // code başlangıcı
-  if (ic && oc.startsWith(ic)) return 80;
-  if (ic && ic.startsWith(oc)) return 80;
-  // code kısmi
-  if (ic && (oc.includes(ic) || ic.includes(oc))) return 70;
-  // text kısmi
-  if (it && ot.includes(it)) return 65;
-  if (it && it.includes(ot)) return 60;
-  // Hiçbir eşleşme yoksa ama outcome atanmışsa → manuel atama
-  if (outcome.id) return 50;
-  return 0;
-}
-
-/** Eşleştirme puanı badge rengi */
-function scoreColor(score: number): string {
-  if (score >= 90) return '#16a34a';
-  if (score >= 70) return '#ca8a04';
-  if (score >= 50) return '#ea580c';
-  return '#dc2626';
-}
-
-function scoreBg(score: number): string {
-  if (score >= 90) return '#f0fdf4';
-  if (score >= 70) return '#fefce8';
-  if (score >= 50) return '#fff7ed';
-  return '#fef2f2';
-}
-
-function scoreLabel(score: number): string {
-  if (score >= 95) return 'Tam Eşleşme';
-  if (score >= 80) return 'Yüksek';
-  if (score >= 60) return 'Kısmi';
-  if (score >= 50) return 'Manuel';
-  return 'Eşleşme Yok';
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  ANA BİLEŞEN                                                             */
-/* ═══════════════════════════════════════════════════════════════════════════ */
 
 interface Props {
   exam: ExamDetail;
 }
 
 export default function OutcomesTab({ exam }: Props) {
-  const [loading, setLoading]         = useState(true);
-  const [saving, setSaving]           = useState(false);
-  const [msg, setMsg]                 = useState('');
-  const [answerKeys, setAnswerKeys]   = useState<AnswerKey[]>([]);
-  const [subSections, setSubSections] = useState<SubSectionInfo[]>([]);
-  const [rows, setRows]               = useState<OutcomeRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [answerKeys, setAnswerKeys] = useState<AnswerKey[]>([]);
+  const [sectionInfos, setSectionInfos] = useState<SectionInfo[]>([]);
+  const [allSections, setAllSections] = useState<ExamSection[]>(exam.sections ?? []);
+  const [rows, setRows] = useState<OutcomeRow[]>([]);
+  const [suggestions, setSuggestions] = useState<Map<number, OutcomeItem>>(new Map());
+  const [allSubjects, setAllSubjects] = useState<SubjectItem[]>([]);
+  const [linkingId, setLinkingId] = useState<number | null>(null);
 
-  // Kazanım seçici modal
-  const [pickerOpen, setPickerOpen]       = useState(false);
-  const [pickerRowIdx, setPickerRowIdx]   = useState<number>(-1);
-  const [pickerSearch, setPickerSearch]   = useState('');
-  const [pickerSection, setPickerSection] = useState<SubSectionInfo | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [sectionFilter, setSectionFilter] = useState<number | null>(null);
 
-  // Toplu kazanım yapıştırma modal
-  const [bulkOpen, setBulkOpen]             = useState(false);
-  const [bulkSectionId, setBulkSectionId]   = useState<number | 'all' | null>(null);
-  const [bulkText, setBulkText]             = useState('');
-  const [bulkCreateMissing, setBulkCreateMissing] = useState(false);
-  const [bulkProgress, setBulkProgress]     = useState<{ pct: number; label: string } | null>(null);
-  const [allSubjects, setAllSubjects]       = useState<SubjectItem[]>([]);
-  const [linkingSectionId, setLinkingSectionId] = useState<number | null>(null);
+  const [pickerItemId, setPickerItemId] = useState<number | null>(null);
+  const [pasteScope, setPasteScope] = useState<number | 'all' | null>(null);
+
   const autoLinkedRef = useRef(false);
 
-  // Filtre
-  const [filterSection, setFilterSection] = useState<number | null>(null);
-  const [filterMatch, setFilterMatch]     = useState<'all' | 'matched' | 'unmatched'>('all');
-
-  /* ── Veri yükle ─── */
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (): Promise<void> => {
     setLoading(true);
     try {
-      if (!autoLinkedRef.current) {
-        autoLinkedRef.current = true;
-        // Otomatik ders bağlama en iyi çaba: başarısız olursa kazanım ağacı
-        // yine yüklenir, ancak kullanıcı neden ders göremediğini bilmeli.
-        try {
-          await examApi.linkSubjects(exam.id);
-        } catch (err) {
-          setMsg('⚠️ Bölümlere müfredat dersi otomatik bağlanamadı: '
-            + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
-        }
-      }
-      const [listedSubjects, freshExam, keys, subjectsTree] = await Promise.all([
+      const [listedSubjects, freshExam, keys, tree] = await Promise.all([
         curriculumApi.listSubjects().catch(() => [] as SubjectItem[]),
         examApi.detail(exam.id),
         answerKeyApi.list(exam.id),
         answerKeyApi.outcomes(exam.id),
       ]);
       setAllSubjects(listedSubjects);
-      const allSections: ExamSection[] = freshExam.sections ?? [];
-      const freshSubSections = allSections.filter(sec => sec.is_sub_section);
-      const freshMainSections = allSections.filter(sec => !sec.is_sub_section);
       setAnswerKeys(keys);
+      const sections = freshExam.sections ?? [];
+      setAllSections(sections);
 
-      // 3) Alt bölümlerin bağlı Subject'lerini bul
-      //    Alt bölümü olan ana bölümler → alt bölümlerle temsil edilir
-      //    Alt bölümü olmayan ana bölümler → kendileri temsil eder
-      const ssInfos: SubSectionInfo[] = [];
+      const infos: SectionInfo[] = leafExamSections(sections).map(sec => {
+        const subject = sec.subject ? tree.find(sub => Number(sub.id) === Number(sec.subject)) ?? null : null;
+        return {
+          section: sec,
+          subject,
+          topics: subject ? topicsForSection(exam.exam_type, sec.name, subject, tree) : [],
+        };
+      });
 
-      // Alt bölümü olan ana bölümlerin id'lerini topla
-      const parentsWithChildren = new Set(
-        freshSubSections.map(s => s.parent_section).filter(Boolean)
-      );
-
-      // Önce alt bölümleri ekle
-      for (const sub of freshSubSections) {
-        let subject: SubjectItem | null = null;
-        let topics: TopicItem[] = [];
-        let outcomes: OutcomeItem[] = [];
-
-        if (sub.subject) {
-          subject = subjectsTree.find(s => Number(s.id) === Number(sub.subject)) ?? null;
-          if (subject) {
-            topics = topicsForSection(exam.exam_type, sub.name, subject, subjectsTree);
-            outcomes = flattenOutcomes(topics);
-          }
+      // Onarım yazma işlemidir (ders bağlar, boş ders kopyalarını temizler):
+      // yalnız bağsız ya da müfredatta bulunmayan derse bağlı bölüm varsa bir kez çalışır.
+      if (!autoLinkedRef.current && infos.some(i => !i.subject)) {
+        autoLinkedRef.current = true;
+        try {
+          await examApi.linkSubjects(exam.id);
+          return fetchData();
+        } catch (err) {
+          setMsg('⚠️ Bölümlere müfredat dersi otomatik bağlanamadı: '
+            + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
         }
-        ssInfos.push({ section: sub, subject, topics, outcomes });
       }
+      setSectionInfos(infos);
 
-      // Alt bölümü olmayan ana bölümleri de ekle
-      for (const main of freshMainSections) {
-        if (parentsWithChildren.has(main.id)) continue; // alt bölümü var, atla
-        let subject: SubjectItem | null = null;
-        let topics: TopicItem[] = [];
-        let outcomes: OutcomeItem[] = [];
-
-        if (main.subject) {
-          subject = subjectsTree.find(s => Number(s.id) === Number(main.subject)) ?? null;
-          if (subject) {
-            topics = topicsForSection(exam.exam_type, main.name, subject, subjectsTree);
-            outcomes = flattenOutcomes(topics);
-          }
-        }
-        ssInfos.push({ section: main, subject, topics, outcomes });
-      }
-
-      // Soru başlangıcına göre sırala
-      ssInfos.sort((a, b) => a.section.question_start - b.section.question_start);
-
-      setSubSections(ssInfos);
-
-      // 4) Cevap anahtarı satırlarını OutcomeRow'a dönüştür
       const primary = pickPrimaryAnswerKey(keys);
-      if (primary && primary.items.length > 0) {
-        const newRows: OutcomeRow[] = primary.items.map(item => {
-          const leaf = leafSectionForQuestion(allSections, item.question_number);
-          const ssInfo = (leaf && ssInfos.find(ss => ss.section.id === leaf.id))
-            || ssInfos.find(ss => ss.section.id === item.section);
-          const resolved = (!item.outcome && ssInfo)
-            ? firstOutcomeForImported(
-                ssInfo.topics,
-                item.imported_outcome_text || item.outcome_code || '',
-              )
-            : null;
-          const outcomeId = item.outcome || resolved?.id || null;
-          const outcomeCode = item.outcome_code || resolved?.code || '';
-          const outcomeText = item.outcome_text || resolved?.text || '';
-          const topicName = withoutGrade(item.topic_name
-            || (outcomeId && ssInfo ? findTopicForOutcome(ssInfo.topics, outcomeId) : '')
-            || (ssInfo ? topicNameFromCode(ssInfo.topics, item.imported_outcome_text || outcomeCode) : ''));
-          const importedCode = item.imported_outcome_text || item.outcome_code || '';
-          const headingHit = !outcomeId && isHeadingCode(importedCode) && !!(topicName || outcomeText);
-          const matchScore = outcomeId
-            ? (calcMatchScore(outcomeCode, outcomeText, {
-                id: outcomeId,
-                code: outcomeCode,
-                text: outcomeText,
-              }) || 50)
-            : headingHit
-              ? 100
-              : 0;
-
-          return {
+      const nextSuggestions = new Map<number, OutcomeItem>();
+      const nextRows: OutcomeRow[] = (primary?.items ?? [])
+        .slice()
+        .sort((a, b) => a.question_number - b.question_number)
+        .map(item => {
+          const leaf = leafSectionForQuestion(sections, item.question_number);
+          const info = infos.find(i => i.section.id === (leaf?.id ?? item.section));
+          const imported = (item.imported_outcome_text || '').trim();
+          const base = {
             item_id: item.id,
             question_number: item.question_number,
             correct_answer: item.correct_answer,
             is_cancelled: item.is_cancelled,
             section_id: leaf?.id ?? item.section,
-            section_name: leaf?.name ?? item.section_name,
-            imported_outcome_text: item.imported_outcome_text || '',
-            outcome_id: outcomeId,
+            imported,
+            outcome_id: item.outcome,
             sub_outcome_id: item.sub_outcome ?? null,
-            outcome_code: outcomeCode,
-            outcome_text: outcomeText,
-            topic_name: topicName,
-            match_score: matchScore,
+            outcome_code: item.outcome_code || '',
+            outcome_text: item.outcome_text || '',
+            topic_name: withoutGrade(item.topic_name || ''),
           };
+          if (item.outcome) {
+            return {
+              ...base,
+              topic_name: base.topic_name || (info ? findTopicForOutcome(info.topics, item.outcome) : ''),
+              state: 'linked' as const,
+            };
+          }
+          if (imported && item.outcome_code && item.outcome_text) return { ...base, state: 'topic' as const };
+          const guess = imported && info ? firstOutcomeForImported(info.topics, imported) : null;
+          if (guess) {
+            nextSuggestions.set(item.id, guess);
+            return {
+              ...base,
+              outcome_code: guess.code,
+              outcome_text: guess.text,
+              topic_name: findTopicForOutcome(info!.topics, guess.id),
+              state: 'suggested' as const,
+            };
+          }
+          return { ...base, state: imported ? 'missed' as const : 'none' as const };
         });
-        setRows(newRows);
-      }
+      setSuggestions(nextSuggestions);
+      setRows(nextRows);
     } catch (err) {
       console.error('OutcomesTab fetchData error:', err);
-      setMsg('❌ Veri yüklenirken hata oluştu.');
+      setMsg('❌ Veri yüklenemedi.');
     } finally {
       setLoading(false);
     }
-  }, [exam.id]);
+  }, [exam.id, exam.exam_type]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  /* ── İstatistikler ─── */
-  const totalQuestions = rows.length;
-  const isRowMatched = (r: OutcomeRow) => !!(r.outcome_id || (r.outcome_code && r.outcome_text));
-  const matchedCount  = rows.filter(isRowMatched).length;
-  const unmatchedCount = totalQuestions - matchedCount;
-  const avgScore = matchedCount > 0
-    ? Math.round(rows.filter(isRowMatched).reduce((s, r) => s + r.match_score, 0) / matchedCount)
-    : 0;
+  const primary = pickPrimaryAnswerKey(answerKeys);
+  const optionalIds = useMemo(() => optionalSectionIds(allSections), [allSections]);
+  const infoById = useMemo(() => new Map(sectionInfos.map(i => [i.section.id, i])), [sectionInfos]);
+  const unlinked = sectionInfos.filter(i => !i.subject && rows.some(r => r.section_id === i.section.id));
 
-  /* ── Filtreleme ─── */
-  const filteredRows = useMemo(() => {
-    let result = rows;
-    if (filterSection !== null) {
-      result = result.filter(r => r.section_id === filterSection);
+  const counts = useMemo(() => {
+    const c = { linked: 0, topic: 0, suggested: 0, missed: 0, none: 0 };
+    for (const r of rows) c[r.state] += 1;
+    return c;
+  }, [rows]);
+  const doneCount = counts.linked + counts.topic;
+  const missingCount = rows.length - doneCount;
+  const percent = rows.length ? Math.round((doneCount / rows.length) * 100) : 0;
+
+  const sectionStats = useMemo(() => {
+    const map = new Map<number, { total: number; done: number }>();
+    for (const r of rows) {
+      const cur = map.get(r.section_id) ?? { total: 0, done: 0 };
+      cur.total += 1;
+      if (DONE.includes(r.state)) cur.done += 1;
+      map.set(r.section_id, cur);
     }
-    if (filterMatch === 'matched') {
-      result = result.filter(r => !!(r.outcome_id || (r.outcome_code && r.outcome_text)));
-    } else if (filterMatch === 'unmatched') {
-      result = result.filter(r => !(r.outcome_id || (r.outcome_code && r.outcome_text)));
-    }
-    return result;
-  }, [rows, filterSection, filterMatch]);
+    return map;
+  }, [rows]);
 
-  /* ── Kazanım ata (tekil — API ile kaydet) ─── */
-  const handleSetOutcome = useCallback(async (rowIdx: number, outcome: OutcomeItem | null) => {
-    const row = rows[rowIdx];
-    if (!row) return;
+  const shownRows = useMemo(() => rows.filter(r =>
+    (sectionFilter === null || r.section_id === sectionFilter)
+    && (filter === 'all' || (filter === 'suggested' ? r.state === 'suggested' : !DONE.includes(r.state))),
+  ), [rows, filter, sectionFilter]);
 
-    // UI güncelle
-    const ssInfo = subSections.find(ss => ss.section.id === row.section_id);
-    const topicName = withoutGrade(outcome && ssInfo ? findTopicForOutcome(ssInfo.topics, outcome.id) : '');
-    const matchScore = outcome ? 100 : 0; // kullanıcı seçtiği için yüksek puan
+  useEffect(() => {
+    if (filter === 'suggested' && counts.suggested === 0) setFilter('all');
+  }, [filter, counts.suggested]);
 
-    setRows(prev => {
-      const next = [...prev];
-      next[rowIdx] = {
-        ...next[rowIdx],
+  /* ── Tekil atama: anında kaydedilir, hata olursa geri alınır ─── */
+  const assign = useCallback(async (itemId: number, outcome: OutcomeItem | null) => {
+    if (!primary) return;
+    const before = rows.find(r => r.item_id === itemId);
+    if (!before) return;
+    const info = infoById.get(before.section_id);
+    const next: OutcomeRow = outcome
+      ? {
+          ...before,
+          imported: '',
+          outcome_id: outcome.id,
+          sub_outcome_id: outcome.sub_outcome_id ?? null,
+          outcome_code: outcome.code,
+          outcome_text: outcome.text,
+          topic_name: info ? findTopicForOutcome(info.topics, outcome.id) : '',
+          state: 'linked',
+        }
+      : {
+          ...before,
+          imported: '',
+          outcome_id: null,
+          sub_outcome_id: null,
+          outcome_code: '',
+          outcome_text: '',
+          topic_name: '',
+          state: 'none',
+        };
+    setRows(prev => prev.map(r => (r.item_id === itemId ? next : r)));
+    setSuggestions(prev => {
+      if (!prev.has(itemId)) return prev;
+      const copy = new Map(prev);
+      copy.delete(itemId);
+      return copy;
+    });
+    setPickerItemId(null);
+    try {
+      // Girilen kod temizlenir: kalırsa ekranda seçilen kazanım yerine eski kod görünür.
+      await answerKeyApi.updateItem(exam.id, primary.id, {
+        item_id: itemId,
         outcome_id: outcome?.id ?? null,
         sub_outcome_id: outcome?.sub_outcome_id ?? null,
-        outcome_code: outcome?.code ?? '',
-        outcome_text: outcome?.text ?? '',
-        topic_name: topicName,
-        match_score: matchScore,
-      };
-      return next;
-    });
-
-    // API'ye kaydet
-    const primary = pickPrimaryAnswerKey(answerKeys);
-    if (primary) {
-      try {
-        await answerKeyApi.updateItem(exam.id, primary.id, {
-          item_id: row.item_id,
-          outcome_id: outcome?.id ?? null,
-          sub_outcome_id: outcome?.sub_outcome_id ?? null,
-        });
-      } catch (err) {
-        console.error('updateItem error:', err);
-        setMsg('❌ Kazanım kaydedilirken hata oluştu.');
-      }
+        imported_outcome_text: '',
+      });
+    } catch (err) {
+      setRows(prev => prev.map(r => (r.item_id === itemId ? before : r)));
+      setMsg('❌ Kaydedilemedi: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
     }
+  }, [primary, rows, infoById, exam.id]);
 
-    setPickerOpen(false);
-  }, [rows, answerKeys, exam.id, subSections]);
+  const acceptSuggestions = useCallback(async (ids: number[]) => {
+    if (!primary || ids.length === 0) return;
+    setBusy(true);
+    try {
+      await answerKeyApi.bulkUpdateItems(exam.id, primary.id, ids.map(id => {
+        const o = suggestions.get(id)!;
+        return { item_id: id, outcome_id: o.id, sub_outcome_id: o.sub_outcome_id ?? null };
+      }));
+      await fetchData();
+      setMsg(`✅ ${ids.length} öneri kaydedildi.`);
+    } catch (err) {
+      setMsg('❌ Öneriler kaydedilemedi: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+    } finally {
+      setBusy(false);
+    }
+  }, [primary, suggestions, exam.id, fetchData]);
 
-  /* ── Kazanım kaldır ─── */
-  const handleRemoveOutcome = useCallback(async (rowIdx: number) => {
-    await handleSetOutcome(rowIdx, null);
-  }, [handleSetOutcome]);
+  const clearAll = useCallback(async () => {
+    if (!primary) return;
+    const targets = rows.filter(r => r.state !== 'none');
+    if (targets.length === 0) return;
+    if (!confirm(`${targets.length} sorunun kazanım bağı ve girilen kodu silinsin mi?`)) return;
+    setBusy(true);
+    try {
+      await answerKeyApi.bulkUpdateItems(exam.id, primary.id, targets.map(r => ({
+        item_id: r.item_id, outcome_id: null, sub_outcome_id: null, imported_outcome_text: '',
+      })));
+      await fetchData();
+      setMsg('✅ Kazanımlar temizlendi.');
+    } catch (err) {
+      setMsg('❌ Temizlenemedi: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+    } finally {
+      setBusy(false);
+    }
+  }, [primary, rows, exam.id, fetchData]);
 
-  /* ── Kazanım seçici aç ─── */
-  const openPicker = useCallback((rowIdx: number) => {
-    const row = rows[rowIdx];
-    const ssInfo = subSections.find(ss => ss.section.id === row.section_id);
-    setPickerRowIdx(rowIdx);
-    setPickerSection(ssInfo ?? null);
-    setPickerSearch('');
-    setPickerOpen(true);
-  }, [rows, subSections]);
-
-  const handleLinkSubject = useCallback(async (sectionId: number, subjectId: number) => {
-    setLinkingSectionId(sectionId);
+  const linkSubject = useCallback(async (sectionId: number, subjectId: number) => {
+    setLinkingId(sectionId);
     try {
       await curriculumApi.linkSection(subjectId, sectionId);
       await fetchData();
@@ -491,747 +378,468 @@ export default function OutcomesTab({ exam }: Props) {
     } catch (err) {
       setMsg('❌ Ders bağlanamadı: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
     } finally {
-      setLinkingSectionId(null);
+      setLinkingId(null);
     }
   }, [fetchData]);
 
-  /* ── Toplu kazanım yapıştır (Backend Akıllı Eşleştirme) ─── */
-  const handleBulkPaste = useCallback(async () => {
-    if (!bulkSectionId || !bulkText.trim()) return;
-
-    // Boş satırlar atılmaz: soru sırası ile satır sırası birebir hizalı
-    // olmalı, aksi halde boş bırakılan sorudan sonrası kayıyordu.
-    const lines = bulkText.split('\n').map(l => l.trim());
-    while (lines.length > 0 && lines[lines.length - 1] === '') lines.pop();
-    if (lines.every(l => l === '')) return;
-    const primary = pickPrimaryAnswerKey(answerKeys);
-    if (!primary) {
-      setMsg('⚠️ Cevap anahtarı bulunamadı.');
-      return;
-    }
-
-    if (bulkSectionId !== 'all') {
-      const ssInfo = subSections.find(ss => ss.section.id === bulkSectionId);
-      if (!ssInfo || !ssInfo.subject) {
-        setMsg('⚠️ Bu bölüme ders bağlanmamış. Önce üstteki listeden müfredat dersi bağlayın.');
-        return;
-      }
-      if (!rows.some(r => r.section_id === bulkSectionId)) {
-        setMsg('⚠️ Bu bölümde soru bulunamadı.');
-        return;
-      }
-    }
-
-    setSaving(true);
-
+  const repairLinks = useCallback(async () => {
+    setBusy(true);
     try {
-      // Tek bölüm de aynı backend ucundan geçer: yabancı ders müfredata yazılmaz.
-      setBulkProgress({ pct: 15, label: 'Soru sırasına göre dağıtılıyor…' });
-      const ordered = [...rows].sort((a, b) => a.question_number - b.question_number);
-      let lineIdx = 0;
-      const aligned = ordered.map(r => (
-        bulkSectionId === 'all' || r.section_id === bulkSectionId
-          ? (lines[lineIdx++] ?? '')
-          : ''
-      ));
-      const targeted = aligned.filter(Boolean).length;
-      setBulkProgress({ pct: 45, label: `${targeted} kazanım eşleştiriliyor…` });
-      const result = await answerKeyApi.bulkAssignOutcomes(
-        exam.id, primary.id, aligned, bulkCreateMissing,
-      );
-      setBulkProgress({ pct: 90, label: 'Sonuçlar uygulanıyor…' });
+      await examApi.linkSubjects(exam.id);
       await fetchData();
-      setBulkProgress({ pct: 100, label: 'Tamamlandı' });
-      setSaving(false);
-      setBulkOpen(false);
-      setBulkText('');
-      setBulkProgress(null);
-      const leftover = Math.max(0, lines.length - targeted);
-      const parts = [
-        result.matched ? `${result.matched} eşleşti` : '',
-        result.created ? `${result.created} yeni eklendi` : '',
-      ].filter(Boolean).join(', ');
-      setMsg(
-        `✅ ${result.total} soruya kazanım işlendi${parts ? ` (${parts})` : ''}`
-        + (leftover ? ` · ⚠️ ${leftover} satır fazla, yok sayıldı.` : '.')
-        + (result.foreign_subject
-          ? ` · ⛔ ${result.foreign_subject} satır başka dersin kazanımı olduğu için`
-            + ' müfredata yazılmadı; satır sırasını kontrol edin.'
-          : ''),
-      );
+      setMsg('✅ Dersler yeniden bağlandı.');
     } catch (err) {
-      console.error('Bulk match error:', err);
-      setSaving(false);
-      setBulkProgress(null);
-      setMsg('❌ Eşleştirme sırasında hata oluştu: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+      setMsg('❌ Otomatik bağlanamadı: ' + (err instanceof Error ? err.message : 'Bilinmeyen hata'));
+    } finally {
+      setBusy(false);
     }
-  }, [bulkSectionId, bulkText, bulkCreateMissing, subSections, rows, answerKeys, exam.id, fetchData]);
+  }, [exam.id, fetchData]);
 
-  /* ── Tüm kazanımları temizle ─── */
-  const handleClearAll = useCallback(async () => {
-    if (!confirm('Tüm kazanım eşleştirmelerini kaldırmak istediğinize emin misiniz?')) return;
+  const pickerRow = pickerItemId !== null ? rows.find(r => r.item_id === pickerItemId) ?? null : null;
 
-    setSaving(true);
-    const primary = pickPrimaryAnswerKey(answerKeys);
-    const newRows = [...rows];
+  if (loading && rows.length === 0) return <div className={k.loading}>Kazanımlar yükleniyor…</div>;
 
-    for (let i = 0; i < newRows.length; i++) {
-      if (newRows[i].outcome_id) {
-        newRows[i] = {
-          ...newRows[i],
-          outcome_id: null,
-          sub_outcome_id: null,
-          outcome_code: '',
-          outcome_text: '',
-          topic_name: '',
-          match_score: 0,
-        };
-        if (primary) {
-          try {
-            await answerKeyApi.updateItem(exam.id, primary.id, {
-              item_id: newRows[i].item_id,
-              outcome_id: null,
-              sub_outcome_id: null,
-            });
-          } catch { /* devam */ }
-        }
-      }
-    }
-
-    setRows(newRows);
-    setSaving(false);
-    setMsg('✅ Tüm kazanım eşleştirmeleri kaldırıldı.');
-  }, [rows, answerKeys, exam.id]);
-
-  /* ═════════════════════════════════════════════════════════════════════════ */
-  /*  RENDER                                                                 */
-  /* ═════════════════════════════════════════════════════════════════════════ */
-
-  if (loading) return (
-    <div className="card-modern" style={{ textAlign: 'center', padding: 60 }}>
-      <div className="skeleton" style={{ width: 32, height: 32, borderRadius: '50%', margin: '0 auto 12px' }} />
-      <p style={{ color: 'var(--text-secondary)', margin: 0, fontSize: 14 }}>Kazanım verileri yükleniyor…</p>
+  if (!primary || rows.length === 0) return (
+    <div className={k.empty}>
+      <b>Önce cevap anahtarı girin</b>
+      <p>Kazanımlar cevap anahtarındaki sorulara bağlanır. Cevap Anahtarı sekmesinden soruları kaydettikten sonra burada eşleştirebilirsiniz.</p>
     </div>
   );
 
-  if (rows.length === 0) return (
-    <div className="card-modern">
-      <div className={s.comingSoon}>
-        <span style={{ fontSize: 48, lineHeight: 1 }}>📋</span>
-        <p className={s.comingSoonTitle}>Cevap Anahtarı Yok</p>
-        <p className={s.comingSoonDesc}>
-          Kazanım eşleştirmesi yapabilmek için önce &quot;Cevap Anahtarı&quot; sekmesinden soruları girmeniz gerekiyor.
-        </p>
-      </div>
-    </div>
-  );
-
-  // Alt ders gruplarını belirle (subSections zaten hem alt bölümleri hem alt bölümü olmayan ana bölümleri içerir)
-  const sectionGroups = subSections;
+  const tone = msg.startsWith('❌') ? k.toastErr : msg.startsWith('⚠️') ? k.toastWarn : k.toastOk;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-
-      {/* ── İstatistik Kartları ────────────────────────────────────────── */}
-      <div className="quick-stats">
-        <div className="quick-stat">
-          <div className="quick-stat-icon blue">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{matchedCount}<span style={{ fontSize: 12, fontWeight: 400 }}>/{totalQuestions}</span></h4>
-            <span>Eşleştirilmiş</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon orange">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{unmatchedCount}</h4>
-            <span>Eşleşmemiş</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon green">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{avgScore}<span style={{ fontSize: 12, fontWeight: 400 }}>%</span></h4>
-            <span>Ort. Eşleşme</span>
-          </div>
-        </div>
-        <div className="quick-stat">
-          <div className="quick-stat-icon purple">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 6h16M4 12h16M4 18h7"/></svg>
-          </div>
-          <div className="quick-stat-info">
-            <h4>{subSections.filter(ss => ss.subject).length}<span style={{ fontSize: 12, fontWeight: 400 }}>/{subSections.length}</span></h4>
-            <span>Bağlı Alt Ders</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Araç Çubuğu ───────────────────────────────────────────────── */}
-      <div className="card-modern">
-        <div className="card-modern-body" style={{ padding: '14px 20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {/* Alt ders filtresi */}
-              <select
-                value={filterSection ?? ''}
-                onChange={e => setFilterSection(e.target.value ? Number(e.target.value) : null)}
-                style={{
-                  padding: '7px 12px', fontSize: 12.5, borderRadius: 8,
-                  border: '1px solid var(--border)', background: '#fff',
-                  cursor: 'pointer', minWidth: 160,
-                }}
-              >
-                <option value="">Tüm Alt Dersler</option>
-                {sectionGroups.map(sg => (
-                  <option key={sg.section.id} value={sg.section.id}>
-                    {sg.section.name} {sg.subject ? `(${sg.subject.name})` : ''}
-                  </option>
-                ))}
-              </select>
-
-              {/* Eşleşme filtresi */}
-              <div style={{ display: 'flex', gap: 0, border: '1px solid var(--border)', borderRadius: 8, overflow: 'hidden' }}>
-                {[
-                  { key: 'all' as const, label: 'Tümü' },
-                  { key: 'matched' as const, label: '✅ Eşleşmiş' },
-                  { key: 'unmatched' as const, label: '⚠️ Eşleşmemiş' },
-                ].map(opt => (
-                  <button
-                    key={opt.key}
-                    onClick={() => setFilterMatch(opt.key)}
-                    style={{
-                      padding: '7px 14px', fontSize: 12, border: 'none',
-                      borderRight: opt.key !== 'unmatched' ? '1px solid var(--border)' : 'none',
-                      background: filterMatch === opt.key ? 'var(--primary)' : '#fff',
-                      color: filterMatch === opt.key ? '#fff' : 'var(--text-secondary)',
-                      cursor: 'pointer', fontWeight: filterMatch === opt.key ? 600 : 400,
-                      transition: 'all .15s',
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                {filteredRows.length} soru gösteriliyor
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', gap: 8 }}>
-              {/* Toplu yapıştır */}
-              <button
-                className="btn-modern btn-primary"
-                onClick={() => {
-                  setBulkSectionId('all');
-                  setBulkText('');
-                  setBulkProgress(null);
-                  setBulkOpen(true);
-                }}
-                style={{ padding: '7px 14px', fontSize: 12 }}
-              >
-                📋 Toplu Yapıştır
-              </button>
-
-              {/* Temizle */}
-              {matchedCount > 0 && (
-                <button
-                  className="btn-modern"
-                  onClick={handleClearAll}
-                  disabled={saving}
-                  style={{
-                    padding: '7px 14px', fontSize: 12,
-                    color: 'var(--danger)', border: '1px solid #fecaca',
-                  }}
-                >
-                  🗑 Tümünü Temizle
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Mesaj ──────────────────────────────────────────────────────── */}
+    <div className={k.page}>
       {msg && (
-        <div style={{
-          padding: '10px 16px', borderRadius: 10, fontSize: 13, lineHeight: 1.5,
-          background: msg.includes('❌') ? '#fef2f2' : msg.includes('⚠️') ? '#fffbeb' : '#f0fdf4',
-          color: msg.includes('❌') ? '#991b1b' : msg.includes('⚠️') ? '#92400e' : '#166534',
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        }}>
-          <span>{msg}</span>
-          <button onClick={() => setMsg('')} style={{
-            background: 'none', border: 'none', cursor: 'pointer', fontSize: 14,
-            color: 'inherit', padding: '0 4px',
-          }}>✕</button>
+        <div className={`${k.toast} ${tone}`} role="status">
+          <span>{msg.replace(/^(✅|⚠️|❌)\s*/u, '')}</span>
+          <button type="button" aria-label="Kapat" onClick={() => setMsg('')}>×</button>
         </div>
       )}
 
-      {/* ── Alt Ders Grupları ──────────────────────────────────────────── */}
-      {sectionGroups.map(sg => {
-        const sectionRows = filteredRows.filter(r => r.section_id === sg.section.id);
-        if (filterSection !== null && filterSection !== sg.section.id) return null;
-        const secMatched = sectionRows.filter(r => r.outcome_id || (r.outcome_code && r.outcome_text)).length;
-        const secTotal = rows.filter(r => r.section_id === sg.section.id).length;
+      <section className={k.toolbar}>
+        <div className={k.summary}>
+          <p className={k.count}>
+            <b>{doneCount}</b>/{rows.length} soru kazanımlı
+            <span>
+              {counts.topic > 0 && `${counts.topic} konu düzeyinde · `}
+              {missingCount > 0 ? `${missingCount} eksik` : 'Eksik yok'}
+            </span>
+          </p>
+          <div className={k.meter} aria-hidden><i style={{ width: `${percent}%` }} /></div>
+        </div>
+        <div className={k.actions}>
+          <button type="button" className={k.btnPrimary} onClick={() => setPasteScope('all')} disabled={busy}>
+            Toplu yapıştır
+          </button>
+          {rows.some(r => r.state !== 'none') && (
+            <button type="button" className={k.btnDanger} onClick={clearAll} disabled={busy}>Temizle</button>
+          )}
+        </div>
+      </section>
 
-        return (
-          <div key={sg.section.id} className="card-modern" style={{ overflow: 'hidden' }}>
-            <div className="card-modern-header" style={{ padding: '14px 22px' }}>
-              <h3 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <span className={s.otSectionIcon}>📘</span>
-                {sg.section.name}
-                {sg.subject && (
-                  <span className={s.otSubjectBadge}>
-                    🎯 {sg.subject.name}
-                    {sg.section.name === 'Felsefe (Seçmeli)' ? ' — aynı müfredat' : ''}
-                  </span>
-                )}
-                <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)' }}>
-                  {secMatched}/{secTotal} eşleşmiş
-                </span>
-              </h3>
-              <div className="card-modern-header-actions">
-                <button
-                  className="btn-modern btn-primary"
-                  onClick={() => {
-                    setBulkSectionId(sg.section.id);
-                    setBulkText('');
-                    setBulkOpen(true);
-                  }}
-                  style={{ padding: '5px 12px', fontSize: 11 }}
-                >
-                  📋 Toplu Yapıştır
-                </button>
-              </div>
-            </div>
+      {counts.suggested > 0 && (
+        <div className={k.notice}>
+          <p>
+            <b>{counts.suggested} soru için öneri var.</b>
+            {' '}Girilen kodlar müfredatta bulundu ama soruya bağlanmamış; analizde sayılmaz.
+          </p>
+          <button
+            type="button"
+            className={k.btnPrimary}
+            disabled={busy}
+            onClick={() => acceptSuggestions([...suggestions.keys()])}
+          >
+            Tümünü kaydet
+          </button>
+        </div>
+      )}
 
-            {!sg.subject && (
-              <div style={{
-                padding: '12px 22px', background: '#fffbeb', borderBottom: '1px solid #fde68a',
-                fontSize: 12, color: '#92400e', display: 'flex', flexWrap: 'wrap',
-                gap: 10, alignItems: 'center',
-              }}>
-                <span>
-                  ⚠️ Bu alt derse henüz bir müfredat dersi bağlanmamış.
-                  Aşağıdan {sg.section.name} için kazanım ağacındaki dersi seçin.
-                </span>
+      {unlinked.length > 0 && (
+        <div className={k.noticeWarn}>
+          <p><b>Müfredat dersi bağlı olmayan bölümler.</b> Bu bölümlerde kazanım aranamaz.</p>
+          <button type="button" className={k.btn} onClick={repairLinks} disabled={busy}>Otomatik bağla</button>
+          <div className={k.linkList}>
+            {unlinked.map(info => (
+              <label key={info.section.id} className={k.linkRow}>
+                <span>{info.section.name}</span>
                 <select
-                  disabled={linkingSectionId === sg.section.id}
+                  disabled={linkingId === info.section.id}
                   defaultValue=""
-                  onChange={e => {
-                    const id = Number(e.target.value);
-                    if (id) handleLinkSubject(sg.section.id, id);
-                  }}
-                  style={{
-                    padding: '6px 10px', fontSize: 12, borderRadius: 8,
-                    border: '1px solid #f59e0b', background: '#fff', minWidth: 200,
-                  }}
+                  onChange={e => { const id = Number(e.target.value); if (id) linkSubject(info.section.id, id); }}
                 >
-                  <option value="">Müfredat dersi seç…</option>
+                  <option value="">Ders seç…</option>
                   {allSubjects.map(sub => (
                     <option key={sub.id} value={sub.id}>
-                      {sub.display_name || sub.name} {sub.exam_type_filter && sub.exam_type_filter !== 'ALL' ? `(${sub.exam_type_filter.replace('YKS_', '')})` : ''}
+                      {sub.display_name || sub.name}
+                      {sub.exam_type_filter && sub.exam_type_filter !== 'ALL' ? ` (${sub.exam_type_filter.replace('YKS_', '')})` : ''}
                     </option>
                   ))}
                 </select>
-              </div>
-            )}
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
 
-            {sectionRows.length === 0 && filterMatch !== 'all' ? (
-              <div style={{ padding: '30px 22px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
-                Bu filtreye uygun soru bulunamadı.
-              </div>
-            ) : sectionRows.length === 0 ? (
-              <div style={{ padding: '30px 22px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 13 }}>
-                Bu bölümde henüz cevap anahtarı girişi yok.
-              </div>
-            ) : (
-              <div style={{ overflowX: 'auto' }}>
-                <table className={s.otTable}>
-                  <thead>
-                    <tr>
-                      <th style={{ width: 55 }}>Soru</th>
-                      <th style={{ width: 55 }}>Cevap</th>
-                      <th style={{ minWidth: 120 }}>Konu</th>
-                      <th style={{ minWidth: 160 }}>Girilen Kazanım</th>
-                      <th style={{ minWidth: 200 }}>Eşleştirilen Kazanım</th>
-                      <th style={{ width: 100 }}>Eşleşme</th>
-                      <th style={{ width: 100 }}>İşlem</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sectionRows.map(row => {
-                      const globalIdx = rows.findIndex(r => r.item_id === row.item_id);
-                      return (
-                        <tr key={row.item_id} className={row.is_cancelled ? s.otCancelled : undefined}>
-                          <td style={{ fontWeight: 700, textAlign: 'center' }}>{row.question_number}</td>
-                          <td style={{ textAlign: 'center' }}>
-                            <span className={s.otAnswerBadge} data-answer={row.correct_answer}>
-                              {row.is_cancelled ? '✕' : row.correct_answer}
-                            </span>
-                          </td>
-                          <td>
-                            <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                              {row.topic_name || '—'}
-                            </span>
-                          </td>
-                          <td>
-                            {(row.imported_outcome_text || row.outcome_code) ? (
-                              <span
-                                style={{
-                                  fontSize: 12,
-                                  color: row.imported_outcome_text
-                                    ? ((row.outcome_id || row.outcome_code)
-                                        ? (row.outcome_code && row.imported_outcome_text.toLowerCase().includes(row.outcome_code.toLowerCase())
-                                            ? 'var(--text-secondary)'
-                                            : '#f59e0b')
-                                        : '#ef4444')
-                                    : '#94a3b8',
-                                  fontFamily: 'monospace',
-                                  fontStyle: row.imported_outcome_text ? 'normal' : 'italic',
-                                }}
-                                title={row.imported_outcome_text || row.outcome_code || ''}
-                              >
-                                {(() => {
-                                  const text = row.imported_outcome_text || row.outcome_code || '';
-                                  return text.length > 40 ? text.substring(0, 40) + '…' : text;
-                                })()}
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: 11, color: '#cbd5e1', fontStyle: 'italic' }}>—</span>
-                            )}
-                          </td>
-                          <td>
-                            {row.outcome_id || (row.outcome_code && row.outcome_text) ? (
-                              <div className={s.otOutcomeCell}>
-                                <span className={s.otOutcomeCode}>{row.outcome_code}</span>
-                                <span className={s.otOutcomeText} title={row.outcome_text}>
-                                  {row.outcome_text}
-                                </span>
-                              </div>
-                            ) : (
-                              <span style={{ fontSize: 12, color: '#94a3b8', fontStyle: 'italic' }}>
-                                Kazanım atanmamış
-                              </span>
-                            )}
-                          </td>
-                          <td style={{ textAlign: 'center' }}>
-                            {row.outcome_id || row.outcome_code ? (
-                              <span
-                                className={s.otScoreBadge}
-                                style={{
-                                  background: scoreBg(row.match_score),
-                                  color: scoreColor(row.match_score),
-                                }}
-                                title={scoreLabel(row.match_score)}
-                              >
-                                {row.match_score}%
-                              </span>
-                            ) : (
-                              <span style={{ fontSize: 11, color: '#cbd5e1' }}>—</span>
-                            )}
-                          </td>
-                          <td>
-                            <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
-                              <button
-                                className={s.otActionBtn}
-                                onClick={() => openPicker(globalIdx)}
-                                title={row.outcome_id ? 'Kazanımı Değiştir' : 'Kazanım Ata'}
-                              >
-                                {row.outcome_id ? '✏️' : '➕'}
-                              </button>
-                              {row.outcome_id && (
-                                <button
-                                  className={s.otActionBtnDanger}
-                                  onClick={() => handleRemoveOutcome(globalIdx)}
-                                  title="Kazanımı Kaldır"
-                                >
-                                  🗑
-                                </button>
-                              )}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+      <section className={k.panel}>
+        <div className={k.listHead}>
+          <div className={k.filters} role="group" aria-label="Süzgeç">
+            <button type="button" className={filter === 'all' ? k.filterOn : k.filter} onClick={() => setFilter('all')}>
+              Tümü <b>{rows.length}</b>
+            </button>
+            <button type="button" className={filter === 'missing' ? k.filterOn : k.filter} onClick={() => setFilter('missing')}>
+              Eksik <b>{missingCount}</b>
+            </button>
+            {counts.suggested > 0 && (
+              <button type="button" className={filter === 'suggested' ? k.filterOn : k.filter} onClick={() => setFilter('suggested')}>
+                Öneri <b>{counts.suggested}</b>
+              </button>
             )}
           </div>
-        );
-      })}
+          <select
+            className={k.sectionSelect}
+            value={sectionFilter ?? ''}
+            onChange={e => setSectionFilter(e.target.value ? Number(e.target.value) : null)}
+            aria-label="Ders"
+          >
+            <option value="">Tüm dersler</option>
+            {sectionInfos.filter(i => sectionStats.has(i.section.id)).map(i => {
+              const st = sectionStats.get(i.section.id)!;
+              return <option key={i.section.id} value={i.section.id}>{i.section.name} ({st.done}/{st.total})</option>;
+            })}
+          </select>
+        </div>
 
-      {/* ── Kazanım Seçici Modal ──────────────────────────────────────── */}
-      {pickerOpen && (
-        <OutcomePickerModal
-          section={pickerSection}
-          search={pickerSearch}
-          onSearch={setPickerSearch}
-          onSelect={o => handleSetOutcome(pickerRowIdx, o)}
-          onClose={() => setPickerOpen(false)}
-          currentOutcomeId={rows[pickerRowIdx]?.outcome_id ?? null}
-          currentSubOutcomeId={rows[pickerRowIdx]?.sub_outcome_id ?? null}
-          questionNumber={rows[pickerRowIdx]?.question_number ?? 0}
+        {shownRows.length === 0 ? (
+          <p className={k.blank}>{filter === 'missing' ? 'Eksik kazanım yok.' : 'Bu süzgece uyan soru yok.'}</p>
+        ) : shownRows.map((row, i) => {
+          const prev = shownRows[i - 1];
+          const info = infoById.get(row.section_id);
+          const st = sectionStats.get(row.section_id);
+          return (
+            <div key={row.item_id}>
+              {(!prev || prev.section_id !== row.section_id) && (
+                <div className={k.section}>
+                  <b>{info?.section.name ?? 'Bölüm'}</b>
+                  {optionalIds.has(row.section_id) && !/seçmeli/i.test(info?.section.name ?? '') && (
+                    <em className={k.tag}>Seçmeli</em>
+                  )}
+                  {info?.subject && norm(info.subject.display_name || info.subject.name) !== norm(info.section.name) && (
+                    <small>{info.subject.display_name || info.subject.name}</small>
+                  )}
+                  {st && <span className={st.done === st.total ? k.sectionDone : ''}>{st.done}/{st.total}</span>}
+                  <button type="button" className={k.linkBtn} onClick={() => setPasteScope(row.section_id)} disabled={busy}>
+                    Yapıştır
+                  </button>
+                </div>
+              )}
+              <Row
+                row={row}
+                canPick={!!info?.subject}
+                busy={busy}
+                onPick={() => setPickerItemId(row.item_id)}
+                onClear={() => assign(row.item_id, null)}
+                onAccept={() => acceptSuggestions([row.item_id])}
+              />
+            </div>
+          );
+        })}
+      </section>
+
+      {pickerRow && (
+        <OutcomePicker
+          row={pickerRow}
+          info={infoById.get(pickerRow.section_id) ?? null}
+          onSelect={o => assign(pickerRow.item_id, o)}
+          onClear={pickerRow.state === 'none' ? null : () => assign(pickerRow.item_id, null)}
+          onClose={() => setPickerItemId(null)}
         />
       )}
 
-      {/* ── Toplu Yapıştır Modal ──────────────────────────────────────── */}
-      {bulkOpen && (
-        <div className={s.outcomeModal} onClick={() => setBulkOpen(false)}>
-          <div
-            className={s.outcomeModalContent}
-            onClick={e => e.stopPropagation()}
-            style={{ maxWidth: 600 }}
-          >
-            <div className={s.outcomeModalHeader}>
-              <h3>📋 Toplu Kazanım Yapıştır</h3>
-              <button
-                onClick={() => setBulkOpen(false)}
-                style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: '0 4px', color: 'var(--text-secondary)' }}
-              >
-                ✕
-              </button>
-            </div>
-            <div className={s.outcomeModalBody}>
-              <div className={s.formGroup} style={{ marginBottom: 14 }}>
-                <label>Kapsam</label>
-                <select
-                  value={bulkSectionId ?? ''}
-                  onChange={e => setBulkSectionId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
-                  style={{
-                    padding: '9px 12px', fontSize: 13, borderRadius: 8,
-                    border: '1px solid var(--border)', width: '100%',
-                  }}
-                >
-                  <option value="all">Tüm Sınav — soru sırasına göre dağıt ({rows.length} soru)</option>
-                  {sectionGroups.map(sg => (
-                    <option key={sg.section.id} value={sg.section.id}>
-                      {sg.section.name} ({rows.filter(r => r.section_id === sg.section.id).length} soru)
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {bulkSectionId === 'all' && (
-                <div style={{
-                  padding: '10px 12px', borderRadius: 8, background: '#eff6ff',
-                  color: '#1e40af', fontSize: 12, marginBottom: 12, lineHeight: 1.55,
-                }}>
-                  İlk satır 1. soruya gider. Bölüm aralıklarına göre otomatik dağılır
-                  {sectionGroups.map(sg => (
-                    <div key={sg.section.id}>
-                      • Soru {sg.section.question_start}–{sg.section.question_end}: {sg.section.name}
-                      {sg.subject ? ` → ${sg.subject.name}` : ' (ders bağlı değil)'}
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <p style={{ fontSize: 12, color: 'var(--text-secondary)', margin: '0 0 10px' }}>
-                Her satıra bir kazanım kodu veya açıklaması yapıştırın. Soru numarası sırasıyla eşleştirilecektir.
-              </p>
-
-              <div className={s.akFormatHelp}>
-                <div className={s.akFormatCard} style={{ flex: '1 1 auto' }}>
-                  <strong>📋 Kazanım Kodu veya Açıklaması</strong>
-                  <code style={{ whiteSpace: 'pre-wrap', fontSize: 11 }}>
-                    {'M.6.1.1.1\nM.6.1.1.2\nDoğal sayılarla dört işlem yapar\nM.6.1.2.3'}
-                  </code>
-                </div>
-              </div>
-
-              <textarea
-                className={s.akTextarea}
-                value={bulkText}
-                onChange={e => setBulkText(e.target.value)}
-                placeholder={'Kazanımları buraya yapıştırın…\nHer satıra bir kazanım kodu veya açıklaması'}
-                rows={8}
-                autoFocus
-              />
-
-              {bulkSectionId && bulkSectionId !== 'all' && (() => {
-                const ssInfo = subSections.find(ss => ss.section.id === bulkSectionId);
-                if (!ssInfo?.subject) return (
-                  <div style={{ padding: '8px 12px', borderRadius: 8, background: '#fef2f2', color: '#991b1b', fontSize: 12, marginTop: 8 }}>
-                    ⚠️ Bu bölüme henüz müfredat dersi bağlanmamış. Önce ders bağlayın.
-                  </div>
-                );
-                return (
-                  <div style={{ padding: '8px 12px', borderRadius: 8, background: '#f0fdf4', color: '#166534', fontSize: 12, marginTop: 8 }}>
-                    🎯 {ssInfo.subject.name} — {ssInfo.outcomes.length} kazanım mevcut
-                  </div>
-                );
-              })()}
-
-              <label
-                className={s.checkRow}
-                style={{ marginTop: 10, fontSize: 12 }}
-                title="Eşleşmeyen satırlar için yalnız bu dersin müfredatına yeni kazanım açılır. Başka dersin metni yazılmaz."
-              >
-                <input
-                  type="checkbox"
-                  checked={bulkCreateMissing}
-                  onChange={e => setBulkCreateMissing(e.target.checked)}
-                />
-                Eşleşmeyenleri müfredata yeni kazanım olarak ekle
-              </label>
-
-              {bulkProgress && (
-                <div className={s.bulkProgressWrap}>
-                  <div className={s.bulkProgressMeta}>
-                    <span>{bulkProgress.label}</span>
-                    <span>%{bulkProgress.pct}</span>
-                  </div>
-                  <div className={s.bulkProgressTrack}>
-                    <div className={s.bulkProgressFill} style={{ width: `${bulkProgress.pct}%` }} />
-                  </div>
-                </div>
-              )}
-
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
-                <button className="btn-modern btn-secondary" onClick={() => setBulkOpen(false)}
-                  style={{ padding: '8px 18px', fontSize: 13 }} disabled={saving}>
-                  İptal
-                </button>
-                <button
-                  className="btn-modern btn-primary"
-                  onClick={handleBulkPaste}
-                  disabled={saving || !bulkText.trim()}
-                  style={{ padding: '8px 18px', fontSize: 13 }}
-                >
-                  {saving ? '⏳ Yükleniyor…' : '🎯 Eşleştir ve Kaydet'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+      {pasteScope !== null && (
+        <PasteModal
+          scope={pasteScope}
+          rows={rows}
+          sectionInfos={sectionInfos}
+          onScope={setPasteScope}
+          onClose={() => setPasteScope(null)}
+          onDone={async text => {
+            setPasteScope(null);
+            await fetchData();
+            setMsg(text);
+          }}
+          examId={exam.id}
+          answerKeyId={primary.id}
+        />
       )}
     </div>
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Kazanım Seçici Modal                                                     */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+/* ── Satır ───────────────────────────────────────────────────────────────── */
 
-function OutcomePickerModal({
-  section, search, onSearch, onSelect, onClose, currentOutcomeId, currentSubOutcomeId, questionNumber,
-}: {
-  section: SubSectionInfo | null;
-  search: string;
-  onSearch: (s: string) => void;
-  onSelect: (o: OutcomeItem) => void;
-  onClose: () => void;
-  currentOutcomeId: number | null;
-  currentSubOutcomeId: number | null;
-  questionNumber: number;
+function Row({ row, canPick, busy, onPick, onClear, onAccept }: {
+  row: OutcomeRow;
+  canPick: boolean;
+  busy: boolean;
+  onPick: () => void;
+  onClear: () => void;
+  onAccept: () => void;
 }) {
-  const topics = section?.topics ?? [];
-  const filteredTopics = filterTopicsByQuery(topics, search).filter(t => (t.outcomes ?? []).length > 0);
+  const answer = row.is_cancelled || row.correct_answer === 'INVALID'
+    ? 'İptal'
+    : row.correct_answer === 'EMPTY' ? 'Boş' : row.correct_answer || '–';
+  const differs = importedDiffers(row);
+  const hasOutcome = row.state === 'linked' || row.state === 'topic' || row.state === 'suggested';
 
   return (
-    <div className={s.outcomeModal} onClick={onClose}>
-      <div className={s.outcomeModalContent} onClick={e => e.stopPropagation()}>
-        <div className={s.outcomeModalHeader}>
-          <h3>
-            🎯 Kazanım Seç
-            <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text-secondary)', marginLeft: 8 }}>
-              Soru {questionNumber}
-              {section?.section.name && ` · ${section.section.name}`}
+    <div className={k.q}>
+      <span className={DONE.includes(row.state) ? k.num : k.numMissing}>{row.question_number}</span>
+      <span className={answer.length > 1 ? k.ansWide : k.ans}>{answer}</span>
+
+      <button type="button" className={k.cell} onClick={onPick} disabled={!canPick} title={row.outcome_text || row.imported}>
+        {hasOutcome ? (
+          <>
+            <span className={k.line}>
+              <b>{row.outcome_code}</b>
+              <span>{row.outcome_text}</span>
             </span>
-          </h3>
-          <button
-            onClick={onClose}
-            style={{ background: 'none', border: 'none', fontSize: 18, cursor: 'pointer', padding: '0 4px', color: 'var(--text-secondary)' }}
-          >
-            ✕
-          </button>
+            <small className={k.meta}>
+              {row.state === 'topic' && <em className={k.tag}>Konu</em>}
+              {row.state === 'suggested' && <em className={k.tagSuggest}>Öneri · kaydedilmedi</em>}
+              {row.state !== 'topic' && row.topic_name && <span>{row.topic_name}</span>}
+              {differs && <span className={k.warnText}>Girilen: {row.imported}</span>}
+            </small>
+          </>
+        ) : row.state === 'missed' ? (
+          <span className={k.missed}>Eşleşmedi: <span>{row.imported}</span></span>
+        ) : (
+          <span className={k.add}>{canPick ? '+ Kazanım seç' : 'Ders bağlı değil'}</span>
+        )}
+      </button>
+
+      <div className={k.rowActions}>
+        {row.state === 'suggested' && (
+          <button type="button" className={k.accept} onClick={onAccept} disabled={busy}>Kaydet</button>
+        )}
+        {(row.state === 'linked' || row.state === 'topic' || row.state === 'missed') && (
+          <button type="button" className={k.x} onClick={onClear} aria-label={`${row.question_number}. sorunun kazanımını kaldır`}>×</button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── Toplu yapıştır ──────────────────────────────────────────────────────── */
+
+function PasteModal({ scope, rows, sectionInfos, onScope, onClose, onDone, examId, answerKeyId }: {
+  scope: number | 'all';
+  rows: OutcomeRow[];
+  sectionInfos: SectionInfo[];
+  onScope: (s: number | 'all') => void;
+  onClose: () => void;
+  onDone: (msg: string) => Promise<void>;
+  examId: number;
+  answerKeyId: number;
+}) {
+  const [text, setText] = useState('');
+  const [createMissing, setCreateMissing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !saving) onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose, saving]);
+
+  // Satırlar soru numarasına göre yerleşir: anahtarda eksik soru varsa sonraki satırlar kaymaz.
+  const targets = useMemo(() => {
+    const infos = scope === 'all' ? sectionInfos : sectionInfos.filter(i => i.section.id === scope);
+    const out: number[] = [];
+    for (const i of infos) {
+      for (let q = i.section.question_start; q <= i.section.question_end; q++) out.push(q);
+    }
+    return out;
+  }, [scope, sectionInfos]);
+
+  const lines = useMemo(() => {
+    const ls = text.split(/\r?\n/).map(l => l.trim());
+    while (ls.length && !ls[ls.length - 1]) ls.pop();
+    return ls;
+  }, [text]);
+  const filled = lines.filter(Boolean).length;
+  const extra = Math.max(0, lines.length - targets.length);
+  const lastQuestion = sectionInfos.reduce((m, i) => Math.max(m, i.section.question_end), 0);
+  const scopeInfo = scope === 'all' ? null : sectionInfos.find(i => i.section.id === scope) ?? null;
+  const noSubject = scopeInfo ? !scopeInfo.subject : false;
+
+  const submit = async () => {
+    const byQuestion = new Map<number, string>();
+    targets.forEach((q, i) => { if (lines[i]) byQuestion.set(q, lines[i]); });
+    const aligned = rows.map(r => byQuestion.get(r.question_number) ?? '');
+    const notInKey = [...byQuestion.keys()].filter(q => !rows.some(r => r.question_number === q)).length;
+    setSaving(true);
+    setError('');
+    try {
+      const res = await answerKeyApi.bulkAssignOutcomes(examId, answerKeyId, aligned, createMissing);
+      const sent = aligned.filter(Boolean).length;
+      const unmatched = Math.max(0, sent - res.matched);
+      const notes = [
+        res.created ? `${res.created} yeni kazanım eklendi` : '',
+        unmatched ? `${unmatched} satır eşleşmedi` : '',
+        extra ? `${extra} satır fazla` : '',
+        notInKey ? `${notInKey} soru anahtarda yok` : '',
+        res.foreign_subject ? `${res.foreign_subject} satır başka dersin kazanımı, yazılmadı` : '',
+      ].filter(Boolean);
+      await onDone(notes.length
+        ? `⚠️ ${res.matched} soruya kazanım bağlandı · ${notes.join(' · ')}.`
+        : `✅ ${res.matched} soruya kazanım bağlandı.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Eşleştirme yapılamadı.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className={k.modal} onClick={() => !saving && onClose()}>
+      <div className={k.sheet} role="dialog" aria-modal="true" aria-label="Toplu kazanım yapıştır" onClick={e => e.stopPropagation()}>
+        <header className={k.sheetHead}>
+          <h3>Kazanımları yapıştır</h3>
+          <button type="button" className={k.x} onClick={onClose} disabled={saving} aria-label="Kapat">×</button>
+        </header>
+        <div className={k.sheetBody}>
+          <label className={k.field}>
+            <span>Kapsam</span>
+            <select value={scope} onChange={e => onScope(e.target.value === 'all' ? 'all' : Number(e.target.value))} disabled={saving}>
+              <option value="all">Tüm sınav · 1–{lastQuestion}</option>
+              {sectionInfos.map(i => (
+                <option key={i.section.id} value={i.section.id}>
+                  {i.section.name} · {i.section.question_start}–{i.section.question_end}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className={k.help}>
+            Her satır bir soru, {targets[0] ?? 1}. sorudan başlar: kazanım kodu (21.5.1) veya açıklaması.
+            Boş satır o soruyu atlar, mevcut bağı değiştirmez.
+          </p>
+          <textarea
+            className={k.area}
+            value={text}
+            onChange={e => setText(e.target.value)}
+            placeholder={'21.1.1\n21.1.2\n\nDoğal sayılarla dört işlem yapar'}
+            rows={9}
+            autoFocus
+            disabled={saving}
+          />
+          <p className={extra || (filled && lines.length < targets.length) ? k.countWarn : k.countOk}>
+            {filled} kazanım · {targets.length} soru
+            {extra ? ` · ${extra} satır fazla` : ''}
+          </p>
+          {noSubject && <p className={k.errText}>Bu bölüme müfredat dersi bağlı değil; önce ders bağlayın.</p>}
+          {error && <p className={k.errText}>{error}</p>}
+          <label className={k.check} title="Eşleşmeyen satırlar için yalnız bu dersin müfredatına yeni kazanım açılır. Başka dersin metni yazılmaz.">
+            <input type="checkbox" checked={createMissing} onChange={e => setCreateMissing(e.target.checked)} disabled={saving} />
+            Eşleşmeyenleri müfredata yeni kazanım olarak ekle
+          </label>
         </div>
-        <div className={s.outcomeModalBody}>
+        <footer className={k.sheetFoot}>
+          <button type="button" className={k.btn} onClick={onClose} disabled={saving}>Vazgeç</button>
+          <button type="button" className={k.btnPrimary} onClick={submit} disabled={saving || filled === 0 || noSubject}>
+            {saving ? 'Eşleştiriliyor…' : 'Eşleştir ve kaydet'}
+          </button>
+        </footer>
+      </div>
+    </div>
+  );
+}
+
+/* ── Kazanım seçici ──────────────────────────────────────────────────────── */
+
+function OutcomePicker({ row, info, onSelect, onClear, onClose }: {
+  row: OutcomeRow;
+  info: SectionInfo | null;
+  onSelect: (o: OutcomeItem) => void;
+  onClear: (() => void) | null;
+  onClose: () => void;
+}) {
+  const [search, setSearch] = useState('');
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  const topics = filterTopicsByQuery(info?.topics ?? [], search).filter(t => (t.outcomes ?? []).length > 0);
+  const isCurrent = (id: number, subId: number | null) =>
+    row.state === 'linked' && row.outcome_id === id && (row.sub_outcome_id ?? null) === subId;
+
+  return (
+    <div className={k.modal} onClick={onClose}>
+      <div className={k.sheet} role="dialog" aria-modal="true" aria-label="Kazanım seç" onClick={e => e.stopPropagation()}>
+        <header className={k.sheetHead}>
+          <h3>
+            {row.question_number}. soru
+            <small>
+              {info?.section.name}
+              {info?.subject && norm(info.subject.display_name || info.subject.name) !== norm(info.section.name)
+                ? ` · ${info.subject.display_name || info.subject.name}` : ''}
+            </small>
+          </h3>
+          <button type="button" className={k.x} onClick={onClose} aria-label="Kapat">×</button>
+        </header>
+        <div className={k.sheetBody}>
+          {row.imported && row.state !== 'linked' && (
+            <p className={k.help}>Girilen: <b>{row.imported}</b></p>
+          )}
           <input
-            className={s.outcomeSearch}
-            type="text"
-            placeholder="Kazanım kodu veya metin ara…"
+            className={k.search}
+            type="search"
+            placeholder="Kod veya metin ara…"
             value={search}
-            onChange={e => onSearch(e.target.value)}
+            onChange={e => setSearch(e.target.value)}
             autoFocus
           />
-
-          {!section?.subject ? (
-            <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-secondary)' }}>
-              <p>⚠️ Bu bölüme müfredat dersi bağlanmamış.</p>
-              <p style={{ fontSize: 12 }}>Kazanım Yönetimi sayfasından ders bağlayabilirsiniz.</p>
-            </div>
-          ) : filteredTopics.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 30, color: 'var(--text-secondary)' }}>
-              <p>Arama sonucu bulunamadı.</p>
-            </div>
-          ) : (
-            <>
-              {section.subject && (
-                <div style={{
-                  padding: '8px 12px', borderRadius: 8, background: '#eff6ff',
-                  color: '#1e40af', fontSize: 12, marginBottom: 10, fontWeight: 500,
-                }}>
-                  📚 {section.subject.name}
-                </div>
-              )}
-              {filteredTopics.map(topic => (
-                <div key={topic.id} className={s.outcomeGroup}>
-                  <div className={s.outcomeGroupTitle}>📖 {topicDisplayName(topic.name)}</div>
-                  {topic.outcomes.map(o => {
-                    const parentActive = o.id === currentOutcomeId && !currentSubOutcomeId;
-                    return (
-                      <div key={o.id}>
-                        <button
-                          className={`${s.outcomeOption} ${parentActive ? s.otOptionActive : ''}`}
-                          onClick={() => onSelect({ ...o, sub_outcome_id: null })}
-                          style={{ marginLeft: 8 }}
-                        >
-                          <strong>{o.code}</strong>
-                          {o.text}
-                          {parentActive && (
-                            <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--primary)' }}>● Mevcut</span>
-                          )}
-                        </button>
-                        {(o.sub_outcomes ?? []).map(sub => {
-                          const subActive = sub.id === currentSubOutcomeId;
-                          return (
-                            <button
-                              key={sub.id}
-                              className={`${s.outcomeOption} ${subActive ? s.otOptionActive : ''}`}
-                              onClick={() => onSelect({
-                                id: o.id,
-                                code: sub.code,
-                                text: sub.text,
-                                sub_outcome_id: sub.id,
-                              })}
-                              style={{ marginLeft: 24 }}
-                            >
-                              <strong>{sub.code}</strong>
-                              {sub.text}
-                              {subActive && (
-                                <span style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--primary)' }}>● Mevcut</span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    );
-                  })}
+          {!info?.subject ? (
+            <p className={k.blank}>Bu bölüme müfredat dersi bağlı değil.</p>
+          ) : topics.length === 0 ? (
+            <p className={k.blank}>Sonuç yok.</p>
+          ) : topics.map(topic => (
+            <div key={topic.id} className={k.group}>
+              <p className={k.topic}>{topicDisplayName(topic.name)}</p>
+              {topic.outcomes.map(o => (
+                <div key={o.id}>
+                  <button
+                    type="button"
+                    className={isCurrent(o.id, null) ? k.optOn : k.opt}
+                    onClick={() => onSelect({ ...o, sub_outcome_id: null })}
+                  >
+                    <strong>{o.code}</strong>{o.text}
+                  </button>
+                  {(o.sub_outcomes ?? []).map(sub => (
+                    <button
+                      key={sub.id}
+                      type="button"
+                      className={`${isCurrent(o.id, sub.id) ? k.optOn : k.opt} ${k.optSub}`}
+                      onClick={() => onSelect({ id: o.id, code: sub.code, text: sub.text, sub_outcome_id: sub.id })}
+                    >
+                      <strong>{sub.code}</strong>{sub.text}
+                    </button>
+                  ))}
                 </div>
               ))}
-            </>
-          )}
+            </div>
+          ))}
         </div>
+        {onClear && (
+          <footer className={k.sheetFoot}>
+            <button type="button" className={k.btnDanger} onClick={onClear}>
+              {row.state === 'missed' ? 'Girilen kodu sil' : 'Kazanımı kaldır'}
+            </button>
+          </footer>
+        )}
       </div>
     </div>
   );

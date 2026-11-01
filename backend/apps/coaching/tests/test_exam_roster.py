@@ -6,7 +6,7 @@ from django.test import TestCase
 from rest_framework.test import APIClient
 
 from apps.coaching.olcme_degerlendirme.models import (
-    Exam, ExamParticipant, ExamRoom, ExamSessionModel,
+    Exam, ExamAudience, ExamParticipant, ExamRoom, ExamSessionModel,
 )
 from apps.coaching.olcme_degerlendirme.views.roster_views import _hatirlatma_ctx
 from apps.coaching.olcme_degerlendirme.services.exam_roster import (
@@ -285,6 +285,35 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
             name='API Sınav', exam_type='YKS_TYT',
             kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
         )
+
+    def test_missing_lists_audience_gap_and_add_skips_outsiders(self):
+        ExamAudience.objects.create(exam=self.exam, sinif_seviyesi=self.sev12)
+        ExamParticipant.objects.create(exam=self.exam, student=self.in_class)
+        res = self.client.get(
+            f'{EXAMS_URL}{self.exam.id}/participants/missing/',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        ids = {row['student_id'] for row in res.json()['students']}
+        self.assertIn(self.classless_12.id, ids)
+        self.assertNotIn(self.in_class.id, ids)
+        self.assertNotIn(self.outsider.id, ids)
+        added = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/participants/missing/',
+            {'student_ids': [self.classless_12.id, self.outsider.id]},
+            format='json', **self.headers,
+        )
+        self.assertEqual(added.status_code, 200, added.content[:300])
+        self.assertEqual(added.json()['added'], 1)
+        row = ExamParticipant.objects.get(exam=self.exam, student=self.classless_12)
+        self.assertIsNone(row.room_id)
+        self.assertFalse(ExamParticipant.objects.filter(exam=self.exam, student=self.outsider).exists())
+        again = self.client.get(
+            f'{EXAMS_URL}{self.exam.id}/participants/missing/',
+            **self.headers,
+        )
+        left = {item['student_id'] for item in again.json()['students']}
+        self.assertNotIn(self.classless_12.id, left)
 
     def test_preview_class_only(self):
         res = self.client.post(
@@ -965,14 +994,64 @@ class ExamRosterAPITest(RosterFixtureMixin, TestCase):
         self.assertEqual(res.status_code, 200, res.content[:300])
         hit = next(x for x in res.json() if x['id'] == self.in_class.id)
         self.assertTrue(hit['in_other_session'])
+        self.assertIn('profil_foto', hit)
+        self.assertIsInstance(hit['profil_foto'], str)
         self.assertEqual(hit['other_session']['exam_session_id'], sonu.id)
         self.assertEqual(hit['other_session']['seat_no'], 4)
+        self.assertFalse(hit['on_list'])
         same = self.client.get(
             f'{EXAMS_URL}{self.exam.id}/participants/search/',
             {'q': 'Ayşe', 'exam_session_id': sonu.id},
             **self.headers,
         )
-        self.assertNotIn(self.in_class.id, {x['id'] for x in same.json()})
+        listed = next(x for x in same.json() if x['id'] == self.in_class.id)
+        self.assertTrue(listed['on_list'])
+        self.assertEqual(listed['seat_no'], 4)
+        self.assertFalse(listed['in_other_session'])
+
+    def test_search_hides_outside_audience_keeps_listed(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamAudience
+        ExamAudience.objects.create(exam=self.exam, sinif_seviyesi=self.sev12)
+        ExamParticipant.objects.create(exam=self.exam, student=self.other_class)
+        outside = self.client.get(
+            f'{EXAMS_URL}{self.exam.id}/participants/search/',
+            {'q': 'Mert'},
+            **self.headers,
+        )
+        self.assertEqual(outside.status_code, 200, outside.content[:300])
+        self.assertNotIn(self.outsider.id, {row['id'] for row in outside.json()})
+        grade11 = self.client.get(
+            f'{EXAMS_URL}{self.exam.id}/participants/search/',
+            {'q': 'Ali'},
+            **self.headers,
+        )
+        listed = next(row for row in grade11.json() if row['id'] == self.other_class.id)
+        self.assertTrue(listed['on_list'])
+        match = self.client.get(
+            f'{EXAMS_URL}{self.exam.id}/participants/search/',
+            {'q': 'Arda'},
+            **self.headers,
+        )
+        hit = next(row for row in match.json() if row['id'] == self.classless_12.id)
+        self.assertFalse(hit['on_list'])
+        self.assertEqual(hit['sinif_seviyesi'], '12. Sınıf')
+
+    def test_list_flags_inactive_enrollment_not_guest(self):
+        ExamParticipant.objects.create(exam=self.exam, student=self.in_class)
+        ExamParticipant.objects.create(exam=self.exam, student=self.other_class)
+        guest = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Misafir', soyad='Öğrenci', kayit_turu='gunu_birlik',
+        )
+        ExamParticipant.objects.create(exam=self.exam, student=guest)
+        OgrenciKayit.objects.filter(ogrenci=self.other_class).update(aktif_mi=False)
+        res = self.client.get(f'{EXAMS_URL}{self.exam.id}/participants/', **self.headers)
+        self.assertEqual(res.status_code, 200, res.content[:300])
+        body = res.json()
+        rows = body['participants'] if isinstance(body, dict) else body
+        flags = {row['student_id']: row['kayit_pasif'] for row in rows}
+        self.assertFalse(flags[self.in_class.id])
+        self.assertTrue(flags[self.other_class.id])
+        self.assertFalse(flags[guest.id])
 
     def test_add_moves_student_from_other_session(self):
         ici = ExamSessionModel.objects.create(

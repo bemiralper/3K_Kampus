@@ -63,14 +63,25 @@ def _find_chrome() -> str | None:
     return None
 
 
-def render_html_to_pdf(html: str, *, timeout: int = 90, landscape: bool = False, footer_template: str | None = None) -> bytes:
-    """Tam HTML belgesini PDF baytlarına çevirir."""
+def render_html_to_pdf(
+    html: str,
+    *,
+    timeout: int = 90,
+    landscape: bool = False,
+    footer_template: str | None = None,
+    css_page_size: bool = False,
+) -> bytes:
+    """Tam HTML belgesini PDF baytlarına çevirir.
+
+    css_page_size: sayfa boyutu ve kenar boşlukları belgedeki @page kurallarından gelir.
+    """
     _validate_html_for_pdf(html)
 
     playwright_err: RuntimeError | None = None
     try:
         return _render_html_playwright(
             html, timeout_ms=timeout * 1000, landscape=landscape, footer_template=footer_template,
+            css_page_size=css_page_size,
         )
     except RuntimeError as exc:
         playwright_err = exc
@@ -90,6 +101,7 @@ def _render_html_playwright(
     timeout_ms: int = 90000,
     landscape: bool = False,
     footer_template: str | None = None,
+    css_page_size: bool = False,
 ) -> bytes:
     try:
         from playwright.sync_api import sync_playwright
@@ -108,6 +120,9 @@ def _render_html_playwright(
                 'print_background': True,
                 'margin': {'top': '10mm', 'bottom': '16mm', 'left': '8mm', 'right': '8mm'},
             }
+            if css_page_size:
+                pdf_kwargs['prefer_css_page_size'] = True
+                pdf_kwargs['margin'] = {'top': '0', 'bottom': '0', 'left': '0', 'right': '0'}
             if footer_template:
                 pdf_kwargs['display_header_footer'] = True
                 pdf_kwargs['footer_template'] = footer_template

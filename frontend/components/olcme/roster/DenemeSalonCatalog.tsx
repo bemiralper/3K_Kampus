@@ -11,11 +11,13 @@ function SalonRow({
   onSaved,
   onDeleted,
   onError,
+  onNotice,
 }: {
   salon: DenemeSalon;
   onSaved: (row: DenemeSalon) => void;
   onDeleted: (id: number) => void;
   onError: (message: string) => void;
+  onNotice?: (message: string) => void;
 }) {
   const [name, setName] = useState(salon.name);
   const [capacity, setCapacity] = useState(String(salon.capacity));
@@ -38,6 +40,7 @@ function SalonRow({
       );
       setPassive(formatInactiveSeats(saved.inactive_seats));
       onSaved(saved);
+      onNotice?.(`${nextName} güncellendi.`);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Salon güncellenemedi.');
     } finally {
@@ -51,6 +54,7 @@ function SalonRow({
     try {
       await examApi.deleteDenemeSalon(salon.id);
       onDeleted(salon.id);
+      onNotice?.(`${salon.name} listeden silindi.`);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Salon silinemedi.');
     } finally {
@@ -93,9 +97,11 @@ function SalonRow({
 function NewSalon({
   onCreated,
   onError,
+  onNotice,
 }: {
   onCreated: (row: DenemeSalon) => void;
   onError: (message: string) => void;
+  onNotice?: (message: string) => void;
 }) {
   const [name, setName] = useState('');
   const [capacity, setCapacity] = useState('130');
@@ -119,6 +125,7 @@ function NewSalon({
       setCapacity('130');
       setPassive('');
       onCreated(saved);
+      onNotice?.(`${nextName} salon listesine eklendi.`);
     } catch (err) {
       onError(err instanceof Error ? err.message : 'Salon kaydedilemedi.');
     } finally {
@@ -159,10 +166,12 @@ export default function DenemeSalonCatalog({
   salonlar,
   onChange,
   onError,
+  onNotice,
 }: {
   salonlar: DenemeSalon[];
   onChange: (next: DenemeSalon[]) => void;
   onError: (message: string) => void;
+  onNotice?: (message: string) => void;
 }) {
   const sortIn = (row: DenemeSalon) => onChange(
     [...salonlar.filter(s => s.id !== row.id), row].sort((a, b) => a.name.localeCompare(b.name, 'tr')),
@@ -172,12 +181,13 @@ export default function DenemeSalonCatalog({
       <p className={r.roomHint}>
         Salonları sınavdan önce tanımlayın. Aynı salon, günü veya saati çakışmayan sınav ve oturumlarda tekrar kullanılır. Sil, yalnızca bu listeyi temizler; eski sınavlardaki salon durur.
       </p>
-      <NewSalon onCreated={sortIn} onError={onError} />
+      <NewSalon onCreated={sortIn} onError={onError} onNotice={onNotice} />
       {salonlar.map(salon => (
         <SalonRow
           key={salon.id}
           salon={salon}
           onError={onError}
+          onNotice={onNotice}
           onSaved={sortIn}
           onDeleted={id => onChange(salonlar.filter(s => s.id !== id))}
         />

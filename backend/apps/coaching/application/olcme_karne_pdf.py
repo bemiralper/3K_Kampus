@@ -14,6 +14,7 @@ iç ayrıntıdır.
 from __future__ import annotations
 
 import io
+import logging
 import math
 import os
 import re
@@ -22,6 +23,8 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings
+
+logger = logging.getLogger(__name__)
 
 # ── Kurumsal palet ─────────────────────────────────────────────────────────
 # Marka mavisi frontend ile ortak (#0262A7); geri kalanı nötr slate tonları.
@@ -2482,6 +2485,17 @@ def render_karne_pdf(data: dict) -> bytes:
 
 
 def render_karne_pdf_many(payloads: list[dict]) -> bytes:
+    if payloads and getattr(settings, 'OLCME_KARNE_HTML', False):
+        try:
+            from apps.coaching.application.olcme_karne_html import render_karne_pdf_html
+
+            return render_karne_pdf_html(payloads)
+        except Exception:
+            logger.exception('HTML karne PDF üretilemedi; eski karneye dönülüyor.')
+    return _render_reportlab_pdf_many(payloads)
+
+
+def _render_reportlab_pdf_many(payloads: list[dict]) -> bytes:
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.platypus import PageBreak, SimpleDocTemplate

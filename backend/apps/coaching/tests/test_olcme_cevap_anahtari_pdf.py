@@ -4,14 +4,20 @@ from django.test import TestCase
 from datetime import date
 
 from apps.coaching.application.olcme_cevap_anahtari_pdf import (
+    _collect_keys,
+    _copy_sequence,
     _group_items,
+    _key_payloads,
     booklet_header_text,
     cell_text,
     cevap_anahtari_filename,
+    copies_covering_each,
     exam_date_label,
     padded_section_rows,
     parse_copies,
     render_cevap_anahtari_pdf,
+    render_shared_cevap_anahtari_pdf,
+    resolve_download_copies,
     subject_fill,
 )
 from apps.coaching.olcme_degerlendirme.models import (
@@ -219,6 +225,52 @@ class CevapAnahtariPdfTest(TestCase):
         six = render_cevap_anahtari_pdf(self.exam, copies_per_page=6)
         self.assertTrue(one.startswith(b'%PDF'))
         self.assertNotEqual(one, six)
+
+    def test_two_copies_are_one_a_and_one_b(self):
+        key_a = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
+        key_b = AnswerKey.objects.create(exam=self.exam, booklet='B', is_primary=False)
+        for n in range(1, 4):
+            AnswerKeyItem.objects.create(
+                answer_key=key_a, section=self.section, question_number=n, correct_answer='A',
+            )
+            AnswerKeyItem.objects.create(
+                answer_key=key_b, section=self.section, question_number=n, correct_answer='B',
+            )
+        payloads = _key_payloads(self.exam, _collect_keys(self.exam))
+        letters = [(key.booklet or '').upper() for key, _items in _copy_sequence(payloads, 2)]
+        self.assertEqual(letters, ['A', 'B'])
+        self.assertEqual(copies_covering_each(2), 2)
+        self.assertEqual(copies_covering_each(1), 1)
+        self.assertEqual(resolve_download_copies(1, booklet_count=2), 2)
+        self.assertEqual(resolve_download_copies(2, booklet_count=2), 2)
+        self.assertEqual(resolve_download_copies(4, booklet_count=2), 4)
+        self.assertEqual(resolve_download_copies(1, booklet_count=2, filtered=True), 1)
+        self.assertEqual(resolve_download_copies(1, booklet_count=1), 2)
+        shared = render_shared_cevap_anahtari_pdf(self.exam)
+        single = render_cevap_anahtari_pdf(self.exam, copies_per_page=1)
+        self.assertTrue(shared.startswith(b'%PDF'))
+        self.assertNotEqual(shared, single)
+
+    def test_message_pdf_sends_one_a_and_one_b(self):
+        from unittest.mock import patch
+
+        from apps.coaching.application.olcme_publish import _load_answer_key_pdf
+
+        key_a = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
+        key_b = AnswerKey.objects.create(exam=self.exam, booklet='B', is_primary=False)
+        AnswerKeyItem.objects.create(
+            answer_key=key_a, section=self.section, question_number=1, correct_answer='A',
+        )
+        AnswerKeyItem.objects.create(
+            answer_key=key_b, section=self.section, question_number=1, correct_answer='C',
+        )
+        with patch(
+            'apps.coaching.application.olcme_cevap_anahtari_pdf.render_cevap_anahtari_pdf',
+            return_value=b'%PDF-1.4',
+        ) as render:
+            data, _name = _load_answer_key_pdf(self.exam)
+        self.assertEqual(data, b'%PDF-1.4')
+        self.assertEqual(render.call_args.kwargs['copies_per_page'], 2)
 
     def test_six_tables_per_page(self):
         key = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)

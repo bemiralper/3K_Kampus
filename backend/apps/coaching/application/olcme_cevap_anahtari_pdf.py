@@ -48,7 +48,7 @@ def cevap_anahtari_filename(exam) -> str:
 
 
 def _copy_sequence(payloads, copies: int) -> list:
-    """Sayfadaki kart sayısı seçilen adettir. 1 adet tek kart basar, 6 slota tamamlanmaz."""
+    """Sayfadaki kart sayısı seçilen adettir. Sıra kitapçık sırasıdır: 2 adet A sonra B."""
     if not payloads:
         return []
     count = copies if copies in ALLOWED_COPIES else 1
@@ -61,6 +61,26 @@ def parse_copies(value) -> int:
     except (TypeError, ValueError):
         return 1
     return n if n in ALLOWED_COPIES else 1
+
+
+def copies_covering_each(booklet_count: int) -> int:
+    """Her kitapçıktan bir kart sığacak en küçük adet. Tek kitapçık 1 kalır."""
+    count = max(int(booklet_count or 0), 0)
+    if count <= 1:
+        return 1
+    if count <= 2:
+        return 2
+    if count <= 4:
+        return 4
+    return 6
+
+
+def resolve_download_copies(requested: int, *, booklet_count: int = 1, filtered: bool = False) -> int:
+    """Tümü indirilirken en az iki kart basılır; A ve B varsa ikisi de girer."""
+    copies = requested if requested in ALLOWED_COPIES else 1
+    if filtered or copies > 1:
+        return copies
+    return max(2, copies_covering_each(booklet_count))
 
 
 def _choice_label(item) -> str:
@@ -681,6 +701,17 @@ def _gapped_grid(cells: list, cols: int, rows: int, tile_w: float, tile_h: float
         ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
     ]))
     return outer
+
+
+def answer_key_card_count(exam, booklets=None) -> int:
+    keys = _collect_keys(exam, booklets)
+    return len(_key_payloads(exam, keys))
+
+
+def render_shared_cevap_anahtari_pdf(exam) -> bytes:
+    """Mesaj eki: her kitapçıktan bir tane, tek PDF. A ve B varsa yan yana."""
+    copies = copies_covering_each(answer_key_card_count(exam))
+    return render_cevap_anahtari_pdf(exam, copies_per_page=copies)
 
 
 def render_cevap_anahtari_pdf(exam, *, copies_per_page: int = 1, booklets=None) -> bytes:

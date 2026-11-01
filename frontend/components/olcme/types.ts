@@ -258,6 +258,7 @@ export interface ExamParticipantRow {
   desk_no: string;
   seat_locked?: boolean;
   seat_stale?: boolean;
+  kayit_pasif?: boolean;
   notified_at?: string | null;
   notified_seat_no?: number | null;
   attendance: '' | 'present' | 'absent';
@@ -271,6 +272,12 @@ export interface ParticipantSearchHit {
   full_name: string;
   ad: string;
   soyad: string;
+  profil_foto?: string | null;
+  sinif_seviyesi?: string;
+  on_list?: boolean;
+  participant_id?: number | null;
+  room_name?: string;
+  seat_no?: number | null;
   in_other_session?: boolean;
   other_session_count?: number;
   other_session?: {
@@ -949,7 +956,10 @@ export interface QuestionAnalysis {
   correct_pct: number;
   wrong_pct: number;
   empty_pct: number;
-  difficulty: 'Kolay' | 'Orta' | 'Zor';
+  /** Bu soruya sayılan öğrenci; seçmeli bölümde yalnız çözenler. */
+  answered_count?: number;
+  /** Çözen yoksa boş. */
+  difficulty: 'Kolay' | 'Orta' | 'Zor' | '';
   discrimination: number;
   choices: Record<string, number>;
   top_distractor: string | null;

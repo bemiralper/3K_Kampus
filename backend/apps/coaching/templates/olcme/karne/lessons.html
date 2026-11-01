@@ -1,0 +1,26 @@
+<section class="lessons{% if flat %} flat{% endif %}">
+  {% for l in lessons %}
+  <div class="card lesson{% if not l.subs %} solo{% endif %}">
+    <div class="lh">
+      {{ l.ring }}
+      <div>
+        <div class="ln">{{ l.name }}</div>
+        <div class="lv"><b>{{ l.net }}</b> net <small>/ {{ l.soru }} soru</small></div>
+        <div class="cmp {% if l.diff.pos %}pos{% else %}neg{% endif %}">Kurum ort. {{ l.diff.text }}</div>
+        {% if l.out %}<div class="out">Puana girmez</div>{% endif %}
+      </div>
+    </div>
+    {% if l.subs %}
+    <div class="subs">
+      {% for sub in l.subs %}
+      <div class="sub">
+        <span class="sn">{{ sub.name }}</span>
+        <span class="bar"><i class="{{ sub.tone }}" style="width:{{ sub.w }}%"></i><em style="left:{{ sub.kw }}%"></em></span>
+        <span class="sv">{{ sub.net }}<small>/{{ sub.soru }}</small></span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</section>

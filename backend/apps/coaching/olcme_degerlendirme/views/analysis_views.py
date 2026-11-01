@@ -15,7 +15,7 @@ import math
 import os
 from collections import defaultdict
 
-from django.db.models import Max, Q
+from django.db.models import F, Max, Q
 
 from rest_framework.decorators import api_view, permission_classes, authentication_classes, renderer_classes
 from rest_framework.permissions import IsAuthenticated
@@ -532,6 +532,55 @@ def _get_exam_or_404(request, exam_pk):
     realign_exam_if_needed(exam)
     realign_section_bindings(exam)
     return exam, None
+
+
+def _earlier_exams(exam):
+    """Aynı tür, kurum ve şubede bu sınavdan önce yapılmış sonuçlu sınavlar; yeniden eskiye.
+
+    Sıra sınav tarihidir, kayıt sırası değil; aynı gün yapılanlarda kayıt zamanı.
+    """
+    qs = (
+        Exam.objects
+        .filter(
+            exam_type=exam.exam_type,
+            kurum=exam.kurum,
+            is_active=True,
+            status__in=['RESULTS_UPLOADED', 'COMPLETED'],
+        )
+        .exclude(pk=exam.pk)
+    )
+    if exam.sube_id:
+        qs = qs.filter(sube_id=exam.sube_id)
+    if exam.exam_date:
+        qs = qs.filter(
+            Q(exam_date__lt=exam.exam_date)
+            | Q(exam_date=exam.exam_date, created_at__lt=exam.created_at)
+        )
+    else:
+        qs = qs.filter(exam_date__isnull=True, created_at__lt=exam.created_at)
+    return qs.order_by(F('exam_date').desc(nulls_last=True), '-created_at')
+
+
+def _previous_exam_answers(exam, *, scan: int = 5):
+    """Sonucu olan en yakın önceki sınav ve cevapları; yoksa (None, None)."""
+    for prev in _earlier_exams(exam)[:scan]:
+        prev_answers = _get_session_answers(prev)
+        if prev_answers.exists():
+            return prev, prev_answers
+    return None, None
+
+
+def _optional_section_ids(sections) -> set[int]:
+    """Ana testin soru aralığı dışında kalan alt bölüm (ör. TYT Felsefe seçmelisi)."""
+    by_id = {sec.id: sec for sec in sections}
+    ids = set()
+    for sec in sections:
+        if not sec.is_sub_section or not sec.parent_section_id:
+            continue
+        parent = by_id.get(sec.parent_section_id)
+        if parent and (sec.question_start > parent.question_end or sec.question_end < parent.question_start):
+            ids.add(sec.id)
+    return ids
 
 
 def _latest_unmatched_answer_ids(exam) -> list[int]:
@@ -1131,30 +1180,18 @@ def exam_analysis_summary(request, exam_pk):
     success_pct = round((success_count / total_students) * 100, 1) if total_students else 0
 
     # Önceki sınava göre değişim
-    prev_exam = (
-        Exam.objects
-        .filter(
-            exam_type=exam.exam_type,
-            kurum=exam.kurum,
-            pk__lt=exam.pk,
-            status__in=['RESULTS_UPLOADED', 'COMPLETED'],
-        )
-        .order_by('-pk')
-        .first()
-    )
     trend = None
+    prev_exam, prev_answers = _previous_exam_answers(exam)
     if prev_exam:
-        prev_answers = _get_session_answers(prev_exam)
-        if prev_answers.exists():
-            prev_nets = [_safe_float(a.total_net) for a in prev_answers]
-            prev_avg = sum(prev_nets) / len(prev_nets) if prev_nets else 0
-            diff = round(avg_net - prev_avg, 2)
-            trend = {
-                'prev_exam_name': prev_exam.name,
-                'prev_avg_net': round(prev_avg, 2),
-                'diff': diff,
-                'direction': 'up' if diff > 0 else 'down' if diff < 0 else 'same',
-            }
+        prev_nets = [_safe_float(a.total_net) for a in prev_answers]
+        prev_avg = sum(prev_nets) / len(prev_nets) if prev_nets else 0
+        diff = round(avg_net - prev_avg, 2)
+        trend = {
+            'prev_exam_name': prev_exam.name,
+            'prev_avg_net': round(prev_avg, 2),
+            'diff': diff,
+            'direction': 'up' if diff > 0 else 'down' if diff < 0 else 'same',
+        }
 
     # Oturum listesi
     sessions = ExamSession.objects.filter(exam=exam, status='COMPLETED').values(
@@ -2367,6 +2404,28 @@ def exam_analysis_rankings(request, exam_pk):
 #  8️⃣ ZORLUK ANALİZİ (Madde Analizi)
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+def _booklet_lookup(items):
+    """A satırı → öğrencinin comparison anahtarı.
+
+    comparison öğrencinin kendi kitapçık numarasıyla tutulur. B öğrencisi için
+    A sorusunun B karşılığı okunur; eşlemesi olmayan satırda B öğrencisi o
+    soruya sayılmaz. Hiç B eşlemesi yoksa herkes A numarasıyla okunur.
+    """
+    b_keys = {}
+    for item in items:
+        b_global = item.booklet_b_global()
+        if b_global:
+            b_keys[item.question_number] = str(b_global)
+    use_b = bool(b_keys)
+
+    def lookup(item, booklet):
+        if use_b and (booklet or '').upper() == 'B':
+            return b_keys.get(item.question_number)
+        return str(item.question_number)
+
+    return lookup
+
+
 @api_view(['GET'])
 @authentication_classes([CsrfExemptSessionAuthentication])
 @permission_classes([IsAuthenticated])
@@ -2397,7 +2456,12 @@ def exam_analysis_questions(request, exam_pk):
     # Doğru cevabı girilmemiş satırlar soru analizine girmez.
     ak_items = AnswerKeyItem.objects.filter(answer_key=answer_key).exclude(
         correct_answer='',
-    ).select_related('section', 'outcome', 'sub_outcome')
+    ).select_related('section', 'section__parent_section', 'outcome', 'sub_outcome')
+    lookup = _booklet_lookup(
+        AnswerKeyItem.objects.filter(answer_key=answer_key).select_related(
+            'section', 'section__parent_section',
+        )
+    )
     if section_id:
         try:
             leaf = exam.sections.get(pk=int(section_id))
@@ -2416,6 +2480,7 @@ def exam_analysis_questions(request, exam_pk):
         q_no = str(item.question_number)
         leaf = _leaf_section_for_question(exam, item.question_number)
         question_stats[q_no] = {
+            'item': item,
             'question_number': item.question_number,
             'correct_answer': item.correct_answer,
             'is_cancelled': item.is_cancelled,
@@ -2428,21 +2493,42 @@ def exam_analysis_questions(request, exam_pk):
             'correct_count': 0,
             'wrong_count': 0,
             'empty_count': 0,
+            'answered': 0,
         }
 
     # Toplam net bazında sıralama (üst %27 - alt %27 için)
-    sorted_answers = sorted(answers, key=lambda a: _safe_float(a.total_net), reverse=True)
+    answer_list = list(answers)
+    sorted_answers = sorted(answer_list, key=lambda a: _safe_float(a.total_net), reverse=True)
     top_27_count = max(1, int(total_students * 0.27))
     top_group = sorted_answers[:top_27_count]
     bottom_group = sorted_answers[-top_27_count:]
 
     top_correct = defaultdict(int)
     bottom_correct = defaultdict(int)
+    top_seen = defaultdict(int)
+    bottom_seen = defaultdict(int)
 
-    for a in answers:
+    # Seçmeli bölüm (ör. Felsefe) yalnız onu çözenlerden okunur; çözmeyen herkes
+    # boş sayılırsa soru "zor" görünür.
+    optional_ids = _optional_section_ids(list(exam.sections.all()))
+    attempted = {
+        a.id: {ss.section_id for ss in a.section_scores.all() if ss.correct or ss.wrong}
+        for a in answer_list
+    } if optional_ids else {}
+
+    def counts_for(q_data, a):
+        if q_data['section_id'] in optional_ids and q_data['section_id'] not in attempted[a.id]:
+            return None
+        return lookup(q_data['item'], a.booklet)
+
+    for a in answer_list:
         comp = a.comparison or {}
         for q_no, q_data in question_stats.items():
-            c = comp.get(q_no, {})
+            key = counts_for(q_data, a)
+            if key is None:
+                continue
+            q_data['answered'] += 1
+            c = comp.get(key, {})
             given = c.get('given', '')
             result = c.get('result', 'empty')
 
@@ -2459,32 +2545,35 @@ def exam_analysis_questions(request, exam_pk):
                 q_data['empty_count'] += 1
 
     # Üst-alt grup analizi
-    for a in top_group:
-        comp = a.comparison or {}
-        for q_no in question_stats:
-            c = comp.get(q_no, {})
-            if c.get('result') in ('correct', 'cancelled'):
-                top_correct[q_no] += 1
-
-    for a in bottom_group:
-        comp = a.comparison or {}
-        for q_no in question_stats:
-            c = comp.get(q_no, {})
-            if c.get('result') in ('correct', 'cancelled'):
-                bottom_correct[q_no] += 1
+    for group, correct_map, seen_map in (
+        (top_group, top_correct, top_seen),
+        (bottom_group, bottom_correct, bottom_seen),
+    ):
+        for a in group:
+            comp = a.comparison or {}
+            for q_no, q_data in question_stats.items():
+                key = counts_for(q_data, a)
+                if key is None:
+                    continue
+                seen_map[q_no] += 1
+                if comp.get(key, {}).get('result') in ('correct', 'cancelled'):
+                    correct_map[q_no] += 1
 
     # Sonuçları derle
     questions_result = []
     for q_no, q_data in question_stats.items():
-        correct_pct = round((q_data['correct_count'] / total_students) * 100, 1) if total_students else 0
-        wrong_pct = round((q_data['wrong_count'] / total_students) * 100, 1) if total_students else 0
-        empty_pct = round((q_data['empty_count'] / total_students) * 100, 1) if total_students else 0
+        answered = q_data['answered']
+        correct_pct = round((q_data['correct_count'] / answered) * 100, 1) if answered else 0
+        wrong_pct = round((q_data['wrong_count'] / answered) * 100, 1) if answered else 0
+        empty_pct = round((q_data['empty_count'] / answered) * 100, 1) if answered else 0
 
-        difficulty = BAND_LABEL[band_for_correct_pct(correct_pct)]
+        difficulty = BAND_LABEL[band_for_correct_pct(correct_pct)] if answered else ''
 
         # Ayırt edicilik indeksi: (Üst %27 doğru oranı - Alt %27 doğru oranı)
-        top_pct = (top_correct.get(q_no, 0) / top_27_count) if top_27_count else 0
-        bot_pct = (bottom_correct.get(q_no, 0) / top_27_count) if top_27_count else 0
+        top_n = top_seen.get(q_no, 0)
+        bot_n = bottom_seen.get(q_no, 0)
+        top_pct = (top_correct.get(q_no, 0) / top_n) if top_n else 0
+        bot_pct = (bottom_correct.get(q_no, 0) / bot_n) if bot_n else 0
         discrimination = round(top_pct - bot_pct, 3)
 
         # Çeldirici analizi — en çok seçilen yanlış şık
@@ -2493,7 +2582,7 @@ def exam_analysis_questions(request, exam_pk):
             if k != q_data['correct_answer'] and k != 'EMPTY' and v > 0
         }
         top_distractor = max(wrong_choices, key=wrong_choices.get) if wrong_choices else None
-        top_distractor_pct = round((wrong_choices.get(top_distractor, 0) / total_students) * 100, 1) if top_distractor and total_students else 0
+        top_distractor_pct = round((wrong_choices.get(top_distractor, 0) / answered) * 100, 1) if top_distractor and answered else 0
 
         questions_result.append({
             'question_number': q_data['question_number'],
@@ -2508,6 +2597,7 @@ def exam_analysis_questions(request, exam_pk):
             'correct_pct': correct_pct,
             'wrong_pct': wrong_pct,
             'empty_pct': empty_pct,
+            'answered_count': answered,
             'difficulty': difficulty,
             'discrimination': discrimination,
 
@@ -2549,13 +2639,30 @@ def exam_analysis_strategy(request, exam_pk):
 
     strategies = []
 
-    # Ders bazlı analiz
+    # Ders bazlı analiz — yaprak dersler; ana test alt dersleriyle iki kez sayılmaz.
+    # Seçmeli bölüm herkese ait değildir. AYT'de öğrenci yalnız alanını çözer;
+    # çözmediği ders ortalamayı sıfıra çekmesin.
+    sections = list(exam.sections.all())
+    parents_with_children = {
+        sec.parent_section_id for sec in sections
+        if sec.is_sub_section and sec.parent_section_id
+    }
+    optional_ids = _optional_section_ids(sections)
+    leaf_ids = {
+        sec.id for sec in sections
+        if (sec.is_sub_section or sec.id not in parents_with_children)
+        and sec.id not in optional_ids
+    }
+    attempted_only = exam.exam_type in ('YKS_AYT', 'AYT_11')
     all_scores = StudentSectionScore.objects.filter(
         student_answer__in=answers,
+        section_id__in=leaf_ids,
     ).select_related('section')
 
     section_stats = defaultdict(lambda: {'nets': [], 'empties': [], 'wrongs': []})
     for ss in all_scores:
+        if attempted_only and not (ss.correct or ss.wrong):
+            continue
         name = ss.section.name
         section_stats[name]['nets'].append(_safe_float(ss.net))
         section_stats[name]['empties'].append(ss.empty)
@@ -2611,42 +2718,30 @@ def exam_analysis_strategy(request, exam_pk):
             })
 
     # Trend analizi
-    prev_exam = (
-        Exam.objects
-        .filter(
-            exam_type=exam.exam_type,
-            kurum=exam.kurum,
-            pk__lt=exam.pk,
-            status__in=['RESULTS_UPLOADED', 'COMPLETED'],
-        )
-        .order_by('-pk')
-        .first()
-    )
+    prev_exam, prev_answers = _previous_exam_answers(exam)
     if prev_exam:
-        prev_answers = _get_session_answers(prev_exam)
-        if prev_answers.exists():
-            prev_nets = [_safe_float(a.total_net) for a in prev_answers]
-            curr_nets = [_safe_float(a.total_net) for a in answers]
-            prev_avg = sum(prev_nets) / len(prev_nets) if prev_nets else 0
-            curr_avg = sum(curr_nets) / len(curr_nets) if curr_nets else 0
-            diff = curr_avg - prev_avg
+        prev_nets = [_safe_float(a.total_net) for a in prev_answers]
+        curr_nets = [_safe_float(a.total_net) for a in answers]
+        prev_avg = sum(prev_nets) / len(prev_nets) if prev_nets else 0
+        curr_avg = sum(curr_nets) / len(curr_nets) if curr_nets else 0
+        diff = curr_avg - prev_avg
 
-            if diff < -3:
-                strategies.append({
-                    'type': 'warning',
-                    'icon': '📉',
-                    'title': 'Genel Düşüş Trendi',
-                    'message': f'Genel net ortalaması önceki sınava ({prev_exam.name}) göre {abs(diff):.1f} net düşüş göstermektedir.',
-                    'priority': 1,
-                })
-            elif diff > 3:
-                strategies.append({
-                    'type': 'success',
-                    'icon': '📈',
-                    'title': 'Genel Artış Trendi',
-                    'message': f'Genel net ortalaması önceki sınava ({prev_exam.name}) göre {diff:.1f} net artış göstermektedir.',
-                    'priority': 1,
-                })
+        if diff < -3:
+            strategies.append({
+                'type': 'warning',
+                'icon': '📉',
+                'title': 'Genel Düşüş Trendi',
+                'message': f'Genel net ortalaması önceki sınava ({prev_exam.name}) göre {abs(diff):.1f} net düşüş göstermektedir.',
+                'priority': 1,
+            })
+        elif diff > 3:
+            strategies.append({
+                'type': 'success',
+                'icon': '📈',
+                'title': 'Genel Artış Trendi',
+                'message': f'Genel net ortalaması önceki sınava ({prev_exam.name}) göre {diff:.1f} net artış göstermektedir.',
+                'priority': 1,
+            })
 
     # Kazanım bazlı zayıf noktalar (eğer cevap anahtarında kazanım varsa)
     ak = AnswerKey.primary_for(exam)
@@ -2654,15 +2749,30 @@ def exam_analysis_strategy(request, exam_pk):
         outcome_items = AnswerKeyItem.objects.filter(
             answer_key=ak,
             outcome__isnull=False,
-        ).select_related('outcome', 'section')
+        ).select_related('outcome', 'section', 'section__parent_section')
 
         if outcome_items.exists():
+            lookup = _booklet_lookup(
+                AnswerKeyItem.objects.filter(answer_key=ak).select_related(
+                    'section', 'section__parent_section',
+                )
+            )
+            answer_list = list(answers)
+            attempted = {
+                a.id: {ss.section_id for ss in a.section_scores.all() if ss.correct or ss.wrong}
+                for a in answer_list
+            }
             outcome_stats = defaultdict(lambda: {'correct': 0, 'total': 0, 'name': '', 'section': ''})
             for item in outcome_items:
-                q_no = str(item.question_number)
-                for a in answers:
+                needs_attempt = attempted_only or item.section_id in optional_ids
+                for a in answer_list:
+                    if needs_attempt and item.section_id not in attempted[a.id]:
+                        continue
+                    key = lookup(item, a.booklet)
+                    if key is None:
+                        continue
                     comp = a.comparison or {}
-                    c = comp.get(q_no, {})
+                    c = comp.get(key, {})
                     outcome_stats[item.outcome_id]['total'] += 1
                     outcome_stats[item.outcome_id]['name'] = item.outcome.text[:80]
                     outcome_stats[item.outcome_id]['section'] = item.section.name
@@ -2704,18 +2814,9 @@ def exam_analysis_comparison(request, exam_pk):
     if err:
         return err
 
-    # Aynı türdeki son 5 sınav — yalnız aynı kurum/şube ve silinmemiş olanlar.
-    past_exams = (
-        Exam.objects
-        .filter(
-            exam_type=exam.exam_type,
-            kurum=exam.kurum,
-            is_active=True,
-            status__in=['RESULTS_UPLOADED', 'COMPLETED'],
-        )
-        .filter(Q(sube_id=exam.sube_id) if exam.sube_id else Q())
-        .order_by('-exam_date', '-created_at')[:6]
-    )
+    # Bu sınav ve ondan önceki en çok 5 sınav (aynı tür, kurum, şube); yeniden eskiye.
+    # Sonraki sınavlar girmez; eski bir sınav açıldığında kendisi listeden düşmez.
+    past_exams = [exam, *_earlier_exams(exam)[:5]]
 
     comparison_data = []
     for pe in past_exams:

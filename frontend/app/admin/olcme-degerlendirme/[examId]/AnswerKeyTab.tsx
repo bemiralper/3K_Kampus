@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef, type KeyboardEvent } from 'react';
 import { answerKeyApi, examApi } from '../../../../components/olcme/api';
 import type {
   ExamDetail,
@@ -16,7 +16,6 @@ import {
   AUDITED_CHOICES,
   auditBookletChoiceCounts,
   formatChoiceAuditMessage,
-  normalizePastedAnswer,
   parsePastedAnswers,
   type BookletChoiceAudit,
 } from '../../../../components/olcme/booklet-choice-audit';
@@ -26,11 +25,9 @@ import {
   flattenSubjectOutcomes,
   subjectsForSection,
 } from '../../../../components/olcme/outcome-search';
-import { leafExamSections, leafSectionForQuestion } from '../../../../components/olcme/section-ranges';
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  Yardımcı Tipler & Fonksiyonlar                                           */
-/* ═══════════════════════════════════════════════════════════════════════════ */
+import {
+  leafExamSections, leafSectionForQuestion, optionalQuestionCount, optionalSectionIds,
+} from '../../../../components/olcme/section-ranges';
 
 interface GridRow {
   question_number: number;
@@ -47,9 +44,18 @@ interface GridRow {
   item_id: number | null;
 }
 
-function normalizeAnswer(val: string): AnswerChoice {
-  return normalizePastedAnswer(val) as AnswerChoice;
-}
+type Step = 'answers' | 'b_booklet' | 'outcomes' | 'preview';
+type Filter = 'all' | 'blank' | 'no_outcome';
+
+const LETTERS: AnswerChoice[] = ['A', 'B', 'C', 'D', 'E'];
+
+/** Konu başlığı kodu (21.5) kazanıma bağlanmadan konuya bağlıdır; o da kazanımlı sayılır. */
+const hasOutcome = (row: { outcome_id: number | null; outcome_code: string; outcome_text: string }) =>
+  !!(row.outcome_id || (row.outcome_code && row.outcome_text));
+
+const toText = (answer: string) => (
+  answer === 'INVALID' ? 'İPTAL' : answer === 'EMPTY' ? 'BOŞ' : answer
+);
 
 function subjectForRow(subjects: SubjectItem[], sections: ExamDetail['sections'], sectionId: number): SubjectItem | null {
   const section = (sections ?? []).find(s => s.id === sectionId);
@@ -62,64 +68,42 @@ function outcomesForRow(subjects: SubjectItem[], sections: ExamDetail['sections'
   return flattenSubjectOutcomes(subjectsForSection(subjects, section?.subject ?? null));
 }
 
-type Step = 'answers' | 'b_booklet' | 'outcomes' | 'preview';
-
-/* ═══════════════════════════════════════════════════════════════════════════ */
-/*  ANA BİLEŞEN                                                             */
-/* ═══════════════════════════════════════════════════════════════════════════ */
-
-interface Props {
-  exam: ExamDetail;
-}
-
-export default function AnswerKeyTab({ exam }: Props) {
-  /* ── Genel durum ─── */
+export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
   const [answerKeys, setAnswerKeys] = useState<AnswerKey[]>([]);
-  const [loading, setLoading]       = useState(true);
-  const [saving, setSaving]         = useState(false);
-  const [msg, setMsg]               = useState('');
-  const [showJumps, setShowJumps]   = useState(false);
-  const [pdfMeta, setPdfMeta]       = useState<{ has_uploaded: boolean; can_generate: boolean; filename: string } | null>(null);
-  const [pdfBusy, setPdfBusy]       = useState('');
-  const [pdfCopies, setPdfCopies]   = useState<1 | 2 | 4 | 6>(1);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [dirty, setDirty] = useState(false);
+  const [pdfMeta, setPdfMeta] = useState<{ has_uploaded: boolean; can_generate: boolean; filename: string } | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfCopies, setPdfCopies] = useState<2 | 4 | 6>(2);
   const [pdfBooklet, setPdfBooklet] = useState('');
 
-  const [rows, setRows]               = useState<GridRow[]>([]);
-  const [step, setStep]               = useState<Step>('answers');
+  const [rows, setRows] = useState<GridRow[]>([]);
+  const [step, setStep] = useState<Step>('answers');
+  const [filter, setFilter] = useState<Filter>('all');
   const [hasExistingData, setHasExistingData] = useState(false);
 
-  /* Textarea içerikleri */
-  const [answerText, setAnswerText]     = useState('');
+  const [answerText, setAnswerText] = useState('');
   const [bBookletText, setBBookletText] = useState('');
-  const [bAnswerText, setBAnswerText]   = useState('');
-  const [outcomeText, setOutcomeText]   = useState('');
+  const [bAnswerText, setBAnswerText] = useState('');
+  const [bSavedText, setBSavedText] = useState('');
+  const [outcomeText, setOutcomeText] = useState('');
 
-  /* Kazanım ağacı */
-  const [subjects, setSubjects]           = useState<SubjectItem[]>([]);
-  const [outcomeModal, setOutcomeModal]   = useState<{ rowIdx: number } | null>(null);
+  const [subjects, setSubjects] = useState<SubjectItem[]>([]);
+  const [outcomeModal, setOutcomeModal] = useState<{ rowIdx: number } | null>(null);
   const [outcomeSearch, setOutcomeSearch] = useState('');
+  const listRef = useRef<HTMLDivElement>(null);
 
-  /* Türemiş değerler */
-  // Alt bölümlerle tamamen kapsanan ana bölümleri hariç tut
   const sections = useMemo(() => leafExamSections(exam.sections), [exam.sections]);
   const hasB = exam.booklet_type === 'AB' || exam.booklet_type === 'ABCD';
+  const allOutcomes = useMemo(() => flattenSubjectOutcomes(subjects), [subjects]);
 
-  const totalQuestions = useMemo(
-    () => sections.reduce((sum, sec) => sum + (sec.question_end - sec.question_start + 1), 0),
-    [sections],
-  );
-
-  const allOutcomes = useMemo(
-    () => flattenSubjectOutcomes(subjects),
-    [subjects],
-  );
-
-  /* ── Boş grid oluştur ─── */
   const buildEmptyGrid = useCallback((): GridRow[] => {
-    const newRows: GridRow[] = [];
+    const grid: GridRow[] = [];
     for (const sec of sections) {
       for (let q = sec.question_start; q <= sec.question_end; q++) {
-        newRows.push({
+        grid.push({
           question_number: q,
           correct_answer: '' as AnswerChoice,
           is_cancelled: false,
@@ -135,51 +119,66 @@ export default function AnswerKeyTab({ exam }: Props) {
         });
       }
     }
-    return newRows;
+    return grid;
   }, [sections]);
 
-  /* ── Veri yükle ─── */
+  const order = useMemo(() => buildEmptyGrid().map(row => row.question_number), [buildEmptyGrid]);
+  const totalQuestions = order.length;
+  const optionalIds = useMemo(() => optionalSectionIds(exam.sections), [exam.sections]);
+  const optionalCount = useMemo(() => optionalQuestionCount(exam.sections), [exam.sections]);
+  const questionSummary = optionalCount > 0
+    ? `${totalQuestions} soru (${totalQuestions - optionalCount} + ${optionalCount} seçmeli)`
+    : `${totalQuestions} soru`;
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const keys = await answerKeyApi.list(exam.id);
       setAnswerKeys(keys);
-
       const primary = pickPrimaryAnswerKey(keys);
-      if (primary && primary.items.length > 0) {
-        setRows(
-          primary.items.map(item => {
-            const leaf = leafSectionForQuestion(exam.sections, item.question_number);
-            return {
-            question_number: item.question_number,
-            correct_answer: item.correct_answer,
-            is_cancelled: item.is_cancelled,
-            section_id: leaf?.id ?? item.section,
-            section_name: leaf?.name ?? item.section_name,
-            outcome_id: item.outcome,
-            sub_outcome_id: item.sub_outcome ?? null,
-            outcome_code: item.outcome_code || '',
-            outcome_text: item.outcome_text || '',
-            imported_outcome_text: item.imported_outcome_text || '',
-            b_question_number: item.b_question_number ?? null,
-            item_id: item.id,
-            };
-          }),
-        );
-        setHasExistingData(true);
-        setStep('preview');
-      } else {
-        setRows(buildEmptyGrid());
-        setHasExistingData(false);
-        setStep('answers');
+      const grid = buildEmptyGrid();
+      const at = new Map(grid.map((row, i) => [row.question_number, i]));
+      const extra: GridRow[] = [];
+      for (const item of primary?.items ?? []) {
+        const leaf = leafSectionForQuestion(exam.sections, item.question_number);
+        const row: GridRow = {
+          question_number: item.question_number,
+          correct_answer: item.correct_answer,
+          is_cancelled: item.is_cancelled,
+          section_id: leaf?.id ?? item.section,
+          section_name: leaf?.name ?? item.section_name,
+          outcome_id: item.outcome,
+          sub_outcome_id: item.sub_outcome ?? null,
+          outcome_code: item.outcome_code || '',
+          outcome_text: item.outcome_text || '',
+          imported_outcome_text: item.imported_outcome_text || '',
+          b_question_number: item.b_question_number ?? null,
+          item_id: item.id,
+        };
+        const idx = at.get(item.question_number);
+        if (idx === undefined) extra.push(row);
+        else grid[idx] = row;
       }
+      setRows([...grid, ...extra.sort((a, b) => a.question_number - b.question_number)]);
+
+      const bKey = keys.find(key => (key.booklet || '').toUpperCase() === 'B' && key !== primary);
+      const bByQ = new Map((bKey?.items ?? []).map(item => [item.question_number, item.correct_answer as string]));
+      const bText = bByQ.size ? order.map(q => toText(bByQ.get(q) ?? '')).join('\n') : '';
+      setBAnswerText(bText);
+      setBSavedText(bText);
+
+      const has = Boolean(primary && primary.items.length > 0);
+      setHasExistingData(has);
+      setStep(has ? 'preview' : 'answers');
+      setDirty(false);
     } catch (err: unknown) {
       setMsg(`❌ Cevap anahtarı yüklenemedi: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`);
       setRows(buildEmptyGrid());
       setHasExistingData(false);
+    } finally {
+      setLoading(false);
     }
-    finally { setLoading(false); }
-  }, [exam.id, buildEmptyGrid]);
+  }, [exam.id, exam.sections, buildEmptyGrid, order]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -187,175 +186,134 @@ export default function AnswerKeyTab({ exam }: Props) {
     try { setPdfMeta(await examApi.answerKeyPdfMeta(exam.id)); }
     catch { setPdfMeta(null); }
   }, [exam.id]);
-
   useEffect(() => { loadPdfMeta(); }, [loadPdfMeta]);
 
-  /* Kazanım ağacını yükle */
   useEffect(() => {
     answerKeyApi.outcomes(exam.id).then(setSubjects).catch(() => {});
   }, [exam.id]);
 
-  /* ═════════════════════════════════════════════════════════════════════════ */
-  /*  ADIM İŞLEYİCİLERİ                                                     */
-  /* ═════════════════════════════════════════════════════════════════════════ */
+  const unsaved = dirty || bAnswerText !== bSavedText;
 
-  /** Adım 1 — Cevapları parse et ve grid'e yaz */
-  const applyAnswers = useCallback(() => {
-    const raw = answerText.trim();
-    if (!raw) { setMsg('Cevap alanı boş.'); return; }
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [unsaved]);
 
-    const grid = buildEmptyGrid();
-    const parsed = parsePastedAnswers(raw);
-    const lines = raw.split(/\n/).map(l => l.trim()).filter(Boolean);
-    const sideBySide = lines.length === 1 && lines[0].length > 1 && !lines[0].includes('\t');
+  const editRows = (update: (prev: GridRow[]) => GridRow[]) => {
+    setRows(update);
+    setDirty(true);
+  };
 
-    if (sideBySide) {
-      for (let i = 0; i < parsed.length && i < grid.length; i++) {
-        const a = parsed[i] as AnswerChoice;
-        grid[i] = { ...grid[i], correct_answer: a, is_cancelled: a === 'INVALID' };
-      }
-      setMsg(`✅ ${Math.min(parsed.length, grid.length)} cevap okundu (yan yana format).`);
-    } else {
-      let filled = 0;
-      for (let i = 0; i < parsed.length && i < grid.length; i++) {
-        const a = parsed[i] as AnswerChoice;
-        if (a) {
-          grid[i] = { ...grid[i], correct_answer: a, is_cancelled: a === 'INVALID' };
-          filled++;
-        }
-      }
-      setMsg(`✅ ${filled} cevap okundu (${totalQuestions} soru bekleniyor).`);
-    }
+  /* ── Yapıştırma adımları ─────────────────────────────────────────────── */
 
-    setRows(grid);
-    setStep(hasB ? 'b_booklet' : 'outcomes');
-  }, [answerText, buildEmptyGrid, totalQuestions, hasB]);
+  const applyAnswers = () => {
+    const parsed = parsePastedAnswers(answerText, order);
+    const read = parsed.filter(Boolean).length;
+    if (!read) { setMsg('⚠️ Tanınan cevap yok. A–E, İPTAL veya BOŞ yazın.'); return; }
+    editRows(prev => prev.map((row, i) => {
+      const answer = (i < totalQuestions ? parsed[i] ?? '' : row.correct_answer) as AnswerChoice;
+      return { ...row, correct_answer: answer, is_cancelled: answer === 'INVALID' };
+    }));
+    const extra = Math.max(0, parsed.length - totalQuestions);
+    const blank = totalQuestions - parsed.slice(0, totalQuestions).filter(Boolean).length;
+    const notes = [
+      extra ? `${extra} fazla cevap yok sayıldı` : '',
+      blank ? `${blank} soru boş kaldı` : '',
+    ].filter(Boolean);
+    setMsg(notes.length
+      ? `⚠️ ${Math.min(read, totalQuestions)} cevap yazıldı · ${notes.join(' · ')}.`
+      : `✅ ${read} cevap yazıldı.`);
+    setStep(hasB ? 'b_booklet' : 'preview');
+  };
 
-  /** Adım 2 — B kitapçığı soru numaralarını parse et */
-  const applyBBooklet = useCallback(() => {
+  const applyBBooklet = () => {
     const raw = bBookletText.trim();
-    const newRows = [...rows];
-    let applied = 0;
+    const notes: string[] = [];
     if (raw) {
-      // Satır, tab, virgül veya boşlukla ayrılmış soru numaraları.
-      const tokens = raw.split(/[\n\t\r, ]+/).map(t => t.trim()).filter(Boolean);
-      const numbers: number[] = [];
-      for (const token of tokens) {
-        const num = parseInt(token, 10);
-        if (!isNaN(num) && num > 0) numbers.push(num);
-      }
-      for (let i = 0; i < numbers.length && i < newRows.length; i++) {
-        newRows[i] = { ...newRows[i], b_question_number: numbers[i] };
-        applied++;
-      }
-      setRows(newRows);
+      const numbers = raw.split(/[\n\t\r, ;]+/).map(t => parseInt(t, 10)).filter(n => !Number.isNaN(n));
+      const max = Math.max(...order);
+      const bad = numbers.filter(n => n < 1 || n > max).length;
+      const dupes = numbers.length - new Set(numbers).size;
+      if (bad) { setMsg(`⚠️ ${bad} numara 1–${max} aralığında değil. Düzeltip tekrar deneyin.`); return; }
+      if (dupes) notes.push(`${dupes} numara tekrar ediyor`);
+      editRows(prev => prev.map((row, i) => (i < numbers.length ? { ...row, b_question_number: numbers[i] } : row)));
+      notes.unshift(`${Math.min(numbers.length, totalQuestions)} B numarası eşlendi`);
+      if (numbers.length < totalQuestions) notes.push(`${totalQuestions - numbers.length} soru eşlenmedi`);
     }
+    if (bChoiceAudit && !bChoiceAudit.ok) { setMsg(formatChoiceAuditMessage(bChoiceAudit)); return; }
+    if (bChoiceAudit?.ok) notes.push('şık dağılımı uyumlu');
+    setMsg(notes.length ? `${notes.some(n => /tekrar|eşlenmedi/.test(n)) ? '⚠️' : '✅'} ${notes.join(' · ')}.` : '');
+    setStep('preview');
+  };
 
-    const audit = bAnswerText.trim()
-      ? auditBookletChoiceCounts(
-          exam.sections,
-          new Map(newRows.map(row => [row.question_number, row.correct_answer])),
-          parsePastedAnswers(bAnswerText),
-        )
-      : null;
-    if (audit && !audit.ok) {
-      setMsg(formatChoiceAuditMessage(audit));
-      return;
-    }
-
-    const missing = newRows.length - applied;
-    const mapped = !bBookletText.trim()
-      ? ''
-      : missing > 0 && applied > 0
-        ? `✅ ${applied} B soru numarası eşlendi · ⚠️ ${missing} soru eşlenmedi.`
-        : `✅ ${applied} B soru numarası eşlendi.`;
-    const checked = audit?.ok ? formatChoiceAuditMessage(audit) : '';
-    setMsg([mapped, checked].filter(Boolean).join(' ') || 'B kitapçığı adımı geçildi.');
-    setStep('outcomes');
-  }, [bBookletText, bAnswerText, rows, exam.sections]);
-
-  /** Adım 3 — Kazanım metinlerini parse et ve eşleştir */
-  const applyOutcomes = useCallback(() => {
-    const raw = outcomeText.trim();
-    if (!raw) { setStep('preview'); return; }
-
-    const lines = raw.split(/\n/).map(l => l.trim());
-    const newRows = [...rows];
+  const applyOutcomes = () => {
+    const lines = outcomeText.replace(/\r/g, '').split('\n').map(line => line.trim());
+    const misses: string[] = [];
     let matched = 0;
     let unmatched = 0;
-    const unmatchedTexts: string[] = [];
-
-    for (let i = 0; i < lines.length && i < newRows.length; i++) {
-      if (!lines[i]) continue; // boş satır atla
+    editRows(prev => prev.map((row, i) => {
+      const text = lines[i];
+      if (!text) return row;
       const found = findOutcomeByText(
-        lines[i],
-        outcomesForRow(subjects, exam.sections, newRows[i].section_id),
-        subjectForRow(subjects, exam.sections, newRows[i].section_id)?.code,
+        text,
+        outcomesForRow(subjects, exam.sections, row.section_id),
+        subjectForRow(subjects, exam.sections, row.section_id)?.code,
       );
-      // Orijinal yapıştırılan metni her zaman kaydet
-      newRows[i] = {
-        ...newRows[i],
-        imported_outcome_text: lines[i],
-      };
-      if (found) {
-        newRows[i] = {
-          ...newRows[i],
-          outcome_id: found.id,
-          sub_outcome_id: found.sub_outcome_id ?? null,
-          outcome_code: found.code,
-          outcome_text: found.text,
-        };
-        matched++;
-      } else {
+      if (!found) {
         unmatched++;
-        if (unmatchedTexts.length < 3) unmatchedTexts.push(lines[i]);
+        if (misses.length < 3) misses.push(text);
+        return {
+          ...row,
+          imported_outcome_text: text,
+          outcome_id: null,
+          sub_outcome_id: null,
+          outcome_code: '',
+          outcome_text: '',
+        };
       }
-    }
-
-    setRows(newRows);
-
-    if (unmatched > 0) {
-      const examples = unmatchedTexts.map(t => `"${t.substring(0, 40)}…"`).join(', ');
-      setMsg(`✅ ${matched} kazanım eşleşti · ⚠️ ${unmatched} bulunamadı (${examples}). Önizlemeden manuel seçebilirsiniz.`);
-    } else if (matched > 0) {
-      setMsg(`✅ ${matched} kazanım başarıyla eşleştirildi.`);
-    }
+      matched++;
+      return {
+        ...row,
+        imported_outcome_text: text,
+        outcome_id: found.id,
+        sub_outcome_id: found.sub_outcome_id ?? null,
+        outcome_code: found.code,
+        outcome_text: found.text,
+      };
+    }));
+    setMsg(unmatched
+      ? `⚠️ ${matched} kazanım eşleşti · ${unmatched} bulunamadı (${misses.map(t => `"${t.slice(0, 40)}"`).join(', ')}). Listeden elle seçin.`
+      : `✅ ${matched} kazanım eşleşti.`);
+    setFilter(unmatched ? 'no_outcome' : 'all');
     setStep('preview');
-  }, [outcomeText, rows, subjects, exam.sections]);
+  };
 
-  /* ═════════════════════════════════════════════════════════════════════════ */
-  /*  ÖNİZLEME İŞLEYİCİLERİ                                                */
-  /* ═════════════════════════════════════════════════════════════════════════ */
+  /* ── Liste düzenleme ─────────────────────────────────────────────────── */
 
   const setAnswer = (idx: number, answer: AnswerChoice) => {
-    setRows(prev => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], correct_answer: answer, is_cancelled: answer === 'INVALID' };
-      return next;
-    });
+    editRows(prev => prev.map((row, i) => {
+      if (i !== idx) return row;
+      const next = row.correct_answer === answer ? ('' as AnswerChoice) : answer;
+      return { ...row, correct_answer: next, is_cancelled: next === 'INVALID' };
+    }));
   };
 
   const setBQuestion = (idx: number, val: string) => {
     const num = val === '' ? null : Number(val);
-    setRows(prev => {
-      const next = [...prev];
-      next[idx] = { ...next[idx], b_question_number: num };
-      return next;
-    });
+    editRows(prev => prev.map((row, i) => (i === idx ? { ...row, b_question_number: num } : row)));
   };
 
   const setOutcome = (idx: number, outcome: OutcomeItem | null) => {
-    setRows(prev => {
-      const next = [...prev];
-      next[idx] = {
-        ...next[idx],
-        outcome_id: outcome?.id ?? null,
-        sub_outcome_id: outcome?.sub_outcome_id ?? null,
-        outcome_code: outcome?.code ?? '',
-        outcome_text: outcome?.text ?? '',
-      };
-      return next;
-    });
+    editRows(prev => prev.map((row, i) => (i === idx ? {
+      ...row,
+      outcome_id: outcome?.id ?? null,
+      sub_outcome_id: outcome?.sub_outcome_id ?? null,
+      outcome_code: outcome?.code ?? '',
+      outcome_text: outcome?.text ?? '',
+      imported_outcome_text: '',
+    } : row)));
     setOutcomeModal(null);
   };
 
@@ -364,251 +322,248 @@ export default function AnswerKeyTab({ exam }: Props) {
     return auditBookletChoiceCounts(
       exam.sections,
       new Map(rows.map(row => [row.question_number, row.correct_answer])),
-      parsePastedAnswers(bAnswerText),
+      parsePastedAnswers(bAnswerText, order),
     );
-  }, [hasB, bAnswerText, rows, exam.sections]);
+  }, [hasB, bAnswerText, rows, exam.sections, order]);
 
-  /** Toplu kaydet */
   const handleSave = async () => {
-    const answered = rows.filter(r => r.correct_answer && r.correct_answer !== ('' as AnswerChoice));
-    if (answered.length === 0) { setMsg('En az bir sorunun cevabını girin.'); return; }
     if (bChoiceAudit && !bChoiceAudit.ok) {
       setMsg(formatChoiceAuditMessage(bChoiceAudit));
       setStep('b_booklet');
       return;
     }
-
-    // Cevabı boş ama kazanımı işaretlenmiş satırlar da gönderilir; aksi
-    // hâlde sunucu tarafında o satırların kazanım bağı kayboluyordu.
     const toSave = rows.filter(r =>
-      (r.correct_answer && r.correct_answer !== ('' as AnswerChoice))
+      r.correct_answer
       || r.outcome_id !== null
       || r.sub_outcome_id !== null
       || r.imported_outcome_text
       || r.b_question_number !== null,
     );
+    const items: BulkAnswerKeyRow[] = toSave.map(r => ({
+      question_number: r.question_number,
+      correct_answer: r.correct_answer,
+      is_cancelled: r.is_cancelled,
+      outcome_id: r.outcome_id,
+      sub_outcome_id: r.sub_outcome_id,
+      imported_outcome_text: r.imported_outcome_text,
+      b_question_number: r.b_question_number,
+    }));
+    const bChanged = hasB && bAnswerText.trim() && bAnswerText !== bSavedText;
+    const bItems = bChanged
+      ? parsePastedAnswers(bAnswerText, order).flatMap((answer, index) => {
+          const q = order[index];
+          if (q === undefined || !answer) return [];
+          return [{ question_number: q, correct_answer: answer as AnswerChoice, is_cancelled: answer === 'INVALID' }];
+        })
+      : [];
 
     setSaving(true);
     setMsg('');
     try {
-      const items: BulkAnswerKeyRow[] = toSave.map(r => ({
-        question_number: r.question_number,
-        correct_answer: r.correct_answer,
-        is_cancelled: r.is_cancelled,
-        outcome_id: r.outcome_id,
-        sub_outcome_id: r.sub_outcome_id,
-        imported_outcome_text: r.imported_outcome_text,
-        b_question_number: r.b_question_number,
-      }));
-
-      const bItems = hasB && bAnswerText.trim()
-        ? parsePastedAnswers(bAnswerText).flatMap((answer, index) => {
-            const row = rows[index];
-            if (!row || !answer) return [];
-            return [{
-              question_number: row.question_number,
-              correct_answer: answer as AnswerChoice,
-              is_cancelled: answer === 'INVALID',
-            }];
-          })
-        : undefined;
-
       const result = await answerKeyApi.bulkImport(exam.id, {
         booklet: hasB ? 'A' : '',
         items,
-        ...(bItems && bItems.length > 0 ? { b_items: bItems } : {}),
+        ...(bItems.length ? { b_items: bItems } : {}),
       });
-
       setMsg(`✅ ${result.message}`);
-      setHasExistingData(true);
       await loadPdfMeta();
-      fetchData();
+      await fetchData();
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Bilinmeyen hata';
-      setMsg(`❌ Kaydetme hatası: ${message}`);
-      console.error('bulkImport error:', err);
+      setMsg(`❌ Kaydetme hatası: ${err instanceof Error ? err.message : 'Bilinmeyen hata'}`);
     } finally {
       setSaving(false);
     }
   };
 
-  /** Sıfırla */
   const handleReset = async () => {
-    if (!confirm('Cevap anahtarını silmek istediğinize emin misiniz?')) return;
+    if (!confirm('Kayıtlı cevap anahtarı (A ve B) silinsin mi? Kazanım bağları da gider.')) return;
     try {
-      for (const ak of answerKeys) {
-        await answerKeyApi.delete(exam.id, ak.id);
-      }
-      setRows(buildEmptyGrid());
-      setHasExistingData(false);
-      setStep('answers');
+      for (const ak of answerKeys) await answerKeyApi.delete(exam.id, ak.id);
       setAnswerText('');
       setBBookletText('');
-      setBAnswerText('');
       setOutcomeText('');
       setMsg('Cevap anahtarı silindi.');
-      setAnswerKeys([]);
       await loadPdfMeta();
-    } catch { setMsg('Silme hatası.'); }
+      await fetchData();
+    } catch { setMsg('❌ Silme hatası.'); }
   };
 
-  /* ═════════════════════════════════════════════════════════════════════════ */
-  /*  RENDER                                                                 */
-  /* ═════════════════════════════════════════════════════════════════════════ */
+  const discard = () => {
+    if (!confirm('Kaydedilmemiş değişiklikler atılsın mı?')) return;
+    setMsg('');
+    setAnswerText('');
+    setBBookletText('');
+    setOutcomeText('');
+    void fetchData();
+  };
+
+  /* ── PDF ─────────────────────────────────────────────────────────────── */
 
   const bookletOptions = useMemo(() => {
-    const fromKeys = answerKeys
-      .map(item => (item.booklet || '').trim().toUpperCase())
-      .filter(Boolean);
-    const fromType = exam.booklet_type === 'ABCD'
-      ? ['A', 'B', 'C', 'D']
-      : exam.booklet_type === 'AB'
-        ? ['A', 'B']
-        : [];
+    const fromKeys = answerKeys.map(item => (item.booklet || '').trim().toUpperCase()).filter(Boolean);
+    const fromType = exam.booklet_type === 'ABCD' ? ['A', 'B', 'C', 'D'] : exam.booklet_type === 'AB' ? ['A', 'B'] : [];
     return [...new Set([...fromType, ...fromKeys])].sort();
   }, [answerKeys, exam.booklet_type]);
 
-  const downloadPdf = async (source?: 'uploaded' | 'generated') => {
-    setPdfBusy(source || 'generated');
+  const savedBooklets = useMemo(
+    () => [...new Set(answerKeys.map(item => (item.booklet || '').trim().toUpperCase()).filter(Boolean))],
+    [answerKeys],
+  );
+  const showsBothBooklets = !pdfBooklet && savedBooklets.includes('A') && savedBooklets.includes('B');
+  const canDownloadPdf = !unsaved && Boolean(hasExistingData || pdfMeta?.can_generate || pdfMeta?.has_uploaded);
+
+  const downloadPdf = async () => {
+    setPdfBusy(true);
     try {
-      await examApi.downloadAnswerKeyPdf(exam.id, {
-        source,
-        copies: pdfCopies,
-        booklet: pdfBooklet || undefined,
-      });
+      await examApi.downloadAnswerKeyPdf(exam.id, { source: 'generated', copies: pdfCopies, booklet: pdfBooklet || undefined });
     } catch (err: unknown) {
-      setMsg(err instanceof Error ? err.message : 'PDF indirilemedi.');
+      setMsg(`❌ ${err instanceof Error ? err.message : 'PDF indirilemedi.'}`);
     } finally {
-      setPdfBusy('');
+      setPdfBusy(false);
     }
   };
 
-  const canDownloadPdf = Boolean(hasExistingData || pdfMeta?.can_generate || pdfMeta?.has_uploaded);
-  const filledCount  = rows.filter(r => r.correct_answer && r.correct_answer !== ('' as AnswerChoice)).length;
-  const outcomeCount = rows.filter(r => r.outcome_id).length;
-  const bCount       = rows.filter(r => r.b_question_number).length;
+  /* ── Türemiş sayılar ─────────────────────────────────────────────────── */
 
-  useEffect(() => {
-    const onScroll = () => setShowJumps(window.scrollY > 160);
-    onScroll();
-    window.addEventListener('scroll', onScroll, { passive: true });
-    return () => window.removeEventListener('scroll', onScroll);
-  }, []);
+  const filledCount = rows.filter(r => r.correct_answer).length;
+  const blankCount = rows.length - filledCount;
+  const outcomeCount = rows.filter(hasOutcome).length;
+  const noOutcomeCount = rows.length - outcomeCount;
+  const bCount = rows.filter(r => r.b_question_number).length;
+  const percent = totalQuestions ? Math.round((filledCount / totalQuestions) * 100) : 0;
 
-  if (loading) return (
-    <div className={k.panel} style={{ textAlign: 'center' }}>
-      <p className={k.hint} style={{ margin: 0 }}>Yükleniyor…</p>
-    </div>
-  );
+  const shownRows = useMemo(() => rows
+    .map((row, idx) => ({ row, idx }))
+    .filter(({ row }) => (filter === 'blank' ? !row.correct_answer : filter === 'no_outcome' ? !hasOutcome(row) : true)),
+  [rows, filter]);
 
-  const stepLabels: { key: Step; label: string; short: string; hint: string }[] = [
-    { key: 'answers', label: 'Cevaplar', short: 'Cevap', hint: 'Yapıştır' },
-    ...(hasB ? [{ key: 'b_booklet' as Step, label: 'B kitapçığı', short: 'B', hint: 'Eşle ve denetle' }] : []),
-    { key: 'outcomes', label: 'Kazanımlar', short: 'Kazanım', hint: 'İsteğe bağlı' },
-    { key: 'preview', label: 'Önizleme', short: 'Önizle', hint: 'Kaydet' },
-  ];
-  const currentStepIdx = stepLabels.findIndex(sl => sl.key === step);
-  const toastKind = msg.includes('❌') || /hata/i.test(msg)
-    ? k.toastErr
-    : msg.includes('⚠️') ? k.toastWarn : k.toastOk;
+  const sectionStats = useMemo(() => {
+    const map = new Map<number, { total: number; filled: number }>();
+    for (const row of rows) {
+      const cur = map.get(row.section_id) ?? { total: 0, filled: 0 };
+      cur.total += 1;
+      if (row.correct_answer) cur.filled += 1;
+      map.set(row.section_id, cur);
+    }
+    return map;
+  }, [rows]);
 
-  const scrollPage = (to: 'top' | 'bottom') => {
-    const root = document.scrollingElement || document.documentElement;
-    const top = to === 'top' ? 0 : root.scrollHeight;
-    root.scrollTo({ top, behavior: 'auto' });
-    window.scrollTo({ top, behavior: 'auto' });
+  const onRowKey = (event: KeyboardEvent<HTMLDivElement>, idx: number) => {
+    if (event.target instanceof HTMLInputElement) return;
+    const key = event.key.toUpperCase();
+    const answer = LETTERS.includes(key as AnswerChoice) ? key as AnswerChoice : key === 'X' ? 'INVALID' as AnswerChoice : null;
+    const move = (dir: 1 | -1) => {
+      const list = listRef.current?.querySelectorAll<HTMLElement>('[data-row]');
+      if (!list) return;
+      const all = [...list];
+      const at = all.findIndex(el => Number(el.dataset.row) === idx);
+      all[at + dir]?.focus();
+    };
+    if (answer) {
+      event.preventDefault();
+      if (rows[idx]?.correct_answer !== answer) setAnswer(idx, answer);
+      move(1);
+    } else if (event.key === 'ArrowDown') { event.preventDefault(); move(1); }
+    else if (event.key === 'ArrowUp') { event.preventDefault(); move(-1); }
+    else if (event.key === 'Backspace' || event.key === 'Delete') {
+      event.preventDefault();
+      if (rows[idx]?.correct_answer) setAnswer(idx, rows[idx].correct_answer);
+    }
   };
+
+  if (loading) return <div className={k.loading}>Yükleniyor…</div>;
+
+  const steps: { key: Step; label: string; done: boolean }[] = [
+    { key: 'answers', label: 'Cevaplar', done: filledCount > 0 },
+    ...(hasB ? [{ key: 'b_booklet' as Step, label: 'B kitapçığı', done: bCount > 0 || Boolean(bAnswerText.trim()) }] : []),
+    { key: 'outcomes', label: 'Kazanımlar', done: outcomeCount > 0 },
+    { key: 'preview', label: 'Liste', done: false },
+  ];
+  const toastKind = msg.includes('❌') ? k.toastErr : msg.includes('⚠️') ? k.toastWarn : k.toastOk;
+  const auditBlocks = Boolean(bChoiceAudit && !bChoiceAudit.ok);
 
   return (
     <div className={k.page}>
       {msg && (
-        <div className={`${k.toast} ${toastKind} mobile-above-nav`} role="status">
-          <span>{msg}</span>
+        <div className={`${k.toast} ${toastKind}`} role="status">
+          <span>{msg.replace(/^(✅|⚠️|❌)\s*/u, '')}</span>
           <button type="button" aria-label="Kapat" onClick={() => setMsg('')}>×</button>
         </div>
       )}
 
-      <div className={k.stats}>
-        <div className={k.stat}><b>{filledCount}</b><span>Cevap</span></div>
-        <div className={k.stat}><b>{totalQuestions}</b><span>Soru</span></div>
-        <div className={k.stat}><b>{outcomeCount}</b><span>Kazanım</span></div>
-        <div className={k.stat}><b>{hasB ? bCount : '—'}</b><span>B eşleme</span></div>
-      </div>
-
-      <div className={k.steps}>
-        {stepLabels.map((sl, i) => (
-          <button
-            key={sl.key}
-            type="button"
-            className={step === sl.key ? k.stepOn : i < currentStepIdx ? k.stepDone : k.step}
-            onClick={() => {
-              if (i <= currentStepIdx || hasExistingData) setStep(sl.key);
-            }}
-          >
-            <b>
-              <span className={k.full}>{i < currentStepIdx ? '✓ ' : `${i + 1}. `}{sl.label}</span>
-              <span className={k.short}>{i < currentStepIdx ? '✓' : i + 1} {sl.short}</span>
-            </b>
-            <span className={k.hintLine}>{sl.hint}</span>
-          </button>
-        ))}
-      </div>
-
-      <section className={k.panel}>
-        <div className={k.pdf}>
-          <label className={k.field} title="Bir sayfaya kaç cevap anahtarı basılacağı">
-            Cevap anahtarı
-            <select value={pdfCopies} onChange={e => setPdfCopies(Number(e.target.value) as 1 | 2 | 4 | 6)}>
-              <option value={1}>1 adet</option>
-              <option value={2}>2 adet</option>
-              <option value={4}>4 adet</option>
-              <option value={6}>6 adet</option>
-            </select>
-          </label>
-          {bookletOptions.length > 0 && (
-            <label className={k.field}>
-              Kitapçık
-              <select value={pdfBooklet} onChange={e => setPdfBooklet(e.target.value)}>
-                <option value="">Tümü</option>
-                {bookletOptions.map(letter => (
-                  <option key={letter} value={letter}>{letter}</option>
-                ))}
-              </select>
-            </label>
-          )}
-          <button
-            type="button"
-            className={k.btnPrimary}
-            disabled={pdfBusy !== '' || !canDownloadPdf}
-            title={canDownloadPdf ? 'Cevap anahtarı PDF indir' : 'Önce cevapları kaydedin'}
-            onClick={() => downloadPdf('generated')}
-          >
-            {pdfBusy ? 'Hazırlanıyor…' : 'PDF indir'}
-          </button>
+      <section className={k.toolbar}>
+        <div className={k.summary}>
+          <p className={k.count}>
+            <b>{filledCount}</b>/{totalQuestions} cevap
+            <span>
+              {optionalCount > 0 ? `${optionalCount} seçmeli dahil · ` : ''}
+              {outcomeCount} kazanım{hasB ? ` · ${bCount} B eşleme` : ''}
+            </span>
+          </p>
+          <div className={k.meter} aria-hidden><i style={{ width: `${percent}%` }} /></div>
+          <p className={unsaved ? k.stateDirty : k.state}>
+            {unsaved ? 'Kaydedilmedi' : hasExistingData ? 'Kaydedildi' : 'Anahtar yok'}
+          </p>
         </div>
       </section>
 
+      {unsaved && (
+        <div className={k.dock} role="region" aria-label="Kaydedilmemiş değişiklik">
+          <p>
+            <b>Kaydedilmedi</b>
+            <span>{auditBlocks ? 'B kitapçığı şıkları uyuşmuyor' : `${filledCount}/${totalQuestions} cevap`}</span>
+          </p>
+          <button type="button" className={k.dockGhost} onClick={discard}>Vazgeç</button>
+          <button
+            type="button"
+            className={k.dockSave}
+            onClick={handleSave}
+            disabled={saving || (filledCount === 0 && outcomeCount === 0) || auditBlocks}
+          >
+            {saving ? 'Kaydediliyor…' : 'Kaydet'}
+          </button>
+        </div>
+      )}
+
+      <nav className={k.tabs} role="tablist" aria-label="Cevap anahtarı">
+        {steps.map(st => (
+          <button
+            key={st.key}
+            type="button"
+            role="tab"
+            aria-selected={step === st.key}
+            className={step === st.key ? k.tabOn : k.tab}
+            onClick={() => setStep(st.key)}
+          >
+            {st.done && <span className={k.tick} aria-hidden>✓</span>}
+            {st.label}
+          </button>
+        ))}
+      </nav>
+
       {step === 'answers' && (
         <section className={k.panel}>
-          <h3>Cevapları yapıştırın</h3>
-          <p className={k.hint}>{totalQuestions} soru bekleniyor. Alt alta, yan yana veya Excel sütunu olarak yapıştırabilirsiniz.</p>
-          <div className={k.formats}>
-            <div className={k.format}><b>Alt alta</b><code>{'A\nB\nC\nD\nE'}</code></div>
-            <div className={k.format}><b>Yan yana</b><code>ABCDEABCDE</code></div>
-            <div className={k.format}><b>İptal</b><code>{'A\nİPTAL\nC'}</code></div>
-          </div>
+          <header className={k.head}>
+            <h3>Cevapları yapıştır</h3>
+            <p>
+              {questionSummary}. Alt alta, yan yana (ABCDE), test test satırlar veya numaralı (1-A) olabilir.
+              İptal için İPTAL veya X, boş için BOŞ.
+              {filledCount > 0 && ' Yapıştırınca mevcut cevaplar değişir; kazanım ve B eşlemesi korunur.'}
+            </p>
+          </header>
           <textarea
             className={k.area}
             value={answerText}
             onChange={e => setAnswerText(e.target.value)}
-            placeholder={'Cevapları buraya yapıştırın. İptal için İPTAL, X veya INVALID.'}
-            rows={8}
+            placeholder={'ABCDEABCDE…\nveya\n1-A\n2-C'}
+            rows={9}
             autoFocus
           />
-          <div className={k.bar}>
+          <PasteCount text={answerText} order={order} />
+          <div className={k.panelBar}>
             <span />
             <button type="button" className={k.btnPrimary} onClick={applyAnswers} disabled={!answerText.trim()}>
-              İleri
+              Cevaplara yaz
             </button>
           </div>
         </section>
@@ -616,146 +571,166 @@ export default function AnswerKeyTab({ exam }: Props) {
 
       {step === 'b_booklet' && hasB && (
         <section className={k.panel}>
-          <h3>B kitapçığı</h3>
-          <p className={k.hint}>Soru numarası eşlemesi ve B kitapçığının kendi cevap anahtarı ayrı girilir. İkisi de isteğe bağlıdır.</p>
-
-          <h4 className={k.subhead}>Soru numarası eşleştirme</h4>
-          <p className={k.hint}>A kitapçığındaki her sorunun B kitapçığındaki karşılığını alt alta yapıştırın.</p>
-          <textarea
-            className={k.area}
-            value={bBookletText}
-            onChange={e => setBBookletText(e.target.value)}
-            placeholder={'3\n1\n5\n2\n4'}
-            rows={5}
-            autoFocus
-          />
-
-          <h4 className={k.subhead}>B kitapçığı cevap anahtarı</h4>
-          <p className={k.hint}>
-            Cevapları A kitapçığıyla aynı sırada yapıştırın. Sistem Türkçe, sosyal ve fen testlerini bir bütün,
-            matematik ile geometriyi ayrı sayar. Türkçede 10 tane B varsa B kitapçığında da 10 tane B olmalıdır.
-          </p>
-          <textarea
-            className={k.area}
-            value={bAnswerText}
-            onChange={e => setBAnswerText(e.target.value)}
-            placeholder={'ABCDEABCDE\nveya her satıra bir şık'}
-            rows={5}
-          />
+          <header className={k.head}>
+            <h3>B kitapçığı</h3>
+            <p>İkisi de isteğe bağlı. Yalnız B cevaplarını girerseniz soru eşlemesi şıklardan kurulur.</p>
+          </header>
+          <div className={k.twoCol}>
+            <label className={k.block}>
+              <span>B cevap anahtarı</span>
+              <small>B kitapçığının kendi sırasıyla. Her testte şık sayıları A ile aynı olmalı.</small>
+              <textarea
+                className={k.area}
+                value={bAnswerText}
+                onChange={e => setBAnswerText(e.target.value)}
+                placeholder={'ABCDEABCDE…'}
+                rows={8}
+              />
+              <PasteCount text={bAnswerText} order={order} />
+            </label>
+            <label className={k.block}>
+              <span>Soru numarası eşlemesi</span>
+              <small>A kitapçığındaki her sorunun B’deki numarası, alt alta.</small>
+              <textarea
+                className={k.area}
+                value={bBookletText}
+                onChange={e => setBBookletText(e.target.value)}
+                placeholder={'3\n1\n5\n2'}
+                rows={8}
+              />
+            </label>
+          </div>
           {bChoiceAudit && <ChoiceAuditPanel audit={bChoiceAudit} />}
-
-          <div className={k.bar}>
-            <button type="button" className={k.btn} onClick={() => setStep('answers')}>Geri</button>
-            <div className={k.actions}>
-              <button
-                type="button"
-                className={k.btn}
-                onClick={() => { setBBookletText(''); setBAnswerText(''); setStep('outcomes'); }}
-              >
-                Atla
-              </button>
-              <button
-                type="button"
-                className={k.btnPrimary}
-                onClick={applyBBooklet}
-                disabled={Boolean(bChoiceAudit && !bChoiceAudit.ok)}
-              >
-                İleri
-              </button>
-            </div>
+          <div className={k.panelBar}>
+            <span />
+            <button
+              type="button"
+              className={k.btnPrimary}
+              onClick={applyBBooklet}
+              disabled={auditBlocks || (!bBookletText.trim() && bAnswerText === bSavedText)}
+            >
+              Uygula
+            </button>
           </div>
         </section>
       )}
 
       {step === 'outcomes' && (
         <section className={k.panel}>
-          <h3>Kazanımlar</h3>
-          <p className={k.hint}>Her satıra bir kazanım kodu veya açıklaması. Eşleşmeyenler önizlemede elle seçilir. Bu adım isteğe bağlı.</p>
-          <div className={k.formats}>
-            <div className={k.format}>
-              <b>Kod veya açıklama</b>
-              <code>{'M.6.1.1.1\nDoğal sayılarla dört işlem yapar'}</code>
-            </div>
-          </div>
+          <header className={k.head}>
+            <h3>Kazanımları yapıştır</h3>
+            <p>Her satır bir soru: kazanım kodu veya açıklaması. Boş satır o soruyu atlar. Eşleşmeyenler listede elle seçilir.</p>
+          </header>
+          {allOutcomes.length === 0 && (
+            <div className={k.warn}>Bu sınavın derslerinde kazanım yok. Müfredattan kazanım ekleyince eşleşir.</div>
+          )}
           <textarea
             className={k.area}
             value={outcomeText}
             onChange={e => setOutcomeText(e.target.value)}
             placeholder={'M.6.1.1.1\nDoğal sayılarla dört işlem yapar'}
-            rows={6}
+            rows={9}
             autoFocus
           />
-          {allOutcomes.length === 0 && (
-            <div className={k.warn}>Kazanım listesi boş. Müfredattan kazanım ekleyince buradan eşleşir.</div>
-          )}
-          <div className={k.bar}>
-            <button type="button" className={k.btn} onClick={() => setStep(hasB ? 'b_booklet' : 'answers')}>Geri</button>
-            <div className={k.actions}>
-              <button type="button" className={k.btn} onClick={() => { setOutcomeText(''); setStep('preview'); }}>Atla</button>
-              <button type="button" className={k.btnPrimary} onClick={applyOutcomes} disabled={!outcomeText.trim()}>İleri</button>
-            </div>
+          <div className={k.panelBar}>
+            <span className={k.muted}>{outcomeText.split('\n').filter(l => l.trim()).length} satır</span>
+            <button type="button" className={k.btnPrimary} onClick={applyOutcomes} disabled={!outcomeText.trim() || allOutcomes.length === 0}>
+              Kazanımlara yaz
+            </button>
           </div>
         </section>
       )}
 
       {step === 'preview' && (
-        <>
-          <div className={k.tools}>
-            <div>
-              <h3>Önizleme</h3>
-              <p>{filledCount}/{totalQuestions} cevap{outcomeCount > 0 ? ` · ${outcomeCount} kazanım` : ''}{hasB && bCount > 0 ? ` · ${bCount} B eşleme` : ''}{bChoiceAudit ? (bChoiceAudit.ok ? ' · şık dağılımı uyumlu' : ' · şık dağılımı uyuşmuyor') : ''}</p>
-            </div>
-            <div className={k.actions}>
-              {!hasExistingData && (
-                <button type="button" className={k.btn} onClick={() => setStep('answers')}>Adımlara dön</button>
-              )}
-              {hasExistingData && (
-                <button type="button" className={k.btnDanger} onClick={handleReset}>Sıfırla</button>
-              )}
-              <button type="button" className={k.btnPrimary} onClick={handleSave} disabled={saving || filledCount === 0 || Boolean(bChoiceAudit && !bChoiceAudit.ok)}>
-                {saving ? 'Kaydediliyor…' : 'Kaydet'}
+        <section className={k.panel}>
+          <div className={k.listHead}>
+            <div className={k.filters} role="group" aria-label="Süz">
+              <button type="button" className={filter === 'all' ? k.filterOn : k.filter} onClick={() => setFilter('all')}>
+                Tümü <b>{rows.length}</b>
               </button>
+              <button type="button" className={filter === 'blank' ? k.filterOn : k.filter} onClick={() => setFilter('blank')}>
+                Boş <b>{blankCount}</b>
+              </button>
+              {allOutcomes.length > 0 && (
+                <button type="button" className={filter === 'no_outcome' ? k.filterOn : k.filter} onClick={() => setFilter('no_outcome')}>
+                  Kazanımsız <b>{noOutcomeCount}</b>
+                </button>
+              )}
             </div>
+            <p className={k.muted}>Satıra gelip A–E, X (iptal) veya ↑↓ ile hızlı girin.</p>
           </div>
 
-          {bChoiceAudit && (
-            <section className={k.panel}>
-              <h3>B kitapçığı şık denetimi</h3>
-              <ChoiceAuditPanel audit={bChoiceAudit} />
-            </section>
+          {auditBlocks && bChoiceAudit && (
+            <div className={k.auditWrap}><ChoiceAuditPanel audit={bChoiceAudit} /></div>
           )}
 
-          <section className={k.panel}>
-            {rows.map((row, idx) => {
-              const showHeader = idx === 0 || rows[idx - 1].section_id !== row.section_id;
-              const sec = sections.find(ss => ss.id === row.section_id);
-              const sectionInfo = sec
-                ? { name: sec.name, question_count: sec.question_end - sec.question_start + 1 }
-                : undefined;
+          <div ref={listRef}>
+            {shownRows.map(({ row, idx }, i) => {
+              const prev = shownRows[i - 1]?.row;
+              const header = !prev || prev.section_id !== row.section_id;
+              const stat = sectionStats.get(row.section_id);
               return (
-                <PreviewRow
-                  key={row.question_number}
-                  row={row}
-                  idx={idx}
-                  showHeader={showHeader}
-                  hasB={hasB}
-                  onAnswer={setAnswer}
-                  onBQuestion={setBQuestion}
-                  onOpenOutcome={() => setOutcomeModal({ rowIdx: idx })}
-                  onClearOutcome={() => setOutcome(idx, null)}
-                  sectionInfo={sectionInfo}
-                />
+                <div key={row.question_number}>
+                  {header && (
+                    <div className={k.section}>
+                      <b>{row.section_name}</b>
+                      {optionalIds.has(row.section_id) && !/seçmeli/i.test(row.section_name) && (
+                        <em className={k.optionalTag}>Seçmeli</em>
+                      )}
+                      {stat && <span className={stat.filled === stat.total ? k.sectionDone : ''}>{stat.filled}/{stat.total}</span>}
+                    </div>
+                  )}
+                  <QuestionRow
+                    row={row}
+                    idx={idx}
+                    hasB={hasB}
+                    canPickOutcome={allOutcomes.length > 0}
+                    onAnswer={setAnswer}
+                    onBQuestion={setBQuestion}
+                    onOpenOutcome={() => { setOutcomeSearch(''); setOutcomeModal({ rowIdx: idx }); }}
+                    onClearOutcome={() => setOutcome(idx, null)}
+                    onKeyDown={e => onRowKey(e, idx)}
+                  />
+                </div>
               );
             })}
-            {filledCount === 0 && (
+            {shownRows.length === 0 && (
               <div className={k.blank}>
-                <p>Henüz cevap girilmemiş.</p>
-                <button type="button" className={k.btnPrimary} onClick={() => setStep('answers')}>Cevapları gir</button>
+                {filter === 'all' ? 'Bu sınavda bölüm yok.' : 'Bu süzgece uyan soru yok.'}
               </div>
             )}
-          </section>
-        </>
+          </div>
+        </section>
       )}
+
+      <section className={k.footer}>
+        <div className={k.pdf}>
+          <span className={k.footLabel}>Cevap anahtarı PDF</span>
+          <select aria-label="Adet" value={pdfCopies} onChange={e => setPdfCopies(Number(e.target.value) as 2 | 4 | 6)}>
+            <option value={2}>{showsBothBooklets ? '2 adet (A ve B)' : '2 adet'}</option>
+            <option value={4}>4 adet</option>
+            <option value={6}>6 adet</option>
+          </select>
+          {bookletOptions.length > 0 && (
+            <select aria-label="Kitapçık" value={pdfBooklet} onChange={e => setPdfBooklet(e.target.value)}>
+              <option value="">Tüm kitapçıklar</option>
+              {bookletOptions.map(letter => <option key={letter} value={letter}>{letter} kitapçığı</option>)}
+            </select>
+          )}
+          <button
+            type="button"
+            className={k.btn}
+            disabled={pdfBusy || !canDownloadPdf}
+            title={unsaved ? 'Önce kaydedin; PDF kayıtlı anahtarı basar.' : canDownloadPdf ? undefined : 'Önce cevapları kaydedin'}
+            onClick={downloadPdf}
+          >
+            {pdfBusy ? 'Hazırlanıyor…' : 'PDF indir'}
+          </button>
+        </div>
+        {hasExistingData && (
+          <button type="button" className={k.btnDanger} onClick={handleReset}>Anahtarı sil</button>
+        )}
+      </section>
 
       {outcomeModal !== null && (
         <OutcomePickerModal
@@ -769,14 +744,20 @@ export default function AnswerKeyTab({ exam }: Props) {
           onClose={() => setOutcomeModal(null)}
         />
       )}
-
-      {showJumps && (
-        <div className={k.jumps}>
-          <button type="button" className={k.jump} aria-label="Yukarı" onClick={() => scrollPage('top')}>↑</button>
-          <button type="button" className={k.jump} aria-label="Aşağı" onClick={() => scrollPage('bottom')}>↓</button>
-        </div>
-      )}
     </div>
+  );
+}
+
+function PasteCount({ text, order }: { text: string; order: number[] }) {
+  if (!text.trim()) return null;
+  const parsed = parsePastedAnswers(text, order);
+  const read = parsed.filter(Boolean).length;
+  const ok = parsed.length === order.length && read === order.length;
+  return (
+    <p className={ok ? k.countOk : k.countWarn}>
+      {read} cevap okundu · {order.length} soru
+      {parsed.length > order.length ? ` · ${parsed.length - order.length} fazla` : ''}
+    </p>
   );
 }
 
@@ -799,10 +780,9 @@ function ChoiceAuditPanel({ audit }: { audit: BookletChoiceAudit }) {
               const left = test.a[choice];
               const right = test.b[choice];
               const bad = left !== right;
-              const label = choice === 'INVALID' ? 'İptal' : choice;
               return (
                 <span key={choice} className={bad ? k.chipBad : k.chip}>
-                  {label} {bad ? `${left}≠${right}` : left}
+                  {choice === 'INVALID' ? 'İptal' : choice} {bad ? `${left}≠${right}` : left}
                 </span>
               );
             })}
@@ -818,75 +798,86 @@ function ChoiceAuditPanel({ audit }: { audit: BookletChoiceAudit }) {
   );
 }
 
-function PreviewRow({
-  row, idx, showHeader, hasB,
-  onAnswer, onBQuestion, onOpenOutcome, onClearOutcome,
-  sectionInfo,
+function QuestionRow({
+  row, idx, hasB, canPickOutcome, onAnswer, onBQuestion, onOpenOutcome, onClearOutcome, onKeyDown,
 }: {
   row: GridRow;
   idx: number;
-  showHeader: boolean;
   hasB: boolean;
+  canPickOutcome: boolean;
   onAnswer: (idx: number, a: AnswerChoice) => void;
   onBQuestion: (idx: number, v: string) => void;
   onOpenOutcome: () => void;
   onClearOutcome: () => void;
-  sectionInfo?: { name: string; question_count: number };
+  onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
 }) {
+  const blank = !row.correct_answer;
   return (
-    <>
-      {showHeader && (
-        <div className={k.section}>
-          {sectionInfo?.name ?? row.section_name}
-          {sectionInfo ? ` · ${sectionInfo.question_count} soru` : ''}
-        </div>
+    <div
+      className={blank ? `${k.q} ${k.qBlank}` : k.q}
+      data-row={idx}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      aria-label={`${row.question_number}. soru`}
+    >
+      <span className={k.num}>{row.question_number}</span>
+      <div className={k.choices}>
+        {LETTERS.map(ch => (
+          <button
+            key={ch}
+            type="button"
+            tabIndex={-1}
+            className={row.correct_answer === ch ? k.choiceOn : k.choice}
+            onClick={() => onAnswer(idx, ch)}
+            aria-pressed={row.correct_answer === ch}
+          >
+            {ch}
+          </button>
+        ))}
+        <button
+          type="button"
+          tabIndex={-1}
+          className={`${row.correct_answer === 'INVALID' ? k.choiceOff : k.choice} ${k.cancel}`}
+          onClick={() => onAnswer(idx, 'INVALID')}
+          aria-pressed={row.correct_answer === 'INVALID'}
+          title="Soru iptal (klavyede X)"
+        >
+          İptal
+        </button>
+        {row.correct_answer === 'EMPTY' && <span className={k.emptyTag}>Boş</span>}
+      </div>
+      {hasB && (
+        <input
+          className={k.bInput}
+          type="number"
+          min={1}
+          value={row.b_question_number ?? ''}
+          onChange={e => onBQuestion(idx, e.target.value)}
+          placeholder="B"
+          aria-label={`${row.question_number}. sorunun B kitapçığı numarası`}
+        />
       )}
-      <div className={k.q}>
-        <div className={k.num}>{row.question_number}</div>
-        <div className={k.choices}>
-          {['A', 'B', 'C', 'D', 'E'].map(ch => (
-            <button
-              key={ch}
-              type="button"
-              className={row.correct_answer === ch ? k.choiceOn : k.choice}
-              onClick={() => onAnswer(idx, ch as AnswerChoice)}
-            >
-              {ch}
+      <div className={k.outcome}>
+        {hasOutcome(row) ? (
+          <>
+            <button type="button" className={k.outcomeOn} onClick={onOpenOutcome} title={row.outcome_text}>
+              <b>{row.outcome_code}</b>
+              <span>{row.outcome_text}</span>
             </button>
-          ))}
+            <button type="button" className={k.x} onClick={onClearOutcome} aria-label="Kazanımı kaldır">×</button>
+          </>
+        ) : canPickOutcome ? (
           <button
             type="button"
-            className={row.is_cancelled ? k.choiceOff : k.choice}
-            onClick={() => onAnswer(idx, 'INVALID')}
-            title="İptal"
+            className={row.imported_outcome_text ? k.outcomeMiss : k.outcomeAdd}
+            onClick={onOpenOutcome}
+            title={row.imported_outcome_text || 'Kazanım seç'}
           >
-            ×
+            {row.imported_outcome_text ? <>Eşleşmedi: <span>{row.imported_outcome_text}</span></> : '+ Kazanım'}
           </button>
-        </div>
-        <div className={k.side}>
-          {hasB && (
-            <input
-              className={k.bInput}
-              type="number"
-              min={1}
-              value={row.b_question_number ?? ''}
-              onChange={e => onBQuestion(idx, e.target.value)}
-              placeholder="B"
-              aria-label="B kitapçığı soru numarası"
-            />
-          )}
-          {row.outcome_code && (
-            <span className={k.tag} title={row.outcome_text}>{row.outcome_code}</span>
-          )}
-          <button type="button" className={k.iconBtn} onClick={onOpenOutcome} title="Kazanım seç">
-            {row.outcome_id ? '✎' : '+'}
-          </button>
-          {row.outcome_id && (
-            <button type="button" className={k.iconBtn} onClick={onClearOutcome} title="Kazanımı kaldır">×</button>
-          )}
-        </div>
+        ) : null}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -897,39 +888,39 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
   onSelect: (o: OutcomeItem) => void;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const onKey = (event: globalThis.KeyboardEvent) => { if (event.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
   return (
     <div className={k.modal} onClick={onClose}>
-      <div className={k.sheet} onClick={e => e.stopPropagation()}>
+      <div className={k.sheet} role="dialog" aria-modal="true" aria-label="Kazanım seç" onClick={e => e.stopPropagation()}>
         <div className={k.sheetHead}>
           <h3>Kazanım seç</h3>
-          <button type="button" className={k.iconBtn} onClick={onClose} aria-label="Kapat">×</button>
+          <button type="button" className={k.x} onClick={onClose} aria-label="Kapat">×</button>
         </div>
         <div className={k.sheetBody}>
           <input
             className={k.search}
-            type="text"
-            placeholder="Kazanım kodu veya metin ara"
+            type="search"
+            placeholder="Kod veya metin ara"
             value={search}
             onChange={e => onSearch(e.target.value)}
             autoFocus
           />
           {subjects.map(subj => {
-            const filteredTopics = filterTopicsByQuery(subj.topics ?? [], search)
-              .filter(t => (t.outcomes ?? []).length > 0);
-            if (filteredTopics.length === 0) return null;
+            const topics = filterTopicsByQuery(subj.topics ?? [], search).filter(t => (t.outcomes ?? []).length > 0);
+            if (topics.length === 0) return null;
             return (
               <div key={subj.id} className={k.group}>
                 <b>{subj.name}</b>
-                {filteredTopics.map(topic => (
+                {topics.map(topic => (
                   <div key={topic.id}>
                     <div className={k.topic}>{topic.name}</div>
                     {topic.outcomes.map(o => (
                       <div key={o.id}>
-                        <button
-                          type="button"
-                          className={k.opt}
-                          onClick={() => onSelect({ ...o, sub_outcome_id: null })}
-                        >
+                        <button type="button" className={k.opt} onClick={() => onSelect({ ...o, sub_outcome_id: null })}>
                           <strong>{o.code}</strong>
                           {o.text}
                         </button>
@@ -938,12 +929,7 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
                             key={sub.id}
                             type="button"
                             className={`${k.opt} ${k.sub}`}
-                            onClick={() => onSelect({
-                              id: o.id,
-                              code: sub.code,
-                              text: sub.text,
-                              sub_outcome_id: sub.id,
-                            })}
+                            onClick={() => onSelect({ id: o.id, code: sub.code, text: sub.text, sub_outcome_id: sub.id })}
                           >
                             <strong>{sub.code}</strong>
                             {sub.text}
@@ -957,10 +943,7 @@ function OutcomePickerModal({ subjects, search, onSearch, onSelect, onClose }: {
             );
           })}
           {subjects.length === 0 && (
-            <div className={k.blank}>
-              <p>Kazanım verisi bulunamadı.</p>
-              <p>Müfredat modülünden kazanım ekleyebilirsiniz.</p>
-            </div>
+            <div className={k.blank}>Bu dersin kazanımı yok. Müfredat modülünden ekleyebilirsiniz.</div>
           )}
         </div>
       </div>
