@@ -124,8 +124,15 @@ def _score_answer(exam, sec_nets, tyt_nets, year, coef):
     }
 
 
+def _rank_cohort_ids(exam) -> set[int]:
+    """Listeyle aynı havuz: son eşleşmiş kayıt ve son eşleşmemiş optik satırı."""
+    from ..views.analysis_views import _latest_unmatched_answer_ids
+
+    return _latest_matched_ids(exam) | set(_latest_unmatched_answer_ids(exam))
+
+
 def _apply_ranks(exam, answers, year_blocks, alan):
-    cohort_ids = _latest_matched_ids(exam)
+    cohort_ids = _rank_cohort_ids(exam)
     cohort = [a for a in answers if a.id in cohort_ids]
     total = len(cohort)
     if exam.exam_type in ('YKS_AYT', 'AYT_11'):
