@@ -157,12 +157,16 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
 
   const imageLibrary = useMemo(() => {
     const seen = new Set<string>();
-    const items: { id: number; url: string; label: string; yayin: string; version: number }[] = [];
+    const items: { id: number; url: string; label: string; yayin: string; version: number; fingerprint: string }[] = [];
     sinavlar.forEach(exam => {
       const url = exam.gorsel_url || '';
       if (!url) return;
       const path = url.split('?')[0];
-      const key = exam.grup_id ? `grup:${exam.grup_id}` : path;
+      const fingerprint = exam.gorsel_parmak_izi || '';
+      // Kopya her sınava ayrı dosya yazar; içerik özeti yoksa yol yedek anahtardır.
+      const key = fingerprint
+        ? `img:${fingerprint}`
+        : (exam.grup_id ? `grup:${exam.grup_id}` : path);
       if (seen.has(key)) return;
       seen.add(key);
       const yayin = (exam.yayin_adi || '').trim();
@@ -173,6 +177,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
         label: exam.baslik || yayin,
         yayin: yayin.toLocaleLowerCase('tr'),
         version,
+        fingerprint,
       });
     });
     const current = form.yayin_adi.trim().toLocaleLowerCase('tr');
@@ -463,23 +468,44 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     }
   };
 
-  const removeLibraryImage = async (item: { id: number; label: string }) => {
-    const owner = sinavlar.find(exam => exam.id === item.id);
-    if (!owner || removingLibraryId) return;
-    const dayCount = examDays(owner, sinavlar).length;
-    const question = dayCount > 1
-      ? `«${item.label}» görseli bu sınavın ${dayCount} gününden de kaldırılsın mı? Anasayfada da görünmez.`
-      : `«${item.label}» görseli kaldırılsın mı? Bağlı olduğu sınavın anasayfa görseli de silinir.`;
+  const removeLibraryImage = async (item: { id: number; label: string; fingerprint: string }) => {
+    if (removingLibraryId) return;
+    const matches = item.fingerprint
+      ? sinavlar.filter(exam => exam.gorsel_parmak_izi === item.fingerprint && exam.gorsel_url)
+      : sinavlar.filter(exam => exam.id === item.id);
+    const seen = new Set<string>();
+    const owners: SinavTakvim[] = [];
+    matches.forEach(exam => {
+      const key = exam.grup_id ? `grup:${exam.grup_id}` : `id:${exam.id}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      owners.push(exam);
+    });
+    const primary = owners.find(exam => exam.id === item.id) || owners[0];
+    if (!primary) return;
+    const dayCount = examDays(primary, sinavlar).length;
+    const question = owners.length > 1
+      ? `Bu görsel ${owners.length} sınavda kullanılıyor. Hepsinden kaldırılsın mı? Anasayfada da görünmez.`
+      : dayCount > 1
+        ? `«${item.label}» görseli bu sınavın ${dayCount} gününden de kaldırılsın mı? Anasayfada da görünmez.`
+        : `«${item.label}» görseli kaldırılsın mı? Bağlı olduğu sınavın anasayfa görseli de silinir.`;
     if (!confirm(question)) return;
     setRemovingLibraryId(item.id);
     try {
-      const res = await websiteAdminApi.removeSinavImage(item.id);
-      if (!res.success) {
-        onMessage?.(res.error || 'Görsel silinemedi', 'error');
-        return;
+      for (const owner of owners) {
+        const res = await websiteAdminApi.removeSinavImage(owner.id);
+        if (!res.success) {
+          onMessage?.(res.error || 'Görsel silinemedi', 'error');
+          onReload();
+          return;
+        }
       }
-      if (reuseFromId === item.id) clearDraftImage();
-      if (editingExam && (editingExam.id === item.id || sameExam(editingExam, owner))) {
+      const touchedOpenExam = owners.some(owner => (
+        owner.id === reuseFromId
+        || editingExam?.id === owner.id
+        || (editingExam ? sameExam(editingExam, owner) : false)
+      ));
+      if (touchedOpenExam) {
         setImageCleared(true);
         clearDraftImage();
       }
@@ -834,7 +860,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
             <div className={s.dialogHead}>
               <div>
                 <h3 id="gorsel-sec-title">Görsel seç</h3>
-                <p>Bilgisayardan yükleyin veya daha önce kullanılan bir görseli seçin. Çarpı, görseli bağlı olduğu sınavdan da kaldırır.</p>
+                <p>Bilgisayardan yükleyin veya daha önce kullanılan bir görseli seçin. Aynı görsel bir kez listelenir. Çarpı, bu görseli kullanan sınavlardan da kaldırır.</p>
               </div>
               <button type="button" className={s.iconBtn} onClick={() => setShowPicker(false)} aria-label="Kapat">
                 <Icon name="close" size={16} />

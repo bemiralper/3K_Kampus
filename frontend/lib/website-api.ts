@@ -162,6 +162,8 @@ export type SinavTakvim = {
   saat?: string | null; saat_bitis?: string | null;
   kapsam: string; baslik: string; yayin_adi?: string; aciklama: string; gorsel_url?: string | null;
   grup_id?: string | null;
+  /** Aynı dosya içeriği kopyalansa da değişmez. Görsel seçicide tekilleştirme anahtarı. */
+  gorsel_parmak_izi?: string | null;
 };
 
 export type SinavGunWrite = {

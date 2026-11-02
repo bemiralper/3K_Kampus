@@ -1,6 +1,11 @@
 """Website serialization helpers."""
+import hashlib
+
 from apps.kurum.branding import serialize_kurum_branding
 from apps.website.application.content_service import landing_content_qs, serialize_public_content
+
+_FINGERPRINTS: dict[tuple, str] = {}
+_FINGERPRINT_LIMIT = 512
 
 
 def _media_url(request, field):
@@ -27,6 +32,34 @@ def _versioned_media_url(request, field):
         return url
     separator = '&' if '?' in url else '?'
     return f'{url}{separator}v={modified}-{size}'
+
+
+def gorsel_fingerprint(field):
+    """Dosya içeriğinin özeti. Kopyalanan görseller aynı değeri paylaşır."""
+    if not field or not getattr(field, 'name', None):
+        return None
+    try:
+        storage = field.storage
+        modified = int(storage.get_modified_time(field.name).timestamp())
+        size = field.size
+    except Exception:
+        return None
+    stat_key = (getattr(storage, 'location', ''), field.name, size, modified)
+    cached = _FINGERPRINTS.get(stat_key)
+    if cached:
+        return cached
+    digest = hashlib.sha256()
+    try:
+        with field.open('rb') as handle:
+            for chunk in iter(lambda: handle.read(64 * 1024), b''):
+                digest.update(chunk)
+    except Exception:
+        return None
+    value = digest.hexdigest()
+    if len(_FINGERPRINTS) >= _FINGERPRINT_LIMIT:
+        _FINGERPRINTS.clear()
+    _FINGERPRINTS[stat_key] = value
+    return value
 
 
 def _resolve_landing_sections_hidden(settings) -> list:
@@ -134,7 +167,7 @@ def serialize_duyuru(duyuru, request, include_content=False):
     return data
 
 
-def serialize_sinav(sinav, request):
+def serialize_sinav(sinav, request, *, include_fingerprint=False):
     tarih = sinav.tarih
     if tarih is not None and hasattr(tarih, 'isoformat'):
         tarih = tarih.isoformat()
@@ -144,7 +177,7 @@ def serialize_sinav(sinav, request):
     saat_bitis = sinav.saat_bitis
     if saat_bitis is not None and hasattr(saat_bitis, 'strftime'):
         saat_bitis = saat_bitis.strftime('%H:%M')
-    return {
+    data = {
         'id': sinav.id,
         'tur': sinav.tur,
         'tarih': tarih,
@@ -157,6 +190,9 @@ def serialize_sinav(sinav, request):
         'gorsel_url': _versioned_media_url(request, sinav.gorsel),
         'grup_id': str(sinav.grup_id) if sinav.grup_id else None,
     }
+    if include_fingerprint:
+        data['gorsel_parmak_izi'] = gorsel_fingerprint(sinav.gorsel) if sinav.gorsel else None
+    return data
 
 
 def serialize_neden_kart(kart):

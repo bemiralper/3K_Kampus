@@ -6,7 +6,7 @@
 .close:focus-visible { outline:3px solid #60a5fa; outline-offset:3px; }
 .detail { display:grid; grid-template-columns:minmax(0,.95fr) minmax(0,1.1fr); }
 .visual { display:flex; flex-direction:column; justify-content:center; gap:24px; min-width:0; padding:32px; background:linear-gradient(145deg,#edf6fc,#f8fafc); border-right:1px solid #e5edf4; }
-.poster { display:block; width:100%; max-height:480px; aspect-ratio:4/3; object-fit:contain; background:#fff; border:1px solid #e5edf4; border-radius:16px; box-shadow:0 12px 30px #172c4508; }
+.poster { display:block; width:100%; height:auto; max-height:480px; object-fit:contain; background:#fff; border:1px solid #e5edf4; border-radius:16px; box-shadow:0 12px 30px #172c4508; }
 .visualCaption { display:flex; align-items:center; justify-content:center; gap:8px; color:#64748b; font-size:12px; }
 .content { min-width:0; padding:58px 32px 30px; }
 .tags { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-bottom:22px; }
@@ -28,6 +28,6 @@
 .notes p { margin:0; color:#475569; font-size:13px; line-height:1.8; white-space:pre-wrap; overflow-wrap:anywhere; }
 .notice { display:flex; align-items:flex-start; gap:9px; margin-top:24px; padding:12px; border-radius:10px; background:#f5f8fb; color:#64748b; }
 .notice p { margin:0; font-size:11px; line-height:1.6; }
-@media(max-width:700px) { .overlay { padding:12px; } .panel { max-height:calc(100dvh - 24px); border-radius:18px; } .detail { grid-template-columns:minmax(0,1fr); } .visual { padding:24px 54px 18px; gap:10px; border-right:0; border-bottom:1px solid #e5edf4; } .poster { max-height:220px; aspect-ratio:16/9; border-radius:10px; } .visualCaption { font-size:11px; } .content { padding:24px 20px; } .tags { margin-bottom:16px; } .title { font-size:23px; } .close { top:10px; right:10px; } }
+@media(max-width:700px) { .overlay { padding:12px; } .panel { max-height:calc(100dvh - 24px); border-radius:18px; } .detail { grid-template-columns:minmax(0,1fr); } .visual { padding:24px 54px 18px; gap:10px; border-right:0; border-bottom:1px solid #e5edf4; } .poster { max-height:220px; border-radius:10px; } .visualCaption { font-size:11px; } .content { padding:24px 20px; } .tags { margin-bottom:16px; } .title { font-size:23px; } .close { top:10px; right:10px; } }
 @media(max-width:360px) { .content { padding:20px 16px; } .visual { padding:24px 46px 16px; } .fact { gap:8px; } .icon { width:32px; height:32px; } }
 .fact dl { margin:0; min-width:0; }

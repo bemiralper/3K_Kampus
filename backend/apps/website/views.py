@@ -747,7 +747,10 @@ def api_admin_sinav_takvim(request):
     if err:
         return err
     if request.method == 'GET':
-        data = [serialize_sinav(s, request) for s in SinavTakvim.objects.filter(kurum=kurum)]
+        data = [
+            serialize_sinav(s, request, include_fingerprint=True)
+            for s in SinavTakvim.objects.filter(kurum=kurum)
+        ]
         return JsonResponse({'success': True, 'data': data})
     if request.method == 'POST':
         data = _parse_json(request)
