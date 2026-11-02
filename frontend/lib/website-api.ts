@@ -162,8 +162,15 @@ export type SinavTakvim = {
   saat?: string | null; saat_bitis?: string | null;
   kapsam: string; baslik: string; yayin_adi?: string; aciklama: string; gorsel_url?: string | null;
   grup_id?: string | null;
-  /** Aynı dosya içeriği kopyalansa da değişmez. Görsel seçicide tekilleştirme anahtarı. */
-  gorsel_parmak_izi?: string | null;
+  gorsel_arsiv_id?: number | null;
+};
+
+export type SinavGorselArsiv = {
+  id: number;
+  ad: string;
+  etiketler: string;
+  gorsel_url: string | null;
+  kullanim: number;
 };
 
 export type SinavGunWrite = {
@@ -180,6 +187,7 @@ export type SinavTakvimWrite = {
   yayin_adi: string;
   aciklama: string;
   gunler: SinavGunWrite[];
+  gorsel_arsiv_id?: number | null;
 };
 
 export type SinavTakvimGroupSave = {
@@ -412,6 +420,23 @@ export const websiteAdminApi = {
     }),
   removeSinavImage: (id: number) =>
     adminFetch<SinavTakvim>(`/sinav-takvim/${id}/gorsel/`, { method: 'DELETE' }),
+  listSinavGorseller: (q = '') =>
+    adminFetch<SinavGorselArsiv[]>(`/sinav-gorsel-arsiv/${q.trim() ? `?q=${encodeURIComponent(q.trim())}` : ''}`),
+  createSinavGorsel: (file: File, ad: string, etiketler: string) => {
+    const body = new FormData();
+    body.append('gorsel', file);
+    body.append('ad', ad);
+    body.append('etiketler', etiketler);
+    return adminFetch<SinavGorselArsiv>('/sinav-gorsel-arsiv/', { method: 'POST', body });
+  },
+  updateSinavGorsel: (id: number, data: { ad?: string; etiketler?: string }) =>
+    adminFetch<SinavGorselArsiv>(`/sinav-gorsel-arsiv/${id}/`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+  removeSinavGorsel: (id: number) =>
+    adminFetch<unknown>(`/sinav-gorsel-arsiv/${id}/`, { method: 'DELETE' }),
 };
 
 // ─── CMS v2 Admin + Public ───────────────────────────────────

@@ -1,11 +1,6 @@
 """Website serialization helpers."""
-import hashlib
-
 from apps.kurum.branding import serialize_kurum_branding
 from apps.website.application.content_service import landing_content_qs, serialize_public_content
-
-_FINGERPRINTS: dict[tuple, str] = {}
-_FINGERPRINT_LIMIT = 512
 
 
 def _media_url(request, field):
@@ -34,32 +29,12 @@ def _versioned_media_url(request, field):
     return f'{url}{separator}v={modified}-{size}'
 
 
-def gorsel_fingerprint(field):
-    """Dosya içeriğinin özeti. Kopyalanan görseller aynı değeri paylaşır."""
-    if not field or not getattr(field, 'name', None):
-        return None
-    try:
-        storage = field.storage
-        modified = int(storage.get_modified_time(field.name).timestamp())
-        size = field.size
-    except Exception:
-        return None
-    stat_key = (getattr(storage, 'location', ''), field.name, size, modified)
-    cached = _FINGERPRINTS.get(stat_key)
-    if cached:
-        return cached
-    digest = hashlib.sha256()
-    try:
-        with field.open('rb') as handle:
-            for chunk in iter(lambda: handle.read(64 * 1024), b''):
-                digest.update(chunk)
-    except Exception:
-        return None
-    value = digest.hexdigest()
-    if len(_FINGERPRINTS) >= _FINGERPRINT_LIMIT:
-        _FINGERPRINTS.clear()
-    _FINGERPRINTS[stat_key] = value
-    return value
+def _sinav_gorsel_field(sinav):
+    """Arşiv kaydı varsa tek dosyayı kullan. Eski sınav dosyası yedektir."""
+    arsiv = getattr(sinav, 'gorsel_arsiv', None)
+    if arsiv is not None and getattr(arsiv, 'gorsel', None):
+        return arsiv.gorsel
+    return sinav.gorsel
 
 
 def _resolve_landing_sections_hidden(settings) -> list:
@@ -167,7 +142,7 @@ def serialize_duyuru(duyuru, request, include_content=False):
     return data
 
 
-def serialize_sinav(sinav, request, *, include_fingerprint=False):
+def serialize_sinav(sinav, request):
     tarih = sinav.tarih
     if tarih is not None and hasattr(tarih, 'isoformat'):
         tarih = tarih.isoformat()
@@ -187,12 +162,24 @@ def serialize_sinav(sinav, request, *, include_fingerprint=False):
         'baslik': sinav.baslik,
         'yayin_adi': sinav.yayin_adi or '',
         'aciklama': sinav.aciklama,
-        'gorsel_url': _versioned_media_url(request, sinav.gorsel),
+        'gorsel_url': _versioned_media_url(request, _sinav_gorsel_field(sinav)),
+        'gorsel_arsiv_id': sinav.gorsel_arsiv_id,
         'grup_id': str(sinav.grup_id) if sinav.grup_id else None,
     }
-    if include_fingerprint:
-        data['gorsel_parmak_izi'] = gorsel_fingerprint(sinav.gorsel) if sinav.gorsel else None
     return data
+
+
+def serialize_sinav_gorsel(arsiv, request):
+    kullanim = getattr(arsiv, 'kullanim', None)
+    if kullanim is None:
+        kullanim = arsiv.sinavlar.count()
+    return {
+        'id': arsiv.id,
+        'ad': arsiv.ad,
+        'etiketler': arsiv.etiketler or '',
+        'gorsel_url': _versioned_media_url(request, arsiv.gorsel),
+        'kullanim': kullanim,
+    }
 
 
 def serialize_neden_kart(kart):
@@ -309,7 +296,8 @@ def build_landing_payload(kurum, request):
         ],
         'duyurular': _landing_duyurular(kurum, request),
         'sinav_takvimi': [
-            serialize_sinav(s, request) for s in kurum.sinav_takvim.filter(aktif=True)
+            serialize_sinav(s, request)
+            for s in kurum.sinav_takvim.filter(aktif=True).select_related('gorsel_arsiv')
         ],
         'neden_kartlari': [
             serialize_neden_kart(k) for k in kurum.neden_kartlari.filter(aktif=True)

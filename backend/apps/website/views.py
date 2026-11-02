@@ -7,6 +7,7 @@ from datetime import time
 from django.core.files.base import ContentFile
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Count
 from django.db.utils import OperationalError, ProgrammingError
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404
@@ -25,14 +26,14 @@ from apps.website.footer_defaults import ensure_site_footer_links
 from apps.website.yasal_defaults import ensure_yasal_metinler, upgrade_yasal_metin_if_needed
 from apps.website.models import (
     SiteSettings, SiteSocialLink, SiteFooterLink, HeroSlide, Duyuru,
-    SinavTakvim, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
+    SinavTakvim, SinavGorselArsiv, NedenKart, BasariIstatistik, OgrenciYorumu, SSS,
     YasalMetin, IletisimMesaji,
 )
 from apps.website.serializers import (
     build_landing_payload, serialize_duyuru, serialize_yasal,
     serialize_iletisim_mesaji, serialize_site_settings,
     serialize_social_link, serialize_footer_link, serialize_hero_slide,
-    serialize_sinav, serialize_neden_kart, serialize_basari,
+    serialize_sinav, serialize_sinav_gorsel, serialize_neden_kart, serialize_basari,
     serialize_yorum, serialize_sss,
 )
 
@@ -570,10 +571,52 @@ def _sinav_group(sinav):
 
 
 def _clear_sinav_gorsel(sinav):
-    """Sınavın görselini, aynı gruptaki her günden kaldırır."""
+    """Sınavın görsel bağını, aynı gruptaki her günden kaldırır. Arşiv dosyası durur."""
     for member in _sinav_group(sinav):
         if member.gorsel:
-            member.gorsel.delete(save=True)
+            member.gorsel.delete(save=False)
+        member.gorsel_arsiv = None
+        member.save(update_fields=['gorsel', 'gorsel_arsiv'])
+
+
+def _normalize_etiketler(raw):
+    parts = []
+    seen = set()
+    for piece in str(raw or '').replace(';', ',').split(','):
+        tag = ' '.join(piece.split())
+        if not tag:
+            continue
+        key = tag.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        parts.append(tag)
+    return ', '.join(parts)[:300]
+
+
+def _archive_or_error(kurum, raw):
+    if raw in (None, '', 0):
+        return None, None
+    try:
+        arsiv_id = int(raw)
+    except (TypeError, ValueError):
+        return None, 'Geçersiz görsel'
+    arsiv = SinavGorselArsiv.objects.filter(pk=arsiv_id, kurum=kurum).first()
+    if arsiv is None:
+        return None, 'Arşiv görseli bulunamadı'
+    return arsiv, None
+
+
+def _bind_sinav_arsiv(rows, arsiv):
+    """Gruptaki günleri aynı arşiv kaydına bağlar. Sınava ayrı dosya yazmaz."""
+    target_id = arsiv.id if arsiv is not None else None
+    for row in rows:
+        if row.gorsel_arsiv_id == target_id and not row.gorsel:
+            continue
+        row.gorsel_arsiv = arsiv
+        if row.gorsel:
+            row.gorsel.delete(save=False)
+        row.save(update_fields=['gorsel_arsiv', 'gorsel'])
 
 
 def _propagate_sinav_gorsel(source):
@@ -682,6 +725,11 @@ def _create_sinav_with_gunler(request, kurum, data):
                 row.full_clean()
                 row.save()
                 rows.append(row)
+            if 'gorsel_arsiv_id' in data:
+                arsiv, arsiv_err = _archive_or_error(kurum, data.get('gorsel_arsiv_id'))
+                if arsiv_err:
+                    raise ValueError(arsiv_err)
+                _bind_sinav_arsiv(rows, arsiv)
     except Exception as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=400)
     return JsonResponse({'success': True, 'data': _sinav_group_payload(request, rows)}, status=201)
@@ -725,10 +773,21 @@ def _sync_sinav_gunler(request, anchor, data):
                 row.save()
                 keep.append(row)
             keep_ids = {row.id for row in keep}
-            donor = next((member for member in members if member.gorsel), None)
-            if donor is not None:
-                donor.refresh_from_db()
-                _propagate_sinav_gorsel(donor)
+            if 'gorsel_arsiv_id' in data:
+                arsiv, arsiv_err = _archive_or_error(anchor.kurum, data.get('gorsel_arsiv_id'))
+                if arsiv_err:
+                    raise ValueError(arsiv_err)
+                _bind_sinav_arsiv(keep, arsiv)
+            else:
+                donor = next((member for member in members if member.gorsel_arsiv_id or member.gorsel), None)
+                if donor is not None and donor.gorsel_arsiv_id:
+                    missing = [row for row in keep if not row.gorsel_arsiv_id]
+                    if missing:
+                        donor.refresh_from_db()
+                        _bind_sinav_arsiv(missing, donor.gorsel_arsiv)
+                elif donor is not None:
+                    donor.refresh_from_db()
+                    _propagate_sinav_gorsel(donor)
             for member in members:
                 if member.id not in keep_ids:
                     member.delete()
@@ -748,8 +807,8 @@ def api_admin_sinav_takvim(request):
         return err
     if request.method == 'GET':
         data = [
-            serialize_sinav(s, request, include_fingerprint=True)
-            for s in SinavTakvim.objects.filter(kurum=kurum)
+            serialize_sinav(s, request)
+            for s in SinavTakvim.objects.filter(kurum=kurum).select_related('gorsel_arsiv')
         ]
         return JsonResponse({'success': True, 'data': data})
     if request.method == 'POST':
@@ -903,7 +962,11 @@ def api_admin_sinav_copy(request, pk):
     except ValidationError as exc:
         return JsonResponse({'success': False, 'error': str(exc)}, status=400)
     clone.save()
-    _copy_sinav_gorsel(source, clone)
+    if source.gorsel_arsiv_id:
+        clone.gorsel_arsiv_id = source.gorsel_arsiv_id
+        clone.save(update_fields=['gorsel_arsiv'])
+    else:
+        _copy_sinav_gorsel(source, clone)
     clone.refresh_from_db()
     return JsonResponse({'success': True, 'data': serialize_sinav(clone, request)}, status=201)
 
@@ -932,6 +995,88 @@ def api_admin_sinav_gorsel_copy(request, pk):
     target.refresh_from_db()
     _propagate_sinav_gorsel(target)
     return JsonResponse({'success': True, 'data': serialize_sinav(target, request)})
+
+
+def _read_image_upload(uploaded):
+    if uploaded is None:
+        return 'Dosya bulunamadı'
+    if uploaded.size > 5 * 1024 * 1024:
+        return 'Dosya boyutu 5MB\'dan küçük olmalıdır'
+    content_type = (uploaded.content_type or '').lower()
+    if content_type not in {'image/jpeg', 'image/png', 'image/webp'}:
+        return 'JPEG, PNG veya WebP görsel seçin'
+    from PIL import Image, UnidentifiedImageError
+    try:
+        with Image.open(uploaded) as image:
+            image.verify()
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        return 'Geçerli bir görsel dosyası seçin.'
+    finally:
+        uploaded.seek(0)
+    return None
+
+
+@csrf_exempt
+def api_admin_sinav_gorsel_arsiv(request):
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
+    if err:
+        return err
+    if request.method == 'GET':
+        qs = SinavGorselArsiv.objects.filter(kurum=kurum).annotate(kullanim=Count('sinavlar'))
+        query = (request.GET.get('q') or '').strip()
+        if query:
+            from django.db.models import Q
+            qs = qs.filter(Q(ad__icontains=query) | Q(etiketler__icontains=query))
+        data = [serialize_sinav_gorsel(row, request) for row in qs]
+        return JsonResponse({'success': True, 'data': data})
+    if request.method != 'POST':
+        return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
+    ad = ' '.join((request.POST.get('ad') or '').split())
+    if not ad:
+        return JsonResponse({'success': False, 'error': 'Görsel adı yazın'}, status=400)
+    image_err = _read_image_upload(request.FILES.get('gorsel'))
+    if image_err:
+        return JsonResponse({'success': False, 'error': image_err}, status=400)
+    arsiv = SinavGorselArsiv(
+        kurum=kurum,
+        ad=ad[:120],
+        etiketler=_normalize_etiketler(request.POST.get('etiketler')),
+    )
+    arsiv.save()
+    arsiv.gorsel.save(request.FILES['gorsel'].name, request.FILES['gorsel'], save=True)
+    arsiv.kullanim = 0
+    return JsonResponse({'success': True, 'data': serialize_sinav_gorsel(arsiv, request)}, status=201)
+
+
+@csrf_exempt
+def api_admin_sinav_gorsel_arsiv_detail(request, pk):
+    kurum, err = _admin_kurum(request, extra_write_modules=('olcme',))
+    if err:
+        return err
+    arsiv = get_object_or_404(
+        SinavGorselArsiv.objects.annotate(kullanim=Count('sinavlar')),
+        pk=pk,
+        kurum=kurum,
+    )
+    if request.method in ('PUT', 'PATCH'):
+        data = _parse_json(request)
+        if data is None:
+            return JsonResponse({'success': False, 'error': 'Geçersiz JSON'}, status=400)
+        if 'ad' in data:
+            ad = ' '.join(str(data.get('ad') or '').split())
+            if not ad:
+                return JsonResponse({'success': False, 'error': 'Görsel adı yazın'}, status=400)
+            arsiv.ad = ad[:120]
+        if 'etiketler' in data:
+            arsiv.etiketler = _normalize_etiketler(data.get('etiketler'))
+        arsiv.save()
+        return JsonResponse({'success': True, 'data': serialize_sinav_gorsel(arsiv, request)})
+    if request.method == 'DELETE':
+        if arsiv.gorsel:
+            arsiv.gorsel.delete(save=False)
+        arsiv.delete()
+        return JsonResponse({'success': True, 'message': 'Arşivden silindi'})
+    return JsonResponse({'success': False, 'error': 'Method not allowed'}, status=405)
 
 
 @csrf_exempt

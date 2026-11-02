@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import type { SinavTakvim } from '@/lib/website-api';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import type { SinavGorselArsiv, SinavTakvim } from '@/lib/website-api';
 import { websiteAdminApi, resolveMediaUrl, type SinavTakvimWrite } from '@/lib/website-api';
 import { WEBSITE_IMAGE_GUIDELINES } from '@/lib/website-image-guidelines';
 import { sinavTurBadge, sinavTurColor, sinavTurLabel } from '@/lib/landing-theme';
@@ -72,11 +72,11 @@ const EMPTY_FORM: FormState = {
   gunler: [],
 };
 
-function formSnapshot(form: FormState, pendingImage: File | null, reuseFromId: number | null = null) {
+function formSnapshot(form: FormState, arsivId: number | null, imageTouched: boolean) {
   return JSON.stringify({
     ...form,
-    _pendingImage: pendingImage?.name ?? '',
-    _reuse: reuseFromId ?? 0,
+    _arsiv: arsivId ?? 0,
+    _arsivTouch: imageTouched,
   });
 }
 
@@ -115,13 +115,19 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [pendingImage, setPendingImage] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [showUnsaved, setShowUnsaved] = useState(false);
   const [pendingTab, setPendingTab] = useState<SinavTabId | null>(null);
   const [showAllExams, setShowAllExams] = useState(false);
-  const [reuseFromId, setReuseFromId] = useState<number | null>(null);
-  const [imageCleared, setImageCleared] = useState(false);
+  const [archive, setArchive] = useState<SinavGorselArsiv[]>([]);
+  const [archiveQuery, setArchiveQuery] = useState('');
+  const [selectedArsivId, setSelectedArsivId] = useState<number | null>(null);
+  const [imageTouched, setImageTouched] = useState(false);
+  const [showArchiveForm, setShowArchiveForm] = useState(false);
+  const [archiveAd, setArchiveAd] = useState('');
+  const [archiveEtiket, setArchiveEtiket] = useState('');
+  const [archiveFile, setArchiveFile] = useState<File | null>(null);
+  const [editingArsivId, setEditingArsivId] = useState<number | null>(null);
+  const [archiveSaving, setArchiveSaving] = useState(false);
   const [removingImage, setRemovingImage] = useState(false);
   const [removingLibraryId, setRemovingLibraryId] = useState<number | null>(null);
   const [showPreview, setShowPreview] = useState(false);
@@ -145,48 +151,27 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     return map;
   }, [sinavlar]);
 
-  useEffect(() => {
-    if (!pendingImage) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(pendingImage);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [pendingImage]);
+  const reloadArchive = useCallback(async () => {
+    const res = await websiteAdminApi.listSinavGorseller();
+    if (res.success && res.data) setArchive(res.data);
+  }, []);
 
-  const imageLibrary = useMemo(() => {
-    const seen = new Set<string>();
-    const items: { id: number; url: string; label: string; yayin: string; version: number; fingerprint: string }[] = [];
-    sinavlar.forEach(exam => {
-      const url = exam.gorsel_url || '';
-      if (!url) return;
-      const path = url.split('?')[0];
-      const fingerprint = exam.gorsel_parmak_izi || '';
-      // Kopya her sınava ayrı dosya yazar; içerik özeti yoksa yol yedek anahtardır.
-      const key = fingerprint
-        ? `img:${fingerprint}`
-        : (exam.grup_id ? `grup:${exam.grup_id}` : path);
-      if (seen.has(key)) return;
-      seen.add(key);
-      const yayin = (exam.yayin_adi || '').trim();
-      const version = Number(url.match(/[?&]v=(\d+)/)?.[1] || 0);
-      items.push({
-        id: exam.id,
-        url,
-        label: exam.baslik || yayin,
-        yayin: yayin.toLocaleLowerCase('tr'),
-        version,
-        fingerprint,
-      });
-    });
+  useEffect(() => { void reloadArchive(); }, [reloadArchive]);
+
+  const visibleArchive = useMemo(() => {
+    const query = archiveQuery.trim().toLocaleLowerCase('tr');
     const current = form.yayin_adi.trim().toLocaleLowerCase('tr');
-    return [...items].sort((a, b) => (
-      Number(b.yayin === current) - Number(a.yayin === current)
-      || b.version - a.version
-      || a.label.localeCompare(b.label, 'tr')
+    const rows = query
+      ? archive.filter(item => (
+        item.ad.toLocaleLowerCase('tr').includes(query)
+        || item.etiketler.toLocaleLowerCase('tr').includes(query)
+      ))
+      : archive;
+    return [...rows].sort((a, b) => (
+      Number(b.ad.toLocaleLowerCase('tr') === current) - Number(a.ad.toLocaleLowerCase('tr') === current)
+      || a.ad.localeCompare(b.ad, 'tr')
     ));
-  }, [sinavlar, form.yayin_adi]);
+  }, [archive, archiveQuery, form.yayin_adi]);
 
   const byDate = useMemo(() => {
     const map: Record<string, SinavTakvim[]> = {};
@@ -197,7 +182,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     return map;
   }, [filtered]);
 
-  const isDirty = () => formSnapshot(form, pendingImage, reuseFromId) !== baselineRef.current;
+  const isDirty = () => formSnapshot(form, selectedArsivId, imageTouched) !== baselineRef.current;
 
   const padDate = (d: number) => {
     const m = String(month + 1).padStart(2, '0');
@@ -222,35 +207,36 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
     };
     setEditId(0);
     setSelectedDate(dateKey);
-    setPendingImage(null);
-    setReuseFromId(null);
-    setImageCleared(false);
+    setSelectedArsivId(null);
+    setImageTouched(false);
+    setShowArchiveForm(false);
     setShowPreview(false);
     setShowPicker(false);
     setForm(nextForm);
-    baselineRef.current = formSnapshot(nextForm, null);
+    baselineRef.current = formSnapshot(nextForm, null, false);
   };
 
   const openEdit = (exam: SinavTakvim) => {
     const nextForm = examToForm(exam, sinavlar);
+    const arsivId = exam.gorsel_arsiv_id ?? null;
     setEditId(exam.id);
     setSelectedDate(exam.tarih);
-    setPendingImage(null);
-    setReuseFromId(null);
-    setImageCleared(false);
+    setSelectedArsivId(arsivId);
+    setImageTouched(false);
+    setShowArchiveForm(false);
     setShowPreview(false);
     setShowPicker(false);
     setForm(nextForm);
-    baselineRef.current = formSnapshot(nextForm, null);
+    baselineRef.current = formSnapshot(nextForm, arsivId, false);
   };
 
   const closeForm = () => {
     setEditId(null);
     setSelectedDate(null);
     setForm({ ...EMPTY_FORM, gunler: [] });
-    setPendingImage(null);
-    setReuseFromId(null);
-    setImageCleared(false);
+    setSelectedArsivId(null);
+    setImageTouched(false);
+    setShowArchiveForm(false);
     setShowPreview(false);
     setShowPicker(false);
     baselineRef.current = '';
@@ -283,7 +269,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   };
 
   const requestClose = () => {
-    if (saving || removingImage || removingLibraryId !== null) return;
+    if (saving || archiveSaving || removingImage || removingLibraryId !== null) return;
     if (isDirty()) {
       setShowUnsaved(true);
       return;
@@ -338,6 +324,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
       baslik,
       yayin_adi: form.yayin_adi,
       aciklama: form.aciklama,
+      ...(imageTouched ? { gorsel_arsiv_id: selectedArsivId } : {}),
       gunler: form.gunler.map(gun => ({
         ...(gun.id ? { id: gun.id } : {}),
         tarih: gun.tarih,
@@ -365,23 +352,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
       })) };
       setEditId(recordId);
       setForm(savedForm);
-      baselineRef.current = formSnapshot(savedForm, null);
-
-      if (pendingImage && recordId && recordId > 0) {
-        const up = await websiteAdminApi.upload('sinav-takvim', recordId, pendingImage, 'gorsel');
-        if (!up.success) {
-          await onReload();
-          onMessage?.(`Sınav kaydedildi; görsel yüklenemedi. ${up.error || 'Tekrar Kaydet’e basarak yeniden deneyebilirsiniz.'}`, 'error');
-          return;
-        }
-      } else if (reuseFromId && recordId && recordId > 0 && reuseFromId !== recordId) {
-        const reused = await websiteAdminApi.reuseSinavImage(recordId, reuseFromId);
-        if (!reused.success) {
-          await onReload();
-          onMessage?.(reused.error || 'Kayıtlı görsel kopyalanamadı', 'error');
-          return;
-        }
-      }
+      baselineRef.current = formSnapshot(savedForm, selectedArsivId, false);
 
       onMessage?.(editId === 0 ? 'Sınav eklendi' : 'Sınav güncellendi', 'success');
       await onReload();
@@ -414,14 +385,12 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
 
   const dayExams = selectedDate ? byDate[selectedDate] || [] : [];
   const editingExam = editId && editId > 0 ? sinavlar.find(exam => exam.id === editId) : null;
-  const reuseExam = reuseFromId ? sinavlar.find(exam => exam.id === reuseFromId) : null;
-  const savedImage = imageCleared ? null : resolveMediaUrl(editingExam?.gorsel_url);
-  const displayImage = previewUrl
-    || (reuseExam ? resolveMediaUrl(reuseExam.gorsel_url) : null)
-    || savedImage
-    || null;
-  const hasDraftImage = Boolean(pendingImage || reuseFromId);
-  const hasSavedImage = Boolean(savedImage);
+  const selectedArchive = selectedArsivId ? archive.find(item => item.id === selectedArsivId) : null;
+  const displayImage = imageTouched && !selectedArsivId
+    ? null
+    : resolveMediaUrl(selectedArchive?.gorsel_url) || (!imageTouched ? resolveMediaUrl(editingExam?.gorsel_url) : null);
+  const hasDraftImage = imageTouched;
+  const hasSavedImage = Boolean(!imageTouched && editingExam?.gorsel_url);
   const g = WEBSITE_IMAGE_GUIDELINES.sinav;
 
   const turOptions = activeTab.types;
@@ -440,77 +409,110 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
   };
 
   const clearDraftImage = () => {
-    setPendingImage(null);
-    setReuseFromId(null);
+    setSelectedArsivId(null);
+    setImageTouched(true);
+  };
+
+  const resetArchiveForm = () => {
+    setShowArchiveForm(false);
+    setEditingArsivId(null);
+    setArchiveAd('');
+    setArchiveEtiket('');
+    setArchiveFile(null);
     if (fileRef.current) fileRef.current.value = '';
+  };
+
+  const openArchiveForm = (item?: SinavGorselArsiv) => {
+    setEditingArsivId(item?.id ?? null);
+    setArchiveAd(item?.ad ?? form.yayin_adi.trim());
+    setArchiveEtiket(item?.etiketler ?? form.tur);
+    setArchiveFile(null);
+    if (fileRef.current) fileRef.current.value = '';
+    setShowArchiveForm(true);
+  };
+
+  const saveArchiveItem = async () => {
+    if (archiveSaving) return;
+    const ad = archiveAd.trim();
+    if (!ad) {
+      onMessage?.('Görsel adı yazın', 'error');
+      return;
+    }
+    if (!editingArsivId && !archiveFile) {
+      onMessage?.('Bir görsel dosyası seçin', 'error');
+      return;
+    }
+    if (archiveFile && (!['image/jpeg', 'image/png', 'image/webp'].includes(archiveFile.type) || archiveFile.size > g.maxMb * 1024 * 1024)) {
+      onMessage?.(`JPEG, PNG veya WebP görsel seçin; en fazla ${g.maxMb} MB olabilir.`, 'error');
+      return;
+    }
+    setArchiveSaving(true);
+    try {
+      const res = editingArsivId
+        ? await websiteAdminApi.updateSinavGorsel(editingArsivId, { ad, etiketler: archiveEtiket })
+        : await websiteAdminApi.createSinavGorsel(archiveFile as File, ad, archiveEtiket);
+      if (!res.success || !res.data) {
+        onMessage?.(res.error || 'Arşive kaydedilemedi', 'error');
+        return;
+      }
+      await reloadArchive();
+      if (!editingArsivId) {
+        setSelectedArsivId(res.data.id);
+        setImageTouched(true);
+        setShowPicker(false);
+      }
+      resetArchiveForm();
+      onMessage?.(editingArsivId ? 'Arşiv görseli güncellendi' : 'Görsel arşive eklendi', 'success');
+    } finally {
+      setArchiveSaving(false);
+    }
   };
 
   const removeSavedImage = async () => {
     if (!editId || editId <= 0) return;
     const dayCount = editingExam ? examDays(editingExam, sinavlar).length : 1;
     const question = dayCount > 1
-      ? `Görsel bu sınavın ${dayCount} gününden de kaldırılsın mı?`
-      : 'Bu görsel kaldırılsın mı?';
+      ? `Görsel bu sınavın ${dayCount} gününden de kaldırılsın mı? Arşivdeki dosya durur.`
+      : 'Görsel bu sınavdan kaldırılsın mı? Arşivdeki dosya durur.';
     if (!confirm(question)) return;
     setRemovingImage(true);
     try {
       const res = await websiteAdminApi.removeSinavImage(editId);
       if (!res.success) {
-        onMessage?.(res.error || 'Görsel silinemedi', 'error');
+        onMessage?.(res.error || 'Görsel kaldırılamadı', 'error');
         return;
       }
-      setImageCleared(true);
-      clearDraftImage();
+      setSelectedArsivId(null);
+      setImageTouched(false);
+      baselineRef.current = formSnapshot(form, null, false);
       onReload();
-      onMessage?.('Görsel silindi', 'success');
+      onMessage?.('Görsel sınavdan kaldırıldı', 'success');
     } finally {
       setRemovingImage(false);
     }
   };
 
-  const removeLibraryImage = async (item: { id: number; label: string; fingerprint: string }) => {
+  const removeArchiveItem = async (item: SinavGorselArsiv) => {
     if (removingLibraryId) return;
-    const matches = item.fingerprint
-      ? sinavlar.filter(exam => exam.gorsel_parmak_izi === item.fingerprint && exam.gorsel_url)
-      : sinavlar.filter(exam => exam.id === item.id);
-    const seen = new Set<string>();
-    const owners: SinavTakvim[] = [];
-    matches.forEach(exam => {
-      const key = exam.grup_id ? `grup:${exam.grup_id}` : `id:${exam.id}`;
-      if (seen.has(key)) return;
-      seen.add(key);
-      owners.push(exam);
-    });
-    const primary = owners.find(exam => exam.id === item.id) || owners[0];
-    if (!primary) return;
-    const dayCount = examDays(primary, sinavlar).length;
-    const question = owners.length > 1
-      ? `Bu görsel ${owners.length} sınavda kullanılıyor. Hepsinden kaldırılsın mı? Anasayfada da görünmez.`
-      : dayCount > 1
-        ? `«${item.label}» görseli bu sınavın ${dayCount} gününden de kaldırılsın mı? Anasayfada da görünmez.`
-        : `«${item.label}» görseli kaldırılsın mı? Bağlı olduğu sınavın anasayfa görseli de silinir.`;
+    const question = item.kullanim > 0
+      ? `«${item.ad}» ${item.kullanim} sınavda kullanılıyor. Arşivden silinirse o sınavlardan da kalkar. Silinsin mi?`
+      : `«${item.ad}» arşivden silinsin mi?`;
     if (!confirm(question)) return;
     setRemovingLibraryId(item.id);
     try {
-      for (const owner of owners) {
-        const res = await websiteAdminApi.removeSinavImage(owner.id);
-        if (!res.success) {
-          onMessage?.(res.error || 'Görsel silinemedi', 'error');
-          onReload();
-          return;
-        }
+      const res = await websiteAdminApi.removeSinavGorsel(item.id);
+      if (!res.success) {
+        onMessage?.(res.error || 'Arşivden silinemedi', 'error');
+        return;
       }
-      const touchedOpenExam = owners.some(owner => (
-        owner.id === reuseFromId
-        || editingExam?.id === owner.id
-        || (editingExam ? sameExam(editingExam, owner) : false)
-      ));
-      if (touchedOpenExam) {
-        setImageCleared(true);
-        clearDraftImage();
+      if (selectedArsivId === item.id) {
+        setSelectedArsivId(null);
+        setImageTouched(true);
       }
-      onReload();
-      onMessage?.('Görsel silindi', 'success');
+      if (editingArsivId === item.id) resetArchiveForm();
+      await reloadArchive();
+      await onReload();
+      onMessage?.('Görsel arşivden silindi', 'success');
     } finally {
       setRemovingLibraryId(null);
     }
@@ -792,25 +794,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
                 <button type="button" className={s.poster} onClick={() => setShowPicker(true)} aria-label="Görsel seç">
                   {displayImage ? <img src={displayImage} alt="" /> : <span>Görsel seç</span>}
                 </button>
-                <p className={s.hint}>Seçmek için alana tıklayın. {g.size}. En fazla {g.maxMb} MB.</p>
-                <input
-                  ref={fileRef}
-                  type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  hidden
-                  onChange={event => {
-                    const file = event.target.files?.[0];
-                    if (!file) return;
-                    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > g.maxMb * 1024 * 1024) {
-                      onMessage?.(`JPEG, PNG veya WebP görsel seçin; en fazla ${g.maxMb} MB olabilir.`, 'error');
-                      event.target.value = '';
-                      return;
-                    }
-                    setPendingImage(file);
-                    setReuseFromId(null);
-                    setShowPicker(false);
-                  }}
-                />
+                <p className={s.hint}>Arşivden seçin. Yeni logo önce arşive, isim ve etiketle eklenir. {g.size}. En fazla {g.maxMb} MB.</p>
                 <div className={s.actions} style={{ marginTop: 0 }}>
                   {displayImage && (
                     <button type="button" className={s.ghost} onClick={() => setShowPreview(true)}>
@@ -859,40 +843,86 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
           >
             <div className={s.dialogHead}>
               <div>
-                <h3 id="gorsel-sec-title">Görsel seç</h3>
-                <p>Bilgisayardan yükleyin veya daha önce kullanılan bir görseli seçin. Aynı görsel bir kez listelenir. Çarpı, bu görseli kullanan sınavlardan da kaldırır.</p>
+                <h3 id="gorsel-sec-title">Görsel arşivi</h3>
+                <p>Arşivden seçin. Yeni görsel bir kez eklenir; sonraki sınavlar aynı kaydı kullanır.</p>
               </div>
               <button type="button" className={s.iconBtn} onClick={() => setShowPicker(false)} aria-label="Kapat">
                 <Icon name="close" size={16} />
               </button>
             </div>
             <div className={s.pickerBody}>
-              <button type="button" className={s.ghost} onClick={() => fileRef.current?.click()}>
-                <Icon name="upload" size={14} /> Görsel yükle
-              </button>
-              {imageLibrary.length > 0 ? (
+              <div className={s.archiveTools}>
+                <input
+                  className={s.archiveSearch}
+                  value={archiveQuery}
+                  onChange={event => setArchiveQuery(event.target.value)}
+                  placeholder="İsim veya etiket ara"
+                  aria-label="Arşivde ara"
+                />
+                <button type="button" className={s.ghost} onClick={() => (showArchiveForm && !editingArsivId ? resetArchiveForm() : openArchiveForm())}>
+                  <Icon name="plus" size={14} /> Arşive ekle
+                </button>
+              </div>
+              {showArchiveForm && (
+                <div className={s.archiveForm}>
+                  <label className={s.field}>
+                    <span>Ad</span>
+                    <input value={archiveAd} onChange={event => setArchiveAd(event.target.value)} placeholder="ÜçDörtBeş" />
+                  </label>
+                  <label className={s.field}>
+                    <span>Etiketler</span>
+                    <input value={archiveEtiket} onChange={event => setArchiveEtiket(event.target.value)} placeholder="TYT, AYT, deneme" />
+                  </label>
+                  {!editingArsivId && (
+                    <label className={s.field}>
+                      <span>Dosya</span>
+                      <input
+                        ref={fileRef}
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp"
+                        onChange={event => setArchiveFile(event.target.files?.[0] ?? null)}
+                      />
+                    </label>
+                  )}
+                  <div className={s.actions} style={{ marginTop: 0 }}>
+                    <button type="button" className={s.primary} onClick={saveArchiveItem} disabled={archiveSaving}>
+                      {archiveSaving ? 'Kaydediliyor…' : editingArsivId ? 'Adı güncelle' : 'Arşive kaydet'}
+                    </button>
+                    <button type="button" className={s.ghost} onClick={resetArchiveForm}>Vazgeç</button>
+                  </div>
+                </div>
+              )}
+              {visibleArchive.length > 0 ? (
                 <div className={s.library}>
-                  {imageLibrary.map(item => (
-                    <div key={item.id} className={reuseFromId === item.id ? `${s.libItem} ${s.libOn}` : s.libItem}>
+                  {visibleArchive.map(item => (
+                    <div key={item.id} className={selectedArsivId === item.id ? `${s.libItem} ${s.libOn}` : s.libItem}>
                       <button
                         type="button"
                         className={s.libPick}
                         onClick={() => {
-                          setReuseFromId(item.id);
-                          setPendingImage(null);
-                          if (fileRef.current) fileRef.current.value = '';
+                          setSelectedArsivId(item.id);
+                          setImageTouched(true);
                           setShowPicker(false);
                         }}
                       >
-                        <img src={resolveMediaUrl(item.url) || item.url} alt="" />
-                        <span>{item.label}</span>
+                        <img src={resolveMediaUrl(item.gorsel_url) || ''} alt="" />
+                        <span>{item.ad}</span>
+                        {item.etiketler && <small className={s.libTags}>{item.etiketler}</small>}
+                      </button>
+                      <button
+                        type="button"
+                        className={s.libEdit}
+                        aria-label={`${item.ad} adını düzenle`}
+                        onClick={() => openArchiveForm(item)}
+                      >
+                        <Icon name="edit" size={10} />
                       </button>
                       <button
                         type="button"
                         className={s.libRemove}
-                        aria-label={`${item.label} görselini sil`}
+                        aria-label={`${item.ad} görselini arşivden sil`}
                         disabled={removingLibraryId === item.id}
-                        onClick={() => removeLibraryImage(item)}
+                        onClick={() => removeArchiveItem(item)}
                       >
                         <Icon name="close" size={10} />
                       </button>
@@ -900,7 +930,7 @@ export default function SinavCalendarAdmin({ sinavlar, onReload, onMessage }: Si
                   ))}
                 </div>
               ) : (
-                <p className={s.hint}>Henüz kullanılmış görsel yok.</p>
+                <p className={s.hint}>{archive.length ? 'Bu aramaya uygun görsel yok.' : 'Arşiv boş. Önce bir görsel ekleyin.'}</p>
               )}
             </div>
           </div>

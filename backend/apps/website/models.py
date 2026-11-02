@@ -24,6 +24,10 @@ def sinav_gorsel_upload_to(instance, filename):
     return _website_path(instance, filename, f'sinav_{instance.pk or "new"}')
 
 
+def arsiv_gorsel_upload_to(instance, filename):
+    return _website_path(instance, filename, f'arsiv_{instance.pk or "new"}')
+
+
 class SiteSettings(models.Model):
     kurum = models.OneToOneField(
         'kurum.Kurum', on_delete=models.CASCADE, related_name='site_settings',
@@ -243,6 +247,14 @@ class SinavTakvim(models.Model):
     yayin_adi = models.CharField('Yayın / Kurum Adı', max_length=120, blank=True, default='')
     aciklama = models.TextField('Açıklama', blank=True, default='')
     gorsel = models.ImageField('Görsel', upload_to=sinav_gorsel_upload_to, blank=True, null=True)
+    gorsel_arsiv = models.ForeignKey(
+        'SinavGorselArsiv',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sinavlar',
+        verbose_name='Arşiv görseli',
+    )
     aktif = models.BooleanField('Aktif', default=True)
     grup_id = models.UUIDField(
         'Gün grubu',
@@ -267,6 +279,31 @@ class SinavTakvim(models.Model):
             raise ValidationError({'saat': 'Bitiş saati için başlangıç saati de seçilmelidir.'})
         if self.saat and self.saat_bitis and self.saat_bitis <= self.saat:
             raise ValidationError({'saat_bitis': 'Bitiş saati başlangıçtan sonra olmalıdır.'})
+
+
+class SinavGorselArsiv(models.Model):
+    """Sınav afişlerinin tek kopyası. Sınavlar bu kayda bağlanır, dosyayı çoğaltmaz."""
+
+    kurum = models.ForeignKey('kurum.Kurum', on_delete=models.CASCADE, related_name='sinav_gorsel_arsivi')
+    ad = models.CharField('Ad', max_length=120)
+    etiketler = models.CharField(
+        'Etiketler',
+        max_length=300,
+        blank=True,
+        default='',
+        help_text='Virgülle ayrılmış etiketler. Arşiv aramasında ada ek olarak kullanılır.',
+    )
+    gorsel = models.ImageField('Görsel', upload_to=arsiv_gorsel_upload_to)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['ad', '-updated_at']
+        verbose_name = 'Sınav görseli'
+        verbose_name_plural = 'Sınav görsel arşivi'
+
+    def __str__(self):
+        return self.ad
 
 
 class NedenKart(models.Model):

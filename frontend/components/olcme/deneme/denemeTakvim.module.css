@@ -616,6 +616,41 @@
   padding: 16px 18px 18px;
 }
 
+.archiveTools {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  align-items: center;
+}
+
+.archiveSearch {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #d5e0ea;
+  border-radius: 10px;
+  background: #fff;
+  font: inherit;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.archiveSearch:focus {
+  outline: 2px solid #93c5fd;
+  border-color: #2563eb;
+}
+
+.archiveForm {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e5edf4;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+
 .library {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
@@ -656,12 +691,38 @@
 
 .libItem span {
   display: block;
-  padding: 4px 6px 6px;
+  padding: 4px 6px 2px;
   font-size: 10.5px;
   color: #475569;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.libTags {
+  display: block;
+  padding: 0 6px 6px;
+  color: #94a3b8;
+  font-size: 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.libEdit {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 99px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
 }
 
 .libRemove {

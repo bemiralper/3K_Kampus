@@ -93,40 +93,6 @@ class SinavCopyApiTests(TestCase):
         self.assertNotEqual(target.gorsel.name, self.exam.gorsel.name)
         self.assertTrue(target.gorsel.storage.exists(target.gorsel.name))
 
-    def test_reused_image_shares_fingerprint_in_library_list(self):
-        target = SinavTakvim.objects.create(
-            kurum=self.kurum,
-            tur='TYT',
-            tarih=date(2026, 8, 1),
-            baslik='Çap Yayınları AYT Deneme',
-            yayin_adi='Çap',
-        )
-        other = SinavTakvim.objects.create(
-            kurum=self.kurum,
-            tur='AYT',
-            tarih=date(2026, 9, 1),
-            baslik='Başka Yayın',
-            yayin_adi='Başka',
-        )
-        other.gorsel.save('diger.jpg', ContentFile(_jpeg_bytes('blue')), save=True)
-        copied = self._post(
-            f'/website-yonetimi/api/sinav-takvim/{target.id}/gorsel-kopyala/',
-            {'kaynak_id': self.exam.id},
-        )
-        self.assertEqual(copied.status_code, 200, copied.content)
-
-        res = self.client.get(
-            '/website-yonetimi/api/sinav-takvim/',
-            HTTP_X_KURUM_ID=str(self.kurum.id),
-        )
-        self.assertEqual(res.status_code, 200, res.content)
-        rows = {row['id']: row for row in res.json()['data']}
-        source_fp = rows[self.exam.id]['gorsel_parmak_izi']
-        self.assertTrue(source_fp)
-        self.assertEqual(rows[target.id]['gorsel_parmak_izi'], source_fp)
-        self.assertNotEqual(rows[other.id]['gorsel_parmak_izi'], source_fp)
-        self.assertNotEqual(rows[self.exam.id]['gorsel_url'].split('?')[0], rows[target.id]['gorsel_url'].split('?')[0])
-
 
 class SinavTakvimOlcmePermissionTests(TestCase):
     """Deneme takvimi Ölçme menüsünden düzenlenir; diğer site içerikleri açılmaz."""
