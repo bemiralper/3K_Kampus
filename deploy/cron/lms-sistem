@@ -1,7 +1,9 @@
-# Sistem Yönetimi — metrik toplama (dakikalık)
+# Sistem Yönetimi — metrik ve ölçme yayını (dakikalık)
+# flock -n: önceki tur bitmediyse yenisi beklenmez, atlanır.
+# Aynı komut kullanıcı crontab'ında tekrarlanmamalı; kurulum yalnız bu dosyadadır.
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
 LMS_ROOT=/var/www/lms
 
-* * * * * lms cd $LMS_ROOT/backend && set -a && . /etc/lms/env && set +a && $LMS_ROOT/venv/bin/python manage.py collect_system_metrics >> /var/log/lms/sistem_metrics.log 2>&1
-* * * * * lms cd $LMS_ROOT/backend && set -a && . /etc/lms/env && set +a && $LMS_ROOT/venv/bin/python manage.py process_olcme_publish >> /var/log/lms/olcme_publish.log 2>&1
+* * * * * lms $LMS_ROOT/backend/scripts/cron-flock.sh system-metrics /var/log/lms/sistem_metrics.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py collect_system_metrics'
+* * * * * lms $LMS_ROOT/backend/scripts/cron-flock.sh olcme-publish /var/log/lms/olcme_publish.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py process_olcme_publish'

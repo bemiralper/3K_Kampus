@@ -32,6 +32,39 @@ def evaluate_alerts() -> list[dict]:
             'metadata': {'disk_percent': host['disk_percent']},
         }
 
+    ram = float(host.get('ram_percent') or 0)
+    if host.get('available') and ram >= 95:
+        desired['ram_critical'] = {
+            'severity': 'critical',
+            'title': 'RAM kritik doluluk',
+            'message': f'RAM %{ram:.0f} dolu',
+            'metadata': {'ram_percent': ram},
+        }
+    elif host.get('available') and ram >= 90:
+        desired['ram_warn'] = {
+            'severity': 'warning',
+            'title': 'RAM uyarı eşiği',
+            'message': f'RAM %{ram:.0f} dolu',
+            'metadata': {'ram_percent': ram},
+        }
+
+    swap = float(host.get('swap_percent') or 0)
+    swap_total = int(host.get('swap_total_bytes') or 0)
+    if host.get('available') and swap_total > 0 and swap >= 80:
+        desired['swap_critical'] = {
+            'severity': 'critical',
+            'title': 'Takas alanı kritik',
+            'message': f'Takas %{swap:.0f} dolu',
+            'metadata': {'swap_percent': swap},
+        }
+    elif host.get('available') and swap_total > 0 and swap >= 50:
+        desired['swap_warn'] = {
+            'severity': 'warning',
+            'title': 'Takas alanı kullanılıyor',
+            'message': f'Takas %{swap:.0f} dolu',
+            'metadata': {'swap_percent': swap},
+        }
+
     if pg.get('status') == 'down':
         desired['postgres_down'] = {
             'severity': 'critical',

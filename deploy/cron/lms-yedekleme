@@ -7,15 +7,17 @@
 # Günlük iş paneldeki saatte bir kez veritabanı yedeği alır.
 # Medya (iletişim PDF’leri dahil) pazar 22:30’ta ayrı çalışır ve
 # günlük last_run kaydını ezmez.
+# Yedek işleri /var/lock/lms-backup.lock ile birbirini dışlar.
+# Tick betiği sorgu başarısızsa Django'ya düşer; o düşüş de aynı kilidin içindedir.
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Her 5 dakika — saat gelmeden Django açılmaz
+# Her 5 dakika — saat gelmeden Django açılmaz. Kilit betiğin içinde.
 */5 * * * * lms /var/www/lms/backend/scripts/backup-cron-tick.sh >> /var/log/lms/backups.log 2>&1
 
-# Pazar 22:30 — yalnızca medya kökü
-30 22 * * 0 lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py run_scheduled_backups --kind selected --resources system.media --trigger weekly --skip-schedule-record >> /var/log/lms/backups.log 2>&1
+# Pazar 22:30 — yalnızca medya kökü. Tick ile aynı kilit.
+30 22 * * 0 lms /var/www/lms/backend/scripts/cron-flock.sh backup /var/log/lms/backups.log -- bash -c 'cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && exec /var/www/lms/venv/bin/python manage.py run_scheduled_backups --kind selected --resources system.media --trigger weekly --skip-schedule-record'
 
 # Her gün 04:00 — 5 günden eski günlük yedek, 21 günden eski haftalık medya, süresi dolmuş sohbet ekleri
-0 4 * * * lms cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && /var/www/lms/venv/bin/python manage.py purge_expired_backups >> /var/log/lms/backups.log 2>&1
+0 4 * * * lms /var/www/lms/backend/scripts/cron-flock.sh backup /var/log/lms/backups.log -- bash -c 'cd /var/www/lms/backend && set -a && . /etc/lms/env && set +a && exec /var/www/lms/venv/bin/python manage.py purge_expired_backups'

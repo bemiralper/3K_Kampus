@@ -9,11 +9,14 @@ from django.test import SimpleTestCase, TestCase, override_settings
 
 from apps.yedekleme.domain.models import BackupArtifact, BackupKind, BackupStatus
 from apps.yedekleme.engine.orchestrator import BackupEngine
+from apps.yedekleme.engine.remote import _remote_key
 from apps.yedekleme.engine.storage import (
     WORK_DIR_NAME,
     cleanup_stale_work_dirs,
     delete_file,
     make_work_dir,
+    resolve_storage_path,
+    safe_backup_filename,
     store_file,
     work_root,
 )
@@ -40,6 +43,38 @@ class BackupStorageDeleteTests(SimpleTestCase):
                 dest = store_file(src, 'job_2/backup.zip')
                 mode = dest.stat().st_mode & 0o777
                 self.assertEqual(mode, 0o664)
+
+
+class BackupPathContainmentTests(SimpleTestCase):
+    def test_store_rejects_parent_and_absolute_keys(self):
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / 'store'
+            with override_settings(BACKUP_CONFIG={'local_root': root}):
+                src = Path(td) / 'src.bin'
+                src.write_bytes(b'data')
+                with self.assertRaises(ValueError):
+                    store_file(src, '../escape.zip')
+                with self.assertRaises(ValueError):
+                    store_file(src, '/tmp/escape.zip')
+                self.assertFalse((Path(td) / 'escape.zip').exists())
+
+    def test_upload_name_drops_directories(self):
+        self.assertEqual(safe_backup_filename('../secret/backup.zip'), 'backup.zip')
+        with self.assertRaises(ValueError):
+            safe_backup_filename('not-a-backup.txt')
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td) / 'store'
+            with override_settings(BACKUP_CONFIG={'local_root': root}):
+                with self.assertRaises(ValueError):
+                    resolve_storage_path('../escape.zip')
+
+    def test_remote_key_rejects_parent_and_absolute(self):
+        with override_settings(BACKUP_CONFIG={'s3_prefix': 'ok'}):
+            self.assertEqual(_remote_key('2026/backup.zip'), 'ok/2026/backup.zip')
+            with self.assertRaises(ValueError):
+                _remote_key('../etc/passwd')
+            with self.assertRaises(ValueError):
+                _remote_key('/etc/passwd')
 
 
 class BackupWorkDirTests(SimpleTestCase):

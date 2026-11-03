@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import socket
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 import django
 from django.conf import settings
+from django.db import transaction
 from django.utils import timezone as dj_tz
 
 from apps.yedekleme.domain.models import (
@@ -25,6 +28,12 @@ from apps.yedekleme.domain.models import (
 from apps.yedekleme.engine import encryption as enc
 from apps.yedekleme.engine.archive import create_zip, extract_zip, sha256_file, verify_checksums, write_checksums
 from apps.yedekleme.engine.handlers import get_handler
+from apps.yedekleme.engine.run_guard import (
+    BackupRunGuard,
+    backup_owner_alive,
+    foreign_heartbeat_alive,
+    process_alive,
+)
 from apps.yedekleme.engine.handlers.base import DryRunReport, JobLog, RestoreAnalysis
 from apps.yedekleme.engine.plan import (
     entry_priority,
@@ -215,15 +224,30 @@ class BackupEngine:
         job.save()
 
     def fail_stale_running_jobs(self, *, max_age_minutes: int | None = None) -> int:
-        """RUNNING durumunda takılı kalan job/artifact kayıtlarını FAILED yapar."""
+        """Kilit veya nabız hâlâ canlıysa hiçbir RUNNING kaydı kapatmaz.
+
+        Yaş tek başına yeterli değildir. Süreç kilidi tutuyorsa veya nabız
+        pid'i yaşıyorsa kayıt olduğu gibi kalır.
+        """
         from datetime import timedelta as _timedelta
 
+        if backup_owner_alive():
+            return 0
         cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
         minutes = max_age_minutes if max_age_minutes is not None else int(cfg.get('stale_job_minutes') or 30)
         cutoff = _now() - _timedelta(minutes=max(1, minutes))
-        msg = f'Asılı kalan iş temizlendi (>{minutes} dk RUNNING)'
+        msg = f'Önceki süreç çalışmıyor (>{minutes} dk, kilit ve nabız yok)'
 
+        protected = []
+        protected_artifacts = []
+        for job in BackupJob.objects.filter(status=BackupStatus.RUNNING, started_at__lt=cutoff):
+            if process_alive(((job.result or {}).get('owner') or {}).get('pid')):
+                protected.append(job.pk)
+                if job.artifact_id:
+                    protected_artifacts.append(job.artifact_id)
         jobs = BackupJob.objects.filter(status=BackupStatus.RUNNING, started_at__lt=cutoff)
+        if protected:
+            jobs = jobs.exclude(pk__in=protected)
         count = jobs.count()
         if count:
             jobs.update(
@@ -234,15 +258,53 @@ class BackupEngine:
                 finished_at=_now(),
                 message='Zaman aşımı / süreç kesildi',
             )
-        BackupArtifact.objects.filter(
+        artifacts = BackupArtifact.objects.filter(
             status=BackupStatus.RUNNING,
             started_at__lt=cutoff,
-        ).update(
+        )
+        if protected_artifacts:
+            artifacts = artifacts.exclude(pk__in=protected_artifacts)
+        artifacts.update(
             status=BackupStatus.FAILED,
             error_message=msg,
             finished_at=_now(),
         )
         return count
+
+    def _fail_abandoned_create_jobs(self) -> int:
+        """Kilit bizde ve yabancı nabız yokken ölü CREATE kayıtlarını kapatır."""
+        jobs = list(
+            BackupJob.objects.filter(
+                action=BackupOperationAction.CREATE,
+                status=BackupStatus.RUNNING,
+            )
+        )
+        ids = []
+        artifact_ids = []
+        for job in jobs:
+            if process_alive(((job.result or {}).get('owner') or {}).get('pid')):
+                continue
+            ids.append(job.pk)
+            if job.artifact_id:
+                artifact_ids.append(job.artifact_id)
+        if not ids:
+            return 0
+        msg = 'Önceki yedek süreci çalışmıyor; kilit boş ve nabız yok'
+        BackupJob.objects.filter(pk__in=ids).update(
+            status=BackupStatus.FAILED,
+            phase=JobPhase.ERROR,
+            progress=100,
+            error_message=msg,
+            finished_at=_now(),
+            message='Süreç yok',
+        )
+        if artifact_ids:
+            BackupArtifact.objects.filter(pk__in=artifact_ids, status=BackupStatus.RUNNING).update(
+                status=BackupStatus.FAILED,
+                error_message=msg,
+                finished_at=_now(),
+            )
+        return len(ids)
 
     def cancel_job(self, job: BackupJob, *, reason: str = 'Manuel iptal') -> dict:
         """Takılı veya istenmeyen RUNNING işi iptal eder (artifact dahil)."""
@@ -350,22 +412,64 @@ class BackupEngine:
         compress: bool = True,
         tenant: dict | None = None,
     ) -> tuple[BackupArtifact, BackupJob]:
-        # M7: Eşzamanlılık sınırı — aynı anda tek bir create işi. Stale (asılı
-        # kalmış) işleri engellemesin diye yalnızca yakın zamanlı RUNNING işler
-        # bloklar; eskiler fail_stale_running_jobs ile FAILED işaretlenir.
+        # Süreç yaşıyorsa yeni yedek yok. Yaş tek başına RUNNING kaydı kapatmaz.
         cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
         max_age_hours = int(cfg.get('max_job_age_hours') or 3)
-        from datetime import timedelta as _timedelta
-        cutoff = _now() - _timedelta(hours=max_age_hours)
+        if trigger != BackupTrigger.PRE_RESTORE and backup_owner_alive():
+            raise RuntimeError(
+                'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
+            )
+        guard = BackupRunGuard()
+        if not guard.try_acquire():
+            if trigger == BackupTrigger.PRE_RESTORE:
+                raise RuntimeError('Yedek kilidi tutuluyor; ikinci yedek açılmaz.')
+            raise RuntimeError(
+                'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
+            )
+        try:
+            return self._create_backup_holding_lock(
+                guard,
+                kind=kind,
+                resource_codes=resource_codes,
+                trigger=trigger,
+                encrypt=encrypt,
+                compress=compress,
+                tenant=tenant,
+                max_age_hours=max_age_hours,
+            )
+        finally:
+            guard.release()
+
+    def _create_backup_holding_lock(
+        self,
+        guard: BackupRunGuard,
+        *,
+        kind: str,
+        resource_codes: list[str] | None,
+        trigger: str,
+        encrypt: bool | None,
+        compress: bool,
+        tenant: dict | None,
+        max_age_hours: int,
+    ) -> tuple[BackupArtifact, BackupJob]:
+        if trigger != BackupTrigger.PRE_RESTORE and foreign_heartbeat_alive():
+            raise RuntimeError(
+                'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
+            )
+        guard.start_heartbeat()
         if trigger != BackupTrigger.PRE_RESTORE:
-            self.fail_stale_running_jobs()
             cleanup_stale_work_dirs(max_age_hours=max_age_hours)
-            if BackupJob.objects.filter(
-                action=BackupOperationAction.CREATE,
-                status=BackupStatus.RUNNING,
-                started_at__gte=cutoff,
-            ).exists():
-                raise RuntimeError('Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.')
+            if any(
+                process_alive(((job.result or {}).get('owner') or {}).get('pid'))
+                for job in BackupJob.objects.filter(
+                    action=BackupOperationAction.CREATE,
+                    status=BackupStatus.RUNNING,
+                )
+            ):
+                raise RuntimeError(
+                    'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
+                )
+            self._fail_abandoned_create_jobs()
 
         tenant = {k: v for k, v in (tenant or {}).items() if v is not None} or None
         if tenant:
@@ -390,26 +494,49 @@ class BackupEngine:
         filename = f'3k-backup_{ts}_{uid}.zip'
         storage_key = f'{ts}_{uid}/{filename}'
 
-        artifact = BackupArtifact.objects.create(
-            filename=filename,
-            storage_key=storage_key,
-            status=BackupStatus.RUNNING,
-            kind=kind,
-            trigger=trigger,
-            resource_codes=codes,
-            created_by=self.user,
-            format_version=MANIFEST_VERSION,
-        )
-        job = BackupJob.objects.create(
-            artifact=artifact,
-            action=BackupOperationAction.CREATE,
-            status=BackupStatus.RUNNING,
-            phase=JobPhase.PREPARING,
-            progress=5,
-            message='Yedek başlıyor',
-            created_by=self.user,
-        )
-        self._log(action=BackupOperationAction.CREATE, artifact=artifact, job=job, step='Yedek başladı', metadata={'kind': kind, 'resources': codes})
+        # Kontrol ve RUNNING kaydı aynı kilitte. Cron ile panel aynı anda iki yedek açamasın.
+        with transaction.atomic():
+            from apps.yedekleme.domain.models import BackupSchedule
+            BackupSchedule.objects.select_for_update().get_or_create(pk=1)
+            if trigger != BackupTrigger.PRE_RESTORE:
+                if any(
+                    process_alive(((job.result or {}).get('owner') or {}).get('pid'))
+                    for job in BackupJob.objects.filter(
+                        action=BackupOperationAction.CREATE,
+                        status=BackupStatus.RUNNING,
+                    )
+                ):
+                    raise RuntimeError(
+                        'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
+                    )
+                self._fail_abandoned_create_jobs()
+            artifact = BackupArtifact.objects.create(
+                filename=filename,
+                storage_key=storage_key,
+                status=BackupStatus.RUNNING,
+                kind=kind,
+                trigger=trigger,
+                resource_codes=codes,
+                created_by=self.user,
+                format_version=MANIFEST_VERSION,
+            )
+            job = BackupJob.objects.create(
+                artifact=artifact,
+                action=BackupOperationAction.CREATE,
+                status=BackupStatus.RUNNING,
+                phase=JobPhase.PREPARING,
+                progress=5,
+                message='Yedek başlıyor',
+                created_by=self.user,
+                result={'owner': {'pid': os.getpid(), 'host': socket.gethostname()}},
+            )
+            self._log(
+                action=BackupOperationAction.CREATE,
+                artifact=artifact,
+                job=job,
+                step='Yedek başladı',
+                metadata={'kind': kind, 'resources': codes},
+            )
 
         do_encrypt = bool(encrypt) if encrypt is not None else False
         if do_encrypt and not enc.encryption_key_available():
@@ -1058,7 +1185,8 @@ class BackupEngine:
 
     def import_backup_file(self, src_path: Path, *, original_filename: str) -> tuple[BackupArtifact, dict]:
         """İndirilmiş .zip / .zip.enc dosyasını sisteme kaydeder (manifest v2 doğrular)."""
-        name = original_filename or src_path.name
+        from apps.yedekleme.engine.storage import safe_backup_filename
+        name = safe_backup_filename(original_filename or src_path.name)
         encrypted = name.endswith('.enc') or False
         ts = datetime.now(timezone.utc).strftime('%Y%m%d_%H%M%S')
         uid = uuid.uuid4().hex[:8]

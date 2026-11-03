@@ -1,3 +1,5 @@
+from unittest import mock
+
 from django.test import Client, TestCase
 from django.contrib.auth import get_user_model
 
@@ -46,6 +48,22 @@ class SistemYonetimiApiSmokeTests(TestCase):
         res = self.client.get('/sistem-yonetimi/api/dashboard/')
         self.assertEqual(res.status_code, 200)
         self.assertIsNone(res.json().get('last_error'))
+
+    @mock.patch('apps.sistem_yonetimi.services.alerts.all_health_checks', return_value=[])
+    @mock.patch('apps.sistem_yonetimi.services.alerts.postgres_status', return_value={'status': 'up'})
+    @mock.patch('apps.sistem_yonetimi.services.alerts.collect_host_metrics')
+    def test_swap_and_ram_alerts(self, host, _pg, _health):
+        from apps.sistem_yonetimi.services.alerts import evaluate_alerts
+        host.return_value = {
+            'available': True,
+            'disk_percent': 10,
+            'ram_percent': 96,
+            'swap_percent': 88,
+            'swap_total_bytes': 1024,
+        }
+        codes = {item['code'] for item in evaluate_alerts() if item['active']}
+        self.assertIn('ram_critical', codes)
+        self.assertIn('swap_critical', codes)
 
     def test_collect_metrics_command(self):
         from django.core.management import call_command

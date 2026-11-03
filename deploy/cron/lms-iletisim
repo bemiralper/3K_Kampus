@@ -1,0 +1,13 @@
+# İletişim (WhatsApp) — kuyruk, SLA, kampanya, ödeme hatırlatma, log temizliği
+# flock -n: önceki tur bitmediyse yenisi beklenmez, atlanır.
+# Aynı komut kullanıcı crontab'ında tekrarlanmamalı; kurulum yalnız bu dosyadadır.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+LMS_ROOT=/var/www/lms
+
+* * * * * lms $LMS_ROOT/backend/scripts/cron-flock.sh comm-queue /var/log/lms/comm_queue.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py process_communication_queue'
+* * * * * lms $LMS_ROOT/backend/scripts/cron-flock.sh comm-sla /var/log/lms/comm_sla.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py check_conversation_sla'
+* * * * * lms $LMS_ROOT/backend/scripts/cron-flock.sh comm-campaigns /var/log/lms/comm_campaigns.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py process_scheduled_campaigns'
+0 9 * * * lms $LMS_ROOT/backend/scripts/cron-flock.sh comm-payment-reminders /var/log/lms/comm_payment_reminders.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py send_payment_reminders --days-ahead=3'
+30 3 * * * lms $LMS_ROOT/backend/scripts/cron-flock.sh comm-purge /var/log/lms/comm_purge.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py purge_communication_logs --days 90'
+45 3 * * 0 lms $LMS_ROOT/backend/scripts/cron-flock.sh comm-archive /var/log/lms/comm_archive.log -- bash -c 'cd "$LMS_ROOT/backend" && set -a && . /etc/lms/env && set +a && exec "$LMS_ROOT/venv/bin/python" manage.py archive_campaign_deliveries --days 180 --purge-archive-days 730'

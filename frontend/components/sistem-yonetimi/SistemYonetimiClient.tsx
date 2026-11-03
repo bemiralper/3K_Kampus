@@ -454,10 +454,11 @@ export default function SistemYonetimiClient() {
               <div className="sistem-grid sistem-grid--metrics">
                 <Metric label="Sunucu" value={STATUS_LABELS[dashboard.server.status] || dashboard.server.status} tone={statusTone(dashboard.server.status)} />
                 <Metric label="Uygulama" value={STATUS_LABELS[dashboard.application.status] || dashboard.application.status} detail={dashboard.application.message} tone={statusTone(dashboard.application.status)} />
-                <Metric label="Son yedek" value={dashboard.last_backup?.filename || '-'} detail={formatDate(dashboard.last_backup?.started_at)} />
+                <Metric label="Son yedek" value={dashboard.last_backup?.filename || '-'} detail={[dashboard.last_backup?.last_run_status, formatDate(dashboard.last_backup?.last_run_at || dashboard.last_backup?.started_at)].filter(Boolean).join(' · ')} tone={dashboard.last_backup?.last_run_status === 'failed' ? 'danger' : 'default'} />
                 <Metric label="Son hata" value={dashboard.last_error?.error_type || '-'} detail={dashboard.last_error?.message || 'Yok'} tone={dashboard.last_error ? 'danger' : 'muted'} />
                 <Metric label="CPU" value={`${Number(dashboard.cpu_percent || 0).toFixed(1)}%`} />
-                <Metric label="RAM" value={`${Number(dashboard.ram_percent || 0).toFixed(1)}%`} />
+                <Metric label="RAM" value={`${Number(dashboard.ram_percent || 0).toFixed(1)}%`} tone={Number(dashboard.ram_percent || 0) >= 95 ? 'danger' : Number(dashboard.ram_percent || 0) >= 90 ? 'warning' : 'default'} />
+                <Metric label="Takas" value={`${Number(dashboard.swap_percent || 0).toFixed(1)}%`} tone={Number(dashboard.swap_percent || 0) >= 80 ? 'danger' : Number(dashboard.swap_percent || 0) >= 50 ? 'warning' : 'default'} />
                 <Metric label="Disk" value={`${Number(dashboard.disk_percent || 0).toFixed(1)}%`} tone={Number(dashboard.disk_percent || 0) >= 90 ? 'danger' : Number(dashboard.disk_percent || 0) >= 85 ? 'warning' : 'default'} />
                 <Metric label="PostgreSQL" value={STATUS_LABELS[String(dashboard.postgres.status)] || String(dashboard.postgres.status)} detail={`${dashboard.postgres.connections || 0} bağlantı`} tone={statusTone(String(dashboard.postgres.status))} />
                 <Metric label="Nginx" value={STATUS_LABELS[String(dashboard.nginx?.status || 'unknown')] || '-'} tone={statusTone(String(dashboard.nginx?.status))} />
@@ -736,6 +737,7 @@ export default function SistemYonetimiClient() {
                 <div className="sistem-grid sistem-grid--metrics" style={{ marginTop: 16 }}>
                   <Metric label="Canlı CPU" value={`${Number(perf.live.cpu_percent || 0).toFixed(1)}%`} />
                   <Metric label="Canlı RAM" value={`${Number(perf.live.ram_percent || 0).toFixed(1)}%`} />
+                  <Metric label="Canlı takas" value={`${Number(perf.live.swap_percent || 0).toFixed(1)}%`} />
                   <Metric label="Canlı Disk" value={`${Number(perf.live.disk_percent || 0).toFixed(1)}%`} />
                 </div>
               )}

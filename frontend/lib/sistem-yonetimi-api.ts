@@ -7,10 +7,19 @@ export type HealthStatus = 'up' | 'warn' | 'down' | 'stopped' | 'unknown';
 export interface DashboardData {
   server: { status: string; host: Record<string, unknown> };
   application: { status: string; message: string };
-  last_backup: { id: number; filename: string; size_bytes: number; started_at: string | null } | null;
+  last_backup: {
+    id: number | null;
+    filename: string;
+    size_bytes: number;
+    started_at: string | null;
+    last_run_status?: string;
+    last_run_at?: string | null;
+    last_run_message?: string;
+  } | null;
   last_error: { id: number; message: string; error_type: string; last_seen_at: string | null; occurrence_count: number } | null;
   cpu_percent: number | null;
   ram_percent: number | null;
+  swap_percent?: number | null;
   disk_percent: number | null;
   postgres: Record<string, unknown>;
   nginx: Record<string, unknown> | null;

@@ -12,6 +12,8 @@ def postgres_status() -> dict:
             version = cur.fetchone()[0]
             cur.execute('SELECT count(*) FROM pg_stat_activity')
             connections = int(cur.fetchone()[0])
+            cur.execute("SELECT current_setting('max_connections')")
+            max_connections = int(cur.fetchone()[0])
             cur.execute("SELECT pg_database_size(current_database())")
             db_size = int(cur.fetchone()[0])
         return {
@@ -19,6 +21,7 @@ def postgres_status() -> dict:
             'message': 'Bağlantı başarılı',
             'version': version,
             'connections': connections,
+            'max_connections': max_connections,
             'database_size_bytes': db_size,
             'vendor': connection.vendor,
         }

@@ -805,9 +805,13 @@ class ApiPermissionTests(TestCase):
                 with self.assertRaises(RuntimeError) as ctx:
                     engine.create_backup(kind=BackupKind.DATABASE, trigger=BackupTrigger.PRE_RESTORE)
                 self.assertNotIn('devam eden', str(ctx.exception))
-        with self.assertRaises(RuntimeError) as ctx:
-            engine.create_backup(kind=BackupKind.DATABASE, trigger=BackupTrigger.MANUAL)
-        self.assertIn('devam eden', str(ctx.exception))
+        with mock.patch('apps.yedekleme.engine.orchestrator.backup_owner_alive', return_value=True):
+            with self.assertRaises(RuntimeError) as ctx:
+                engine.create_backup(kind=BackupKind.DATABASE, trigger=BackupTrigger.MANUAL)
+            self.assertIn('devam eden', str(ctx.exception))
+        self.assertTrue(
+            BackupJob.objects.filter(artifact=art, status=BackupStatus.RUNNING).exists()
+        )
 
     def test_fail_stale_running_jobs_clears_old_create(self):
         from datetime import timedelta

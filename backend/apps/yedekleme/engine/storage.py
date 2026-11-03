@@ -13,6 +13,29 @@ from django.conf import settings
 WORK_DIR_NAME = '.work'
 
 
+def safe_backup_filename(name: str) -> str:
+    """Yüklenen addan dizin parçasını atar. Yalnızca yedek uzantıları kalır."""
+    base = Path(name or '').name
+    if not base or base in {'.', '..'}:
+        raise ValueError('Geçersiz yedek dosya adı')
+    allowed = base.endswith('.zip') or base.endswith('.zip.enc') or base.endswith('.enc')
+    if not allowed or '/' in base or '\\' in base or '\x00' in base:
+        raise ValueError('Geçersiz yedek dosya adı')
+    return base
+
+
+def resolve_storage_path(storage_key: str) -> Path:
+    """Depo kökünün dışına çıkan anahtarı reddeder (mutlak yol ve .. dahil)."""
+    root = local_root().resolve()
+    key = (storage_key or '').strip()
+    if not key or key.startswith(('/', '\\')) or '\x00' in key:
+        raise ValueError('Geçersiz depolama anahtarı')
+    candidate = (root / key).resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError('Yedek yolu depo dışına çıkıyor')
+    return candidate
+
+
 def local_root() -> Path:
     cfg = getattr(settings, 'BACKUP_CONFIG', {}) or {}
     root = Path(cfg.get('local_root') or (Path(settings.BASE_DIR) / 'private' / 'backups'))
@@ -84,7 +107,7 @@ def _ensure_removable(path: Path) -> None:
 
 
 def store_file(src: Path, storage_key: str) -> Path:
-    dest = local_root() / storage_key
+    dest = resolve_storage_path(storage_key)
     dest.parent.mkdir(parents=True, exist_ok=True)
     _apply_storage_mode(dest.parent)
     shutil.copy2(src, dest)
@@ -99,7 +122,7 @@ def store_file(src: Path, storage_key: str) -> Path:
 
 
 def fetch_file(storage_key: str) -> Path:
-    path = local_root() / storage_key
+    path = resolve_storage_path(storage_key)
     if not path.exists():
         # Yerel eksikse uzaktan (varsa) indirmeyi dene.
         try:
@@ -127,8 +150,8 @@ def _try_rmdir_empty(path: Path, stop_at: Path) -> None:
 
 
 def delete_file(storage_key: str) -> None:
-    root = local_root()
-    path = root / storage_key
+    root = local_root().resolve()
+    path = resolve_storage_path(storage_key)
     if path.exists():
         _ensure_removable(path)
         try:

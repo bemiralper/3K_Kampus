@@ -1,7 +1,17 @@
 """
 Test Settings
 """
+import os
+import tempfile
+from pathlib import Path
+
 from .base import *
+
+# Testler /var/lock kullanmaz. Üretim cron ile aynı dosya adı burada değildir.
+_guard_dir = Path(tempfile.gettempdir()) / 'lms-yedek-test-guard'
+_guard_dir.mkdir(parents=True, exist_ok=True)
+os.environ.setdefault('LMS_BACKUP_LOCK', str(_guard_dir / 'lms-backup.lock'))
+os.environ.setdefault('LMS_BACKUP_HEARTBEAT', str(_guard_dir / 'backup.heartbeat'))
 
 DEBUG = True
 
@@ -21,6 +31,12 @@ DATABASES = {
         'PORT': '5432',
     }
 }
+
+# Yalnızca izole test süreci aynı test veritabanını açsın diye.
+# Üretim ayarı bu değişkeni okumaz.
+_test_db_name = os.environ.get('LMS_TEST_DB_NAME', '').strip()
+if _test_db_name:
+    DATABASES['default']['NAME'] = _test_db_name
 
 # Password hashers (faster for tests)
 PASSWORD_HASHERS = [

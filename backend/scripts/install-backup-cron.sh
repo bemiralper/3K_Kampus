@@ -71,29 +71,26 @@ chown -R "$RUN_USER":"${LMS_RUN_GROUP:-www-data}" "$BACKUP_ROOT"
 chmod -R u+rwX,g+rwX "$BACKUP_ROOT"
 echo "Yedek depo: $BACKUP_ROOT (sahip: $RUN_USER)"
 
-tick="$APP_ROOT/backend/scripts/backup-cron-tick.sh"
-if [[ -f "$tick" ]]; then
-  chmod 755 "$tick"
+# Tek kurulum yolu. Kilit denetimi geçmezse mevcut cron dosyası değişmez.
+# Bu betik yedek deposunu hazırlar; cron dosyalarını install-lms-cron.sh yazar.
+export LMS_APP_ROOT="$APP_ROOT"
+export LMS_RUN_USER="$RUN_USER"
+export LMS_ENV_FILE="$ENV_FILE"
+export LMS_VENV="$VENV_PY"
+export LMS_CRON_SRC_DIR="$(cd "$(dirname "$CRON_SRC")" && pwd)"
+if [[ -n "${LMS_CRON_DIR:-}" ]]; then
+  export LMS_CRON_DIR
+elif [[ "$CRON_DST" == "/etc/cron.d/lms-yedekleme" ]]; then
+  export LMS_CRON_DIR="/etc/cron.d"
+else
+  export LMS_CRON_DIR="$(dirname "$CRON_DST")"
 fi
 
-# Şablondaki yolları ortam değişkenleriyle özelleştir
-tmp="$(mktemp)"
-sed \
-  -e "s|/var/www/lms|$APP_ROOT|g" \
-  -e "s|/etc/lms/env|$ENV_FILE|g" \
-  -e "s|/var/www/lms/venv/bin/python|$VENV_PY|g" \
-  -e "s|/var/log/lms/backups.log|$LOG_FILE|g" \
-  -e "s|^\([^#]*\) lms |\1 ${RUN_USER} |" \
-  "$CRON_SRC" > "$tmp"
+"$SCRIPT_DIR/install-lms-cron.sh"
 
-# cron.d: dosya root'a ait, izin 644, satır sonunda boş satır olmalı
-install -m 644 -o root -g root "$tmp" "$CRON_DST"
-rm -f "$tmp"
-
-# Bazı sistemlerde cron.d dosyasında nokta/özel karakter kısıtı — adımız uygun
-echo "Kuruldu: $CRON_DST"
+echo "Kuruldu: $LMS_CRON_DIR"
 echo "Kontrol:"
-echo "  sudo cat $CRON_DST"
+echo "  sudo cat $LMS_CRON_DIR/lms-yedekleme"
 echo "  sudo tail -f $LOG_FILE"
 echo "  sudo -u $RUN_USER bash -lc 'cd $APP_ROOT/backend && set -a && . $ENV_FILE && set +a && $VENV_PY manage.py run_scheduled_backups --force'"
 echo

@@ -188,10 +188,10 @@ class DatabaseFullHandler:
                 pass
         return None
 
-    def export(self, resource, work_dir: Path, log) -> ExportResult:
+    def export(self, resource, work_dir: Path, log, *, database: dict | None = None) -> ExportResult:
         work_dir.mkdir(parents=True, exist_ok=True)
         out = work_dir / 'database.dump'
-        db = settings.DATABASES['default']
+        db = database or settings.DATABASES['default']
         cmd = [
             pg_dump_binary(),
             '-Fc',
@@ -298,14 +298,14 @@ class DatabaseFullHandler:
             details=analysis.details,
         )
 
-    def restore(self, resource, payload_dir: Path, *, dry_run: bool = False) -> RestoreResult:
+    def restore(self, resource, payload_dir: Path, *, dry_run: bool = False, database: dict | None = None) -> RestoreResult:
         if dry_run:
             report = self.dry_run(resource, payload_dir)
             return RestoreResult(ok=True, message='dry-run', meta={'dry_run': report.__dict__})
         dump = payload_dir / 'database.dump'
         if not dump.exists():
             return RestoreResult(ok=False, message='database.dump eksik')
-        db = settings.DATABASES['default']
+        db = database or settings.DATABASES['default']
 
         # 1) Custom-format dump'ı düz SQL'e çevir. --clean KULLANILMAZ; çıktı
         # sadece CREATE + COPY/INSERT içerir, hiç DROP komutu üretilmez.
@@ -371,7 +371,8 @@ class DatabaseFullHandler:
                 message=(stderr or stdout or f'psql exit={proc.returncode}')[-2000:],
                 meta={'returncode': proc.returncode},
             )
-        seq_error = reset_all_sequences()
+        # Açık veritabanı verildiyse Django'nun bağlı olduğu tabanı elleme.
+        seq_error = None if database is not None else reset_all_sequences()
         return RestoreResult(
             ok=True,
             message='pg_restore tamamlandı',

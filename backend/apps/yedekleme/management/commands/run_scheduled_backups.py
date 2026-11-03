@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from django.core.management.base import BaseCommand, CommandError
 from django.utils import timezone
 
@@ -60,15 +62,26 @@ class Command(BaseCommand):
             # Bu dönem içinde zaten çalıştı mı? (dedupe)
             if schedule.last_run_at:
                 last = timezone.localtime(schedule.last_run_at)
-                if schedule.frequency == ScheduleFrequency.DAILY and last.date() == now.date():
-                    self.stdout.write('Bugün zaten çalıştı.')
-                    return
-                if schedule.frequency == ScheduleFrequency.WEEKLY and last.isocalendar()[:2] == now.isocalendar()[:2]:
-                    self.stdout.write('Bu hafta zaten çalıştı.')
-                    return
-                if schedule.frequency == ScheduleFrequency.MONTHLY and (last.year, last.month) == (now.year, now.month):
-                    self.stdout.write('Bu ay zaten çalıştı.')
-                    return
+                same_period = (
+                    (schedule.frequency == ScheduleFrequency.DAILY and last.date() == now.date())
+                    or (schedule.frequency == ScheduleFrequency.WEEKLY and last.isocalendar()[:2] == now.isocalendar()[:2])
+                    or (schedule.frequency == ScheduleFrequency.MONTHLY and (last.year, last.month) == (now.year, now.month))
+                )
+                if same_period:
+                    # Başarısız deneme günü kapatmasın. Kısa aralıkla yeniden dene;
+                    # başarılı kayıt ikinci yedeği engeller.
+                    if schedule.last_run_status == 'failed':
+                        if now - last < timedelta(minutes=15):
+                            self.stdout.write('Son deneme başarısız; kısa süre sonra yeniden denenecek.')
+                            return
+                    else:
+                        if schedule.frequency == ScheduleFrequency.DAILY:
+                            self.stdout.write('Bugün zaten çalıştı.')
+                        elif schedule.frequency == ScheduleFrequency.WEEKLY:
+                            self.stdout.write('Bu hafta zaten çalıştı.')
+                        else:
+                            self.stdout.write('Bu ay zaten çalıştı.')
+                        return
 
             # Catch-up: sabit ±1 dk pencere yerine, planlanan saat GEÇTİYSE ve bu
             # dönemde henüz çalışmadıysa tetikle. Böylece cron 5 dk'da bir

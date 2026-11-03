@@ -37,15 +37,20 @@ def active_session_count() -> int:
 def last_backup_summary() -> dict | None:
     try:
         from apps.yedekleme.domain.models import BackupArtifact, BackupStatus
+        from apps.yedekleme.domain.models import BackupSchedule
         art = BackupArtifact.objects.filter(status=BackupStatus.COMPLETED).order_by('-started_at').first()
-        if not art:
+        schedule = BackupSchedule.get_singleton()
+        if not art and not schedule.last_run_at:
             return None
         return {
-            'id': art.id,
-            'filename': art.filename,
-            'size_bytes': art.size_bytes,
-            'started_at': art.started_at.isoformat() if art.started_at else None,
-            'finished_at': art.finished_at.isoformat() if art.finished_at else None,
+            'id': art.id if art else None,
+            'filename': art.filename if art else '',
+            'size_bytes': art.size_bytes if art else 0,
+            'started_at': art.started_at.isoformat() if art and art.started_at else None,
+            'finished_at': art.finished_at.isoformat() if art and art.finished_at else None,
+            'last_run_status': schedule.last_run_status,
+            'last_run_at': schedule.last_run_at.isoformat() if schedule.last_run_at else None,
+            'last_run_message': schedule.last_run_message,
         }
     except Exception:
         return None
@@ -100,6 +105,7 @@ def build_dashboard() -> dict:
         } if last_err else None,
         'cpu_percent': host.get('cpu_percent'),
         'ram_percent': host.get('ram_percent'),
+        'swap_percent': host.get('swap_percent'),
         'disk_percent': host.get('disk_percent'),
         'postgres': pg,
         'nginx': next((s for s in services if s['code'] == 'nginx'), None),
@@ -243,7 +249,13 @@ def collect_and_store_metrics() -> SystemMetricSample:
         net_bytes_sent=int(host.get('net_bytes_sent') or 0),
         net_bytes_recv=int(host.get('net_bytes_recv') or 0),
         pg_connections=int(pg.get('connections') or 0),
-        extra={'load_avg': host.get('load_avg') or []},
+        extra={
+            'load_avg': host.get('load_avg') or [],
+            'swap_percent': float(host.get('swap_percent') or 0),
+            'swap_used_bytes': int(host.get('swap_used_bytes') or 0),
+            'swap_total_bytes': int(host.get('swap_total_bytes') or 0),
+            'pg_max_connections': int(pg.get('max_connections') or 0),
+        },
     )
     return sample
 

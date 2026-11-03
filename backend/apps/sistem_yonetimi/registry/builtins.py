@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from apps.sistem_yonetimi.collectors.logs import file_mtime_iso
 from apps.sistem_yonetimi.collectors.postgres import postgres_status
-from apps.sistem_yonetimi.collectors.systemd import tcp_probe, unit_status
+from apps.sistem_yonetimi.collectors.systemd import http_probe, tcp_probe, unit_status
 from apps.sistem_yonetimi.config import get_config
 from apps.sistem_yonetimi.registry.specs import (
     HealthCheckSpec,
@@ -86,9 +87,27 @@ def _health_unit(code: str, label: str, unit: str):
                 ok = tcp_probe('127.0.0.1', 80) or tcp_probe('127.0.0.1', 443)
                 return {'status': 'up' if ok else 'stopped', 'message': 'systemctl yok; TCP probe', 'detail': st}
             if code in ('gunicorn', 'lms-backend'):
-                ok = tcp_probe('127.0.0.1', 8000)
+                ok = tcp_probe('127.0.0.1', 8000, timeout=1.5)
                 return {'status': 'up' if ok else 'down', 'message': 'systemctl yok; :8000 probe', 'detail': st}
+            if code == 'frontend':
+                ok = tcp_probe('127.0.0.1', 3000, timeout=1.5)
+                return {'status': 'up' if ok else 'down', 'message': 'systemctl yok; :3000 probe', 'detail': st}
             return {'status': 'unknown', 'message': st.get('message') or 'systemctl yok', 'detail': st}
+        active = st.get('active_state') == 'active'
+        if active and code in ('gunicorn', 'lms-backend', 'frontend'):
+            if code == 'frontend':
+                url = os.environ.get('LMS_FRONTEND_HEALTH_URL', 'http://127.0.0.1:3000/')
+                tcp_ok = tcp_probe('127.0.0.1', 3000, timeout=1.5)
+            else:
+                url = os.environ.get('LMS_HEALTH_URL', 'http://127.0.0.1:8000/api/legacy/index/')
+                tcp_ok = tcp_probe('127.0.0.1', 8000, timeout=1.5)
+            ok, detail = http_probe(url, timeout=2.0)
+            if not ok or not tcp_ok:
+                return {
+                    'status': 'down',
+                    'message': f'servis active ama uygulama yanıt vermiyor ({detail})',
+                    'detail': {**st, 'http': detail, 'tcp': tcp_ok, 'url': url},
+                }
         return {'status': st.get('status') or 'unknown', 'message': st.get('active_state', ''), 'detail': st}
     return _check
 
@@ -138,22 +157,50 @@ def _register_health():
                 base = OutboundQueueItem.objects.filter(
                     message__conversation__channel=channel,
                 )
-                pending = base.filter(
+                from datetime import timedelta
+
+                from django.utils import timezone
+
+                pending_qs = base.filter(
                     message__status__in=[MessageStatus.PENDING, MessageStatus.SENDING],
-                ).count()
+                )
+                pending = pending_qs.count()
                 failed = base.filter(message__status=MessageStatus.FAILED).count()
+                stale_before = timezone.now() - timedelta(minutes=10)
+                locked_before = timezone.now() - timedelta(minutes=15)
+                stale = pending_qs.filter(next_attempt_at__lt=stale_before).count()
+                locked = pending_qs.filter(locked_at__isnull=False, locked_at__lt=locked_before).count()
                 status = 'up'
-                if failed > 20 or pending > 500:
+                if failed > 20 or pending > 500 or stale or locked:
                     status = 'warn'
+                message = f'Bekleyen {pending}, başarısız {failed}'
+                if stale or locked:
+                    message += f', gecikmiş {stale}, kilitli {locked}'
                 return {
                     'status': status,
-                    'message': f'Bekleyen {pending}, başarısız {failed}',
-                    'detail': {'pending': pending, 'failed': failed, 'channel': channel},
+                    'message': message,
+                    'detail': {
+                        'pending': pending,
+                        'failed': failed,
+                        'stale': stale,
+                        'locked': locked,
+                        'channel': channel,
+                    },
                 }
             except Exception as exc:  # noqa: BLE001
                 return {'status': 'unknown', 'message': f'{name} kuyruk kontrolü başarısız: {exc}'}
         return _inner
 
+    def cron_lock_check():
+        from apps.sistem_yonetimi.services.cron_health import cron_lock_health
+        return cron_lock_health()
+
+    register_health_check(HealthCheckSpec(
+        code='cron_locks',
+        label='Cron kilitleri',
+        check=cron_lock_check,
+        category='scheduler',
+    ))
     register_health_check(HealthCheckSpec(code='scheduler', label='Scheduler', check=scheduler_check, category='scheduler'))
     register_health_check(HealthCheckSpec(code='backup', label='Backup', check=backup_check, category='backup'))
     register_health_check(HealthCheckSpec(

@@ -600,8 +600,6 @@ def schedule_run_now_view(request):
 @api_permission_required('yedekleme.create', 'yedekleme.restore', 'yedekleme.manage', write_codes=['yedekleme.create', 'yedekleme.restore', 'yedekleme.manage'])
 def backup_upload_view(request):
     """İndirilmiş v2 yedek dosyasını (.zip / .zip.enc) sisteme kaydeder."""
-    from pathlib import Path
-
     uploaded = request.FILES.get('file')
     if not uploaded:
         return JsonResponse({'error': 'file alanı zorunlu (multipart)'}, status=400)
@@ -612,8 +610,10 @@ def backup_upload_view(request):
         limit_label = f'{limit_gb:.0f} GB' if limit_gb >= 1 else f'{max_bytes // (1024 ** 1024)} MB'
         return JsonResponse({'error': f'Dosya çok büyük (en fazla {limit_label})'}, status=400)
 
-    name = uploaded.name or 'backup.zip'
-    if not (name.endswith('.zip') or name.endswith('.zip.enc') or name.endswith('.enc')):
+    from apps.yedekleme.engine.storage import safe_backup_filename
+    try:
+        name = safe_backup_filename(uploaded.name or 'backup.zip')
+    except ValueError:
         return JsonResponse({'error': 'Sadece .zip veya .zip.enc (yedekleme v2) yüklenebilir'}, status=400)
 
     tmp = make_work_dir('backup_upload_') / name

@@ -42,9 +42,18 @@ def collect_host_metrics() -> dict:
             pass
 
         try:
-            cpu_percent = float(psutil.cpu_percent(interval=0.0))
+            # interval=0 her yeni süreçte anlamsız 0 döner. Kısa örnek gerçek kullanımı verir.
+            cpu_percent = float(psutil.cpu_percent(interval=0.2))
         except Exception:
             cpu_percent = 0.0
+        try:
+            swap = psutil.swap_memory()
+            swap_percent = float(swap.percent)
+            swap_used = int(swap.used)
+            swap_total = int(swap.total)
+        except Exception:
+            swap_percent = 0.0
+            swap_used = swap_total = 0
         try:
             cpu_count = int(psutil.cpu_count() or 0)
         except Exception:
@@ -62,6 +71,9 @@ def collect_host_metrics() -> dict:
             'ram_percent': float(mem.percent),
             'ram_used_bytes': int(mem.used),
             'ram_total_bytes': int(mem.total),
+            'swap_percent': swap_percent,
+            'swap_used_bytes': swap_used,
+            'swap_total_bytes': swap_total,
             'disk_percent': float(disk.percent),
             'disk_used_bytes': int(disk.used),
             'disk_total_bytes': int(disk.total),

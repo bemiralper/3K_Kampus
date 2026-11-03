@@ -307,6 +307,13 @@ else
   log "frontend build atlandı"
 fi
 
+log "cron kilit şablonları kuruluyor"
+if [[ "$(id -u)" -eq 0 ]]; then
+  "$SCRIPT_DIR/install-lms-cron.sh"
+else
+  sudo "$SCRIPT_DIR/install-lms-cron.sh"
+fi
+
 if [[ "$SKIP_RESTART" != true ]]; then
   restarted=false
   if [[ -z "${LMS_BACKEND_SERVICE:-}" ]]; then

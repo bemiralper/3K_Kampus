@@ -1,0 +1,6 @@
+# 3K Kampüs — yedekleri Google Drive'a kopyala (günlük 03:15)
+# flock -n: önceki kopya sürüyorsa yenisi atlanır.
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+15 3 * * * lms /var/www/lms/backend/scripts/cron-flock.sh backup-gdrive /var/log/lms/rclone-backup.log -- rclone copy /var/www/lms/backend/private/backups gdrive:3k-kampus-backups --include '**/*.zip' --include '**/*.zip.enc' --max-age 2d --log-file /var/log/lms/rclone-backup.log --log-level INFO

@@ -128,3 +128,24 @@ def tcp_probe(host: str, port: int, timeout: float = 1.5) -> bool:
             return True
     except OSError:
         return False
+
+
+def http_probe(url: str, timeout: float = 2.0) -> tuple[bool, str]:
+    """Kısa zaman aşımıyla HTTP dener. 2xx–4xx yanıt var sayılır; bağlantı ve 5xx değil."""
+    import urllib.error
+    import urllib.request
+
+    try:
+        request = urllib.request.Request(url, method='GET')
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            code = int(getattr(response, 'status', 0) or 0)
+            if 200 <= code < 500:
+                return True, f'HTTP {code}'
+            return False, f'HTTP {code}'
+    except urllib.error.HTTPError as exc:
+        code = int(getattr(exc, 'code', 0) or 0)
+        if 200 <= code < 500:
+            return True, f'HTTP {code}'
+        return False, f'HTTP {code}'
+    except Exception as exc:
+        return False, type(exc).__name__

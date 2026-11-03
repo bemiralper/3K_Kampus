@@ -32,8 +32,16 @@ def _prefix() -> str:
 
 
 def _remote_key(storage_key: str) -> str:
+    """Mutlak yol ve .. parçası uzak anahtara yazılmaz."""
+    key = (storage_key or '').replace('\\', '/').strip()
+    if not key or '\x00' in key or key.startswith('/'):
+        raise ValueError('Geçersiz uzak anahtar')
+    parts = [part for part in key.split('/') if part not in ('', '.')]
+    if not parts or any(part == '..' for part in parts):
+        raise ValueError('Geçersiz uzak anahtar')
+    safe = '/'.join(parts)
     prefix = _prefix()
-    return f'{prefix}/{storage_key}' if prefix else storage_key
+    return f'{prefix}/{safe}' if prefix else safe
 
 
 def _client():
