@@ -781,6 +781,11 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
                 _safe_refresh_campaign_stats(item.campaign_id)
             return True
 
+        if result.get('uncertain'):
+            OutboundQueueRepository.mark_failed(item, UNCERTAIN_SEND_ERROR, permanent=True)
+            _safe_refresh_campaign_stats(item.campaign_id)
+            return False
+
         if is_rate_limit_error(result):
             # Meta 130429: deneme sayılmaz, kısa süre sonra tekrar (W-06)
             OutboundQueueRepository.defer_item(item, str(result.get('error', 'Rate limit')))
@@ -801,8 +806,9 @@ def process_queue_item(item, client: BaseChannelClient | None = None) -> bool:
             _safe_refresh_campaign_stats(item.campaign_id)
         return False
     except Exception as exc:
-        logger.exception('Queue item processing failed message=%s', message.id)
-        OutboundQueueRepository.mark_failed(item, str(exc))
+        logger.error('Queue item processing failed message=%s type=%s', message.id, type(exc).__name__)
+        uncertain = item.provider_call_started_at is not None
+        OutboundQueueRepository.mark_failed(item, UNCERTAIN_SEND_ERROR if uncertain else 'Gönderim hazırlığı başarısız.', permanent=uncertain)
         if item.campaign_id:
             _safe_refresh_campaign_stats(item.campaign_id)
         return False

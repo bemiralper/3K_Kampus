@@ -47,6 +47,14 @@ export default function OdevPlanPrintClient({
   }, [assignmentIdOverride, printToken]);
 
   useEffect(() => { fetchPlan(); }, [fetchPlan]);
+  useEffect(() => {
+    if (error) document.body.setAttribute("data-pdf-error", "true");
+    else document.body.removeAttribute("data-pdf-error");
+    return () => {
+      document.body.removeAttribute("data-pdf-error");
+      document.body.removeAttribute("data-pdf-ready");
+    };
+  }, [error]);
 
   useEffect(() => {
     if (assignment && !loading && !error) {

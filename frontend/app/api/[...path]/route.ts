@@ -249,8 +249,7 @@ async function proxyRequest(request: NextRequest, path: string) {
     headers.set('Accept', 'text/event-stream');
   }
 
-  console.log(`[API Proxy] ${request.method} ${url}${streamMultipart ? ' (stream)' : ''}`);
-  console.log(`[API Proxy] Forwarding cookies:`, headers.get('Cookie'));
+  console.log(`[API Proxy] ${request.method} ${normalizedPath}${streamMultipart ? ' (stream)' : ''}`);
 
   const fetchInit: RequestInit = {
     method: request.method,
@@ -327,7 +326,6 @@ async function proxyRequest(request: NextRequest, path: string) {
       }
       // Forward Set-Cookie headers (may be multiple)
       if (lowerKey === 'set-cookie') {
-        console.log(`[API Proxy] Set-Cookie: ${value}`);
         proxyResponse.headers.append('Set-Cookie', value);
       } else {
         proxyResponse.headers.set(key, value);

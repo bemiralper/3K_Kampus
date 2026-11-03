@@ -107,6 +107,12 @@ class CommunicationService:
         content = content or MessageContent()
         source = source or MessageSource()
 
+        # Homework dispatch must not contact the provider before its transaction
+        # commits. Existing callers keep their result fields; QUEUED is explicit.
+        defer_homework = source.module == 'odev'
+        if defer_homework:
+            process_immediately = False
+
         if not content.text and not content.attachment_path and not content.template_name:
             return SendResult(success=False, errors=['Mesaj içeriği boş olamaz.'])
 
@@ -332,6 +338,15 @@ class CommunicationService:
         from apps.communication.application.conversation_phone_sync import resolve_outbound_phone
 
         provider_response: dict[str, Any] = {}
+        if defer_homework:
+            from apps.communication.application.celery_dispatch import schedule_outbound_after_commit
+            schedule_outbound_after_commit()
+            return SendResult(
+                success=True, message_id=str(message.id),
+                provider_response={'queued': True},
+                sent_to_phone=resolve_outbound_phone(conversation),
+                message_status=message.status,
+            )
         if process_immediately:
             from apps.communication.application.bulk_dispatch import pool_active, wait_send_slot
 

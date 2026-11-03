@@ -63,6 +63,9 @@ INSTALLED_APPS = [
 ]
 
 # WhatsApp Business Cloud API (dev: empty defaults)
+# Enable only after assignment_manual.0022 and the PDF job worker/cron are ready.
+ASSIGNMENT_OPERATION_LEDGER_ENABLED = os.environ.get('ASSIGNMENT_OPERATION_LEDGER_ENABLED', 'False').lower() == 'true'
+
 WHATSAPP_PHONE_NUMBER_ID = os.environ.get('WHATSAPP_PHONE_NUMBER_ID', '')
 WHATSAPP_WABA_ID = os.environ.get('WHATSAPP_WABA_ID', '')
 WHATSAPP_ACCESS_TOKEN = os.environ.get('WHATSAPP_ACCESS_TOKEN', '')

@@ -2,6 +2,7 @@
 Haftalık ödev — WhatsApp PDF eki kısa mesaj şablonları (Haftalık Ödev kategorisi).
 """
 from __future__ import annotations
+from django.db import transaction
 
 from apps.communication.application.template_category_service import TemplateCategoryService
 from apps.communication.domain.enums import TemplateAudienceScope, TemplateCategory
@@ -42,6 +43,7 @@ def _default_sube_id(kurum_id: int) -> int | None:
     return Sube.objects.filter(kurum_id=kurum_id).order_by('id').values_list('id', flat=True).first()
 
 
+@transaction.atomic
 def ensure_role_template(
     kurum_id: int,
     role: str,
@@ -53,6 +55,9 @@ def ensure_role_template(
     spec = next((row for row in _ROLE_SPECS if row[0] == role), None)
     if not spec:
         raise ValueError(f'Bilinmeyen ödev şablon rolü: {role}')
+
+    from apps.kurum.domain.models import Kurum
+    Kurum.objects.select_for_update().get(pk=kurum_id)
 
     if sube_id is None:
         sube_id = _default_sube_id(kurum_id)
@@ -79,20 +84,17 @@ def ensure_role_template(
             variables_json=role_variables_json(role),
             is_active=True,
         )
-    else:
-        updates: list[str] = []
-        if not tpl.is_active:
-            tpl.is_active = True
-            updates.append('is_active')
-        if get_template_role(tpl) != role:
-            tpl.variables_json = role_variables_json(role)
-            updates.append('variables_json')
-        if updates:
-            updates.append('updated_at')
-            tpl.save(update_fields=updates)
-
     if link_config:
-        set_config_template(kurum_id, role, tpl)
+        # Explicit setup only: serialize initial binding and preserve user choices.
+        from .assignment_template_roles import get_or_create_config, ROLE_CONFIG_FIELDS
+        with transaction.atomic():
+            config = get_or_create_config(kurum_id)
+            if config:
+                config = type(config).objects.select_for_update().get(pk=config.pk)
+                field = ROLE_CONFIG_FIELDS[role]
+                if not getattr(config, f'{field}_id'):
+                    setattr(config, field, tpl)
+                    config.save(update_fields=[field, 'updated_at'])
     return tpl
 
 
@@ -113,23 +115,36 @@ def get_pdf_message_template(
     recipient_type: str,
 ) -> MessageTemplate | None:
     """notify_type: plan|report — recipient_type: veli|ogrenci"""
-    from .assignment_template_roles import _config_table_available
+    return get_pdf_message_templates(kurum_id).get((notify_type, recipient_type))
 
-    link_config = _config_table_available()
-    ensure_assignment_pdf_templates(kurum_id, link_config=link_config)
-    from .assignment_template_roles import get_active_template_for_notify
 
-    tpl = get_active_template_for_notify(kurum_id, notify_type, recipient_type)
-    if tpl:
-        return tpl
-
-    role = next(
-        (r for r, pair in _ROLE_TO_NOTIFY.items() if pair == (notify_type, recipient_type)),
-        None,
-    )
-    if role:
-        return ensure_role_template(kurum_id, role, link_config=link_config)
-    return None
+def get_pdf_message_templates(kurum_id: int) -> dict:
+    """Read the four slots once, never seed, reactivate or alter a mapping."""
+    from .models import AssignmentNotificationConfig
+    from .assignment_template_roles import ROLE_CONFIG_FIELDS
+    config = AssignmentNotificationConfig.objects.select_related(
+        *ROLE_CONFIG_FIELDS.values()
+    ).filter(kurum_id=kurum_id).first()
+    result = {}
+    missing = {}
+    for role, pair in _ROLE_TO_NOTIFY.items():
+        tpl = getattr(config, ROLE_CONFIG_FIELDS[role], None) if config else None
+        if tpl and tpl.kurum_id == kurum_id and tpl.is_active:
+            result[pair] = tpl
+        elif not config or not getattr(config, f'{ROLE_CONFIG_FIELDS[role]}_id'):
+            missing[role] = pair
+    # Legacy installations may have customized named templates but no config
+    # row yet. Preserve their text without seeding or changing an inactive slot.
+    if missing:
+        names = {name: missing[role] for role, name, _, _ in _ROLE_SPECS if role in missing}
+        branch_id = _default_sube_id(kurum_id)
+        if branch_id:
+            for template in MessageTemplate.objects.filter(
+                kurum_id=kurum_id, sube_id=branch_id,
+                category=TemplateCategory.HAFTALIK_ODEV, name__in=names, is_active=True,
+            ):
+                result.setdefault(names[template.name], template)
+    return result
 
 
 def default_pdf_message_body(notify_type: str, recipient_type: str) -> str:

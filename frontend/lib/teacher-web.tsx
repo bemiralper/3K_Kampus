@@ -105,11 +105,14 @@ export function useTeacherData<T>(path: string | null) {
 
   useEffect(() => {
     if (!path || !scope) {
+      setData(null);
+      setError(null);
       setLoading(false);
       return;
     }
     let cancelled = false;
     setLoading(true);
+    setData(null);
     setError(null);
     teacherRequest<T>(path, { scope })
       .then((body) => {
@@ -200,6 +203,9 @@ export function TeacherProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    setProfileName("");
+    setTermId(null);
+    setTermName("");
     if (!scope) return;
     let cancelled = false;
     teacherRequest<{ ad?: string; soyad?: string }>("/api/teacher/profile/", { scope })

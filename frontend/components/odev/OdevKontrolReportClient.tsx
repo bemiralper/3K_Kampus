@@ -484,6 +484,7 @@ export default function OdevKontrolReportClient({
 
   const fetchReport = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const result = await fetchAssignmentReport(assignmentId, {
         printToken: printMode ? printToken : undefined,
@@ -495,6 +496,8 @@ export default function OdevKontrolReportClient({
           topic_cumulative: (result.topic_cumulative || []) as unknown as TopicCumulative[],
           book_cumulative: (result.book_cumulative || []) as unknown as BookCumulative[],
         });
+      } else {
+        throw new Error(result.error || "Rapor yüklenemedi");
       }
     } catch (e) {
       console.error("Rapor yüklenemedi:", e);
@@ -510,6 +513,14 @@ export default function OdevKontrolReportClient({
   }, [printMode, fullReport, loading, error]);
 
   useEffect(() => { fetchReport(); }, [fetchReport]);
+  useEffect(() => {
+    if (error) document.body.setAttribute("data-pdf-error", "true");
+    else document.body.removeAttribute("data-pdf-error");
+    return () => {
+      document.body.removeAttribute("data-pdf-error");
+      document.body.removeAttribute("data-pdf-ready");
+    };
+  }, [error]);
 
   // Derse gore soru istatistikleri — aynı ders adına sahip lesson'ları grupla
   const groupedLessonStats = useMemo(() => {

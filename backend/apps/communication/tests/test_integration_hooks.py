@@ -175,7 +175,9 @@ class IntegrationHooksTest(TestCase):
         msg = Message.objects.filter(source_module=SOURCE_ODEV).first()
         self.assertIsNotNone(msg)
         self.assertIn(str(assignment.id), msg.source_ref_id)
-        self.assertEqual(msg.status, MessageStatus.SENT)
+        # Accepted locally; provider delivery only starts after transaction commit.
+        self.assertEqual(msg.status, MessageStatus.PENDING)
+        mock_send.assert_not_called()
 
     @patch.object(WhatsAppCloudClient, 'send_text')
     def test_absence_hook_sends_when_called(self, mock_send):

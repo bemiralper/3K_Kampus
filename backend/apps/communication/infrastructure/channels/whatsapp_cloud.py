@@ -247,8 +247,11 @@ class WhatsAppCloudClient(BaseChannelClient):
                     'error_code': data.get('error', {}).get('code'),
                 }
         except httpx.HTTPError as exc:
-            logger.exception('WhatsApp HTTP error kurum=%s', kurum_id)
-            return {'success': False, 'error': str(exc)}
+            # A read/write/protocol failure after POST may have been accepted.
+            # Connection establishment errors can still use normal retry policy.
+            uncertain = not isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout, httpx.PoolTimeout))
+            logger.error('WhatsApp HTTP error kurum=%s type=%s uncertain=%s', kurum_id, type(exc).__name__, uncertain)
+            return {'success': False, 'error': 'WhatsApp bağlantı hatası.', 'uncertain': uncertain}
 
     def _apply_context(self, payload: dict[str, Any], context_message_id: str | None) -> dict[str, Any]:
         if context_message_id:

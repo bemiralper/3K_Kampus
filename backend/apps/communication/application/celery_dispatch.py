@@ -14,6 +14,22 @@ def is_celery_enabled() -> bool:
     return bool(getattr(settings, 'CELERY_BROKER_URL', ''))
 
 
+def schedule_outbound_after_commit() -> None:
+    """Durable queue is the fallback. Never consume a global batch in a request."""
+    from django.db import transaction
+
+    def submit():
+        if not is_celery_enabled():
+            return  # process_communication_queue cron owns the persisted rows.
+        try:
+            from apps.communication.tasks import process_outbound_queue_task
+            process_outbound_queue_task.apply_async(retry=False)
+        except Exception as exc:
+            logger.error('Kuyruk kalıcı kaydedildi; broker dispatch başarısız, cron tekrar işleyecek type=%s', type(exc).__name__)
+
+    transaction.on_commit(submit)
+
+
 def dispatch_process_outbound_queue(
     limit: int | None = None,
     *,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { PageHeading } from "@/components/teacher/PortalUI";
 
 import {
   clock,
@@ -86,8 +87,7 @@ export default function TopicsPage() {
 
   return (
     <>
-      <h1>Konular</h1>
-      <p className="tp-sub">Bu haftanın dersine işlenen konuyu yazın.</p>
+      <PageHeading eyebrow="HER DERSİN BİR İZİ VAR" title="Konu günlüğüm" description="Bu hafta işlediğin konuları dersine bağlı olarak kaydet." />
       {classes.loading ? <p className="tp-state">Yükleniyor…</p> : null}
       <label>
         Sınıf

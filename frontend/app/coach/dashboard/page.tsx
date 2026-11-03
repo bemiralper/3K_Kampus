@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import { useAuth } from "@/lib/contexts/AuthContext";
 import {
   downloadHaftalikProgramPdf,
@@ -53,7 +53,11 @@ export default function CoachDashboardPage() {
   const [selectedDayIso, setSelectedDayIso] = useState<string>("");
 
   // Operasyonel veriler
-  const [loadingOps, setLoadingOps] = useState(true);
+  const [sectionState, setSectionState] = useState<Record<string, string>>({});
+  const [programError, setProgramError] = useState("");
+  const programEpoch = useRef(0);
+  const operationsEpoch = useRef(0);
+  useEffect(() => () => { programEpoch.current++; operationsEpoch.current++; }, []);
   const [gorevOzet, setGorevOzet] = useState<GorevDashboardOzet | null>(null);
   const [coachStats, setCoachStats] = useState<CoachSelfStats | null>(null);
   const [students, setStudents] = useState<CoachPortalStudent[]>([]);
@@ -66,57 +70,51 @@ export default function CoachDashboardPage() {
 
   // Program yükleme
   const loadProgram = useCallback(async () => {
+    const epoch = ++programEpoch.current;
     setProgramLoading(true);
-    const response = await fetchHaftalikProgram({
-      week: week || undefined,
-      coachId,
-    });
-    if (response.success && response.data) {
-      setProgram(response.data);
-      // Seçili günü belirle
-      const hasToday = response.data.days.some((d) => d.date === today);
-      if (hasToday) {
-        setSelectedDayIso(today);
-      } else if (response.data.days.length > 0) {
-        setSelectedDayIso(response.data.days[0].date);
+    setProgramError("");
+    try {
+      const response = await fetchHaftalikProgram({ week: week || undefined, coachId });
+      if (epoch !== programEpoch.current) return;
+      if (response.success && response.data) {
+        setProgram(response.data);
+        const hasToday = response.data.days.some((d) => d.date === today);
+        setSelectedDayIso(hasToday ? today : response.data.days[0]?.date || "");
+      } else {
+        setProgramError(response.error || "Program yüklenemedi.");
       }
-    } else {
-      setProgram(null);
+    } catch {
+      if (epoch === programEpoch.current) setProgramError("Program yüklenemedi. Yeniden deneyin.");
+    } finally {
+      if (epoch === programEpoch.current) setProgramLoading(false);
     }
-    setProgramLoading(false);
   }, [week, coachId, today]);
 
   // Operasyon verilerini yükleme
   const loadOps = useCallback(async () => {
-    setLoadingOps(true);
-    const [badge, gorev, studentList, overdue, stats] = await Promise.all([
-      fetchKontrolBadge(),
-      fetchGorevDashboardOzet(),
-      fetchCoachStudents(),
-      fetchAssignments({ status: "OVERDUE" }),
-      fetchCoachMeStats(),
+    const epoch = ++operationsEpoch.current;
+    const section = async <T,>(label: string, load: () => Promise<{ success: boolean; data?: T }>, apply: (value: T) => void) => {
+      setSectionState((state) => ({ ...state, [label]: "Yükleniyor…" }));
+      try {
+        const result = await load();
+        if (epoch !== operationsEpoch.current) return;
+        if (!result.success || !result.data) throw new Error("load");
+        apply(result.data);
+        setSectionState((state) => ({ ...state, [label]: "" }));
+      } catch {
+        if (epoch === operationsEpoch.current) setSectionState((state) => ({ ...state, [label]: "Yüklenemedi; yeniden deneyin." }));
+      }
+    };
+    await Promise.allSettled([
+      section("Ödev sayıları", fetchKontrolBadge, (data) => {
+        setDueTodayCount(data.due_today ?? data.count ?? 0); setOverdueCount(data.overdue ?? 0);
+      }),
+      section("Görevler", fetchGorevDashboardOzet, setGorevOzet),
+      section("Öğrenciler", fetchCoachStudents, setStudents),
+      section("Geciken ödevler", () => fetchAssignments({ status: "OVERDUE", page: 1, page_size: 10 }), setOverdueItems),
+      section("Görüşme özeti", fetchCoachMeStats, setCoachStats),
     ]);
 
-    if (badge.success && badge.data) {
-      setDueTodayCount(badge.data.due_today ?? badge.data.count ?? 0);
-      setOverdueCount(badge.data.overdue ?? 0);
-    }
-    if (gorev.success && gorev.data) setGorevOzet(gorev.data);
-    if (stats.success && stats.data) setCoachStats(stats.data);
-
-    const nextStudents = studentList.success && studentList.data ? studentList.data : [];
-    setStudents(nextStudents);
-
-    const raw = overdue.success && overdue.data ? (overdue.data as unknown) : [];
-    const list = Array.isArray(raw)
-      ? raw
-      : Array.isArray((raw as { results?: ManualAssignment[] }).results)
-      ? (raw as { results: ManualAssignment[] }).results!
-      : [];
-    setOverdueItems(list.slice(0, 10));
-    if (list.length) setOverdueCount((c) => Math.max(c, list.length));
-
-    setLoadingOps(false);
   }, []);
 
   useEffect(() => {
@@ -191,6 +189,13 @@ export default function CoachDashboardPage() {
 
   return (
     <div className="cdash-root">
+      {(programError || Object.values(sectionState).some(Boolean)) && (
+        <div role="status" style={{ fontSize: 12, marginBottom: 10 }}>
+          {programError && <div>Program: {programError} <button type="button" onClick={() => void loadProgram()}>Yeniden dene</button></div>}
+          {Object.entries(sectionState).filter(([, value]) => value).map(([label, value]) => <div key={label}>{label}: {value}</div>)}
+          {Object.values(sectionState).some((value) => value.startsWith("Yüklenemedi")) && <button type="button" onClick={() => void loadOps()}>Bölümleri yeniden yükle</button>}
+        </div>
+      )}
       {/* ─── 1. Cockpit Header & KPIs ────────────────────────── */}
       <header className="cdash-header">
         <div className="cdash-header-copy">

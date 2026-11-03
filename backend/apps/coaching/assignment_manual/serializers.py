@@ -258,6 +258,10 @@ class ManualAssignmentListSerializer(serializers.ModelSerializer):
         return can_set_new_control_date(obj, getattr(request, 'user', None))
 
     def to_representation(self, instance):
+        # Project only for serialization; never persist the read-time status.
+        from copy import copy
+        instance = copy(instance)
+        instance.status = getattr(instance, 'effective_status', instance.status)
         data = super().to_representation(instance)
         data['title'] = strip_completion_title_suffix(data.get('title'))
         return data
@@ -359,7 +363,7 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
         """Ödev sonuç raporu için özet veriler"""
         from .completion_utils import build_report_summary_counts
 
-        tasks = AssignmentTask.objects.filter(lesson_block__assignment=obj)
+        tasks = [task for lesson in obj.lessons.all() for task in lesson.tasks.all()]
         summary = build_report_summary_counts(tasks)
         summary['overall_completion_percent'] = obj.completion_percent
         return summary
@@ -491,9 +495,8 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
         lessons_data = data.get('lessons') or []
         content_ids = self._collect_task_content_ids(lessons_data)
         if content_ids:
-            existing = set(
-                ResourceContent.objects.filter(id__in=content_ids).values_list('id', flat=True)
-            )
+            self._content_cache = ResourceContent.objects.in_bulk(content_ids)
+            existing = set(self._content_cache)
             missing = sorted({cid for cid in content_ids if cid not in existing})
             if missing:
                 titles = []
@@ -719,7 +722,9 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                 task_data['quota_kind'] = quota_kind
 
                 if content_id:
-                    content = ResourceContent.objects.filter(id=content_id).first()
+                    content = getattr(self, '_content_cache', {}).get(int(content_id))
+                    if content is None:
+                        content = ResourceContent.objects.filter(id=content_id).first()
                     if content is None:
                         raise serializers.ValidationError({
                             'lessons': (

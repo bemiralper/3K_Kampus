@@ -1,6 +1,7 @@
 """Kaynak havuzu (StudentResourceAssignment) ilerlemesini manuel ödevlerden senkronize eder."""
 
 from django.db.models import Avg
+from django.db import transaction
 from django.utils import timezone
 
 from apps.coaching.assignment_manual.models import ManualAssignment
@@ -25,47 +26,48 @@ def sync_source_assignment_progress(manual_assignment):
     if not source_id:
         return
 
-    try:
-        source = StudentResourceAssignment.objects.get(pk=source_id, is_active=True)
-    except StudentResourceAssignment.DoesNotExist:
-        return
+    with transaction.atomic():
+        try:
+            source = StudentResourceAssignment.objects.select_for_update().get(pk=source_id, is_active=True)
+        except StudentResourceAssignment.DoesNotExist:
+            return
 
-    manuals = ManualAssignment.objects.filter(
-        source_assignment_id=source_id,
-        is_active=True,
-        status__in=_ACTIVE_MANUAL_STATUSES,
-    )
-    if not manuals.exists():
-        return
-
-    progress = round(manuals.aggregate(avg=Avg('completion_percent'))['avg'] or 0)
-    source.progress_percent = progress
-
-    all_completed = not manuals.exclude(
-        status=ManualAssignment.Status.COMPLETED,
-    ).exists()
-
-    update_fields = ['progress_percent', 'updated_at']
-
-    if (
-        all_completed
-        and progress >= 100
-        and source.status != StudentResourceAssignment.Status.CANCELLED
-    ):
-        source.status = StudentResourceAssignment.Status.COMPLETED
-        if not source.completed_at:
-            source.completed_at = timezone.now()
-            update_fields.append('completed_at')
-        update_fields.append('status')
-    elif (
-        progress > 0
-        and source.status
-        not in (
-            StudentResourceAssignment.Status.COMPLETED,
-            StudentResourceAssignment.Status.CANCELLED,
+        manuals = ManualAssignment.objects.filter(
+            source_assignment_id=source_id,
+            is_active=True,
+            status__in=_ACTIVE_MANUAL_STATUSES,
         )
-    ):
-        source.status = StudentResourceAssignment.Status.IN_PROGRESS
-        update_fields.append('status')
+        if not manuals.exists():
+            return
 
-    source.save(update_fields=update_fields)
+        progress = round(manuals.aggregate(avg=Avg('completion_percent'))['avg'] or 0)
+        source.progress_percent = progress
+
+        all_completed = not manuals.exclude(
+            status=ManualAssignment.Status.COMPLETED,
+        ).exists()
+
+        update_fields = ['progress_percent', 'updated_at']
+
+        if (
+            all_completed
+            and progress >= 100
+            and source.status != StudentResourceAssignment.Status.CANCELLED
+        ):
+            source.status = StudentResourceAssignment.Status.COMPLETED
+            if not source.completed_at:
+                source.completed_at = timezone.now()
+                update_fields.append('completed_at')
+            update_fields.append('status')
+        elif (
+            progress > 0
+            and source.status
+            not in (
+                StudentResourceAssignment.Status.COMPLETED,
+                StudentResourceAssignment.Status.CANCELLED,
+            )
+        ):
+            source.status = StudentResourceAssignment.Status.IN_PROGRESS
+            update_fields.append('status')
+
+        source.save(update_fields=update_fields)

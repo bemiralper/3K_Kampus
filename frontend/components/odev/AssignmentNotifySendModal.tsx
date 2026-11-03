@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, useRef } from "react";
 import Link from "next/link";
+import { newOperationKey } from "@/lib/operation-key";
 import {
   downloadAssignmentServerPdf,
+  fetchAssignmentNotifyJob,
   previewAssignmentNotify,
   sendAssignmentNotify,
   type AssignmentNotifyRecipient,
@@ -35,11 +37,12 @@ export interface NotifySentDetail {
 }
 
 export function formatNotifySentToast(sent: number, details?: NotifySentDetail[]): string {
-  if (!details?.length) {
-    return `${sent} kişiye WhatsApp ile gönderildi. Mesajlar işletme hattından iletilir.`;
-  }
-  const targets = details.map((d) => `${d.display_name} (${d.telefon})`).join(" · ");
-  return `${sent} kişiye gönderildi: ${targets}. WhatsApp uygulamasında işletme sohbetini kontrol edin.`;
+  const states: Record<string, string> = {
+    PENDING: "Kuyrukta", SENDING: "İşleniyor", SENT: "Sağlayıcıya iletildi",
+    DELIVERED: "Teslim edildi", READ: "Okundu", FAILED: "Başarısız", UNKNOWN: "Gönderim sonucu belirsiz",
+  };
+  if (!details?.length) return `${sent} alıcı için işlem kaydedildi. Teslim durumunu iletişim ekranından takip edebilirsiniz.`;
+  return details.map((d) => `${d.display_name}: ${states[d.message_status] || "Kuyrukta"}`).join(" · ");
 }
 
 function recipientKey(r: AssignmentNotifyRecipient): string {
@@ -51,7 +54,7 @@ function formatSendHistory(r: AssignmentNotifyRecipient): string | null {
   const count = r.send_count ?? 0;
   if (count <= 0) return null;
   const last = r.last_sent_at ? `Son: ${r.last_sent_at}` : "";
-  return `${count} kez gönderildi${last ? ` · ${last}` : ""}`;
+  return `${count >= 15 ? "Son 15 işlem" : `${count} işlem`}${last ? ` · ${last}` : ""}`;
 }
 
 export default function AssignmentNotifySendModal({
@@ -64,6 +67,11 @@ export default function AssignmentNotifySendModal({
   assignHomeworkHref,
 }: AssignmentNotifySendModalProps) {
   const [loading, setLoading] = useState(true);
+  const [previewAttempt, setPreviewAttempt] = useState(0);
+  const sendingRef = useRef(false);
+  const mounted = useRef(true);
+  const sendController = useRef<AbortController | null>(null);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; sendController.current?.abort(); }; }, []);
   const [sending, setSending] = useState(false);
   const [sendPhase, setSendPhase] = useState("");
   const [error, setError] = useState("");
@@ -71,6 +79,7 @@ export default function AssignmentNotifySendModal({
   const [pdfBusy, setPdfBusy] = useState(false);
   const [pdfError, setPdfError] = useState("");
   const [previewTitle, setPreviewTitle] = useState("");
+  const [operationLedgerEnabled, setOperationLedgerEnabled] = useState(false);
   const [sendMode, setSendMode] = useState<"document" | "meta_template">("document");
   const [metaTplVeli, setMetaTplVeli] = useState("");
   const [metaTplOgrenci, setMetaTplOgrenci] = useState("");
@@ -79,15 +88,18 @@ export default function AssignmentNotifySendModal({
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
     (async () => {
       setLoading(true);
       setError("");
       try {
-        const res = await previewAssignmentNotify(assignmentId, notifyType);
+        const res = await previewAssignmentNotify(assignmentId, notifyType, controller.signal);
         if (!res.success || !res.data) {
           throw new Error((res as { error?: string }).error || "Önizleme yüklenemedi");
         }
         if (!cancelled) {
+          setOperationLedgerEnabled(res.data.operation_ledger_enabled === true);
           setPreviewTitle(res.data.assignment_title || "");
           setSendMode(res.data.send_mode === "meta_template" ? "meta_template" : "document");
           setMetaTplVeli(res.data.meta_template_veli || "");
@@ -95,18 +107,19 @@ export default function AssignmentNotifySendModal({
           setRecipients(res.data.recipients || []);
           const initialExcluded = new Set<string>();
           for (const r of res.data.recipients || []) {
-            if (r.skip_reason) initialExcluded.add(recipientKey(r));
+            if (r.skip_reason || r.send_history?.some((history) => history.status === "UNKNOWN")) initialExcluded.add(recipientKey(r));
           }
           setExcluded(initialExcluded);
         }
       } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Hata");
+        if (!cancelled) setError(e instanceof Error && e.name === "AbortError" ? "Alıcılar zamanında yüklenemedi. Yeniden deneyin." : e instanceof Error ? e.message : "Önizleme yüklenemedi.");
       } finally {
+        clearTimeout(timer);
         if (!cancelled) setLoading(false);
       }
     })();
-    return () => { cancelled = true; };
-  }, [assignmentId, notifyType]);
+    return () => { cancelled = true; clearTimeout(timer); controller.abort(); };
+  }, [assignmentId, notifyType, previewAttempt]);
 
   const sendable = useMemo(
     () => recipients.filter((r) => {
@@ -143,7 +156,8 @@ export default function AssignmentNotifySendModal({
   };
 
   const handleSend = async () => {
-    if (sendable.length === 0) return;
+    if (sendable.length === 0 || sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     setError("");
     setSuccessMsg("");
@@ -154,13 +168,39 @@ export default function AssignmentNotifySendModal({
         .map((r) => r.veli_id as number);
       const includeStudent = sendable.some((r) => r.recipient_type === "ogrenci");
 
-      setSendPhase("PDF hazırlanıyor…");
-      const res = await sendAssignmentNotify(assignmentId, {
+      const storageKey = `odev-send:${assignmentId}:${notifyType}:${JSON.stringify([veliIds, includeStudent, reportOrientation, localStorage.getItem("3k_active_kurum"), localStorage.getItem("3k_active_sube"), localStorage.getItem("3k_active_egitim_yili")])}`;
+      let operationKey = sessionStorage.getItem(storageKey);
+      if (!operationKey) {
+        operationKey = newOperationKey();
+        sessionStorage.setItem(storageKey, operationKey);
+      }
+      setSendPhase("İşlem kaydediliyor…");
+      let res = await sendAssignmentNotify(assignmentId, {
         notify_type: notifyType,
+        async: operationLedgerEnabled, retry: true, idempotency_key: operationKey,
         veli_ids: veliIds,
         include_student: includeStudent,
         orientation: notifyType === "report" ? reportOrientation : "portrait",
       });
+
+      const deadline = Date.now() + 120000;
+      while (res.success && res.data?.job_id && ["PENDING", "PROCESSING"].includes(res.data.status || "")) {
+        if (!mounted.current) return;
+        if (Date.now() >= deadline) throw new Error("İşlem arka planda devam ediyor. Yeniden denemeniz aynı işlem kaydını kontrol eder; ikinci gönderim oluşturmaz.");
+        setSendPhase(res.data.status === "PENDING" ? "İş kuyruğunda…" : "PDF hazırlanıyor…");
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        if (!mounted.current) return;
+        const controller = new AbortController();
+        sendController.current = controller;
+        const timer = setTimeout(() => controller.abort(), 15000);
+        try { res = await fetchAssignmentNotifyJob(assignmentId, res.data.job_id, controller.signal); }
+        finally { clearTimeout(timer); }
+      }
+      if (!mounted.current) return;
+      if (res.data?.status === "FAILED") {
+        throw new Error(res.data.error || "PDF veya gönderim hazırlığı başarısız. Yeniden deneyebilirsiniz.");
+      }
+      if (res.success) sessionStorage.removeItem(storageKey);
 
       if (!res.success) {
         throw new Error((res as { error?: string }).error || "Gönderim başarısız");
@@ -176,15 +216,16 @@ export default function AssignmentNotifySendModal({
       }
 
       onSent?.(sentCount, res.data?.sent_details);
+      if (!mounted.current) return;
 
       const base = formatNotifySentToast(sentCount, res.data?.sent_details);
       const extra = warning || (skipped > 0 && extraErrors.length > 0 ? extraErrors[0] : "");
       setSuccessMsg(extra ? `${base} ${extra}`.trim() : base);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Gönderim hatası");
+      if (mounted.current) setError(e instanceof Error && e.name === "AbortError" ? "İşlem yanıtı alınamadı. Yeniden denemeniz aynı işlem kaydını kontrol eder." : e instanceof Error ? e.message : "Gönderim hatası");
     } finally {
-      setSending(false);
-      setSendPhase("");
+      sendingRef.current = false;
+      if (mounted.current) { setSending(false); setSendPhase(""); }
     }
   };
 
@@ -283,10 +324,10 @@ export default function AssignmentNotifySendModal({
             <div style={{ color: "#dc2626", fontSize: 13, marginBottom: 12 }}>{error}</div>
             <button
               type="button"
-              onClick={() => setError("")}
+              onClick={() => { setError(""); setPreviewAttempt((n) => n + 1); }}
               style={{ padding: "8px 14px", borderRadius: 8, border: "1px solid #e2e8f0", background: "#fff", cursor: "pointer" }}
             >
-              Geri dön
+              Yeniden yükle
             </button>
           </div>
         ) : (
@@ -322,6 +363,12 @@ export default function AssignmentNotifySendModal({
                     {historyLabel && (
                       <div style={{ fontSize: 11, color: "#0369a1", marginTop: 2, fontWeight: 500 }}>
                         📤 {historyLabel}
+                      </div>
+                    )}
+                    {r.send_history?.some((history) => history.status === "UNKNOWN") && (
+                      <div role="alert" style={{ fontSize: 12, color: "#b45309", marginTop: 6 }}>
+                        Önceki gönderimin sonucu belirsiz. Yeniden gönderim çift mesaja yol açabilir.
+                        İletişim geçmişini doğruladıktan sonra alıcıyı elle seçebilirsiniz.
                       </div>
                     )}
                     {(r.send_history?.length ?? 0) > 0 && (

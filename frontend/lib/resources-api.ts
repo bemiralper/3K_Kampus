@@ -3,8 +3,9 @@
  * Kaynak Kütüphanesi, Öğrenci Kaynak Havuzu ve Ödev modülleri için merkezi API fonksiyonları
  */
 
-import { apiGet, apiPost, apiPostForm, apiPut, apiPatch, apiDelete, ApiResponse, extractApiError } from './api';
+import { apiGet, apiPost, apiPostForm, apiPut, apiPatch, apiDelete, ApiResponse, extractApiError, getContextHeaders } from './api';
 import { notifyResourcesChanged } from './resources-events';
+import { withRequestTimeout } from './request-timeout';
 
 // ═══════════════════════════════════════════════════════
 // TYPES - Kaynak Kütüphanesi (Resources)
@@ -1577,7 +1578,7 @@ export async function fetchKontrolBadge(): Promise<ApiResponse<KontrolBadgeData>
  */
 export async function fetchAssignmentDetail(
   id: number,
-  options?: { printToken?: string },
+  options?: { printToken?: string; signal?: AbortSignal },
 ): Promise<ApiResponse<ManualAssignment>> {
   const headers: Record<string, string> = {};
   if (options?.printToken) {
@@ -1585,18 +1586,35 @@ export async function fetchAssignmentDetail(
   }
   return apiGet<ManualAssignment>(
     `/api/coaching/manual-assignments/assignments/${id}/`,
-    Object.keys(headers).length ? { headers } : {},
+    { headers, signal: options?.signal },
   );
 }
 
 /**
  * Ödev oluştur
  */
-export async function createAssignment(data: AssignmentCreatePayload): Promise<ApiResponse<ManualAssignment>> {
-  const result = await apiPost<ManualAssignment>('/api/coaching/manual-assignments/assignments/', data);
+export function fetchAssignmentCapabilities() {
+  return apiGet<{ operation_ledger_enabled: boolean }>('/api/coaching/manual-assignments/assignments/capabilities/');
+}
+
+export async function createAssignment(data: AssignmentCreatePayload, idempotencyKey?: string): Promise<ApiResponse<ManualAssignment>> {
+  const result = await apiPost<ManualAssignment>('/api/coaching/manual-assignments/assignments/', data, { headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {} });
   if (result.success) {
     notifyResourcesChanged({ type: "assignment-create" });
   }
+  return result;
+}
+
+export interface AssignmentCreateItemResult {
+  key: string;
+  success: boolean;
+  data?: ManualAssignment;
+  error?: string;
+}
+
+export async function batchCreateAssignments(items: { key: string; payload: AssignmentCreatePayload }[]) {
+  const result = await apiPost<AssignmentCreateItemResult[]>('/api/coaching/manual-assignments/assignments/batch-create/', { items });
+  if (result.success) notifyResourcesChanged({ type: "assignment-create" });
   return result;
 }
 
@@ -1813,10 +1831,17 @@ export async function updateTaskCompletionStatus(
     completed_question_count?: number;
     coach_evaluation_note?: string;
   }
-): Promise<ApiResponse<AssignmentTask>> {
+): Promise<ApiResponse<AssignmentTask> & { assignment_summary?: Partial<ManualAssignment> }> {
   return apiPost<AssignmentTask>(
     `/api/coaching/manual-assignments/tasks/${taskId}/update_task_status/`,
     data
+  );
+}
+
+export function batchUpdateTaskCompletionStatus(taskIds: number[], completionStatus: "DONE" | "NOT_DONE") {
+  return apiPost<{ tasks: AssignmentTask[]; assignment_summary: Partial<ManualAssignment> }>(
+    '/api/coaching/manual-assignments/tasks/batch-status/',
+    { task_ids: taskIds, completion_status: completionStatus },
   );
 }
 
@@ -1825,7 +1850,7 @@ export async function updateTaskCompletionStatus(
  */
 export async function resetTaskCompletionStatus(
   taskId: number
-): Promise<ApiResponse<AssignmentTask>> {
+): Promise<ApiResponse<AssignmentTask> & { assignment_summary?: Partial<ManualAssignment> }> {
   return apiPost<AssignmentTask>(
     `/api/coaching/manual-assignments/tasks/${taskId}/reset_task_status/`,
     {}
@@ -2101,16 +2126,18 @@ export interface AssignmentNotifyPreviewData {
   send_mode?: 'document' | 'meta_template';
   meta_template_veli?: string;
   meta_template_ogrenci?: string;
+  operation_ledger_enabled?: boolean;
   recipients: AssignmentNotifyRecipient[];
 }
 
 export async function previewAssignmentNotify(
   assignmentId: number,
   notifyType: AssignmentNotifyType,
+  signal?: AbortSignal,
 ): Promise<ApiResponse<AssignmentNotifyPreviewData>> {
-  return apiGet<AssignmentNotifyPreviewData>(
-    `/api/coaching/manual-assignments/assignments/${assignmentId}/notify-preview/?type=${notifyType}`,
-  );
+  return withRequestTimeout((boundedSignal) => apiGet<AssignmentNotifyPreviewData>(
+    `/api/coaching/manual-assignments/assignments/${assignmentId}/notify-preview/?type=${notifyType}`, { signal: boundedSignal },
+  ), 20000, signal);
 }
 
 export async function renderAssignmentReportPdf(
@@ -2177,36 +2204,20 @@ export async function downloadAssignmentServerPdf(
       ? path
       : `${process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000"}${path}`;
 
-  const contextHeaders: Record<string, string> = {};
-  if (typeof window !== "undefined") {
-    const kurumId = localStorage.getItem("3k_active_kurum");
-    if (kurumId) {
-      try {
-        const parsed = JSON.parse(kurumId);
-        contextHeaders["X-Kurum-ID"] = String(parsed?.id ?? parsed);
-      } catch {
-        contextHeaders["X-Kurum-ID"] = kurumId;
+  const { blob, cd } = await withRequestTimeout(async (signal) => {
+    const res = await fetch(url, {
+      method: "GET", credentials: "include", headers: getContextHeaders(), signal,
+    });
+    if (!res.ok) {
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const data = await res.json();
+        throw new Error(extractApiError(data, res, "PDF indirilemedi"));
       }
+      throw new Error(`PDF indirilemedi (${res.status})`);
     }
-  }
-
-  const res = await fetch(url, {
-    method: "GET",
-    credentials: "include",
-    headers: contextHeaders,
-  });
-
-  if (!res.ok) {
-    const contentType = res.headers.get("content-type") || "";
-    if (contentType.includes("application/json")) {
-      const data = await res.json();
-      throw new Error(extractApiError(data, res, "PDF indirilemedi"));
-    }
-    throw new Error(`PDF indirilemedi (${res.status})`);
-  }
-
-  const blob = await res.blob();
-  const cd = res.headers.get("Content-Disposition") || "";
+    return { blob: await res.blob(), cd: res.headers.get("Content-Disposition") || "" };
+  }, 120000);
   const match = /filename="?([^";]+)"?/i.exec(cd);
   const filename =
     match?.[1] ||
@@ -2218,10 +2229,27 @@ export async function downloadAssignmentServerPdf(
   await downloadPdfBlob(blob, filename);
 }
 
+export interface AssignmentNotifyJob {
+  job_id?: string;
+  status?: string;
+  error?: string;
+  sent?: number;
+  skipped?: number;
+  errors?: string[];
+  sent_details?: { recipient_type: string; display_name: string; telefon: string; message_status: string }[];
+}
+
+export function fetchAssignmentNotifyJob(assignmentId: number, jobId: string, signal?: AbortSignal) {
+  return withRequestTimeout((boundedSignal) => apiGet<AssignmentNotifyJob>(`/api/coaching/manual-assignments/assignments/${assignmentId}/notify-job/?job_id=${encodeURIComponent(jobId)}`, { signal: boundedSignal }), 15000, signal);
+}
+
 export async function sendAssignmentNotify(
   assignmentId: number,
   payload: {
     notify_type: AssignmentNotifyType;
+    idempotency_key?: string;
+    async?: boolean;
+    retry?: boolean;
     veli_ids?: number[];
     include_student?: boolean;
     /** Ekrandaki rapor/plan HTML'i — sunucuda vektörel PDF'e çevrilir (legacy) */
@@ -2231,7 +2259,7 @@ export async function sendAssignmentNotify(
     pdf_filename?: string;
     orientation?: "portrait" | "landscape";
   },
-): Promise<ApiResponse<{ sent: number; skipped: number; errors: string[]; sent_details?: { recipient_type: string; display_name: string; telefon: string; message_status: string }[] }>> {
+): Promise<ApiResponse<AssignmentNotifyJob>> {
   if (payload.pdf_blob) {
     const form = new FormData();
     form.append("notify_type", payload.notify_type);
@@ -2249,14 +2277,17 @@ export async function sendAssignmentNotify(
     );
   }
 
-  return apiPost(
+  return withRequestTimeout((signal) => apiPost(
     `/api/coaching/manual-assignments/assignments/${assignmentId}/notify-send/`,
     {
       notify_type: payload.notify_type,
+      idempotency_key: payload.idempotency_key,
+      async: payload.async,
+      retry: payload.retry,
       veli_ids: payload.veli_ids,
       include_student: payload.include_student,
       report_html: payload.report_html,
       orientation: payload.orientation,
-    },
-  );
+    }, { signal },
+  ), payload.async ? 30000 : 120000);
 }

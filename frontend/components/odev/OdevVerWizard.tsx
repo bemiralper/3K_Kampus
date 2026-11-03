@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
+import { newOperationKey, payloadDigest } from '@/lib/operation-key';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
 import { useUnsavedChangesGuard } from '@/lib/hooks/useUnsavedChangesGuard';
@@ -27,6 +28,8 @@ import {
   fetchContentTaskHistory,
   fetchBookStructure,
   createAssignment,
+  batchCreateAssignments,
+  fetchAssignmentCapabilities,
   updateAssignment,
   fetchAssignmentDetail,
   fetchAssignmentPackage,
@@ -346,7 +349,34 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   const kontrolBase = isCoach ? '/coach/odev/kontrol' : '/admin/odev/kontrol';
 
+  const [operationLedgerEnabled, setOperationLedgerEnabled] = useState(false);
+  useEffect(() => {
+    let current = true;
+    void fetchAssignmentCapabilities().then((result) => {
+      if (current && result.success) setOperationLedgerEnabled(result.data?.operation_ledger_enabled === true);
+    });
+    return () => { current = false; };
+  }, []);
+
+  const requestEpochs = useRef<Record<string, number>>({});
+  const screenAlive = useRef(true);
+  const startRequest = (key: string) => {
+    const epoch = (requestEpochs.current[key] || 0) + 1;
+    requestEpochs.current[key] = epoch;
+    return () => screenAlive.current && requestEpochs.current[key] === epoch;
+  };
+  const invalidateSelections = () => {
+    ["resources", "history", "book", "quota", "controls", "gaps"].forEach((key) => {
+      requestEpochs.current[key] = (requestEpochs.current[key] || 0) + 1;
+    });
+  };
+  useEffect(() => {
+    screenAlive.current = true;
+    return () => { screenAlive.current = false; };
+  }, []);
+
   const checkPendingControls = useCallback(async (studentIds: number[], nameById: Map<number, string>) => {
+    const current = startRequest("controls");
     const found: PendingControlInfo[] = [];
     await Promise.all(
       studentIds.map(async (sid) => {
@@ -366,7 +396,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         } catch { /* sessiz */ }
       }),
     );
-    setPendingControls(found);
+    if (current()) setPendingControls(found);
   }, []);
 
   /**
@@ -381,9 +411,11 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     bookNamesById: Map<number, string>,
   ) => {
     if (otherStudents.length === 0 || bookIds.length === 0) {
+      startRequest("gaps");
       setResourceGaps([]);
       return;
     }
+    const current = startRequest("gaps");
     const gaps: ResourceGapInfo[] = [];
     await Promise.all(
       otherStudents.map(async (student) => {
@@ -408,11 +440,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         } catch { /* sessiz — uyarı olmadan da atama akışı çalışsın */ }
       }),
     );
-    setResourceGaps(gaps);
+    if (current()) setResourceGaps(gaps);
   }, []);
 
   useEffect(() => {
     if (!multiSelect || selectedStudents.length < 2 || cart.length === 0) {
+      startRequest("gaps");
       setResourceGaps([]);
       return;
     }
@@ -638,6 +671,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   };
 
   const fetchResources = async (sid: number) => {
+    const current = startRequest("resources");
     setResLoading(true);
     setResources([]);
     try {
@@ -672,17 +706,20 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           }));
         }
       }
-      setResources(await mergeQuotaCatalogBooks(sid, flat));
-    } catch { flash('❌ Kaynaklar yüklenemedi'); }
+      const merged = await mergeQuotaCatalogBooks(sid, flat);
+      if (current()) setResources(merged);
+    } catch { if (current()) flash('❌ Kaynaklar yüklenemedi'); }
     finally {
-      setResLoading(false);
+      if (current()) setResLoading(false);
     }
   };
 
   /* ─── Fetch content task history for student ─── */
   const fetchQuotaDefaults = async (sid: number) => {
+    const current = startRequest("quota");
     try {
       const result = await fetchLastQuotaDefaults(sid);
+      if (!current()) return;
       if (result.success && result.data) {
         setLastQuotaDefaults({
           PARAGRAF: result.data.PARAGRAF || null,
@@ -691,37 +728,45 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         return;
       }
     } catch { /* varsayılan boş */ }
-    setLastQuotaDefaults({ PARAGRAF: null, PROBLEM: null });
+    if (current()) setLastQuotaDefaults({ PARAGRAF: null, PROBLEM: null });
   };
 
   const fetchTaskHistory = async (sid: number) => {
+    const current = startRequest("history");
+    setTaskHistory({}); setBookProgress({}); setUnitProgress({});
     try {
       const result = await fetchContentTaskHistory(sid);
+      if (!current()) return;
       if (result.success && result.data) {
         setTaskHistory(result.data.contents || {});
         setBookProgress(result.data.by_book || {});
         setUnitProgress(result.data.by_unit || {});
       }
-    } catch { flash('❌ Görev geçmişi yüklenemedi'); }
+    } catch { if (current()) flash('❌ Görev geçmişi yüklenemedi'); }
   };
   const fetchBook = async (bookId: number) => {
+    const current = startRequest("book");
     setBookLoading(true);
     setBookDetails(null);
     try {
       const result = await fetchBookStructure(bookId, {
         studentId: selectedStudent?.id || (preselectedStudentId ? parseInt(preselectedStudentId, 10) : undefined),
       });
+      if (!current()) return;
       if (result.success && result.data) {
         setBookDetails(result.data as BookDetails);
       } else {
         flash(result.error || 'Kitap yapısı yüklenemedi — şube seçimini kontrol edin');
       }
-    } catch { flash('❌ Kitap yapısı yüklenemedi'); }
-    setBookLoading(false);
+    } catch { if (current()) flash('❌ Kitap yapısı yüklenemedi'); }
+    if (current()) setBookLoading(false);
   };
 
   /* ─── Handlers ─── */
   const pickStudent = (s: Student) => {
+    invalidateSelections();
+    setBookLoading(false);
+    setLastQuotaDefaults({ PARAGRAF: null, PROBLEM: null });
     if (!editingAssignmentId) {
       draftReadyRef.current = false;
     }
@@ -791,11 +836,16 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       const updated = exists ? prev.filter(ss => ss.id !== s.id) : [...prev, s];
       // İlk seçili öğrenciyi primary olarak ayarla
       if (updated.length > 0 && (!selectedStudent || !updated.some(ss => ss.id === selectedStudent.id))) {
+        invalidateSelections();
+        setSelectedResource(null); setBookDetails(null); setBookLoading(false);
         setSelectedStudent(updated[0]);
+        void fetchQuotaDefaults(updated[0].id);
         fetchResources(updated[0].id);
         fetchTaskHistory(updated[0].id);
       }
       if (updated.length === 0) {
+        invalidateSelections();
+        setResources([]); setBookDetails(null); setBookLoading(false);
         setSelectedStudent(null);
         setPendingControls([]);
       } else {
@@ -839,6 +889,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
   };
 
   const pickResource = (r: StudentResource) => {
+    startRequest("book");
     setSelectedResource(r);
     if (isRoutineQuotaResource(r)) {
       setBookDetails(null);
@@ -1375,6 +1426,8 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       let lastError = '';
       const createdSends: { id: number; name: string }[] = [];
       const quotaItems = cart.filter((c) => c.quotaKind);
+      const createItems = [];
+      const storageKeys: string[] = [];
       for (const student of targetStudents) {
         const body = {
           student: student.id,
@@ -1387,10 +1440,37 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           ...(packageTemplateId && !editingAssignmentId ? { template_id: packageTemplateId } : {}),
           ...(sourceAssignmentId && !editingAssignmentId ? { source_assignment: sourceAssignmentId } : {}),
         };
+        const fingerprint = JSON.stringify([body, localStorage.getItem('3k_active_kurum'), localStorage.getItem('3k_active_sube'), localStorage.getItem('3k_active_egitim_yili')]);
+        const digest = await payloadDigest(fingerprint);
+        const storageKey = `odev-create:${digest}`;
+        const stored = sessionStorage.getItem(storageKey);
+        const previous = stored ? JSON.parse(stored) as { key: string; fingerprint: string } : null;
+        const key = previous?.fingerprint === fingerprint ? previous.key : newOperationKey();
+        sessionStorage.setItem(storageKey, JSON.stringify({ key, fingerprint }));
+        storageKeys.push(storageKey);
+        createItems.push({ key, payload: body });
+      }
+      const batchResults = new Map<string, { success: boolean; data?: unknown; error?: string }>();
+      if (!editingAssignmentId && operationLedgerEnabled) {
+        for (let offset = 0; offset < createItems.length; offset += 50) {
+          const chunk = createItems.slice(offset, offset + 50);
+          const response = await batchCreateAssignments(chunk);
+          if (response.success && response.data) {
+            response.data.forEach((item) => batchResults.set(item.key, item));
+          } else {
+            chunk.forEach((item) => batchResults.set(item.key, { success: false, error: response.error || 'Toplu kayıt tamamlanamadı' }));
+          }
+        }
+      }
+      for (let index = 0; index < targetStudents.length; index++) {
+        const student = targetStudents[index];
+        const body = createItems[index].payload;
         try {
           const result = editingAssignmentId
             ? await updateAssignment(editingAssignmentId, body)
-            : await createAssignment(body);
+            : operationLedgerEnabled
+              ? (batchResults.get(createItems[index].key) || { success: false, error: 'İşlem sonucu alınamadı' })
+              : await createAssignment(body);
           if (result.success) {
             successCount++;
             const createdId = extractAssignmentId(result.data) ?? extractAssignmentId(result);
@@ -1425,6 +1505,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       }
 
       if (failCount === 0) {
+        storageKeys.forEach((key) => sessionStorage.removeItem(key));
         const studentNames = targetStudents.length === 1
           ? `${targetStudents[0].ad} ${targetStudents[0].soyad}`
           : `${successCount} öğrenci`;

@@ -73,12 +73,6 @@ class AssignmentNotificationService:
     def _get_assignment(self, assignment_id: int, kurum_id: int) -> ManualAssignment | None:
         return (
             ManualAssignment.objects.select_related('student', 'student__kurum')
-            .prefetch_related(
-                'lessons__tasks',
-                'lessons__lesson',
-                'lessons__resource_book',
-                'lessons__resource_book__ders',
-            )
             .filter(id=assignment_id, student__kurum_id=kurum_id, is_active=True)
             .first()
         )
@@ -226,7 +220,7 @@ class AssignmentNotificationService:
         for msg in qs[:15]:
             history.append({
                 'sent_at': timezone.localtime(msg.created_at).strftime('%d.%m.%Y %H:%M'),
-                'status': msg.status,
+                'status': ('UNKNOWN' if 'durumu belirsiz' in (msg.failed_reason or '').lower() else msg.status),
             })
         return history
 
@@ -235,15 +229,18 @@ class AssignmentNotificationService:
         kurum_id: int,
         assignment_id: int,
         notify_type: str,
+        *, assignment: ManualAssignment | None = None,
     ) -> AssignmentNotifyPreview:
-        assignment = self._get_assignment(assignment_id, kurum_id)
-        if not assignment:
+        assignment = assignment or self._get_assignment(assignment_id, kurum_id)
+        if not assignment or assignment.pk != assignment_id or assignment.student.kurum_id != kurum_id or not assignment.is_active:
             raise ValueError('Ödev bulunamadı.')
         if assignment.status == ManualAssignment.Status.DRAFT:
             raise ValueError('Taslak ödev gönderilemez.')
         if notify_type == NOTIFY_REPORT and assignment.status != ManualAssignment.Status.COMPLETED:
             raise ValueError('Kontrol raporu yalnızca tamamlanan ödevler için gönderilebilir.')
 
+        from .assignment_template_seed import get_pdf_message_templates
+        templates = get_pdf_message_templates(kurum_id)
         ogrenci = assignment.student
         ogrenci_ad = f'{ogrenci.ad} {ogrenci.soyad}'.strip()
         recipients: list[AssignmentNotifyRecipient] = []
@@ -258,6 +255,7 @@ class AssignmentNotificationService:
                 for_veli=True,
                 veli=veli,
                 kurum=kurum,
+                templates=templates, count_usage=False,
             )
             skip = ''
             if not ContactResolver.veli_allows_outbound(veli, OPT_IN_CATEGORY):
@@ -297,6 +295,7 @@ class AssignmentNotificationService:
             notify_type,
             for_veli=False,
             kurum=kurum,
+            templates=templates, count_usage=False,
         )
         student_skip = ContactResolver.ogrenci_outbound_skip(
             ogrenci, empty='Öğrenci telefonu bulunamadı',
@@ -321,8 +320,8 @@ class AssignmentNotificationService:
         ))
 
         pdf_title = pdf_title_label(notify_type)
-        meta_veli = get_meta_template_for_notify(kurum_id, notify_type, 'veli')
-        meta_ogrenci = get_meta_template_for_notify(kurum_id, notify_type, 'ogrenci')
+        meta_veli = get_meta_template_for_notify(kurum_id, notify_type, 'veli', sube_id=ogrenci.sube_id)
+        meta_ogrenci = get_meta_template_for_notify(kurum_id, notify_type, 'ogrenci', sube_id=ogrenci.sube_id)
         send_mode = 'meta_template' if (meta_veli or meta_ogrenci) else 'document'
         return AssignmentNotifyPreview(
             notify_type=notify_type,
@@ -413,8 +412,8 @@ class AssignmentNotificationService:
         pdf_filename: str | None = None,
         orientation: str = 'portrait',
     ) -> dict:
-        preview = self.preview(kurum_id, assignment_id, notify_type)
         assignment = self._get_assignment(assignment_id, kurum_id)
+        preview = self.preview(kurum_id, assignment_id, notify_type, assignment=assignment)
         if not assignment:
             raise ValueError('Ödev bulunamadı.')
 
@@ -492,7 +491,8 @@ class AssignmentNotificationService:
                         'recipient_type': 'veli',
                         'display_name': item.display_name,
                         'telefon': mask_phone(result.sent_to_phone or item.telefon),
-                        'message_status': result.message_status or 'SENT',
+                        'message_status': result.message_status or 'PENDING',
+                        'message_id': result.message_id,
                     })
                 else:
                     skipped += 1
@@ -530,7 +530,8 @@ class AssignmentNotificationService:
                         'recipient_type': 'ogrenci',
                         'display_name': item.display_name,
                         'telefon': mask_phone(result.sent_to_phone or item.telefon),
-                        'message_status': result.message_status or 'SENT',
+                        'message_status': result.message_status or 'PENDING',
+                        'message_id': result.message_id,
                     })
                 else:
                     skipped += 1
@@ -540,12 +541,5 @@ class AssignmentNotificationService:
                     else:
                         label = item.display_name or item.recipient_type
                         errors.append(f'{label}: Gönderim başarısız.')
-
-        if sent:
-            try:
-                from apps.communication.application.celery_dispatch import dispatch_process_outbound_queue
-                dispatch_process_outbound_queue()
-            except Exception:
-                pass
 
         return {'sent': sent, 'skipped': skipped, 'errors': errors, 'sent_details': sent_details}

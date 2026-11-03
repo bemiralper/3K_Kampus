@@ -264,10 +264,11 @@ export function isSessionExpiredResponse(status: number, data: unknown): boolean
 }
 
 /** POST/PUT/PATCH/DELETE öncesi CSRF çerezi yoksa /auth/api/me/ ile alınır. */
-export async function ensureCsrfCookie(): Promise<void> {
+export async function ensureCsrfCookie(signal?: AbortSignal): Promise<void> {
   if (typeof document === "undefined") return;
   if (getCsrfToken()) return;
   await fetch(resolveApiUrl("/auth/api/me/"), {
+    signal,
     credentials: "include",
     headers: { "Cache-Control": "no-cache" },
   });
@@ -293,8 +294,9 @@ export async function apiFetch<T = unknown>(
 
   if (isMutating) {
     try {
-      await ensureCsrfCookie();
+      await ensureCsrfCookie(options.signal || undefined);
     } catch {
+      if (options.signal?.aborted) throw new DOMException('İstek iptal edildi veya zaman aşımına uğradı.', 'AbortError');
       /* CSRF ön-yükleme başarısız olsa da asıl istek hata mesajını üretir */
     }
   }

@@ -261,4 +261,10 @@ def find_replacement_template(
 def recreate_default_template_for_role(kurum_id: int, role: str) -> MessageTemplate:
     from .assignment_template_seed import ensure_role_template
 
-    return ensure_role_template(kurum_id, role)
+    # This is an explicit reset action, unlike preview/startup seeding.
+    template = ensure_role_template(kurum_id, role, link_config=False)
+    template.is_active = True
+    template.variables_json = role_variables_json(role)
+    template.save(update_fields=['is_active', 'variables_json', 'updated_at'])
+    set_config_template(kurum_id, role, template)
+    return template

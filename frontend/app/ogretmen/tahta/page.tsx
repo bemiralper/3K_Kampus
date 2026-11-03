@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { PageHeading } from "@/components/teacher/PortalUI";
 
 import { teacherRequest, useTeacher, useTeacherData } from "@/lib/teacher-web";
 
@@ -34,8 +35,7 @@ export default function BoardPage() {
 
   return (
     <>
-      <h1>Akıllı tahta</h1>
-      <p className="tp-sub">Tahtadaki 8 haneli kodu girin. Bu ekran ders adını tahtaya gönderir.</p>
+      <PageHeading eyebrow="DERSİNİ BÜYÜK EKRANA TAŞI" title="Akıllı tahta" description="Tahtadaki 8 haneli eşleştirme koduyla bağlan, sınıfını ve dersini tahtaya gönder." />
       {boards.error ? <p className="tp-error">{boards.error}</p> : null}
       {mine ? (
         <section className="tp-panel">

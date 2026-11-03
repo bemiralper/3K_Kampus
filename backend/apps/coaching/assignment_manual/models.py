@@ -6,10 +6,35 @@ AssignmentLesson: Ödev içindeki ders blokları
 AssignmentTask: Her ders bloğu içindeki görevler
 """
 
+import uuid
+
 from django.db import models
 from django.conf import settings
 from django.utils import timezone
 from django.core.validators import MinValueValidator, MaxValueValidator
+
+
+class AssignmentOperation(models.Model):
+    """Additive durable operation ledger; existing assignment/message IDs are retained."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    kurum = models.ForeignKey('kurum.Kurum', on_delete=models.CASCADE)
+    actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL)
+    assignment = models.ForeignKey('ManualAssignment', null=True, on_delete=models.SET_NULL)
+    kind = models.CharField(max_length=16)
+    key = models.CharField(max_length=100)
+    fingerprint = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict)
+    result = models.JSONField(default=dict)
+    status = models.CharField(max_length=20, default='PENDING')
+    error = models.CharField(max_length=255, blank=True)
+    pdf = models.FileField(upload_to='communication/assignment-jobs/', blank=True)
+    started_at = models.DateTimeField(null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'coaching_assignment_operation'
+        constraints = [models.UniqueConstraint(fields=['kurum', 'actor', 'kind', 'key'], name='assignment_operation_key_unique')]
 
 
 class ManualAssignment(models.Model):

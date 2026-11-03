@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import { PageHeading } from "@/components/teacher/PortalUI";
 
 import { clock, useTeacher, useTeacherData } from "@/lib/teacher-web";
 
@@ -55,8 +56,7 @@ export default function ProgramPage() {
 
   return (
     <>
-      <h1>Program</h1>
-      <p className="tp-sub">{termName || "Haftalık dersler"}</p>
+      <PageHeading eyebrow="HAFTANIN RİTMİ" title="Ders programım" description={`${termName || "Aktif dönem"} · Sınıf derslerin ve birebir buluşmaların bir arada.`} />
       {schedule.loading ? <p className="tp-state">Yükleniyor…</p> : null}
       {schedule.error ? <p className="tp-error">{schedule.error}</p> : null}
       {data && columns === 0 ? <p className="tp-state">Bu dönemde program yok.</p> : null}

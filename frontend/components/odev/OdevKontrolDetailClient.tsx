@@ -6,6 +6,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import {
   fetchAssignmentDetail,
   updateTaskCompletionStatus,
+  batchUpdateTaskCompletionStatus,
   resetTaskCompletionStatus,
   resetAllTaskCompletionStatuses,
   updateTaskEvaluationNote,
@@ -266,11 +267,30 @@ export default function OdevKontrolDetailClient({
     setShowCompletionChooser(false);
   }, [completionDismissKey]);
 
+  const activeAssignmentId = useRef(assignmentId);
+  activeAssignmentId.current = assignmentId;
+  const mutationInFlight = useRef(false);
+  const mergeTaskMutation = (tasks: AssignmentTask[], summary?: Partial<AssignmentDetail>) => {
+    if (!assignment || assignment.id !== Number(activeAssignmentId.current) || !summary) return null;
+    const byId = new Map(tasks.filter(Boolean).map((task) => [task.id, task]));
+    const updated: AssignmentDetail = {
+      ...assignment, ...summary,
+      lessons: assignment.lessons.map((lesson) => ({ ...lesson, tasks: lesson.tasks.map((task) => byId.has(task.id) ? { ...task, ...byId.get(task.id)! } : task) })),
+    };
+    setAssignment(updated);
+    return updated;
+  };
+
+  const detailRequest = useRef<AbortController | null>(null);
   const fetchAssignment = useCallback(async (): Promise<AssignmentDetail | null> => {
+    detailRequest.current?.abort();
+    const controller = new AbortController();
+    detailRequest.current = controller;
     // Sadece ilk yüklemede loading göster, sonraki refresh'lerde scroll bozulmasın
     if (!initialLoadDone.current) setLoading(true);
     try {
-      const result = await fetchAssignmentDetail(Number(assignmentId));
+      const result = await fetchAssignmentDetail(Number(assignmentId), { signal: controller.signal });
+      if (controller.signal.aborted) return null;
       if (result.success !== false && result.data) {
         const data = result.data as unknown as AssignmentDetail;
         setAssignment(data);
@@ -309,6 +329,7 @@ export default function OdevKontrolDetailClient({
         return data;
       }
     } catch (e) {
+      if (controller.signal.aborted) return null;
       console.error("Yüklenemedi:", e);
       flash("❌ Ödev verileri yüklenemedi");
     }
@@ -317,7 +338,12 @@ export default function OdevKontrolDetailClient({
     return null;
   }, [assignmentId, expandedStorageKey]);
 
-  useEffect(() => { fetchAssignment(); }, [fetchAssignment]);
+  useEffect(() => {
+    initialLoadDone.current = false;
+    setAssignment(null);
+    fetchAssignment();
+    return () => detailRequest.current?.abort();
+  }, [fetchAssignment]);
 
   /* Ödev verdikten sonra kontrol rapor WhatsApp'ına dönüş */
   useEffect(() => {
@@ -400,6 +426,8 @@ export default function OdevKontrolDetailClient({
     pct?: number,
     solvedCount?: number,
   ) => {
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true;
     setSaving(taskId);
     const wasCompleted = assignment?.status === "COMPLETED";
     try {
@@ -419,7 +447,9 @@ export default function OdevKontrolDetailClient({
           ? `⚠️ Eksik: ${solvedCount} soru`
           : `⚠️ Eksik: %${pct}`;
         flash(completionStatus === "DONE" ? "✅ Yaptı olarak işaretlendi" : completionStatus === "NOT_DONE" ? "❌ Yapmadı olarak işaretlendi" : partialLabel);
-        const updated = await fetchAssignment();
+        const updated = result.assignment_summary
+          ? mergeTaskMutation([result.data as unknown as AssignmentTask], result.assignment_summary as Partial<AssignmentDetail>)
+          : await fetchAssignment();
         setPartialTaskId(null);
         collapseFullyControlledLessons(updated);
         if (!wasCompleted && updated?.status === "COMPLETED") {
@@ -429,6 +459,7 @@ export default function OdevKontrolDetailClient({
         flash("❌ " + (result.error || "İşlem başarısız"));
       }
     } catch { flash("❌ Bağlantı hatası"); }
+    mutationInFlight.current = false;
     setSaving(null);
   };
 
@@ -436,7 +467,7 @@ export default function OdevKontrolDetailClient({
     tasks: AssignmentTask[],
     completionStatus: "DONE" | "NOT_DONE",
   ) => {
-    if (!assignment || !tasks.length || bulkSaving) return;
+    if (!assignment || !tasks.length || bulkSaving || mutationInFlight.current) return;
     const locked =
       !assignment.can_override_control_lock && (
         !!assignment.non_submission_reason ||
@@ -449,57 +480,54 @@ export default function OdevKontrolDetailClient({
       flash(completionStatus === "DONE" ? "Hepsi zaten yaptı" : "Hepsi zaten yapmadı");
       return;
     }
+    mutationInFlight.current = true;
     setBulkSaving(true);
     const wasCompleted = assignment.status === "COMPLETED";
     try {
-      const results = await Promise.all(
-        targets.map((t) =>
-          updateTaskCompletionStatus(t.id, { completion_status: completionStatus }),
-        ),
-      );
-      const ok = results.filter((r) => r.success).length;
-      const fail = results.length - ok;
-      if (ok > 0) {
-        flash(
-          completionStatus === "DONE"
-            ? `✅ ${ok} görev yaptı işaretlendi${fail ? ` · ${fail} başarısız` : ""}`
-            : `❌ ${ok} görev yapmadı işaretlendi${fail ? ` · ${fail} başarısız` : ""}`,
-        );
-        const updated = await fetchAssignment();
+      const result = await batchUpdateTaskCompletionStatus(targets.map((task) => task.id), completionStatus);
+      if (result.success && result.data) {
+        const updated = mergeTaskMutation(result.data.tasks as unknown as AssignmentTask[], result.data.assignment_summary as Partial<AssignmentDetail>);
+        flash(`${targets.length} görev güncellendi`);
         collapseFullyControlledLessons(updated);
-        if (!wasCompleted && updated?.status === "COMPLETED") {
-          openCompletionChooserIfNeeded();
-        }
+        if (!wasCompleted && updated?.status === "COMPLETED") openCompletionChooserIfNeeded();
       } else {
-        flash("❌ Toplu işaretleme başarısız");
+        flash("❌ " + (result.error || "Toplu işaretleme başarısız"));
       }
     } catch {
       flash("❌ Bağlantı hatası");
     }
+    mutationInFlight.current = false;
     setBulkSaving(false);
   };
 
   const handleSaveNote = async (taskId: number) => {
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    setSaving(taskId);
     try {
       const result = await updateTaskEvaluationNote(taskId, noteText);
       if (result.success) {
         flash("✅ Not kaydedildi");
-        await fetchAssignment();
+        mergeTaskMutation([result.data as unknown as AssignmentTask], {});
         setEditingNoteTaskId(null);
         setNoteText("");
       } else {
         flash("❌ " + (result.error || "Not kaydedilemedi"));
       }
     } catch { flash("❌ Not kaydedilemedi"); }
+    finally { mutationInFlight.current = false; setSaving(null); }
   };
 
   const handleDeleteNote = async (taskId: number) => {
     if (!confirm("Bu görev notunu silmek istiyor musunuz?")) return;
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true;
+    setSaving(taskId);
     try {
       const result = await updateTaskEvaluationNote(taskId, "");
       if (result.success) {
         flash("Not silindi");
-        await fetchAssignment();
+        mergeTaskMutation([result.data as unknown as AssignmentTask], {});
         setEditingNoteTaskId(null);
         setNoteText("");
       } else {
@@ -507,7 +535,7 @@ export default function OdevKontrolDetailClient({
       }
     } catch {
       flash("❌ Not silinemedi");
-    }
+    } finally { mutationInFlight.current = false; setSaving(null); }
   };
 
   const handlePostpone = async () => {
@@ -681,12 +709,15 @@ export default function OdevKontrolDetailClient({
 
   const handleResetTask = async (taskId: number) => {
     if (!confirm("Bu görevin değerlendirmesini sıfırlamak istiyor musunuz?")) return;
+    if (mutationInFlight.current) return;
+    mutationInFlight.current = true;
     setSaving(taskId);
     try {
       const result = await resetTaskCompletionStatus(taskId);
       if (result.success) {
         flash("Görev değerlendirmesi sıfırlandı");
-        await fetchAssignment();
+        if (result.assignment_summary) mergeTaskMutation([result.data as unknown as AssignmentTask], result.assignment_summary as Partial<AssignmentDetail>);
+        else await fetchAssignment();
         setPartialTaskId(null);
       } else {
         flash("❌ " + (result.error || "Sıfırlama başarısız"));
@@ -694,6 +725,7 @@ export default function OdevKontrolDetailClient({
     } catch {
       flash("❌ Bağlantı hatası");
     }
+    mutationInFlight.current = false;
     setSaving(null);
   };
 
@@ -1327,7 +1359,7 @@ export default function OdevKontrolDetailClient({
                               {tasks.map(task => {
                           const badge = getCompletionBadge(task.completion_status);
                           const isPartialOpen = partialTaskId === task.id;
-                          const isSaving = saving === task.id;
+                          const isSaving = saving !== null || bulkSaving;
                           const isEditingNote = editingNoteTaskId === task.id;
                           const showExtra = isPartialOpen || isEditingNote || !!task.student_feedback || (!!task.coach_evaluation_note && !isEditingNote);
                           const compactClass =

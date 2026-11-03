@@ -186,9 +186,12 @@ def build_pdf_attachment_message(
     for_veli: bool,
     veli=None,
     kurum=None,
+    templates: dict | None = None,
+    count_usage: bool = True,
 ) -> str:
     recipient_type = 'veli' if for_veli else 'ogrenci'
-    template = get_pdf_message_template(kurum_id, notify_type, recipient_type)
+    template = (templates.get((notify_type, recipient_type)) if templates is not None
+                else get_pdf_message_template(kurum_id, notify_type, recipient_type))
     body_template = default_pdf_message_body(notify_type, recipient_type)
     if template and _body_matches_notify_type(notify_type, template.body or ''):
         # Rol etiketi varsa plan/rapor slotunun doğru şablon olduğunu doğrula
@@ -214,7 +217,7 @@ def build_pdf_attachment_message(
     note = ctx.get('odev_not') or ''
     if note and '{{odev_not}}' not in (body_template or '') and note not in message:
         message = f'{message}\n\n{note}'.strip()
-    if template:
+    if template and count_usage:
         from apps.communication.application.template_service import TemplateService
         TemplateService().increment_usage(template)
     return message

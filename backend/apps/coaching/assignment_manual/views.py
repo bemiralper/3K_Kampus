@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from rest_framework.authentication import SessionAuthentication
 from rest_framework.parsers import JSONParser, FormParser, MultiPartParser
 from django.http import HttpResponse
+from django.conf import settings
 from django.db.models import Q, Count, Prefetch, F
 from django.db import transaction
 from django.utils import timezone
@@ -91,6 +92,7 @@ from .lock_utils import (
     is_assignment_control_locked,
 )
 from shared.context import get_secili_kurum_id
+from .read_models import with_effective_status
 
 VALID_NON_SUBMISSION_REASONS = frozenset(
     choice[0]
@@ -284,6 +286,12 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         if self.action in ('create', 'update', 'partial_update'):
             return ManualAssignmentCreateSerializer
         return ManualAssignmentDetailSerializer
+
+    @action(detail=False, methods=['get'])
+    def capabilities(self, request):
+        return Response({'success': True, 'data': {
+            'operation_ledger_enabled': getattr(settings, 'ASSIGNMENT_OPERATION_LEDGER_ENABLED', False),
+        }})
     
     def get_queryset(self):
         queryset = ManualAssignment.objects.select_related(
@@ -297,6 +305,10 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             )
         ).filter(is_active=True)
 
+        if self.action in ('notify_preview', 'notify_send', 'notify_job', 'plan_pdf', 'report_pdf', 'render_report_pdf'):
+            queryset = queryset.prefetch_related(None).select_related('student__kurum')
+        if self.action in ('list', 'student_assignments', 'coach_assignments', 'kontrol_badge'):
+            queryset = with_effective_status(queryset)
         queryset = filter_manual_assignments(queryset, self.request.user)
 
         ctx = getattr(self, '_coaching_ctx', None)
@@ -319,7 +331,8 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 queryset = queryset.filter(coach_id=coach_id)
         
         if status_filter:
-            queryset = queryset.filter(status=status_filter)
+            field = 'effective_status' if self.action in ('list', 'student_assignments', 'coach_assignments', 'kontrol_badge') else 'status'
+            queryset = queryset.filter(**{field: status_filter})
         
         if risk_status:
             queryset = queryset.filter(risk_status=risk_status)
@@ -384,6 +397,8 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
 
     def get_object(self):
         obj = super().get_object()
+        if self.action in ('update', 'partial_update', 'destroy', 'assign', 'update_risk_status', 'postpone', 'reactivate', 'open_for_coach', 'set_control_date', 'update_late_note', 'mark_all_not_done', 'reset_all_tasks'):
+            obj = ManualAssignment.objects.select_for_update().get(pk=obj.pk)
         gate = assert_coaching_student_sube_access(
             self.request, obj.student.kurum_id, obj.student.sube_id,
         )
@@ -398,11 +413,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             return err
         self._coaching_ctx = ctx
 
-        from apps.student_resources.services.overdue_status import (
-            refresh_manual_assignment_overdue,
-        )
 
-        refresh_manual_assignment_overdue(ctx['kurum_id'])
 
         queryset = self.filter_queryset(self.get_queryset())
 
@@ -424,40 +435,95 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         return Response({'success': True, 'data': serializer.data})
     
     def create(self, request, *args, **kwargs):
-        """Ödev oluştur"""
         ctx, err = mandatory_coaching_context(request)
         if err:
             return err
         self._coaching_ctx = ctx
+        return self._create_assignment_response(request, request.data, request.headers.get('Idempotency-Key'))
 
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        student = serializer.validated_data.get('student')
+    @transaction.atomic
+    def _create_assignment_response(self, request, payload, key=None):
+        from apps.ogrenci.domain.models import Ogrenci
+        from .operations import get_operation
+        from .models import AssignmentOperation
+        operation = None
+        if key and getattr(settings, 'ASSIGNMENT_OPERATION_LEDGER_ENABLED', False):
+            try:
+                operation, _ = get_operation(
+                    kurum_id=self._coaching_ctx['kurum_id'], actor_id=request.user.pk,
+                    kind='create', key=key, payload={
+                        'data': payload, 'scope': self._coaching_ctx,
+                    },
+                )
+                operation = AssignmentOperation.objects.select_for_update().get(pk=operation.pk)
+            except ValueError as exc:
+                return Response({'success': False, 'error': str(exc)}, status=409)
+        # Shared student lock serializes duplicate-content checks across distinct
+        # operation keys. All assignment/task model save and signal paths remain.
+        try:
+            student_id = int(payload.get('student'))
+        except (ValueError, TypeError):
+            student_id = None
+        student = Ogrenci.objects.select_for_update().filter(
+            pk=student_id, kurum_id=self._coaching_ctx['kurum_id'],
+        ).first()
         if student:
             gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
             if gate:
                 return gate
-            if not user_can_access_student(request.user, student.id):
-                return Response({
-                    'success': False,
-                    'error': 'Bu öğrenciye erişim yetkiniz yok.',
-                }, status=status.HTTP_403_FORBIDDEN)
+            if not user_can_access_student(request.user, student.pk):
+                return Response({'success': False, 'error': 'Bu öğrenciye erişim yetkiniz yok.'}, status=403)
+        if operation and operation.status == 'SUCCEEDED':
+            if not student:
+                return Response({'success': False, 'error': 'Öğrenciye erişim yok.'}, status=403)
+            return Response(operation.result, status=201)
+        serializer = ManualAssignmentCreateSerializer(data=payload, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        validated_student = serializer.validated_data.get('student')
+        if not student or validated_student.pk != student.pk:
+            return Response({'success': False, 'error': 'Öğrenciye erişim yok.'}, status=403)
         assignment = serializer.save()
-        
-        # Detay serializer ile dön
-        detail_serializer = ManualAssignmentDetailSerializer(assignment)
-
-        # ── Takvim Entegrasyonu ──
         self._sync_to_calendar(assignment, request.user.id)
+        # Existing response contract, with relations loaded once for serialization.
+        assignment = ManualAssignment.objects.select_related('student', 'coach').prefetch_related(
+            Prefetch('lessons', queryset=AssignmentLesson.objects.select_related(
+                'lesson', 'resource_book', 'resource_book__ders',
+            ).prefetch_related(ASSIGNMENT_TASKS_PREFETCH))
+        ).get(pk=assignment.pk)
+        result = {'success': True, 'data': ManualAssignmentDetailSerializer(assignment).data,
+                  'message': 'Ödev başarıyla oluşturuldu.'}
+        if operation:
+            operation.assignment = assignment
+            operation.result = result
+            operation.status = 'SUCCEEDED'
+            operation.save(update_fields=['assignment', 'result', 'status', 'updated_at'])
+        return Response(result, status=201)
 
-        # WhatsApp gönderimi manuel "Gönder" butonu ile yapılır
-        
-        return Response({
-            'success': True,
-            'data': detail_serializer.data,
-            'message': 'Ödev başarıyla oluşturuldu.'
-        }, status=status.HTTP_201_CREATED)
-    
+    @action(detail=False, methods=['post'], url_path='batch-create')
+    def batch_create(self, request):
+        """Per-student atomic results; successful items are replayable by key."""
+        from rest_framework.exceptions import ValidationError
+        if not getattr(settings, 'ASSIGNMENT_OPERATION_LEDGER_ENABLED', False):
+            return Response({'success': False, 'error': 'Toplu işlem altyapısı henüz etkinleştirilmedi.'}, status=503)
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+        self._coaching_ctx = ctx
+        items = request.data.get('items')
+        if (not isinstance(items, list) or not items or len(items) > 50
+                or any(not isinstance(item, dict) or not isinstance(item.get('payload'), dict)
+                       or not isinstance(item.get('key'), str) or not item['key'] for item in items)):
+            return Response({'success': False, 'error': 'En fazla 50 geçerli öğrenci işlemi gönderilebilir.'}, status=400)
+        results = []
+        for item in items:
+            try:
+                response = self._create_assignment_response(request, item['payload'], item['key'])
+                results.append({'key': item['key'], 'http_status': response.status_code, **response.data})
+            except ValidationError as exc:
+                results.append({'key': item['key'], 'http_status': 400, 'success': False, 'error': str(exc.detail)})
+        return Response({'success': True, 'data': results})
+
+    @transaction.atomic
     def update(self, request, *args, **kwargs):
         """Ödev güncelle"""
         instance = self.get_object()
@@ -478,6 +544,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             'message': 'Ödev başarıyla güncellendi.'
         })
     
+    @transaction.atomic
     def destroy(self, request, *args, **kwargs):
         """Ödev sil (soft delete) — silme sebebi zorunlu."""
         deletion_reason = (request.data.get('deletion_reason') or '').strip()
@@ -618,16 +685,12 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             return err
         self._coaching_ctx = ctx
 
-        from apps.student_resources.services.overdue_status import (
-            refresh_manual_assignment_overdue,
-        )
 
-        refresh_manual_assignment_overdue(ctx['kurum_id'])
 
         from django.db.models.functions import TruncDate
         from django.utils import timezone as dj_tz
 
-        queryset = ManualAssignment.objects.filter(is_active=True)
+        queryset = with_effective_status(ManualAssignment.objects.filter(is_active=True))
         queryset = filter_manual_assignments(queryset, request.user)
         queryset = filter_queryset_by_student_sube(queryset, ctx['sube_id'])
 
@@ -644,22 +707,17 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
             .filter(due_day=today)
             .count()
         )
-        opened_for_coach = queryset.filter(control_opened_for_coach=True).count()
-
-        return Response({
-            'success': True,
-            'data': {
-                'total': queryset.count(),
-                'draft': queryset.filter(status=ManualAssignment.Status.DRAFT).count(),
-                'assigned': queryset.filter(status=ManualAssignment.Status.ASSIGNED).count(),
-                'in_progress': queryset.filter(status=ManualAssignment.Status.IN_PROGRESS).count(),
-                'completed': queryset.filter(status=ManualAssignment.Status.COMPLETED).count(),
-                'overdue': queryset.filter(status=ManualAssignment.Status.OVERDUE).count(),
-                'at_risk': queryset.filter(risk_status=ManualAssignment.RiskStatus.AT_RISK).count(),
-                'due_today': due_today,
-                'opened_for_coach': opened_for_coach,
-            },
-        })
+        counts = queryset.aggregate(
+            total=Count('id'),
+            **{key: Count('id', filter=Q(effective_status=value)) for key, value in (
+                ('draft', 'DRAFT'), ('assigned', 'ASSIGNED'), ('in_progress', 'IN_PROGRESS'),
+                ('completed', 'COMPLETED'), ('overdue', 'OVERDUE'),
+            )},
+            at_risk=Count('id', filter=Q(risk_status=ManualAssignment.RiskStatus.AT_RISK)),
+            opened_for_coach=Count('id', filter=Q(control_opened_for_coach=True)),
+        )
+        counts['due_today'] = due_today
+        return Response({'success': True, 'data': counts})
 
     @action(detail=False, methods=['get'])
     def student_assignments(self, request):
@@ -667,9 +725,6 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         Öğrenciye ait tüm ödevler
         GET /api/coaching/manual-assignments/student_assignments/?student_id={id}
         """
-        from apps.student_resources.services.overdue_status import (
-            refresh_manual_assignment_overdue,
-        )
         from apps.ogrenci.domain.models import Ogrenci
 
         student_id = request.query_params.get('student_id')
@@ -695,7 +750,6 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'error': 'Bu öğrenciye erişim yetkiniz yok.',
             }, status=status.HTTP_403_FORBIDDEN)
 
-        refresh_manual_assignment_overdue(student.kurum_id)
 
         assignments = self.get_queryset().filter(student_id=student_id)
         serializer = ManualAssignmentListSerializer(assignments, many=True)
@@ -703,11 +757,11 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         # İstatistikler
         stats = {
             'total': assignments.count(),
-            'draft': assignments.filter(status=ManualAssignment.Status.DRAFT).count(),
-            'assigned': assignments.filter(status=ManualAssignment.Status.ASSIGNED).count(),
-            'in_progress': assignments.filter(status=ManualAssignment.Status.IN_PROGRESS).count(),
-            'completed': assignments.filter(status=ManualAssignment.Status.COMPLETED).count(),
-            'overdue': assignments.filter(status=ManualAssignment.Status.OVERDUE).count(),
+            'draft': assignments.filter(effective_status=ManualAssignment.Status.DRAFT).count(),
+            'assigned': assignments.filter(effective_status=ManualAssignment.Status.ASSIGNED).count(),
+            'in_progress': assignments.filter(effective_status=ManualAssignment.Status.IN_PROGRESS).count(),
+            'completed': assignments.filter(effective_status=ManualAssignment.Status.COMPLETED).count(),
+            'overdue': assignments.filter(effective_status=ManualAssignment.Status.OVERDUE).count(),
             'at_risk': assignments.filter(risk_status=ManualAssignment.RiskStatus.AT_RISK).count(),
         }
         
@@ -723,12 +777,8 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         Koça ait tüm ödevler
         GET /api/coaching/manual-assignments/coach_assignments/
         """
-        from apps.student_resources.services.overdue_status import (
-            refresh_manual_assignment_overdue,
-        )
 
         kurum_id = get_secili_kurum_id(request)
-        refresh_manual_assignment_overdue(kurum_id)
 
         coach = request.user
         assignments = self.get_queryset().filter(coach=coach)
@@ -751,19 +801,15 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         """
         from django.db.models.functions import TruncDate
         from django.utils import timezone as dj_tz
-        from apps.student_resources.services.overdue_status import (
-            refresh_manual_assignment_overdue,
-        )
 
         kurum_id = get_secili_kurum_id(request)
-        refresh_manual_assignment_overdue(kurum_id)
 
-        queryset = self.get_queryset().filter(status__in=KONTROL_BADGE_STATUSES)
+        queryset = self.get_queryset().filter(effective_status__in=KONTROL_BADGE_STATUSES)
         if kurum_id:
             queryset = queryset.filter(student__kurum_id=kurum_id)
-        overdue = queryset.filter(status=ManualAssignment.Status.OVERDUE).count()
+        overdue = queryset.filter(effective_status=ManualAssignment.Status.OVERDUE).count()
         pending = queryset.filter(
-            status__in=(
+            effective_status__in=(
                 ManualAssignment.Status.ASSIGNED,
                 ManualAssignment.Status.IN_PROGRESS,
             )
@@ -1151,6 +1197,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def assign(self, request, pk=None):
         """
         Taslak ödevi öğrenciye ata
@@ -1180,6 +1227,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def update_risk_status(self, request, pk=None):
         """
         Risk durumu güncelle
@@ -1208,6 +1256,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def postpone(self, request, pk=None):
         """
         \u00d6devi ertele
@@ -1269,6 +1318,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def reactivate(self, request, pk=None):
         """
         Kontrol günü geçmiş ödevi yönetici yeniden aktif eder.
@@ -1319,6 +1369,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def open_for_coach(self, request, pk=None):
         """
         Kontrol tarihi geçmiş ödevi yönetici koça açar.
@@ -1367,6 +1418,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def set_control_date(self, request, pk=None):
         """
         Gecikmiş / koça açılmış ödev için yeni kontrol tarihi.
@@ -1420,6 +1472,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def update_late_note(self, request, pk=None):
         """
         Geç teslim notu ekle/güncelle
@@ -1441,6 +1494,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def mark_all_not_done(self, request, pk=None):
         """
         Tüm görevleri Yapmadı olarak işaretle (öğrenci gelmedi / ödev getirilmedi)
@@ -1500,6 +1554,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         })
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def reset_all_tasks(self, request, pk=None):
         """
         Tüm değerlendirilmiş görevleri sıfırla.
@@ -1562,8 +1617,6 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         )
 
         assignment = self._get_assignment_for_report(pk)
-        update_assignment_completion_from_tasks(assignment)
-        assignment.refresh_from_db()
         detail_data = ManualAssignmentDetailSerializer(assignment).data
         
         # ═══ 1) Öğrencinin TÜM ödevlerinden genel istatistik ═══
@@ -1575,6 +1628,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         all_tasks = AssignmentTask.objects.filter(
             lesson_block__assignment__in=all_assignments
         ).select_related('lesson_block')
+        all_tasks = list(all_tasks)
 
         tasks_by_assignment = defaultdict(list)
         for task in all_tasks:
@@ -1585,11 +1639,11 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         completed_assignments = sum(
             1 for a in all_assignments_list if a.status == 'COMPLETED'
         )
-        total_tasks_all = all_tasks.count()
-        done_tasks_all = all_tasks.filter(completion_status='DONE').count()
-        partial_tasks_all = all_tasks.filter(completion_status='PARTIAL').count()
-        not_done_tasks_all = all_tasks.filter(completion_status='NOT_DONE').count()
-        pending_tasks_all = all_tasks.filter(completion_status='PENDING').count()
+        total_tasks_all = len(all_tasks)
+        done_tasks_all = sum(t.completion_status == 'DONE' for t in all_tasks)
+        partial_tasks_all = sum(t.completion_status == 'PARTIAL' for t in all_tasks)
+        not_done_tasks_all = sum(t.completion_status == 'NOT_DONE' for t in all_tasks)
+        pending_tasks_all = sum(t.completion_status == 'PENDING' for t in all_tasks)
 
         total_questions_all = sum(t.question_count or 0 for t in all_tasks)
         completed_questions_all = sum(t.completed_question_count or 0 for t in all_tasks)
@@ -1634,7 +1688,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         
         # ═══ 2) Konu bazlı kümülatif istatistik ═══
         # Bu ödevdeki her konu için, o konudan o güne kadar toplam ne kadar çözülmüş
-        current_lessons = AssignmentLesson.objects.filter(assignment=assignment)
+        current_lessons = assignment.lessons.all()
         topic_cumulative = []
         
         for lesson in current_lessons:
@@ -1773,9 +1827,9 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         
         recent_trend = []
         for ra in reversed(list(recent_assignments)):
-            ra_tasks = AssignmentTask.objects.filter(lesson_block__assignment=ra)
-            ra_total = ra_tasks.count()
-            ra_done = ra_tasks.filter(completion_status='DONE').count()
+            ra_tasks = tasks_by_assignment.get(ra.id, [])
+            ra_total = len(ra_tasks)
+            ra_done = sum(t.completion_status == 'DONE' for t in ra_tasks)
             ra_total_q = sum(t.question_count or 0 for t in ra_tasks)
             ra_done_q = sum(t.completed_question_count or 0 for t in ra_tasks)
             
@@ -1824,7 +1878,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         try:
             from .notification_service import AssignmentNotificationService
 
-            preview = AssignmentNotificationService().preview(kurum_id, int(pk), notify_type)
+            preview = AssignmentNotificationService().preview(kurum_id, int(pk), notify_type, assignment=assignment)
         except ValueError as exc:
             return Response({'success': False, 'error': str(exc)}, status=400)
 
@@ -1834,6 +1888,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 'notify_type': preview.notify_type,
                 'assignment_id': preview.assignment_id,
                 'assignment_title': preview.assignment_title,
+                'operation_ledger_enabled': getattr(settings, 'ASSIGNMENT_OPERATION_LEDGER_ENABLED', False),
                 'student_name': preview.student_name,
                 'pdf_title': preview.pdf_title,
                 'send_mode': preview.send_mode,
@@ -1856,6 +1911,28 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 ],
             },
         })
+
+    @action(detail=True, methods=['get'], url_path='notify-job')
+    def notify_job(self, request, pk=None):
+        if not getattr(settings, 'ASSIGNMENT_OPERATION_LEDGER_ENABLED', False):
+            return Response({'success': False, 'error': 'İşlem takibi henüz etkinleştirilmedi.'}, status=503)
+        from .models import AssignmentOperation
+        from .operations import operation_data
+        assignment = self.get_object()
+        if not user_can_access_student(request.user, assignment.student_id):
+            return Response({'success': False, 'error': 'Erişim yok.'}, status=403)
+        from uuid import UUID
+        try:
+            job_id = UUID(request.query_params.get('job_id', ''))
+        except (ValueError, TypeError, AttributeError):
+            return Response({'success': False, 'error': 'Geçersiz işlem kimliği.'}, status=400)
+        operation = AssignmentOperation.objects.filter(
+            pk=job_id, assignment=assignment,
+            kurum_id=self._get_kurum_id(), actor_id=request.user.pk, kind='notify',
+        ).first()
+        if not operation:
+            return Response({'success': False, 'error': 'İşlem bulunamadı.'}, status=404)
+        return Response({'success': True, 'data': operation_data(operation)})
 
     @action(detail=True, methods=['get'], url_path='report-pdf')
     def report_pdf(self, request, pk=None):
@@ -1928,6 +2005,9 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='render-report-pdf')
     def render_report_pdf(self, request, pk=None):
         """Ekran HTML'inden vektörel PDF üretir."""
+        assignment = self.get_object()
+        if not user_can_access_student(request.user, assignment.student_id):
+            return Response({'success': False, 'error': 'Bu öğrenciye erişim yetkiniz yok.'}, status=403)
         report_html = request.data.get('report_html')
         if not isinstance(report_html, str) or not report_html.strip():
             return Response({'success': False, 'error': 'report_html gerekli.'}, status=400)
@@ -1985,6 +2065,46 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         orientation = (data.get('orientation') or 'portrait').strip().lower()
         if orientation not in ('portrait', 'landscape'):
             orientation = 'portrait'
+
+        # New clients opt in; the legacy synchronous PDF contract remains available.
+        if (getattr(settings, 'ASSIGNMENT_OPERATION_LEDGER_ENABLED', False)
+                and data.get('async') in (True, 'true', '1', 1)):
+            from .operations import get_operation, schedule_operation, operation_data
+            from .notification_service import AssignmentNotificationService
+            try:
+                selected = sorted(set(int(v) for v in veli_ids if v))
+                payload = {
+                    'assignment_id': int(pk), 'notify_type': notify_type,
+                    'veli_ids': selected, 'include_student': include_student,
+                    'orientation': orientation,
+                    'sube_id': assignment.student.sube_id,
+                    'education_year': request.headers.get('X-Egitim-Yili-ID', ''),
+                }
+                with transaction.atomic():
+                    operation, created = get_operation(
+                        kurum_id=kurum_id, actor_id=request.user.pk, kind='notify',
+                        key=request.headers.get('Idempotency-Key') or data.get('idempotency_key'),
+                        payload=payload, assignment=assignment,
+                    )
+                    if created:
+                        preview = AssignmentNotificationService().preview(kurum_id, int(pk), notify_type, assignment=assignment)
+                        if not any(not r.skip_reason and (
+                            (r.recipient_type == 'veli' and r.veli_id in selected)
+                            or (r.recipient_type == 'ogrenci' and include_student)
+                        ) for r in preview.recipients):
+                            raise ValueError('Gönderilebilir alıcı seçilmedi.')
+                        schedule_operation(operation.pk)
+                    elif data.get('retry') is True:
+                        from .models import AssignmentOperation
+                        operation = AssignmentOperation.objects.select_for_update().get(pk=operation.pk)
+                        if operation.status == 'FAILED':
+                            operation.status = 'PENDING'
+                            operation.error = ''
+                            operation.save(update_fields=['status', 'error', 'updated_at'])
+                            schedule_operation(operation.pk)
+                return Response({'success': True, 'data': operation_data(operation)}, status=202)
+            except (ValueError, TypeError):
+                return Response({'success': False, 'error': 'Alıcı seçimi, ödev durumu veya işlem anahtarı geçersiz.'}, status=400)
 
         uploaded = request.FILES.get('pdf')
         if uploaded:
@@ -2161,9 +2281,75 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         if not user_can_access_student(self.request.user, student.id):
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied(detail='Bu öğrenciye erişim yetkiniz yok.')
+        if self.action in ('update_task_status', 'mark_completed', 'reset_task_status', 'evaluation_note'):
+            assignment = ManualAssignment.objects.select_for_update().get(pk=obj.lesson_block.assignment_id)
+            # Read task after obtaining the shared parent lock, not before it.
+            block = obj.lesson_block
+            obj.refresh_from_db()
+            obj.lesson_block = block
+            obj.lesson_block.assignment = assignment
         return obj
     
+    def _assignment_summary(self, assignment):
+        from .completion_utils import build_report_summary_counts
+        tasks = list(AssignmentTask.objects.filter(lesson_block__assignment=assignment))
+        return {
+            'id': assignment.id, 'status': assignment.status,
+            'status_display': assignment.get_status_display(),
+            'risk_status': assignment.risk_status,
+            'risk_status_display': assignment.get_risk_status_display(),
+            'completion_percent': assignment.completion_percent,
+            'completed_date': assignment.completed_date.isoformat() if assignment.completed_date else None,
+            'report_summary': build_report_summary_counts(tasks),
+            'updated_at': assignment.updated_at.isoformat(),
+            'is_control_locked': is_assignment_control_locked(assignment),
+        }
+
+    @action(detail=False, methods=['post'], url_path='batch-status')
+    @transaction.atomic
+    def batch_status(self, request):
+        """All-or-nothing; only DONE/NOT_DONE, max 200 tasks of one assignment."""
+        raw_ids = request.data.get('task_ids')
+        target = request.data.get('completion_status')
+        if (not isinstance(raw_ids, list) or not raw_ids or len(raw_ids) > 200
+                or any(type(value) is not int or value <= 0 for value in raw_ids)
+                or target not in ('DONE', 'NOT_DONE')):
+            return Response({'success': False, 'error': 'Görev listesi veya durum geçersiz.'}, status=400)
+        ids = set(raw_ids)
+        tasks = list(self.get_queryset().filter(pk__in=ids))
+        if len(tasks) != len(ids):
+            return Response({'success': False, 'error': 'Görev bulunamadı veya erişim yok.'}, status=404)
+        assignment_ids = {t.lesson_block.assignment_id for t in tasks}
+        if len(assignment_ids) != 1:
+            return Response({'success': False, 'error': 'Görevler aynı ödeve ait olmalı.'}, status=400)
+        assignment = ManualAssignment.objects.select_for_update().get(pk=assignment_ids.pop())
+        student = tasks[0].lesson_block.assignment.student
+        gate = assert_coaching_student_sube_access(request, student.kurum_id, student.sube_id)
+        if gate:
+            return gate
+        if not user_can_access_student(request.user, student.pk):
+            return Response({'success': False, 'error': 'Erişim yok.'}, status=403)
+        tasks = list(self.get_queryset().filter(pk__in=ids))
+        if all(task.completion_status == target for task in tasks):
+            return Response({'success': True, 'data': {
+                'tasks': AssignmentTaskSerializer(tasks, many=True).data,
+                'assignment_summary': self._assignment_summary(assignment),
+            }})
+        locked = control_lock_response(assignment, request.user)
+        if locked:
+            return locked
+        for task in tasks:
+            if task.completion_status != target:
+                self._apply_task_completion_status(task, target)
+                task.save()  # Preserve existing model/signal side effects.
+        self._update_assignment_completion(assignment)
+        return Response({'success': True, 'data': {
+            'tasks': AssignmentTaskSerializer(tasks, many=True).data,
+            'assignment_summary': self._assignment_summary(assignment),
+        }})
+
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def mark_completed(self, request, pk=None):
         """
         Görevi tamamlandı olarak işaretle
@@ -2193,6 +2379,7 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def update_task_status(self, request, pk=None):
         """
         G\u00f6rev tamamlanma durumunu g\u00fcncelle (Yapt\u0131/Yapmad\u0131/Eksik)
@@ -2240,10 +2427,12 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         return Response({
             'success': True,
             'data': AssignmentTaskSerializer(task).data,
+            'assignment_summary': self._assignment_summary(task.lesson_block.assignment),
             'message': f'G\u00f6rev durumu g\u00fcncellendi: {task.get_completion_status_display()}'
         })
 
     @action(detail=True, methods=['post'])
+    @transaction.atomic
     def reset_task_status(self, request, pk=None):
         """
         Görev değerlendirmesini sıfırla (PENDING).
@@ -2266,10 +2455,12 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
         return Response({
             'success': True,
             'data': AssignmentTaskSerializer(task).data,
+            'assignment_summary': self._assignment_summary(task.lesson_block.assignment),
             'message': 'Görev değerlendirmesi sıfırlandı.',
         })
 
     @action(detail=True, methods=['post', 'patch'])
+    @transaction.atomic
     def evaluation_note(self, request, pk=None):
         """
         Koç değerlendirme notunu güncelle (durum değiştirmeden).

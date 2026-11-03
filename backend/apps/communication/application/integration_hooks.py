@@ -46,6 +46,10 @@ HOSGELDIN_OGRENCI_EVENT = 'ogrenci.hosgeldin'
 
 def _safe_hook(fn, *args, **kwargs) -> SendResult | None:
     try:
+        from django.db import transaction
+        if getattr(kwargs.get('source'), 'module', '') == SOURCE_ODEV:
+            with transaction.atomic():
+                return fn(*args, **kwargs)
         return fn(*args, **kwargs)
     except Exception:
         logger.exception('Communication integration hook failed: %s', fn.__name__)

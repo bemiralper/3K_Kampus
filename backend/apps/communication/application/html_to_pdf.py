@@ -10,11 +10,14 @@ import re
 import shutil
 import subprocess
 import tempfile
+import time
+import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 _MIN_PDF_BYTES = 2500
+_URL_RENDER_SLOTS = threading.BoundedSemaphore(2)
 
 
 def _extract_body_html(html: str) -> str:
@@ -218,7 +221,7 @@ def _launch_playwright_browser(playwright):
     raise RuntimeError(f'{hint}\n{" | ".join(launch_errors[:2])}')
 
 
-def render_url_to_pdf(
+def _render_url_to_pdf(
     url: str,
     *,
     wait_selector: str = '[data-pdf-ready="true"]',
@@ -235,13 +238,40 @@ def render_url_to_pdf(
         ) from exc
 
     pdf_bytes: bytes
+    started = time.monotonic()
+    deadline = started + timeout_ms / 1000
+
+    def remaining():
+        milliseconds = int((deadline - time.monotonic()) * 1000)
+        if milliseconds <= 0:
+            raise RuntimeError('PDF oluşturma toplam süre sınırını aştı.')
+        return milliseconds
+
+    if not _URL_RENDER_SLOTS.acquire(timeout=min(5, timeout_ms / 1000)):
+        raise RuntimeError('PDF oluşturma kapasitesi dolu. Biraz sonra tekrar deneyin.')
     try:
         with sync_playwright() as playwright:
             browser = _launch_playwright_browser(playwright)
+            logger.info('assignment_pdf stage=browser_started elapsed_ms=%d', (time.monotonic()-started)*1000)
             try:
                 page = browser.new_page(viewport={'width': 1280, 'height': 1800})
-                page.goto(url, wait_until='networkidle', timeout=timeout_ms)
-                page.wait_for_selector(wait_selector, timeout=timeout_ms)
+                page.add_init_script("""
+                    window.addEventListener('error', () => { window.__pdfRenderError = true; });
+                    window.addEventListener('unhandledrejection', () => { window.__pdfRenderError = true; });
+                """)
+                response = page.goto(url, wait_until='domcontentloaded', timeout=remaining())
+                logger.info('assignment_pdf stage=navigation elapsed_ms=%d', (time.monotonic()-started)*1000)
+                if response and response.status >= 400:
+                    raise RuntimeError('PDF yazdırma sayfası yüklenemedi.')
+                page.wait_for_function(
+                    "selector => window.__pdfRenderError || document.querySelector(selector) || document.querySelector('[data-pdf-error=\"true\"]')",
+                    arg=wait_selector, timeout=remaining(),
+                )
+                if page.evaluate('() => Boolean(window.__pdfRenderError)') or page.locator('[data-pdf-error="true"]').count():
+                    raise RuntimeError('PDF verileri yüklenemedi. Lütfen yeniden deneyin.')
+                page.wait_for_function('() => document.fonts.status === "loaded"', timeout=remaining())
+                page.wait_for_function('() => Array.from(document.images).every(image => image.complete)', timeout=remaining())
+                logger.info('assignment_pdf stage=data_ready elapsed_ms=%d', (time.monotonic()-started)*1000)
                 # Print medyası + büyük bloklarda avoid'u kaldır (1. sayfa boşluğu)
                 page.emulate_media(media='print')
                 if 'odev-kontrol' in url or 'odev-plan' in url:
@@ -274,7 +304,7 @@ def render_url_to_pdf(
     except RuntimeError:
         raise
     except Exception as exc:
-        logger.error('Playwright URL PDF failed for %s: %s', url, exc)
+        logger.error('Playwright URL PDF failed type=%s', type(exc).__name__)
         msg = str(exc)
         if 'Executable doesn' in msg or "doesn't exist" in msg:
             raise RuntimeError(
@@ -287,9 +317,63 @@ def render_url_to_pdf(
                 'Docker kullanıyorsanız backend ortamında '
                 'PDF_RENDER_BASE_URL=http://frontend:3000 ayarlayın '
                 '(FRONTEND_URL tarayıcı için localhost kalabilir). '
-                f'Hedef: {url}'
             ) from exc
-        raise RuntimeError(f'PDF oluşturulamadı: {exc}') from exc
+        raise RuntimeError('PDF oluşturulamadı veya zaman aşımına uğradı.') from exc
+    finally:
+        _URL_RENDER_SLOTS.release()
+        logger.info('assignment_pdf stage=finished elapsed_ms=%d', (time.monotonic()-started)*1000)
 
     _validate_pdf_bytes(pdf_bytes)
     return pdf_bytes
+
+
+def render_url_to_pdf(url: str, *, wait_selector: str = '[data-pdf-ready="true"]', landscape: bool = False, timeout_ms: int = 90000) -> bytes:
+    """Bound the *entire* Chromium lifecycle, including PDF and startup hangs.
+
+    A subprocess group lets a timeout reap Chromium children as well as Python.
+    Tokens travel over stdin, never command line arguments or diagnostic logs.
+    """
+    import json
+    import signal
+    import sys
+    started = time.monotonic()
+    deadline = started + timeout_ms / 1000
+    if not _URL_RENDER_SLOTS.acquire(timeout=min(5, timeout_ms / 1000)):
+        raise RuntimeError('PDF oluşturma kapasitesi dolu. Biraz sonra tekrar deneyin.')
+    process = None
+    try:
+        script = ('import json,sys,logging; logging.basicConfig(level=logging.INFO,format="%(message)s"); '
+                  'from apps.communication.application.html_to_pdf import _render_url_to_pdf; '
+                  'args=json.load(sys.stdin); '
+                  'sys.stdout.buffer.write(_render_url_to_pdf(**args))')
+        env = {**os.environ, 'PYTHONPATH': os.pathsep.join(sys.path)}
+        process = subprocess.Popen(
+            [sys.executable, '-c', script], stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env,
+            start_new_session=(os.name == 'posix'),
+        )
+        remaining_seconds = max(0.001, deadline - time.monotonic())
+        payload = json.dumps(dict(url=url, wait_selector=wait_selector, landscape=landscape, timeout_ms=max(1, int(remaining_seconds*1000)))).encode()
+        try:
+            output, diagnostics = process.communicate(payload, timeout=remaining_seconds)
+            for line in diagnostics.decode('utf-8', errors='replace').splitlines():
+                if re.fullmatch(r'assignment_pdf stage=(browser_started|navigation|data_ready|finished) elapsed_ms=\d+', line):
+                    logger.info(line)
+        except subprocess.TimeoutExpired as exc:
+            raise RuntimeError('PDF oluşturma zaman aşımına uğradı. Yeniden deneyebilirsiniz.') from exc
+        if process.returncode:
+            raise RuntimeError('PDF verileri yüklenemedi veya belge oluşturulamadı.')
+        _validate_pdf_bytes(output)
+        return output
+    finally:
+        if process:
+            if os.name == 'posix':
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            elif process.poll() is None:
+                process.kill()
+            process.communicate()
+        _URL_RENDER_SLOTS.release()
+        logger.info('assignment_pdf stage=total elapsed_ms=%d', (time.monotonic()-started)*1000)
