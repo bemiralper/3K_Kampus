@@ -17,7 +17,7 @@ from pathlib import Path
 import psycopg
 from django.db import connection
 from django.db.utils import OperationalError
-from django.test import TransactionTestCase, override_settings
+from django.test import SimpleTestCase, TransactionTestCase, override_settings
 from django.utils import timezone
 
 from apps.yedekleme.domain.models import (
@@ -56,6 +56,29 @@ class _ProbeHandler:
         work_dir.mkdir(parents=True, exist_ok=True)
         (work_dir / 'meta.json').write_text('{}', encoding='utf-8')
         return ExportResult(files=['meta.json'], meta={}, bytes_written=2)
+
+
+class LockOpenTests(SimpleTestCase):
+    def test_existing_lock_is_opened_without_creat(self):
+        from unittest import mock
+        from apps.yedekleme.engine.run_guard import BackupRunGuard
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / 'lms-backup.lock'
+            path.write_bytes(b'')
+            seen = []
+            real_open = os.open
+
+            def spy(name, flags, *args):
+                if Path(name) == path:
+                    seen.append(flags)
+                return real_open(name, flags, *args)
+
+            with mock.patch.dict(os.environ, {'LMS_BACKUP_LOCK': str(path)}), \
+                    mock.patch('apps.yedekleme.engine.run_guard.os.open', side_effect=spy):
+                guard = BackupRunGuard()
+                self.assertTrue(guard.try_acquire())
+                guard.release()
+            self.assertEqual(seen, [os.O_RDWR])
 
 
 @override_settings(BACKUP_ENCRYPTION_KEY='')

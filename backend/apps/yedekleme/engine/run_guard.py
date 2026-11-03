@@ -94,7 +94,7 @@ class BackupRunGuard:
     def try_acquire(self) -> bool:
         path = backup_lock_path()
         path.parent.mkdir(parents=True, exist_ok=True)
-        fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+        fd = self._open_lock(path)
         try:
             import fcntl
             fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -106,6 +106,22 @@ class BackupRunGuard:
             raise
         self.fd = fd
         return True
+
+    def _open_lock(self, path: Path) -> int:
+        """Var olan kilidi O_CREAT olmadan açar.
+
+        /var/lock yapışkan dizindir. Başka kullanıcının dosyasına O_CREAT
+        ile açmak root için de EACCES verir; kilit boşken dolu sanılır.
+        """
+        for _ in range(2):
+            try:
+                return os.open(path, os.O_RDWR)
+            except FileNotFoundError:
+                try:
+                    return os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL, 0o644)
+                except FileExistsError:
+                    continue
+        raise FileNotFoundError(path)
 
     def start_heartbeat(self) -> None:
         if self._thread is not None:
