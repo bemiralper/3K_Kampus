@@ -14,7 +14,9 @@ printf 'lock-marker\n' >"$LOCK_DIR/lms-backup.lock"
 
 DEST="$TMP/cron.d"
 mkdir -p "$DEST"
-printf 'OLD-LOCKED cron-flock.sh\n' >"$DEST/lms-sistem"
+for name in lms-sistem lms-iletisim lms-yedekleme lms-backup-gdrive; do
+  printf 'OLD %s\n' "$name" >"$DEST/$name"
+done
 
 bad_src="$TMP/bad-src"
 mkdir -p "$bad_src"
@@ -34,10 +36,12 @@ if [[ "$bad_code" -eq 0 ]]; then
   cat "$TMP/bad.out" >&2
   exit 1
 fi
-if [[ "$(cat "$DEST/lms-sistem")" != "OLD-LOCKED cron-flock.sh" ]]; then
-  echo "HATA: reddedilen kurulum mevcut cron dosyasini degistirdi" >&2
-  exit 1
-fi
+for name in lms-sistem lms-iletisim lms-yedekleme lms-backup-gdrive; do
+  if [[ "$(cat "$DEST/$name")" != "OLD $name" ]]; then
+    echo "HATA: reddedilen kurulum $name dosyasini degistirdi" >&2
+    exit 1
+  fi
+done
 if [[ "$(cat "$LOCK_DIR/lms-backup.lock")" != "lock-marker" ]]; then
   echo "HATA: reddedilen kurulum kilit dosyasini degistirdi" >&2
   exit 1

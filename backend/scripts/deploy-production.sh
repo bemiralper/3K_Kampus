@@ -183,6 +183,18 @@ log "BACKEND=$BACKEND_DIR"
 log "PYTHON=$PYTHON"
 log "DJANGO_ENV=$DJANGO_ENV"
 
+log "aktif yedek kontrolü (bakım, cron ve yeniden başlatmadan önce)"
+cd "$BACKEND_DIR"
+set +e
+"$PYTHON" manage.py check_backup_idle
+idle_code=$?
+set -e
+if [[ "$idle_code" -ne 0 ]]; then
+  echo "[deploy] Aktif veya sahibi belirsiz yedek var. Bakım açılmadı, cron yazılmadı, servis yeniden başlatılmadı." >&2
+  exit "$idle_code"
+fi
+cd "$APP_ROOT"
+
 ensure_var_lib_3k_permissions
 
 maintenance_on

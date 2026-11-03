@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from urllib.parse import urlparse
 
 from apps.sistem_yonetimi.collectors.logs import file_mtime_iso
 from apps.sistem_yonetimi.collectors.postgres import postgres_status
@@ -75,9 +76,32 @@ def _register_logs():
         register_log_source(LogSourceSpec(code=code, label=label, path=path, category=category))
 
 
+def probe_target(env_name: str, default_url: str) -> tuple[str, int, str]:
+    """Gunicorn ve Next yoklamasının adresi. Varsayılan üretim portudur.
+
+    LMS_HEALTH_URL ve LMS_FRONTEND_HEALTH_URL hem HTTP hem TCP hedefini belirler.
+    """
+    url = (os.environ.get(env_name) or default_url).strip() or default_url
+    parsed = urlparse(url)
+    host = parsed.hostname or '127.0.0.1'
+    if parsed.port:
+        port = parsed.port
+    elif parsed.scheme == 'https':
+        port = 443
+    else:
+        port = 80
+    return host, int(port), url
+
+
 def _health_unit(code: str, label: str, unit: str):
     def _check():
         st = unit_status(unit)
+        if code == 'frontend':
+            host, port, url = probe_target('LMS_FRONTEND_HEALTH_URL', 'http://127.0.0.1:3000/')
+        elif code in ('gunicorn', 'lms-backend'):
+            host, port, url = probe_target('LMS_HEALTH_URL', 'http://127.0.0.1:8000/api/legacy/index/')
+        else:
+            host, port, url = '', 0, ''
         if not st.get('available'):
             # Fallback TCP probes for common services in docker/dev
             if code == 'postgresql':
@@ -86,27 +110,23 @@ def _health_unit(code: str, label: str, unit: str):
             if code == 'nginx':
                 ok = tcp_probe('127.0.0.1', 80) or tcp_probe('127.0.0.1', 443)
                 return {'status': 'up' if ok else 'stopped', 'message': 'systemctl yok; TCP probe', 'detail': st}
-            if code in ('gunicorn', 'lms-backend'):
-                ok = tcp_probe('127.0.0.1', 8000, timeout=1.5)
-                return {'status': 'up' if ok else 'down', 'message': 'systemctl yok; :8000 probe', 'detail': st}
-            if code == 'frontend':
-                ok = tcp_probe('127.0.0.1', 3000, timeout=1.5)
-                return {'status': 'up' if ok else 'down', 'message': 'systemctl yok; :3000 probe', 'detail': st}
+            if code in ('gunicorn', 'lms-backend', 'frontend'):
+                ok = tcp_probe(host, port, timeout=1.5)
+                return {
+                    'status': 'up' if ok else 'down',
+                    'message': f'systemctl yok; {host}:{port} probe',
+                    'detail': {**st, 'url': url, 'port': port},
+                }
             return {'status': 'unknown', 'message': st.get('message') or 'systemctl yok', 'detail': st}
         active = st.get('active_state') == 'active'
         if active and code in ('gunicorn', 'lms-backend', 'frontend'):
-            if code == 'frontend':
-                url = os.environ.get('LMS_FRONTEND_HEALTH_URL', 'http://127.0.0.1:3000/')
-                tcp_ok = tcp_probe('127.0.0.1', 3000, timeout=1.5)
-            else:
-                url = os.environ.get('LMS_HEALTH_URL', 'http://127.0.0.1:8000/api/legacy/index/')
-                tcp_ok = tcp_probe('127.0.0.1', 8000, timeout=1.5)
+            tcp_ok = tcp_probe(host, port, timeout=1.5)
             ok, detail = http_probe(url, timeout=2.0)
             if not ok or not tcp_ok:
                 return {
                     'status': 'down',
                     'message': f'servis active ama uygulama yanıt vermiyor ({detail})',
-                    'detail': {**st, 'http': detail, 'tcp': tcp_ok, 'url': url},
+                    'detail': {**st, 'http': detail, 'tcp': tcp_ok, 'url': url, 'port': port},
                 }
         return {'status': st.get('status') or 'unknown', 'message': st.get('active_state', ''), 'detail': st}
     return _check

@@ -32,6 +32,7 @@ from apps.yedekleme.engine.run_guard import (
     BackupRunGuard,
     backup_owner_alive,
     foreign_heartbeat_alive,
+    owner_pid_from_result,
     process_alive,
 )
 from apps.yedekleme.engine.handlers.base import DryRunReport, JobLog, RestoreAnalysis
@@ -238,41 +239,62 @@ class BackupEngine:
         cutoff = _now() - _timedelta(minutes=max(1, minutes))
         msg = f'Önceki süreç çalışmıyor (>{minutes} dk, kilit ve nabız yok)'
 
-        protected = []
-        protected_artifacts = []
+        doomed = []
+        doomed_artifacts = []
         for job in BackupJob.objects.filter(status=BackupStatus.RUNNING, started_at__lt=cutoff):
-            if process_alive(((job.result or {}).get('owner') or {}).get('pid')):
-                protected.append(job.pk)
-                if job.artifact_id:
-                    protected_artifacts.append(job.artifact_id)
-        jobs = BackupJob.objects.filter(status=BackupStatus.RUNNING, started_at__lt=cutoff)
-        if protected:
-            jobs = jobs.exclude(pk__in=protected)
-        count = jobs.count()
-        if count:
-            jobs.update(
-                status=BackupStatus.FAILED,
-                phase=JobPhase.ERROR,
-                progress=100,
-                error_message=msg,
-                finished_at=_now(),
-                message='Zaman aşımı / süreç kesildi',
-            )
-        artifacts = BackupArtifact.objects.filter(
-            status=BackupStatus.RUNNING,
-            started_at__lt=cutoff,
-        )
-        if protected_artifacts:
-            artifacts = artifacts.exclude(pk__in=protected_artifacts)
-        artifacts.update(
+            pid = owner_pid_from_result(job.result)
+            # Sahibi yazılmamış kayıt eski koddan kalmıştır. Süreç hâlâ
+            # çalışıyor olabilir; yaş bunu kanıtlamaz.
+            if pid is None or process_alive(pid):
+                continue
+            doomed.append(job.pk)
+            if job.artifact_id:
+                doomed_artifacts.append(job.artifact_id)
+        if not doomed:
+            return 0
+        BackupJob.objects.filter(pk__in=doomed).update(
             status=BackupStatus.FAILED,
+            phase=JobPhase.ERROR,
+            progress=100,
             error_message=msg,
             finished_at=_now(),
+            message='Zaman aşımı / süreç kesildi',
         )
-        return count
+        if doomed_artifacts:
+            BackupArtifact.objects.filter(
+                pk__in=doomed_artifacts,
+                status=BackupStatus.RUNNING,
+            ).update(
+                status=BackupStatus.FAILED,
+                error_message=msg,
+                finished_at=_now(),
+            )
+        return len(doomed)
+
+    def _refuse_unresolved_creates(self) -> None:
+        """Sahibi belirsiz veya hâlâ yaşayan CREATE kaydında yeni yedek açmaz.
+
+        Yalnızca kayıtlı pid'i ölmüş işler kapatılır. Eski kodun sahibi
+        yazmadığı satır belirsizdir; yaş veya boş kilit bunu kanıtlamaz.
+        """
+        running = list(
+            BackupJob.objects.filter(
+                action=BackupOperationAction.CREATE,
+                status=BackupStatus.RUNNING,
+            )
+        )
+        if any(owner_pid_from_result(job.result) is None for job in running):
+            raise RuntimeError(
+                'Sahibi bilinmeyen çalışan yedek var. Tamamlanması bekleniyor; otomatik kapatılmaz.'
+            )
+        if any(process_alive(owner_pid_from_result(job.result)) for job in running):
+            raise RuntimeError(
+                'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
+            )
+        self._fail_abandoned_create_jobs()
 
     def _fail_abandoned_create_jobs(self) -> int:
-        """Kilit bizde ve yabancı nabız yokken ölü CREATE kayıtlarını kapatır."""
+        """Kilit bizde ve yabancı nabız yokken, kayıtlı pid'i ölmüş CREATE işlerini kapatır."""
         jobs = list(
             BackupJob.objects.filter(
                 action=BackupOperationAction.CREATE,
@@ -282,7 +304,8 @@ class BackupEngine:
         ids = []
         artifact_ids = []
         for job in jobs:
-            if process_alive(((job.result or {}).get('owner') or {}).get('pid')):
+            pid = owner_pid_from_result(job.result)
+            if pid is None or process_alive(pid):
                 continue
             ids.append(job.pk)
             if job.artifact_id:
@@ -459,17 +482,7 @@ class BackupEngine:
         guard.start_heartbeat()
         if trigger != BackupTrigger.PRE_RESTORE:
             cleanup_stale_work_dirs(max_age_hours=max_age_hours)
-            if any(
-                process_alive(((job.result or {}).get('owner') or {}).get('pid'))
-                for job in BackupJob.objects.filter(
-                    action=BackupOperationAction.CREATE,
-                    status=BackupStatus.RUNNING,
-                )
-            ):
-                raise RuntimeError(
-                    'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
-                )
-            self._fail_abandoned_create_jobs()
+            self._refuse_unresolved_creates()
 
         tenant = {k: v for k, v in (tenant or {}).items() if v is not None} or None
         if tenant:
@@ -499,17 +512,7 @@ class BackupEngine:
             from apps.yedekleme.domain.models import BackupSchedule
             BackupSchedule.objects.select_for_update().get_or_create(pk=1)
             if trigger != BackupTrigger.PRE_RESTORE:
-                if any(
-                    process_alive(((job.result or {}).get('owner') or {}).get('pid'))
-                    for job in BackupJob.objects.filter(
-                        action=BackupOperationAction.CREATE,
-                        status=BackupStatus.RUNNING,
-                    )
-                ):
-                    raise RuntimeError(
-                        'Zaten devam eden bir yedekleme işi var. Lütfen tamamlanmasını bekleyin.'
-                    )
-                self._fail_abandoned_create_jobs()
+                self._refuse_unresolved_creates()
             artifact = BackupArtifact.objects.create(
                 filename=filename,
                 storage_key=storage_key,

@@ -91,19 +91,101 @@ for name in "${FILES[@]}"; do
   fi
 done
 
+assert_same_locks() {
+  local flock_bin="$SCRIPT_DIR/cron-flock.sh"
+  local tick="$SCRIPT_DIR/backup-cron-tick.sh"
+  local rendered name found
+  if [[ ! -f "$flock_bin" || ! -f "$tick" ]]; then
+    echo "Kilit betiği yok: $flock_bin veya $tick" >&2
+    return 1
+  fi
+  if ! grep -F -q 'LMS_LOCK_DIR:-/var/lock' "$flock_bin"; then
+    echo "cron-flock.sh varsayılan kilit dizini /var/lock değil" >&2
+    return 1
+  fi
+  if ! grep -F -q 'lms-${name}.lock' "$flock_bin"; then
+    echo "cron-flock.sh kilit adı lms-<iş>.lock değil" >&2
+    return 1
+  fi
+  if ! grep -F -q '/var/lock/lms-backup.lock' "$tick"; then
+    echo "tick kilidi /var/lock/lms-backup.lock değil" >&2
+    return 1
+  fi
+  if grep -q 'LMS_LOCK_DIR=' "$stage"/*; then
+    echo "Cron dosyası kilit dizinini değiştiriyor" >&2
+    return 1
+  fi
+  python3 - "$stage" <<'PY'
+import re, sys
+from pathlib import Path
+stage = Path(sys.argv[1])
+expected = {
+    "lms-sistem": ["system-metrics", "olcme-publish"],
+    "lms-iletisim": [
+        "comm-queue", "comm-sla", "comm-campaigns",
+        "comm-payment-reminders", "comm-purge", "comm-archive",
+    ],
+    "lms-yedekleme": ["backup", "backup"],
+    "lms-backup-gdrive": ["backup-gdrive"],
+}
+for name, locks in expected.items():
+    text = (stage / name).read_text(encoding="utf-8")
+    found = re.findall(r"cron-flock\.sh\s+(\S+)", text)
+    if found != locks:
+        raise SystemExit(f"{name} kilit adlari {found} != {locks}")
+if "backup-cron-tick.sh" not in (stage / "lms-yedekleme").read_text(encoding="utf-8"):
+    raise SystemExit("tick ayni backup kilidine bagli degil")
+print("kilit yollari canli adlarla ayni")
+PY
+}
+
 if [[ "$failed" -ne 0 ]]; then
+  echo "Kurulum reddedildi. Mevcut cron dosyaları ve kilitler değiştirilmedi: $CRON_DST_DIR" >&2
+  exit 1
+fi
+if ! assert_same_locks; then
   echo "Kurulum reddedildi. Mevcut cron dosyaları ve kilitler değiştirilmedi: $CRON_DST_DIR" >&2
   exit 1
 fi
 
 mkdir -p "$CRON_DST_DIR"
+rollback_dir="$(mktemp -d)"
+for name in "${FILES[@]}"; do
+  dest="$CRON_DST_DIR/$name"
+  if [[ -f "$dest" ]]; then
+    cp -p "$dest" "$rollback_dir/$name"
+  else
+    : >"$rollback_dir/$name.missing"
+  fi
+done
+restore_cron() {
+  local name dest
+  for name in "${FILES[@]}"; do
+    dest="$CRON_DST_DIR/$name"
+    if [[ -f "$rollback_dir/$name" ]]; then
+      mv -f "$rollback_dir/$name" "$dest"
+    elif [[ -f "$rollback_dir/$name.missing" ]]; then
+      rm -f "$dest"
+    fi
+  done
+}
 for name in "${FILES[@]}"; do
   dest="$CRON_DST_DIR/$name"
   tmp_dest="$CRON_DST_DIR/.$name.lms-new"
-  cp "$stage/$name" "$tmp_dest"
+  if ! cp "$stage/$name" "$tmp_dest"; then
+    echo "Cron yazılamadı, önceki dosyalar geri konuyor: $name" >&2
+    restore_cron
+    exit 1
+  fi
   chmod 644 "$tmp_dest"
-  mv -f "$tmp_dest" "$dest"
+  if ! mv -f "$tmp_dest" "$dest"; then
+    echo "Cron yerine konamadı, önceki dosyalar geri konuyor: $name" >&2
+    rm -f "$tmp_dest"
+    restore_cron
+    exit 1
+  fi
 done
+rm -rf "$rollback_dir"
 
 tick="$APP_ROOT/backend/scripts/backup-cron-tick.sh"
 flock_bin="$APP_ROOT/backend/scripts/cron-flock.sh"

@@ -830,6 +830,7 @@ class ApiPermissionTests(TestCase):
             artifact=art,
             action=BackupOperationAction.CREATE,
             status=BackupStatus.RUNNING,
+            result={'owner': {'pid': 99999999}},
         )
         BackupJob.objects.filter(artifact=art).update(started_at=old)
         BackupArtifact.objects.filter(pk=art.pk).update(started_at=old)

@@ -28,6 +28,18 @@ def heartbeat_path() -> Path:
     return Path('/var/log/lms/cron-state/backup.heartbeat')
 
 
+def owner_pid_from_result(result) -> int | None:
+    """Kayıtlı sahip pid. Eski kod bu alanı yazmadığı için yoksa None döner."""
+    raw = ((result or {}).get('owner') or {}).get('pid')
+    try:
+        pid = int(raw)
+    except (TypeError, ValueError):
+        return None
+    if pid <= 0:
+        return None
+    return pid
+
+
 def process_alive(pid: int | None) -> bool:
     if not pid or int(pid) <= 0:
         return False

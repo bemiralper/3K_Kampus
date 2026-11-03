@@ -109,8 +109,8 @@ class BackupConcurrencyTests(TransactionTestCase):
         self.assertEqual(job.status, BackupStatus.COMPLETED)
         self.assertEqual(artifact.status, BackupStatus.COMPLETED)
 
-    def test_recent_running_without_owner_is_abandoned(self):
-        """Beş dakikalık RUNNING satırı, kilit ve nabız yoksa yaşından dolayı tutulmaz."""
+    def test_ownerless_running_is_not_abandoned(self):
+        """Eski kodun sahibi yazmadığı RUNNING satırı belirsizdir; kapatılmaz."""
         self._use_guard_files()
         art = BackupArtifact.objects.create(
             filename='live.zip',
@@ -126,16 +126,32 @@ class BackupConcurrencyTests(TransactionTestCase):
             status=BackupStatus.RUNNING,
             result={},
         )
-        BackupJob.objects.filter(pk=job.pk).update(started_at=timezone.now() - timedelta(minutes=5))
+        BackupJob.objects.filter(pk=job.pk).update(started_at=timezone.now() - timedelta(minutes=45))
         _engine, handler = self._engine()
-        _artifact, new_job = self._create(handler)
-        self.assertTrue(self.exported)
+        with self.assertRaises(RuntimeError) as caught:
+            self._create(handler)
+        self.assertIn('otomatik kapatılmaz', str(caught.exception))
+        self.assertFalse(self.exported)
         job.refresh_from_db()
         art.refresh_from_db()
-        self.assertEqual(job.status, BackupStatus.FAILED)
-        self.assertEqual(art.status, BackupStatus.FAILED)
-        self.assertEqual(new_job.status, BackupStatus.COMPLETED)
-        self.assertNotEqual(new_job.pk, job.pk)
+        self.assertEqual(job.status, BackupStatus.RUNNING)
+        self.assertEqual(art.status, BackupStatus.RUNNING)
+        self.assertEqual(BackupEngine().fail_stale_running_jobs(max_age_minutes=30), 0)
+        job.refresh_from_db()
+        self.assertEqual(job.status, BackupStatus.RUNNING)
+
+    def test_check_backup_idle_blocks_without_closing_the_row(self):
+        from django.core.management import call_command
+        self._use_guard_files()
+        _art, job = self._aged_running()
+        with self.assertRaises(SystemExit) as caught:
+            call_command('check_backup_idle')
+        self.assertEqual(caught.exception.code, 2)
+        job.refresh_from_db()
+        self.assertEqual(job.status, BackupStatus.RUNNING)
+        job.delete()
+        _art.delete()
+        call_command('check_backup_idle')
 
     def _aged_running(self, *, owner_pid=None):
         art = BackupArtifact.objects.create(

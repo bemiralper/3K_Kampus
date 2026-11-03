@@ -5,6 +5,8 @@ Kuyruk satırı işlenmez, süreç öldürülmez, nabız dosyası silinmez.
 
 from __future__ import annotations
 
+import os
+import socket
 import time
 from datetime import timedelta
 from unittest import mock
@@ -48,6 +50,37 @@ class ActiveServiceProbeTests(TestCase):
                 mock.patch('apps.sistem_yonetimi.registry.builtins.tcp_probe', return_value=True):
             result = _health_unit('gunicorn', 'Gunicorn', 'lms-backend')()
         self.assertEqual(result['status'], 'up')
+
+    def test_configured_port_is_used_and_closed_port_is_down(self):
+        listening = socket.socket()
+        listening.bind(('127.0.0.1', 0))
+        listening.listen(1)
+        open_port = listening.getsockname()[1]
+        refused = socket.socket()
+        refused.bind(('127.0.0.1', 0))
+        closed_port = refused.getsockname()[1]
+        unit = {'available': False, 'message': 'yok', 'status': 'unknown', 'active_state': 'unknown'}
+        try:
+            with mock.patch.dict(os.environ, {
+                'LMS_HEALTH_URL': f'http://127.0.0.1:{open_port}/api/legacy/index/',
+            }):
+                with mock.patch('apps.sistem_yonetimi.registry.builtins.unit_status', return_value=unit):
+                    up = _health_unit('gunicorn', 'Gunicorn', 'lms-backend')()
+            self.assertEqual(up['status'], 'up')
+            self.assertIn(f'127.0.0.1:{open_port}', up['message'])
+            self.assertEqual(up['detail']['port'], open_port)
+
+            with mock.patch.dict(os.environ, {
+                'LMS_FRONTEND_HEALTH_URL': f'http://127.0.0.1:{closed_port}/',
+            }):
+                with mock.patch('apps.sistem_yonetimi.registry.builtins.unit_status', return_value=unit):
+                    down = _health_unit('frontend', 'Next.js', 'lms-frontend')()
+            self.assertEqual(down['status'], 'down')
+            self.assertIn(f'127.0.0.1:{closed_port}', down['message'])
+            self.assertEqual(down['detail']['url'], f'http://127.0.0.1:{closed_port}/')
+        finally:
+            listening.close()
+            refused.close()
 
 
 class CronLockHealthTests(TestCase):
