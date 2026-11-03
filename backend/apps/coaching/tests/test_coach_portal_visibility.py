@@ -178,6 +178,27 @@ class CoachPortalVisibilityTests(TestCase):
         self.assertIn(ogrenci.id, self._listed_ids(self.coach_user))
         self.assertIn(ogrenci.id, self._listed_ids(self.admin_user))
 
+    def test_taslak_sozlesme_koc_atamasini_kapatmaz(self):
+        ogrenci = self._student('Taslak')
+        assignment = self._assign(ogrenci)
+        self._sozlesme(ogrenci, SozlesmeDurum.TASLAK, 'SZL-PV-TASLAK')
+
+        self.assertIn(ogrenci.id, self._listed_ids(self.coach_user))
+        self.assertIn(ogrenci.id, self._listed_ids(self.admin_user))
+        assignment.refresh_from_db()
+        self.assertIsNone(assignment.end_date)
+        self.assertEqual(assignment.end_reason, '')
+
+    def test_iptal_yaninda_taslak_sozlesme_atamayi_korur(self):
+        ogrenci = self._student('IptalTaslak')
+        assignment = self._assign(ogrenci)
+        self._sozlesme(ogrenci, SozlesmeDurum.IPTAL, 'SZL-PV-IPTAL-TASLAK')
+        self._sozlesme(ogrenci, SozlesmeDurum.TASLAK, 'SZL-PV-YENI-TASLAK')
+
+        self.assertIn(ogrenci.id, self._listed_ids(self.coach_user))
+        assignment.refresh_from_db()
+        self.assertIsNone(assignment.end_date)
+
     def test_profil_pasif_ogrencide_bulunamadi_doner(self):
         ogrenci = self._student('Gizli')
         self._assign(ogrenci)

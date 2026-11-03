@@ -1,16 +1,24 @@
 """
 Koç portalında görünmemesi gereken öğrenciler.
 
-Pasif, kaydı kapanmış veya geçerli sözleşmesi kalmamış öğrenciler
-koç listesinde, atama kapsamında ve kapasitede yok sayılır.
+Pasif, kaydı kapanmış veya sözleşmelerinin tamamı iptal/fesih olan
+öğrenciler koç listesinde, atama kapsamında ve kapasitede yok sayılır.
 Atamaları kapanır; iptal/fesih sonrası koçluk erişimi de kapanır.
+
+Taslak sözleşme henüz yürürlükte değildir. Koçu önceden atanmış
+öğrencinin taslak sözleşmesi, açık atamayı kapatmaz.
 """
 from django.db.models import Exists, OuterRef
 from django.utils import timezone
 
 from apps.coaching.services.eligibility import AKTIF_SOZLESME_DURUMLARI
+from apps.odeme_takip.domain.enums import SozlesmeDurum
 
 GRANTING_DURUMLAR = AKTIF_SOZLESME_DURUMLARI
+REVOKED_SOZLESME_DURUMLARI = (
+    SozlesmeDurum.IPTAL,
+    SozlesmeDurum.FESHEDILMIS,
+)
 
 
 def visible_coach_student_queryset():
@@ -18,8 +26,8 @@ def visible_coach_student_queryset():
 
     Aktif öğrenci görünür. Hiç kaydı yoksa kayıt şartı aranmaz.
     Kaydı varsa en az biri aktif olmalıdır. Hiç sözleşmesi yoksa
-    sözleşme şartı aranmaz. Sözleşmesi varsa en az biri geçerli
-    (aktif, tamamlandı, dondurulmuş) olmalıdır.
+    veya taslak (ya da aktif, tamamlandı, dondurulmuş) sözleşmesi
+    varsa görünür. Sözleşmelerinin tamamı iptal veya fesih ise gizlenir.
     """
     from apps.odeme_takip.domain.models import Sozlesme
     from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
@@ -29,16 +37,15 @@ def visible_coach_student_queryset():
         OgrenciKayit.objects.filter(ogrenci_id=OuterRef('pk'), aktif_mi=True),
     )
     has_sozlesme = Exists(Sozlesme.objects.filter(ogrenci_id=OuterRef('pk')))
-    has_granting = Exists(
-        Sozlesme.objects.filter(
-            ogrenci_id=OuterRef('pk'),
-            durum__in=GRANTING_DURUMLAR,
+    has_non_revoked = Exists(
+        Sozlesme.objects.filter(ogrenci_id=OuterRef('pk')).exclude(
+            durum__in=REVOKED_SOZLESME_DURUMLARI,
         ),
     )
     return (
         Ogrenci.objects.filter(aktif_mi=True)
         .filter(~has_kayit | has_active_kayit)
-        .filter(~has_sozlesme | has_granting)
+        .filter(~has_sozlesme | has_non_revoked)
     )
 
 
@@ -64,7 +71,8 @@ def is_student_visible_in_coach_portal(student_id) -> bool:
 def hidden_assignment_end_reasons(student_ids) -> dict[int, str]:
     """Gizli öğrencinin koç atamasının kapanma nedeni.
 
-    Öncelik: pasif öğrenci, kapalı kayıt, geçerli sözleşmesi olmayan kayıt.
+    Öncelik: pasif öğrenci, kapalı kayıt, sözleşmelerinin tamamı iptal/fesih.
+    Taslak sözleşme bu nedenle kapanmaz.
     """
     from apps.coaching.models import CoachStudentAssignment
     from apps.odeme_takip.domain.models import Sozlesme
@@ -86,11 +94,10 @@ def hidden_assignment_end_reasons(student_ids) -> dict[int, str]:
     has_sozlesme = set(
         Sozlesme.objects.filter(ogrenci_id__in=ids).values_list('ogrenci_id', flat=True)
     )
-    granting = set(
-        Sozlesme.objects.filter(
-            ogrenci_id__in=ids,
-            durum__in=GRANTING_DURUMLAR,
-        ).values_list('ogrenci_id', flat=True)
+    has_non_revoked = set(
+        Sozlesme.objects.filter(ogrenci_id__in=ids)
+        .exclude(durum__in=REVOKED_SOZLESME_DURUMLARI)
+        .values_list('ogrenci_id', flat=True)
     )
 
     reasons: dict[int, str] = {}
@@ -99,7 +106,7 @@ def hidden_assignment_end_reasons(student_ids) -> dict[int, str]:
             reasons[student.id] = CoachStudentAssignment.EndReason.OGRENCI_PASIF
         elif student.id in has_kayit and student.id not in active_kayit:
             reasons[student.id] = CoachStudentAssignment.EndReason.KAYIT_KAPALI
-        elif student.id in has_sozlesme and student.id not in granting:
+        elif student.id in has_sozlesme and student.id not in has_non_revoked:
             reasons[student.id] = CoachStudentAssignment.EndReason.GECERLI_SOZLESME_YOK
     return reasons
 
