@@ -599,30 +599,31 @@ class LinkedTytIndex:
         self._empty = False
         from ..models.result import StudentAnswer
 
-        rows = (
-            StudentAnswer.objects
-            .filter(session__exam=tyt, session__status='COMPLETED')
-            .select_related('student')
-            .prefetch_related('section_scores__section')
-            .order_by('session_id', 'raw_student_id', 'id')
-        )
+        from ..views.analysis_views import _get_session_answers
+
+        rows = list(_get_session_answers(tyt, include_unmatched=True))
+        # İsim/kod aynı anda birden fazla kişiye aitse otomatik bağlama.
+        def unique(mapping, key, row):
+            if key not in mapping:
+                mapping[key] = row
+            elif mapping[key] is not None and mapping[key].id != row.id:
+                mapping[key] = None
+
         for row in rows:
             if row.student_id:
-                self.by_student.setdefault(row.student_id, row)
-                tc = ''
-                if row.student_id and row.student:
-                    tc = (row.student.tc_kimlik_no or '').strip()
+                self.by_student[row.student_id] = row
+                tc = (getattr(row.student, 'tc_kimlik_no', '') or '').strip()
                 if tc:
-                    self.by_tc.setdefault(tc, row)
+                    unique(self.by_tc, tc, row)
             name = (row.raw_student_name or '').strip()
             if name:
-                self.by_name.setdefault(name, row)
+                unique(self.by_name, name, row)
                 norm = _normalize_name_for_matching(name)
                 if norm and len(norm) >= 4:
-                    self.by_norm.setdefault(norm, row)
+                    unique(self.by_norm, norm, row)
             raw = (row.raw_student_id or '').strip()
             if is_reliable_tyt_link_code(raw):
-                self.by_raw.setdefault(raw, row)
+                unique(self.by_raw, raw, row)
         if student_ids:
             from apps.ogrenci.domain.models import Ogrenci
             self.tc_of = {
@@ -642,16 +643,22 @@ class LinkedTytIndex:
             tc = self.tc_of.get(student_id)
             if tc and tc in self.by_tc:
                 return self.by_tc[tc]
-        name = (raw_student_name or '').strip()
-        if name and name in self.by_name:
-            return self.by_name[name]
-        if name:
-            norm = _normalize_name_for_matching(name)
-            if norm and len(norm) >= 4 and norm in self.by_norm:
-                return self.by_norm[norm]
+        def compatible(row):
+            return row is not None and (not student_id or not row.student_id or row.student_id == student_id)
+
         raw = (raw_student_id or '').strip()
-        if is_reliable_tyt_link_code(raw) and raw in self.by_raw:
-            return self.by_raw[raw]
+        if is_reliable_tyt_link_code(raw):
+            row = self.by_raw.get(raw)
+            if compatible(row):
+                return row
+        name = (raw_student_name or '').strip()
+        row = self.by_name.get(name)
+        if compatible(row):
+            return row
+        norm = _normalize_name_for_matching(name)
+        row = self.by_norm.get(norm) if len(norm) >= 4 else None
+        if compatible(row):
+            return row
         return None
 
     def nets_for(self, student_id: int = None, raw_student_name: str = None,
@@ -675,105 +682,10 @@ def _get_linked_tyt_answer(exam, student_id: int = None,
                            raw_student_name: str = None,
                            raw_student_id: str = None,
                            index: LinkedTytIndex = None):
-    """
-    Bağlantılı TYT sınavından öğrencinin StudentAnswer kaydını döndürür.
-
-    Eşleştirme önceliği:
-      1. student_id (DB'de kayıtlı öğrenci FK) — en güvenilir
-      2. TC kimlik no (student FK varsa → tc_kimlik_no ile diğer sınavda ara)
-      3. raw_student_name (ad-soyad) — önce birebir, sonra fuzzy (Türkçe normalize)
-      4. raw_student_id — yalnızca TC / güvenilir okul no (0, 1, 105 gibi sıra no değil)
-
-    index verilirse bağlı TYT satırları yeniden taranmaz.
-    """
-    if index is not None:
-        return index.lookup(student_id, raw_student_name, raw_student_id)
-
-    if not hasattr(exam, 'linked_tyt_exam') or not exam.linked_tyt_exam:
-        return None
-
-    tyt_exam = exam.linked_tyt_exam
-
-    # Lazy import — circular dependency önleme
-    from ..models.result import StudentAnswer
-
-    tyt_answer = None
-
-    # ── 1. student_id (DB FK) ─────────────────────────────────────────
-    if student_id:
-        tyt_answer = (
-            StudentAnswer.objects
-            .filter(
-                session__exam=tyt_exam,
-                session__status='COMPLETED',
-                student_id=student_id,
-            )
-            .first()
-        )
-
-    # ── 2. TC kimlik no ──────────────────────────────────────────────
-    if not tyt_answer and student_id:
-        from apps.ogrenci.domain.models import Ogrenci
-        tc = (
-            Ogrenci.objects
-            .filter(id=student_id)
-            .values_list('tc_kimlik_no', flat=True)
-            .first()
-        )
-        if tc:
-            tyt_answer = (
-                StudentAnswer.objects
-                .filter(
-                    session__exam=tyt_exam,
-                    session__status='COMPLETED',
-                    student__tc_kimlik_no=tc,
-                )
-                .first()
-            )
-
-    # ── 3a. raw_student_name — birebir eşleşme ──────────────────────
-    if not tyt_answer and raw_student_name:
-        tyt_answer = (
-            StudentAnswer.objects
-            .filter(
-                session__exam=tyt_exam,
-                session__status='COMPLETED',
-                raw_student_name=raw_student_name,
-            )
-            .first()
-        )
-
-    # ── 3b. raw_student_name — fuzzy (Türkçe normalize) ─────────────
-    if not tyt_answer and raw_student_name:
-        normalized_name = _normalize_name_for_matching(raw_student_name)
-        if normalized_name and len(normalized_name) >= 4:
-            tyt_candidates = (
-                StudentAnswer.objects
-                .filter(
-                    session__exam=tyt_exam,
-                    session__status='COMPLETED',
-                )
-                .only('id', 'raw_student_name')
-            )
-            for candidate in tyt_candidates:
-                cand_norm = _normalize_name_for_matching(candidate.raw_student_name)
-                if cand_norm and cand_norm == normalized_name:
-                    tyt_answer = candidate
-                    break
-
-    # ── 4. raw_student_id — yalnızca güvenilir kod (TC / okul no) ──
-    if not tyt_answer and is_reliable_tyt_link_code(raw_student_id):
-        tyt_answer = (
-            StudentAnswer.objects
-            .filter(
-                session__exam=tyt_exam,
-                session__status='COMPLETED',
-                raw_student_id=raw_student_id,
-            )
-            .first()
-        )
-
-    return tyt_answer
+    """Puan, ders ve sıra için aynı son-kayıt/kimlik çözümleyicisi."""
+    if index is None:
+        index = build_linked_tyt_index(exam, [student_id] if student_id else [])
+    return index.lookup(student_id, raw_student_name, raw_student_id)
 
 
 def _get_linked_tyt_nets(exam, student_id: int = None,

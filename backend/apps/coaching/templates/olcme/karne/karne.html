@@ -76,7 +76,7 @@
     <section class="duo">
       <div class="card">
         {% if s.trend_svg %}
-        <h2>Gelişim <small>toplam net · son sınavlar</small></h2>
+        <h2>Gelişim <small>{{ s.net_label }} · son sınavlar</small></h2>
         {{ s.trend_svg }}
         {% elif s.kurum_scale %}
         <h2>Kurumla karşılaştırma <small>{{ s.soru }} soru üzerinden</small></h2>

@@ -40,6 +40,15 @@ export function questionTotal(detail: StudentDetailResponse) {
 }
 
 export function answerCounts(detail: StudentDetailResponse) {
+  if (detail.exam_type === 'YKS_AYT') {
+    const hidden = new Set(detail.karne_insights?.hidden_section_ids || []);
+    const rows = detail.section_details.filter(sd => sd.source !== 'tyt' && !hidden.has(sd.section_id));
+    const parents = new Set(rows.filter(sd => sd.is_sub_section).map(sd => sd.parent_id));
+    const leaves = rows.filter(sd => !parents.has(sd.section_id) && sd.alana_dahil !== false);
+    if (leaves.length) return leaves.reduce((acc, sd) => ({
+      correct: acc.correct + sd.correct, wrong: acc.wrong + sd.wrong, empty: acc.empty + sd.empty,
+    }), { correct: 0, wrong: 0, empty: 0 });
+  }
   const correct = detail.total_correct || 0;
   const wrong = detail.total_wrong || 0;
   const total = questionTotal(detail);

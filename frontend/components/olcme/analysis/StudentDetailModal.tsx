@@ -208,14 +208,15 @@ function AnswerGrid({
             <tr>
               <th className={s.karneGridLabel}>Cevap</th>
               {part.map(q => {
-                const empty = !q.given || q.result === 'empty';
+                const cancelled = q.result === 'cancelled';
+                const empty = !cancelled && (!q.given || q.result === 'empty');
                 const wrong = q.result === 'wrong';
                 return (
                   <td
                     key={`g-${q.q}`}
                     className={empty ? s.karneEmpty : wrong ? s.karneWrong : s.karneOk}
                   >
-                    {empty ? '·' : q.given.toLocaleUpperCase('tr-TR')}
+                    {cancelled ? 'İptal' : empty ? '·' : q.given.toLocaleUpperCase('tr-TR')}
                   </td>
                 );
               })}
@@ -223,7 +224,7 @@ function AnswerGrid({
             <tr>
               <th className={s.karneGridLabel}>Anahtar</th>
               {part.map(q => (
-                <td key={`c-${q.q}`}>{q.correct || ''}</td>
+                <td key={`c-${q.q}`}>{q.result === 'cancelled' ? 'İptal' : q.correct || ''}</td>
               ))}
             </tr>
           </tbody>
@@ -383,8 +384,8 @@ export default function StudentDetailModal({
   const answerGrids = (detail?.answer_grids || []).filter(grid => !hiddenGrids.has(grid.section_id));
   const kpiTiles: [string, string, string][] = detail ? [
     ['Soru', fmtInt(questionTotal(detail) || null), 'ink'],
-    ['Doğru', fmtInt(detail.total_correct), 'green'],
-    ['Yanlış', fmtInt(detail.total_wrong), 'red'],
+    ['Doğru', fmtInt(answerCounts(detail).correct), 'green'],
+    ['Yanlış', fmtInt(answerCounts(detail).wrong), 'red'],
     ...(!isAyt && questionTotal(detail) ? [['Boş', fmtInt(answerCounts(detail).empty), 'muted'] as [string, string, string]] : []),
     [
       isAyt && detail.net_etiket ? detail.net_etiket : 'Net',

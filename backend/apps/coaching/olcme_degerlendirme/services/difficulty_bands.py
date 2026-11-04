@@ -112,6 +112,7 @@ def summarize_difficulty(
     bands: dict[str, str],
     b_to_a: dict | None = None,
     field_questions: set[str] | None = None,
+    field_only: bool = False,
 ) -> dict | None:
     """`field_questions` doluysa orta ve zor yalnız o sorulardan sayılır.
 
@@ -129,7 +130,7 @@ def summarize_difficulty(
         band = bands.get(key)
         if not band or band not in counts:
             continue
-        if field_questions is not None and band in ('orta', 'zor') and key not in field_questions:
+        if field_questions is not None and (field_only or band in ('orta', 'zor')) and key not in field_questions:
             continue
         slot = counts[band]
         slot['soru'] += 1
@@ -176,7 +177,7 @@ def build_difficulty_index(all_answers, exam) -> dict:
     }
 
 
-def student_difficulty_summary(answer, index: dict | None, *, field_questions: set[str] | None = None) -> dict | None:
+def student_difficulty_summary(answer, index: dict | None, *, field_questions: set[str] | None = None, field_only: bool = False) -> dict | None:
     if not index:
         return None
     return summarize_difficulty(
@@ -186,6 +187,7 @@ def student_difficulty_summary(answer, index: dict | None, *, field_questions: s
         bands=index.get('bands') or {},
         b_to_a=index.get('b_to_a') or {},
         field_questions=field_questions,
+        field_only=field_only,
     )
 
 

@@ -1278,6 +1278,10 @@ def _answer_counts(data) -> tuple[int, int, int]:
     correct = int(data.get('total_correct') or 0)
     wrong = int(data.get('total_wrong') or 0)
     total = _question_total(data)
+    if data.get('exam_type') == 'YKS_AYT':
+        leaves = _leaf_sections(data)
+        if leaves:
+            return tuple(sum(int(row.get(key) or 0) for row in leaves) for key in ('correct', 'wrong', 'empty'))
     if total and data.get('exam_type') != 'YKS_AYT':
         empty = max(0, total - correct - wrong)
     else:
@@ -1701,10 +1705,10 @@ def _comment_lines(data: dict) -> list[str]:
     if len(history) >= 2:
         prev, cur = history[-2], history[-1]
         delta = float(cur.get('toplam_net') or 0) - float(prev.get('toplam_net') or 0)
-        if abs(delta) < 0.5:
+        if abs(delta) < 0.005:
             text = 'Bir önceki sınava göre neti aynı seviyede.'
         else:
-            text = f"Bir önceki sınava göre {_fmt(abs(delta), 1)} net {'arttı' if delta > 0 else 'düştü'}."
+            text = f"Bir önceki sınava göre {_fmt(abs(delta), 2 if abs(delta) < 0.5 else 1)} net {'arttı' if delta > 0 else 'düştü'}."
             nets = [float(h.get('toplam_net') or 0) for h in history]
             if delta > 0 and len(history) >= 3 and nets[-1] >= max(nets):
                 text = text[:-1] + f'; son {len(history)} sınavın en yüksek neti.'
@@ -1740,7 +1744,8 @@ def _comment_lines(data: dict) -> list[str]:
         ]
         lines.append(f"Öncelik {' ve '.join(parts)} olmalı.")
 
-    bands = {b.get('key'): b for b in (data.get('difficulty') or {}).get('bands') or []}
+    summary = data.get('target_difficulty') if data.get('exam_type') == 'YKS_AYT' else data.get('difficulty')
+    bands = {b.get('key'): b for b in (summary or {}).get('bands') or []}
     kolay = bands.get('kolay') or {}
     missed = int(kolay.get('yanlis') or 0) + int(kolay.get('bos') or 0)
     if missed:
@@ -1892,9 +1897,13 @@ def _trend_chart(ctx: _Ctx, data: dict):
 def _focus_items(data: dict) -> tuple[str, str, list[tuple[str, str]]]:
     """Kazanım verisi varsa en zayıf konular, yoksa ders ders tekrar edilecek sorular."""
     topics = []
+    names = ({r.get('section_name') for r in _leaf_sections(data)}
+             if data.get('exam_type') in ('YKS_AYT', 'AYT_11') else set())
     for block in data.get('topic_blocks') or []:
         heading = (block.get('heading') or '').strip()
         for table in block.get('tables') or []:
+            if names and table.get('title') not in names and heading not in names:
+                continue
             for row in table.get('rows') or []:
                 wrong = int(row.get('yanlis') or 0)
                 empty = int(row.get('bos') or 0)
@@ -1921,7 +1930,7 @@ def _focus_items(data: dict) -> tuple[str, str, list[tuple[str, str]]]:
         wrong = [n for n, q in numbered if q.get('result') == 'wrong']
         empty = [
             n for n, q in numbered
-            if q.get('result') not in ('wrong', 'correct') and (q.get('correct') or '').strip()
+            if q.get('result') == 'empty' and (q.get('correct') or '').strip()
         ]
         if not wrong and not empty:
             continue
@@ -2121,7 +2130,9 @@ def _answer_grids(ctx: _Ctx, data: dict) -> list[Any]:
                 ders_no = question.get('n') or question.get('q') or start + offset + 1
 
                 nums.append(Paragraph(str(ders_no), ctx.s('gridNum')))
-                if result == 'wrong' and answer:
+                if result == 'cancelled':
+                    given.append(Paragraph('İptal', ctx.s('tdMuted')))
+                elif result == 'wrong' and answer:
                     given.append(Paragraph(answer.upper(), ctx.s('gridAnsWrong')))
                     cmds.append(('BACKGROUND', (col, 1), (col, 1), bad_bg))
                 elif result == 'correct' and answer:
@@ -2130,7 +2141,7 @@ def _answer_grids(ctx: _Ctx, data: dict) -> list[Any]:
                 else:
                     given.append(Paragraph('·', ctx.s('tdMuted')))
                     cmds.append(('BACKGROUND', (col, 1), (col, 1), empty_bg))
-                correct.append(Paragraph((question.get('correct') or '').upper(), ctx.s('gridNum')))
+                correct.append(Paragraph('İptal' if result == 'cancelled' else (question.get('correct') or '').upper(), ctx.s('gridNum')))
 
             tbl = Table([nums, given, correct], colWidths=[label_w] + [cell_w] * len(part))
             tbl.setStyle(TableStyle(cmds))

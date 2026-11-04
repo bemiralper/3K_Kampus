@@ -177,6 +177,8 @@ h2 small { font:500 7.8pt 'Inter',system-ui,sans-serif; color:var(--muted); }
 .areas h3 { font-size:8pt; margin-bottom:1.4mm; text-transform:uppercase; letter-spacing:.08em; }
 .chip { display:inline-block; margin:0 1.2mm 1.2mm 0; padding:.8mm 2.2mm; border-radius:3mm; font-size:8pt; font-weight:600; }
 .chip.good { background:#dcfce7; color:#166534; } .chip.bad { background:#fee2e2; color:#991b1b; }
+.rank .tbl th { letter-spacing:.02em; font-size:6.6pt; padding-left:1mm; padding-right:1mm; }
+.rank .tbl td { padding-left:1mm; padding-right:1mm; }
 .rank .tyt { margin-top:2.5mm; display:flex; flex-wrap:wrap; gap:1.5mm 4mm; align-items:baseline; background:var(--soft); border-radius:3mm; padding:2mm 3mm; font-size:8.2pt; color:var(--muted); }
 .rank .tyt b { color:var(--ink); }
 
@@ -214,6 +216,7 @@ h2 small { font:500 7.8pt 'Inter',system-ui,sans-serif; color:var(--muted); }
 .cell em { font:500 4.4pt 'Inter',system-ui,sans-serif; color:var(--muted); font-style:normal; line-height:1; }
 .cell b { font:700 7pt 'Inter',system-ui,sans-serif; line-height:1; color:color-mix(in srgb, var(--c) 80%, #000); }
 .cell u { font:700 5.2pt 'Inter',system-ui,sans-serif; line-height:1; color:#15803d; text-decoration:none; min-height:1.6mm; }
+.cell.cancelled { --c:#64748b; background:#e2e8f0; } .cell.cancelled b { font-size:4pt; }
 .cell.empty { background:#f1f5f9; } .cell.empty b { color:#94a3b8; }
 
 .foot { margin-top:auto; padding-top:2mm; font-size:7pt; color:var(--muted); display:flex; justify-content:space-between; }

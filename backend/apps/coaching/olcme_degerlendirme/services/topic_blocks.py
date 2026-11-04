@@ -179,6 +179,7 @@ def build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         for sid, codes in codes_by_subject.items()
     }
     use_b = (booklet or '').upper() == 'B'
+    has_b_mapping = any(item.booklet_b_global() for item in items)
     blocks_map: OrderedDict = OrderedDict()
     for item in items:
         subject = section_curriculum_subject(item, subject_cache)
@@ -188,7 +189,14 @@ def build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
             continue
         lookup_q = item.booklet_b_global() if use_b else item.question_number
         if not lookup_q:
+            if use_b and has_b_mapping:
+                continue
             lookup_q = item.question_number
+        result = (comparison.get(str(lookup_q)) or {}).get('result')
+        if item.is_cancelled or result == 'cancelled':
+            continue
+        if str(lookup_q) not in comparison:
+            continue
         sec = item.section
         parent_name = sec.parent_section.name if sec.parent_section_id else sec.name
         table_name = sec.name

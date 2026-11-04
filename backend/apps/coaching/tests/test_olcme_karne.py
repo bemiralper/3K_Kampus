@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.test import SimpleTestCase, TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from rest_framework.test import APIClient
 
 from apps.coaching.olcme_degerlendirme.models import (
@@ -271,6 +271,7 @@ class OlcmeKarnePdfNotifyTest(TestCase):
                 name=name, exam_type='YKS_TYT', status=Exam.Status.RESULTS_UPLOADED,
                 kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili, exam_date=day,
             )
+            ExamSection.objects.create(exam=other, name='Türkçe', order=1, question_start=1, question_end=40)
             session = ExamSession.objects.create(
                 exam=other, status=ExamSession.Status.COMPLETED, original_filename='x.dat',
             )
@@ -728,6 +729,7 @@ class KarneOptionalSectionAndClassColumnsTest(SimpleTestCase):
         self.assertFalse(is_unattempted_optional_section({**rows[2], 'correct': 1}))
         self.assertEqual(student_alan_question_count(rows), 5)
 
+    @override_settings(OLCME_KARNE_HTML=False)
     def test_pdf_hides_unattempted_optional_and_class_columns(self):
         from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
 
@@ -843,6 +845,7 @@ class KarneSummaryVisualsTest(SimpleTestCase):
         self.assertIn('Fen Bilimleri (%22)', text)
         self.assertIn('2 kolay soruyu', text)
 
+    @override_settings(OLCME_KARNE_HTML=False)
     def test_pdf_has_new_summary_blocks(self):
         from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
 

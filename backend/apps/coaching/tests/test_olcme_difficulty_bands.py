@@ -1,7 +1,7 @@
 """Zorluk bandı: eşik, iptal, az katılım, B kitapçığı ve karne cümlesi."""
 import io
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from apps.coaching.olcme_degerlendirme.services.difficulty_bands import (
     MIN_PARTICIPANTS,
@@ -160,6 +160,7 @@ class DifficultyBandTest(SimpleTestCase):
         ])
         self.assertEqual(note, 'Yanlışların tamamı zor sorularda.')
 
+    @override_settings(OLCME_KARNE_HTML=False)
     def test_pdf_prints_the_table_and_skips_it_when_absent(self):
         from apps.coaching.application.olcme_karne_pdf import render_karne_pdf
 

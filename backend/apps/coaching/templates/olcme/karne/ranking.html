@@ -1,10 +1,10 @@
 <section class="card rank">
   <h2>Puan ve sıralama {% if s.ranking.year %}<small>{{ s.ranking.year }} verilerine göre tahmin</small>{% endif %}</h2>
   <table class="tbl">
-    <thead><tr><th>Puan türü</th><th class="n">Puan</th><th class="n">Kurum ort.</th><th class="n">Net</th><th class="n">Kurum sırası</th><th class="n">Türkiye tahmini</th></tr></thead>
+    <thead><tr><th>Puan türü</th><th class="n">Puan</th><th class="n">Kurum ort.</th><th class="n">Net</th><th class="n">Net sırası</th><th class="n">Puan sırası</th><th class="n">Türkiye tahmini</th></tr></thead>
     <tbody>
       {% for r in s.ranking.rows %}
-      <tr class="{% if r.is_alan %}main{% endif %}"><td>{{ r.label }}</td><td class="n b">{{ r.puan }}</td><td class="n">{{ r.avg }}</td><td class="n">{{ r.net }}</td><td class="n">{{ r.kurum }}</td><td class="n">{{ r.turkiye }}</td></tr>
+      <tr class="{% if r.is_alan %}main{% endif %}"><td>{{ r.label }}</td><td class="n b">{{ r.puan }}</td><td class="n">{{ r.avg }}</td><td class="n">{{ r.net }}</td><td class="n">{{ r.net_sira }}</td><td class="n">{{ r.kurum }}</td><td class="n">{{ r.turkiye }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

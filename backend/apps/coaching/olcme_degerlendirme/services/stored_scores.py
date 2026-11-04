@@ -253,6 +253,8 @@ def refresh_exam_scores(exam, *, follow_linked: bool = True) -> int:
             a.id: _score_answer(exam, nets_by_id[a.id], tyt_by_id.get(a.id) or {}, year, coef)
             for a in answers
         }
+        for block in year_blocks.values():
+            block['scoring_version'] = 2
         _apply_ranks(exam, answers, year_blocks, alan)
         for answer in answers:
             payload[answer.id][str(year)] = year_blocks[answer.id]
@@ -297,6 +299,8 @@ def blocks_for_answers(exam, answers, year) -> dict[int, dict]:
         for answer_id in ids:
             block = (found.get(answer_id).by_year if found.get(answer_id) else None) or {}
             if year_key not in block:
+                return True
+            if exam.exam_type == 'YKS_AYT' and (block[year_key] or {}).get('scoring_version', 0) < 2:
                 return True
             if needs_pt and not (block.get(year_key) or {}).get('puan_turleri'):
                 return True

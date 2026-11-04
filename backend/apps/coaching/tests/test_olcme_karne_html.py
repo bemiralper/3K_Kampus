@@ -164,8 +164,8 @@ class KarneContextTest(SimpleTestCase):
             linked_tyt_exam_name='Orijinal TYT',
             tyt_siralama={'net': 70, 'puan': 360, 'kurum_ici_sira': 12, 'toplam_ogrenci': 100, 'tahmini_siralama': 5000},
             puan_turleri={
-                'SAY': {'puan': 300, 'ayt_net': 19, 'kurum_ici_sira': 4, 'tahmini_siralama': 1000},
-                'SOZ': {'puan': 200, 'ayt_net': 0, 'kurum_ici_sira': 40},
+                'SAY': {'puan': 300, 'ayt_net': 19, 'kurum_ici_sira': 4, 'net_kurum_ici_sira': 6, 'tahmini_siralama': 1000},
+                'SOZ': {'puan': 200, 'ayt_net': 0, 'kurum_ici_sira': 40, 'net_kurum_ici_sira': 30},
             },
         ))
         self.assertEqual((ctx['correct'], ctx['wrong'], ctx['empty'], ctx['soru']), (20, 4, 16, 40))
@@ -177,6 +177,10 @@ class KarneContextTest(SimpleTestCase):
         self.assertEqual(ctx['retry'], [])
         self.assertNotIn('Boş konu', [p['name'] for p in ctx['priorities']])
         self.assertEqual([r['label'] for r in ctx['ranking']['rows']], ['Sayısal', 'Sözel'])
+        say = ctx['ranking']['rows'][0]
+        self.assertEqual(say['net_sira'], '6. / 50')
+        self.assertEqual(say['kurum'], '4. / 50')
+        self.assertEqual(ctx['ranking']['rows'][1]['net_sira'], '30. / 50')
         self.assertEqual(ctx['ranking']['tyt']['name'], 'Orijinal TYT')
         names = [r['name'] for r in ctx['table_rows']]
         self.assertIn('Bağlı TYT · Orijinal TYT', names)
@@ -249,6 +253,19 @@ class KarneContextTest(SimpleTestCase):
 
 
 class KarneHtmlRenderTest(TestCase):
+    def test_ayt_ranking_table_shows_net_place(self):
+        html = karne.render_karne_html([_tyt_payload(
+            exam_type='YKS_AYT', exam_type_label='AYT', alan_puan_turu='SAY',
+            puan_turleri={
+                'SAY': {'puan': 300, 'ayt_net': 19, 'kurum_ici_sira': 4, 'net_kurum_ici_sira': 6},
+                'EA': {'puan': 250, 'ayt_net': 12, 'kurum_ici_sira': 8, 'net_kurum_ici_sira': 2},
+            },
+        )])
+        self.assertIn('Net sırası', html)
+        self.assertIn('Puan sırası', html)
+        self.assertIn('6. / 50', html)
+        self.assertIn('2. / 50', html)
+
     def test_document_escapes_text_and_marks_optional_blocks(self):
         html = karne.render_karne_html([_tyt_payload()])
         self.assertIn('Ayşe &lt;b&gt;Yılmaz&lt;/b&gt;', html)

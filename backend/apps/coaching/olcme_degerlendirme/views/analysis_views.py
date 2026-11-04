@@ -15,7 +15,7 @@ import math
 import os
 from collections import defaultdict
 
-from django.db.models import F, Max, Q
+from django.db.models import F, Max, Q, Sum
 
 from rest_framework.decorators import api_view, permission_classes, authentication_classes, renderer_classes
 from rest_framework.permissions import IsAuthenticated
@@ -41,6 +41,7 @@ from ..views import CsrfExemptSessionAuthentication
 from ..interfaces.sube_context import get_exam_or_response
 from ..services.scoring import (
     _get_linked_tyt_answer,
+    build_linked_tyt_index,
     estimate_ranking,
     calculate_percentile,
     calculate_std_dev,
@@ -276,11 +277,15 @@ def _section_in_alan(name: str, alan_kodu: str | None) -> bool:
 def _mark_alan_inclusion(section_details: list, exam_type: str, alan_kodu: str | None) -> None:
     """Ders satırına alana_dahil yazar. Üst satır, çocuğundan biri alandaysa dahildir."""
     for row in section_details:
-        if exam_type != 'YKS_AYT' or row.get('source') == 'tyt':
+        if exam_type == 'AYT_11' and row.get('source') != 'tyt':
+            from ..services.scoring import AYT_11_SAY_SECTIONS, AYT_11_EA_SECTIONS
+            names = AYT_11_EA_SECTIONS if _ayt11_pt_key(alan_kodu) == 'EA' else AYT_11_SAY_SECTIONS
+            row['alana_dahil'] = row.get('section_name') in names
+        elif exam_type != 'YKS_AYT' or row.get('source') == 'tyt':
             row['alana_dahil'] = True
         else:
             row['alana_dahil'] = _section_in_alan(row.get('section_name') or '', alan_kodu)
-    if exam_type != 'YKS_AYT':
+    if exam_type not in ('YKS_AYT', 'AYT_11'):
         return
     for row in section_details:
         if row.get('source') == 'tyt' or row.get('is_sub_section'):
@@ -391,40 +396,62 @@ KARNE_HISTORY_LIMIT = 6
 
 
 def _karne_net_history(exam, answer) -> list[dict]:
-    """Bu sınav ve öncesindeki aynı türden sınavlar. Sonraki sınavlar eski karneye girmez."""
+    """Aynı dönem/tür/soru sayısı; her sınavın son cevabı ve mevcut sınavda biten seri."""
     if not answer.student_id:
         return []
-    qs = (
-        StudentAnswer.objects
-        .filter(
-            student_id=answer.student_id,
-            session__exam__exam_type=exam.exam_type,
-            session__exam__kurum_id=exam.kurum_id,
-            session__status='COMPLETED',
-        )
-        .order_by('-session__exam__exam_date', '-session__exam__created_at')
-    )
+    qs = StudentAnswer.objects.filter(
+        student_id=answer.student_id,
+        session__exam__exam_type=exam.exam_type,
+        session__exam__kurum_id=exam.kurum_id,
+        session__exam__egitim_yili_id=exam.egitim_yili_id,
+        session__status='COMPLETED',
+    ).select_related('session__exam').prefetch_related('section_scores__section')
     if exam.exam_date:
-        qs = qs.filter(session__exam__exam_date__lte=exam.exam_date)
-    rows = list(qs.values_list(
-        'id', 'session__exam_id', 'session__exam__name', 'session__exam__exam_date', 'total_net',
-    )[:KARNE_HISTORY_LIMIT * 2])
-    history: list[dict] = []
-    seen: set[int] = set()
-    for aid, exam_id, name, date, net in rows:
-        if exam_id in seen:
+        qs = qs.filter(
+            Q(session__exam__exam_date__lt=exam.exam_date)
+            | Q(session__exam__exam_date=exam.exam_date,
+                session__exam__created_at__lt=exam.created_at)
+            | Q(session__exam__exam_date=exam.exam_date,
+                session__exam__created_at=exam.created_at, session__exam_id__lte=exam.id)
+            | Q(session__exam_id=exam.id)
+        )
+    else:
+        qs = qs.filter(Q(session__exam__created_at__lt=exam.created_at)
+                       | Q(session__exam__created_at=exam.created_at, session__exam_id__lte=exam.id))
+    latest_ids = qs.order_by().values('session__exam_id').annotate(last=Max('id')).values('last')
+    question_count = exam.total_questions
+    qs = qs.filter(id__in=latest_ids).annotate(history_question_count=Sum(
+        'session__exam__sections__question_count',
+        filter=Q(session__exam__sections__is_sub_section=False),
+    )).filter(history_question_count=question_count)
+    order = ['-session__exam__created_at', '-session__exam_id', '-id']
+    if exam.exam_date:
+        order.insert(0, '-session__exam__exam_date')
+    qs = qs.order_by(*order)[:KARNE_HISTORY_LIMIT]
+    history, seen = [], set()
+    alan = _get_student_alan(answer.student, exam.egitim_yili)
+    for row in qs:
+        past = row.session.exam
+        if past.id in seen:
             continue
-        seen.add(exam_id)
+        seen.add(past.id)
+        # Eski bir yüklemenin karnesi açıldığında mevcut nokta o yüklemeye aittir.
+        if past.id == exam.id:
+            row = answer
+        sections = list(row.section_scores.all())
+        parents = {ss.section.parent_section_id for ss in sections if ss.section.is_sub_section}
+        field_net = sum(float(ss.net or 0) for ss in sections
+                        if ss.section_id not in parents and _section_in_alan(ss.section.name, alan))
         history.append({
-            'exam_id': exam_id,
-            'exam_name': name or '',
-            'exam_date': str(date) if date else None,
-            'toplam_net': _safe_float(net),
-            'is_current': exam_id == exam.id,
+            'exam_id': past.id, 'answer_id': row.id, 'exam_name': past.name or '',
+            'exam_date': str(past.exam_date) if past.exam_date else None,
+            'toplam_net': field_net if exam.exam_type == 'YKS_AYT' else _safe_float(row.total_net),
+            'section_nets': {ss.section.name: _safe_float(ss.net) for ss in sections},
+            'is_current': past.id == exam.id,
         })
         if len(history) >= KARNE_HISTORY_LIMIT:
             break
-    if not any(row['is_current'] for row in history):
+    if not any(h['is_current'] for h in history):
         return []
     return list(reversed(history))
 
@@ -831,13 +858,13 @@ def _section_score_detail(ss, sec_info, kurum_avg, sinif_avg, *, source='ayt', n
     }
 
 
-def _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids):
+def _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids, index=None):
     """AYT karnesine bağlı TYT sınavının Ders/Test satırlarını ekler."""
     if not getattr(exam, 'linked_tyt_exam_id', None):
         return []
 
     tyt_answer = _get_linked_tyt_answer(
-        exam, answer.student_id, answer.raw_student_name, answer.raw_student_id,
+        exam, answer.student_id, answer.raw_student_name, answer.raw_student_id, index=index,
     )
     if not tyt_answer:
         return []
@@ -845,15 +872,8 @@ def _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids):
     tyt_exam = exam.linked_tyt_exam
     tyt_sec_map = _build_section_map(tyt_exam)
     ayt_student_ids = [a.student_id for a in all_answers if a.student_id]
-    tyt_cohort = list(
-        StudentAnswer.objects
-        .filter(
-            session__exam=tyt_exam,
-            session__status='COMPLETED',
-            student_id__in=ayt_student_ids,
-        )
-        .prefetch_related('section_scores__section')
-    )
+    cohort_students = set(ayt_student_ids)
+    tyt_cohort = [a for a in _get_session_answers(tyt_exam) if a.student_id in cohort_students]
     cohort_ids = {ta.id for ta in tyt_cohort}
     if tyt_answer.id not in cohort_ids:
         tyt_cohort.append(tyt_answer)
@@ -1560,7 +1580,7 @@ def exam_analysis_student_detail(request, exam_pk, answer_pk):
     return Response(build_student_detail_payload(exam, answer, ranking_year))
 
 
-def _build_linked_tyt_rank_index(exam, ranking_year) -> dict:
+def _build_linked_tyt_rank_index(exam, ranking_year, linked_index=None) -> dict:
     """Bağlı TYT sınavının kendi puanı ve sıraları.
 
     AYT puanının içindeki TYT katkısı değil; öğrencinin TYT karnesindeki
@@ -1617,30 +1637,19 @@ def _build_linked_tyt_rank_index(exam, ranking_year) -> dict:
             'tahmini_siralama': estimates[puan].get('tahmini_siralama'),
             'toplam_ogrenci': total,
         }
-        keys = []
-        if row.student_id:
-            keys.append(('id', row.student_id))
-        raw = (row.raw_student_id or '').strip()
-        if raw:
-            keys.append(('raw', raw))
-        for key in keys:
-            prev = index.get(key)
-            if prev is None or entry['puan'] > prev['puan']:
-                index[key] = entry
+        index[row.id] = entry
+    index['_lookup'] = linked_index or build_linked_tyt_index(exam)
     return index
 
 
 def _tyt_siralama_for(index, answer):
     if not index or answer is None:
         return None
-    if getattr(answer, 'student_id', None):
-        hit = index.get(('id', answer.student_id))
-        if hit:
-            return hit
-    raw = (getattr(answer, 'raw_student_id', None) or '').strip()
-    if raw:
-        return index.get(('raw', raw))
-    return None
+    lookup = index.get('_lookup')
+    if lookup is None:
+        return None
+    row = lookup.lookup(answer.student_id, answer.raw_student_name, answer.raw_student_id)
+    return index.get(row.id) if row else None
 
 
 def build_exam_payload_context(exam, ranking_year) -> dict:
@@ -1731,7 +1740,9 @@ def build_exam_payload_context(exam, ranking_year) -> dict:
         .prefetch_related('sections')
         .order_by('order', 'id')
     )
+    linked_index = build_linked_tyt_index(exam, student_ids) if is_ayt else None
     return {
+        'linked_tyt_index': linked_index,
         'sec_map': _build_section_map(exam),
         'all_answers': all_answers,
         'all_nets': all_nets,
@@ -1751,7 +1762,7 @@ def build_exam_payload_context(exam, ranking_year) -> dict:
         'exam_sessions': exam_sessions,
         'participant_sessions': _participant_sessions_by_student(exam, exam_sessions),
         'difficulty_index': build_difficulty_index(all_answers, exam),
-        'tyt_rank_index': _build_linked_tyt_rank_index(exam, ranking_year) if is_ayt else {},
+        'tyt_rank_index': _build_linked_tyt_rank_index(exam, ranking_year, linked_index) if is_ayt else {},
         'blocks': blocks,
     }
 
@@ -1826,7 +1837,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
 
     if exam.exam_type == 'YKS_AYT':
         section_details.extend(
-            _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids)
+            _linked_tyt_section_details(exam, answer, all_answers, sinif_student_ids, ctx.get('linked_tyt_index'))
         )
 
     # ── Genel bilgiler ────────────────────────────────────────────────────
@@ -1888,32 +1899,9 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         exam.exam_type, alan_kodu, sec_map,
     )
 
-    # ── Net gelişim trendi ────────────────────────────────────────────────
-    net_trend = []
-    if include_trend and answer.student:
-        past_answers = (
-            StudentAnswer.objects
-            .filter(
-                student=answer.student,
-                session__exam__exam_type=exam.exam_type,
-                session__exam__kurum=exam.kurum,
-                session__status='COMPLETED',
-            )
-            .select_related('session__exam')
-            .prefetch_related('section_scores__section')
-            .order_by('session__exam__exam_date', 'session__exam__created_at')
-        )
-        for pa in past_answers:
-            pa_sections = {}
-            for pss in pa.section_scores.all():
-                pa_sections[pss.section.name] = _safe_float(pss.net)
-            net_trend.append({
-                'exam_id': pa.session.exam_id,
-                'exam_name': pa.session.exam.name,
-                'exam_date': str(pa.session.exam.exam_date) if pa.session.exam.exam_date else None,
-                'toplam_net': _safe_float(pa.total_net),
-                'section_nets': pa_sections,
-            })
+    # Aynı kayıt seçimi hem genel hem ders bazındaki geçmişte kullanılır.
+    net_history = _karne_net_history(exam, answer)
+    net_trend = net_history if include_trend else []
 
     # ── Toplam boş maliyet analizi ────────────────────────────────────────
     total_empty = answer.total_empty
@@ -2002,7 +1990,9 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'total_wrong': answer.total_wrong,
         'total_empty': answer.total_empty,
         'total_questions': exam.total_questions,
-        'alan_soru': alan_soru,
+        'alan_soru': int(exam.total_questions or 0) if is_ayt11 else alan_soru,
+        'wrong_answer_count': exam.wrong_answer_count,
+        'per_section_penalty': exam.per_section_penalty,
         'puan': score_data['puan'],
         'ham_puan': score_data['ham_puan'],
         'puan_turleri': puan_turleri_detail,
@@ -2013,14 +2003,15 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         'kurum_ici_yuzdelik': kurum_percentile,
         'kurum_ici_sira': kurum_sira,
         'toplam_ogrenci': rank_total,
-        'kurum_avg_net': round(kurum_avg_net, 2),
+        'kurum_avg_net': (round(sum(ctx['pt_net_lists'].get(pt_key) or []) / len(ctx['pt_net_lists'][pt_key]), 2)
+                          if is_ayt and ctx['pt_net_lists'].get(pt_key) else round(kurum_avg_net, 2)),
         'sinif_avg_net': sinif_avg_net,
         'section_details': section_details,
         'alan': alan_kodu,
         'strong_areas': _area_payload(strong),
         'weak_areas': _area_payload(weak),
         'net_trend': net_trend,
-        'net_history': _karne_net_history(exam, answer),
+        'net_history': net_history,
         'dogruluk_orani': dogruluk_orani,
         'toplam_bos_potansiyel': total_bos_potansiyel,
         'referans_yil': ranking_data.get('referans_yil', 2026),
@@ -2035,7 +2026,7 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
         **_student_session_fields(
             exam, answer, ctx['exam_sessions'], ctx.get('participant_sessions'),
         ),
-        'kurum_avg_puan': kurum_avg_puan,
+        'kurum_avg_puan': puan_turleri_avgs.get(pt_key, kurum_avg_puan),
         'puan_turleri_avgs': puan_turleri_avgs,
         'answer_grids': answer_grids,
         'topic_blocks': topic_blocks,
@@ -2051,6 +2042,16 @@ def build_student_detail_payload(exam, answer, ranking_year, *, include_trend=Tr
             ),
         ),
     }
+    if is_ayt:
+        leaves = [r for r in _leaf_area_sections(section_details)
+                  if r.get('source') != 'tyt' and r.get('alana_dahil') is not False
+                  and not is_unattempted_optional_section(r)]
+        attempted_field = sum(r['correct'] + r['wrong'] for r in leaves)
+        payload['dogruluk_orani'] = round(sum(r['correct'] for r in leaves) / attempted_field * 100, 1) if attempted_field else 0
+        field_summary = student_difficulty_summary(answer, ctx.get('difficulty_index'),
+            field_questions=field_question_numbers((ctx.get('difficulty_index') or {}).get('section_spans'), alan_kodu),
+            field_only=True)
+        payload['target_difficulty'] = field_summary
     from apps.coaching.application.olcme_karne_pdf import karne_insights
 
     payload['karne_insights'] = karne_insights(payload)

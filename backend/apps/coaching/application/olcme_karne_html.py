@@ -345,6 +345,8 @@ def _scope(data: dict) -> dict:
 
 def _wrong_per_correct(data: dict, leaves: list[dict]) -> int:
     """Kaç yanlış bir doğruyu götürür. Sınav ayarı payload'da yok; öğrencinin kendi netinden çıkar."""
+    if 'wrong_answer_count' in data:
+        return int(data['wrong_answer_count'] or 0)
     correct = sum(_num(r.get('correct')) for r in leaves)
     wrong = sum(_num(r.get('wrong')) for r in leaves)
     net = sum(_num(r.get('net')) for r in leaves)
@@ -359,7 +361,7 @@ def _wrong_per_correct(data: dict, leaves: list[dict]) -> int:
 
 
 def _counts(data: dict, leaves: list[dict]) -> tuple[int, int, int, int]:
-    if data.get('exam_type') in AYT_TYPES and leaves:
+    if data.get('exam_type') == 'YKS_AYT' and leaves:
         c = sum(int(_num(r.get('correct'))) for r in leaves)
         w = sum(int(_num(r.get('wrong'))) for r in leaves)
         e = sum(int(_num(r.get('empty'))) for r in leaves)
@@ -456,19 +458,23 @@ def _section_history(data: dict, mains: list[dict], history: list[dict]) -> list
         return []
     exam_ids = [h['exam_id'] for h in history]
     nets: dict = {}
-    trend = data.get('net_trend') or []
+    trend = history if any('section_nets' in h for h in history) else data.get('net_trend') or []
     if trend:
         for t in trend:
             if t.get('exam_id') in exam_ids:
                 nets[t['exam_id']] = t.get('section_nets') or {}
     elif data.get('student_id'):
-        from apps.coaching.olcme_degerlendirme.models import StudentSectionScore
+        from django.db.models import Max
+        from apps.coaching.olcme_degerlendirme.models import StudentAnswer, StudentSectionScore
 
+        latest_ids = (StudentAnswer.objects.filter(
+            student_id=data['student_id'], session__exam_id__in=exam_ids,
+            session__status='COMPLETED',
+        ).values('session__exam_id').annotate(last=Max('id')).values('last'))
         rows = (
             StudentSectionScore.objects
             .filter(
-                student_answer__student_id=data['student_id'],
-                student_answer__session__exam_id__in=exam_ids,
+                student_answer_id__in=latest_ids,
                 student_answer__session__status='COMPLETED',
                 section__parent_section__isnull=True,
             )
@@ -495,12 +501,19 @@ def _section_history(data: dict, mains: list[dict], history: list[dict]) -> list
     return cards
 
 
+def _place(rank, total) -> str:
+    if not rank:
+        return '–'
+    return f"{rank}. / {total or '–'}"
+
+
 def _ranking(data: dict) -> dict | None:
     pts = data.get('puan_turleri') or {}
     avgs = data.get('puan_turleri_avgs') or {}
     alan_pt = data.get('alan_puan_turu')
     labels = {'SAY': 'Sayısal', 'EA': 'Eşit Ağırlık', 'SOZ': 'Sözel', 'DIL': 'Dil'}
     order = sorted(pts.keys(), key=lambda k: (k != alan_pt, k))
+    total = data.get('toplam_ogrenci')
     rows = []
     for key in order:
         pt = pts[key] or {}
@@ -510,7 +523,8 @@ def _ranking(data: dict) -> dict | None:
             'puan': tr(pt.get('puan')),
             'avg': tr(avgs.get(key)) if avgs.get(key) is not None else '–',
             'net': tr(pt.get('ayt_net')),
-            'kurum': f"{pt['kurum_ici_sira']}. / {data.get('toplam_ogrenci') or '–'}" if pt.get('kurum_ici_sira') else '–',
+            'net_sira': _place(pt.get('net_kurum_ici_sira'), total),
+            'kurum': _place(pt.get('kurum_ici_sira'), total),
             'turkiye': f"~{tr_int(pt['tahmini_siralama'])}" if pt.get('tahmini_siralama') else '–',
         })
     if not rows:
@@ -522,7 +536,7 @@ def _ranking(data: dict) -> dict | None:
             'name': data.get('linked_tyt_exam_name') or 'TYT',
             'net': tr(tyt.get('net')),
             'puan': tr(tyt.get('puan')),
-            'kurum': f"{tyt['kurum_ici_sira']}. / {tyt.get('toplam_ogrenci') or '–'}" if tyt.get('kurum_ici_sira') else '–',
+            'kurum': _place(tyt.get('kurum_ici_sira'), tyt.get('toplam_ogrenci')),
             'turkiye': f"~{tr_int(tyt['tahmini_siralama'])}" if tyt.get('tahmini_siralama') else '–',
         }
     return {'rows': rows, 'tyt': tyt_row, 'year': data.get('referans_yil')}
@@ -535,7 +549,7 @@ def _retry(data: dict, scope: dict) -> list[dict]:
             continue
         qs = g.get('questions') or []
         wrong = [q.get('n') for q in qs if q.get('result') == 'wrong']
-        empty = [q.get('n') for q in qs if q.get('result') not in ('wrong', 'correct') and q.get('correct')]
+        empty = [q.get('n') for q in qs if q.get('result') == 'empty' and q.get('correct')]
         if wrong or empty:
             out.append({'name': g.get('section_name') or '', 'wrong': wrong, 'empty': empty})
     return out
@@ -549,11 +563,11 @@ def _answer_rows(data: dict, scope: dict) -> list[dict]:
         cells = []
         for q in g.get('questions') or []:
             res = q.get('result')
-            cls = 'good' if res == 'correct' else 'bad' if res == 'wrong' else 'empty'
+            cls = 'cancelled' if res == 'cancelled' else 'good' if res == 'correct' else 'bad' if res == 'wrong' else 'empty'
             cells.append({
                 'n': q.get('n'),
-                'given': q.get('given') or '·',
-                'fix': q.get('correct') if res != 'correct' and q.get('correct') else '',
+                'given': 'İptal' if res == 'cancelled' else q.get('given') or '·',
+                'fix': q.get('correct') if res in ('wrong', 'empty') and q.get('correct') else '',
                 'cls': cls,
             })
         if cells:
@@ -632,10 +646,14 @@ def _table_rows(scope: dict, *, group: str = '') -> list[dict]:
 
 def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0') -> dict:
     branding = branding or {'theme': DEFAULT_THEME, 'logo': ''}
+    if not data.get('karne_insights'):
+        from .olcme_karne_pdf import karne_insights
+        data = {**data, 'karne_insights': karne_insights(data)}
     scope = _scope(data)
     is_ayt = data.get('exam_type') in AYT_TYPES
     k = _wrong_per_correct(data, scope['score_leaves'])
     penalty = 1 / k if k else 0.0
+    score_penalty = 0.0 if is_ayt and data.get('per_section_penalty') is False else penalty
     correct, wrong, empty, soru = _counts(data, scope['score_leaves'])
     net = data.get('alan_net') if data.get('alan_net') is not None else data.get('toplam_net')
 
@@ -649,6 +667,14 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
 
     blocks = _topic_tables(data, scope)
     difficulty = _difficulty(data, penalty)
+    if 'target_difficulty' in data:
+        target_difficulty = _difficulty({**data, 'difficulty': data['target_difficulty']}, score_penalty)
+    else:
+        target_difficulty = None if data.get('exam_type') == 'YKS_AYT' else difficulty
+    accuracy = correct / (correct + wrong) * 100 if correct + wrong else 0
+    loss_penalty = penalty
+    if data.get('exam_type') == 'YKS_AYT' and data.get('per_section_penalty') is False:
+        loss_penalty = 0
     lessons = _lessons(scope)
     tyt_lessons = _lessons(scope['tyt'])
     ahead = data.get('kurum_ici_yuzdelik')
@@ -700,7 +726,7 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'net_label': net_label,
         'puan_label': f'{alan_pt} puanı' if alan_pt else 'Puan',
         'puan': tr(data.get('puan')) if data.get('puan') is not None else '–',
-        'kurum_avg_puan': tr(data.get('kurum_avg_puan')) if data.get('kurum_avg_puan') is not None else '',
+        'kurum_avg_puan': tr((data.get('puan_turleri_avgs') or {}).get(alan_pt, data.get('kurum_avg_puan'))) if data.get('kurum_avg_puan') is not None else '',
         'delta': delta,
         'kurum_sira': data.get('kurum_ici_sira'),
         'toplam_ogrenci': data.get('toplam_ogrenci'),
@@ -709,7 +735,7 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'yuzdelik': poss_gen(round(_num(data.get('yuzdelik_dilim')))) if data.get('yuzdelik_dilim') is not None else '',
         'yil': data.get('referans_yil') or '',
         'comments': list((data.get('karne_insights') or {}).get('comment') or [])[:4],
-        'lessons': shown,
+        'lessons': lessons if data.get('exam_type') == 'AYT_11' else shown,
         'flat': all(not lesson['subs'] for lesson in shown),
         'has_out': any(lesson['out'] for lesson in shown),
         'rank_on_cover': bool(scope['out_ids']) and ranking is not None,
@@ -719,20 +745,20 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'trend_svg': mark_safe(_line_chart(history, data.get('kurum_avg_net'), branding['theme'], uid)),
         'kurum_scale': kurum_scale,
         'cmp_rows': cmp_rows if len(cmp_rows) > 1 else [],
-        'priorities': _priorities(blocks, scope, penalty, limit=3 if has_trend else 5),
+        'priorities': _priorities(blocks, scope, score_penalty, limit=3 if has_trend else 5),
         'target': (
-            {'count': difficulty['recover_count'], 'net': tr(_num(net) + difficulty['recover_net']),
-             'label': 'Kolay ve orta' if difficulty['has_kolay'] else 'Orta'}
-            if difficulty and difficulty['recover_count'] else None
+            {'count': target_difficulty['recover_count'], 'net': tr(min(soru, _num(net) + target_difficulty['recover_net'])),
+             'label': 'Kolay ve orta' if target_difficulty['has_kolay'] else 'Orta'}
+            if target_difficulty and target_difficulty['recover_count'] else None
         ),
         'table_rows': _table_rows(scope) + _table_rows(
             scope['tyt'], group=f"Bağlı TYT · {data.get('linked_tyt_exam_name') or 'TYT'}",
         ),
         'difficulty': difficulty,
-        'accuracy_ring': mark_safe(_ring(_num(data.get('dogruluk_orani')) / 100, size=64, stroke=7)),
-        'accuracy': poss(round(_num(data.get('dogruluk_orani')))),
-        'lost_net': tr(wrong * penalty),
-        'penalty_text': f'{k} yanlış 1 doğruyu götürür' if k else 'yanlışlar neti düşürmez',
+        'accuracy_ring': mark_safe(_ring(accuracy / 100, size=64, stroke=7)),
+        'accuracy': poss(round(accuracy)),
+        'lost_net': tr(wrong * loss_penalty),
+        'penalty_text': ('bölüm netlerine yanlış düzeltmesi uygulanmaz' if loss_penalty == 0 and k else f'{k} yanlış 1 doğruyu götürür' if k else 'yanlışlar neti düşürmez'),
         'strong': data.get('strong_areas') or [],
         'weak': data.get('weak_areas') or [],
         'ranking': ranking,
