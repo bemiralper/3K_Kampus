@@ -35,15 +35,15 @@ h1,h2,h3,.v,.v2,.lv b,.donut-c b,.big,.exam { font-family:'Poppins','Inter',syst
 }
 
 /* radial-gradient PDF'e resim olarak gömülür ve dosyayı büyütür; parıltı vektörel dairelerle verilir */
-.band { margin:0 -11mm; padding:8mm 11mm 14mm; color:#fff; display:flex; justify-content:space-between; align-items:flex-start;
+.band { margin:0 -11mm; padding:5mm 11mm 8mm; color:#fff; display:flex; justify-content:space-between; align-items:flex-start; gap:5mm;
   position:relative; overflow:hidden;
   background:linear-gradient(135deg, var(--brand), color-mix(in srgb, var(--brand) 70%, #020617)); }
 .band::before, .band::after { content:''; position:absolute; border-radius:50%; pointer-events:none; }
 .band::before { right:-28mm; top:-52mm; width:120mm; height:120mm; background:color-mix(in srgb, #7dd3fc 20%, transparent); }
 .band::after { right:-8mm; top:-30mm; width:70mm; height:70mm; background:color-mix(in srgb, #7dd3fc 16%, transparent); }
 .band > * { position:relative; z-index:1; }
-.logo { height:13mm; max-width:60mm; object-fit:contain; }
-.band-r { text-align:right; }
+.logo { height:22mm; max-width:70mm; max-inline-size:40%; object-fit:contain; object-position:left center; flex-shrink:0; }
+.band-r { text-align:right; flex:1; min-width:0; overflow-wrap:anywhere; }
 .eyebrow { font-size:7.5pt; letter-spacing:.14em; text-transform:uppercase; opacity:.8; font-weight:600; }
 .exam { font-size:14pt; font-weight:700; margin-top:1mm; }
 .when { font-size:8.5pt; opacity:.85; }
