@@ -14,7 +14,7 @@ from apps.coaching.olcme_degerlendirme.models import (
     StudentSectionScore,
 )
 from apps.coaching.olcme_degerlendirme.models.answer_key import AnswerKey, AnswerKeyItem
-from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, Topic
+from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, SubOutcome, Topic
 from apps.coaching.olcme_degerlendirme.services.development_analysis import (
     build_development_analysis,
     ols_slope,
@@ -102,6 +102,24 @@ class DevelopmentAnalysisScenariosTest(TestCase):
                 answer.comparison[str(qn)] = {'result': result}
             answer.save(update_fields=['comparison'])
         return exam, answer, section
+
+    def test_sub_outcome_retains_parent_label_without_duplicating_counts(self):
+        exam, answer, _ = self._exam(
+            'Alt kazanım', date(2026, 1, 1), q=2,
+            items=[(1, self.outcome_main, 'wrong'), (2, self.outcome_main, 'correct')],
+        )
+        child = SubOutcome.objects.create(outcome=self.outcome_main, text='Grafikte kesişimi bulur')
+        AnswerKeyItem.objects.filter(answer_key__exam=exam, question_number=1).update(sub_outcome=child)
+        payload = build_development_analysis(self.ogrenci, exam_type='TYT', window='all')
+        outcomes = payload['subjects'][0]['outcomes']
+        self.assertEqual(sum(row['question_count'] for row in outcomes), 2)
+        self.assertEqual(sum(row['wrong'] for row in outcomes), 1)
+        child_row = next(row for row in outcomes if row['sub_outcome_id'] == child.pk)
+        self.assertEqual(child_row['parent_outcome_name'], self.outcome_main.text)
+        self.assertEqual(child_row['name'], child.text)
+        blocks = _build_topic_blocks(exam, answer.comparison, answer.booklet)
+        rows = [row for block in blocks for table in block['tables'] for row in table['rows']]
+        self.assertTrue(all(row['parent_outcome_name'] == self.outcome_main.text for row in rows))
 
     def test_one_exam_is_insufficient_and_uses_stored_net(self):
         self._exam('TYT 1', date(2026, 1, 1), net='17.25')
@@ -192,11 +210,13 @@ class DevelopmentAnalysisScenariosTest(TestCase):
         self.assertEqual([e['exam_type'] for e in lgs['exams']], ['LGS'])
         self.assertEqual([e['exam_type'] for e in manuel['exams']], ['DENEME'])
 
-    def test_lgs_group_includes_grade_7(self):
+    def test_lgs_group_does_not_mix_different_grade_exams(self):
         self._exam('LGS 8', date(2026, 3, 1), exam_type='LGS', net='18.00')
         self._exam('LGS 7', date(2026, 3, 8), exam_type='LGS_7', net='16.00')
         lgs = build_development_analysis(self.ogrenci, exam_type='LGS', window='all')
-        self.assertEqual([e['exam_type'] for e in lgs['exams']], ['LGS', 'LGS_7'])
+        self.assertEqual([e['exam_type'] for e in lgs['exams']], ['LGS'])
+        grade7 = build_development_analysis(self.ogrenci, exam_type='LGS_7', window='all')
+        self.assertEqual([e['exam_type'] for e in grade7['exams']], ['LGS_7'])
 
     def test_outcome_data_threshold_and_new_measurement(self):
         items_base = [(i, self.outcome_main, 'correct' if i <= 8 else 'wrong') for i in range(1, 16)]
@@ -297,6 +317,10 @@ class DevelopmentAnalysisScenariosTest(TestCase):
         StudentSectionScore.objects.create(
             student_answer=answer, section=kimya, correct=6, wrong=1, empty=0, net=Decimal('5.75'),
         )
+        biyoloji = ExamSection.objects.create(exam=exam, name='Biyoloji', order=4, question_start=15,
+            question_end=20, is_sub_section=True, parent_section=fen)
+        StudentSectionScore.objects.create(student_answer=answer, section=biyoloji, correct=2, wrong=0,
+            empty=4, net=Decimal('2'))
         payload = build_development_analysis(self.ogrenci, exam_type='TYT', window='all')
         names = [s['name'] for s in payload['subjects']]
         self.assertIn('Fizik', names)

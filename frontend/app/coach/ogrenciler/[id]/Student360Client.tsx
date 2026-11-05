@@ -245,7 +245,7 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
       case 'odevler':
         return <OdevlerTab key={`odevler-${tabReloadKey}`} studentId={studentId} />;
       case 'sinavlar':
-        return <SinavlarTab studentId={studentId} />;
+        return <SinavlarTab studentId={studentId} refreshKey={tabReloadKey} />;
       case 'gorusmeler':
         return (
           <GorusmelerTab
@@ -332,7 +332,7 @@ export default function Student360Client({ studentId }: Student360ClientProps) {
         pinned={pinned}
         onTogglePin={handleTogglePin}
         onShowInfo={() => setShowInfoDrawer(true)}
-        onRefresh={() => loadProfile({ silent: true })}
+        onRefresh={() => { void loadProfile({ silent: true }); setTabReloadKey(k => k+1); }}
         refreshing={refreshing}
         onAction={handleAction}
       />

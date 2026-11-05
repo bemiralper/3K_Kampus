@@ -195,7 +195,7 @@ class KarneDataRegressionTests(TestCase):
             block.pop('scoring_version')
         stored.save()
         block = blocks_for_answers(exam, [answer], 2026)[answer.id]
-        self.assertEqual(block['scoring_version'], 2)
+        self.assertEqual(block['scoring_version'], 3)
         stamp = StudentStoredScore.objects.get(pk=stored.pk).updated_at
         blocks_for_answers(exam, [answer], 2026)
         self.assertEqual(StudentStoredScore.objects.get(pk=stored.pk).updated_at, stamp)

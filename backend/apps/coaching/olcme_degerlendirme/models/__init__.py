@@ -30,7 +30,7 @@ __all__ = [
     'Exam', 'ExamSection', 'ExamSessionModel',
     'AnswerKey', 'AnswerKeyItem',
     'ExamSession',
-    'StudentAnswer', 'StudentSectionScore', 'StudentStoredScore',
+    'StudentAnswer', 'StudentSectionScore', 'StudentStoredScore', 'ExamStudyAction',
     'Subject', 'Topic', 'Outcome', 'SubOutcome',
     'MappingTemplate',
     'OlcmePuanAyar', 'OlcmeKatsayiSeti',
@@ -42,3 +42,5 @@ __all__ = [
     'OptikYaziciProfili', 'OmrTaramaOturumu', 'OmrTaramaDosyasi', 'OmrTaramaSayfasi',
     'OptikOkumaOturumu', 'OptikOkumaKaynak', 'OptikOkumaSayfa',
 ]
+
+from .study_action import ExamStudyAction

@@ -289,8 +289,8 @@ function ExamRow({ exam, open, toggle }: { exam: StudentExamResult; open: boolea
         </td>
         <td className={s.center}>
           <div className={s.puanCell}>
-            <span className={s.puanMain}>{exam.puan > 0 ? fmt(exam.puan) : "—"}</span>
-            {exam.ham_puan > 0 && <span className={s.puanSub}>ham: {fmt(exam.ham_puan)}</span>}
+            <span className={s.puanMain}>{exam.puan != null && exam.puan > 0 ? fmt(exam.puan) : "—"}</span>
+            {exam.ham_puan != null && exam.ham_puan > 0 && <span className={s.puanSub}>ham: {fmt(exam.ham_puan)}</span>}
           </div>
         </td>
         <td className={s.center}>
@@ -310,8 +310,8 @@ function ExamRow({ exam, open, toggle }: { exam: StudentExamResult; open: boolea
           {/* Detail metrics */}
           <tr><td colSpan={10} style={{ padding: 0 }}>
             <div className={s.examDetailGrid}>
-              <Detail label="Ham Puan" value={exam.ham_puan > 0 ? fmt(exam.ham_puan) : "—"} />
-              <Detail label="Standart Puan" value={exam.puan > 0 ? fmt(exam.puan) : "—"} />
+              <Detail label="Ham Puan" value={exam.ham_puan != null && exam.ham_puan > 0 ? fmt(exam.ham_puan) : "—"} />
+              <Detail label="Standart Puan" value={exam.puan != null && exam.puan > 0 ? fmt(exam.puan) : "—"} />
               <Detail label="Tahmini Sıralama" value={exam.tahmini_siralama ? exam.tahmini_siralama.toLocaleString("tr-TR") : "—"} />
               <Detail label="Yüzdelik Dilim" value={exam.yuzdelik_dilim != null ? `%${exam.yuzdelik_dilim}` : "—"} />
               <Detail label="Kurum İçi" value={exam.kurum_ici_sira > 0 ? `${exam.kurum_ici_sira} / ${exam.toplam_ogrenci}` : "—"} />

@@ -14,15 +14,18 @@ from . import development_thresholds as T
 from .topic_blocks import build_topic_blocks
 
 
-def ayt_section_allowed(name: str, exam_type: str, alan: str | None) -> bool:
+def ayt_section_allowed(name: str, exam_type: str, alan: str | None, *, score_scope=False) -> bool:
     """AYT'de yalnızca öğrencinin alan testlerini bırak."""
+    if exam_type == 'AYT_11':
+        if not score_scope:
+            return True
+        from .scoring import AYT_11_SAY_SECTIONS, AYT_11_EA_SECTIONS
+        from ..views.analysis_views import _ayt11_pt_key
+        return name in (AYT_11_EA_SECTIONS if _ayt11_pt_key(alan) == 'EA' else AYT_11_SAY_SECTIONS)
     if exam_type != 'YKS_AYT':
         return True
-    from ..views.analysis_views import _AYT_ALAN_SECTION_KEYS, _normalize_alan_kodu, _section_name_key
-    allowed = _AYT_ALAN_SECTION_KEYS.get(_normalize_alan_kodu(alan) or '')
-    if not allowed:
-        return True
-    return _section_name_key(name) in allowed
+    from ..views.analysis_views import _section_in_alan
+    return _section_in_alan(name, alan)
 
 INSUFFICIENT = 'Yeterli veri yok.'
 
@@ -408,7 +411,10 @@ def scoring_scores_by_name(answer, exam) -> dict:
     result = {}
     for ss in mains:
         if ss.section.id in parent_ids:
-            continue
+            children = [child for child in subs if child.section.parent_section_id == ss.section.id]
+            if children and sum(child.section.question_count for child in children) >= ss.section.question_count:
+                continue
+            ss._incomplete_breakdown = True
         result[ss.section.name] = ss
     for ss in subs:
         result[ss.section.name] = ss
@@ -471,15 +477,15 @@ def empty_payload(student_name: str, filters: dict) -> dict:
     }
 
 
-def _select_answers(ogrenci, exam_type_group, window, exam_ids, date_from, date_to):
+def _select_answers(ogrenci, exam_type_group, window, exam_ids, date_from, date_to, answers_queryset=None, custom_selection=False):
     from ..models import StudentAnswer
+    from django.db.models import F
 
     answers = list(
-        StudentAnswer.objects
-        .filter(student=ogrenci, session__status='COMPLETED')
+        (answers_queryset if answers_queryset is not None else StudentAnswer.objects.filter(student=ogrenci, session__status='COMPLETED'))
         .select_related('session__exam')
-        .prefetch_related('section_scores__section')
-        .order_by('session__exam__exam_date', 'session__exam__created_at', 'id')
+        .prefetch_related(None).defer('answers', 'comparison')
+        .order_by(F('session__exam__exam_date').asc(nulls_first=True), 'session__exam__created_at', 'id')
     )
     latest_group = None
     if answers:
@@ -504,6 +510,11 @@ def _select_answers(ogrenci, exam_type_group, window, exam_ids, date_from, date_
         a.session.exam.id,
     ))
 
+    if selected and not exam_ids:
+        latest = selected[-1].session.exam
+        selected = [a for a in selected if a.session.exam.exam_type == latest.exam_type
+                    and a.session.exam.egitim_yili_id == latest.egitim_yili_id]
+
     if date_from:
         selected = [
             a for a in selected
@@ -515,21 +526,26 @@ def _select_answers(ogrenci, exam_type_group, window, exam_ids, date_from, date_
             if a.session.exam.exam_date and a.session.exam.exam_date <= date_to
         ]
 
-    if exam_ids:
+    if custom_selection or exam_ids:
         wanted = set(exam_ids)
         selected = [a for a in selected if a.session.exam_id in wanted]
+        if selected:
+            latest=selected[-1].session.exam
+            selected=[a for a in selected if a.session.exam.exam_type==latest.exam_type and a.session.exam.egitim_yili_id==latest.egitim_yili_id]
     elif window != 'all':
         selected = selected[-int(window):]
 
     filters = {
         'exam_type_group': group,
         'exam_types': list(allowed_types) if allowed_types else [],
-        'window': 'custom' if exam_ids else window,
+        'window': 'custom' if custom_selection or exam_ids else window,
         'exam_ids': exam_ids,
         'date_from': date_from.isoformat() if date_from else None,
         'date_to': date_to.isoformat() if date_to else None,
     }
-    return selected, filters
+    ids = [a.id for a in selected]
+    full = {a.id: a for a in StudentAnswer.objects.filter(id__in=ids).select_related('session__exam').prefetch_related('section_scores__section')}
+    return [full[aid] for aid in ids], filters
 
 
 def _build_exam_summaries(answers) -> list[dict]:
@@ -571,6 +587,8 @@ def _collect_subject_series(answers, alan: str | None = None) -> OrderedDict:
                 'empty': ss.empty,
                 'question_count': q,
                 'performance_rate': _r(rate),
+                'incomplete_breakdown': getattr(ss, '_incomplete_breakdown', False),
+                'score_included': ayt_section_allowed(name, exam.exam_type, alan, score_scope=True),
                 '_rate': rate,
                 '_net': net,
             })
@@ -583,12 +601,13 @@ def _collect_outcome_series(answers, alan: str | None = None) -> OrderedDict:
     for answer in answers:
         exam = answer.session.exam
         blocks = build_topic_blocks(exam, answer.comparison or {}, answer.booklet or '')
+        answer._study_topic_blocks = blocks
         for block in blocks:
             heading = block.get('heading') or ''
             for table in block.get('tables') or []:
                 table_name = table.get('title') or heading
                 subject = table_name
-                if exam.exam_type == 'YKS_AYT':
+                if exam.exam_type in ('YKS_AYT', 'AYT_11'):
                     if ayt_section_allowed(table_name, exam.exam_type, alan):
                         subject = table_name
                     elif ayt_section_allowed(heading, exam.exam_type, alan):
@@ -612,9 +631,12 @@ def _collect_outcome_series(answers, alan: str | None = None) -> OrderedDict:
                     mastery = (c / q) * 100
                     attempted = c + w
                     accuracy = (c / attempted) * 100 if attempted else None
-                    key = (subject, topic, outcome)
+                    identity = (row.get('subject_id'), row.get('topic_id'), row.get('outcome_id'), row.get('sub_outcome_id'))
+                    key = (subject, topic, outcome, identity)
                     series.setdefault(key, []).append({
                         'exam_id': exam.id,
+                        'answer_id': answer.id,
+                        '_parent_outcome_name': row.get('parent_outcome_name') or '',
                         'exam_name': exam.name,
                         'exam_date': str(exam.exam_date) if exam.exam_date else None,
                         'exam_index': exam_index[exam.id],
@@ -636,10 +658,12 @@ def _outcome_period_change(points: list[dict], exam_count: int):
     if not split:
         return None, None
     prev_n, _recent_n = split
-    previous = [p['_mastery'] for p in points if p['exam_index'] < prev_n]
-    recent = [p['_mastery'] for p in points if p['exam_index'] >= prev_n]
+    previous = [p for p in points if p['exam_index'] < prev_n]
+    recent = [p for p in points if p['exam_index'] >= prev_n]
     if previous and recent:
-        return (sum(recent) / len(recent)) - (sum(previous) / len(previous)), None
+        def rate(rows):
+            return sum(p['correct'] for p in rows) / sum(p['question_count'] for p in rows) * 100
+        return rate(recent) - rate(previous), None
     if recent and not previous:
         return None, 'yeni_olculdu'
     return None, 'insufficient_data'
@@ -731,6 +755,8 @@ def _analyze_subject(name: str, points: list[dict], outcome_groups: list[dict]) 
         'name': name,
         'exam_count': n,
         'average_net': _r(avg_net),
+        'incomplete_breakdown': any(p.get('incomplete_breakdown') for p in points),
+        'score_included': points[-1].get('score_included', True) if points else True,
         'first_net': _r(nets[0]) if nets else None,
         'last_net': _r(nets[-1]) if nets else None,
         'net_change': _r(nets[-1] - nets[0]) if n >= 2 else None,
@@ -761,7 +787,8 @@ def _analyze_subject(name: str, points: list[dict], outcome_groups: list[dict]) 
 
 
 def _analyze_outcome(key: tuple[str, str, str], points: list[dict], exam_count: int) -> dict:
-    subject, topic, name = key
+    subject, topic, name = key[:3]
+    ids = key[3] if len(key) > 3 else (None, None, None, None)
     q = sum(p['question_count'] for p in points)
     c = sum(p['correct'] for p in points)
     w = sum(p['wrong'] for p in points)
@@ -789,12 +816,15 @@ def _analyze_outcome(key: tuple[str, str, str], points: list[dict], exam_count: 
             status = 'insufficient_data'
 
     last_two = masteries[-2:] if masteries else []
-    recent_mastery = (sum(last_two) / len(last_two)) if last_two else mastery
+    recent_points = points[-2:]
+    recent_mastery = sum(p['correct'] for p in recent_points) / sum(p['question_count'] for p in recent_points) * 100 if recent_points else mastery
     decline_input = period if period is not None else a
     low_s = bucket_low_performance(mastery)
     dec_s = bucket_decline(decline_input)
     rec_s = bucket_recent_weakness(recent_mastery)
-    per_s = bucket_persistence(masteries)
+    per_s = bucket_persistence(masteries) if n >= 2 else 0
+    if n < 2:
+        dec_s = 0
     priority_score = (
         low_s * T.DEVELOPMENT_PRIORITY_LOW_W
         + dec_s * T.DEVELOPMENT_PRIORITY_DECLINE_W
@@ -807,6 +837,8 @@ def _analyze_outcome(key: tuple[str, str, str], points: list[dict], exam_count: 
         public_series.append({k: v for k, v in p.items() if not k.startswith('_') and k != 'exam_index'})
 
     return {
+        **dict(zip(('subject_id', 'topic_id', 'outcome_id', 'sub_outcome_id'), ids)),
+        'parent_outcome_name': next((p.get('_parent_outcome_name') for p in points if p.get('_parent_outcome_name')), ''),
         'name': name,
         'subject': subject,
         'topic': topic,
@@ -914,13 +946,15 @@ def build_development_analysis(
     exam_ids=None,
     date_from=None,
     date_to=None,
+    answers_queryset=None,
+    custom_selection=False,
 ) -> dict:
     group = resolve_exam_type_group(exam_type)
     win = parse_window(window)
     ids = parse_exam_ids(exam_ids)
     d_from = parse_date(date_from)
     d_to = parse_date(date_to)
-    answers, filters = _select_answers(ogrenci, group, win, ids, d_from, d_to)
+    answers, filters = _select_answers(ogrenci, group, win, ids, d_from, d_to, answers_queryset, custom_selection)
     student_name = f'{ogrenci.ad} {ogrenci.soyad}'.strip()
     if not answers:
         return empty_payload(student_name, filters)
@@ -939,6 +973,8 @@ def build_development_analysis(
         analyzed = _analyze_outcome(key, points, len(answers))
         outcomes_by_subject[key[0]].append(analyzed)
         if analyzed['priority_score'] is not None:
+            if not ayt_section_allowed(analyzed['subject'], answers[-1].session.exam.exam_type, alan, score_scope=True):
+                continue
             mastery = analyzed['mastery_rate']
             q = analyzed['question_count'] or 0
             correct = analyzed['correct'] or 0
@@ -960,13 +996,17 @@ def build_development_analysis(
                 'narrative': analyzed['narrative'],
             })
     priorities.sort(key=lambda x: (-x['priority_score'], x['mastery_rate'] or 0, x['outcome']))
-    priorities = priorities[:T.DEVELOPMENT_PRIORITY_LIMIT]
+    # Keep the complete list; the coach can search all deficits.
+
 
     subjects = []
     for name, points in subject_series.items():
         subjects.append(_analyze_subject(name, points, outcomes_by_subject.get(name, [])))
 
+    from .study_recommendations import build_study_agenda
+    agenda = build_study_agenda(ogrenci, answers, outcomes_by_subject, alan)
     return {
+        'agenda': agenda,
         'student_name': student_name,
         'filters': filters,
         'exam_count': len(answers),

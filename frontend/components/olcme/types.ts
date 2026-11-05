@@ -1006,9 +1006,17 @@ export interface StudentExamSectionDetail {
   question_count: number;
   is_sub_section: boolean;
   parent_section_id?: number | null;
+  alana_dahil?: boolean;
 }
 
 export interface StudentExamResult {
+  scores_loaded?: boolean;
+  all_tests_net?: number;
+  alan?: string | null;
+  alan_puan_turu?: string | null;
+  referans_yil?: number;
+  egitim_yili_id?: number;
+  total_questions?: number;
   answer_id?: number;
   exam_id: number;
   exam_name: string;
@@ -1020,8 +1028,8 @@ export interface StudentExamResult {
   total_wrong: number;
   total_empty: number;
   total_net: number;
-  puan: number;
-  ham_puan: number;
+  puan: number | null;
+  ham_puan: number | null;
   puan_turleri?: StudentDetailResponse['puan_turleri'];
   tahmini_siralama: number | null;
   yuzdelik_dilim: number | null;
@@ -1056,6 +1064,7 @@ export interface StudentExamTrend {
 }
 
 export interface StudentExamResponse {
+  scores_loaded?: boolean;
   student_name: string;
   alan?: string | null;
   exams: StudentExamResult[];
@@ -1064,7 +1073,7 @@ export interface StudentExamResponse {
 }
 
 export type DevelopmentWindow = '1' | '3' | '5' | '10' | 'all' | 'custom';
-export type DevelopmentTypeGroup = 'TYT' | 'TYT_11' | 'AYT' | 'AYT_11' | 'LGS' | 'manuel';
+export type DevelopmentTypeGroup = 'TYT' | 'TYT_11' | 'AYT' | 'AYT_11' | 'LGS' | 'LGS_7' | 'manuel';
 export type DevelopmentStatus =
   | 'insufficient_data'
   | 'improving'
@@ -1107,6 +1116,11 @@ export interface DevelopmentOutcomeSeriesPoint {
 }
 
 export interface DevelopmentOutcome {
+  parent_outcome_name?: string;
+  subject_id?: number | null;
+  topic_id?: number | null;
+  outcome_id?: number | null;
+  sub_outcome_id?: number | null;
   name: string;
   subject: string;
   topic: string;
@@ -1130,6 +1144,8 @@ export interface DevelopmentOutcome {
 }
 
 export interface DevelopmentSubject {
+  incomplete_breakdown?: boolean;
+  score_included?: boolean;
   name: string;
   exam_count: number;
   average_net: number | null;
@@ -1194,6 +1210,7 @@ export interface DevelopmentPriority {
 }
 
 export interface DevelopmentResponse {
+  agenda?: StudyAgenda;
   student_name: string;
   filters: {
     exam_type_group: DevelopmentTypeGroup | null;
@@ -1279,4 +1296,23 @@ export interface OptikFormOzet {
 
 export interface OptikFormDetay extends OptikFormOzet {
   alanlar: OptikFormAlani[];
+}
+
+
+export interface StudyRecommendation {
+  key: string; revision: string; kind: 'current' | 'recurring' | 'recheck' | 'academic';
+  subject: string; topic: string; name: string; reason: string;
+  exam_id: number; answer_id: number; exam_name: string; exam_date: string | null;
+  correct: number; wrong: number; empty: number; question_count: number;
+  gain: number | null; mastery_rate: number | null; confidence: string;
+  exam_count: number; missed_exam_count: number;
+  questions: {n: number; result: string; item_id: number}[];
+  evidence: DevelopmentOutcomeSeriesPoint[];
+  status: string; note: string; assignment_id: number | null; stale: boolean;
+  assignment_active?: boolean; assignment_status?: string;
+}
+export interface StudyAgenda {
+  items: StudyRecommendation[]; source_exam_id: number; source_answer_id: number;
+  mapped_questions: number; total_questions: number; empty_reason: string | null;
+  followups?: {id: number; name: string; subject: string; assignment_id: number | null; status: string; before: string; after: string | null}[];
 }

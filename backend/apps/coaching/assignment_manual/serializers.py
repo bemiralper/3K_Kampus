@@ -433,6 +433,7 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
 
 
 class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
+    exam_study_action = serializers.IntegerField(required=False, write_only=True, min_value=1)
     """Ödev Oluşturma Serializer"""
     # Yazma için özel nested serializer kullan
     lessons = serializers.ListField(
@@ -455,7 +456,7 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
             'due_date', 'reminder_date',
             'expected_accuracy_percent', 'minimum_completion_percent',
             'estimated_duration_minutes', 'difficulty_level',
-            'coach_notes', 'source_assignment', 'template_id', 'lessons'
+            'coach_notes', 'source_assignment', 'template_id', 'lessons', 'exam_study_action'
         ]
 
     @staticmethod
@@ -473,6 +474,8 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
         return ids
 
     def validate(self, data):
+        if self.instance is not None and 'exam_study_action' in data:
+            raise serializers.ValidationError({'exam_study_action': 'Ödevin sınav kaynağı sonradan değiştirilemez.'})
         from apps.resources.models import ResourceContent
 
         student = data.get('student')
@@ -606,6 +609,7 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
         from django.db import transaction
 
         lessons_data = validated_data.pop('lessons', [])
+        exam_action_id = validated_data.pop('exam_study_action', None)
 
         request = self.context.get('request')
         if request and request.user.is_authenticated:
@@ -617,8 +621,38 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
             validated_data['assigned_date'] = timezone.now()
 
         with transaction.atomic():
+            action = None
+            if exam_action_id:
+                from apps.coaching.olcme_degerlendirme.models import ExamStudyAction
+                from apps.coaching.olcme_degerlendirme.views.student_exam_views import student_exam_scope, scoped_answers
+                from apps.coaching.olcme_degerlendirme.services.development_analysis import build_development_analysis
+                student, err = student_exam_scope(request, validated_data['student'].pk)
+                if err is not None:
+                    raise serializers.ValidationError({'exam_study_action': 'Öneriye erişim yok.'})
+                action = ExamStudyAction.objects.select_for_update().filter(pk=exam_action_id, student=student).first()
+                if not action or action.status not in ('planned', 'reviewed', 'assigned'):
+                    raise serializers.ValidationError({'exam_study_action': 'Öneriyi önce inceleyip plana alın.'})
+                if action.assignment_id:
+                    if not action.assignment.is_active:
+                        raise serializers.ValidationError({'exam_study_action': 'Bağlı ödev pasif; öneriyi yeniden inceleyin.'})
+                    return action.assignment
+                from apps.coaching.olcme_degerlendirme.models import StudentAnswer
+                StudentAnswer.objects.select_for_update().get(pk=action.answer_id)
+                filters = action.snapshot.get('_filters') or {}
+                live = build_development_analysis(student, exam_type=filters.get('exam_type_group'),
+                    window=filters.get('window'), exam_ids=filters.get('exam_ids'),
+                    date_from=filters.get('date_from'), date_to=filters.get('date_to'),
+                    answers_queryset=scoped_answers(request, student), custom_selection=filters.get('window') == 'custom')
+                row = next((r for r in (live.get('agenda') or {}).get('items', []) if r['key'] == action.source_key), None)
+                if not row or row['revision'] != action.revision:
+                    raise serializers.ValidationError({'exam_study_action': 'Sınav verisi değişti; öneriyi yeniden inceleyin.'})
             assignment = ManualAssignment.objects.create(**validated_data)
             self._create_lessons(assignment, lessons_data)
+            if action:
+                action.assignment = assignment
+                action.status = 'assigned'
+                action.actor = request.user
+                action.save(update_fields=['assignment', 'status', 'actor', 'updated_at'])
 
         return assignment
 

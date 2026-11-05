@@ -143,8 +143,12 @@ def _apply_ranks(exam, answers, year_blocks, alan):
                 key=lambda a: year_blocks[a.id]['puan_turleri'][pt]['puan'],
                 reverse=True,
             )
+            previous, rank = None, 0
             for idx, answer in enumerate(ordered, 1):
-                year_blocks[answer.id]['ranks'][pt] = idx
+                score = year_blocks[answer.id]['puan_turleri'][pt]['puan']
+                if score != previous:
+                    rank, previous = idx, score
+                year_blocks[answer.id]['ranks'][pt] = rank
         for answer in cohort:
             pt_key = _ALAN_TO_PUAN_TURU.get(alan.get(answer.student_id), 'SAY')
             if pt_key not in track_keys:
@@ -168,8 +172,12 @@ def _apply_ranks(exam, answers, year_blocks, alan):
             year_blocks[answer.id]['toplam_ogrenci'] = total
         return
     ordered = sorted(cohort, key=lambda a: year_blocks[a.id]['puan'], reverse=True)
+    previous, rank = None, 0
     for idx, answer in enumerate(ordered, 1):
-        year_blocks[answer.id]['kurum_ici_sira'] = idx
+        score = year_blocks[answer.id]['puan']
+        if score != previous:
+            rank, previous = idx, score
+        year_blocks[answer.id]['kurum_ici_sira'] = rank
         year_blocks[answer.id]['toplam_ogrenci'] = total
     for answer in answers:
         if answer.id not in cohort_ids:
@@ -254,7 +262,7 @@ def refresh_exam_scores(exam, *, follow_linked: bool = True) -> int:
             for a in answers
         }
         for block in year_blocks.values():
-            block['scoring_version'] = 2
+            block['scoring_version'] = 3
         _apply_ranks(exam, answers, year_blocks, alan)
         for answer in answers:
             payload[answer.id][str(year)] = year_blocks[answer.id]
@@ -300,7 +308,7 @@ def blocks_for_answers(exam, answers, year) -> dict[int, dict]:
             block = (found.get(answer_id).by_year if found.get(answer_id) else None) or {}
             if year_key not in block:
                 return True
-            if exam.exam_type == 'YKS_AYT' and (block[year_key] or {}).get('scoring_version', 0) < 2:
+            if (block[year_key] or {}).get('scoring_version', 0) < 3:
                 return True
             if needs_pt and not (block.get(year_key) or {}).get('puan_turleri'):
                 return True

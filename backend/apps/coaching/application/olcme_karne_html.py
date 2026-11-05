@@ -387,32 +387,12 @@ def _topic_tables(data: dict, scope: dict) -> list[dict]:
 
 def _priorities(blocks: list[dict], scope: dict, penalty: float, limit: int = 3) -> list[dict]:
     """Konular, puana giren testlerden seçilir. Alan dışı boş test sahte öncelik üretmesin."""
-    names = scope['score_names']
-    rows = []
-    for block in blocks:
-        for table in block['tables']:
-            if names and table.get('title') not in names and block.get('heading') not in names:
-                continue
-            for r in table.get('rows') or []:
-                wrong, empty = int(_num(r.get('yanlis'))), int(_num(r.get('bos')))
-                if wrong + empty <= 0:
-                    continue
-                gain = wrong * (1 + penalty) + empty
-                rows.append((gain, _num(r.get('basari')), r.get('name') or '', table.get('title') or '', wrong, empty))
-    if not rows:
-        for s in scope['score_leaves']:
-            wrong, empty = int(_num(s.get('wrong'))), int(_num(s.get('empty')))
-            if wrong + empty <= 0:
-                continue
-            gain = wrong * (1 + penalty) + empty
-            rows.append((gain, _ratio(s.get('net'), s.get('question_count')), s.get('section_name') or '', '', wrong, empty))
-    rows.sort(key=lambda t: (-t[0], t[1]))
-    out = []
-    for gain, _b, name, title, wrong, empty in rows[:limit]:
-        bits = [f'{wrong} yanlış' if wrong else '', f'{empty} boş' if empty else '']
-        detail = ' · '.join(b for b in [title, *bits] if b)
-        out.append({'name': name, 'detail': detail, 'gain': tr(gain)})
-    return out
+    from apps.coaching.olcme_degerlendirme.services.study_recommendations import current_losses
+    rows = current_losses(blocks, scope['score_names'], scope['score_leaves'], penalty)
+    return [{'name': r['name'], 'gain': tr(r['gain']),
+             'detail': ' · '.join(str(b) for b in [r.get('subject') if not r.get('section_fallback') else '',
+                         f"{r['wrong']} yanlış" if r['wrong'] else '',
+                         f"{r['empty']} boş" if r['empty'] else ''] if b)} for r in rows[:limit]]
 
 
 def _difficulty(data: dict, penalty: float) -> dict | None:

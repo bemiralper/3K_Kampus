@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import Link from 'next/link';
+import { studentExamApi } from '@/components/olcme/api';
 import { newOperationKey, payloadDigest } from '@/lib/operation-key';
 import { useSearchParams } from 'next/navigation';
 import { useAuth } from '@/lib/contexts/AuthContext';
@@ -491,6 +492,17 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     if (!sourceKontrolAssignmentId) return pendingControls;
     return pendingControls.filter((pc) => pc.id !== sourceKontrolAssignmentId);
   }, [pendingControls, sourceKontrolAssignmentId]);
+  const examStudyActionId = Number(searchParams.get('exam_action')) || null;
+  const [examStudySource, setExamStudySource] = useState<{subject: string; topic: string; name: string; reason: string} | null>(null);
+  const [examStudyError, setExamStudyError] = useState('');
+  useEffect(() => {
+    let cancelled = false;
+    if (!examStudyActionId || !preselectedStudentId) return;
+    studentExamApi.studyActionDetail(Number(preselectedStudentId), examStudyActionId)
+      .then(data => { if (!cancelled) { setExamStudySource(data.snapshot); if(data.assignment_id) setExamStudyError(`Bu önerinin #${data.assignment_id} numaralı ödevi zaten var. Sınavlar sayfasındaki bağlı ödevden devam edin.`); } })
+      .catch(err => { if (!cancelled) setExamStudyError(err instanceof Error ? err.message : 'Sınav önerisi yüklenemedi.'); });
+    return () => { cancelled = true; };
+  }, [examStudyActionId, preselectedStudentId]);
   const preselectedLessonId = (() => {
     const raw = searchParams.get('lesson');
     if (!raw) return null;
@@ -990,7 +1002,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
     applyCompletionNotes([stamped]);
   }, [bookDetails, selectedResource, cart, applyCompletionNotes, topicK3]);
 
-  const removeContents = (ids: number[]) => {
+  const removeContents = useCallback((ids: number[]) => {
     const idSet = new Set(ids);
     setCart((prev) => prev.filter((c) => !idSet.has(c.id)));
     setContentNotes((prev) => {
@@ -998,16 +1010,16 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       ids.forEach((id) => { delete n[id]; });
       return n;
     });
-  };
+  }, []);
 
-  const removeContent = (id: number) => {
+  const removeContent = useCallback((id: number) => {
     removeContents([id]);
-  };
+  }, [removeContents]);
 
   const toggleContent = useCallback((c: Content, t: Topic, u: Unit) => {
     if (cart.some(x => x.id === c.id)) removeContent(c.id);
     else addContent(c, t, u);
-  }, [cart, addContent]);
+  }, [cart, addContent, removeContent]);
 
   const selectAllUnit = useCallback((unit: Unit) => {
     if (!bookDetails || !selectedResource) return;
@@ -1344,6 +1356,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       ? (selectedStudent ? [selectedStudent] : [])
       : (multiSelect ? selectedStudents : (selectedStudent ? [selectedStudent] : []));
     if (targetStudents.length === 0 || cart.length === 0) return;
+    if (examStudyActionId && (!examStudySource || examStudyError)) { flash(examStudyError || 'Sınav önerisi doğrulanmalı.'); return; }
     if (savingRef.current) return;
     savingRef.current = true;
     const openWhatsApp = options?.openWhatsApp ?? status === 'PUBLISHED';
@@ -1439,6 +1452,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
           lessons,
           ...(packageTemplateId && !editingAssignmentId ? { template_id: packageTemplateId } : {}),
           ...(sourceAssignmentId && !editingAssignmentId ? { source_assignment: sourceAssignmentId } : {}),
+          ...(examStudyActionId && !editingAssignmentId ? { exam_study_action: examStudyActionId } : {}),
         };
         const fingerprint = JSON.stringify([body, localStorage.getItem('3k_active_kurum'), localStorage.getItem('3k_active_sube'), localStorage.getItem('3k_active_egitim_yili')]);
         const digest = await payloadDigest(fingerprint);
@@ -1671,6 +1685,10 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
         </div>
       )}
 
+      {examStudyActionId && <section role="status" style={{padding:16, marginBottom:20, border:'1px solid #bfdbfe', borderRadius:12, background:'#eff6ff', color:'#23415d'}}>
+        <b>Sınav önerisinden çalışma planı</b>
+        {examStudySource ? <><p>{examStudySource.subject} · {examStudySource.topic}</p><p>{examStudySource.name}</p><small>{examStudySource.reason} Öğrencinin mevcut kaynağından uygun içeriği seçin; kazanım ve kitap konusu otomatik eşlenmez.</small></> : <p>{examStudyError || 'Öneri doğrulanıyor…'}</p>}
+      </section>}
       {/* Hero Header */}
       <div className="hero-header" style={{ marginBottom: 24 }}>
         <div className="hero-content">

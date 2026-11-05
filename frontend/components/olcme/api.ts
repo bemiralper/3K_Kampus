@@ -808,9 +808,9 @@ export const analysisApi = {
   },
 
   /** Öğrenci detay (sınıf/kurum kıyaslama verisi ile) */
-  studentDetail: (examId: number, answerId: number, rankingYear?: number) => {
+  studentDetail: (examId: number, answerId: number, rankingYear?: number, signal?: AbortSignal) => {
     const qs = rankingYear ? `?ranking_year=${rankingYear}` : '';
-    return request<StudentDetailResponse>(`${BASE}/${examId}/analysis/students/${answerId}/detail/${qs}`);
+    return request<StudentDetailResponse>(`${BASE}/${examId}/analysis/students/${answerId}/detail/${qs}`, {signal});
   },
 
   /** Yeni karne belgesi (PDF ile aynı HTML). Sunucuda kapalıysa enabled=false. */
@@ -1119,13 +1119,18 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
 const STUDENT_EXAM_BASE = '/api/coaching/olcme-degerlendirme/student-exams';
 
 export const studentExamApi = {
+  studyAction: (studentId: number, body: {key: string; revision: string; status: string; note?: string; filters: unknown}) =>
+    request<{id: number; status: string; assignment_id: number | null}>(`${STUDENT_EXAM_BASE}/${studentId}/study-action/`, {method: 'POST', body: JSON.stringify(body)}),
+  studyActionDetail: (studentId: number, actionId: number) =>
+    request<{id: number; status: string; assignment_id: number | null; snapshot: {subject: string; topic: string; name: string; reason: string}; note: string}>(`${STUDENT_EXAM_BASE}/${studentId}/study-action/?action_id=${actionId}`),
   /** Öğrencinin girdiği tüm sınavlar + KPI + trend */
-  results: (studentId: number, examType?: string, rankingYear?: number) => {
+  results: (studentId: number, examType?: string, rankingYear?: number, signal?: AbortSignal, light = false) => {
     const params = new URLSearchParams();
     if (examType) params.set('exam_type', examType);
+    if (light) params.set('light', '1');
     if (rankingYear) params.set('ranking_year', String(rankingYear));
     const qs = params.toString() ? `?${params}` : '';
-    return request<StudentExamResponse>(`${STUDENT_EXAM_BASE}/${studentId}/${qs}`);
+    return request<StudentExamResponse>(`${STUDENT_EXAM_BASE}/${studentId}/${qs}`, {signal});
   },
 
   development: (
@@ -1136,16 +1141,17 @@ export const studentExamApi = {
       examIds?: number[];
       dateFrom?: string;
       dateTo?: string;
-    }
+    },
+    signal?: AbortSignal
   ) => {
     const qs = new URLSearchParams();
     if (params?.examType) qs.set('exam_type', params.examType);
-    if (params?.window && params.window !== 'custom') qs.set('window', params.window);
+    if (params?.window) qs.set('window', params.window);
     if (params?.examIds?.length) qs.set('exam_ids', params.examIds.join(','));
     if (params?.dateFrom) qs.set('date_from', params.dateFrom);
     if (params?.dateTo) qs.set('date_to', params.dateTo);
     const suffix = qs.toString() ? `?${qs}` : '';
-    return request<DevelopmentResponse>(`${STUDENT_EXAM_BASE}/${studentId}/development/${suffix}`);
+    return request<DevelopmentResponse>(`${STUDENT_EXAM_BASE}/${studentId}/development/${suffix}`, {signal});
   },
 };
 

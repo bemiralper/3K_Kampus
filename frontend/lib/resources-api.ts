@@ -375,6 +375,7 @@ export interface AssignmentPackageCreateUpdate {
 }
 
 export interface AssignmentCreatePayload {
+  exam_study_action?: number;
   student: number;
   title: string;
   description?: string;

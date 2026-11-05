@@ -211,17 +211,25 @@ def build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
         )
         block = blocks_map.setdefault(parent_name, OrderedDict())
         table = block.setdefault(table_name, OrderedDict())
-        row_key = (topic, outcome or label, subject_code)
+        identity = (item.outcome_id, item.sub_outcome_id)
+        row_key = (topic, outcome or label, subject_code, identity)
         row = table.setdefault(row_key, {
             'name': label,
             'topic': topic,
             'outcome': outcome,
             'subject_code': subject_code,
+            'subject_id': sid,
+            'topic_id': getattr(getattr(item, 'outcome', None), 'topic_id', None) or getattr(getattr(getattr(item, 'sub_outcome', None), 'outcome', None), 'topic_id', None),
+            'outcome_id': item.outcome_id or getattr(getattr(item, 'sub_outcome', None), 'outcome_id', None),
+            'sub_outcome_id': item.sub_outcome_id,
+            'parent_outcome_name': getattr(getattr(item, 'outcome', None) or getattr(getattr(item, 'sub_outcome', None), 'outcome', None), 'text', '') or '',
+            'questions': [],
             'soru': 0,
             'dogru': 0,
             'yanlis': 0,
             'bos': 0,
         })
+        row['questions'].append({'n': lookup_q, 'result': result, 'item_id': item.id})
         row['soru'] += 1
         result = (comparison.get(str(lookup_q)) or {}).get('result')
         if result == 'correct':
@@ -240,6 +248,7 @@ def build_topic_blocks(exam, comparison: dict, booklet: str) -> list:
                     'title': tname,
                     'rows': [
                         {
+                            **{key: vals[key] for key in ('subject_id', 'topic_id', 'outcome_id', 'sub_outcome_id', 'parent_outcome_name', 'questions')},
                             'name': vals['name'],
                             'topic': vals.get('topic') or '',
                             'outcome': vals.get('outcome') or '',
