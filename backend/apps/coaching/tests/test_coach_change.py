@@ -117,6 +117,7 @@ class CoachChangeServiceTest(TestCase):
             sube=self.sube,
             ad='Dolu',
             soyad='Koç',
+            user=User.objects.create_user(username='dolu_koc', password='x'),
             tc_kimlik_no='33333333333',
         )
         full_coach = CoachProfile.objects.create(

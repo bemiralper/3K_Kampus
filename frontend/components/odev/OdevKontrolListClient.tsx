@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
@@ -210,6 +210,8 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
         q: debouncedSearch || undefined,
         page: targetPage,
         page_size: PAGE_SIZE,
+        sort: sortBy,
+        direction: sortOrder,
       });
       if (seq !== requestSeq.current) return;
       if (result.success !== false) {
@@ -226,7 +228,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
       flash("Ödevler yüklenemedi");
     }
     if (seq === requestSeq.current) setLoading(false);
-  }, [filterStatus, filterRisk, filterDueToday, filterOpenedForCoach, debouncedSearch, PAGE_SIZE]);
+  }, [filterStatus, filterRisk, filterDueToday, filterOpenedForCoach, debouncedSearch, PAGE_SIZE, sortBy, sortOrder]);
 
   useEffect(() => {
     loadAssignments(1);
@@ -298,27 +300,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
 
   const goDetail = (id: number) => router.push(paths.detail(id));
 
-  const sortedAssignments = useMemo(() => {
-    return [...assignments].sort((a, b) => {
-      const aDueToday = assignmentIsDueToday(a) ? 1 : 0;
-      const bDueToday = assignmentIsDueToday(b) ? 1 : 0;
-      if (aDueToday !== bDueToday) return bDueToday - aDueToday;
-
-      let cmp = 0;
-      switch (sortBy) {
-        case "created": cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime(); break;
-        case "due_date": {
-          const da = a.due_date ? new Date(a.due_date).getTime() : Infinity;
-          const db = b.due_date ? new Date(b.due_date).getTime() : Infinity;
-          cmp = da - db;
-          break;
-        }
-        case "progress": cmp = a.completion_percent - b.completion_percent; break;
-        case "student": cmp = (a.student_name || "").localeCompare(b.student_name || "", "tr"); break;
-      }
-      return sortOrder === "desc" ? -cmp : cmp;
-    });
-  }, [assignments, sortBy, sortOrder]);
+  const sortedAssignments = assignments;
 
   const dueTodayStat = stats?.due_today ?? assignments.filter((a) => assignmentIsDueToday(a)).length;
   const openedForCoachStat =
@@ -510,6 +492,7 @@ export default function OdevKontrolListClient({ variant = "admin" }: OdevKontrol
                 ? "Bugün kontrol günü olan ödevler"
                 : "Öğrencilerinizin ödevlerini kontrol edin")
               : "Atanan ödevleri filtreleyin, kontrol edin ve takip edin"}
+            {" · Tüm eğitim yıllarındaki ödev geçmişi"}
           </p>
         </div>
         {!isCoach && (

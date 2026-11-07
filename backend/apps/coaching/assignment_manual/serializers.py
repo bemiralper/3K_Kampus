@@ -463,14 +463,17 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
     def _collect_task_content_ids(lessons_data) -> list[int]:
         ids: list[int] = []
         for lesson in lessons_data or []:
-            for task in lesson.get('tasks') or []:
+            tasks = lesson.get('tasks') or []
+            if not isinstance(tasks, list) or any(not isinstance(task, dict) for task in tasks):
+                raise serializers.ValidationError({'lessons': 'Görevler geçerli bir liste olmalı.'})
+            for task in tasks:
                 raw = task.get('content_id', task.get('content'))
                 if raw in (None, '', 0, '0'):
                     continue
                 try:
                     ids.append(int(raw))
                 except (TypeError, ValueError):
-                    continue
+                    raise serializers.ValidationError({'lessons': 'İçerik kimliği sayı olmalı.'})
         return ids
 
     def validate(self, data):
@@ -495,10 +498,17 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                 'student': 'Bu öğrenci pasif durumda. Pasif öğrenciye yeni ödev atanamaz.',
             })
 
+        source = data.get('source_assignment')
+        if source is not None and student is not None and (source.student_id != student.pk or not source.is_active):
+            raise serializers.ValidationError({'source_assignment': 'Kaynak ataması bu öğrenciye ait ve aktif olmalı.'})
+        template = data.get('template')
+        if template is not None and student is not None and template.kurum_id not in (None, student.kurum_id):
+            raise serializers.ValidationError({'template_id': 'Ödev paketi bu kuruma ait değil.'})
+
         lessons_data = data.get('lessons') or []
         content_ids = self._collect_task_content_ids(lessons_data)
         if content_ids:
-            self._content_cache = ResourceContent.objects.in_bulk(content_ids)
+            self._content_cache = ResourceContent.objects.select_related('topic__unit').in_bulk(content_ids)
             existing = set(self._content_cache)
             missing = sorted({cid for cid in content_ids if cid not in existing})
             if missing:
@@ -520,6 +530,23 @@ class ManualAssignmentCreateSerializer(serializers.ModelSerializer):
                         f'{label}. Sayfayı yenileyip içeriği tekrar seçin.'
                     ),
                 })
+
+        request = self.context.get('request')
+        if request is not None:
+            from apps.resources.scoping import contents_accessible_for_request, resolve_book_for_structure
+            if content_ids and contents_accessible_for_request(request, content_ids) is None:
+                raise serializers.ValidationError({'lessons': 'Kaynak içeriğine erişim yetkiniz yok.'})
+            for lesson in lessons_data:
+                book_id = lesson.get('resource_book')
+                if book_id and resolve_book_for_structure(request, book_id) is None:
+                    raise serializers.ValidationError({'lessons': 'Kaynak kitabına erişim yetkiniz yok.'})
+                if book_id:
+                    for task in lesson.get('tasks') or []:
+                        content_id = task.get('content_id', task.get('content'))
+                        if content_id and int(content_id) in getattr(self, '_content_cache', {}):
+                            content = self._content_cache[int(content_id)]
+                            if content.topic.unit.book_id != int(book_id):
+                                raise serializers.ValidationError({'lessons': 'İçerik seçilen kitaba ait değil.'})
 
         if student is not None and data.get('status') != 'DRAFT':
             exclude_id = getattr(self.instance, 'pk', None)

@@ -1,7 +1,6 @@
 """
 Koç–öğrenci erişim kapsamı (kaynak havuzu, manuel ödev).
 """
-from django.db.models import Q
 
 
 def get_coach_profile(user):
@@ -42,7 +41,8 @@ def is_resource_admin(user):
         return False
     if user.is_superuser or _has_resource_admin_role(user):
         return True
-    if get_coach_profile(user) is not None:
+    # An inactive coach is not promoted to institution admin by is_staff.
+    if hasattr(getattr(user, 'personel', None), 'coach_profile'):
         return False
     return bool(user.is_staff)
 
@@ -107,6 +107,9 @@ def scoped_student_ids(user):
     if coach_profile is not None:
         return set(get_active_coach_student_ids(coach_profile))
 
+    if hasattr(getattr(user, 'personel', None), 'coach_profile'):
+        return set()
+
     allowed = set()
     from apps.student_resources.models import StudentResourceAssignment
 
@@ -145,20 +148,8 @@ def filter_by_student_scope(queryset, user, student_field='student_id'):
 
 
 def filter_manual_assignments(queryset, user):
-    if is_resource_admin(user):
-        return queryset
-    allowed = scoped_student_ids(user)
-    if not allowed:
-        return queryset.filter(coach=user)
-    return queryset.filter(Q(student_id__in=allowed) | Q(coach=user))
+    return filter_by_student_scope(queryset, user)
 
 
 def filter_by_assignment_scope(queryset, user, assignment_prefix='assignment'):
-    """AssignmentLesson / AssignmentTask gibi ilişkili queryset'ler."""
-    if is_resource_admin(user):
-        return queryset
-    allowed = scoped_student_ids(user)
-    q = Q(**{f'{assignment_prefix}__coach': user})
-    if allowed:
-        q = q | Q(**{f'{assignment_prefix}__student_id__in': allowed})
-    return queryset.filter(q)
+    return filter_by_student_scope(queryset, user, f'{assignment_prefix}__student_id')

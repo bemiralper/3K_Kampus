@@ -8,8 +8,8 @@ Kaynaklar:
 """
 from django.db.models import Q
 
-from apps.odeme_takip.domain.enums import KalemTuru, SozlesmeDurum
-from apps.odeme_takip.domain.models import Sozlesme, SozlesmeKalemi
+from apps.odeme_takip.domain.enums import SozlesmeDurum
+from apps.odeme_takip.domain.models import Sozlesme
 
 
 AKTIF_SOZLESME_DURUMLARI = (
@@ -73,15 +73,16 @@ def get_kocluk_ogrenci_ids(*, kurum_id=None, sube_id=None, egitim_yili_id=None):
     if egitim_yili_id:
         soz_qs = soz_qs.filter(egitim_yili_id=egitim_yili_id)
 
-    student_ids.update(
-        SozlesmeKalemi.objects.filter(
-            sozlesme__in=soz_qs,
-            kalem_turu__in=(KalemTuru.EK_HIZMET, KalemTuru.EK_HIZMET_SATISI),
-            kalem_id__in=kocluk_hizmet_ids,
-        ).values_list('sozlesme__ogrenci_id', flat=True)
+    # Read the same frozen contract scope used by access synchronization.
+    # Never grant a new service just because the live package catalog changed.
+    from apps.odeme_takip.application.services.sozlesme_erisim_sync import (
+        _desired_from_contract, _snapshot_for,
     )
-
-    student_ids.update(_students_from_grup_dersi_sozlesmeler(soz_qs, kocluk_hizmet_ids))
+    coaching_ids = set(kocluk_hizmet_ids)
+    for contract in soz_qs.prefetch_related('kalemler'):
+        _packages, services = _desired_from_contract(contract, _snapshot_for(contract, False))
+        if coaching_ids.intersection(services):
+            student_ids.add(contract.ogrenci_id)
 
     ogrenci_qs = Ogrenci.objects.filter(id__in=student_ids, aktif_mi=True)
     if kurum_id:
@@ -90,39 +91,6 @@ def get_kocluk_ogrenci_ids(*, kurum_id=None, sube_id=None, egitim_yili_id=None):
         ogrenci_qs = ogrenci_qs.filter(sube_id=sube_id)
 
     return set(ogrenci_qs.values_list('id', flat=True))
-
-
-def _students_from_grup_dersi_sozlesmeler(soz_qs, kocluk_hizmet_ids):
-    from apps.egitim_paketleri.models import EkHizmet, GrupDersi
-    from apps.ogrenci_kayit.application.services import resolve_grup_dersi_inclusions
-
-    ids = set()
-    kalemler = SozlesmeKalemi.objects.filter(
-        sozlesme__in=soz_qs,
-        kalem_turu=KalemTuru.GRUP_DERSI,
-    ).select_related('sozlesme')
-
-    for kalem in kalemler:
-        try:
-            grup = GrupDersi.objects.get(id=kalem.kalem_id)
-        except GrupDersi.DoesNotExist:
-            continue
-
-        soz = kalem.sozlesme
-        dahil_ids, _ = resolve_grup_dersi_inclusions(
-            grup,
-            kurum_id=soz.kurum_id,
-            sube_id=soz.sube_id,
-            egitim_yili_id=soz.egitim_yili_id,
-        )
-        if EkHizmet.objects.filter(
-            id__in=dahil_ids,
-            hizmet_turu='kocluk',
-            aktif_mi=True,
-        ).exists():
-            ids.add(soz.ogrenci_id)
-
-    return ids
 
 
 def get_assignable_kocluk_ogrenci_queryset(*, kurum_id=None, sube_id=None, egitim_yili_id=None):

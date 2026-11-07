@@ -201,3 +201,70 @@ test('saving a task note and resetting one task do not reload the detail tree', 
   expect(resets).toBe(1);
   expect(detailLoads).toBe(before);
 });
+
+test('list sorting is requested from the server before pagination', async ({ page }) => {
+  await mockPortal(page);
+  const queries: URLSearchParams[] = [];
+  await page.route('**/api/coaching/manual-assignments/assignments/**', async route => {
+    const url = new URL(route.request().url());
+    if (!url.pathname.endsWith('/assignments/')) return route.fallback();
+    queries.push(url.searchParams);
+    await route.fulfill({ json: { success: true, data: [{ ...assignment, id: 42 }], count: 120 } });
+  });
+  await page.goto('/coach/odev/kontrol');
+  const sort = page.locator('select').filter({ has: page.locator('option[value="student-asc"]') });
+  await sort.selectOption('student-asc');
+  await expect.poll(() => queries.at(-1)?.get('sort')).toBe('student');
+  expect(queries.at(-1)?.get('direction')).toBe('asc');
+  expect(queries.at(-1)?.get('page')).toBe('1');
+  await page.getByRole('button', { name: 'Sonraki', exact: true }).first().click();
+  await expect.poll(() => queries.at(-1)?.get('page')).toBe('2');
+  expect(queries.at(-1)?.get('sort')).toBe('student');
+});
+
+test('routine quota failure is visible and retried without duplicating homework', async ({ page }) => {
+  await mockPortal(page);
+  await page.addInitScript(() => {
+    sessionStorage.setItem('odev-ver-draft:v1:1', JSON.stringify({ studentId: 1,
+      cart: [{ id: -1, contentId: 0, contentName: 'Problem hedefi', contentType: 'QUOTA', topicId: -1,
+        topicName: 'Problem', unitId: 0, unitName: '', bookId: 1, bookName: 'Problem Kitabı',
+        lessonId: 1, lessonName: 'Matematik', questionCount: 140, pageCount: null, quotaKind: 'PROBLEM', dailyQuestionCount: 20 }],
+      title: 'Rutin Test', notes: '', dueDate: '2099-11-10', priority: 'MEDIUM', currentStep: 3, updatedAt: Date.now(), contentNotes: {},
+    }));
+  });
+  await page.route('**/api/coaching/students/**', route => route.fulfill({ json: { success: true, data: [{ id: 1, ad: 'Ayşe', soyad: 'Bir' }] } }));
+  await page.route('**/api/student-resources/assignments/student_detail/**', route => route.fulfill({ json: { success: true, data: { student: { id: 1 }, lessons: [] } } }));
+  let creates = 0;
+  let quotas = 0;
+  await page.route('**/api/coaching/manual-assignments/assignments/', async route => {
+    creates++;
+    await route.fulfill({ json: { success: true, data: { ...assignment, id: 33 } } });
+  });
+  await page.route('**/api/student-resources/routine-quotas/', async route => {
+    quotas++;
+    await route.fulfill({ status: quotas === 1 ? 400 : 200, json: { success: quotas > 1, error: quotas === 1 ? 'Sentetik kota hatası' : undefined, data: {} } });
+  });
+  await page.goto('/coach/odev/ver');
+  await page.getByText('Ayşe Bir', { exact: true }).click();
+  await page.getByRole('button', { name: 'Taslak Kaydet', exact: true }).click();
+  await expect(page.locator('section[role="alert"]')).toContainText('1 rutin hedef güncellenemedi');
+  expect(creates).toBe(1);
+  await page.getByRole('button', { name: 'Yalnızca rutin hedefleri tekrar dene' }).click();
+  await expect(page.locator('section[role="alert"]')).toHaveCount(0);
+  expect(quotas).toBe(2);
+  expect(creates).toBe(1);
+});
+
+test('notification preview shows the total while history remains limited', async ({ page }) => {
+  await mockPortal(page);
+  await page.route('**/notify-preview/**', route => route.fulfill({ json: {
+    success: true, data: { operation_ledger_enabled: true, recipients: [{ recipient_type: 'ogrenci',
+      ogrenci_id: 1, display_name: 'Sentetik Öğrenci', telefon: '***', body: 'Plan', send_count: 20,
+      send_history: Array.from({ length: 15 }, () => ({ sent_at: '07.11.2026 10:00', status: 'DELIVERED' })),
+    }], send_mode: 'document' },
+  } }));
+  await page.goto('/coach/odev/kontrol/1');
+  await page.getByRole('button', { name: /WhatsApp.*Plan PDF Gönder/ }).click();
+  await expect(page.getByText('20 gönderim kaydı', { exact: false })).toBeVisible();
+  await expect(page.getByText('Son 15 işlem gösteriliyor', { exact: false })).toBeVisible();
+});

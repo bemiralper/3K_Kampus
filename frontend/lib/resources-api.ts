@@ -1515,6 +1515,8 @@ export async function fetchAssignments(params?: {
   /** Verilirse backend sayfalama devreye girer (yoksa tüm liste döner) */
   page?: number;
   page_size?: number;
+  sort?: "created" | "due_date" | "progress" | "student";
+  direction?: "asc" | "desc";
 }): Promise<FetchAssignmentsResult> {
   const searchParams = new URLSearchParams();
   if (params?.student_id) searchParams.append('student_id', String(params.student_id));
@@ -1528,6 +1530,8 @@ export async function fetchAssignments(params?: {
   if (params?.q) searchParams.append('q', params.q);
   if (params?.page) searchParams.append('page', String(params.page));
   if (params?.page_size) searchParams.append('page_size', String(params.page_size));
+  if (params?.sort) searchParams.append('sort', params.sort);
+  if (params?.direction) searchParams.append('direction', params.direction);
 
   const qs = searchParams.toString();
   const path = qs
@@ -1708,18 +1712,6 @@ export async function fetchStudentAssignmentStats(
   };
 }
 
-/**
- * Ödev durumunu güncelle (task seviyesinde)
- */
-export async function updateTaskStatus(
-  taskId: number,
-  data: {
-    status?: string;
-    completed_at?: string | null;
-  }
-): Promise<ApiResponse<AssignmentTask>> {
-  return apiPut<AssignmentTask>(`/api/coaching/manual-assignments/tasks/${taskId}/`, data);
-}
 
 /**
  * Ödev risk durumunu güncelle

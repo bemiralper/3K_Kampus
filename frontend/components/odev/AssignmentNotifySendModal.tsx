@@ -54,7 +54,7 @@ function formatSendHistory(r: AssignmentNotifyRecipient): string | null {
   const count = r.send_count ?? 0;
   if (count <= 0) return null;
   const last = r.last_sent_at ? `Son: ${r.last_sent_at}` : "";
-  return `${count >= 15 ? "Son 15 işlem" : `${count} işlem`}${last ? ` · ${last}` : ""}`;
+  return `${count} gönderim kaydı${count > 15 ? " · Son 15 işlem gösteriliyor" : ""}${last ? ` · ${last}` : ""}`;
 }
 
 export default function AssignmentNotifySendModal({

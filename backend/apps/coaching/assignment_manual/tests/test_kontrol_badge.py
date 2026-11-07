@@ -40,6 +40,7 @@ class KontrolBadgeTest(TestCase):
         self.client = APIClient()
         self.client.force_authenticate(user=self.coach)
         self.client.defaults['HTTP_X_KURUM_ID'] = str(self.kurum.id)
+        self.client.defaults['HTTP_X_SUBE_ID'] = str(self.sube.id)
 
         # "Bugün" için gerçek `now()` kullanılmaz — refresh_manual_assignment_overdue()
         # `due_date < now()` olan her şeyi OVERDUE yapıyor; test isteği gönderene kadar

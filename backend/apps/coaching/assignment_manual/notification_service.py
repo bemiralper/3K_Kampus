@@ -193,14 +193,7 @@ class AssignmentNotificationService:
     def _source_id(self, notify_type: str, assignment_id: int, recipient_key: str) -> str:
         return f'{assignment_id}:{notify_type}:{recipient_key}'
 
-    def _recipient_send_history(
-        self,
-        kurum_id: int,
-        source_ref: str,
-        *,
-        veli_id: int | None = None,
-        ogrenci_id: int | None = None,
-    ) -> list[dict]:
+    def _recipient_messages(self, kurum_id, source_ref, *, veli_id=None, ogrenci_id=None):
         from apps.communication.domain.models import Message
 
         qs = Message.objects.filter(
@@ -216,6 +209,17 @@ class AssignmentNotificationService:
                 Q(conversation__veli_id__isnull=True),
             )
 
+        return qs
+
+    def _recipient_send_history(
+        self,
+        kurum_id: int,
+        source_ref: str,
+        *,
+        veli_id: int | None = None,
+        ogrenci_id: int | None = None,
+    ) -> list[dict]:
+        qs = self._recipient_messages(kurum_id, source_ref, veli_id=veli_id, ogrenci_id=ogrenci_id)
         history: list[dict] = []
         for msg in qs[:15]:
             history.append({
@@ -272,7 +276,7 @@ class AssignmentNotificationService:
                 telefon=self._mask_phone(phone),
                 body=body,
                 skip_reason=skip,
-                send_count=len(history),
+                send_count=self._recipient_messages(kurum_id, source_ref, veli_id=veli.id).count(),
                 last_sent_at=history[0]['sent_at'] if history else None,
                 send_history=history,
             ))
@@ -314,7 +318,7 @@ class AssignmentNotificationService:
             telefon=self._mask_phone(student_phone) if student_phone else '',
             body=student_body,
             skip_reason=student_skip,
-            send_count=len(student_history),
+            send_count=self._recipient_messages(kurum_id, student_source, ogrenci_id=ogrenci.id).count(),
             last_sent_at=student_history[0]['sent_at'] if student_history else None,
             send_history=student_history,
         ))

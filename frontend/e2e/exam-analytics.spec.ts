@@ -39,7 +39,7 @@ async function portal(page:Page, options:{fail?:boolean;delay?:boolean;hang?:boo
    const subject=makeSubject(ids);
    if(url.searchParams.get('exam_type')==='AYT') subject.name='AYT Matematik';
    const subjects=options.rich?richSubjects(ids):[subject];
-   if(options.zeroLoss){subjects[0].topics.push({name:'Kayıpsız konu',question_count:10,correct:10,wrong:0,empty:0,mastery_rate:100,outcomes:[]});subjects[0].outcomes.push({...subjects[0].outcomes[0],name:'Kayıpsız kazanım',correct:10,wrong:0,empty:0,question_count:10});subjects.push({...subjects[0],name:'Kayıpsız ders',series:ids.map(id=>({exam_id:id,correct:10,wrong:0,empty:0,question_count:10,net:10})),topics:[],outcomes:[]} as DevelopmentSubject);}
+   if(options.zeroLoss){subjects[0].topics.push({name:'Kayıpsız konu',question_count:10,correct:10,wrong:0,empty:0,mastery_rate:100,outcomes:[]});subjects[0].outcomes.push({...subjects[0].outcomes[0],name:'Kayıpsız kazanım',correct:10,wrong:0,empty:0,question_count:10});subjects.push({...subjects[0],name:'Kayıpsız ders',series:ids.map(id=>({exam_id:id,exam_name:`Deneme ${id}`,exam_date:'2026-11-01',performance_rate:100,correct:10,wrong:0,empty:0,question_count:10,net:10})),topics:[],outcomes:[]} as DevelopmentSubject);}
    body={subjects:options.noMappings?[]:subjects,exam_count:ids.length,exams:[],summary:{},priorities:[],filters:{}};
   }
   await route.fulfill({json:body});

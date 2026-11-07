@@ -339,6 +339,20 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
   /* ─── Toast ─── */
   const [toast, setToast] = useState<string | null>(null);
+  const [pendingQuotaUpdates, setPendingQuotaUpdates] = useState<Parameters<typeof upsertStudentRoutineQuota>[0][]>([]);
+  const [retryingQuotas, setRetryingQuotas] = useState(false);
+  const retryQuotaUpdates = async () => {
+    setRetryingQuotas(true);
+    const failed: typeof pendingQuotaUpdates = [];
+    for (const payload of pendingQuotaUpdates) {
+      try {
+        const result = await upsertStudentRoutineQuota(payload);
+        if (!result.success) failed.push(payload);
+      } catch { failed.push(payload); }
+    }
+    setPendingQuotaUpdates(failed);
+    setRetryingQuotas(false);
+  };
   const flash = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
   /* ─── Kontrolü tamamlanmamış ödev uyarısı ─── */
@@ -1437,6 +1451,7 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       let lastCreatedId: number | null = null;
       let lastStudentName = '';
       let lastError = '';
+      let quotaUpdatesFailed = false;
       const createdSends: { id: number; name: string }[] = [];
       const quotaItems = cart.filter((c) => c.quotaKind);
       const createItems = [];
@@ -1497,12 +1512,21 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
             await Promise.all(quotaItems.map((item) => {
               const daily = item.dailyQuestionCount
                 || Math.max(1, Math.round((item.questionCount || 7) / 7));
-              return upsertStudentRoutineQuota({
+              const quotaPayload: Parameters<typeof upsertStudentRoutineQuota>[0] = {
                 student: student.id,
                 kind: item.quotaKind as RoutineQuotaKind,
                 daily_question_count: daily,
                 resource_book: item.bookId,
-              }).catch(() => undefined);
+              };
+              const rememberFailure = () => {
+                quotaUpdatesFailed = true;
+                setPendingQuotaUpdates(previous => [
+                  ...previous.filter(row => row.student !== quotaPayload.student || row.kind !== quotaPayload.kind), quotaPayload,
+                ]);
+              };
+              return upsertStudentRoutineQuota(quotaPayload).then(result => {
+                if (!result.success) rememberFailure();
+              }).catch(rememberFailure);
             }));
           } else {
             failCount++;
@@ -1520,6 +1544,12 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
 
       if (failCount === 0) {
         storageKeys.forEach((key) => sessionStorage.removeItem(key));
+        if (quotaUpdatesFailed) {
+          for (const student of targetStudents) clearOdevVerDraft(student.id);
+          resetAll();
+          flash('Ödev kaydedildi. Güncellenemeyen rutin hedefleri uyarıdan tekrar deneyebilirsiniz.');
+          return;
+        }
         const studentNames = targetStudents.length === 1
           ? `${targetStudents[0].ad} ${targetStudents[0].soyad}`
           : `${successCount} öğrenci`;
@@ -1672,6 +1702,14 @@ export default function OdevVerWizard({ variant = 'admin' }: OdevVerWizardProps)
       className={`odev-ver-root${isCoach ? " odev-ver-coach" : ""}`}
       style={{ padding: 0, fontFamily: "'Poppins', sans-serif" }}
     >
+      {pendingQuotaUpdates.length > 0 && (
+        <section role="alert" style={{ padding: 16, marginBottom: 16, border: '1px solid #f59e0b', borderRadius: 12 }}>
+          <p>Ödev kaydedildi. {pendingQuotaUpdates.length} rutin hedef güncellenemedi.</p>
+          <button type="button" disabled={retryingQuotas} onClick={retryQuotaUpdates}>
+            {retryingQuotas ? 'Hedefler güncelleniyor…' : 'Yalnızca rutin hedefleri tekrar dene'}
+          </button>
+        </section>
+      )}
       {/* Toast */}
       {toast && (
         <div style={{

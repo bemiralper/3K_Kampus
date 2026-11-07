@@ -129,3 +129,15 @@ class AssignmentListSearchPaginationTest(TestCase):
         stats_res = self.client.get(STATS_URL)
         self.assertEqual(stats_res.status_code, 200)
         self.assertEqual(stats_res.data['data']['due_today'], 1)
+
+    def test_ordering_is_applied_before_pagination(self):
+        response = self.client.get(ASSIGNMENTS_URL, {'page': 1, 'page_size': 2, 'sort': 'student', 'direction': 'asc'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row['student'] for row in response.json()['data']], [self.ayse.pk, self.ayse.pk])
+        response = self.client.get(ASSIGNMENTS_URL, {'page': 1, 'page_size': 2, 'sort': 'student', 'direction': 'desc'})
+        self.assertEqual([row['student'] for row in response.json()['data']], [self.mehmet.pk, self.mehmet.pk])
+
+    def test_sort_ties_have_stable_id_order(self):
+        rows = self.client.get(ASSIGNMENTS_URL, {'sort': 'progress', 'direction': 'asc'}).json()['data']
+        expected = list(ManualAssignment.objects.order_by('completion_percent', 'id').values_list('id', flat=True))
+        self.assertEqual([row['id'] for row in rows], expected)

@@ -41,12 +41,17 @@ def close_revoked_sozlesme_erisim(sozlesme, *, dry_run=False) -> dict:
     from django.db import transaction
     from apps.ozel_ders.services.sync_service import reconcile_contract_programs
     with transaction.atomic():
+        from apps.ogrenci.domain.models import Ogrenci
+        Ogrenci.objects.select_for_update().filter(pk=sozlesme.ogrenci_id).exists()
         result = _close_stale_erisim(sozlesme, dry_run=dry_run)
         result['closed_programs'] = reconcile_contract_programs(sozlesme, dry_run=dry_run)
+        if not dry_run:
+            from apps.coaching.services.coach_student_visibility import reconcile_coaching_entitlement
+            result['closed_coach_assignments'] = reconcile_coaching_entitlement(sozlesme.ogrenci_id)
         return result
 
 
-def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False, refresh_inclusions=None) -> dict:
+def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False, refresh_inclusions=None, preserve_coach_assignment=False) -> dict:
     """Sözleşme kalemleri için eksik erişim kayıtlarını açar.
 
     refresh_inclusions True ise paket kataloğundaki güncel dahil hizmetler
@@ -73,6 +78,12 @@ def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False, refresh_inclusio
         from apps.ogrenci.domain.models import Ogrenci
 
         Ogrenci.objects.select_for_update().filter(pk=sozlesme.ogrenci_id).exists()
+        from apps.ogrenci.domain.models import OgrenciEkHizmet
+        from apps.coaching.services.eligibility import _kocluk_ek_hizmet_ids
+        had_coaching_access = OgrenciEkHizmet.objects.filter(
+            ogrenci_id=sozlesme.ogrenci_id, aktif_mi=True,
+            ek_hizmet_id__in=_kocluk_ek_hizmet_ids(),
+        ).exists()
         sozlesme.refresh_from_db()
         snap = _copy_snapshot(_snapshot_for(sozlesme, refresh_inclusions))
         # Kataloga sonradan eklenen deneme buraya yazılmaz. Öğrencide zaten
@@ -113,6 +124,11 @@ def sync_sozlesme_erisim(sozlesme, *, user=None, dry_run=False, refresh_inclusio
         result.update(closed)
         from apps.ozel_ders.services.sync_service import reconcile_contract_programs
         result['closed_programs'] = reconcile_contract_programs(sozlesme, user=user, dry_run=dry_run)
+        if not dry_run:
+            from apps.coaching.services.coach_student_visibility import reconcile_coaching_entitlement
+            result['closed_coach_assignments'] = reconcile_coaching_entitlement(
+                sozlesme.ogrenci_id, had_coaching_access=had_coaching_access and not preserve_coach_assignment,
+            )
     return result
 
 

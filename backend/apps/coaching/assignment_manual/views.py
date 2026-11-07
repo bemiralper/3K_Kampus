@@ -393,7 +393,12 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
                 | Q(coach__last_name__icontains=search_q)
             )
 
-        return queryset.order_by('-created_at')
+        sort = self.request.query_params.get('sort', 'created')
+        direction = '' if self.request.query_params.get('direction') == 'asc' else '-'
+        fields = {'created': ['created_at'], 'due_date': ['due_date'],
+                  'progress': ['completion_percent'], 'student': ['student__ad', 'student__soyad']}
+        ordering = [direction + field for field in fields.get(sort, ['created_at'])]
+        return queryset.order_by(*ordering, direction + 'id')
 
     def get_object(self):
         obj = super().get_object()
@@ -802,11 +807,11 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         from django.db.models.functions import TruncDate
         from django.utils import timezone as dj_tz
 
-        kurum_id = get_secili_kurum_id(request)
-
+        ctx, err = mandatory_coaching_context(request)
+        if err:
+            return err
+        self._coaching_ctx = ctx
         queryset = self.get_queryset().filter(effective_status__in=KONTROL_BADGE_STATUSES)
-        if kurum_id:
-            queryset = queryset.filter(student__kurum_id=kurum_id)
         overdue = queryset.filter(effective_status=ManualAssignment.Status.OVERDUE).count()
         pending = queryset.filter(
             effective_status__in=(
@@ -2196,7 +2201,7 @@ class ManualAssignmentViewSet(viewsets.ModelViewSet):
         return Response({'success': True, 'data': result})
 
 
-class AssignmentLessonViewSet(viewsets.ModelViewSet):
+class AssignmentLessonViewSet(viewsets.ReadOnlyModelViewSet):
     """Ders Bloğu ViewSet"""
     queryset = AssignmentLesson.objects.all()
     serializer_class = AssignmentLessonSerializer
@@ -2213,9 +2218,13 @@ class AssignmentLessonViewSet(viewsets.ModelViewSet):
             self.request.user,
             assignment_prefix='assignment',
         )
-        kurum_id = get_secili_kurum_id(self.request)
-        if kurum_id:
-            queryset = queryset.filter(assignment__student__kurum_id=kurum_id)
+        ctx, err = mandatory_coaching_context(self.request)
+        if err:
+            return queryset.none()
+        queryset = queryset.filter(
+            assignment__is_active=True, assignment__student__kurum_id=ctx['kurum_id'],
+            assignment__student__sube_id=ctx['sube_id'],
+        )
 
         assignment_id = self.request.query_params.get('assignment_id')
         if assignment_id:
@@ -2238,7 +2247,7 @@ class AssignmentLessonViewSet(viewsets.ModelViewSet):
         return obj
 
 
-class AssignmentTaskViewSet(viewsets.ModelViewSet):
+class AssignmentTaskViewSet(viewsets.ReadOnlyModelViewSet):
     """Görev ViewSet"""
     queryset = AssignmentTask.objects.all()
     serializer_class = AssignmentTaskSerializer
@@ -2257,11 +2266,14 @@ class AssignmentTaskViewSet(viewsets.ModelViewSet):
             self.request.user,
             assignment_prefix='lesson_block__assignment',
         )
-        kurum_id = get_secili_kurum_id(self.request)
-        if kurum_id:
-            queryset = queryset.filter(
-                lesson_block__assignment__student__kurum_id=kurum_id,
-            )
+        ctx, err = mandatory_coaching_context(self.request)
+        if err:
+            return queryset.none()
+        queryset = queryset.filter(
+            lesson_block__assignment__is_active=True,
+            lesson_block__assignment__student__kurum_id=ctx['kurum_id'],
+            lesson_block__assignment__student__sube_id=ctx['sube_id'],
+        )
 
         lesson_id = self.request.query_params.get('lesson_id')
         if lesson_id:

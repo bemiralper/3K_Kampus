@@ -129,7 +129,7 @@ class SozlesmeService:
         ))
         return (sozlesme.paket_turu or '', sozlesme.paket_id, kalemler)
 
-    def _sync_erisim(self, sozlesme, user=None, *, refresh_inclusions=False):
+    def _sync_erisim(self, sozlesme, user=None, *, refresh_inclusions=False, preserve_coach_assignment=False):
         """Erişim kaydını sözleşme ile aynı işlemde günceller.
 
         Hata yutulmaz; çağıran atomic blok yarım sözleşmeyi geri alır.
@@ -140,6 +140,7 @@ class SozlesmeService:
         )
         sync_sozlesme_erisim(
             sozlesme, user=user, refresh_inclusions=refresh_inclusions,
+            preserve_coach_assignment=preserve_coach_assignment,
         )
 
     def _sync_ozel_ders_kalem(self, sozlesme, kalem, *, removed=False, user=None):
@@ -751,6 +752,7 @@ class SozlesmeService:
                     sozlesme,
                     user=user,
                     refresh_inclusions=eski_durum == SozlesmeDurum.TASLAK,
+                    preserve_coach_assignment=eski_durum == SozlesmeDurum.TASLAK,
                 )
             elif new_status in (SozlesmeDurum.IPTAL, SozlesmeDurum.FESHEDILMIS):
                 from apps.coaching.services.coach_student_visibility import (

@@ -1,6 +1,7 @@
 """
 Coaching API Views
 """
+from django.db import transaction
 from rest_framework import viewsets, status, filters
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -606,6 +607,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             'data': response.data,
         })
     
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
         ctx, err = mandatory_coaching_context(request)
         if err:
@@ -626,9 +628,24 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                 # start_date yoksa bugünü kullan
                 start_date = serializer.validated_data.get('start_date', date.today())
                 
+                from apps.ogrenci.domain.models import Ogrenci
+                from rest_framework.exceptions import ValidationError
+                from apps.coaching.services.coach_change import validate_coach_student, CoachChangeError
+                student = Ogrenci.objects.select_for_update().get(pk=student.pk)
+                coach = CoachProfile.objects.select_for_update().get(pk=serializer.validated_data['coach'].pk)
+                try:
+                    validate_coach_student(coach, student)
+                except CoachChangeError as exc:
+                    raise ValidationError({'student': exc.message})
+                if coach.available_capacity <= 0:
+                    raise ValidationError({'coach': 'Koç kapasitesi dolu.'})
+                if serializer.validated_data.get('is_primary', True) and CoachStudentAssignment.objects.filter(
+                    student=student, is_primary=True, end_date__isnull=True,
+                ).exists():
+                    raise ValidationError({'student': 'Öğrencinin zaten aktif birincil koçu var.'})
                 instance = CoachStudentAssignment.objects.create(
-                    coach=serializer.validated_data['coach'],
-                    student=serializer.validated_data['student'],
+                    coach=coach,
+                    student=student,
                     start_date=start_date,
                     is_primary=serializer.validated_data.get('is_primary', True),
                     created_by=request.user if request.user.is_authenticated else None
@@ -705,6 +722,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         })
     
     @action(detail=False, methods=['post'], url_path='bulk-assign', url_name='bulk-assign')
+    @transaction.atomic
     def bulk_assign(self, request):
         """
         Toplu öğrenci atama
@@ -730,9 +748,25 @@ class AssignmentViewSet(viewsets.ModelViewSet):
         serializer = BulkAssignSerializer(data=request.data)
         if serializer.is_valid():
             with transaction.atomic():
-                coach = CoachProfile.objects.select_for_update().get(
-                    id=serializer.validated_data['coach_id']
-                )
+                from apps.ogrenci.domain.models import Ogrenci
+                from rest_framework.exceptions import ValidationError
+                from apps.coaching.services.coach_change import validate_coach_student, CoachChangeError
+                student_ids = sorted(set(serializer.validated_data['student_ids']))
+                if len(student_ids) != len(serializer.validated_data['student_ids']):
+                    raise ValidationError({'student_ids': 'Öğrenci listesinde tekrar var.'})
+                students = list(Ogrenci.objects.select_for_update().filter(id__in=student_ids).order_by('id'))
+                coach = CoachProfile.objects.select_for_update().get(id=serializer.validated_data['coach_id'])
+                if coach.available_capacity < len(students):
+                    raise ValidationError({'coach_id': 'Koç kapasitesi yetersiz.'})
+                for student in students:
+                    try:
+                        validate_coach_student(coach, student)
+                    except CoachChangeError as exc:
+                        raise ValidationError({'student_ids': exc.message})
+                if serializer.validated_data.get('is_primary', True) and CoachStudentAssignment.objects.filter(
+                    student_id__in=student_ids, is_primary=True, end_date__isnull=True,
+                ).exists():
+                    raise ValidationError({'student_ids': 'Bazı öğrencilerin zaten aktif birincil koçu var.'})
                 student_ids = serializer.validated_data['student_ids']
                 start_date = serializer.validated_data.get('start_date', date.today())
                 is_primary = serializer.validated_data.get('is_primary', True)
@@ -753,7 +787,7 @@ class AssignmentViewSet(viewsets.ModelViewSet):
                     }, status=status.HTTP_400_BAD_REQUEST)
 
                 from apps.ogrenci.domain.models import Ogrenci
-                students = Ogrenci.objects.filter(id__in=student_ids)
+                # Students were locked and validated above.
                 
                 # Assignments oluştur
                 assignments = []
@@ -809,6 +843,20 @@ class AssignmentViewSet(viewsets.ModelViewSet):
             'error': 'Doğrulama hatası',
             'errors': serializer.errors,
         }, status=status.HTTP_400_BAD_REQUEST)
+
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        obj = self.get_object()
+        from apps.ogrenci.domain.models import Ogrenci
+        Ogrenci.objects.select_for_update().get(pk=obj.student_id)
+        CoachProfile.objects.select_for_update().get(pk=obj.coach_id)
+        response = super().update(request, *args, **kwargs)
+        obj.refresh_from_db()
+        from apps.coaching.services.coach_change import sync_student_assigned_coach, transfer_from_last_ended_primary
+        if obj.end_date is None and obj.is_primary:
+            transfer_from_last_ended_primary(student_id=obj.student_id, to_coach=obj.coach)
+        sync_student_assigned_coach(obj.student_id)
+        return response
 
     @action(detail=False, methods=['post'], url_path='change-coach', url_name='change-coach')
     def change_coach(self, request):

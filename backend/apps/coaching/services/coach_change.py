@@ -129,7 +129,7 @@ def transfer_student_coaching_work(
         counts['takvim'] = moved
     except Exception:
         logger.exception('Takvim koç devri başarısız student=%s', student_id)
-        counts['takvim'] = 0
+        raise
 
     if from_user_id and to_user_id:
         try:
@@ -141,6 +141,7 @@ def transfer_student_coaching_work(
             ).update(claimed_by_user_id=to_user_id)
         except Exception:
             logger.exception('Sohbet claim devri başarısız student=%s', student_id)
+            raise
 
     return {key: value for key, value in counts.items() if value}
 
@@ -186,6 +187,27 @@ def get_student_assignment_history(student_id: int):
     )
 
 
+def validate_coach_student(coach, student):
+    """Shared invariant for single, bulk, transfer and reopened assignments."""
+    teacher = coach.teacher
+    if (not coach.is_active or not coach.is_coach or not teacher.aktif_mi
+            or not teacher.user_id or not teacher.user.is_active):
+        raise CoachChangeError('Koç aktif olmalı ve kullanıcı hesabı bulunmalı.', code='coach_not_found')
+    if (teacher.kurum_id, teacher.sube_id) != (student.kurum_id, student.sube_id):
+        raise CoachChangeError('Koç ve öğrenci aynı kurum ve şubede olmalı.', code='scope_mismatch')
+    if not student.aktif_mi:
+        raise CoachChangeError('Pasif öğrenciye koç atanamaz.', code='student_inactive')
+    from .coach_student_visibility import is_student_visible_in_coach_portal
+    if not is_student_visible_in_coach_portal(student.pk):
+        raise CoachChangeError('Öğrencinin kaydı veya sözleşmesi kapalı.', code='student_ineligible')
+    from apps.odeme_takip.domain.models import Sozlesme
+    from apps.odeme_takip.domain.enums import SozlesmeDurum
+    from .eligibility import get_kocluk_ogrenci_ids
+    if Sozlesme.objects.filter(ogrenci_id=student.pk).exclude(durum=SozlesmeDurum.TASLAK).exists():
+        if student.pk not in get_kocluk_ogrenci_ids(kurum_id=student.kurum_id, sube_id=student.sube_id):
+            raise CoachChangeError('Öğrencinin aktif koçluk hizmeti bulunmuyor.', code='coaching_service_required')
+
+
 def change_primary_coach(
     *,
     student_id: int,
@@ -208,6 +230,7 @@ def change_primary_coach(
         raise CoachChangeError('Öğrenci bulunamadı', code='student_not_found') from exc
 
     with transaction.atomic():
+        student = Ogrenci.objects.select_for_update().get(pk=student_id)
         try:
             new_coach = CoachProfile.objects.select_for_update().get(
                 pk=new_coach_id, is_active=True
@@ -215,11 +238,18 @@ def change_primary_coach(
         except CoachProfile.DoesNotExist as exc:
             raise CoachChangeError('Yeni koç bulunamadı veya aktif değil', code='coach_not_found') from exc
 
+        validate_coach_student(new_coach, student)
+        if transfer_date > date.today():
+            raise CoachChangeError('İleri tarihli koç devri yapılamaz.', code='invalid_transfer_date')
+
         previous = (
             CoachStudentAssignment.objects.select_for_update()
             .filter(student=student, is_primary=True, end_date__isnull=True)
             .first()
         )
+
+        if previous and transfer_date < previous.start_date:
+            raise CoachChangeError('Devir tarihi mevcut atamanın başlangıcından önce olamaz.', code='invalid_transfer_date')
 
         if previous and previous.coach_id == new_coach_id:
             raise CoachChangeError(
@@ -251,6 +281,8 @@ def change_primary_coach(
         )
 
         transferred: dict[str, int] = {}
+        if not previous:
+            transferred = transfer_from_last_ended_primary(student_id=student.id, to_coach=new_coach)
         if previous:
             old_coach = (
                 CoachProfile.objects.select_related('teacher')

@@ -196,3 +196,36 @@ def _clean_ids(student_ids) -> list[int]:
         seen.add(sid)
         ids.append(sid)
     return ids
+
+
+def reconcile_coaching_entitlement(student_id, *, had_coaching_access=True):
+    """End assignments only when the last contract-backed coaching right is lost.
+
+    Adding service again makes the student assignable; it never reopens an old
+    coach relationship automatically. Students without contracts retain the
+    explicit legacy/manual assignment workflow.
+    """
+    # A first contract cannot revoke an independently assigned manual coach.
+    # Only an actual loss of existing service (or explicit contract revocation) closes it.
+    if not had_coaching_access:
+        return 0
+    from apps.coaching.services.eligibility import get_kocluk_ogrenci_ids
+    from apps.odeme_takip.domain.models import Sozlesme
+    from apps.coaching.models import CoachStudentAssignment
+    from apps.ogrenci.domain.models import Ogrenci
+
+    student = Ogrenci.objects.filter(pk=student_id).first()
+    if not student or not Sozlesme.objects.filter(ogrenci_id=student_id).exclude(
+        durum=SozlesmeDurum.TASLAK,
+    ).exists():
+        return 0
+    eligible = get_kocluk_ogrenci_ids(kurum_id=student.kurum_id, sube_id=student.sube_id)
+    if student_id in eligible:
+        return 0
+    closed = close_open_coach_assignments(
+        [student_id], reason=CoachStudentAssignment.EndReason.GECERLI_SOZLESME_YOK,
+    )
+    if closed:
+        from .coach_change import sync_student_assigned_coach
+        sync_student_assigned_coach(student_id)
+    return closed

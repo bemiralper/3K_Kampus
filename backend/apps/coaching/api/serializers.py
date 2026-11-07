@@ -295,6 +295,12 @@ class AssignmentCreateSerializer(serializers.ModelSerializer):
         student = attrs.get('student')
         is_primary = attrs.get('is_primary', True)
         
+        from apps.coaching.services.coach_change import validate_coach_student, CoachChangeError
+        try:
+            validate_coach_student(coach, student)
+        except CoachChangeError as exc:
+            raise serializers.ValidationError({'student': exc.message})
+
         # Kapasite kontrolü
         if coach.available_capacity <= 0:
             raise serializers.ValidationError({
@@ -322,6 +328,22 @@ class AssignmentUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CoachStudentAssignment
         fields = ['end_date', 'is_primary']
+
+    def validate(self, attrs):
+        instance = self.instance
+        if attrs.get('end_date', instance.end_date) is None:
+            from apps.coaching.services.coach_change import validate_coach_student, CoachChangeError
+            try:
+                validate_coach_student(instance.coach, instance.student)
+            except CoachChangeError as exc:
+                raise serializers.ValidationError({'student': exc.message})
+            if attrs.get('is_primary', instance.is_primary):
+                if CoachStudentAssignment.objects.filter(student=instance.student, is_primary=True,
+                        end_date__isnull=True).exclude(pk=instance.pk).exists():
+                    raise serializers.ValidationError({'student': 'Öğrencinin zaten aktif birincil koçu var.'})
+                if not (instance.is_primary and instance.end_date is None) and instance.coach.available_capacity <= 0:
+                    raise serializers.ValidationError({'coach': 'Koç kapasitesi dolu.'})
+        return attrs
 
 
 class CoachChangeSerializer(serializers.Serializer):
