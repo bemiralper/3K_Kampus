@@ -1,7 +1,7 @@
 """Resmi Maarif kodu 2018 kazanımına yapışmasın."""
 from django.test import TestCase
 
-from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, Subject, Topic
+from apps.coaching.olcme_degerlendirme.models.curriculum import Outcome, SubOutcome, Subject, Topic
 from apps.coaching.olcme_degerlendirme.services.maarif_numeric import official_stored_codes
 from apps.coaching.olcme_degerlendirme.views.curriculum_views import _match_single_text
 
@@ -65,3 +65,22 @@ class OfficialMaarifCodeMatchTests(TestCase):
 
     def test_official_code_does_not_cross_subjects(self):
         self.assertIsNone(_match_single_text('MAT.11.3.1', self.tarih))
+
+    def test_dotted_codes_do_not_match_when_only_digits_agree(self):
+        maarif = Topic.objects.create(
+            subject=self.math, program='maarif', code='7.21',
+            name='Maarif · 7. sınıf · Sayılar ve Nicelikler', order=3,
+        )
+        Outcome.objects.create(
+            topic=maarif, code='7.21.1.1', text='Tam sayıları inceler.', order=1,
+        )
+        old = Topic.objects.create(
+            subject=self.math, program='program_2018', code='7.2',
+            name='7. sınıf · CEBİR', order=4,
+        )
+        parent = Outcome.objects.create(topic=old, code='7.2.1', text='Tam sayılar', order=1)
+        SubOutcome.objects.create(
+            outcome=parent, code='7.2.1.1', text='Tam sayılarda işlem yapar.', order=1,
+        )
+        self.assertIsNone(_match_single_text('7.21.11', self.math, program=''))
+        self.assertIsNone(_match_single_text('7.21.1', self.math, program=''))

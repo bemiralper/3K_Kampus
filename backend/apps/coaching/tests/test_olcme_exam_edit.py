@@ -362,6 +362,37 @@ class OlcmeExamEditAPITest(TestCase):
         self.exam.refresh_from_db()
         self.assertEqual(self.exam.name, 'Deneme 1 (revize)')
 
+    def test_lgs_create_defaults_penalty_to_three(self):
+        res = self.client.post(
+            EXAMS_URL,
+            {
+                'name': '7. Sınıf Deneme',
+                'exam_type': 'LGS_7',
+                'apply_template': False,
+                'sections': [{'name': 'Türkçe', 'question_start': 1, 'question_end': 20}],
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 201, res.content)
+        exam = Exam.objects.get(name='7. Sınıf Deneme')
+        self.assertEqual(exam.wrong_answer_count, 3)
+
+        explicit = self.client.post(
+            EXAMS_URL,
+            {
+                'name': '8. Sınıf Özel Ceza',
+                'exam_type': 'LGS',
+                'apply_template': False,
+                'wrong_answer_count': 4,
+                'sections': [{'name': 'Türkçe', 'question_start': 1, 'question_end': 20}],
+            },
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(explicit.status_code, 201, explicit.content)
+        self.assertEqual(Exam.objects.get(name='8. Sınıf Özel Ceza').wrong_answer_count, 4)
+
     def test_create_kurum_ici_without_sections_rejected(self):
         res = self.client.post(
             EXAMS_URL,

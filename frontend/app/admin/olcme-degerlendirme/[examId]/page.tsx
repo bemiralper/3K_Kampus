@@ -9,6 +9,7 @@ import {
   EXAM_STATUS,
   BOOKLET_TYPES,
   SCHEDULE_PREFERENCES,
+  defaultWrongAnswerCount,
   examSupportsOptionalPhilosophy,
   optionalPhilosophyHint,
 } from '../../../../components/olcme/types';
@@ -271,7 +272,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
     name: exam.name,
     description: exam.description || '',
     duration_minutes: exam.duration_minutes?.toString() || '',
-    wrong_answer_count: exam.wrong_answer_count?.toString() || '4',
+    wrong_answer_count: exam.wrong_answer_count?.toString() || defaultWrongAnswerCount(exam.exam_type),
     per_section_penalty: exam.per_section_penalty,
     booklet_type: exam.booklet_type,
     booklet_auto_detect: exam.booklet_auto_detect,

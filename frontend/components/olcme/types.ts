@@ -21,6 +21,11 @@ export const EXAM_TYPES = [
 
 export type ExamTypeValue = typeof EXAM_TYPES[number]['value'];
 
+/** LGS 7 ve 8. sınıf: 3 yanlış 1 doğruyu götürür. YKS: 4 yanlış. */
+export function defaultWrongAnswerCount(examType: string): string {
+  return examType === 'LGS' || examType === 'LGS_7' ? '3' : '4';
+}
+
 export const OPTIONAL_PHILOSOPHY_EXAM_TYPES = ['YKS_TYT', 'TYT_11', 'YKS_AYT', 'DENEME'] as const;
 
 export function examSupportsOptionalPhilosophy(examType: string): boolean {

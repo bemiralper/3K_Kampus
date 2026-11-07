@@ -9,6 +9,7 @@ import {
   BOOKLET_TYPES,
   SCHEDULE_PREFERENCES,
   EXAM_CREATE_FORM_DEFAULT,
+  defaultWrongAnswerCount,
   examSupportsOptionalPhilosophy,
   optionalPhilosophyHint,
 } from '../../../../components/olcme/types';
@@ -277,16 +278,20 @@ export default function YeniSinavPage() {
 
   /* Sınav türü seçilince toplam süre şablondan gelir. Elle değiştirilmiş oturum süresi korunur. */
   const appliedDuration = useRef('');
+  const appliedPenaltyType = useRef('');
   useEffect(() => {
     if (!form.exam_type) return;
     const tpl = templates[form.exam_type];
     const nextDuration = tpl ? String(tpl.duration) : '';
     const previous = appliedDuration.current;
+    const typeChanged = appliedPenaltyType.current !== form.exam_type;
+    appliedPenaltyType.current = form.exam_type;
     setForm(p => ({
       ...p,
       duration_minutes: nextDuration || p.duration_minutes,
       apply_template: !isManualSectionExamType(form.exam_type),
       curriculum_band: resolveBand(form.exam_type, p.curriculum_band),
+      ...(typeChanged ? { wrong_answer_count: defaultWrongAnswerCount(form.exam_type) } : {}),
     }));
     if (nextDuration) {
       setSessions(prev => prev.map(ss => {

@@ -1723,12 +1723,16 @@ def _match_single_text(query: str, subject: Subject, program: str = ''):
             out_score = 0
             match_type = 'outcome'
             
-            # Code tam eşleşme
+            # Code tam eşleşme. Noktayı silerek kıyaslama 7.21.1 ile 7.2.1.1'i
+            # aynı sayar; noktalı kodda yalnızca birebir kod geçerlidir.
             if outcome_code_lower and query_lower == outcome_code_lower:
                 out_score = 100
-            elif outcome_code_lower and query_lower.replace('.', '') == outcome_code_lower.replace('.', ''):
+            elif (
+                not query_is_code
+                and outcome_code_lower
+                and query_lower.replace('.', '') == outcome_code_lower.replace('.', '')
+            ):
                 out_score = 98
-            # Noktalı kod girildiyse üst kod prefix/substring ile eşlenmesin
             elif query_is_code:
                 out_score = 0
             # Text tam eşleşme (normalize)
@@ -1788,10 +1792,14 @@ def _match_single_text(query: str, subject: Subject, program: str = ''):
                 
                 sub_score = 0
                 
-                # Code tam eşleşme
+                # Code tam eşleşme. Noktalı kodda 7.21.11, 7.21.1.1 sayılmaz.
                 if sub_code_lower and query_lower == sub_code_lower:
                     sub_score = 100
-                elif sub_code_lower and query_lower.replace('.', '') == sub_code_lower.replace('.', ''):
+                elif (
+                    not query_is_code
+                    and sub_code_lower
+                    and query_lower.replace('.', '') == sub_code_lower.replace('.', '')
+                ):
                     sub_score = 98
                 elif query_is_code:
                     sub_score = 0

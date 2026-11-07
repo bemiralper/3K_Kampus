@@ -385,6 +385,15 @@ class ExamCreateSerializer(serializers.ModelSerializer):
                 validated_data['exam_type'],
             )
 
+        # 7 ve 8. sınıf LGS: alan gönderilmezse 3 yanlış 1 doğruyu götürür.
+        # YKS modeli 4'te kalır. Form açıkça başka değer yollarsa o korunur.
+        from ..services.curriculum_band import LGS_EXAM_TYPES
+        if (
+            validated_data.get('exam_type') in LGS_EXAM_TYPES
+            and 'wrong_answer_count' not in self.initial_data
+        ):
+            validated_data['wrong_answer_count'] = 3
+
         exam = Exam.objects.create(**validated_data)
 
         # Sınıf ataması
