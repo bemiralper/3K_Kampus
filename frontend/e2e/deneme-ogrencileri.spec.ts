@@ -77,3 +77,25 @@ for (const width of [390, 1440]) test(`oturum işlemleri seçilen katılıma uyg
   expect(actions[1]).toMatchObject({ islem: 'iptal', participant_id: 12 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test('pasif deneme kulübü öğrencisi detay sayfasına yönlenmeden forma alınır', async ({ page }) => {
+  await shell(page);
+  await page.route('**/api/ogrenci-kayit/metadata/**', route => route.fulfill({ json: {
+    lookups: { registration_type: [{ id: 1, code: 'gunu_birlik', name: 'Tek deneme' }], gender: [], entry_type: [], guardian_type: [] },
+    cities: [], rules: [], sinif_seviyeleri: [{ id: 8, ad: '8. Sınıf', kod: '8' }, { id: 9, ad: '9. Sınıf', kod: '9' }],
+    alanlar: [], subeler: [], egitim_yillari: [{ id: 1, ad: '2026-2027', aktif_mi: true }],
+  } }));
+  await page.route('**/api/ogrenci-kayit/tc-check/**', route => route.fulfill({ json: {
+    found: true, aktif_yilda_kayitli: true,
+    ogrenci: { id: 1, tc_kimlik_no: '10000000146', ad: 'Pasif', soyad: 'Kulüp', aktif_mi: false, kayit_turu: 'deneme_kulubu', dogum_tarihi: '2011-04-04', telefon: '05321110049' },
+    son_kayit: { sinif_seviyesi_id: 8, sinif_seviyesi: '8. Sınıf', aktif_mi: false },
+    sonraki_seviye: { id: 9, ad: '9. Sınıf', kod: '9' }, veliler: [],
+  } }));
+  await page.goto('/ogrenciler/misafir/yeni');
+  await page.getByPlaceholder('11 haneli TC Kimlik No').fill('10000000146');
+  await expect(page.getByText('Öğrencinin eski kaydı pasif.', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Öğrenci kaydını aç', exact: true })).toHaveCount(0);
+  await page.getByRole('dialog').getByRole('button', { name: /kullan|forma|bilgileri/i }).click();
+  await expect(page).toHaveURL(/\/ogrenciler\/misafir\/yeni/);
+  await expect(page.locator('input[value="Pasif"]')).toBeVisible();
+});

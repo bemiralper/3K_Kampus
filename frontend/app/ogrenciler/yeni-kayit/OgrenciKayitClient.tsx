@@ -583,6 +583,10 @@ export default function OgrenciKayitClient({
     if (decision === "renew" && tcResult.ogrenci) {
       const ogr = tcResult.ogrenci;
       const cinsiyetOpt = metadata?.lookups.gender?.find((g) => g.code === ogr.cinsiyet);
+      const reopenWalkIn = isWalkIn && ogr.aktif_mi === false;
+      const selectedSeviye = reopenWalkIn
+        ? metadata?.sinif_seviyeleri?.find((item) => item.id === tcResult.son_kayit?.sinif_seviyesi_id)
+        : tcResult.sonraki_seviye;
       const renewEntryType = metadata?.lookups.entry_type?.find((e) => e.code === "kayit_yenileme");
 
       const guardians = (tcResult.veliler || []).map((v) => ({
@@ -640,7 +644,7 @@ export default function OgrenciKayitClient({
         enrollment: {
           ...prev.enrollment,
           giris_turu: renewEntryType?.id || prev.enrollment.giris_turu,
-          sinif_seviyesi: tcResult.sonraki_seviye?.id || prev.enrollment.sinif_seviyesi,
+          sinif_seviyesi: selectedSeviye?.id || prev.enrollment.sinif_seviyesi,
         },
         guardians: guardians.length ? guardians : prev.guardians,
         veliSecimi: guardians.length ? "add" : prev.veliSecimi,
@@ -658,8 +662,8 @@ export default function OgrenciKayitClient({
         existingAdres: tcResult.adres,
       });
 
-      if (tcResult.sonraki_seviye) {
-        fetchStudentNumber(tcResult.sonraki_seviye.id);
+      if (selectedSeviye) {
+        fetchStudentNumber(selectedSeviye.id);
       }
 
     } else if (decision === "new" && tcResult.ogrenci) {
@@ -680,13 +684,13 @@ export default function OgrenciKayitClient({
         },
       }));
     }
-  }, [metadata, fetchStudentNumber, fetchDistricts]);
+  }, [metadata, fetchStudentNumber, fetchDistricts, isWalkIn]);
 
   const handleUseExistingStudent = useCallback(
     (tcResult: TcCheckResponse, kimlikResult: KimlikResolveResponse | null) => {
       const ogr = tcResult.ogrenci;
       const upgradeDeneme = !isWalkIn && ogr?.kayit_turu === "gunu_birlik";
-      if (tcResult.aktif_yilda_kayitli && ogr?.id && !upgradeDeneme) {
+      if (tcResult.aktif_yilda_kayitli && ogr?.id && !upgradeDeneme && !(isWalkIn && ogr.aktif_mi === false)) {
         markClean();
         requestNavigation(ogrenciHref(String(ogr.id)), { hard: true });
         return;

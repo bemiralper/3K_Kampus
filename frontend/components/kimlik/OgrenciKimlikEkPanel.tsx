@@ -4,10 +4,11 @@ import type { TcCheckResponse } from "@/app/ogrenciler/yeni-kayit/types";
 
 type Props = {
   tcResult: TcCheckResponse | null;
+  reopenWalkIn?: boolean;
 };
 
 /** Öğrenci kayıt modalında kayıt geçmişi / sözleşme ek bilgileri. */
-export default function OgrenciKimlikEkPanel({ tcResult }: Props) {
+export default function OgrenciKimlikEkPanel({ tcResult, reopenWalkIn = false }: Props) {
   if (!tcResult?.found) return null;
 
   return (
@@ -48,7 +49,13 @@ export default function OgrenciKimlikEkPanel({ tcResult }: Props) {
         </div>
       )}
 
-      {tcResult.aktif_yilda_kayitli && (
+      {reopenWalkIn && (
+        <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-900">
+          Öğrencinin eski kaydı pasif. Bilgilerini forma alıp tek deneme kaydını tamamlayabilirsiniz. Önceki sözleşme yeniden açılmaz.
+        </div>
+      )}
+
+      {tcResult.aktif_yilda_kayitli && !reopenWalkIn && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
           {tcResult.ogrenci?.kayit_turu === "gunu_birlik"
             ? "Bu öğrenci seçili yılda tek deneme kaydı. Düğme kaydı açar; kurum kaydında bilgileri forma alınır ve öğrenci listesine düşer."

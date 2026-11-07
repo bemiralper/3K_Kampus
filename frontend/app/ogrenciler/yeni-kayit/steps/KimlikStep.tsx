@@ -130,7 +130,8 @@ export default function KimlikStep({
 
   const upgradeDeneme =
     !registrationLocked && tcResult?.ogrenci?.kayit_turu === "gunu_birlik";
-  const openExisting = Boolean(tcResult?.aktif_yilda_kayitli) && !upgradeDeneme;
+  const reopenWalkIn = registrationLocked && tcResult?.ogrenci?.aktif_mi === false;
+  const openExisting = Boolean(tcResult?.aktif_yilda_kayitli) && !upgradeDeneme && !reopenWalkIn;
 
   return (
     <div className="wizard-step-content">
@@ -401,7 +402,7 @@ export default function KimlikStep({
         context="ogrenci"
         loading={tcChecking || kimlik.checking}
         applyLabel={openExisting ? "Öğrenci kaydını aç" : undefined}
-        extraContent={<OgrenciKimlikEkPanel tcResult={tcResult} />}
+        extraContent={<OgrenciKimlikEkPanel tcResult={tcResult} reopenWalkIn={reopenWalkIn} />}
         onApply={handleApplyExisting}
         onClose={() => kimlik.dismissForChangeNumber(data.student.telefon)}
         onChangeNumber={() => {
