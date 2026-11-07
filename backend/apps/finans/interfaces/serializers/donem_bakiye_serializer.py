@@ -14,11 +14,12 @@ class DonemBakiyeListSerializer(serializers.ModelSerializer):
     mali_hesap_tip = serializers.CharField(source='mali_hesap.tip', read_only=True)
     egitim_yili_str = serializers.SerializerMethodField()
     durum_label = serializers.SerializerMethodField()
-    net_kar = serializers.IntegerField(read_only=True)
+    net_kar = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True, coerce_to_string=False)
     gider_gelir_orani = serializers.FloatField(read_only=True)
 
     class Meta:
         model = DonemBakiye
+        extra_kwargs = {name: {'coerce_to_string': False} for name in ['donem_basi_bakiye', 'toplam_gelir', 'toplam_gider', 'donem_sonu_bakiye', 'devir_tutari']}
         fields = [
             'id', 'mali_hesap', 'mali_hesap_ad', 'mali_hesap_tip',
             'egitim_yili', 'egitim_yili_str',
@@ -44,11 +45,12 @@ class DonemBakiyeDetailSerializer(serializers.ModelSerializer):
     egitim_yili_str = serializers.SerializerMethodField()
     durum_label = serializers.SerializerMethodField()
     kapatan_ad = serializers.SerializerMethodField()
-    net_kar = serializers.IntegerField(read_only=True)
+    net_kar = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True, coerce_to_string=False)
     gider_gelir_orani = serializers.FloatField(read_only=True)
 
     class Meta:
         model = DonemBakiye
+        extra_kwargs = {name: {'coerce_to_string': False} for name in ['donem_basi_bakiye', 'toplam_gelir', 'toplam_gider', 'donem_sonu_bakiye', 'devir_tutari']}
         fields = [
             'id', 'mali_hesap', 'mali_hesap_ad', 'mali_hesap_tip',
             'kurum', 'sube', 'sube_ad',

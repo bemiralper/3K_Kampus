@@ -4,6 +4,7 @@ Gider kaydına bağlı olmadan doğrudan cari hesaba ödeme yapılmasını sağl
 """
 from decimal import Decimal
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 from django.utils import timezone
 
 from apps.finans.application.cari_hareket_service import CariHareketService
@@ -42,7 +43,7 @@ class CariOdemeService:
         from apps.finans.domain.payment_method import OdemeYontemi
         return OdemeYontemi.objects.filter(id=odeme_yontemi_id).first()
 
-    @transaction.atomic
+    @atomic_result
     def serbest_odeme_yap(self, data: dict):
         """
         Gider kaydına bağlı olmadan cari hesaba ödeme yapar.
@@ -96,7 +97,7 @@ class CariOdemeService:
                 return None, {'genel': 'Aktif eğitim yılı bulunamadı. Lütfen eğitim yılı tanımlayın.'}
             egitim_yili_id = aktif_yil.pk
 
-        tutar_int = int(tutar)
+        tutar_int = tutar
         hareket_aciklama = f"Serbest ödeme: {hesap.gorunen_ad or hesap.unvan} — {tutar} ₺"
         if aciklama:
             hareket_aciklama += f" ({aciklama})"
@@ -269,7 +270,7 @@ class CariOdemeService:
             'yeni_bakiye': str(hesap.bakiye),
         }, None
 
-    @transaction.atomic
+    @atomic_result
     def serbest_odeme_iptal(self, cari_hareket_id: int):
         """
         Serbest ödemeyi iptal eder.
@@ -332,7 +333,7 @@ class CariOdemeService:
                         kurum_id=orijinal_bh.kurum_id,
                         sube_id=orijinal_bh.sube_id,
                         egitim_yili_id=orijinal_bh.egitim_yili_id,
-                        tutar=int(tutar),
+                        tutar=tutar,
                         yon=HareketYonu.GIRIS,
                         kaynak=HareketKaynagi.TAHSILAT_IPTAL,
                         islem_tarihi=timezone.now().date(),
@@ -406,6 +407,15 @@ class CariOdemeService:
                 mh_err = self._validate_mali_hesap(mali_hesap_id, kurum_id, sube_id)
                 if mh_err:
                     errors['mali_hesap_id'] = mh_err
+
+        from apps.finans.application.tenant_validation import validate_finans_links
+        link_errors = validate_finans_links(
+            kurum_id=kurum_id, sube_id=sube_id,
+            mali_hesap_id=mali_hesap_id,
+            odeme_yontemi_id=data.get('odeme_yontemi_id'),
+        )
+        if link_errors:
+            errors.update(link_errors)
 
         tutar = data.get('tutar')
         if not tutar or Decimal(str(tutar)) <= Decimal('0'):

@@ -20,7 +20,7 @@ def _esc(value: Any) -> str:
 def _fmt_tl(amount: int | float | None) -> str:
     if amount is None:
         return '—'
-    return f'₺{int(amount):,}'.replace(',', '.')
+    return '₺' + format(amount, ',.2f').translate(str.maketrans({',': '.', '.': ','}))
 
 
 def _table(headers: list[str], rows: list[list[str]], *, right_cols: set[int] | None = None) -> str:

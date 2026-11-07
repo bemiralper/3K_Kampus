@@ -7,7 +7,9 @@ Temel Kural: Her transfer kaynak hesapta ÇIKIŞ, hedef hesapta GİRİŞ olmak
 üzere iki BakiyeHareketi kaydı oluşturur. İşlem atomiktir — ya ikisi de
 başarılı olur ya da hiçbiri kaydedilmez.
 """
+from decimal import Decimal
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 from django.utils import timezone
 
 from apps.finans.application.bakiye_hareketi_service import BakiyeHareketiService
@@ -29,7 +31,7 @@ class HesapTransferiService:
     def get_all(self, kurum_id, sube_id=None, egitim_yili_id=None, filters=None):
         return self.repo.get_all(kurum_id, sube_id, egitim_yili_id, filters)
 
-    @transaction.atomic
+    @atomic_result
     def transfer_yap(self, data, user=None, kurum_id=None, sube_id=None):
         """
         data: {
@@ -63,7 +65,17 @@ class HesapTransferiService:
             if kaynak.sube_id != int(sube_id) or hedef.sube_id != int(sube_id):
                 return None, {'error': 'Seçilen hesaplar aktif şubeye ait değil'}
 
-        tutar = int(data['tutar'])
+        from apps.finans.application.tenant_validation import validate_finans_links
+        for hesap in (kaynak, hedef):
+            link_errors = validate_finans_links(
+                kurum_id=kaynak.sube.kurum_id, sube_id=hesap.sube_id,
+                mali_hesap_id=hesap.id,
+                odeme_yontemi_id=data.get('odeme_yontemi_id') if hesap == kaynak else None,
+            )
+            if link_errors:
+                return None, link_errors
+
+        tutar = Decimal(str(data['tutar']))
         transfer_turu = data.get('transfer_turu') or TransferTuru.VIRMAN
         if transfer_turu not in dict(TransferTuru.CHOICES):
             transfer_turu = TransferTuru.VIRMAN
@@ -141,7 +153,7 @@ class HesapTransferiService:
 
         return transfer, None
 
-    @transaction.atomic
+    @atomic_result
     def iptal(self, transfer_id, neden='', user=None, kurum_id=None, sube_id=None):
         """
         Hesap transferini geri alır (iptal).
@@ -167,7 +179,7 @@ class HesapTransferiService:
         if transfer.iptal_edildi:
             return None, {'error': 'Bu transfer zaten iptal edilmiş'}
 
-        tutar = int(transfer.tutar or 0)
+        tutar = transfer.tutar or Decimal(0)
         kaynak = transfer.kaynak_hesap
         hedef = transfer.hedef_hesap
         etiket = TransferTuru.get_label(transfer.transfer_turu)
@@ -248,7 +260,7 @@ class HesapTransferiService:
             errors['tutar'] = 'Tutar zorunlu'
         else:
             try:
-                if int(tutar) <= 0:
+                if Decimal(str(tutar)) <= 0:
                     errors['tutar'] = "Tutar 0'dan büyük olmalı"
             except (TypeError, ValueError):
                 errors['tutar'] = 'Geçersiz tutar'

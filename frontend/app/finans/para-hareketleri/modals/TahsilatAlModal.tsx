@@ -21,7 +21,7 @@ import {
 import { islemMasrafiGoster } from "@/app/finans/utils/islem-masrafi-eligibility";
 
 const fmtTL = (v: number) =>
-  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
+  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(v || 0);
 const today = () => todayIsoLocal();
 
 interface TahsilatAlModalProps {

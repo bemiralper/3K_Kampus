@@ -10,6 +10,8 @@ from collections import defaultdict
 from datetime import date, datetime, time
 from decimal import Decimal
 
+from apps.finans.application.money import as_money
+
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
@@ -47,12 +49,9 @@ RAPOR_ODEME_LABELS = {
 }
 
 
-def int_amount(value) -> int:
-    if value is None:
-        return 0
-    if isinstance(value, Decimal):
-        return int(value)
-    return int(value)
+def int_amount(value) -> Decimal:
+    """Geriye uyumlu yardımcı adı; kuruşlar korunarak Decimal döndürülür."""
+    return as_money(value)
 
 
 def gun_datetime_araligi(gun: date) -> tuple[datetime, datetime]:
@@ -107,7 +106,7 @@ def kova_listesi_with_yuzde(kova: dict[str, dict]) -> list[dict]:
     rows = []
     for key in RAPOR_ODEME_KOVASI:
         val = kova.get(key, {'toplam': 0, 'adet': 0})
-        tutar = int(val.get('toplam') or 0)
+        tutar = as_money(val.get('toplam') or 0)
         if tutar == 0 and int(val.get('adet') or 0) == 0:
             continue
         rows.append({
@@ -120,7 +119,7 @@ def kova_listesi_with_yuzde(kova: dict[str, dict]) -> list[dict]:
     for key, val in kova.items():
         if key in RAPOR_ODEME_KOVASI or key == 'cari_mahsup':
             continue
-        tutar = int(val.get('toplam') or 0)
+        tutar = as_money(val.get('toplam') or 0)
         if tutar == 0:
             continue
         rows.append({
@@ -189,7 +188,7 @@ def kasa_acilis_bakiye(kasa_ids: list[int], gun: date) -> int:
             .values_list('bakiye_sonrasi', flat=True)
             .first()
         )
-        total += int(prev or 0)
+        total += as_money(prev or 0)
     return total
 
 
@@ -197,9 +196,9 @@ def kasa_gunluk_hareket(kasa_ids: list[int], gun: date) -> tuple[int, int]:
     """Kasa hesaplarında günlük giriş ve çıkış toplamı."""
     if not kasa_ids:
         return 0, 0
-    qs = BakiyeHareketi.objects.filter(mali_hesap_id__in=kasa_ids, islem_tarihi=gun)
-    giris = int(qs.filter(yon=HareketYonu.GIRIS).aggregate(t=Sum('tutar'))['t'] or 0)
-    cikis = int(qs.filter(yon=HareketYonu.CIKIS).aggregate(t=Sum('tutar'))['t'] or 0)
+    qs = BakiyeHareketi.objects.filter(mali_hesap_id__in=kasa_ids, islem_tarihi=gun).exclude(kaynak=HareketKaynagi.DEVIR)
+    giris = as_money(qs.filter(yon=HareketYonu.GIRIS).aggregate(t=Sum('tutar'))['t'] or 0)
+    cikis = as_money(qs.filter(yon=HareketYonu.CIKIS).aggregate(t=Sum('tutar'))['t'] or 0)
     return giris, cikis
 
 
@@ -208,6 +207,16 @@ def net_nakit_degisim(kurum_id: int, gun: date, sube_id: int | None) -> int:
     kasa_ids = _kasa_hesap_ids(kurum_id, sube_id)
     giris, cikis = kasa_gunluk_hareket(kasa_ids, gun)
     return giris - cikis
+
+
+def manual_cek_gun_qs(kurum_id, gun, sube_id):
+    from apps.odeme_takip.domain.cek_senet import CekSenetDetay
+    movements = BakiyeHareketi.objects.filter(
+        kurum_id=kurum_id, kaynak_tip='CekSenetDetay', kaynak='tahsilat', yon='giris')
+    qs = CekSenetDetay.objects.filter(
+        kurum_id=kurum_id, yon='alinan', durum='tahsil_edildi', taksit__isnull=True,
+        tahsil_tarihi=gun, pk__in=movements.values('kaynak_id'))
+    return qs.filter(sube_id=sube_id) if sube_id else qs
 
 
 def odeme_kirilimi_topla(kurum_id: int, gun: date, sube_id: int | None) -> dict[str, dict]:
@@ -226,7 +235,7 @@ def odeme_kirilimi_topla(kurum_id: int, gun: date, sube_id: int | None) -> dict[
         t_qs = t_qs.filter(sozlesme__sube_id=sube_id)
     for row in t_qs.values('odeme_yontemi__tip').annotate(toplam=Sum('tutar'), adet=Count('id')):
         b = odeme_tip_to_bucket(row['odeme_yontemi__tip'])
-        kova[b]['toplam'] += int(row['toplam'] or 0)
+        kova[b]['toplam'] += as_money(row['toplam'] or 0)
         kova[b]['adet'] += row['adet'] or 0
 
     g_qs = GelirTahsilat.objects.filter(
@@ -240,6 +249,11 @@ def odeme_kirilimi_topla(kurum_id: int, gun: date, sube_id: int | None) -> dict[
         kova[b]['toplam'] += int_amount(row['toplam'])
         kova[b]['adet'] += row['adet'] or 0
 
+    for row in manual_cek_gun_qs(kurum_id, gun, sube_id).values('odeme_yontemi__tip').annotate(
+            toplam=Sum('tutar'), adet=Count('pk')):
+        b = odeme_tip_to_bucket(row['odeme_yontemi__tip'])
+        kova[b]['toplam'] += as_money(row['toplam'])
+        kova[b]['adet'] += row['adet']
     return dict(kova)
 
 
@@ -254,7 +268,7 @@ def nakit_tahsilat_toplam(kurum_id: int, gun: date, sube_id: int | None) -> int:
     ).exclude(tahsilat_turu=TahsilatTuru.IADE)
     if sube_id:
         qs = qs.filter(sozlesme__sube_id=sube_id)
-    return int(qs.aggregate(t=Sum('tutar'))['t'] or 0)
+    return as_money(qs.aggregate(t=Sum('tutar'))['t'] or 0)
 
 
 def nakit_gelir_toplam(kurum_id: int, gun: date, sube_id: int | None) -> int:
@@ -294,7 +308,7 @@ def nakit_iade_toplam(kurum_id: int, gun: date, sube_id: int | None) -> int:
     )
     if sube_id:
         qs = qs.filter(sozlesme__sube_id=sube_id)
-    return int(qs.aggregate(t=Sum('tutar'))['t'] or 0)
+    return as_money(qs.aggregate(t=Sum('tutar'))['t'] or 0)
 
 
 def transfer_toplamlari(kurum_id: int, gun: date, sube_id: int | None) -> dict[str, int]:
@@ -311,7 +325,7 @@ def transfer_toplamlari(kurum_id: int, gun: date, sube_id: int | None) -> dict[s
     }
     for row in qs.values('transfer_turu').annotate(toplam=Sum('tutar')):
         tur = row['transfer_turu']
-        tutar = int(row['toplam'] or 0)
+        tutar = as_money(row['toplam'] or 0)
         if tur == TransferTuru.KASADAN_BANKAYA:
             result['bankaya_aktarim'] += tutar
         elif tur == TransferTuru.BANKADAN_KASAYA:
@@ -330,8 +344,8 @@ def kasa_manuel_hareketler(kasa_ids: list[int], gun: date) -> tuple[int, int]:
         islem_tarihi=gun,
         kaynak=HareketKaynagi.MANUEL,
     )
-    giris = int(qs.filter(yon=HareketYonu.GIRIS).aggregate(t=Sum('tutar'))['t'] or 0)
-    cikis = int(qs.filter(yon=HareketYonu.CIKIS).aggregate(t=Sum('tutar'))['t'] or 0)
+    giris = as_money(qs.filter(yon=HareketYonu.GIRIS).aggregate(t=Sum('tutar'))['t'] or 0)
+    cikis = as_money(qs.filter(yon=HareketYonu.CIKIS).aggregate(t=Sum('tutar'))['t'] or 0)
     return giris, cikis
 
 
@@ -353,7 +367,7 @@ def kasa_sayim_bilgisi(kasa_ids: list[int], gun: date) -> tuple[int | None, bool
         .first()
     )
     if hareket:
-        return int(hareket.bakiye_sonrasi), True
+        return as_money(hareket.bakiye_sonrasi), True
     return None, False
 
 
@@ -443,7 +457,7 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     ).exclude(tahsilat_turu=TahsilatTuru.IADE).filter(bugun_islem_q('tahsilat_tarihi', gun))
     if sube_id:
         t_qs = t_qs.filter(sozlesme__sube_id=sube_id)
-    toplam += int(t_qs.aggregate(t=Sum('tutar'))['t'] or 0)
+    toplam += as_money(t_qs.aggregate(t=Sum('tutar'))['t'] or 0)
 
     gt_qs = GelirTahsilat.objects.filter(
         gelir_kaydi__kurum_id=kurum_id,
@@ -451,7 +465,7 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     ).filter(bugun_islem_q('tahsilat_tarihi', gun))
     if sube_id:
         gt_qs = gt_qs.filter(gelir_kaydi__sube_id=sube_id)
-    toplam += int(gt_qs.aggregate(t=Sum('tutar'))['t'] or 0)
+    toplam += as_money(gt_qs.aggregate(t=Sum('tutar'))['t'] or 0)
 
     ch_qs = CariHareket.objects.filter(
         cari_bagimsiz_tahsilat_q(),
@@ -460,7 +474,11 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     ).filter(bugun_islem_q('islem_tarihi', gun))
     if sube_id:
         ch_qs = ch_qs.filter(sube_id=sube_id)
-    toplam += int(ch_qs.aggregate(t=Sum('tutar'))['t'] or 0)
+    toplam += as_money(ch_qs.aggregate(t=Sum('tutar'))['t'] or 0)
+    # Carili manuel tahsilatlar yukarıdaki CariHareket toplamında yer alır.
+    from apps.finans.application.period.period_service import _manual_cek_rows
+    toplam += sum(row['tutar'] for row in _manual_cek_rows(
+        kurum_id=kurum_id, sube_id=sube_id, baslangic=gun, bitis=gun))
     return toplam
 
 
@@ -525,7 +543,7 @@ def gider_odeme_kirilimi_topla(kurum_id: int, gun: date, sube_id: int | None) ->
     for detay in verilen_cek_gider_odemeleri_qs(kurum_id, gun, sube_id):
         tip = detay.odeme_yontemi.tip if detay.odeme_yontemi_id else None
         b = odeme_tip_to_bucket(tip)
-        tutar = int(detay.tutar or 0)
+        tutar = as_money(detay.tutar or 0)
         kova[b]['toplam'] += tutar
         kova[b]['adet'] += 1
 

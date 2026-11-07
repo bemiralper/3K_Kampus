@@ -15,7 +15,7 @@ class HesapTransferiCreateSerializer(serializers.Serializer):
     """Transfer oluşturma validasyonu."""
     kaynak_hesap_id = serializers.IntegerField()
     hedef_hesap_id = serializers.IntegerField()
-    tutar = serializers.IntegerField(min_value=1)
+    tutar = serializers.DecimalField(max_digits=18, decimal_places=2, min_value=0.01)
     transfer_tarihi = serializers.DateField()
     transfer_turu = serializers.CharField(required=False, allow_blank=True)
     egitim_yili_id = serializers.IntegerField(required=False, allow_null=True)
@@ -34,7 +34,7 @@ def _serialize_transfer(t):
         'id': t.id,
         'kaynak_hesap': {'id': t.kaynak_hesap_id, 'ad': t.kaynak_hesap.ad if t.kaynak_hesap_id else ''},
         'hedef_hesap': {'id': t.hedef_hesap_id, 'ad': t.hedef_hesap.ad if t.hedef_hesap_id else ''},
-        'tutar': int(t.tutar),
+        'tutar': t.tutar,
         'transfer_turu': t.transfer_turu,
         'transfer_turu_label': t.get_transfer_turu_display(),
         'transfer_tarihi': str(t.transfer_tarihi),

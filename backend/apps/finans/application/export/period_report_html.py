@@ -33,7 +33,7 @@ def _fmt_tl(amount: Any) -> str:
         num = float(amount)
     except (TypeError, ValueError):
         return _esc(amount)
-    formatted = f"{num:,.0f}".replace(",", ".")
+    formatted = f"{num:,.2f}".translate(str.maketrans({",": ".", ".": ","}))
     return f"{formatted} TL"
 
 

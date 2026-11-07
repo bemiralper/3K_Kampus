@@ -9,6 +9,7 @@ Akış:
 from decimal import Decimal, InvalidOperation
 
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 from django.utils import timezone
 
 from apps.finans.application.bakiye_hareketi_service import BakiyeHareketiService
@@ -97,7 +98,7 @@ class IslemMasrafiService:
             return 'Seçilen ödeme yöntemi için işlem masrafı girilemez.'
         return None
 
-    @transaction.atomic
+    @atomic_result
     def olustur(
         self,
         *,
@@ -184,9 +185,9 @@ class IslemMasrafiService:
             'bakiyeden_mahsup': False,
         })
 
-        bakiye_tutar = int(kesinti_tutar.to_integral_value())
+        bakiye_tutar = kesinti_tutar
         if bakiye_tutar <= 0:
-            return None, 'Kesinti tutarı en az 1 TL olmalıdır.'
+            return None, 'Kesinti tutarı sıfırdan büyük olmalıdır.'
 
         hareket = self.bakiye_service.hareket_olustur(
             mali_hesap_id=mali_hesap_id,
@@ -223,7 +224,7 @@ class IslemMasrafiService:
 
         return masraf, None
 
-    @transaction.atomic
+    @atomic_result
     def iptal(self, kaynak_tip: str, kaynak_id: int, islem_tarihi=None, islem_yapan=None):
         """
         Ana işlem iptal edildiğinde bağlı masrafı geri alır.
@@ -254,7 +255,7 @@ class IslemMasrafiService:
         sube_id = gider.sube_id if gider else masraf.sube_id
         egitim_yili_id = gider.egitim_yili_id if gider else None
 
-        if odeme.mali_hesap_id and bakiye_tutar > 0 and kurum_id and egitim_yili_id:
+        if odeme.mali_hesap_id and bakiye_tutar > 0 and kurum_id:
             self.bakiye_service.hareket_olustur(
                 mali_hesap_id=odeme.mali_hesap_id,
                 kurum_id=kurum_id,

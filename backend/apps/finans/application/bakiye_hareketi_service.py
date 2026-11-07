@@ -5,7 +5,11 @@ Bakiye Hareketi Service
 Temel Kural: Her finansal işlem (tahsilat, gider, devir) bu service
 üzerinden hareket oluşturmalıdır. Doğrudan repository'ye gitmek YASAK.
 """
+from decimal import Decimal, InvalidOperation
 from django.db import transaction
+from apps.finans.application.transaction_utils import ClosedFinancialPeriod
+from apps.finans.constants.hareket_types import DonemDurum
+from apps.finans.domain.donem_bakiye import DonemBakiye
 
 from apps.finans.infrastructure.bakiye_hareketi_repository import BakiyeHareketiRepository
 from apps.finans.infrastructure.donem_bakiye_repository import DonemBakiyeRepository
@@ -44,7 +48,7 @@ class BakiyeHareketiService:
             sube_id: Şube PK
             egitim_yili_id: Eğitim yılı PK
             yon: HareketYonu.GIRIS veya HareketYonu.CIKIS
-            tutar: Pozitif integer (TL)
+            tutar: Pozitif Decimal (TL ve kuruş)
             kaynak: HareketKaynagi sabiti
             islem_tarihi: date objesi
             kaynak_tip: Kaynak modelin adı (opsiyonel)
@@ -59,6 +63,12 @@ class BakiyeHareketiService:
             ValueError: Geçersiz parametrelerde
         """
         # ─── Validasyon ───────────────────────────
+        try:
+            tutar = Decimal(str(tutar))
+        except (InvalidOperation, TypeError, ValueError):
+            raise ValueError('Geçersiz tutar.')
+        if not tutar.is_finite() or tutar != tutar.quantize(Decimal('0.01')):
+            raise ValueError('Tutar en fazla iki ondalık basamak içermelidir.')
         if tutar <= 0:
             raise ValueError("Tutar 0'dan büyük olmalıdır.")
 
@@ -73,11 +83,19 @@ class BakiyeHareketiService:
         # oluşturma arasındaki race condition'ı engelle (double-spend koruması).
         from apps.finans.domain.financial_account import MaliHesap
         MaliHesap.objects.select_for_update().filter(pk=mali_hesap_id).first()
+        donem = DonemBakiye.objects.filter(
+            mali_hesap_id=mali_hesap_id, egitim_yili_id=egitim_yili_id,
+        ).first()
+        if donem and donem.durum != DonemDurum.ACIK:
+            raise ClosedFinancialPeriod('Kapalı veya devredilmiş döneme işlem yapılamaz.')
 
         # ─── Mevcut bakiye ────────────────────────
         bakiye_oncesi = self.repo.son_bakiye(mali_hesap_id)
 
-        if yon == HareketYonu.GIRIS:
+        if kaynak == HareketKaynagi.DEVIR:
+            # Devir bir dönem sınıflamasıdır; gerçek para giriş/çıkışı değildir.
+            bakiye_sonrasi = bakiye_oncesi
+        elif yon == HareketYonu.GIRIS:
             bakiye_sonrasi = bakiye_oncesi + tutar
         else:
             bakiye_sonrasi = bakiye_oncesi - tutar

@@ -15,7 +15,7 @@ interface Props {
 }
 
 const fmtTL = (n: number) =>
-  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 0 }).format(n || 0);
+  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", maximumFractionDigits: 2 }).format(n || 0);
 
 const TIP_ICON: Record<string, string> = {
   kasa: "💵",

@@ -8,6 +8,7 @@ MİMARİ:
 - Bir Tahsilat birden fazla taksiti kapatabilir
 """
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 from django.db.models import Case, IntegerField, Sum, Value, When
 from django.utils import timezone
 
@@ -134,7 +135,7 @@ class TahsilatService:
     def get_all(self, kurum_id=None, sube_id=None, egitim_yili_id=None, filters=None):
         return self.repo.get_all(kurum_id, sube_id, egitim_yili_id, filters)
 
-    @transaction.atomic
+    @atomic_result
     def create(self, data, user=None):
         """
         Tahsilat kaydet — TEK kayıt + otomatik taksit dağıtımlı.
@@ -201,6 +202,14 @@ class TahsilatService:
         mali_err = self._validate_mali_hesap_for_sozlesme(mali_hesap_id, sozlesme)
         if mali_err:
             return None, mali_err
+
+        from apps.finans.application.tenant_validation import validate_finans_links
+        link_errors = validate_finans_links(
+            kurum_id=sozlesme.kurum_id, sube_id=sozlesme.sube_id,
+            mali_hesap_id=mali_hesap_id, odeme_yontemi_id=data['odeme_yontemi_id'],
+        )
+        if link_errors:
+            return None, link_errors
 
         # ── TEK Tahsilat kaydı oluştur (toplam tutar) ──
         tahsilat = self.repo.create({
@@ -317,7 +326,7 @@ class TahsilatService:
             durum=durum,
         )
 
-    @transaction.atomic
+    @atomic_result
     def cancel(self, tahsilat_id, neden, user=None):
         """
         Tahsilat iptal — SİLMEK YOK!
@@ -414,6 +423,7 @@ class TahsilatService:
 
         return tahsilat, None
 
+    @atomic_result
     def iade_yap(self, data, user=None):
         """
         İade — kurumdan öğrenciye/veliye nakit iade (kasadan/bankadan çıkış).
@@ -495,6 +505,14 @@ class TahsilatService:
         ) or sozlesme.mali_hesap_id
         if not mali_hesap_id:
             return None, {'error': 'İade edilecek mali hesap (kasa/banka) belirtilmeli'}
+
+        from apps.finans.application.tenant_validation import validate_finans_links
+        link_errors = validate_finans_links(
+            kurum_id=sozlesme.kurum_id, sube_id=sozlesme.sube_id,
+            mali_hesap_id=mali_hesap_id, odeme_yontemi_id=odeme_yontemi_id,
+        )
+        if link_errors:
+            return None, link_errors
 
         aciklama = data.get('aciklama') or (
             f'İade — Kaynak Tahsilat #{kaynak_tahsilat.id}' if kaynak_tahsilat

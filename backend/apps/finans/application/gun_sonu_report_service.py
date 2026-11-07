@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime
 
+from apps.finans.application.money import as_money
+
 from django.db.models import Count, Sum
 from django.utils import timezone
 
@@ -47,7 +49,7 @@ def _fmt_datetime(dt: datetime) -> str:
 
 
 def _fmt_tl(amount: int | float) -> str:
-    return f'₺{int(amount):,}'.replace(',', '.')
+    return '₺' + format(as_money(amount), ',.2f').translate(str.maketrans({',': '.', '.': ','}))
 
 
 class GunSonuReportService:
@@ -191,7 +193,7 @@ class GunSonuReportService:
         if sube_id:
             qs = qs.filter(sozlesme__sube_id=sube_id)
         agg = qs.aggregate(toplam=Sum('tutar'), adet=Count('id'))
-        return int(agg['toplam'] or 0), agg['adet'] or 0
+        return as_money(agg['toplam'] or 0), agg['adet'] or 0
 
     def _gelir_tahsilat(self, kurum_id, gun, sube_id):
         qs = GelirTahsilat.objects.filter(
@@ -201,7 +203,9 @@ class GunSonuReportService:
         if sube_id:
             qs = qs.filter(gelir_kaydi__sube_id=sube_id)
         agg = qs.aggregate(toplam=Sum('tutar'), adet=Count('id'))
-        return int(agg['toplam'] or 0), agg['adet'] or 0
+        from apps.finans.application.gun_sonu_finans_helpers import manual_cek_gun_qs
+        manual = manual_cek_gun_qs(kurum_id, gun, sube_id).aggregate(toplam=Sum('tutar'), adet=Count('pk'))
+        return as_money(agg['toplam']) + as_money(manual['toplam']), (agg['adet'] or 0) + manual['adet']
 
     def _gider_odeme(self, kurum_id, gun, sube_id):
         from apps.finans.application.gun_sonu_finans_helpers import gider_odeme_toplam
@@ -220,7 +224,7 @@ class GunSonuReportService:
         if sube_id:
             qs = qs.filter(sozlesme__sube_id=sube_id)
         agg = qs.aggregate(toplam=Sum('tutar'), adet=Count('id'))
-        return int(agg['toplam'] or 0), agg['adet'] or 0
+        return as_money(agg['toplam'] or 0), agg['adet'] or 0
 
     def _tahsilat_dagilimi_rapor(self, kirilim: list[dict]) -> list[dict]:
         """Özet rapor B bölümü — geriye dönük uyumlu format."""
@@ -321,7 +325,7 @@ class GunSonuReportService:
         for row in t_qs.values('islem_yapan_id').annotate(toplam=Sum('tutar')):
             uid = row['islem_yapan_id']
             key = str(uid) if uid else '__sistem__'
-            totals[key]['tahsilat'] += int(row['toplam'] or 0)
+            totals[key]['tahsilat'] += as_money(row['toplam'] or 0)
 
         gt_qs = GelirTahsilat.objects.filter(
             gelir_kaydi__kurum_id=kurum_id,
@@ -332,7 +336,7 @@ class GunSonuReportService:
         for row in gt_qs.values('islem_yapan_id').annotate(toplam=Sum('tutar')):
             uid = row['islem_yapan_id']
             key = str(uid) if uid else '__sistem__'
-            totals[key]['gelir'] += int(row['toplam'] or 0)
+            totals[key]['gelir'] += as_money(row['toplam'] or 0)
 
         go_qs = GiderOdeme.objects.filter(
             gider_kaydi__kurum_id=kurum_id,
@@ -344,7 +348,7 @@ class GunSonuReportService:
         for row in go_qs.values('islem_yapan_id').annotate(toplam=Sum('tutar')):
             uid = row['islem_yapan_id']
             key = str(uid) if uid else '__sistem__'
-            totals[key]['gider'] += int(row['toplam'] or 0)
+            totals[key]['gider'] += as_money(row['toplam'] or 0)
 
         user_ids = [int(k) for k in totals if k != '__sistem__']
         user_map: dict[int, str] = {}

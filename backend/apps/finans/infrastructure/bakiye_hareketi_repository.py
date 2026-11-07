@@ -96,7 +96,9 @@ class BakiyeHareketiRepository:
     @staticmethod
     def son_bakiye(mali_hesap_id):
         """
-        Mali hesabın canlı bakiyesi — TOPLAM GİRİŞ − TOPLAM ÇIKIŞ (SUM bazlı).
+        Mali hesabın canlı bakiyesi — devir işaretleri hariç GİRİŞ − ÇIKIŞ.
+
+        Devir gerçek para hareketi değildir; yeni dönemin açılışını işaretler.
 
         Önceden en son hareketin (islem_tarihi/created_at/id sıralı) sadece
         `bakiye_sonrasi` alanı okunuyordu. Ancak servis kilidi dışında (örn.
@@ -113,11 +115,11 @@ class BakiyeHareketiRepository:
         arası tutarsızlık oluşmaz. Yeni oluşturulan hareketler de bu doğru
         değerden bakiye_oncesi hesaplayacağı için zincir kendini onarır.
         """
-        agg = BakiyeHareketi.objects.filter(mali_hesap_id=mali_hesap_id).aggregate(
+        agg = BakiyeHareketi.objects.filter(mali_hesap_id=mali_hesap_id).exclude(kaynak=HareketKaynagi.DEVIR).aggregate(
             giris=Sum('tutar', filter=Q(yon=HareketYonu.GIRIS)),
             cikis=Sum('tutar', filter=Q(yon=HareketYonu.CIKIS)),
         )
-        return int(agg['giris'] or 0) - int(agg['cikis'] or 0)
+        return (agg['giris'] or 0) - (agg['cikis'] or 0)
 
     @staticmethod
     def hareket_sayisi(mali_hesap_id, egitim_yili_id):

@@ -7,6 +7,8 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date, datetime, time, timedelta
 
+from apps.finans.application.money import as_money
+
 from django.db.models import Count, Q, Sum
 from django.utils import timezone
 
@@ -112,7 +114,7 @@ def _bugun_alinan_toplam(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> in
         sube_id=sube_id, egitim_yili_id=egitim_yili_id,
         sube_field='gelir_kaydi__sube_id', yil_field='gelir_kaydi__egitim_yili_id',
     )
-    toplam += int(GelirTahsilat.objects.filter(gt_q).aggregate(t=Sum('tutar'))['t'] or 0)
+    toplam += as_money(GelirTahsilat.objects.filter(gt_q).aggregate(t=Sum('tutar'))['t'] or 0)
 
     ch_q = Q(
         kurum_id=kurum_id,
@@ -122,7 +124,7 @@ def _bugun_alinan_toplam(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> in
         sube_id=sube_id, egitim_yili_id=egitim_yili_id,
         sube_field='sube_id', yil_field='egitim_yili_id',
     )
-    toplam += int(CariHareket.objects.filter(ch_q).aggregate(t=Sum('tutar'))['t'] or 0)
+    toplam += as_money(CariHareket.objects.filter(ch_q).aggregate(t=Sum('tutar'))['t'] or 0)
     return toplam
 
 
@@ -135,7 +137,7 @@ def _kayit_zamani_str(dt) -> str | None:
 def _gider_odeme_toplam(qs) -> int:
     """Ödeme queryset toplamını tam sayıya yuvarlar (kuruş kaybını azaltır)."""
     raw = qs.aggregate(t=Sum('tutar'))['t'] or 0
-    return int(round(float(raw)))
+    return as_money(raw)
 
 
 def _gider_kategori_dagilimi(kurum_id, baslangic, bitis, sube_id=None, egitim_yili_id=None) -> list[dict]:
@@ -145,10 +147,10 @@ def _gider_kategori_dagilimi(kurum_id, baslangic, bitis, sube_id=None, egitim_yi
         .annotate(toplam=Sum('tutar'), adet=Count('id'))
         .order_by('-toplam')
     )
-    toplam = sum(int(r['toplam'] or 0) for r in rows)
+    toplam = sum(as_money(r['toplam'] or 0) for r in rows)
     result = []
     for r in rows:
-        tutar = int(r['toplam'] or 0)
+        tutar = as_money(r['toplam'] or 0)
         result.append({
             'kategori_id': r['gider_kaydi__gider_kategorisi_id'],
             'kategori_adi': r['gider_kaydi__gider_kategorisi__ad'] or 'Belirtilmemiş',
@@ -181,7 +183,7 @@ def _gunluk_gelir_gider_net(
     baslangic: date,
     bitis: date,
 ) -> list[dict]:
-    gelir_map = {str(g['label'])[:10]: int(g['tutar']) for g in gelir_grafik}
+    gelir_map = {str(g['label'])[:10]: as_money(g['tutar']) for g in gelir_grafik}
     days: list[dict] = []
     cur = baslangic
     while cur <= bitis:
@@ -252,8 +254,8 @@ def _mali_hesap_bloklari(kurum_id, sube_id, egitim_yili_id) -> tuple[list[dict],
 
     kasa = [h for h in hesaplar if h.get('mali_hesap_tip') == MaliHesapTipi.KASA]
     banka = [h for h in hesaplar if h.get('mali_hesap_tip') == MaliHesapTipi.BANKA]
-    kasa_toplam = sum(int(h.get('donem_sonu_bakiye') or 0) for h in kasa)
-    banka_toplam = sum(int(h.get('donem_sonu_bakiye') or 0) for h in banka)
+    kasa_toplam = sum(as_money(h.get('donem_sonu_bakiye') or 0) for h in kasa)
+    banka_toplam = sum(as_money(h.get('donem_sonu_bakiye') or 0) for h in banka)
     return kasa, banka, kasa_toplam, banka_toplam
 
 
@@ -270,7 +272,7 @@ def _pos_hesap_bloklari(kurum_id, sube_id) -> tuple[list[dict], int]:
     """
     tipler = [MaliHesapTipi.POS, MaliHesapTipi.SANAL_POS, MaliHesapTipi.E_CUZDAN, MaliHesapTipi.DIGER]
     pos = _mali_hesap_canli_bakiyeler(kurum_id, sube_id, tipler=tipler)
-    pos_toplam = sum(int(h.get('donem_sonu_bakiye') or 0) for h in pos)
+    pos_toplam = sum(as_money(h.get('donem_sonu_bakiye') or 0) for h in pos)
     return pos, pos_toplam
 
 
@@ -291,7 +293,7 @@ def _mali_hesap_canli_bakiyeler(kurum_id, sube_id, tipler=None) -> list[dict]:
     selector = BakiyeHareketiSelector()
     rows: list[dict] = []
     for mh in qs.order_by('tip', 'siralama', 'ad'):
-        bakiye = int(selector.get_son_bakiye(mh.id) or 0)
+        bakiye = as_money(selector.get_son_bakiye(mh.id) or 0)
         rows.append({
             'id': mh.id,
             'mali_hesap_id': mh.id,
@@ -316,10 +318,10 @@ def _serialize_gider_odeme(odeme) -> dict:
         'cari_hesap_adi': cari.gorunen_ad if cari else '—',
         'kategori_adi': kat.ad if kat else '',
         'fatura_no': gk.fatura_no or '',
-        'tutar': int(odeme.tutar),
-        'net_tutar': int(gk.net_tutar),
-        'odenen_toplam': int(gk.odenen_toplam),
-        'kalan_tutar': int(gk.kalan_tutar),
+        'tutar': as_money(odeme.tutar),
+        'net_tutar': as_money(gk.net_tutar),
+        'odenen_toplam': as_money(gk.odenen_toplam),
+        'kalan_tutar': as_money(gk.kalan_tutar),
         'odeme_tarihi': odeme.odeme_tarihi.isoformat(),
         'vade_tarihi': (
             (gk.vade_tarihi or gk.fatura_tarihi).isoformat()
@@ -352,10 +354,10 @@ def _serialize_gider_kaydi(gk) -> dict:
         'cari_hesap_adi': cari.gorunen_ad if cari else '—',
         'kategori_adi': kat.ad if kat else '',
         'fatura_no': gk.fatura_no or '',
-        'tutar': int(gk.net_tutar),
-        'net_tutar': int(gk.net_tutar),
-        'odenen_toplam': int(gk.odenen_toplam),
-        'kalan_tutar': int(gk.kalan_tutar),
+        'tutar': as_money(gk.net_tutar),
+        'net_tutar': as_money(gk.net_tutar),
+        'odenen_toplam': as_money(gk.odenen_toplam),
+        'kalan_tutar': as_money(gk.kalan_tutar),
         'odeme_tarihi': vade.isoformat() if vade else '',
         'vade_tarihi': vade.isoformat() if vade else None,
         'odeme_yontemi_adi': gk.odeme_yontemi.ad if gk.odeme_yontemi_id else None,
@@ -415,7 +417,7 @@ def _bugun_gider_kaydi_satirlari(kurum_id, gun, sube_id=None, egitim_yili_id=Non
             'kaynak': 'gider_kayit',
             'kaynak_label': f'Gider ({gk.get_durum_display()})',
             'kisi_adi': kisi,
-            'tutar': int(gk.net_tutar),
+            'tutar': as_money(gk.net_tutar),
             'odeme_yontemi': gk.odeme_yontemi.ad if gk.odeme_yontemi_id else None,
             'odeme_yontemi_tipi': gk.odeme_yontemi.tip if gk.odeme_yontemi_id else None,
             'tarih': vade.isoformat() if vade else gun.isoformat(),
@@ -445,7 +447,7 @@ def _gider_islem_satirlari(kurum_id, baslangic, bitis, sube_id=None, egitim_yili
             'kaynak': 'gider',
             'kaynak_label': 'Gider Ödemesi',
             'kisi_adi': kisi,
-            'tutar': int(o.tutar),
+            'tutar': as_money(o.tutar),
             'odeme_yontemi': (
                 o.odeme_yontemi.ad if o.odeme_yontemi_id
                 else ('Bakiyeden Mahsup' if o.bakiyeden_mahsup else None)
@@ -477,7 +479,7 @@ def _yaklasan_gider_satirlari(kurum_id, bugun, bitis, sube_id=None, egitim_yili_
             continue
         cari = gk.cari_hesap
         kisi = cari.gorunen_ad if cari else (gk.fatura_no or f'Gider #{gk.id}')
-        kalan = int(t.kalan_tutar or t.tutar or 0)
+        kalan = as_money(t.kalan_tutar or t.tutar or 0)
         if kalan <= 0:
             continue
         rows.append({
@@ -523,7 +525,7 @@ def _bugun_islem_satirlari(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> 
                 'kaynak': 'sozlesme',
                 'kaynak_label': KAYNAK_LABELS['sozlesme'],
                 'kisi_adi': kisi,
-                'tutar': int(th.tutar),
+                'tutar': as_money(th.tutar),
                 'odeme_yontemi': th.odeme_yontemi.ad if th.odeme_yontemi_id else None,
                 'odeme_yontemi_tipi': th.odeme_yontemi.tip if th.odeme_yontemi_id else None,
                 'tarih': th.tahsilat_tarihi.isoformat(),
@@ -551,7 +553,7 @@ def _bugun_islem_satirlari(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> 
             'kaynak': 'gelir',
             'kaynak_label': KAYNAK_LABELS['gelir'],
             'kisi_adi': kisi,
-            'tutar': int(gt.tutar),
+            'tutar': as_money(gt.tutar),
             'odeme_yontemi': gt.odeme_yontemi.ad if gt.odeme_yontemi_id else None,
             'odeme_yontemi_tipi': gt.odeme_yontemi.tip if gt.odeme_yontemi_id else None,
             'tarih': gt.tahsilat_tarihi.isoformat(),
@@ -575,7 +577,7 @@ def _bugun_islem_satirlari(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> 
             'kaynak': 'cari',
             'kaynak_label': KAYNAK_LABELS['cari'],
             'kisi_adi': str(ch.cari_hesap) if ch.cari_hesap_id else '—',
-            'tutar': int(ch.tutar),
+            'tutar': as_money(ch.tutar),
             'odeme_yontemi': None,
             'odeme_yontemi_tipi': None,
             'tarih': ch.islem_tarihi.isoformat(),
@@ -608,7 +610,7 @@ def _geciken_listesi(kurum_id, sube_id, egitim_yili_id, limit=20) -> tuple[list[
 
     all_taksitler = list(base_qs)
     adet = len(all_taksitler)
-    toplam_kalan = sum(int(t.kalan_tutar or 0) for t in all_taksitler)
+    toplam_kalan = sum(as_money(t.kalan_tutar or 0) for t in all_taksitler)
     gecikme_sum = sum(gecikme_gunu(t) for t in all_taksitler)
 
     rows = []
@@ -625,7 +627,7 @@ def _geciken_listesi(kurum_id, sube_id, egitim_yili_id, limit=20) -> tuple[list[
             'veli_telefon': (veli.telefon or None) if veli else None,
             'taksit_no': t.taksit_no,
             'vade_tarihi': t.vade_tarihi.isoformat(),
-            'kalan_tutar': int(t.kalan_tutar or 0),
+            'kalan_tutar': as_money(t.kalan_tutar or 0),
             'gecikme_gun': gecikme_gunu(t),
         })
 
@@ -674,7 +676,7 @@ class DashboardOverviewService:
             _gider_odeme_qs(kurum_id, ay_basi, ay_sonu, sube_id, egitim_yili_id),
         )
 
-        bu_ay_alinan_tutar = int(bu_ay_alinan['ozet']['toplam_tutar'])
+        bu_ay_alinan_tutar = as_money(bu_ay_alinan['ozet']['toplam_tutar'])
 
         kasa_hesaplari, banka_hesaplari, kasa_toplam, banka_toplam = _mali_hesap_bloklari(
             kurum_id, sube_id, egitim_yili_id,

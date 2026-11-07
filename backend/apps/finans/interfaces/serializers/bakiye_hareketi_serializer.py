@@ -14,10 +14,11 @@ class BakiyeHareketiListSerializer(serializers.ModelSerializer):
     yon_label = serializers.SerializerMethodField()
     kaynak_label = serializers.SerializerMethodField()
     islem_yapan_ad = serializers.SerializerMethodField()
-    signed_tutar = serializers.IntegerField(read_only=True)
+    signed_tutar = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True, coerce_to_string=False)
 
     class Meta:
         model = BakiyeHareketi
+        extra_kwargs = {name: {'coerce_to_string': False} for name in ['tutar', 'bakiye_oncesi', 'bakiye_sonrasi']}
         fields = [
             'id', 'mali_hesap', 'mali_hesap_ad',
             'yon', 'yon_label', 'tutar', 'signed_tutar',
@@ -48,10 +49,11 @@ class BakiyeHareketiDetailSerializer(serializers.ModelSerializer):
     yon_label = serializers.SerializerMethodField()
     kaynak_label = serializers.SerializerMethodField()
     islem_yapan_ad = serializers.SerializerMethodField()
-    signed_tutar = serializers.IntegerField(read_only=True)
+    signed_tutar = serializers.DecimalField(max_digits=18, decimal_places=2, read_only=True, coerce_to_string=False)
 
     class Meta:
         model = BakiyeHareketi
+        extra_kwargs = {name: {'coerce_to_string': False} for name in ['tutar', 'bakiye_oncesi', 'bakiye_sonrasi']}
         fields = [
             'id', 'mali_hesap', 'mali_hesap_ad', 'mali_hesap_tip',
             'kurum', 'sube', 'sube_ad',

@@ -63,7 +63,7 @@ export function fmtTL(val: number): string {
     style: "currency",
     currency: "TRY",
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(val);
 }
 

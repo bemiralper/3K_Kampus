@@ -4,10 +4,11 @@
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.exceptions import NotFound, PermissionDenied, ValidationError
 
 from apps.finans.application.cek_senet.cek_senet_service import CekSenetService, serialize_cek_senet
 from apps.finans.interfaces.views.base import FinansAPIView
-from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube
+from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube, assert_record_sube_access
 from shared.context import get_secili_kurum_id
 from shared.permissions import FinansModulePermission
 
@@ -23,6 +24,21 @@ def _int_param(value):
 
 def _current_user(request):
     return request.user if request.user.is_authenticated else None
+
+
+class CekSenetRecordView(FinansAPIView):
+    """Tüm tekil kayıt uçları, işleme başlamadan aynı erişim kapısından geçer."""
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        detay = CekSenetService().get_by_id(kwargs['pk'])
+        if detay is None:
+            raise NotFound('Kayıt bulunamadı')
+        err = assert_record_sube_access(request, detay.kurum_id, detay.sube_id)
+        if err is not None:
+            if err.status_code == 400:
+                raise ValidationError(err.data)
+            raise PermissionDenied(err.data)
 
 
 class CekSenetListView(FinansAPIView):
@@ -58,14 +74,11 @@ class CekSenetListView(FinansAPIView):
 
     def post(self, request):
         kurum_id = _int_param(request.data.get('kurum_id')) or get_secili_kurum_id(request)
-        sube_id = _int_param(request.data.get('sube_id'))
         if not kurum_id:
             return Response({'error': 'kurum_id gerekli'}, status=status.HTTP_400_BAD_REQUEST)
-        if not sube_id:
-            sube_id_res, err = resolve_mandatory_finans_sube(request, kurum_id)
-            if err:
-                return err
-            sube_id = sube_id_res
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        if err is not None:
+            return err
 
         payload = dict(request.data)
         payload['kurum_id'] = kurum_id
@@ -88,7 +101,7 @@ class CekSenetListView(FinansAPIView):
         return Response(result, status=status.HTTP_201_CREATED)
 
 
-class CekSenetDetailView(FinansAPIView):
+class CekSenetDetailView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def get(self, request, pk):
@@ -124,14 +137,14 @@ class CekSenetDashboardView(FinansAPIView):
         return Response(service.dashboard(kurum_id, sube_id=sube_id))
 
 
-class CekSenetTimelineView(FinansAPIView):
+class CekSenetTimelineView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def get(self, request, pk):
         return Response({'results': CekSenetService().timeline(pk)})
 
 
-class CekSenetCiroView(FinansAPIView):
+class CekSenetCiroView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def post(self, request, pk):
@@ -150,7 +163,7 @@ class CekSenetCiroView(FinansAPIView):
         return Response(result)
 
 
-class CekSenetProtestoView(FinansAPIView):
+class CekSenetProtestoView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def post(self, request, pk):
@@ -165,7 +178,7 @@ class CekSenetProtestoView(FinansAPIView):
         return Response(result)
 
 
-class CekSenetIadeView(FinansAPIView):
+class CekSenetIadeView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def post(self, request, pk):
@@ -180,7 +193,7 @@ class CekSenetIadeView(FinansAPIView):
         return Response(result)
 
 
-class CekSenetIptalView(FinansAPIView):
+class CekSenetIptalView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def post(self, request, pk):
@@ -194,7 +207,7 @@ class CekSenetIptalView(FinansAPIView):
         return Response(result)
 
 
-class CekSenetDosyaView(FinansAPIView):
+class CekSenetDosyaView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
     parser_classes = [MultiPartParser, FormParser]
 
@@ -218,7 +231,7 @@ class CekSenetDosyaView(FinansAPIView):
         return Response(result, status=status.HTTP_201_CREATED)
 
 
-class CekSenetDosyaDeleteView(FinansAPIView):
+class CekSenetDosyaDeleteView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def delete(self, request, pk, dosya_id):
@@ -228,7 +241,7 @@ class CekSenetDosyaDeleteView(FinansAPIView):
         return Response({'success': True})
 
 
-class CekSenetTransitionView(FinansAPIView):
+class CekSenetTransitionView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def post(self, request, pk):
@@ -250,7 +263,7 @@ class CekSenetTransitionView(FinansAPIView):
         return Response(payload)
 
 
-class CekSenetTahsilView(FinansAPIView):
+class CekSenetTahsilView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def post(self, request, pk):
@@ -272,7 +285,7 @@ class CekSenetTahsilView(FinansAPIView):
         return Response(result)
 
 
-class CekSenetOdeView(FinansAPIView):
+class CekSenetOdeView(CekSenetRecordView):
     permission_classes = [FinansModulePermission]
 
     def post(self, request, pk):

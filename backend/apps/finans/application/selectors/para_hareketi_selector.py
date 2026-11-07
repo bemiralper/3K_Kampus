@@ -9,7 +9,7 @@ Hareketleri" ekranının veri kaynağı doğrudan burasıdır — ayrıca her
 kaydı okunabilir hale getirmek için kaynak modele (Tahsilat, GelirTahsilat,
 GiderOdeme, HesapTransferi) geri referans verilerek zenginleştirilir.
 """
-from django.db.models import Q, Sum, Case, When, IntegerField
+from django.db.models import Q, Sum, Case, When, DecimalField
 
 from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
 from apps.finans.constants.hareket_types import HareketYonu, HareketKaynagi
@@ -47,19 +47,19 @@ class ParaHareketiSelector:
                 Case(
                     When(yon=HareketYonu.GIRIS, then='tutar'),
                     default=0,
-                    output_field=IntegerField(),
+                    output_field=DecimalField(max_digits=18, decimal_places=2),
                 )
             ),
             toplam_cikis=Sum(
                 Case(
                     When(yon=HareketYonu.CIKIS, then='tutar'),
                     default=0,
-                    output_field=IntegerField(),
+                    output_field=DecimalField(max_digits=18, decimal_places=2),
                 )
             ),
         )
-        filtre_toplam_giris = int(agg['toplam_giris'] or 0)
-        filtre_toplam_cikis = int(agg['toplam_cikis'] or 0)
+        filtre_toplam_giris = (agg['toplam_giris'] or 0)
+        filtre_toplam_cikis = (agg['toplam_cikis'] or 0)
 
         qs = qs.order_by('-islem_tarihi', '-created_at', '-id')
 
@@ -109,8 +109,8 @@ class ParaHareketiSelector:
             'mali_hesap_tip': hareket.mali_hesap.tip if hareket.mali_hesap_id else '',
             'yon': hareket.yon,
             'yon_label': HareketYonu.get_label(hareket.yon),
-            'tutar': int(hareket.tutar),
-            'signed_tutar': int(hareket.signed_tutar),
+            'tutar': (hareket.tutar),
+            'signed_tutar': (hareket.signed_tutar),
             'kaynak': hareket.kaynak,
             'kaynak_label': HareketKaynagi.get_label(hareket.kaynak),
             'kaynak_tip': hareket.kaynak_tip,
@@ -118,7 +118,7 @@ class ParaHareketiSelector:
             'cari_adi': cari_adi,
             'odeme_yontemi_adi': odeme_yontemi_adi,
             'belge_no': belge_no,
-            'bakiye_sonrasi': int(hareket.bakiye_sonrasi) if hareket.bakiye_sonrasi is not None else None,
+            'bakiye_sonrasi': (hareket.bakiye_sonrasi) if hareket.bakiye_sonrasi is not None else None,
             'islem_tarihi': str(hareket.islem_tarihi),
             'aciklama': hareket.aciklama or '',
             'islem_yapan': hareket.islem_yapan.get_full_name() if hareket.islem_yapan else None,

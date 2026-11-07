@@ -5,7 +5,7 @@ import { odemeTakipBridge, type SozlesmeAramaSonuc } from "../../services/odeme-
 import { finansModalInputStyle } from "@/components/finans/FinansModal";
 
 const fmtTL = (v: number) =>
-  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v || 0);
+  new Intl.NumberFormat("tr-TR", { style: "currency", currency: "TRY", minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(v || 0);
 
 interface SozlesmeAramaProps {
   value: SozlesmeAramaSonuc | null;

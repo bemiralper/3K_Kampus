@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime
 
+from apps.finans.application.money import as_money
+
 from django.db.models import Count, Sum
 from django.utils import timezone
 
@@ -227,7 +229,7 @@ class GunSonuDetayReportService:
                 'taksit_no': taksit.taksit_no if taksit else '—',
                 'odeme_donemi': _taksit_donem_label(taksit),
                 'odeme_turu': _odeme_label(t.odeme_yontemi),
-                'tutar': int(t.tutar or 0),
+                'tutar': as_money(t.tutar or 0),
                 'personel': _user_display(t.islem_yapan),
                 'aciklama': (t.aciklama or '').strip() or '—',
             })
@@ -301,7 +303,7 @@ class GunSonuDetayReportService:
                 'kasa': detay.tahsilat_mali_hesap.ad if detay.tahsilat_mali_hesap_id else '—',
                 'aciklama': (detay.aciklama or '').strip() or 'Verilen çek/senet ödemesi',
                 'onaylayan': '—',
-                'tutar': int(detay.tutar or 0),
+                'tutar': as_money(detay.tutar or 0),
                 'personel': '—',
             })
 
@@ -358,12 +360,12 @@ class GunSonuDetayReportService:
                 'saat': _fmt_saat(t.iptal_tarihi),
                 'islem_no': t.referans_no or f'TH-{t.id}',
                 'islem_turu': 'Tahsilat İptali',
-                'eski_tutar': int(t.tutar or 0),
+                'eski_tutar': as_money(t.tutar or 0),
                 'yeni_durum': 'İptal Edildi',
                 'sebep': (t.iptal_nedeni or '').strip() or '—',
                 'kullanici': _user_display(t.iptal_eden),
                 'tur': 'Tahsilat İptali',
-                'tutar': int(t.tutar or 0),
+                'tutar': as_money(t.tutar or 0),
             })
 
         gt_qs = GelirTahsilat.objects.filter(
@@ -460,7 +462,7 @@ class GunSonuDetayReportService:
                 'saat': _fmt_saat(t.created_at),
                 'ogrenci': f'{ogr.ad} {ogr.soyad}'.strip() if ogr else '—',
                 'iade_nedeni': (t.aciklama or '').strip() or '—',
-                'tutar': int(t.tutar or 0),
+                'tutar': as_money(t.tutar or 0),
                 'iade_tarihi': _fmt_date(t.tahsilat_tarihi),
                 'onaylayan': _user_display(t.islem_yapan),
                 'kullanici': _user_display(t.islem_yapan),
@@ -534,7 +536,7 @@ class GunSonuDetayReportService:
                 kat = detay.gider_taksit.gider_kaydi.gider_kategorisi.ad
             else:
                 kat = 'Çek/Senet'
-            agg[kat] += int(detay.tutar or 0)
+            agg[kat] += as_money(detay.tutar or 0)
 
         rows = [{'kategori': k, 'tutar': v} for k, v in agg.items()]
         rows.sort(key=lambda r: -r['tutar'])
@@ -554,13 +556,13 @@ class GunSonuDetayReportService:
             if saat == '—':
                 continue
             hour = saat.split(':')[0]
-            buckets[hour] += int(row.get('tutar') or 0)
+            buckets[hour] += as_money(row.get('tutar') or 0)
         for row in gelir_hareketleri or []:
             saat = row.get('saat', '—')
             if saat == '—':
                 continue
             hour = saat.split(':')[0]
-            buckets[hour] += int(row.get('tutar') or 0)
+            buckets[hour] += as_money(row.get('tutar') or 0)
         return [{'saat': f'{h}:00', 'tutar': t} for h, t in sorted(buckets.items())]
 
     def _personel_performans(
@@ -676,7 +678,7 @@ class GunSonuDetayReportService:
                 'kasa': h.mali_hesap.ad if h.mali_hesap else '—',
                 'yon': 'Giriş' if h.yon == HareketYonu.GIRIS else 'Çıkış',
                 'kaynak': HareketKaynagi.get_label(h.kaynak),
-                'tutar': int(h.tutar),
+                'tutar': as_money(h.tutar),
                 'aciklama': (h.aciklama or '').strip() or '—',
                 'personel': _user_display(h.islem_yapan),
             })
@@ -694,7 +696,7 @@ class GunSonuDetayReportService:
                     'kasa': t.kaynak_hesap.ad,
                     'yon': 'Çıkış',
                     'kaynak': TransferTuru.get_label(t.transfer_turu),
-                    'tutar': int(t.tutar),
+                    'tutar': as_money(t.tutar),
                     'aciklama': (t.aciklama or '').strip() or f'{t.kaynak_hesap.ad} → {t.hedef_hesap.ad}',
                     'personel': _user_display(t.islem_yapan),
                 })
@@ -704,7 +706,7 @@ class GunSonuDetayReportService:
                     'kasa': t.hedef_hesap.ad,
                     'yon': 'Giriş',
                     'kaynak': TransferTuru.get_label(t.transfer_turu),
-                    'tutar': int(t.tutar),
+                    'tutar': as_money(t.tutar),
                     'aciklama': (t.aciklama or '').strip() or f'{t.kaynak_hesap.ad} → {t.hedef_hesap.ad}',
                     'personel': _user_display(t.islem_yapan),
                 })
@@ -733,15 +735,15 @@ class GunSonuDetayReportService:
         for h in hareket_qs:
             hesap_ad = h.mali_hesap.ad if h.mali_hesap else '—'
             if h.yon == HareketYonu.GIRIS:
-                toplamlar[hesap_ad]['giris'] += int(h.tutar)
+                toplamlar[hesap_ad]['giris'] += as_money(h.tutar)
             else:
-                toplamlar[hesap_ad]['cikis'] += int(h.tutar)
+                toplamlar[hesap_ad]['cikis'] += as_money(h.tutar)
             detay.append({
                 'saat': _fmt_saat(h.created_at),
                 'banka': hesap_ad,
                 'yon': 'Giriş' if h.yon == HareketYonu.GIRIS else 'Çıkış',
                 'tur': HareketKaynagi.get_label(h.kaynak),
-                'tutar': int(h.tutar),
+                'tutar': as_money(h.tutar),
                 'aciklama': (h.aciklama or '').strip() or '—',
             })
 
@@ -756,9 +758,9 @@ class GunSonuDetayReportService:
         for t in transfer_qs:
             if t.kaynak_hesap_id in banka_ids or t.hedef_hesap_id in banka_ids:
                 if t.transfer_turu == TransferTuru.KASADAN_BANKAYA:
-                    eft_toplam += int(t.tutar)
+                    eft_toplam += as_money(t.tutar)
                 elif t.transfer_turu == TransferTuru.BANKADAN_KASAYA:
-                    havale_toplam += int(t.tutar)
+                    havale_toplam += as_money(t.tutar)
 
         banka_bazli = [
             {
@@ -798,7 +800,7 @@ class GunSonuDetayReportService:
             pos_ad = t.mali_hesap.ad if t.mali_hesap else (t.odeme_yontemi.ad if t.odeme_yontemi else 'POS')
             banka = _banka_label(t.mali_hesap)
             key = (pos_ad, banka, 'POS')
-            agg[key]['tutar'] += int(t.tutar or 0)
+            agg[key]['tutar'] += as_money(t.tutar or 0)
             agg[key]['adet'] += 1
 
         g_qs = GelirTahsilat.objects.filter(
@@ -922,11 +924,11 @@ class GunSonuDetayReportService:
         ).exclude(durum=SozlesmeDurum.TASLAK)
         if sube_id:
             soz_qs = soz_qs.filter(sube_id=sube_id)
-        toplam_sozlesme = int(soz_qs.aggregate(t=Sum('net_tutar'))['t'] or 0)
+        toplam_sozlesme = as_money(soz_qs.aggregate(t=Sum('net_tutar'))['t'] or 0)
 
         iskonto = 0
         for s in soz_qs.only('brut_tutar', 'net_tutar'):
-            iskonto += max(0, int(s.brut_tutar or 0) - int(s.net_tutar or 0))
+            iskonto += max(0, as_money(s.brut_tutar or 0) - as_money(s.net_tutar or 0))
 
         bekleyen_qs = Taksit.objects.filter(
             sozlesme__kurum_id=kurum_id,
@@ -936,7 +938,7 @@ class GunSonuDetayReportService:
         )
         if sube_id:
             bekleyen_qs = bekleyen_qs.filter(sozlesme__sube_id=sube_id)
-        bekleyen_tahsilat = int(bekleyen_qs.aggregate(t=Sum('kalan_tutar'))['t'] or 0)
+        bekleyen_tahsilat = as_money(bekleyen_qs.aggregate(t=Sum('kalan_tutar'))['t'] or 0)
 
         return {
             'toplam_sozlesme_tutari': toplam_sozlesme,

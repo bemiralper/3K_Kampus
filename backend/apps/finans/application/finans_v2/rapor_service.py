@@ -343,28 +343,25 @@ class FinansV2RaporService:
 
     # ─── 9. Nakit Akışı ───────────────────────────
     def nakit_akisi(self, kurum_id, sube_id, params):
-        tahsilat_qs = GelirTahsilat.objects.filter(
-            gelir_kaydi__kurum_id=kurum_id, durum=OdemeDurum.TAMAMLANDI,
-        )
-        odeme_qs = GiderOdeme.objects.filter(
-            gider_kaydi__kurum_id=kurum_id, durum=OdemeDurum.TAMAMLANDI,
+        from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+        from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
+
+        hareketler = BakiyeHareketi.objects.filter(kurum_id=kurum_id).exclude(
+            kaynak__in=[HareketKaynagi.DEVIR, HareketKaynagi.ACILIS, HareketKaynagi.TRANSFER],
         )
         if sube_id:
-            tahsilat_qs = tahsilat_qs.filter(gelir_kaydi__sube_id=sube_id)
-            odeme_qs = odeme_qs.filter(gider_kaydi__sube_id=sube_id)
-        tahsilat_qs = self._tarih(tahsilat_qs, params, 'tahsilat_tarihi')
-        odeme_qs = self._tarih(odeme_qs, params, 'odeme_tarihi')
+            hareketler = hareketler.filter(sube_id=sube_id)
+        hareketler = self._tarih(hareketler, params, 'islem_tarihi')
+        if params.get('egitim_yili_id'):
+            hareketler = hareketler.filter(egitim_yili_id=params['egitim_yili_id'])
 
-        def bucket(qs, alan):
-            out = {}
-            for r in (qs.annotate(ay=TruncMonth(alan)).values('ay')
-                      .annotate(t=Sum('tutar')).order_by('ay')):
-                if r['ay']:
-                    out[r['ay']] = _f(r['t'])
-            return out
+        def bucket(yon):
+            return {r['ay']: _f(r['t']) for r in (
+                hareketler.filter(yon=yon).annotate(ay=TruncMonth('islem_tarihi'))
+                .values('ay').annotate(t=Sum('tutar')).order_by('ay')) if r['ay']}
 
-        gmap = bucket(tahsilat_qs, 'tahsilat_tarihi')
-        dmap = bucket(odeme_qs, 'odeme_tarihi')
+        gmap = bucket(HareketYonu.GIRIS)
+        dmap = bucket(HareketYonu.CIKIS)
         keys = sorted(set(gmap) | set(dmap))
         rows = []
         kumulatif = 0

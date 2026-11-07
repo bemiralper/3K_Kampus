@@ -140,6 +140,6 @@ class IslemMasrafi(models.Model):
         return f'{self.get_kesinti_turu_display()} — {self.kesinti_tutar} ₺'
 
     @property
-    def bakiye_tutar(self) -> int:
-        """BakiyeHareketi için tamsayı TL tutarı."""
-        return int(self.kesinti_tutar.to_integral_value())
+    def bakiye_tutar(self) -> Decimal:
+        """BakiyeHareketi için kuruş hassasiyetinde tutar."""
+        return self.kesinti_tutar

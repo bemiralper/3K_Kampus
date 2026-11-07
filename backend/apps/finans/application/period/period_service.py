@@ -6,6 +6,8 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 
+from apps.finans.application.money import as_money
+
 from django.db.models import Q, Sum, Count
 from django.utils import timezone
 
@@ -95,10 +97,10 @@ def _cek_senet_row(detay) -> dict:
         'kaynak': 'cek_senet',
         'kaynak_label': KAYNAK_LABELS['cek_senet'],
         'kisi_adi': kisi,
-        'tutar': int(detay.tutar or 0),
-        'toplam_tutar': int(detay.tutar or 0),
+        'tutar': as_money(detay.tutar or 0),
+        'toplam_tutar': as_money(detay.tutar or 0),
         'odenen_tutar': 0,
-        'kalan_tutar': int(detay.tutar or 0),
+        'kalan_tutar': as_money(detay.tutar or 0),
         'tahsil_durumu': 'bekliyor',
         'tahsil_durumu_label': CekSenetDurum.get_label(detay.durum) or 'Portföyde',
         'odeme_yontemi': _yontem_label(tip),
@@ -113,6 +115,38 @@ def _cek_senet_row(detay) -> dict:
         'cari_hesap_id': detay.cari_hesap_id,
         'cek_senet_id': detay.id,
     }
+
+
+def _manual_cek_rows(*, kurum_id, baslangic, bitis, sube_id=None,
+                     egitim_yili_id=None, odeme_yontemi_tipi=None,
+                     odeme_yontemi_tipleri=None, odeme_yontemi_ids=None, **kwargs):
+    """Carisiz manuel çek tahsili; carili olanlar cari kaynağında zaten sayılır."""
+    from apps.finans.domain.bakiye_hareketi import BakiyeHareketi
+    from apps.odeme_takip.domain.cek_senet import CekSenetDetay
+    movements = BakiyeHareketi.objects.filter(
+        kurum_id=kurum_id, kaynak_tip='CekSenetDetay', kaynak='tahsilat', yon='giris')
+    if egitim_yili_id:
+        movements = movements.filter(egitim_yili_id=egitim_yili_id)
+    qs = CekSenetDetay.objects.filter(
+        kurum_id=kurum_id, yon='alinan', durum='tahsil_edildi', taksit__isnull=True,
+        cari_hesap__isnull=True, tahsil_tarihi__range=(baslangic, bitis),
+        pk__in=movements.values('kaynak_id'),
+    ).filter(_yontem_filter(odeme_yontemi_tipi, odeme_yontemi_tipleri, odeme_yontemi_ids))
+    if sube_id:
+        qs = qs.filter(sube_id=sube_id)
+    rows = []
+    for det in qs.select_related('odeme_yontemi'):
+        rows.append({
+            'id': det.pk, 'kaynak': 'cek_senet', 'kaynak_label': KAYNAK_LABELS['cek_senet'],
+            'kisi_adi': det.keside_eden or det.cek_senet_no or f'Çek/Senet #{det.pk}',
+            'tutar': as_money(det.tutar), 'odeme_yontemi': det.odeme_yontemi.ad,
+            'odeme_yontemi_tipi': det.odeme_yontemi.tip, 'odeme_yontemi_id': det.odeme_yontemi_id,
+            'tahsil_durumu': 'odendi', 'tahsil_durumu_label': 'Alındı',
+            'tarih': det.tahsil_tarihi.isoformat(), 'vade_tarihi': det.vade_tarihi.isoformat(),
+            'aciklama': det.aciklama, 'sozlesme_id': None, 'sozlesme_no': None,
+            'gelir_id': None, 'cari_hesap_id': None, 'cek_senet_id': det.pk,
+        })
+    return rows
 
 
 def _yontem_filter(
@@ -223,7 +257,7 @@ def _aggregate_yontem_rows(yontem_rows: list[dict], toplam_tutar: int) -> list[d
         key = tip or '_belirtilmemis'
         if key not in yontem_map:
             yontem_map[key] = {'toplam': 0, 'adet': 0, 'yontem_tipi': tip}
-        yontem_map[key]['toplam'] += int(y.get('toplam') or 0)
+        yontem_map[key]['toplam'] += as_money(y.get('toplam') or 0)
         yontem_map[key]['adet'] += int(y.get('adet') or 0)
 
     yontem_dagilimi = []
@@ -294,9 +328,9 @@ class PeriodService:
             {
                 'kaynak': key,
                 'kaynak_label': KAYNAK_LABELS.get(key, key),
-                'toplam': int(kaynaklar[key]['toplam'] or 0),
+                'toplam': as_money(kaynaklar[key]['toplam'] or 0),
                 'adet': int(kaynaklar[key]['adet'] or 0),
-                'oran': round(int(kaynaklar[key]['toplam'] or 0) / toplam_tutar * 100, 1) if toplam_tutar else 0,
+                'oran': round(as_money(kaynaklar[key]['toplam'] or 0) / toplam_tutar * 100, 1) if toplam_tutar else 0,
             }
             for key in ('sozlesme', 'gelir', 'cari', 'cek_senet')
             if kaynaklar.get(key, {}).get('toplam') or kaynaklar.get(key, {}).get('adet')
@@ -308,7 +342,7 @@ class PeriodService:
         for row in rows:
             day = str(row.get('tarih', ''))[:10]
             if day:
-                by_day[day] += int(row.get('tutar') or 0)
+                by_day[day] += as_money(row.get('tutar') or 0)
         return [
             {'label': day, 'tutar': tutar}
             for day, tutar in sorted(by_day.items())
@@ -342,7 +376,7 @@ class PeriodService:
                 tahsilat_tarihi__lte=bitis,
             ) & ~Q(tahsilat_turu=TahsilatTuru.IADE) & yontem_q
             agg = Tahsilat.objects.filter(th_q).aggregate(t=Sum('tutar'), a=Count('id'))
-            sozlesme_data = {'toplam': int(agg['t'] or 0), 'adet': int(agg['a'] or 0)}
+            sozlesme_data = {'toplam': as_money(agg['t'] or 0), 'adet': int(agg['a'] or 0)}
             yontem_rows.extend(
                 Tahsilat.objects.filter(th_q)
                 .values('odeme_yontemi__tip', 'odeme_yontemi__ad')
@@ -363,14 +397,14 @@ class PeriodService:
             if egitim_yili_id:
                 gt_q &= Q(gelir_kaydi__egitim_yili_id=egitim_yili_id)
             agg = GelirTahsilat.objects.filter(gt_q).aggregate(t=Sum('tutar'), a=Count('id'))
-            gelir_data = {'toplam': int(agg['t'] or 0), 'adet': int(agg['a'] or 0)}
+            gelir_data = {'toplam': as_money(agg['t'] or 0), 'adet': int(agg['a'] or 0)}
             yontem_rows.extend(
                 GelirTahsilat.objects.filter(gt_q)
                 .values('odeme_yontemi__tip', 'odeme_yontemi__ad')
                 .annotate(toplam=Sum('tutar'), adet=Count('id'))
             )
             for gt in GelirTahsilat.objects.filter(gt_q).only('tahsilat_tarihi', 'tutar'):
-                detail_rows.append({'tarih': gt.tahsilat_tarihi.isoformat(), 'tutar': int(gt.tutar)})
+                detail_rows.append({'tarih': gt.tahsilat_tarihi.isoformat(), 'tutar': as_money(gt.tutar)})
 
         if not kaynak or kaynak == 'cari':
             ch_q = Q(
@@ -384,11 +418,17 @@ class PeriodService:
             if egitim_yili_id:
                 ch_q &= Q(egitim_yili_id=egitim_yili_id)
             agg = CariHareket.objects.filter(ch_q).aggregate(t=Sum('tutar'), a=Count('id'))
-            cari_data = {'toplam': int(agg['t'] or 0), 'adet': int(agg['a'] or 0)}
+            cari_data = {'toplam': as_money(agg['t'] or 0), 'adet': int(agg['a'] or 0)}
             for ch in CariHareket.objects.filter(ch_q).only('islem_tarihi', 'tutar'):
-                detail_rows.append({'tarih': ch.islem_tarihi.isoformat(), 'tutar': int(ch.tutar)})
+                detail_rows.append({'tarih': ch.islem_tarihi.isoformat(), 'tutar': as_money(ch.tutar)})
 
+        manual_rows = _manual_cek_rows(**kwargs) if not kaynak or kaynak == 'cek_senet' else []
+        detail_rows.extend(manual_rows)
+        for row in manual_rows:
+            yontem_rows.append({'odeme_yontemi__tip': row['odeme_yontemi_tipi'],
+                                'toplam': row['tutar'], 'adet': 1})
         kaynaklar = {'sozlesme': sozlesme_data, 'gelir': gelir_data, 'cari': cari_data}
+        kaynaklar['cek_senet'] = {'toplam': sum(r['tutar'] for r in manual_rows), 'adet': len(manual_rows)}
         toplam_tutar = sum(k['toplam'] for k in kaynaklar.values())
         toplam_adet = sum(k['adet'] for k in kaynaklar.values())
 
@@ -424,7 +464,7 @@ class PeriodService:
     @classmethod
     def _expected_total(cls, **kwargs) -> int:
         data = cls._summary_beklenen_raw(**kwargs)
-        return sum(int(v['toplam']) for v in data.values())
+        return sum(as_money(v['toplam']) for v in data.values())
 
     @classmethod
     def _summary_beklenen_raw(cls, **kwargs) -> dict[str, dict]:
@@ -460,9 +500,9 @@ class PeriodService:
             ):
                 if t.id in linked_taksit_ids:
                     continue
-                tutar = int(t.tutar or 0)
-                odenen = int(t.odenen_tutar or 0)
-                kalan_t = int(t.kalan_tutar or 0)
+                tutar = as_money(t.tutar or 0)
+                odenen = as_money(t.odenen_tutar or 0)
+                kalan_t = as_money(t.kalan_tutar or 0)
                 toplam += tutar
                 alinan += odenen
                 kalan += kalan_t
@@ -475,7 +515,7 @@ class PeriodService:
 
             gq = Q(
                 kurum_id=kurum_id,
-                durum=GelirDurum.ONAYLANDI,
+                durum__in=[GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL, GelirDurum.TAHSIL_EDILDI],
                 vade_tarihi__gte=baslangic,
                 vade_tarihi__lte=bitis,
             )
@@ -488,9 +528,9 @@ class PeriodService:
             alinan = 0
             kalan = 0
             for g in GelirKaydi.objects.filter(gq).prefetch_related('tahsilatlar'):
-                brut = int(g.brut_tutar)
+                brut = g.net_tutar
                 odenen = sum(
-                    int(t.tutar) for t in g.tahsilatlar.filter(durum=OdemeDurum.TAMAMLANDI)
+                    t.tutar for t in g.tahsilatlar.filter(durum=OdemeDurum.TAMAMLANDI)
                 )
                 kalan_t = brut - odenen
                 toplam += brut
@@ -506,7 +546,7 @@ class PeriodService:
             adet = 0
             toplam = 0
             for detay in qs.only('tutar'):
-                tutar = int(detay.tutar or 0)
+                tutar = as_money(detay.tutar or 0)
                 toplam += tutar
                 adet += 1
             cek_senet_beklenen = {
@@ -561,7 +601,7 @@ class PeriodService:
 
             gq = Q(
                 kurum_id=kurum_id,
-                durum=GelirDurum.ONAYLANDI,
+                durum__in=[GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL, GelirDurum.TAHSIL_EDILDI],
                 vade_tarihi__gte=baslangic,
                 vade_tarihi__lte=bitis,
             )
@@ -596,7 +636,7 @@ class PeriodService:
                     'adet': row['adet'],
                 })
 
-        toplam_alinan = sum(int(y.get('toplam') or 0) for y in yontem_rows)
+        toplam_alinan = sum(as_money(y.get('toplam') or 0) for y in yontem_rows)
         return _aggregate_yontem_rows(yontem_rows, toplam_alinan)
 
     @classmethod
@@ -604,9 +644,9 @@ class PeriodService:
         baslangic = kwargs['baslangic']
         bitis = kwargs['bitis']
         kaynaklar = cls._summary_beklenen_raw(**kwargs)
-        toplam_beklenen = sum(int(v['toplam']) for v in kaynaklar.values())
-        toplam_alinan = sum(int(v.get('alinan') or 0) for v in kaynaklar.values())
-        toplam_kalan = sum(int(v.get('kalan') or 0) for v in kaynaklar.values())
+        toplam_beklenen = sum(as_money(v['toplam']) for v in kaynaklar.values())
+        toplam_alinan = sum(as_money(v.get('alinan') or 0) for v in kaynaklar.values())
+        toplam_kalan = sum(as_money(v.get('kalan') or 0) for v in kaynaklar.values())
         toplam_adet = sum(int(v['adet']) for v in kaynaklar.values())
 
         rows = cls.period_details(mode='beklenen', **kwargs)
@@ -680,9 +720,9 @@ class PeriodService:
                         continue
                     ogr = t.sozlesme.ogrenci
                     kisi = f'{ogr.ad} {ogr.soyad}'.strip() if ogr else '—'
-                    toplam_t = int(t.tutar or 0)
-                    odenen = int(t.odenen_tutar or 0)
-                    kalan = int(t.kalan_tutar or 0)
+                    toplam_t = as_money(t.tutar or 0)
+                    odenen = as_money(t.odenen_tutar or 0)
+                    kalan = as_money(t.kalan_tutar or 0)
                     durum = _tahsil_durumu(odenen, kalan)
                     yontem_tipleri = sorted(_taksit_yontem_tipleri(t.id))
                     rows.append({
@@ -714,7 +754,7 @@ class PeriodService:
 
                 gq = Q(
                     kurum_id=kurum_id,
-                    durum=GelirDurum.ONAYLANDI,
+                    durum__in=[GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL, GelirDurum.TAHSIL_EDILDI],
                     vade_tarihi__gte=baslangic,
                     vade_tarihi__lte=bitis,
                 )
@@ -724,9 +764,9 @@ class PeriodService:
                     gq &= Q(egitim_yili_id=egitim_yili_id)
                 for g in GelirKaydi.objects.filter(gq).select_related('cari_hesap'):
                     odenen = sum(
-                        int(t.tutar) for t in g.tahsilatlar.filter(durum=OdemeDurum.TAMAMLANDI)
+                        t.tutar for t in g.tahsilatlar.filter(durum=OdemeDurum.TAMAMLANDI)
                     )
-                    toplam_t = int(g.brut_tutar)
+                    toplam_t = g.net_tutar
                     kalan = toplam_t - odenen
                     durum = _tahsil_durumu(odenen, max(kalan, 0))
                     yontem_tipleri = sorted(_gelir_yontem_tipleri(g.id))
@@ -821,7 +861,7 @@ class PeriodService:
                     'kaynak': 'gelir',
                     'kaynak_label': KAYNAK_LABELS['gelir'],
                     'kisi_adi': kisi,
-                    'tutar': int(gt.tutar),
+                    'tutar': as_money(gt.tutar),
                     'odeme_yontemi': _yontem_label(gt.odeme_yontemi.tip) if gt.odeme_yontemi_id else None,
                     'odeme_yontemi_tipi': gt.odeme_yontemi.tip if gt.odeme_yontemi_id else None,
                     'tahsil_durumu': 'odendi',
@@ -853,7 +893,7 @@ class PeriodService:
                     'kaynak': 'cari',
                     'kaynak_label': KAYNAK_LABELS['cari'],
                     'kisi_adi': str(ch.cari_hesap) if ch.cari_hesap_id else '—',
-                    'tutar': int(ch.tutar),
+                    'tutar': as_money(ch.tutar),
                     'odeme_yontemi': None,
                     'odeme_yontemi_tipi': None,
                     'tahsil_durumu': 'odendi',
@@ -868,6 +908,11 @@ class PeriodService:
                     'cari_hesap_id': ch.cari_hesap_id,
                 })
 
+        if not kaynak or kaynak == 'cek_senet':
+            rows.extend(_manual_cek_rows(
+                kurum_id=kurum_id, baslangic=baslangic, bitis=bitis, sube_id=sube_id,
+                egitim_yili_id=egitim_yili_id, odeme_yontemi_tipi=odeme_yontemi_tipi,
+                odeme_yontemi_tipleri=odeme_yontemi_tipleri, odeme_yontemi_ids=odeme_yontemi_ids))
         rows.sort(key=lambda r: (r['tarih'], r['id']))
         return rows
 

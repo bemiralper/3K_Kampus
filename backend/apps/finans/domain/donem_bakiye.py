@@ -8,7 +8,7 @@ Eğitim yılı bazında mali hesap bakiyelerinin dönemsel takibi.
 - Dönem kapatıldığında tüm rakamlar sabitlenir (snapshot alınır)
 - Devir işlemi: eski dönem kapanır → devir tutarı hesaplanır →
   yeni dönemde açılış bakiyesi olarak yazılır
-- Tüm tutarlar Integer (TL bazlı, kuruş YOK)
+- Tüm tutarlar Decimal (TL ve kuruş)
 """
 from django.db import models
 from django.conf import settings
@@ -62,29 +62,34 @@ class DonemBakiye(models.Model):
         null=True, blank=True,
     )
 
-    # ─── Bakiye Bilgileri (Integer-Only) ─────────
-    donem_basi_bakiye = models.IntegerField(
+    # ─── Bakiye Bilgileri (Decimal) ─────────
+    donem_basi_bakiye = models.DecimalField(
         'Dönem Başı Bakiye (TL)',
+        max_digits=18, decimal_places=2,
         default=0,
         help_text='Dönem açıldığında başlangıç bakiyesi. İlk yılda 0, sonraki yıllarda önceki yılın devir tutarı.',
     )
-    toplam_gelir = models.IntegerField(
+    toplam_gelir = models.DecimalField(
         'Toplam Gelir (TL)',
+        max_digits=18, decimal_places=2,
         default=0,
         help_text='Dönem içi tüm giriş hareketleri toplamı (devir hariç)',
     )
-    toplam_gider = models.IntegerField(
+    toplam_gider = models.DecimalField(
         'Toplam Gider (TL)',
+        max_digits=18, decimal_places=2,
         default=0,
         help_text='Dönem içi tüm çıkış hareketleri toplamı (devir hariç)',
     )
-    donem_sonu_bakiye = models.IntegerField(
+    donem_sonu_bakiye = models.DecimalField(
         'Dönem Sonu Bakiye (TL)',
+        max_digits=18, decimal_places=2,
         default=0,
         help_text='donem_basi_bakiye + toplam_gelir - toplam_gider',
     )
-    devir_tutari = models.IntegerField(
+    devir_tutari = models.DecimalField(
         'Devir Tutarı (TL)',
+        max_digits=18, decimal_places=2,
         default=0,
         help_text='Sonraki eğitim yılına devredilecek tutar',
     )

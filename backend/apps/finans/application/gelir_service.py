@@ -4,6 +4,7 @@ Gelir kaydı oluşturma, onaylama, durum yönetimi.
 """
 from decimal import Decimal
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 from django.utils import timezone
 
 from apps.finans.infrastructure.gelir_repository import GelirKaydiRepository
@@ -44,7 +45,7 @@ class GelirService:
             son_sira = 0
         return f"{prefix}{son_sira + 1:03d}"
 
-    @transaction.atomic
+    @atomic_result
     def create(self, data: dict):
         """
         Yeni gelir kaydı oluşturur ve otomatik onaylar.
@@ -93,7 +94,7 @@ class GelirService:
 
         return gelir, None
 
-    @transaction.atomic
+    @atomic_result
     def update(self, gelir_id: int, data: dict):
         """Gelir kaydını günceller. Tahsilatı olan kayıt da düzenlenir; tutar tahsilatın altına inemez."""
         gelir = self.gelir_repo.get_by_id(gelir_id)
@@ -115,6 +116,10 @@ class GelirService:
         if errors:
             return None, errors
 
+        if (data.get('cari_hesap_id', gelir.cari_hesap_id) != gelir.cari_hesap_id
+                and (gelir.tahsil_edilen or Decimal('0')) > 0):
+            return None, {'cari_hesap_id': 'Ödemesi olan kaydın carisi değiştirilemez. Önce ödemeleri iptal edin.'}
+
         old_net = gelir.net_tutar
         old_cari_id = gelir.cari_hesap_id
         old_fatura_tarihi = gelir.fatura_tarihi
@@ -122,7 +127,7 @@ class GelirService:
 
         # Tutar/KDV modu değiştiyse yeniden hesapla
         if 'brut_tutar' in data or 'kdv_orani' in data or 'kdv_mod' in data:
-            girilen = data.get('brut_tutar', gelir.brut_tutar)
+            girilen = data.get('brut_tutar', gelir.net_tutar if gelir.kdv_mod == 'dahil' else gelir.brut_tutar)
             kdv_orani = data.get('kdv_orani', gelir.kdv_orani)
             kdv_mod = data.get('kdv_mod', getattr(gelir, 'kdv_mod', KDV_HARIC))
             if kdv_mod not in KDV_MOD_VALUES:
@@ -192,7 +197,7 @@ class GelirService:
 
         return gelir, None
 
-    @transaction.atomic
+    @atomic_result
     def onayla(self, gelir_id: int):
         """
         Gelir kaydını onaylar.
@@ -226,7 +231,7 @@ class GelirService:
 
         return gelir, None
 
-    @transaction.atomic
+    @atomic_result
     def onay_kaldir(self, gelir_id: int):
         """Onayı kaldırır → taslak. Tahsilatı olan kayda uygulanmaz."""
         gelir = self.gelir_repo.get_by_id(gelir_id)
@@ -255,7 +260,7 @@ class GelirService:
         gelir = self.gelir_repo.update(gelir, {'durum': GelirDurum.TASLAK})
         return gelir, None
 
-    @transaction.atomic
+    @atomic_result
     def iptal_et(self, gelir_id: int, *, force=False):
         """Gelir kaydını iptal eder. force=True: önce aktif tahsilatları iptal eder."""
         gelir = self.gelir_repo.get_by_id(gelir_id)

@@ -6,6 +6,7 @@ import logging
 from decimal import Decimal
 
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 from django.db.models import Q
 from django.utils import timezone
 
@@ -42,7 +43,7 @@ class GiderService:
         except Exception:
             logger.exception('Gider çek/senet senkronu atlandı (gider_id=%s)', getattr(gider, 'pk', None))
 
-    @transaction.atomic
+    @atomic_result
     def create(self, data: dict):
         """
         Yeni gider kaydı oluşturur ve otomatik onaylar.
@@ -111,7 +112,7 @@ class GiderService:
 
         return gider, None
 
-    @transaction.atomic
+    @atomic_result
     def update(self, gider_id: int, data: dict):
         """
         Gider kaydını günceller (taslak veya ödemesiz onaylı).
@@ -130,6 +131,10 @@ class GiderService:
         if errors:
             return None, errors
 
+        if (data.get('cari_hesap_id', gider.cari_hesap_id) != gider.cari_hesap_id
+                and (gider.odenen_toplam or Decimal('0')) > 0):
+            return None, {'cari_hesap_id': 'Ödemesi olan kaydın carisi değiştirilemez. Önce ödemeleri iptal edin.'}
+
         old_net = gider.net_tutar
         old_cari_id = gider.cari_hesap_id
         old_fatura_tarihi = gider.fatura_tarihi
@@ -141,7 +146,7 @@ class GiderService:
 
         # Tutar/KDV modu değiştiyse yeniden hesapla
         if 'brut_tutar' in data or 'kdv_orani' in data or 'kdv_mod' in data:
-            girilen = data.get('brut_tutar', gider.brut_tutar)
+            girilen = data.get('brut_tutar', gider.net_tutar if gider.kdv_mod == 'dahil' else gider.brut_tutar)
             kdv_orani = data.get('kdv_orani', gider.kdv_orani)
             kdv_mod = data.get('kdv_mod', getattr(gider, 'kdv_mod', KDV_HARIC))
             if kdv_mod not in KDV_MOD_VALUES:
@@ -242,7 +247,7 @@ class GiderService:
 
         return gider, None
 
-    @transaction.atomic
+    @atomic_result
     def onaya_gonder(self, gider_id: int):
         """
         Gider kaydını onaya gönderir.
@@ -258,7 +263,7 @@ class GiderService:
         gider = self.gider_repo.update(gider, {'durum': GiderDurum.ONAY_BEKLIYOR})
         return gider, None
 
-    @transaction.atomic
+    @atomic_result
     def onayla(self, gider_id: int, onaylayan_user=None):
         """
         Gider kaydını onaylar + taksit planını otomatik oluşturur.
@@ -305,7 +310,7 @@ class GiderService:
 
         return gider, None
 
-    @transaction.atomic
+    @atomic_result
     def onay_kaldir(self, gider_id: int):
         """Onayı kaldırır → taslak. Ödemesi olan kayda uygulanmaz."""
         gider = self.gider_repo.get_by_id(gider_id)
@@ -339,7 +344,7 @@ class GiderService:
         })
         return gider, None
 
-    @transaction.atomic
+    @atomic_result
     def iptal_et(self, gider_id: int, *, force=False):
         """
         Gider kaydını iptal eder.

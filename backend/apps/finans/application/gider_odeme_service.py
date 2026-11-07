@@ -5,6 +5,7 @@ Bakiyeden mahsup: Cari hesaptaki artı bakiyeden gider ödemesi yapılabilir.
 """
 from decimal import Decimal
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 
 from apps.finans.infrastructure.gider_odeme_repository import GiderOdemeRepository
 from apps.finans.infrastructure.gider_repository import GiderKaydiRepository, GiderTaksitRepository
@@ -35,7 +36,7 @@ class GiderOdemeService:
         self.cari_hesap_repo = CariHesapRepository
         self.masraf_service = IslemMasrafiService()
 
-    @transaction.atomic
+    @atomic_result
     def odeme_yap(self, data: dict):
         """
         Gider ödemesi yapar. İki mod destekler:
@@ -74,7 +75,7 @@ class GiderOdemeService:
         else:
             return self._normal_odeme_yap(gider, tutar, data)
 
-    @transaction.atomic
+    @atomic_result
     def record_from_cek_senet_odeme(self, gider, tutar, data: dict):
         """
         Çek/senet modülünden yapılan gider ödemesini GiderOdeme'ye yansıtır.
@@ -219,7 +220,7 @@ class GiderOdemeService:
 
         return odeme, None
 
-    @transaction.atomic
+    @atomic_result
     def odeme_iptal(self, odeme_id: int):
         """
         Ödemeyi iptal eder ve tüm bakiyeleri geri alır.
@@ -331,6 +332,15 @@ class GiderOdemeService:
             errors['gider_kaydi'] = 'Gider kaydı bulunamadı.'
             return errors
 
+        from apps.finans.application.tenant_validation import validate_finans_links
+        link_errors = validate_finans_links(
+            kurum_id=gider.kurum_id, sube_id=gider.sube_id,
+            mali_hesap_id=data.get('mali_hesap_id'),
+            odeme_yontemi_id=data.get('odeme_yontemi_id'),
+        )
+        if link_errors:
+            return link_errors
+
         if not gider.odenebilir_mi:
             errors['gider_kaydi'] = (
                 f'Bu gidere ödeme yapılamaz (durum: {gider.get_durum_display()}). '
@@ -358,8 +368,12 @@ class GiderOdemeService:
                     kaynak_tip='SerbestOdemeIptal'
                 ).aggregate(t=Sum('tutar'))['t'] or Decimal('0')
                 mahsuplar = qs.filter(
-                    islem_turu='mahsup'
+                    islem_turu='mahsup', yon=CariHareketYonu.ALACAK,
                 ).aggregate(t=Sum('tutar'))['t'] or Decimal('0')
+                mahsup_iptaller = qs.filter(
+                    islem_turu='mahsup', yon=CariHareketYonu.BORC,
+                ).aggregate(t=Sum('tutar'))['t'] or Decimal('0')
+                mahsuplar -= mahsup_iptaller
                 serbest_bakiye = serbest - iptaller - mahsuplar
 
                 if tutar and serbest_bakiye <= 0:

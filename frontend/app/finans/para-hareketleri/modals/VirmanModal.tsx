@@ -20,7 +20,7 @@ const fmtTL = (v: number) =>
     style: "currency",
     currency: "TRY",
     minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    maximumFractionDigits: 2,
   }).format(v || 0);
 const today = () => todayIsoLocal();
 
@@ -229,7 +229,8 @@ export default function VirmanModal({ mode, onClose, onSuccess }: VirmanModalPro
         <span className="virman-modal-tutar-prefix">₺</span>
         <input
           type="number"
-          min={1}
+          min={0.01}
+          step={0.01}
           value={tutar}
           onChange={(e) => setTutar(e.target.value)}
           placeholder="0"

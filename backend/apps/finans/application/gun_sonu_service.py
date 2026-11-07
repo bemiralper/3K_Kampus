@@ -10,6 +10,8 @@ Veri kaynakları:
 """
 from datetime import date
 
+from apps.finans.application.money import as_money
+
 from django.db.models import Sum, Count
 from django.utils import timezone
 
@@ -57,8 +59,8 @@ class GunSonuService:
             },
             'iade_toplam': iade_toplam,
             'net': tahsilat_toplam - odeme_toplam - iade_toplam,
-            'kasada_beklenen': int(kasa_bakiye),
-            'banka_bakiye': int(banka_bakiye),
+            'kasada_beklenen': as_money(kasa_bakiye),
+            'banka_bakiye': as_money(banka_bakiye),
             'kart_bekleyen': int(kart_bekleyen),
             'hesap_bakiyeleri': hesap_bakiyeleri,
         }
@@ -92,7 +94,7 @@ class GunSonuService:
         for row in qs.values('odeme_yontemi__tip').annotate(toplam=Sum('tutar'), adet=Count('id')):
             b = self._tip_bucket(row['odeme_yontemi__tip'])
             kova.setdefault(b, {'toplam': 0, 'adet': 0})
-            kova[b]['toplam'] += int(row['toplam'] or 0)
+            kova[b]['toplam'] += as_money(row['toplam'] or 0)
             kova[b]['adet'] += row['adet']
 
         # Diğer gelir tahsilatları
@@ -105,7 +107,15 @@ class GunSonuService:
         for row in gqs.values('odeme_yontemi__tip').annotate(toplam=Sum('tutar'), adet=Count('id')):
             b = self._tip_bucket(row['odeme_yontemi__tip'])
             kova.setdefault(b, {'toplam': 0, 'adet': 0})
-            kova[b]['toplam'] += int(row['toplam'] or 0)
+            kova[b]['toplam'] += as_money(row['toplam'] or 0)
+            kova[b]['adet'] += row['adet']
+
+        from apps.finans.application.gun_sonu_finans_helpers import manual_cek_gun_qs
+        for row in manual_cek_gun_qs(kurum_id, gun, sube_id).values('odeme_yontemi__tip').annotate(
+                toplam=Sum('tutar'), adet=Count('pk')):
+            b = self._tip_bucket(row['odeme_yontemi__tip'])
+            kova.setdefault(b, {'toplam': 0, 'adet': 0})
+            kova[b]['toplam'] += as_money(row['toplam'])
             kova[b]['adet'] += row['adet']
 
         labels = self._bucket_labels()
@@ -147,7 +157,7 @@ class GunSonuService:
         )
         if sube_id:
             qs = qs.filter(sozlesme__sube_id=sube_id)
-        return int(qs.aggregate(t=Sum('tutar'))['t'] or 0)
+        return as_money(qs.aggregate(t=Sum('tutar'))['t'] or 0)
 
     def _hesap_bakiyeleri(self, kurum_id, sube_id=None):
         qs = MaliHesap.objects.filter(sube__kurum_id=kurum_id, aktif_mi=True)
@@ -163,6 +173,6 @@ class GunSonuService:
                 'tip': hesap.tip,
                 'tip_label': hesap.get_tip_display(),
                 'sube_ad': hesap.sube.ad if hesap.sube else '',
-                'bakiye': int(bakiye),
+                'bakiye': as_money(bakiye),
             })
         return sonuc

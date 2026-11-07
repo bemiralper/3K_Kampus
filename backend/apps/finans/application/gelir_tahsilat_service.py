@@ -4,6 +4,7 @@ Tahsilat kaydı oluşturma, iptal, BakiyeHareketi entegrasyonu.
 """
 from decimal import Decimal
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 
 from apps.finans.infrastructure.gelir_tahsilat_repository import GelirTahsilatRepository
 from apps.finans.infrastructure.gelir_repository import GelirKaydiRepository
@@ -29,7 +30,7 @@ class GelirTahsilatService:
         self.cari_hareket_service = CariHareketService()
         self.masraf_service = IslemMasrafiService()
 
-    @transaction.atomic
+    @atomic_result
     def tahsilat_yap(self, data: dict):
         """
         Gelir tahsilatı yapar.
@@ -117,7 +118,7 @@ class GelirTahsilatService:
 
         return tahsilat, None
 
-    @transaction.atomic
+    @atomic_result
     def tahsilat_iptal(self, tahsilat_id: int):
         """
         Tahsilatı iptal eder ve tüm bakiyeleri geri alır.
@@ -219,6 +220,15 @@ class GelirTahsilatService:
         if not gelir:
             errors['gelir_kaydi'] = 'Gelir kaydı bulunamadı.'
             return errors
+
+        from apps.finans.application.tenant_validation import validate_finans_links
+        link_errors = validate_finans_links(
+            kurum_id=gelir.kurum_id, sube_id=gelir.sube_id,
+            mali_hesap_id=data.get('mali_hesap_id'),
+            odeme_yontemi_id=data.get('odeme_yontemi_id'),
+        )
+        if link_errors:
+            return link_errors
 
         if gelir.durum not in [GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL]:
             errors['gelir_kaydi'] = f'Bu gelir kaydından tahsilat yapılamaz (durum: {gelir.get_durum_display()}).'

@@ -65,6 +65,15 @@ class CariSerbestOdemeIptalView(APIView):
     """POST → Serbest ödemeyi iptal eder (ters kayıtlar oluşturur)."""
 
     def post(self, request, cari_hareket_id):
+        from apps.finans.domain.cari_hareket import CariHareket
+        from apps.finans.interfaces.views.sube_context import assert_record_sube_access
+
+        hareket = CariHareket.objects.filter(pk=cari_hareket_id).first()
+        if hareket is None:
+            return Response({'error': 'Cari hareket bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        err = assert_record_sube_access(request, hareket.kurum_id, hareket.sube_id)
+        if err is not None:
+            return err
         service = CariOdemeService()
         result, errors = service.serbest_odeme_iptal(cari_hareket_id)
 

@@ -60,8 +60,9 @@ class HesapTransferi(models.Model):
     )
 
     # ─── Transfer Bilgileri ──────────────────────
-    tutar = models.IntegerField(
+    tutar = models.DecimalField(
         'Tutar (TL)',
+        max_digits=18, decimal_places=2,
         help_text='Transfer tutarı — her zaman pozitif',
     )
     transfer_turu = models.CharField(

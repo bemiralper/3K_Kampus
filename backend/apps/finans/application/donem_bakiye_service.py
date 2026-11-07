@@ -63,7 +63,7 @@ class DonemBakiyeService:
                 'kurum_id': kurum_id,
                 'sube_id': sube_id,
                 'egitim_yili_id': egitim_yili_id,
-                'donem_basi_bakiye': devir if devir is not None else int(hesap.baslangic_bakiye),
+                'donem_basi_bakiye': devir if devir is not None else hesap.baslangic_bakiye,
                 'durum': DonemDurum.ACIK,
             })
             olusturulan += 1
@@ -111,6 +111,8 @@ class DonemBakiyeService:
         Returns:
             dict: { kapatilan: int, toplam_gelir: int, toplam_gider: int, message: str }
         """
+        from apps.finans.domain.financial_account import MaliHesap
+        list(MaliHesap.objects.select_for_update().filter(sube_id=sube_id).order_by('pk'))
         donemler = self.repo.get_by_sube_ve_yil(sube_id, egitim_yili_id)
         acik_donemler = [d for d in donemler if d.durum == DonemDurum.ACIK]
 
@@ -173,6 +175,10 @@ class DonemBakiyeService:
         """
         from apps.finans.application.bakiye_hareketi_service import BakiyeHareketiService
 
+        if int(eski_egitim_yili_id) == int(yeni_egitim_yili_id):
+            raise ValueError('Kaynak ve hedef dönem aynı olamaz.')
+        from apps.finans.domain.financial_account import MaliHesap
+        list(MaliHesap.objects.select_for_update().filter(sube_id=sube_id).order_by('pk'))
         eski_donemler = self.repo.get_by_sube_ve_yil(sube_id, eski_egitim_yili_id)
 
         # Kapanmamış dönem var mı?
@@ -211,6 +217,14 @@ class DonemBakiyeService:
                     'donem_sonu_bakiye': devir_tutari,
                     'durum': DonemDurum.ACIK,
                 })
+
+            else:
+                yeni = self.repo.get_by_mali_hesap_ve_yil(eski_donem.mali_hesap_id, yeni_egitim_yili_id)
+                if yeni.durum != DonemDurum.ACIK:
+                    raise ValueError('Hedef dönem kapalı veya devredilmiş.')
+                yeni.donem_basi_bakiye = devir_tutari
+                yeni.hesapla_bakiye()
+                yeni.save(update_fields=['donem_basi_bakiye', 'donem_sonu_bakiye', 'updated_at'])
 
             # Devir bakiye hareketi: yeni döneme GİRİŞ
             if devir_tutari != 0:
@@ -278,7 +292,7 @@ class DonemBakiyeService:
                     'kurum_id': kurum_id,
                     'sube_id': sube_id,
                     'egitim_yili_id': egitim_yili_id,
-                    'donem_basi_bakiye': devir if devir is not None else int(hesap.baslangic_bakiye or 0),
+                    'donem_basi_bakiye': devir if devir is not None else (hesap.baslangic_bakiye or 0),
                     'durum': DonemDurum.ACIK,
                 })
                 olusturulan += 1

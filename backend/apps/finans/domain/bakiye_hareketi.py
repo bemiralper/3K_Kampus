@@ -6,9 +6,10 @@ Mali hesaplardaki her para giriş/çıkışının logu.
 - Her tahsilat, iade, gider ve devir işlemi otomatik hareket oluşturur
 - Hareketler ASLA silinmez veya güncellenmez (immutable audit trail)
 - Her hareket bir mali hesaba ve eğitim yılına bağlıdır
-- Tutar her zaman pozitif Integer (TL), yön HareketYonu ile belirlenir
+- Tutar her zaman pozitif Decimal (TL), yön HareketYonu ile belirlenir
 - kaynak_tip + kaynak_id ile orijinal işleme referans tutulur
 """
+from decimal import Decimal
 from django.db import models
 from django.conf import settings
 from django.core.validators import MinValueValidator
@@ -65,9 +66,10 @@ class BakiyeHareketi(models.Model):
         choices=HareketYonu.CHOICES,
         help_text='Giriş (+) veya Çıkış (-)',
     )
-    tutar = models.IntegerField(
+    tutar = models.DecimalField(
         'Tutar (TL)',
-        validators=[MinValueValidator(1)],
+        max_digits=18, decimal_places=2,
+        validators=[MinValueValidator(Decimal('0.01'))],
         help_text='Hareket tutarı — her zaman pozitif, yön ayrı alan',
     )
     kaynak = models.CharField(
@@ -93,13 +95,15 @@ class BakiyeHareketi(models.Model):
     )
 
     # ─── Bakiye Snapshot ─────────────────────────
-    bakiye_oncesi = models.IntegerField(
+    bakiye_oncesi = models.DecimalField(
         'İşlem Öncesi Bakiye',
+        max_digits=18, decimal_places=2,
         default=0,
         help_text='Bu hareket öncesi hesap bakiyesi',
     )
-    bakiye_sonrasi = models.IntegerField(
+    bakiye_sonrasi = models.DecimalField(
         'İşlem Sonrası Bakiye',
+        max_digits=18, decimal_places=2,
         default=0,
         help_text='Bu hareket sonrası hesap bakiyesi',
     )

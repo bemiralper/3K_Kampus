@@ -18,7 +18,7 @@ def _esc(value: Any) -> str:
 
 
 def _fmt_tl(amount: int | float) -> str:
-    return f'₺{int(amount):,}'.replace(',', '.')
+    return '₺' + format(amount, ',.2f').translate(str.maketrans({',': '.', '.': ','}))
 
 
 def _section_table(title: str, headers: list[str], rows: list[list[str]], *, total_row: list[str] | None = None) -> str:

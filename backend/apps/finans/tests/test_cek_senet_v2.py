@@ -361,7 +361,8 @@ class CekSenetV2Test(TestCase):
 
     def test_timeline_endpoint(self):
         detay_id = self._create_alinan()
-        response = self.client.get(f'/finans/api/cek-senet/{detay_id}/timeline/')
+        response = self.client.get(f'/finans/api/cek-senet/{detay_id}/timeline/',
+                                   HTTP_X_SUBE_ID=str(self.sube.id))
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(len(response.data['results']), 1)
 

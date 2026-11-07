@@ -5,7 +5,10 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from apps.finans.application.tenant_validation import validate_finans_links
+
 from django.db import transaction
+from apps.finans.application.transaction_utils import atomic_result
 from django.utils import timezone
 
 from apps.finans.constants.hareket_types import HareketKaynagi, HareketYonu
@@ -304,7 +307,7 @@ class CekSenetService:
             'gider_taksit__gider_kaydi',
         ).first()
 
-    @transaction.atomic
+    @atomic_result
     def sync_sozlesme_plan(self, sozlesme) -> None:
         """Sözleşme taksit planı sonrası çek/senet kayıtlarını senkronize et."""
         if not cek_senet_v2_enabled():
@@ -370,7 +373,7 @@ class CekSenetService:
             odeme_yontemi_id__isnull=True,
         ).update(odeme_yontemi_id=cek_yontemleri[0].id)
 
-    @transaction.atomic
+    @atomic_result
     def create_from_taksit(self, taksit, odeme_yontemi) -> CekSenetDetay | None:
         if not cek_senet_v2_enabled() or not is_cek_senet_yontemi(odeme_yontemi):
             return None
@@ -397,7 +400,7 @@ class CekSenetService:
         )
         return detay
 
-    @transaction.atomic
+    @atomic_result
     def create_from_gider_taksit(self, gider_taksit, odeme_yontemi) -> CekSenetDetay | None:
         if not cek_senet_v2_enabled() or not is_cek_senet_yontemi(odeme_yontemi):
             return None
@@ -432,7 +435,7 @@ class CekSenetService:
         self._sync_takvim(detay)
         return detay
 
-    @transaction.atomic
+    @atomic_result
     def sync_gider_plan(self, gider_kaydi) -> None:
         """Gider taksit planı sonrası verilen çek/senet kayıtlarını senkronize et."""
         if not cek_senet_v2_enabled():
@@ -479,7 +482,7 @@ class CekSenetService:
                 detay.save(update_fields=['durum', 'updated_at'])
                 self._sync_takvim(detay)
 
-    @transaction.atomic
+    @atomic_result
     def transition(self, kayit_id: int, hedef_durum: str, payload: dict | None = None, user=None):
         detay = self.get_by_id(kayit_id)
         if not detay:
@@ -528,7 +531,7 @@ class CekSenetService:
         self._sync_takvim(detay, user)
         return detay, None
 
-    @transaction.atomic
+    @atomic_result
     def tahsil_et(
         self,
         kayit_id: int,
@@ -543,6 +546,7 @@ class CekSenetService:
         if not cek_senet_v2_enabled():
             return None, {'error': 'Çek/senet V2 özelliği kapalı'}
 
+        CekSenetDetay.objects.select_for_update().filter(pk=kayit_id).first()
         detay = self.get_by_id(kayit_id)
         if not detay:
             return None, {'error': 'Kayıt bulunamadı'}
@@ -550,10 +554,21 @@ class CekSenetService:
             return None, {'error': 'Yalnızca alınan çek/senet tahsil edilebilir'}
         if detay.durum not in (CekSenetDurum.TAHSILDE, CekSenetDurum.PORTFOYDE):
             return None, {'error': 'Tahsil için kayıt tahsilde veya portföyde olmalı'}
-        if not detay.taksit_id:
-            return None, {'error': 'Taksit bağlantısı yok'}
         if not detay.odeme_yontemi_id:
             return None, {'error': 'Ödeme yöntemi tanımlı değil'}
+
+        link_errors = validate_finans_links(
+            kurum_id=detay.kurum_id, sube_id=detay.sube_id,
+            mali_hesap_id=tahsilat_mali_hesap_id,
+            odeme_yontemi_id=detay.odeme_yontemi_id,
+            match_payment_account=False,
+        )
+        if link_errors:
+            return None, link_errors
+
+        if not detay.taksit_id:
+            return self._tahsil_manual(detay, tahsilat_mali_hesap_id,
+                                      tahsilat_tarihi, aciklama, user)
 
         taksit = detay.taksit
         sozlesme = taksit.sozlesme
@@ -593,6 +608,44 @@ class CekSenetService:
             tutar=tutar, aciklama=aciklama or 'Tahsil edildi', user=user,
         )
 
+        return serialize_cek_senet(detay), None
+
+    def _tahsil_manual(self, detay, mali_hesap_id, tarih, aciklama, user):
+        """Sözleşmesiz portföy tahsilatı: bir kasa girişi ve varsa cari alacak."""
+        from apps.egitim_yili.domain.models import EgitimYili
+        from apps.finans.application.cari_hareket_service import CariHareketService
+        from apps.finans.constants.cari_types import CariHareketYonu, CariHareketTuru
+
+        tarih = tarih or timezone.localdate()
+        if isinstance(tarih, str):
+            tarih = date.fromisoformat(tarih)
+        yil = EgitimYili.objects.filter(aktif_mi=True).order_by('-baslangic_yil').first()
+        yil_id = yil.pk if yil else None
+        if detay.tutar <= 0:
+            return None, {'error': 'Geçersiz çek/senet tutarı'}
+        self.bakiye_service.hareket_olustur(
+            mali_hesap_id=mali_hesap_id, kurum_id=detay.kurum_id, sube_id=detay.sube_id,
+            egitim_yili_id=yil_id, yon=HareketYonu.GIRIS, tutar=detay.tutar,
+            kaynak=HareketKaynagi.TAHSILAT, islem_tarihi=tarih,
+            kaynak_tip='CekSenetDetay', kaynak_id=detay.pk,
+            aciklama=aciklama or f'Manuel çek/senet tahsili #{detay.pk}', islem_yapan=user,
+        )
+        if detay.cari_hesap_id:
+            detay.cari_hareket = CariHareketService().hareket_olustur(
+                cari_hesap_id=detay.cari_hesap_id, kurum_id=detay.kurum_id,
+                sube_id=detay.sube_id, egitim_yili_id=yil_id, tutar=detay.tutar,
+                yon=CariHareketYonu.ALACAK, islem_turu=CariHareketTuru.TAHSILAT,
+                islem_tarihi=tarih, kaynak_tip='CekSenetDetay', kaynak_id=detay.pk,
+                aciklama=aciklama or f'Manuel çek/senet tahsili #{detay.pk}', islem_yapan=user,
+            )
+        onceki = detay.durum
+        detay.tahsilat_mali_hesap_id = mali_hesap_id
+        detay.tahsil_tarihi = tarih
+        detay.durum = CekSenetDurum.TAHSIL_EDILDI
+        detay.save(update_fields=['cari_hareket', 'tahsilat_mali_hesap', 'tahsil_tarihi', 'durum', 'updated_at'])
+        log_cek_senet(detay, 'tahsil_edildi', onceki_durum=onceki,
+                      yeni_durum=detay.durum, tutar=detay.tutar, aciklama=aciklama, user=user)
+        self._sync_takvim(detay, user)
         return serialize_cek_senet(detay), None
 
     def _create_tahsilat_for_cek_senet(self, data: dict, user=None):
@@ -671,7 +724,7 @@ class CekSenetService:
             for d in sorted(allowed)
         ]
 
-    @transaction.atomic
+    @atomic_result
     def create_verilen(self, data: dict, user=None):
         """Manuel verilen çek/senet kaydı oluştur."""
         if not cek_senet_v2_enabled():
@@ -686,6 +739,14 @@ class CekSenetService:
         yontem = OdemeYontemi.objects.filter(id=odeme_yontemi_id).first()
         if not is_cek_senet_yontemi(yontem):
             return None, {'error': 'Ödeme yöntemi çek/senet tipinde olmalı'}
+
+        link_errors = validate_finans_links(
+            kurum_id=kurum_id, sube_id=sube_id,
+            odeme_yontemi_id=odeme_yontemi_id,
+            cari_hesap_id=data.get('cari_hesap_id'),
+        )
+        if link_errors:
+            return None, link_errors
 
         tutar = int(data.get('tutar') or 0)
         vade = data.get('vade_tarihi')
@@ -724,7 +785,7 @@ class CekSenetService:
         self._sync_takvim(detay, user)
         return serialize_cek_senet(detay), None
 
-    @transaction.atomic
+    @atomic_result
     def create_alinan(self, data: dict, user=None):
         """Manuel alınan çek/senet kaydı oluştur (sözleşmesiz)."""
         if not cek_senet_v2_enabled():
@@ -739,6 +800,14 @@ class CekSenetService:
         yontem = OdemeYontemi.objects.filter(id=odeme_yontemi_id).first()
         if not is_cek_senet_yontemi(yontem):
             return None, {'error': 'Ödeme yöntemi çek/senet tipinde olmalı'}
+
+        link_errors = validate_finans_links(
+            kurum_id=kurum_id, sube_id=sube_id,
+            odeme_yontemi_id=odeme_yontemi_id,
+            cari_hesap_id=data.get('cari_hesap_id'),
+        )
+        if link_errors:
+            return None, link_errors
 
         tutar = int(data.get('tutar') or 0)
         vade = data.get('vade_tarihi')
@@ -776,12 +845,19 @@ class CekSenetService:
         )
         return serialize_cek_senet(detay), None
 
-    @transaction.atomic
+    @atomic_result
     def guncelle(self, kayit_id: int, data: dict, user=None):
         """Kimlik/belge alanlarını güncelle (durum değiştirmeden)."""
         detay = self.get_by_id(kayit_id)
         if not detay:
             return None, {'error': 'Kayıt bulunamadı'}
+
+        link_errors = validate_finans_links(
+            kurum_id=detay.kurum_id, sube_id=detay.sube_id,
+            cari_hesap_id=data.get('cari_hesap_id'),
+        )
+        if link_errors:
+            return None, link_errors
 
         editable = [
             'cek_senet_no', 'seri_no', 'banka_adi', 'sube_adi', 'hesap_no',
@@ -813,7 +889,7 @@ class CekSenetService:
         self._sync_takvim(detay, user)
         return serialize_cek_senet(detay), None
 
-    @transaction.atomic
+    @atomic_result
     def ciro_et(self, kayit_id: int, *, ciro_edilen_cari_id: int, ciro_tarihi=None, aciklama: str = '', user=None):
         """Alınan çek/senedi başka bir cariye ciro et (devret)."""
         detay = self.get_by_id(kayit_id)
@@ -830,6 +906,13 @@ class CekSenetService:
         cari = CariHesap.objects.filter(id=ciro_edilen_cari_id).first()
         if not cari:
             return None, {'error': 'Ciro edilecek cari bulunamadı'}
+
+        link_errors = validate_finans_links(
+            kurum_id=detay.kurum_id, sube_id=detay.sube_id,
+            cari_hesap_id=ciro_edilen_cari_id,
+        )
+        if link_errors:
+            return None, link_errors
 
         tarih = ciro_tarihi or timezone.localdate()
         if isinstance(tarih, str):
@@ -850,7 +933,7 @@ class CekSenetService:
         )
         return serialize_cek_senet(detay), None
 
-    @transaction.atomic
+    @atomic_result
     def protesto_et(self, kayit_id: int, *, protesto_tarihi=None, aciklama: str = '', user=None):
         """Çek/senedi protestolu işaretle (vadede ödenmedi)."""
         detay = self.get_by_id(kayit_id)
@@ -874,7 +957,7 @@ class CekSenetService:
         )
         return serialize_cek_senet(detay), None
 
-    @transaction.atomic
+    @atomic_result
     def iade_et(self, kayit_id: int, *, iade_tarihi=None, aciklama: str = '', user=None):
         """Çek/senedi iade et (kaynağına geri verildi)."""
         detay = self.get_by_id(kayit_id)
@@ -898,7 +981,7 @@ class CekSenetService:
         )
         return serialize_cek_senet(detay), None
 
-    @transaction.atomic
+    @atomic_result
     def iptal_et(self, kayit_id: int, *, aciklama: str = '', user=None):
         """Çek/senedi iptal et."""
         detay = self.get_by_id(kayit_id)
@@ -928,7 +1011,7 @@ class CekSenetService:
         rows = CekSenetDosya.objects.filter(detay_id=kayit_id).select_related('yukleyen')
         return [serialize_dosya(d) for d in rows]
 
-    @transaction.atomic
+    @atomic_result
     def dosya_ekle(self, kayit_id: int, *, dosya, dosya_adi: str = '', dosya_turu: str = 'diger', aciklama: str = '', user=None):
         from apps.odeme_takip.domain.cek_senet import CekSenetDosya
         detay = self.get_by_id(kayit_id)
@@ -950,7 +1033,7 @@ class CekSenetService:
         log_cek_senet(detay, 'dosya_eklendi', aciklama=f'Dosya: {obj.dosya_adi}', user=user)
         return serialize_dosya(obj), None
 
-    @transaction.atomic
+    @atomic_result
     def dosya_sil(self, kayit_id: int, dosya_id: int, user=None):
         from apps.odeme_takip.domain.cek_senet import CekSenetDosya
         obj = CekSenetDosya.objects.filter(id=dosya_id, detay_id=kayit_id).first()
@@ -1029,7 +1112,7 @@ class CekSenetService:
             'aylik_vade': aylik,
         }
 
-    @transaction.atomic
+    @atomic_result
     def ode(
         self,
         kayit_id: int,
@@ -1043,6 +1126,7 @@ class CekSenetService:
         if not cek_senet_v2_enabled():
             return None, {'error': 'Çek/senet V2 özelliği kapalı'}
 
+        CekSenetDetay.objects.select_for_update().filter(pk=kayit_id).first()
         detay = self.get_by_id(kayit_id)
         if not detay:
             return None, {'error': 'Kayıt bulunamadı'}
@@ -1063,6 +1147,15 @@ class CekSenetService:
         mali_hesap = MaliHesap.objects.filter(id=odeme_mali_hesap_id).first()
         if not mali_hesap:
             return None, {'error': 'Mali hesap bulunamadı'}
+
+        link_errors = validate_finans_links(
+            kurum_id=detay.kurum_id, sube_id=detay.sube_id,
+            mali_hesap_id=odeme_mali_hesap_id,
+            odeme_yontemi_id=detay.odeme_yontemi_id,
+            match_payment_account=False,
+        )
+        if link_errors:
+            return None, link_errors
 
         if detay.gider_taksit_id:
             from decimal import Decimal
