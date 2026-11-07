@@ -568,7 +568,7 @@ class DirectRegistrationView(APIView):
 
                 # Öğrenci var mı kontrol et
                 was_walk_in = False
-                ogrenci = Ogrenci.objects.filter(
+                ogrenci = Ogrenci.objects.select_for_update().filter(
                     kurum_id=kurum_id,
                     tc_kimlik_no=student_data["tc_kimlik_no"],
                 ).first()
@@ -600,9 +600,17 @@ class DirectRegistrationView(APIView):
                     if ogrenci.sube_id != sube_id:
                         ogrenci.sube_id = sube_id
                         updates.append('sube_id')
-                    if (ogrenci.kayit_turu or '') == GUNU_BIRLIK_CODE:
-                        was_walk_in = not is_walk_in
-                        ogrenci.kayit_turu = GUNU_BIRLIK_CODE if is_walk_in else (kayit_turu_code or 'asil')
+                    already_walk_in = (ogrenci.kayit_turu or '') == GUNU_BIRLIK_CODE
+                    # Pasif kayıt tek deneme formundan gelince liste dışarıda kalıyordu:
+                    # tür güncellenmeden 201 dönülüyor, liste ise yalnız aktif tek denemeyi gösteriyor.
+                    reopen_walk_in = is_walk_in and not ogrenci.aktif_mi
+                    if already_walk_in or reopen_walk_in:
+                        was_walk_in = already_walk_in and not is_walk_in
+                        if is_walk_in:
+                            ogrenci.kayit_turu = GUNU_BIRLIK_CODE
+                            ogrenci.aktif_mi = True
+                        else:
+                            ogrenci.kayit_turu = kayit_turu_code or 'asil'
                         ogrenci.ad = student_data['ad']
                         ogrenci.soyad = student_data['soyad']
                         ogrenci.dogum_tarihi = student_data['dogum_tarihi']
@@ -613,6 +621,8 @@ class DirectRegistrationView(APIView):
                             'kayit_turu', 'ad', 'soyad', 'dogum_tarihi',
                             'cinsiyet', 'telefon', 'email',
                         ])
+                        if is_walk_in:
+                            updates.append('aktif_mi')
                     if 'whatsapp_uygun' in student_data:
                         ogrenci.whatsapp_uygun = _whatsapp_uygun_flag(student_data)
                         updates.append('whatsapp_uygun')
@@ -647,11 +657,11 @@ class DirectRegistrationView(APIView):
                         aktif_mi=True,
                     ).first()
                     if not sinif:
-                        return Response({"detail": "Seçilen sınıf bulunamadı veya bu şubeye ait değil"}, status=status.HTTP_400_BAD_REQUEST)
+                        raise ValueError("Seçilen sınıf bulunamadı veya bu şubeye ait değil")
                     if sinif.sinif_seviyesi_id and sinif.sinif_seviyesi_id != sinif_seviyesi.id:
-                        return Response({"detail": "Seçilen sınıf, sınıf seviyesi ile uyuşmuyor"}, status=status.HTTP_400_BAD_REQUEST)
+                        raise ValueError("Seçilen sınıf, sınıf seviyesi ile uyuşmuyor")
                     if alan and sinif.alan_id and sinif.alan_id != alan.id:
-                        return Response({"detail": "Seçilen sınıf, alan ile uyuşmuyor"}, status=status.HTTP_400_BAD_REQUEST)
+                        raise ValueError("Seçilen sınıf, alan ile uyuşmuyor")
 
                 # Mevcut kayıt kontrolü
                 existing_kayit = OgrenciKayit.objects.filter(
@@ -660,19 +670,16 @@ class DirectRegistrationView(APIView):
                 ).first()
 
                 if existing_kayit and not is_walk_in and not was_walk_in:
-                    return Response({"detail": "Bu öğrenci bu eğitim yılında zaten kayıtlı"}, status=status.HTTP_400_BAD_REQUEST)
+                    raise ValueError("Bu öğrenci bu eğitim yılında zaten kayıtlı")
 
                 # Kayıt oluştur — şube her zaman aktif bağlamdan (üst bar seçimi)
                 if enrollment_data.get("sube") and int(enrollment_data["sube"]) != int(sube_id):
-                    return Response(
-                        {"detail": "Kayıt yalnızca seçili şube için yapılabilir. Lütfen üst bardan doğru şubeyi seçin."},
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
+                    raise ValueError("Kayıt yalnızca seçili şube için yapılabilir. Lütfen üst bardan doğru şubeyi seçin.")
 
                 school_id = enrollment_data.get("school_id")
                 okul, school_err = resolve_school_for_enrollment(school_id, kurum_id, sube_id)
                 if school_err:
-                    return Response({"detail": school_err}, status=status.HTTP_400_BAD_REQUEST)
+                    raise ValueError(school_err)
 
                 if existing_kayit:
                     kayit = existing_kayit
@@ -685,6 +692,8 @@ class DirectRegistrationView(APIView):
                         kayit.giris_turu = giris_turu_code
                         kayit.giris_tarihi = enrollment_data.get("giris_tarihi") or kayit.giris_tarihi
                         kayit.referans = enrollment_data.get("referans") or kayit.referans
+                        if is_walk_in:
+                            kayit.aktif_mi = True
                         kayit.save()
                     else:
                         skip_profile_writes = True
@@ -1054,6 +1063,10 @@ class DirectRegistrationView(APIView):
                 participant = None
                 seat = {'status': '', 'detail': ''}
                 if is_walk_in and walk_exam is None:
+                    if (ogrenci.kayit_turu or '') != GUNU_BIRLIK_CODE:
+                        raise ValueError(
+                            "Bu öğrenci kurum kaydında. Tek deneme listesine alınmadı."
+                        )
                     message = "Tek deneme kaydı açıldı."
                 elif is_walk_in:
                     from apps.ogrenci_kayit.application.gunu_birlik import _attach, assign_open_seat
@@ -1070,27 +1083,18 @@ class DirectRegistrationView(APIView):
                         message = "Kayıtlı öğrenci, sınava eklendi."
                     else:
                         message = "Tek deneme kaydı açıldı ve sınava eklendi."
-                    if deneme_ucreti is not None:
+                    if deneme_ucreti is not None and attach_err != 'zaten':
                         from ..application.deneme_ucret import record_deneme_ucreti
 
-                        try:
-                            record_deneme_ucreti(
-                                ogrenci=ogrenci,
-                                kayit=kayit,
-                                exam=walk_exam,
-                                tutar=deneme_ucreti,
-                                user=request.user,
-                                odeme_yontemi_id=walk.get('odeme_yontemi_id'),
-                                mali_hesap_id=walk.get('mali_hesap_id'),
-                            )
-                        except ValueError as exc:
-                            deneme_ucreti = None
-                            message = f'{message} {exc}'
-                        except Exception:
-                            import logging
-                            logging.getLogger(__name__).exception('Deneme ücreti yazılamadı')
-                            deneme_ucreti = None
-                            message = f'{message} Deneme ücreti kayda geçmedi.'
+                        record_deneme_ucreti(
+                            ogrenci=ogrenci,
+                            kayit=kayit,
+                            exam=walk_exam,
+                            tutar=deneme_ucreti,
+                            user=request.user,
+                            odeme_yontemi_id=walk.get('odeme_yontemi_id'),
+                            mali_hesap_id=walk.get('mali_hesap_id'),
+                        )
 
                 payload = {
                     "id": ogrenci.id,

@@ -526,6 +526,85 @@ class GunuBirlikTamKayitTests(TestCase):
         self.assertEqual(OgrenciKayit.objects.filter(ogrenci=asil).count(), 1)
         self.assertTrue(ExamParticipant.objects.filter(exam=self.exam, student=asil).exists())
 
+    def test_pasif_deneme_tek_deneme_formunda_listeye_doner(self):
+        from apps.ogrenci_kayit.application.gunu_birlik import list_misafirler
+
+        pasif = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Eski', soyad='Deneme',
+            tc_kimlik_no='10000000049', telefon='05321110049',
+            kayit_turu='deneme_kulubu', aktif_mi=False,
+        )
+        kayit = OgrenciKayit.objects.create(
+            ogrenci=pasif, kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+            sinif_seviyesi=self.seviye, aktif_mi=False, okul_no='DK-49',
+        )
+        payload = {
+            'student': {
+                'tc_kimlik_no': '10000000049',
+                'ad': 'Eski',
+                'soyad': 'Deneme',
+                'dogum_tarihi': '2011-04-04',
+                'telefon': '05321110049',
+            },
+            'enrollment': {
+                'egitim_yili': self.yil.id,
+                'sinif_seviyesi': self.seviye.id,
+                'ogrenci_no': 'GB-49',
+            },
+            'address': {},
+            'guardians': [],
+            'package': {},
+            'gunu_birlik': {'kayit': True},
+        }
+        res = self._register(payload)
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertIn('açıldı', res.json()['message'])
+        pasif.refresh_from_db()
+        kayit.refresh_from_db()
+        self.assertEqual(pasif.kayit_turu, GUNU_BIRLIK_CODE)
+        self.assertTrue(pasif.aktif_mi)
+        self.assertTrue(kayit.aktif_mi)
+        self.assertEqual(kayit.sinif_seviyesi_id, self.seviye.id)
+        ids = {row['id'] for row in list_misafirler(self.kurum.id, self.sube.id, q='Deneme')}
+        self.assertIn(pasif.id, ids)
+
+    def test_aktif_kurum_kaydi_sinavsiz_tek_deneme_listesine_yazilmaz(self):
+        from apps.ogrenci_kayit.application.gunu_birlik import list_misafirler
+
+        asil = Ogrenci.objects.create(
+            kurum=self.kurum, sube=self.sube, ad='Asıl', soyad='Kayıt',
+            tc_kimlik_no='10000000050', telefon='05321110050',
+            kayit_turu='asil', aktif_mi=True,
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=asil, kurum=self.kurum, sube=self.sube, egitim_yili=self.yil, aktif_mi=True,
+        )
+        payload = {
+            'student': {
+                'tc_kimlik_no': '10000000050',
+                'ad': 'Asıl',
+                'soyad': 'Kayıt',
+                'dogum_tarihi': '2011-04-04',
+                'telefon': '05321110050',
+            },
+            'enrollment': {
+                'egitim_yili': self.yil.id,
+                'sinif_seviyesi': self.seviye.id,
+            },
+            'address': {},
+            'guardians': [],
+            'package': {},
+            'gunu_birlik': {'kayit': True},
+        }
+        res = self._register(payload)
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn('kurum kaydında', res.json()['detail'])
+        asil.refresh_from_db()
+        self.assertEqual(asil.kayit_turu, 'asil')
+        self.assertTrue(asil.aktif_mi)
+        ids = {row['id'] for row in list_misafirler(self.kurum.id, self.sube.id)}
+        self.assertNotIn(asil.id, ids)
+
     def test_paketsiz_kayit_giris_belgesi_uretir(self):
         from apps.communication.application.communication_service import SendResult
         from apps.ogrenci.domain.models import OgrenciEgitimPaketi
@@ -871,3 +950,128 @@ class GunuBirlikTamKayitTests(TestCase):
         }
         normal, _ = build_kayit_queryset(ctx, params)
         self.assertIn(ogrenci.id, set(normal.values_list('ogrenci_id', flat=True)))
+
+    def _review_exam(self):
+        self.exam = Exam.objects.create(
+            name='LGS Deneme', exam_type='LGS', exam_date=timezone.localdate() + timedelta(days=10),
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        return self.exam
+
+    def _review_kayit(self):
+        return OgrenciKayit.objects.create(
+            ogrenci=self.guest, kurum=self.kurum, sube=self.sube,
+            egitim_yili=self.yil, sinif_seviyesi=self.seviye, okul_no='GB-987',
+        )
+
+    def _review_action(self, body):
+        return self.client.post('/api/ogrenci-kayit/gunu-birlik/sinav/', body, format='json', **self.headers)
+
+    def test_arama_ad_soyad_ve_ogrenci_numarasi(self):
+        from apps.ogrenci_kayit.application.gunu_birlik import list_misafirler
+        self._review_kayit()
+        for query in ['Eski Misafir', 'Misafir Eski', 'GB-987']:
+            with self.subTest(query=query):
+                rows = list_misafirler(self.kurum.id, self.sube.id, q=query, egitim_yili_id=self.yil.id)
+                self.assertEqual([row['id'] for row in rows], [self.guest.id])
+
+    def test_liste_bes_yuz_kayitta_kesilmez(self):
+        from apps.ogrenci_kayit.application.gunu_birlik import list_misafirler
+        Ogrenci.objects.bulk_create([
+            Ogrenci(kurum=self.kurum, sube=self.sube, ad='Liste', soyad=str(i),
+                    tc_kimlik_no=str(20000000000 + i), kayit_turu=GUNU_BIRLIK_CODE)
+            for i in range(501)
+        ])
+        rows = list_misafirler(self.kurum.id, self.sube.id)
+        self.assertEqual(len(rows), 502)
+        self.assertIn(self.guest.id, {row['id'] for row in rows})
+
+    def test_hatali_sinif_yeni_ve_mevcut_kayitta_degisiklik_birakmaz(self):
+        self._review_exam()
+        for tc in [self.guest.tc_kimlik_no, '10000000046']:
+            with self.subTest(tc=tc):
+                payload = self._walk_payload(tc_kimlik_no=tc, ad='Degismemeli')
+                payload['package'] = {}
+                payload['gunu_birlik'] = {'kayit': True}
+                payload['enrollment']['sinif'] = 99999999
+                res = self._register(payload)
+                self.assertEqual(res.status_code, 400, res.content)
+        self.guest.refresh_from_db()
+        self.assertEqual(self.guest.ad, 'Eski')
+        self.assertFalse(Ogrenci.objects.filter(tc_kimlik_no='10000000046').exists())
+        self.assertFalse(OgrenciKayit.objects.filter(ogrenci=self.guest).exists())
+
+    def test_ucret_hatasi_sihirbazdaki_kaydi_geri_alir(self):
+        self._review_exam()
+        payload = self._walk_payload()
+        payload['package'] = {}
+        payload['gunu_birlik']['deneme_ucreti'] = '250'
+        res = self._register(payload)
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertIn('Ödeme şekli', res.json()['detail'])
+        self.assertFalse(Ogrenci.objects.filter(tc_kimlik_no='10000000046').exists())
+        self.assertFalse(ExamParticipant.objects.filter(exam=self.exam).exists())
+
+    def test_listeden_ucret_hatasi_geri_alinir_ve_tekrar_denenebilir(self):
+        from apps.odeme_takip.domain.models import Sozlesme
+        self._review_exam()
+        self._review_kayit()
+        body = {'islem': 'kayit', 'ogrenci_id': self.guest.id, 'exam_id': self.exam.id, 'deneme_ucreti': '250'}
+        res = self._review_action(body)
+        self.assertEqual(res.status_code, 400, res.content)
+        self.assertFalse(ExamParticipant.objects.filter(exam=self.exam, student=self.guest).exists())
+        self.assertFalse(Sozlesme.objects.filter(ogrenci=self.guest).exists())
+        hesap, yontem = self._nakit()
+        body.update(odeme_yontemi_id=yontem.id, mali_hesap_id=hesap.id)
+        res = self._review_action(body)
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(ExamParticipant.objects.filter(exam=self.exam, student=self.guest).count(), 1)
+        self.assertEqual(Sozlesme.objects.filter(ogrenci=self.guest, net_tutar=250).count(), 1)
+
+    def test_aktif_yil_ve_sinav_kaydi_dogru_seviyeyi_kullanir(self):
+        from apps.ogrenci_kayit.application.gunu_birlik import list_misafirler
+        self._review_exam()
+        self._review_kayit()
+        yeni_yil = EgitimYili.objects.create(baslangic_yil=2026, bitis_yil=2027, aktif_mi=True)
+        diger = SinifSeviyesi.objects.create(kurum=self.kurum, sube=self.sube, ad='7. Sınıf', kod='7')
+        OgrenciKayit.objects.create(ogrenci=self.guest, kurum=self.kurum, sube=self.sube,
+                                   egitim_yili=yeni_yil, sinif_seviyesi=diger, okul_no='YENI-7')
+        row = list_misafirler(self.kurum.id, self.sube.id, egitim_yili_id=self.yil.id)[0]
+        self.assertEqual(row['sinif_seviyesi_id'], self.seviye.id)
+        self.assertEqual(row['ogrenci_no'], 'GB-987')
+        self.assertEqual(list_misafirler(self.kurum.id, self.sube.id, q='YENI-7', egitim_yili_id=self.yil.id), [])
+        res = self._review_action({'islem': 'kayit', 'ogrenci_id': self.guest.id, 'exam_id': self.exam.id})
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual(ExamParticipant.objects.get(exam=self.exam, student=self.guest).sinif_seviyesi_id, self.seviye.id)
+
+    def test_coklu_oturumda_secili_katilim_degistirilir_ve_silinir(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamSessionModel
+        from apps.ogrenci_kayit.application.gunu_birlik import list_misafirler
+        self._review_exam()
+        sessions = [ExamSessionModel.objects.create(exam=self.exam, name=f'Oturum {i}', order=i,
+                    session_date=timezone.localdate() + timedelta(days=10 + i)) for i in range(3)]
+        parts = [ExamParticipant.objects.create(exam=self.exam, student=self.guest, exam_session=session,
+                    source=ExamParticipant.Source.MANUAL, sinif_seviyesi=self.seviye) for session in sessions[:2]]
+        row = list_misafirler(self.kurum.id, self.sube.id)[0]
+        self.assertEqual(len(row['sinavlar']), 2)
+        self.assertEqual(row['deneme_sayisi'], 1)
+        body = {'islem': 'oturum', 'ogrenci_id': self.guest.id, 'exam_id': self.exam.id,
+                'exam_session_id': sessions[2].id}
+        self.assertEqual(self._review_action(body).status_code, 400)
+        body['participant_id'] = parts[1].id
+        res = self._review_action(body)
+        self.assertEqual(res.status_code, 200, res.content)
+        parts[0].refresh_from_db()
+        parts[1].refresh_from_db()
+        self.assertEqual(parts[0].exam_session_id, sessions[0].id)
+        self.assertEqual(parts[1].exam_session_id, sessions[2].id)
+        with patch('apps.ogrenci_kayit.application.deneme_ucret.void_deneme_ucreti', return_value=1) as void:
+            body['islem'] = 'iptal'
+            res = self._review_action(body)
+            self.assertEqual(res.status_code, 200, res.content)
+            self.assertTrue(ExamParticipant.objects.filter(pk=parts[0].id).exists())
+            self.assertFalse(ExamParticipant.objects.filter(pk=parts[1].id).exists())
+            void.assert_not_called()
+            body['participant_id'] = parts[0].id
+            self.assertEqual(self._review_action(body).status_code, 200)
+            void.assert_called_once()

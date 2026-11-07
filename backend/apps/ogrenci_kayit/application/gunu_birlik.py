@@ -471,7 +471,7 @@ def _deneme_izi_var():
     )
 
 
-def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
+def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '', egitim_yili_id=None) -> list[dict]:
     from django.db.models import Q
 
     from apps.coaching.olcme_degerlendirme.models import ExamParticipant
@@ -488,20 +488,27 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
     ).order_by('-created_at', 'soyad', 'ad')
     text = (q or '').strip()
     if text:
-        from django.db.models import Q
+        from django.db.models import Exists, OuterRef
+        numbers = OgrenciKayit.objects.filter(ogrenci_id=OuterRef('pk'), okul_no__icontains=text, aktif_mi=True)
+        if egitim_yili_id:
+            numbers = numbers.filter(egitim_yili_id=egitim_yili_id)
+        names = Q()
+        for token in text.split():
+            names &= Q(ad__icontains=token) | Q(soyad__icontains=token)
+        phone = normalize_tc(text) if all(c in '0123456789+()- . ' for c in text) else text
         qs = qs.filter(
-            Q(ad__icontains=text)
-            | Q(soyad__icontains=text)
-            | Q(tc_kimlik_no__icontains=text)
-            | Q(telefon__icontains=normalize_tc(text) or text)
+            names | Q(tc_kimlik_no__icontains=text)
+            | Q(telefon__icontains=phone or text) | Exists(numbers)
         )
-    ogrenciler = list(qs[:500])
+    ogrenciler = list(qs)
     ids = [o.id for o in ogrenciler]
     numaralar = {}
     seviye_ids = {}
     seviye_adlari = {}
     for kayit in (
-        OgrenciKayit.objects.filter(ogrenci_id__in=ids)
+        OgrenciKayit.objects.filter(ogrenci_id__in=ids, aktif_mi=True, **(
+            {"egitim_yili_id": egitim_yili_id} if egitim_yili_id else {}
+        ))
         .select_related('sinif_seviyesi')
         .order_by('id')
     ):
@@ -510,19 +517,14 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
             seviye_ids[kayit.ogrenci_id] = kayit.sinif_seviyesi_id
             seviye_adlari[kayit.ogrenci_id] = kayit.sinif_seviyesi.ad if kayit.sinif_seviyesi_id else ''
     sinavlar: dict[int, list] = {i: [] for i in ids}
-    seen_pairs: set[tuple[int, int]] = set()
     parts = (
         ExamParticipant.objects.filter(student_id__in=ids)
         .select_related('exam', 'exam_session', 'sinif_seviyesi')
         .prefetch_related('exam__exam_sessions')
         .order_by('-exam__exam_date', '-exam_id', 'id')
     )
-    session_cache: dict[int, list] = {}
+    session_cache: dict[int, tuple] = {}
     for part in parts:
-        key = (part.student_id, part.exam_id)
-        if key in seen_pairs or not part.exam_id:
-            continue
-        seen_pairs.add(key)
         exam = part.exam
         if exam.id not in session_cache:
             all_sessions = list(exam.exam_sessions.all())
@@ -566,7 +568,7 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
             'sinif_seviyesi': seviye_adlari.get(ogrenci.id) or '',
             'kayit_turu': ogrenci.kayit_turu or '',
             'kurum_kaydi': (ogrenci.kayit_turu or '') != GUNU_BIRLIK_CODE,
-            'deneme_sayisi': len(sinavlar.get(ogrenci.id, [])),
+            'deneme_sayisi': len({item['id'] for item in sinavlar.get(ogrenci.id, [])}),
             'created_at': ogrenci.created_at.isoformat() if ogrenci.created_at else None,
             'sinavlar': sinavlar.get(ogrenci.id, []),
         }
@@ -574,7 +576,7 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '') -> list[dict]:
     ]
 
 
-def _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id):
+def _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id=None):
     from apps.coaching.olcme_degerlendirme.models import Exam, ExamParticipant
 
     from .sinav_uygunluk import exam_is_open
@@ -584,22 +586,23 @@ def _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id):
         raise ValueError('Sınav bulunamadı.')
     if not exam_is_open(exam):
         raise ValueError('Tarihi geçmiş denemede bu işlem yapılamaz.')
-    ogrenci = Ogrenci.objects.filter(
+    ogrenci = Ogrenci.objects.select_for_update().filter(
         id=ogrenci_id, kurum_id=kurum_id, sube_id=sube_id, aktif_mi=True,
     ).first()
     if ogrenci is None:
         raise ValueError('Öğrenci bulunamadı.')
-    participant = (
-        ExamParticipant.objects.filter(exam=exam, student=ogrenci)
-        .select_related('exam_session')
-        .order_by('id')
-        .first()
-    )
+    participants = ExamParticipant.objects.filter(exam=exam, student=ogrenci).select_related('exam_session')
+    if participant_id is not None:
+        participants = participants.filter(pk=participant_id)
+    elif participants.count() > 1:
+        raise ValueError('İşlem yapılacak oturumu seçin.')
+    participant = participants.order_by('id').first()
     if participant is None:
         raise ValueError('Bu öğrencinin bu sınavda kaydı yok.')
     return exam, ogrenci, participant
 
 
+@transaction.atomic
 def register_deneme_kaydi(
     *,
     kurum_id,
@@ -636,13 +639,13 @@ def register_deneme_kaydi(
     ).first()
     if exam is None:
         raise ValueError('Sınav bulunamadı.')
-    ogrenci = Ogrenci.objects.filter(
+    ogrenci = Ogrenci.objects.select_for_update().filter(
         id=ogrenci_id, kurum_id=kurum_id, sube_id=sube_id, aktif_mi=True,
     ).first()
     if ogrenci is None:
         raise ValueError('Öğrenci bulunamadı.')
     kayit = (
-        OgrenciKayit.objects.filter(ogrenci=ogrenci)
+        OgrenciKayit.objects.filter(ogrenci=ogrenci, egitim_yili_id=exam.egitim_yili_id, aktif_mi=True)
         .select_related('sinif_seviyesi')
         .order_by('-id')
         .first()
@@ -661,41 +664,27 @@ def register_deneme_kaydi(
         if attach_err:
             raise ValueError(attach_err)
         seat = assign_open_seat(participant) if participant is not None else {'status': '', 'detail': ''}
-    ucret_uyari = ''
-    if deneme_ucreti is not None:
-        try:
+        if deneme_ucreti is not None:
             record_deneme_ucreti(
-                ogrenci=ogrenci,
-                kayit=kayit,
-                exam=exam,
-                tutar=deneme_ucreti,
-                user=user,
-                odeme_yontemi_id=odeme_yontemi_id,
-                mali_hesap_id=mali_hesap_id,
+                ogrenci=ogrenci, kayit=kayit, exam=exam, tutar=deneme_ucreti,
+                user=user, odeme_yontemi_id=odeme_yontemi_id, mali_hesap_id=mali_hesap_id,
             )
-        except ValueError as exc:
-            ucret_uyari = str(exc)
-        except Exception:
-            logger.exception('Deneme ücreti yazılamadı')
-            ucret_uyari = 'Deneme ücreti kayda geçmedi.'
-    detail = seat.get('detail') or ''
-    if ucret_uyari:
-        detail = f'{detail} {ucret_uyari}'.strip()
     return {
         'ok': True,
         'exam_id': exam.id,
         'sinav_adi': exam.name,
         'participant_id': participant.id if participant is not None else None,
         'seat_status': seat.get('status') or '',
-        'seat_detail': detail,
-        'deneme_ucreti': None if ucret_uyari else deneme_ucreti,
+        'seat_detail': seat.get('detail') or '',
+        'deneme_ucreti': deneme_ucreti,
     }
 
 
-def change_deneme_oturumu(*, kurum_id, sube_id, ogrenci_id, exam_id, exam_session_id) -> dict:
+@transaction.atomic
+def change_deneme_oturumu(*, kurum_id, sube_id, ogrenci_id, exam_id, exam_session_id, participant_id=None) -> dict:
     from .sinav_uygunluk import upcoming_sessions
 
-    exam, _ogrenci, participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id)
+    exam, _ogrenci, participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id)
     try:
         session_id = int(exam_session_id)
     except (TypeError, ValueError):
@@ -727,18 +716,21 @@ def change_deneme_oturumu(*, kurum_id, sube_id, ogrenci_id, exam_id, exam_sessio
     }
 
 
-def cancel_deneme_kaydi(*, kurum_id, sube_id, ogrenci_id, exam_id) -> dict:
+@transaction.atomic
+def cancel_deneme_kaydi(*, kurum_id, sube_id, ogrenci_id, exam_id, participant_id=None) -> dict:
     from django.db.models.deletion import ProtectedError
 
     from apps.coaching.olcme_degerlendirme.models import ExamParticipant
 
     from .deneme_ucret import void_deneme_ucreti
 
-    exam, ogrenci, _participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id)
+    exam, ogrenci, _participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id)
     try:
         with transaction.atomic():
-            ExamParticipant.objects.filter(exam=exam, student=ogrenci).delete()
-            closed = void_deneme_ucreti(ogrenci=ogrenci, exam=exam)
+            _participant.delete()
+            closed = 0
+            if not ExamParticipant.objects.filter(exam=exam, student=ogrenci).exists():
+                closed = void_deneme_ucreti(ogrenci=ogrenci, exam=exam)
     except ProtectedError:
         raise ValueError('Bu denemeye sonuç girildiği için kayıt iptal edilemedi.')
     return {'ok': True, 'finans_iptal': closed}

@@ -104,7 +104,7 @@ class GunuBirlikView(APIView):
             return err
         kurum_id, sube_id, _yil = ctx
         q = request.query_params.get('q') or ''
-        rows = list_misafirler(kurum_id, sube_id, q=q)
+        rows = list_misafirler(kurum_id, sube_id, q=q, egitim_yili_id=_yil)
         return Response({'ogrenciler': rows, 'count': len(rows)})
 
     def post(self, request):
@@ -237,9 +237,9 @@ class GunuBirlikSinavIslemView(APIView):
         )
         try:
             if islem == 'oturum':
-                result = change_deneme_oturumu(**kwargs, exam_session_id=request.data.get('exam_session_id'))
+                result = change_deneme_oturumu(**kwargs, exam_session_id=request.data.get('exam_session_id'), participant_id=request.data.get('participant_id'))
             elif islem == 'iptal':
-                result = cancel_deneme_kaydi(**kwargs)
+                result = cancel_deneme_kaydi(**kwargs, participant_id=request.data.get('participant_id'))
             elif islem == 'kayit':
                 from ..application.deneme_ucret import parse_deneme_ucreti
 

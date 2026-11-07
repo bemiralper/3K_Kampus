@@ -18,6 +18,7 @@ type Oturum = {
 
 type Sinav = {
   id: number;
+  participant_id: number;
   name: string;
   exam_date: string | null;
   sinif_seviyesi: string;
@@ -114,12 +115,16 @@ export default function DenemeOgrencileriPage() {
   const [pasifError, setPasifError] = useState("");
   const [pasifBusy, setPasifBusy] = useState(false);
 
+  const loadVersion = useRef(0);
+
   const load = useCallback(async (query: string) => {
+    const version = ++loadVersion.current;
     setLoading(true);
     setError("");
     const res = await apiGet<{ ogrenciler: DenemeOgrenci[] }>(
       `/api/ogrenci-kayit/gunu-birlik/${query.trim() ? `?q=${encodeURIComponent(query.trim())}` : ""}`,
     );
+    if (version !== loadVersion.current) return;
     if (!res.success || !res.data) {
       setError(res.error || "Liste alınamadı.");
       setRows([]);
@@ -130,9 +135,13 @@ export default function DenemeOgrencileriPage() {
   }, []);
 
   useEffect(() => {
+    const invalidate = () => { ++loadVersion.current; };
     setLoading(true);
     const timer = window.setTimeout(() => { load(q); }, 250);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      invalidate();
+    };
   }, [q, load]);
 
   const downloadBelge = async (ogrenci: DenemeOgrenci, sinav: Sinav) => {
@@ -184,6 +193,7 @@ export default function DenemeOgrencileriPage() {
         islem: "oturum",
         ogrenci_id: oturum.ogrenci.id,
         exam_id: oturum.sinav.id,
+        participant_id: oturum.sinav.participant_id,
         exam_session_id: Number(oturum.sessionId),
       });
       setOturum(null);
@@ -361,6 +371,7 @@ export default function DenemeOgrencileriPage() {
         islem: "iptal",
         ogrenci_id: iptal.ogrenci.id,
         exam_id: iptal.sinav.id,
+        participant_id: iptal.sinav.participant_id,
       });
       setIptal(null);
       await load(q);
@@ -434,11 +445,17 @@ export default function DenemeOgrencileriPage() {
               </button>
             )}
           </div>
-          <span className="deneme-count">{loading ? "…" : `${rows.length} öğrenci`}</span>
+          <span className="deneme-count">{loading ? "…" : error ? "—" : `${rows.length} öğrenci`}</span>
         </div>
 
         {loading ? (
           <div className="ogrenci-empty"><p>Yükleniyor…</p></div>
+        ) : error ? (
+          <div className="ogrenci-empty">
+            <h4>Liste yüklenemedi</h4>
+            <p>Öğrenciler alınırken bir hata oluştu.</p>
+            <button type="button" className="ogl-btn ogl-btn--soft" onClick={() => load(q)}>Tekrar dene</button>
+          </div>
         ) : rows.length === 0 ? (
           <div className="ogrenci-empty">
             <div className="ogrenci-empty-visual" aria-hidden>
@@ -658,7 +675,7 @@ export default function DenemeOgrencileriPage() {
               <div className="deneme-pick-list">
                 {secim.ogrenci.sinavlar.map((sinav) => (
                   <button
-                    key={sinav.id}
+                    key={sinav.participant_id}
                     type="button"
                     className="deneme-pick"
                     disabled={Boolean(busyKey)}
@@ -684,7 +701,7 @@ export default function DenemeOgrencileriPage() {
       )}
 
       {oturum && (
-        <div className="ogl-dialog-overlay" role="presentation" onClick={() => setOturum(null)}>
+        <div className="ogl-dialog-overlay" role="presentation" onClick={() => !busyKey && setOturum(null)}>
           <div className="ogl-dialog" role="dialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <h3 className="deneme-dialog-title">Oturum değiştir</h3>
             <p className="deneme-dialog-text">{oturum.ogrenci.ad} {oturum.ogrenci.soyad} · {oturum.sinav.name}</p>
@@ -702,7 +719,7 @@ export default function DenemeOgrencileriPage() {
                 ))}
             </select>
             <div className="deneme-dialog-actions">
-              <button type="button" className="ogl-btn ogl-btn--ghost" onClick={() => setOturum(null)}>Vazgeç</button>
+              <button type="button" className="ogl-btn ogl-btn--ghost" onClick={() => !busyKey && setOturum(null)}>Vazgeç</button>
               <button type="button" className="ogl-btn ogl-btn--primary" disabled={Boolean(busyKey)} onClick={confirmOturum}>Kaydet</button>
             </div>
           </div>
@@ -710,15 +727,15 @@ export default function DenemeOgrencileriPage() {
       )}
 
       {iptal && (
-        <div className="ogl-dialog-overlay" role="presentation" onClick={() => setIptal(null)}>
+        <div className="ogl-dialog-overlay" role="presentation" onClick={() => !busyKey && setIptal(null)}>
           <div className="ogl-dialog" role="alertdialog" aria-modal="true" onClick={(event) => event.stopPropagation()}>
             <h3 className="deneme-dialog-title">Deneme kaydını iptal et</h3>
             <p className="deneme-dialog-text">
-              {iptal.ogrenci.ad} {iptal.ogrenci.soyad}, {iptal.sinav.name} sınavından çıkarılacak.
-              Bu deneme için alınmış ücret de finans kaydında iptal edilir.
+              {iptal.ogrenci.ad} {iptal.ogrenci.soyad} için {iptal.sinav.name}
+              {iptal.sinav.session_name ? ` · ${iptal.sinav.session_name}` : ""} kaydı iptal edilecek. Bu sınavda başka oturum kaydı kalmazsa deneme ücreti de finans kaydında iptal edilir.
             </p>
             <div className="deneme-dialog-actions">
-              <button type="button" className="ogl-btn ogl-btn--ghost" onClick={() => setIptal(null)}>Vazgeç</button>
+              <button type="button" className="ogl-btn ogl-btn--ghost" onClick={() => !busyKey && setIptal(null)}>Vazgeç</button>
               <button type="button" className="ogl-btn ogl-btn--danger" disabled={Boolean(busyKey)} onClick={confirmIptal}>İptal et</button>
             </div>
           </div>
