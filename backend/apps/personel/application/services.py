@@ -15,6 +15,30 @@ from apps.kimlik.application.kisi_service import KisiService
 from apps.kimlik.application.enforcement import assert_identity_for_new_record
 from apps.kimlik.exceptions import KimlikConflictError
 from apps.kimlik.domain.models import Kisi
+from django.core.exceptions import PermissionDenied
+from django.utils.crypto import get_random_string
+
+
+def assert_can_assign_role(actor, role, target_user=None):
+    """Bir personel yazma izni, daha güçlü giriş rolü verme yetkisi değildir."""
+    if actor is None:
+        return  # yalnız güvenilir uygulama içi çağrılar
+    from shared.permissions import user_has_permission
+    if target_user and target_user.is_superuser and not actor.is_superuser:
+        raise PermissionDenied('Süper kullanıcı hesabını yalnız süper kullanıcı yönetebilir.')
+    if actor.is_superuser or user_has_permission(actor, 'sistem.admin'):
+        return
+    own = UserRole.objects.filter(user=actor).select_related('role').first()
+    if not own or not role or not role.is_active or role.has_permission('sistem.admin'):
+        raise PermissionDenied('Bu rolü atama yetkiniz yok.')
+    requested = set(role.get_all_permissions().values_list('code', flat=True))
+    staff_scope=('sinif.','egitim_tanimlari.','egitim_paketleri.','rapor.','ogrenci.','ozel_ders.','olcme.','coaching.','takvim.','gorev.')
+    delegated_staff=(role.code in ('ogretmen','koc')
+                     and all(p.startswith(staff_scope) and not p.endswith(('.manage','.admin')) for p in requested))
+    if not delegated_staff and (role.level<own.role.level or not all(user_has_permission(actor,p) for p in requested)):
+        raise PermissionDenied('Sahip olmadığınız yetkileri atayamazsınız.')
+    if target_user and target_user.pk == actor.pk and own.role_id != role.pk:
+        raise PermissionDenied('Kendi giriş rolünüzü değiştiremezsiniz.')
 
 
 def resolve_system_role_for_personel(personel, role_code=None):
@@ -26,6 +50,7 @@ def resolve_system_role_for_personel(personel, role_code=None):
         role = Role.objects.filter(code__iexact=role_code, silindi_mi=False).first()
         if role:
             return role
+        raise ValueError('Atanacak rol bulunamadı.')
 
     gorev = (
         PersonelGorevlendirme.objects.filter(personel=personel, aktif_mi=True, rol__isnull=False)
@@ -48,22 +73,22 @@ def resolve_system_role_for_personel(personel, role_code=None):
         if role:
             return role
 
-    return Role.objects.filter(is_system_role=True, silindi_mi=False).order_by('level').first()
+    return Role.objects.get_or_create(code='ogretmen', defaults={'name':'Öğretmen','level':50,'is_system_role':True})[0]
 
 
-def assign_user_role_for_personel(user, personel, role_code=None, must_change_password=True):
+def assign_user_role_for_personel(user, personel, role_code=None, must_change_password=True, actor=None):
     """Personel kullanıcısına görevlendirmedeki (veya verilen) rolü atar veya günceller."""
     role = resolve_system_role_for_personel(personel, role_code=role_code)
     if not role:
         return None
+    assert_can_assign_role(actor, role, user)
 
+    defaults={'role':role,'kurum':personel.kurum}
+    if must_change_password is not None:
+        defaults['must_change_password']=must_change_password
     user_role, _created = UserRole.objects.update_or_create(
         user=user,
-        defaults={
-            'role': role,
-            'kurum': personel.kurum,
-            'must_change_password': must_change_password,
-        },
+        defaults=defaults,
     )
     return user_role
 
@@ -152,6 +177,7 @@ class PersonelService:
             user = self._create_user_account(personel)
             personel.user = user
             personel.save()
+            assign_user_role_for_personel(user, personel, must_change_password=True)
 
         return personel
 
@@ -195,14 +221,16 @@ class PersonelService:
             username = f"{original_username.split('@')[0]}{counter}@{original_username.split('@')[1]}"
             counter += 1
         
+        temporary_password = get_random_string(24)
         user = User.objects.create_user(
             username=username,
             email=personel.email,
             first_name=personel.ad,
             last_name=personel.soyad,
-            password=personel.tc_kimlik_no or User.objects.make_random_password()  # TC veya rastgele şifre
+            password=temporary_password,
         )
         
+        user._temporary_password = temporary_password
         return user
     
     @transaction.atomic
@@ -244,7 +272,7 @@ class PersonelService:
         return self.repository.get_without_user_account(kurum_id, sube_id)
     
     @transaction.atomic
-    def create_user_account_for_personel(self, personel_id, password=None):
+    def create_user_account_for_personel(self, personel_id, password=None, actor=None):
         """Mevcut personel için kullanıcı hesabı oluştur"""
         personel = self.repository.get_by_id(personel_id)
         if not personel:
@@ -261,7 +289,7 @@ class PersonelService:
             email=personel.email,
             first_name=personel.ad,
             last_name=personel.soyad,
-            password=password or personel.tc_kimlik_no or User.objects.make_random_password()
+            password=password or get_random_string(24)
         )
         
         personel.user = user
@@ -271,6 +299,7 @@ class PersonelService:
             user,
             personel,
             must_change_password=not bool(password),
+            actor=actor,
         )
         
         return personel

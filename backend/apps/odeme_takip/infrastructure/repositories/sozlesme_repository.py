@@ -8,13 +8,14 @@ from apps.odeme_takip.domain.models import (
     IndirimTuru,
 )
 from apps.odeme_takip.domain.enums import SozlesmeDurum, OnayDurum, TahsilatDurum, TahsilatTuru
+from apps.odeme_takip.domain.contract_scope import egitim_sozlesmeleri
 
 
 class SozlesmeRepository:
     """Sözleşme veritabanı işlemleri"""
 
     def get_all(self, kurum_id=None, sube_id=None, egitim_yili_id=None, durum=None, ogrenci_id=None):
-        qs = Sozlesme.objects.select_related(
+        qs = egitim_sozlesmeleri(Sozlesme.objects.all()).select_related(
             'ogrenci', 'egitim_yili', 'kurum', 'sube', 'olusturan',
             'veli', 'odeme_yontemi', 'mali_hesap',
         ).prefetch_related('kalemler', 'indirimler', 'taksitler')
@@ -33,7 +34,7 @@ class SozlesmeRepository:
 
     def get_by_id(self, id):
         try:
-            return Sozlesme.objects.select_related(
+            return egitim_sozlesmeleri(Sozlesme.objects.all()).select_related(
                 'ogrenci', 'egitim_yili', 'kurum', 'sube', 'olusturan',
                 'veli', 'odeme_yontemi', 'mali_hesap',
             ).prefetch_related(
@@ -49,12 +50,12 @@ class SozlesmeRepository:
 
     def get_by_sozlesme_no(self, sozlesme_no):
         try:
-            return Sozlesme.objects.get(sozlesme_no=sozlesme_no)
+            return egitim_sozlesmeleri(Sozlesme.objects.all()).get(sozlesme_no=sozlesme_no)
         except Sozlesme.DoesNotExist:
             return None
 
     def get_by_ogrenci(self, ogrenci_id, egitim_yili_id=None):
-        qs = Sozlesme.objects.select_related(
+        qs = egitim_sozlesmeleri(Sozlesme.objects.all()).select_related(
             'egitim_yili'
         ).filter(ogrenci_id=ogrenci_id)
         if egitim_yili_id:
@@ -90,7 +91,7 @@ class SozlesmeRepository:
 
     def get_ozet_istatistikler(self, kurum_id, sube_id, egitim_yili_id):
         """Dashboard özet istatistikleri"""
-        base_qs = Sozlesme.objects.filter(
+        base_qs = egitim_sozlesmeleri(Sozlesme.objects.all()).filter(
             kurum_id=kurum_id, sube_id=sube_id, egitim_yili_id=egitim_yili_id
         ).exclude(durum__in=[SozlesmeDurum.TASLAK, SozlesmeDurum.IPTAL])
 

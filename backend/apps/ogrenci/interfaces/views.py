@@ -1722,34 +1722,25 @@ def ogrenci_finans_ozet_api(request, pk):
             s_kalan = float(s.kalan_borc)
             s_yuzde = float(s.odeme_yuzdesi)
             deneme_kaydi = 'gunu_birlik_deneme_ucreti' in (s.notlar or '')
-            aktif_tahsil = [
-                th for th in tahsilat_list
-                if th['durum'] == TahsilatDurum.AKTIF and th['tahsilat_turu'] != TahsilatTuru.IADE
-            ]
-            # Ücret gelir kaydı ve kasa hareketi olarak yazılır. Sözleşme
-            # tahsilatı açılmaz; öğrenci kartı yine de tahsil edilmiş görünsün.
-            if (
-                deneme_kaydi
-                and s.durum == SozlesmeDurum.TAMAMLANDI
-                and not aktif_tahsil
-                and (s.net_tutar or 0) > 0
-            ):
-                s_odenen = float(s.net_tutar)
-                s_kalan = 0
-                s_yuzde = 100.0
-                tahsilat_list.append({
-                    'id': -s.id,
-                    'taksit_no': None,
-                    'tutar': s_odenen,
-                    'tahsilat_tarihi': str(s.baslangic_tarihi) if s.baslangic_tarihi else None,
-                    'tahsilat_turu': TahsilatTuru.NORMAL,
-                    'odeme_yontemi_ad': s.odeme_yontemi.ad if s.odeme_yontemi_id else '',
-                    'referans_no': '',
-                    'durum': TahsilatDurum.AKTIF,
-                    'iptal_nedeni': '',
-                    'aciklama': 'Deneme ücreti gelir kaydı olarak kasaya işlendi.',
-                })
-            
+            # Tek denemenin ödeme bilgisi gerçek gelir tahsilatından gelir.
+            # Tamamlandı statüsü tek başına ödeme kanıtı değildir.
+            if deneme_kaydi:
+                from apps.ogrenci_kayit.application.deneme_ucret import deneme_gelir_tahsilatlari
+
+                for gelir_tahsilat in deneme_gelir_tahsilatlari(s):
+                    tahsilat_list.append({
+                        'id': -gelir_tahsilat.id,
+                        'taksit_no': None,
+                        'tutar': float(gelir_tahsilat.tutar),
+                        'tahsilat_tarihi': str(gelir_tahsilat.tahsilat_tarihi),
+                        'tahsilat_turu': TahsilatTuru.NORMAL,
+                        'odeme_yontemi_ad': gelir_tahsilat.odeme_yontemi.ad if gelir_tahsilat.odeme_yontemi_id else '',
+                        'referans_no': '',
+                        'durum': TahsilatDurum.AKTIF,
+                        'iptal_nedeni': '',
+                        'aciklama': 'Deneme ücreti gelir tahsilatı.',
+                    })
+
             sozlesme_data = {
                 'id': s.id,
                 'sozlesme_no': s.sozlesme_no,

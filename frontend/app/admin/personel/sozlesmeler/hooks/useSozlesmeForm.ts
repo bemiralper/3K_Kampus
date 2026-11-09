@@ -11,27 +11,33 @@ export function useSozlesmeForm(
   },
 ) {
   const [dirty, setDirty] = useState(false);
-  const initialRef = useRef<string>("");
-  const autosavingRef = useRef(false);
+  const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveError, setSaveError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const initialRef = useRef("");
+  const pending = useRef(false);
+  const mounted = useRef(true);
+  const latest = useRef({ form: JSON.stringify(form), options });
+  latest.current = { form: JSON.stringify(form), options };
+
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   const markClean = useCallback((snapshot: SozlesmeFormData) => {
     initialRef.current = JSON.stringify(snapshot);
     setDirty(false);
+    setSaveState("saved");
+    setSaveError("");
   }, []);
 
   const patchWithDirty = useCallback(
     (patch: Partial<SozlesmeFormData>, apply: (p: Partial<SozlesmeFormData>) => void) => {
       apply(patch);
       setDirty(true);
-    },
-    [],
+    }, [],
   );
-
-  useEffect(() => {
-    if (!initialRef.current && form.personel_id) {
-      initialRef.current = JSON.stringify(form);
-    }
-  }, [form]);
 
   useEffect(() => {
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
@@ -46,17 +52,37 @@ export function useSozlesmeForm(
   useEffect(() => {
     if (!options.isEdit || !options.sozlesmeId || !dirty) return;
     const timer = setTimeout(async () => {
-      if (autosavingRef.current) return;
-      autosavingRef.current = true;
+      if (pending.current) return;
+      pending.current = true;
+      const snapshot = latest.current.form;
+      const id = latest.current.options.sozlesmeId!;
+      setSaveState("saving");
+      setSaveError("");
       try {
-        await saveTaslak(options.sozlesmeId!, options.buildPayload("TASLAK"));
-        setDirty(false);
+        // Taslak ucu alanları kaydeder; sözleşmenin durumu değişmez.
+        const result = await saveTaslak(id, latest.current.options.buildPayload());
+        if (!mounted.current || id !== latest.current.options.sozlesmeId) return;
+        if (!result.success) throw new Error(result.error || "Değişiklikler kaydedilemedi.");
+        if (snapshot === latest.current.form) {
+          initialRef.current = snapshot;
+          setDirty(false);
+          setSaveState("saved");
+        }
+      } catch (error) {
+        if (mounted.current && id === latest.current.options.sozlesmeId) {
+          setSaveState("error");
+          setSaveError(error instanceof Error ? error.message : "Değişiklikler kaydedilemedi.");
+        }
       } finally {
-        autosavingRef.current = false;
+        pending.current = false;
+        if (mounted.current && id === latest.current.options.sozlesmeId && snapshot !== latest.current.form) {
+          setRetry(value => value + 1);
+        }
       }
     }, 3000);
     return () => clearTimeout(timer);
-  }, [dirty, form, options]);
+  }, [dirty, form, options.isEdit, options.sozlesmeId, retry]);
 
-  return { dirty, setDirty, markClean, patchWithDirty };
+  const retrySave = useCallback(() => setRetry(value => value + 1), []);
+  return { dirty, setDirty, markClean, patchWithDirty, saveState, saveError, retrySave };
 }

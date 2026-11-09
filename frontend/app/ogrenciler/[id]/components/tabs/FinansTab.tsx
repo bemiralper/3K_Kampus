@@ -367,7 +367,7 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
                 <span>
                   {formatMoney(s.net_tutar)}
                   {" · "}
-                  {s.durum === "iptal" ? "İptal" : s.toplam_odenen > 0 ? `${formatMoney(s.toplam_odenen)} alındı` : "Ücret yok"}
+                  {s.durum === "iptal" ? "İptal" : s.toplam_odenen > 0 ? `${formatMoney(s.toplam_odenen)} alındı` : s.net_tutar > 0 ? "Tahsilat yok" : "Ücretsiz"}
                 </span>
               </div>
             ))}

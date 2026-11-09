@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useKurum } from '@/lib/contexts/KurumContext';
 import {
@@ -112,7 +112,12 @@ export default function SozlesmelerClient() {
     return () => clearTimeout(t);
   }, [search]);
 
+  const requestSeq = useRef(0);
   const load = useCallback(async () => {
+    const seq = ++requestSeq.current;
+    setSozlesmeler([]);
+    setStats(null);
+    setHelper(null);
     if (!initialized || !activeKurum) return;
     setLoading(true);
     setLoadError('');
@@ -127,6 +132,7 @@ export default function SozlesmelerClient() {
       fetchSozlesmeStats(),
       fetchHelperData(),
     ]);
+    if (seq !== requestSeq.current) return;
     if (sRes.success && Array.isArray(sRes.data)) {
       setSozlesmeler(sRes.data);
     } else {

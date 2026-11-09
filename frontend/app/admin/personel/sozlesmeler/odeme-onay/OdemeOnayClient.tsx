@@ -1,6 +1,9 @@
 'use client';
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { Modal } from 'antd';
+import dayjs from 'dayjs';
+import AppDatePicker from '@/components/ui/AppDatePicker';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   fetchHakedisler, onaylaHakedis, odendiHakedis, fetchHakedisStats,
 } from '../services/api';
@@ -15,7 +18,7 @@ const btnPrimary = 'px-4 py-2 bg-indigo-600 text-white text-[13px] font-medium r
 const btnSecondary = 'px-4 py-2 bg-white border border-gray-200 text-gray-700 text-[13px] font-medium rounded-xl hover:bg-gray-50 transition-colors';
 
 const fmtPara = (n: number) =>
-  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n);
+  new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
 const fmtTarih = (d: string | null) => {
   if (!d) return '—';
   return new Date(d).toLocaleDateString('tr-TR', { day: '2-digit', month: '2-digit', year: 'numeric' });
@@ -33,6 +36,10 @@ export default function OdemeOnayClient() {
   const [loading, setLoading] = useState(true);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
+  const [paymentIds, setPaymentIds] = useState<number[] | null>(null);
+  const [paymentDate, setPaymentDate] = useState(dayjs().format('YYYY-MM-DD'));
+  const [paymentBusy, setPaymentBusy] = useState(false);
+
   // Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null);
   const showToast = (type: 'success' | 'error', msg: string) => {
@@ -40,18 +47,22 @@ export default function OdemeOnayClient() {
     setTimeout(() => setToast(null), 3500);
   };
 
+  const loadSeq=useRef(0);
   const load = useCallback(async () => {
-    if (!initialized || !activeSube?.id) return;
+    const seq=++loadSeq.current;
+    setHakedisler([]);setStats(null);setSelectedIds(new Set());
+    if (!initialized || !activeSube?.id) {setLoading(false);return;}
     setLoading(true);
-    setSelectedIds(new Set());
-    const [hRes, sRes] = await Promise.all([
-      fetchHakedisler(yil, ay, durumFiltre || undefined),
-      fetchHakedisStats(yil, ay),
-    ]);
-    if (hRes.success && hRes.data) setHakedisler(hRes.data);
-    if (sRes.success && sRes.data) setStats(sRes.data);
-    setLoading(false);
-  }, [yil, ay, durumFiltre, initialized, activeSube?.id]);
+    try {
+      const [hRes,sRes]=await Promise.all([fetchHakedisler(yil,ay,durumFiltre||undefined),fetchHakedisStats(yil,ay)]);
+      if(seq!==loadSeq.current)return;
+      if(!hRes.success||!hRes.data)throw new Error(hRes.error||'Bordrolar yüklenemedi.');
+      if(!sRes.success||!sRes.data)throw new Error(sRes.error||'Özet yüklenemedi.');
+      setHakedisler(hRes.data);setStats(sRes.data);
+    } catch(error) {
+      if(seq===loadSeq.current)showToast('error',error instanceof Error?error.message:'Bordrolar yüklenemedi.');
+    } finally {if(seq===loadSeq.current)setLoading(false);}
+  }, [yil,ay,durumFiltre,initialized,activeSube?.id]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -80,13 +91,7 @@ export default function OdemeOnayClient() {
   };
 
   // Tekil ödendi
-  const handleOdendi = async (id: number) => {
-    const tarih = prompt('Ödeme tarihi (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
-    if (!tarih) return;
-    const res = await odendiHakedis(id, tarih);
-    if (res.success) { showToast('success', 'Ödendi olarak işaretlendi.'); load(); }
-    else showToast('error', (res as { error?: string }).error || 'Hata.');
-  };
+  const handleOdendi = (id: number) => { setPaymentDate(dayjs().format('YYYY-MM-DD'));setPaymentIds([id]); };
 
   // Toplu onayla
   const handleTopluOnayla = async () => {
@@ -114,15 +119,18 @@ export default function OdemeOnayClient() {
       return h?.durum === 'ONAYLANDI';
     });
     if (eligible.length === 0) { showToast('error', 'Ödendi işaretlenecek kayıt seçilmedi.'); return; }
-    const tarih = prompt('Ödeme tarihi (YYYY-MM-DD):', new Date().toISOString().slice(0, 10));
-    if (!tarih) return;
-    let ok = 0;
-    for (const id of eligible) {
-      const res = await odendiHakedis(id, tarih);
-      if (res.success) ok++;
-    }
-    showToast('success', `${ok}/${eligible.length} hakediş ödendi olarak işaretlendi.`);
-    load();
+    setPaymentDate(dayjs().format('YYYY-MM-DD'));
+    setPaymentIds(eligible);
+  };
+  const confirmPayments=async()=>{
+    if(!paymentIds||!paymentDate||paymentBusy)return;
+    setPaymentBusy(true);
+    let ok=0;
+    try {
+      for(const id of paymentIds){const res=await odendiHakedis(id,paymentDate);if(res.success)ok++;}
+      showToast(ok===paymentIds.length?'success':'error',`${ok}/${paymentIds.length} bordro ödendi olarak işaretlendi. Bu işlem banka/kasa hareketi oluşturmaz.`);
+      setPaymentIds(null);await load();
+    } finally {setPaymentBusy(false);}
   };
 
   // Durum sayıları
@@ -132,6 +140,10 @@ export default function OdemeOnayClient() {
 
   return (
     <div className="p-6 max-w-[1200px] mx-auto">
+      <Modal title="Bordroyu ödendi olarak işaretle" open={Boolean(paymentIds)} confirmLoading={paymentBusy} okText="Ödendi olarak işaretle" cancelText="Vazgeç" onCancel={() => {if(!paymentBusy)setPaymentIds(null);}} onOk={confirmPayments} okButtonProps={{disabled:!paymentDate}}>
+        <p>{paymentIds?.length || 0} bordro için ödeme tarihi seçin. Bu işlem banka/kasa hareketi oluşturmaz.</p>
+        <AppDatePicker value={paymentDate} onChange={setPaymentDate} />
+      </Modal>
       {/* Toast */}
       {toast && (
         <div className={`fixed top-4 right-4 z-[9999] px-4 py-3 rounded-xl shadow-lg text-white text-[13px] font-medium ${toast.type === 'success' ? 'bg-emerald-500' : 'bg-red-500'}`}>

@@ -93,10 +93,19 @@ def sync_hakedis_for_oturum(oturum: BirebirDersOturumu) -> Optional[BirebirHaked
     )
 
 
+def _lock_entitlement_session(hakedis_id, kurum_id, sube_id):
+    # Yoklama da önce oturumu kilitler; onay ve yoklama aynı sırayı kullanır.
+    ids = BirebirHakedis.objects.filter(
+        pk=hakedis_id, oturum__kurum_id=kurum_id, oturum__sube_id=sube_id,
+    ).values_list('oturum_id', flat=True)
+    list(BirebirDersOturumu.objects.select_for_update().filter(pk__in=ids))
+
+
 @transaction.atomic
 def approve_hakedis(hakedis_id: int, *, kurum_id: int, sube_id: int) -> BirebirHakedis:
+    _lock_entitlement_session(hakedis_id, kurum_id, sube_id)
     try:
-        h = BirebirHakedis.objects.select_related('oturum', 'ogretmen', 'ders').get(
+        h = BirebirHakedis.objects.select_for_update(of=('self',)).select_related('oturum', 'ogretmen', 'ders').get(
             pk=hakedis_id,
             oturum__kurum_id=kurum_id,
             oturum__sube_id=sube_id,
@@ -118,8 +127,9 @@ def approve_hakedis(hakedis_id: int, *, kurum_id: int, sube_id: int) -> BirebirH
 
 @transaction.atomic
 def cancel_hakedis(hakedis_id: int, *, kurum_id: int, sube_id: int) -> BirebirHakedis:
+    _lock_entitlement_session(hakedis_id, kurum_id, sube_id)
     try:
-        h = BirebirHakedis.objects.select_related('oturum').get(
+        h = BirebirHakedis.objects.select_for_update(of=('self',)).select_related('oturum').get(
             pk=hakedis_id,
             oturum__kurum_id=kurum_id,
             oturum__sube_id=sube_id,

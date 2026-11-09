@@ -8,7 +8,6 @@ from decimal import Decimal, InvalidOperation
 
 from django.http import JsonResponse, HttpResponse
 from django.views.decorators.http import require_http_methods
-from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from shared.permissions import require_module_permission
 
@@ -64,11 +63,40 @@ def _reject_if_other_sube(request, hakedis):
     ctx, err = _aktif_sube_ctx(request)
     if err:
         return err
-    if hakedis.sozlesme.sube_id != ctx['sube_id']:
+    if hakedis.sozlesme.sube_id != ctx['sube_id'] or hakedis.sozlesme.kurum_id != ctx['kurum_id']:
         return JsonResponse(
             {'success': False, 'error': 'Bu bordro seçili şubeye ait değil.'},
             status=403,
         )
+    return None
+
+
+def _guard_contract(request, contract_id):
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
+    contract = PersonelSozlesme.objects.filter(pk=contract_id).first()
+    if contract is None:
+        return JsonResponse({'success': False, 'error': 'Sözleşme bulunamadı.'}, status=404)
+    if contract.kurum_id != ctx['kurum_id'] or contract.sube_id != ctx['sube_id']:
+        return JsonResponse({'success': False, 'error': 'Sözleşmeye erişim yetkiniz yok.'}, status=403)
+    return None
+
+
+def _guard_contract_update(pk, data):
+    """Yetkili nesnenin ilişkilerini değiştirerek kapsam dışına taşınmasını önler."""
+    contract = PersonelSozlesme.objects.get(pk=pk)
+    for key in ('personel_id', 'sube_id', 'kurum_id', 'egitim_yili_id'):
+        if key in data and str(data[key]) != str(getattr(contract, key)):
+            return JsonResponse({'success': False, 'error': 'Sözleşmenin personel/kurum/şube/yıl bağlantısı değiştirilemez.'}, status=403)
+    if data.get('gorevlendirme_id'):
+        from apps.personel.domain.models import PersonelGorevlendirme
+        if not PersonelGorevlendirme.objects.filter(
+            pk=data['gorevlendirme_id'], personel_id=contract.personel_id,
+            kurum_id=contract.kurum_id, gorev_sube_id=contract.sube_id,
+            egitim_yili_id=contract.egitim_yili_id,
+        ).exists():
+            return JsonResponse({'success': False, 'error': 'Görevlendirme sözleşmeyle eşleşmiyor.'}, status=403)
     return None
 
 
@@ -128,7 +156,6 @@ def _dec(val, default='0.00'):
 #  SÖZLEŞME API
 # ═══════════════════════════════════════════════════════════════
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET', 'POST'])
 def api_sozlesme_list_create(request):
@@ -215,10 +242,12 @@ def api_sozlesme_list_create(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET', 'PUT', 'DELETE'])
 def api_sozlesme_detail(request, pk):
+    blocked = _guard_contract(request, pk)
+    if blocked:
+        return blocked
     svc = SozlesmeService()
 
     if request.method == 'GET':
@@ -238,6 +267,9 @@ def api_sozlesme_detail(request, pk):
         except ValueError as e:
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
+        blocked = _guard_contract_update(pk, data)
+        if blocked:
+            return blocked
         try:
             sozlesme = svc.update(pk, data)
             if not sozlesme:
@@ -247,16 +279,21 @@ def api_sozlesme_detail(request, pk):
             return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
     # DELETE
-    ok = svc.delete(pk)
+    try:
+        ok = svc.delete(pk)
+    except ValueError as exc:
+        return JsonResponse({'success':False,'error':str(exc)}, status=400)
     if ok:
         return JsonResponse({'success': True}, status=204)
     return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_sozlesme_durum(request, pk):
+    blocked = _guard_contract(request, pk)
+    if blocked:
+        return blocked
     """Sözleşme durumunu değiştir. Fesih durumunda fesih_sebebi ve fesih_tarihi de alınır."""
     try:
         body = json.loads(request.body)
@@ -277,22 +314,29 @@ def api_sozlesme_durum(request, pk):
     return JsonResponse({'success': True, 'data': _serialize_sozlesme(sozlesme)})
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['PUT'])
 def api_sozlesme_taslak(request, pk):
+    blocked = _guard_contract(request, pk)
+    if blocked:
+        return blocked
     """Taslak kaydet — durum TASLAK kalır."""
     try:
         body = json.loads(request.body)
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
-    body['durum'] = SozlesmeDurumu.TASLAK
+    # Otomatik kayıt mevcut sözleşmenin yaşam döngüsünü değiştirmez.
+    body.pop('durum', None)
     svc = SozlesmeService()
     try:
         data = parse_sozlesme_body(body, kurum_id=None, ey_id=None, partial=True, taslak=True)
+        data.pop('durum', None)
     except ValueError as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
+    blocked = _guard_contract_update(pk, data)
+    if blocked:
+        return blocked
     try:
         sozlesme = svc.update(pk, data)
         if not sozlesme:
@@ -302,7 +346,6 @@ def api_sozlesme_taslak(request, pk):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_sozlesme_preview_hesap(request):
@@ -330,10 +373,12 @@ def api_sozlesme_preview_hesap(request):
     return JsonResponse({'success': True, 'data': ozet})
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_sozlesme_print_token(request, pk):
+    blocked = _guard_contract(request, pk)
+    if blocked:
+        return blocked
     kurum_id, _ = _ctx(request)
     from apps.personel.application.print_token import create_print_token, DOC_PERSONEL_SOZLESME
     s = SozlesmeService().get(pk)
@@ -343,7 +388,6 @@ def api_sozlesme_print_token(request, pk):
     return JsonResponse({'success': True, 'token': token})
 
 
-@csrf_exempt
 @require_http_methods(['GET'])
 def api_sozlesme_print_data(request, pk):
     """Print sayfası — yalnızca geçerli print token ile."""
@@ -360,10 +404,12 @@ def api_sozlesme_print_data(request, pk):
     return JsonResponse({'success': True, 'data': _serialize_sozlesme(s)})
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_sozlesme_pdf(request, pk):
+    blocked = _guard_contract(request, pk)
+    if blocked:
+        return blocked
     """Sözleşme belgesi PDF (Playwright — print route)."""
     kurum_id, _ = _ctx(request)
     s = SozlesmeService().get(pk)
@@ -381,7 +427,6 @@ def api_sozlesme_pdf(request, pk):
     return response
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_sozlesme_stats(request):
@@ -395,7 +440,6 @@ def api_sozlesme_stats(request):
     return JsonResponse({'success': True, 'data': stats})
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_sozlesme_helper_data(request):
@@ -537,7 +581,6 @@ def api_sozlesme_helper_data(request):
 #  HAKEDİŞ API
 # ═══════════════════════════════════════════════════════════════
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET', 'POST'])
 def api_hakedis_list_create(request):
@@ -567,6 +610,10 @@ def api_hakedis_list_create(request):
     except json.JSONDecodeError:
         return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
 
+    blocked = _guard_contract(request, body.get('sozlesme_id'))
+    if blocked:
+        return blocked
+
     data = {
         'sozlesme_id': body.get('sozlesme_id'),
         'yil': int(body.get('yil', 0)),
@@ -590,7 +637,6 @@ def api_hakedis_list_create(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET', 'PUT', 'DELETE'])
 def api_hakedis_detail(request, pk):
@@ -646,7 +692,6 @@ def api_hakedis_detail(request, pk):
     return JsonResponse({'success': True}, status=204)
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_hakedis_onayla(request, pk):
@@ -662,7 +707,6 @@ def api_hakedis_onayla(request, pk):
     return JsonResponse({'success': True, 'data': _serialize_hakedis(hakedis)})
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_hakedis_odendi(request, pk):
@@ -687,7 +731,6 @@ def api_hakedis_odendi(request, pk):
     return JsonResponse({'success': True, 'data': _serialize_hakedis(hakedis)})
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_hakedis_toplu_olustur(request):
@@ -718,7 +761,6 @@ def api_hakedis_toplu_olustur(request):
     })
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_hakedis_stats(request):
@@ -739,7 +781,6 @@ def api_hakedis_stats(request):
 #  RAPOR API
 # ═══════════════════════════════════════════════════════════════
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_rapor_yillik(request):
@@ -915,13 +956,15 @@ def _serialize_avans(a):
     }
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET', 'POST'])
 def api_avans_list_create(request):
     """Avans kayıtlarını listele veya yeni oluştur."""
     kurum_id, _ = _ctx(request)
     svc = AvansService()
+    ctx, err = _aktif_sube_ctx(request)
+    if err:
+        return err
 
     if request.method == 'GET':
         sozlesme_id = request.GET.get('sozlesme_id')
@@ -941,6 +984,7 @@ def api_avans_list_create(request):
                 'sozlesme', 'sozlesme__personel', 'olusturan',
             ).filter(sozlesme__kurum_id=kurum_id).order_by('-tarih')
 
+        qs = qs.filter(sozlesme__kurum_id=ctx['kurum_id'], sozlesme__sube_id=ctx['sube_id'])
         return JsonResponse({
             'success': True,
             'data': [_serialize_avans(a) for a in qs],
@@ -988,10 +1032,15 @@ def api_avans_list_create(request):
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET', 'PUT', 'DELETE'])
 def api_avans_detail(request, pk):
+    existing = AvansKaydi.objects.filter(pk=pk).first()
+    if not existing:
+        return JsonResponse({'success': False, 'error': 'Bulunamadı.'}, status=404)
+    blocked = _guard_contract(request, existing.sozlesme_id)
+    if blocked:
+        return blocked
     svc = AvansService()
 
     if request.method == 'GET':
@@ -1034,7 +1083,6 @@ def api_avans_detail(request, pk):
 #  TOPLU ÖDENDİ (Maaş Bordrosu sayfası için)
 # ═══════════════════════════════════════════════════════════════
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_hakedis_toplu_onayla(request):
@@ -1075,7 +1123,6 @@ def api_hakedis_toplu_onayla(request):
     })
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_hakedis_toplu_odendi(request):
@@ -1123,12 +1170,13 @@ def api_hakedis_toplu_odendi(request):
 #  PERSONEL DETAY (Ödeme Geçmişi)
 # ═══════════════════════════════════════════════════════════════
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_personel_odeme_gecmisi(request, personel_id):
     """Personelin tüm aylardaki ödeme geçmişi."""
-    kurum_id, _ = _ctx(request)
+    ctx,err=_aktif_sube_ctx(request)
+    if err:return err
+    kurum_id=ctx['kurum_id']
 
     from apps.personel.domain.models import Personel
     try:
@@ -1140,11 +1188,12 @@ def api_personel_odeme_gecmisi(request, personel_id):
     hakedisler = AylikHakedis.objects.filter(
         sozlesme__personel_id=personel_id,
         sozlesme__kurum_id=kurum_id,
+        sozlesme__sube_id=ctx['sube_id'],
     ).select_related('sozlesme', 'sozlesme__personel', 'sozlesme__egitim_yili').order_by('-yil', '-ay')
 
     # Avans kayıtları
     avans_svc = AvansService()
-    avanslar = avans_svc.list_for_personel(personel_id, kurum_id)
+    avanslar = avans_svc.list_for_personel(personel_id, kurum_id).filter(sozlesme__sube_id=ctx['sube_id'])
 
     # Toplamlar
     agg = hakedisler.aggregate(
@@ -1471,7 +1520,6 @@ def _build_bordro_pdf_single(hakedis):
     return buf
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_bordro_pdf_tekil(request, pk):
@@ -1498,7 +1546,6 @@ def api_bordro_pdf_tekil(request, pk):
     return response
 
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['GET'])
 def api_bordro_pdf_toplu(request):
@@ -1672,139 +1719,28 @@ def api_bordro_pdf_toplu(request):
 #  FİNANS ENTEGRASYONU — Maaş Giderleri
 # ═══════════════════════════════════════════════════════════════
 
-@csrf_exempt
 @require_module_permission("personel", manage_only=True)
 @require_http_methods(['POST'])
 def api_maas_gider_kaydet(request):
-    """
-    Aylık bordroyu finans modülüne gider olarak kaydet.
-    Body: { yil, ay, gider_kategorisi_id, (opsiyonel) mali_hesap_id, odeme_yontemi_id }
-    Her ödendi durumundaki hakediş için ayrı GiderKaydi oluşturulur.
-    """
-    kurum_id, ey_id = _ctx(request)
-
+    from shared.permissions import user_has_module_permission
+    if not user_has_module_permission(request.user,'finans',write=True):
+        return JsonResponse({'success':False,'error':'Finansa aktarım yetkiniz yok.'},status=403)
+    ctx,err=_aktif_sube_ctx(request)
+    if err:return err
+    from apps.personel.application.payroll_expense_service import export_payroll_expenses
     try:
-        body = json.loads(request.body)
-    except json.JSONDecodeError:
-        return JsonResponse({'success': False, 'error': 'Geçersiz JSON.'}, status=400)
-
-    yil = body.get('yil')
-    ay = body.get('ay')
-    gider_kategorisi_id = body.get('gider_kategorisi_id')
-
-    if not all([yil, ay, gider_kategorisi_id]):
-        return JsonResponse({'success': False, 'error': 'yil, ay ve gider_kategorisi_id zorunludur.'}, status=400)
-
-    yil, ay = int(yil), int(ay)
-
-    ctx, err = _aktif_sube_ctx(request)
-    if err:
-        return err
-
-    # Ödendi durumundaki hakedişler — yalnızca seçili şube
-    hakedisler = AylikHakedis.objects.filter(
-        sozlesme__kurum_id=kurum_id,
-        sozlesme__egitim_yili_id=ey_id,
-        sozlesme__sube_id=ctx['sube_id'],
-        yil=yil,
-        ay=ay,
-        durum=HakedisDurumu.ODENDI,
-    ).select_related('sozlesme', 'sozlesme__personel')
-
-    if not hakedisler.exists():
-        return JsonResponse({
-            'success': False,
-            'error': f'{_ay_adi(ay)} {yil} için ödendi durumunda hakediş bulunamadı.',
-        }, status=400)
-
-    try:
-        from apps.finans.domain.gider_kaydi import GiderKaydi, GiderKategorisi
-        from apps.kurum.domain.models import Kurum
-    except ImportError:
-        return JsonResponse({
-            'success': False,
-            'error': 'Finans modülü bulunamadı.',
-        }, status=500)
-
-    kurum = Kurum.objects.filter(id=kurum_id).first()
-    if not kurum:
-        return JsonResponse({'success': False, 'error': 'Kurum bulunamadı.'}, status=404)
-
-    kategori = GiderKategorisi.objects.filter(id=gider_kategorisi_id).first()
-    if not kategori:
-        return JsonResponse({'success': False, 'error': 'Gider kategorisi bulunamadı.'}, status=404)
-
-    mali_hesap_id = body.get('mali_hesap_id')
-    odeme_yontemi_id = body.get('odeme_yontemi_id')
-    fatura_tarihi = body.get('fatura_tarihi', date.today().isoformat())
-
-    created_giderler = []
-    # Bordronun kısmen kaydedilmesini önlemek için tüm gider kayıtları tek bir
-    # atomik işlemde oluşturulur — biri başarısız olursa hiçbiri kalmaz.
-    with transaction.atomic():
-        for h in hakedisler:
-            tutar = h.brut_toplam
-            if tutar <= 0:
-                continue
-
-            aciklama = f'{h.sozlesme.personel.tam_ad} — {_ay_adi(ay)} {yil} Maaş Gideri'
-
-            gider_data = {
-                'kurum': kurum,
-                'gider_kategorisi': kategori,
-                'fatura_tarihi': fatura_tarihi,
-                'vade_tarihi': fatura_tarihi,
-                'brut_tutar': tutar,
-                'kdv_orani': 0,
-                'aciklama': aciklama,
-                'durum': 'onaylandi',
-            }
-            if mali_hesap_id:
-                gider_data['mali_hesap_id'] = mali_hesap_id
-            if odeme_yontemi_id:
-                gider_data['odeme_yontemi_id'] = odeme_yontemi_id
-
-            gider = GiderKaydi(**gider_data)
-            gider.kdv_tutar = Decimal('0.00')
-            gider.net_tutar = tutar
-            gider.save()
-            created_giderler.append({
-                'id': gider.id,
-                'personel': h.sozlesme.personel.tam_ad,
-                'tutar': float(tutar),
-            })
-
-    return JsonResponse({
-        'success': True,
-        'data': {
-            'olusturulan': len(created_giderler),
-            'giderler': created_giderler,
-            'toplam': sum(g['tutar'] for g in created_giderler),
-        },
-    })
+        body=json.loads(request.body)
+        result=export_payroll_expenses(ctx,body)
+    except (ValueError,TypeError,AttributeError) as exc:
+        return JsonResponse({'success':False,'error':str(exc)},status=400)
+    return JsonResponse({'success':True,'data':result})
 
 
-@csrf_exempt
-@require_module_permission("personel", manage_only=True)
+@require_module_permission('personel', manage_only=True)
 @require_http_methods(['GET'])
 def api_gider_kategorileri(request):
-    """Finans modülündeki gider kategorilerini döndür."""
-    kurum_id, _ = _ctx(request)
-
-    try:
-        from apps.finans.domain.gider_kaydi import GiderKategorisi
-    except ImportError:
-        return JsonResponse({
-            'success': True,
-            'data': [],
-        })
-
-    kategoriler = GiderKategorisi.objects.filter(
-        kurum_id=kurum_id,
-        aktif_mi=True,
-    ).order_by('sira', 'ad').values('id', 'ad', 'ikon', 'renk', 'ust_kategori_id')
-
-    return JsonResponse({
-        'success': True,
-        'data': list(kategoriler),
-    })
+    from apps.finans.domain.gider_kategorisi import GiderKategorisi
+    ctx,err=_aktif_sube_ctx(request)
+    if err:return err
+    rows=GiderKategorisi.objects.filter(kurum_id=ctx['kurum_id'],sube_id=ctx['sube_id'],aktif_mi=True).order_by('siralama','ad').values('id','ad','ikon','renk',ust_kategori_id=F('parent_id'))
+    return JsonResponse({'success':True,'data':list(rows)})

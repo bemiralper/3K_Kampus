@@ -1,7 +1,9 @@
 "use client";
 
+import { Modal } from "antd";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/contexts/AuthContext";
 import { usePersonelPath } from "@/components/personel/PersonelPathProvider";
 import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
 import { useKurum } from "@/lib/contexts/KurumContext";
@@ -27,6 +29,7 @@ type PersonelData = {
   soyad: string;
   tam_ad: string;
   dogum_tarihi: string;
+  dogum_tarihi_iso?: string;
   cinsiyet: string;
   cinsiyet_display: string;
   telefon: string;
@@ -75,8 +78,10 @@ const PERSONEL_FORM_STEPS: { key: FormStep; label: string; icon: string }[] = [
 
 export default function PersonelListesiPage() {
   const { href } = usePersonelPath();
+  const { user } = useAuth();
+  const canWrite = Boolean(user?.is_superuser || user?.permissions?.some(p => ["sistem.admin","personel.write","personel.manage"].includes(p)));
   const router = useRouter();
-  const { activeSube, activeEgitimYili } = useKurum();
+  const { activeKurum, activeSube, activeEgitimYili, initialized } = useKurum();
   const [mounted, setMounted] = useState(false);
   const [personeller, setPersoneller] = useState<PersonelData[]>([]);
   const [filteredPersoneller, setFilteredPersoneller] = useState<PersonelData[]>([]);
@@ -111,6 +116,7 @@ export default function PersonelListesiPage() {
     aktif_mi: true,
     create_user_account: false,
   });
+  const [newCredentials, setNewCredentials] = useState<{username: string; temp_password: string} | null>(null);
   const [formError, setFormError] = useState('');
   const [formSuccess, setFormSuccess] = useState('');
   const [formLoading, setFormLoading] = useState(false);
@@ -120,6 +126,35 @@ export default function PersonelListesiPage() {
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [uploadingPhoto, setUploadingPhoto] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const drawerRef = useRef<HTMLDivElement>(null);
+  const initialFormRef = useRef('');
+  const formRef = useRef(formData);
+  formRef.current = formData;
+  const requestCloseDrawer = useCallback(() => {
+    if (formLoading || uploadingPhoto) return;
+    if (JSON.stringify(formRef.current) !== initialFormRef.current && !window.confirm('Kaydedilmemiş değişiklikler var. Vazgeçilsin mi?')) return;
+    setShowDrawer(false);
+  }, [formLoading, uploadingPhoto]);
+  const closeDrawerRef = useRef(requestCloseDrawer);
+  closeDrawerRef.current = requestCloseDrawer;
+  useEffect(() => {
+    if (!showDrawer) return;
+    initialFormRef.current = JSON.stringify(formRef.current);
+    const previous = document.activeElement as HTMLElement | null;
+    const root = drawerRef.current;
+    const focusable = () => Array.from(root?.querySelectorAll<HTMLElement>('button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex="0"]') ?? []).filter(el => el.getClientRects().length > 0);
+    focusable()[0]?.focus();
+    const handle = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.stopPropagation(); closeDrawerRef.current(); }
+      if (event.key !== 'Tab') return;
+      const items = focusable(), first = items[0], last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    root?.addEventListener('keydown', handle);
+    return () => { root?.removeEventListener('keydown', handle); previous?.focus(); };
+  }, [showDrawer]);
 
   // Quick view popup
   const [quickViewPersonel, setQuickViewPersonel] = useState<PersonelData | null>(null);
@@ -179,8 +214,13 @@ export default function PersonelListesiPage() {
   // Steps configuration (alias)
   const steps = PERSONEL_FORM_STEPS;
 
+  const listRequestRef = useRef(0);
+
   // Veri çekme
   const fetchPersoneller = useCallback(async () => {
+    const seq = ++listRequestRef.current;
+    setPersoneller([]);
+    if (!initialized || !activeKurum?.id || !activeSube?.id) { setLoading(false); return; }
     try {
       setLoading(true);
       setListError("");
@@ -190,6 +230,7 @@ export default function PersonelListesiPage() {
         aktif_personel?: number;
       }>(`/personel/api/list/?show_inactive=${showInactive}`);
 
+      if (seq !== listRequestRef.current) return;
       if (result.success) {
         const rows = (result.personeller ?? result.data?.personeller ?? []) as PersonelData[];
         const toplam = (result.toplam_personel ?? result.data?.toplam_personel ?? rows.length) as number;
@@ -208,9 +249,9 @@ export default function PersonelListesiPage() {
       console.error("Personel listesi alınamadı:", error);
       setListError("Personel listesi alınamadı.");
     } finally {
-      setLoading(false);
+      if (seq === listRequestRef.current) setLoading(false);
     }
-  }, [showInactive]);
+  }, [showInactive, initialized, activeKurum?.id, activeSube?.id, activeEgitimYili?.id]);
 
   useEffect(() => {
     fetchPersoneller();
@@ -221,13 +262,13 @@ export default function PersonelListesiPage() {
     if (!searchQuery) {
       setFilteredPersoneller(personeller);
     } else {
-      const query = searchQuery.toLowerCase();
+      const query = searchQuery.toLocaleLowerCase('tr');
       setFilteredPersoneller(
         personeller.filter(
           (p) =>
-            p.ad.toLowerCase().includes(query) ||
-            p.soyad.toLowerCase().includes(query) ||
-            p.tam_ad.toLowerCase().includes(query) ||
+            p.ad.toLocaleLowerCase('tr').includes(query) ||
+            p.soyad.toLocaleLowerCase('tr').includes(query) ||
+            p.tam_ad.toLocaleLowerCase('tr').includes(query) ||
             (p.tc_kimlik_no && p.tc_kimlik_no.includes(query)) ||
             (p.email && p.email.toLowerCase().includes(query)) ||
             (p.cep_telefon && p.cep_telefon.includes(query))
@@ -271,13 +312,13 @@ export default function PersonelListesiPage() {
   useEffect(() => {
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setShowDrawer(false);
+        if (!drawerRef.current?.contains(e.target as Node)) requestCloseDrawer();
         setQuickViewPersonel(null);
       }
     };
     window.addEventListener('keydown', handleEsc);
     return () => window.removeEventListener('keydown', handleEsc);
-  }, []);
+  }, [requestCloseDrawer]);
 
   // Click outside for quick view
   useEffect(() => {
@@ -292,6 +333,7 @@ export default function PersonelListesiPage() {
 
   // Drawer açma
   const openDrawer = (personel?: PersonelData) => {
+    if (!canWrite) return;
     kimlik.resetKimlik();
     setKimlikLink({});
     setExistingPersonelHasAccount(false);
@@ -302,7 +344,7 @@ export default function PersonelListesiPage() {
         tc_kimlik_no: personel.tc_kimlik_no || '',
         ad: personel.ad || '',
         soyad: personel.soyad || '',
-        dogum_tarihi: '',
+        dogum_tarihi: personel.dogum_tarihi_iso || (personel.dogum_tarihi?.includes('.') ? personel.dogum_tarihi.split('.').reverse().join('-') : personel.dogum_tarihi || ''),
         cinsiyet: personel.cinsiyet || '',
         telefon: personel.telefon || '',
         cep_telefon: personel.cep_telefon || '',
@@ -500,6 +542,7 @@ export default function PersonelListesiPage() {
         : await apiPost(`/personel/api/create/`, payload);
 
       if (result.success) {
+        if (result.user_account) setNewCredentials(result.user_account as {username:string;temp_password:string});
         const personelId = editingPersonel
           ? editingPersonel.id
           : (result.personel as { id?: number } | undefined)?.id ??
@@ -556,6 +599,7 @@ export default function PersonelListesiPage() {
 
   // Personel silme modalını aç
   const openDeleteModal = (personel: PersonelData) => {
+    if (!canWrite) return;
     setDeletingPersonel(personel);
     setShowDeleteModal(true);
     setQuickViewPersonel(null);
@@ -652,7 +696,7 @@ export default function PersonelListesiPage() {
             </div>
           </div>
         </div>
-        <button className="btn-hero" onClick={() => openDrawer()}>
+        <button className="btn-hero" disabled={!canWrite} onClick={() => openDrawer()}>
           <span className="btn-hero-icon">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <line x1="12" y1="5" x2="12" y2="19" />
@@ -780,7 +824,7 @@ export default function PersonelListesiPage() {
             </div>
             <h3>Personel Bulunamadı</h3>
             <p>Henüz kayıtlı personel yok veya arama kriterlerinize uygun sonuç bulunamadı.</p>
-            <button className="btn-primary" onClick={() => openDrawer()}>
+            <button className="btn-primary" disabled={!canWrite} onClick={() => openDrawer()}>
               İlk Personeli Ekle
             </button>
           </div>
@@ -853,7 +897,7 @@ export default function PersonelListesiPage() {
                     </button>
                     <button 
                       className="action-btn-mini"
-                      onClick={() => openDrawer(personel)}
+                      disabled={!canWrite} onClick={() => openDrawer(personel)}
                       title="Düzenle"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -863,7 +907,7 @@ export default function PersonelListesiPage() {
                     </button>
                     <button 
                       className="action-btn-mini action-btn-danger"
-                      onClick={() => openDeleteModal(personel)}
+                      disabled={!canWrite} onClick={() => openDeleteModal(personel)}
                       title="Sil"
                     >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -1004,11 +1048,16 @@ export default function PersonelListesiPage() {
         </div>
       )}
 
+      <Modal open={Boolean(newCredentials)} title="Yeni giriş hesabı" onOk={() => setNewCredentials(null)} onCancel={() => setNewCredentials(null)} okText="Bilgileri aldım" cancelButtonProps={{ style: { display: 'none' } }}>
+        <p>Geçici şifre yalnız burada gösterilir. İlk girişte değiştirilmelidir.</p>
+        <p>Kullanıcı adı: <strong>{newCredentials?.username}</strong></p>
+        <p>Geçici şifre: <code>{newCredentials?.temp_password}</code></p>
+      </Modal>
       {/* Drawer */}
       {showDrawer && (
         <>
-          <div className="drawer-overlay visible" onClick={() => setShowDrawer(false)} />
-          <div className="drawer open">
+          <div className="drawer-overlay visible" onClick={requestCloseDrawer} />
+          <div ref={drawerRef} role="dialog" aria-modal="true" aria-label="Personel bilgileri" className="drawer open">
             <div className="drawer-header">
           <div className="drawer-title-area">
             <div className="drawer-icon">
@@ -1031,7 +1080,7 @@ export default function PersonelListesiPage() {
               <p>{editingPersonel ? editingPersonel.tam_ad : 'Personel bilgilerini girin'}</p>
             </div>
           </div>
-          <button className="drawer-close" onClick={() => setShowDrawer(false)}>
+          <button className="drawer-close" onClick={requestCloseDrawer}>
             <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
               <line x1="18" y1="6" x2="6" y2="18"/>
               <line x1="6" y1="6" x2="18" y2="18"/>
@@ -1488,7 +1537,7 @@ export default function PersonelListesiPage() {
           </div>
 
           <div className="drawer-footer">
-            <button type="button" className="btn-cancel" onClick={() => setShowDrawer(false)}>
+            <button type="button" className="btn-cancel" onClick={requestCloseDrawer}>
               İptal
             </button>
             <div className="footer-actions">

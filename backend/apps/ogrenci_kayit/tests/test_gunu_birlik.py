@@ -1075,3 +1075,99 @@ class GunuBirlikTamKayitTests(TestCase):
             body['participant_id'] = parts[0].id
             self.assertEqual(self._review_action(body).status_code, 200)
             void.assert_called_once()
+
+    def _paid_deneme_sale(self):
+        from apps.odeme_takip.domain.models import Sozlesme
+        hesap, yontem = self._nakit()
+        self.exam = Exam.objects.create(
+            name='Tek deneme finans testi', exam_type='LGS',
+            exam_date=timezone.localdate() + timedelta(days=12),
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.yil,
+        )
+        payload = self._walk_payload()
+        payload['package'] = {}
+        payload['gunu_birlik'].update(
+            deneme_ucreti='250', odeme_yontemi_id=yontem.id, mali_hesap_id=hesap.id,
+        )
+        response = self._register(payload)
+        self.assertEqual(response.status_code, 201, response.content)
+        return Sozlesme.objects.get(ogrenci__tc_kimlik_no='10000000046'), hesap
+
+    def test_tek_deneme_sozlesme_listesi_ve_alacak_raporuna_girmez(self):
+        from apps.finans.infrastructure.bakiye_hareketi_repository import BakiyeHareketiRepository
+        sale, hesap = self._paid_deneme_sale()
+        response = self.client.get('/odeme-takip/api/sozlesmeler/', **self.headers)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual(response.json(), [])
+        dashboard = self.client.get('/odeme-takip/api/dashboard/', **self.headers)
+        self.assertEqual(dashboard.status_code, 200, dashboard.content)
+        for key in ('toplam_sozlesme', 'toplam_hacim', 'acik_alacak', 'brut_toplam', 'sozlesmesiz_ogrenci_sayisi'):
+            self.assertEqual(float(dashboard.json()[key]), 0, key)
+        self.assertEqual(sale.toplam_odenen, 250)
+        self.assertEqual(sale.kalan_borc, 0)
+        self.assertEqual(int(BakiyeHareketiRepository.son_bakiye(hesap.id)), 250)
+        # URL bilinse bile bu satışa ikinci sözleşme tahsilatı açılamaz.
+        detail = self.client.get(f'/odeme-takip/api/sozlesmeler/{sale.id}/', **self.headers)
+        self.assertEqual(detail.status_code, 404)
+        duplicate = self.client.post(
+            '/odeme-takip/api/tahsilatlar/create/',
+            {'sozlesme_id': sale.id, 'tutar': 250}, format='json', **self.headers,
+        )
+        self.assertEqual(duplicate.status_code, 404)
+        self.assertEqual(int(BakiyeHareketiRepository.son_bakiye(hesap.id)), 250)
+
+    def test_deneme_kulubu_sozlesmesi_listede_kalir(self):
+        sale, _ = self._paid_deneme_sale()
+        sale.pk = None
+        sale.sozlesme_no = 'KULUP-TEST'
+        sale.notlar = 'Yıllık deneme kulübü sözleşmesi'
+        sale.paket_adi = 'Deneme kulübü'
+        sale.save()
+        response = self.client.get('/odeme-takip/api/sozlesmeler/', **self.headers)
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertEqual([row['id'] for row in response.json()], [sale.id])
+        self.assertEqual(sale.toplam_odenen, 0)
+        self.assertEqual(sale.kalan_borc, 250)
+
+    def test_deneme_odemesi_yalniz_gercek_tahsilatla_gosterilir(self):
+        from apps.finans.domain.gelir_tahsilat import GelirTahsilat
+        from apps.finans.constants.gider_types import OdemeDurum
+        sale, _ = self._paid_deneme_sale()
+        self.assertEqual(sale.toplam_odenen, 250)
+        # İptal edilmiş/kısmi/missing gelir, tamamlandı statüsüyle ödenmiş varsayılmaz.
+        collection = GelirTahsilat.objects.get()
+        collection.tutar = 100
+        collection.save(update_fields=['tutar'])
+        self.assertEqual(sale.toplam_odenen, 100)
+        self.assertEqual(sale.kalan_borc, 150)
+        collection.durum = OdemeDurum.IPTAL
+        collection.save(update_fields=['durum'])
+        self.assertEqual(sale.toplam_odenen, 0)
+        sale.notlar = 'gunu_birlik_deneme_ucreti gelir:99999999'
+        sale.save(update_fields=['notlar'])
+        self.assertEqual(sale.toplam_odenen, 0)
+        self.client.force_login(self.user)
+        response = self.client.get(f'/ogrenciler/api/{sale.ogrenci_id}/finans-ozet/', **self.headers)
+        self.assertEqual(response.status_code, 200, response.content)
+        row = next(row for row in response.json()['sozlesmeler'] if row['id'] == sale.id)
+        self.assertEqual(row['toplam_odenen'], 0)
+        self.assertEqual(row['tahsilatlar'], [])
+
+    def test_deneme_canli_kontrolu_salt_okunur_ve_sube_sinirli(self):
+        from io import StringIO
+        from django.core.management import call_command
+        from apps.odeme_takip.domain.models import Sozlesme
+        from apps.finans.domain.gelir_tahsilat import GelirTahsilat
+        sale, _ = self._paid_deneme_sale()
+        before = (Sozlesme.objects.count(), GelirTahsilat.objects.count())
+        out = StringIO()
+        call_command('audit_deneme_satislari', kurum_id=self.kurum.id, sube_id=self.sube.id, stdout=out)
+        result = json.loads(out.getvalue())
+        self.assertTrue(result['salt_okunur'])
+        self.assertEqual(result['satis_izi_sayisi'], 1)
+        self.assertEqual(result['inceleme_gereken'], 0)
+        self.assertEqual(result['kayitlar'][0]['satis_izi_id'], sale.id)
+        self.assertEqual(before, (Sozlesme.objects.count(), GelirTahsilat.objects.count()))
+        out = StringIO()
+        call_command('audit_deneme_satislari', kurum_id=self.kurum.id, sube_id=self.sube.id + 9999, stdout=out)
+        self.assertEqual(json.loads(out.getvalue())['satis_izi_sayisi'], 0)

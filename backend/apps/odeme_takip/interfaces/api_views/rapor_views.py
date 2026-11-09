@@ -21,6 +21,8 @@ from apps.odeme_takip.domain.models import Sozlesme, Tahsilat, Taksit
 from apps.odeme_takip.domain.enums import (
     SozlesmeDurum, TahsilatDurum, TahsilatTuru, TaksitDurum,
 )
+from apps.odeme_takip.domain.contract_scope import egitim_sozlesmeleri
+from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
 from apps.ogrenci.domain.models import OgrenciKayit
 
 from shared.context import get_secili_egitim_yili_id
@@ -34,7 +36,7 @@ def _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id):
     edilip öğrenci pasife alınmışsa muhasebe dashboard'unda görünmemelidir.
     Eğitim yılı yoksa öğrenci listesiyle aynı şekilde tüm yıllar dikkate alınır.
     """
-    with_contract = Sozlesme.objects.filter(
+    with_contract = egitim_sozlesmeleri(Sozlesme.objects.all()).filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
     ).exclude(durum=SozlesmeDurum.IPTAL)
@@ -44,6 +46,7 @@ def _sozlesmesiz_kayit_qs(kurum_id, sube_id, egitim_yili_id):
         aktif_mi=True,
         ogrenci__aktif_mi=True,
     )
+    kayit_qs = kayit_qs.exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
     if egitim_yili_id:
         with_contract = with_contract.filter(egitim_yili_id=egitim_yili_id)
         kayit_qs = kayit_qs.filter(egitim_yili_id=egitim_yili_id)
@@ -60,7 +63,7 @@ def _odemesiz_aktif_sozlesme_qs(kurum_id, sube_id, egitim_yili_id):
         sozlesme_id=OuterRef('pk'),
         durum=TahsilatDurum.AKTIF,
     ).exclude(tahsilat_turu=TahsilatTuru.IADE)
-    return Sozlesme.objects.filter(
+    return egitim_sozlesmeleri(Sozlesme.objects.all()).filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
         egitim_yili_id=egitim_yili_id,
@@ -93,7 +96,7 @@ def dashboard_ozet(request):
     geciken_sayi = len(vadesi_gecenler)
 
     # Brüt toplam
-    base_qs = Sozlesme.objects.filter(
+    base_qs = egitim_sozlesmeleri(Sozlesme.objects.all()).filter(
         kurum_id=kurum_id, sube_id=sube_id, egitim_yili_id=egitim_yili_id
     ).exclude(durum__in=[SozlesmeDurum.TASLAK, SozlesmeDurum.IPTAL])
 
@@ -131,7 +134,7 @@ def dashboard_ozet(request):
 
     ort_tahsil_suresi = round(toplam_gun / tahsil_sayisi, 1) if tahsil_sayisi > 0 else 0
 
-    taslak_sozlesme_sayisi = Sozlesme.objects.filter(
+    taslak_sozlesme_sayisi = egitim_sozlesmeleri(Sozlesme.objects.all()).filter(
         kurum_id=kurum_id,
         sube_id=sube_id,
         egitim_yili_id=egitim_yili_id,
@@ -218,7 +221,7 @@ def ogrenci_risk_skorlari(request):
     if err:
         return err
 
-    base_qs = Sozlesme.objects.filter(
+    base_qs = egitim_sozlesmeleri(Sozlesme.objects.all()).filter(
         kurum_id=kurum_id, sube_id=sube_id, egitim_yili_id=egitim_yili_id,
     ).exclude(durum__in=[SozlesmeDurum.TASLAK, SozlesmeDurum.IPTAL])
 

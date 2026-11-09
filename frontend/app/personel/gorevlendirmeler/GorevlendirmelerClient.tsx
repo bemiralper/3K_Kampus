@@ -86,7 +86,7 @@ interface HelperData {
 
 export default function GorevlendirmelerClient() {
   const { basePath: personelHomeHref } = usePersonelPath();
-  const { activeEgitimYili } = useKurum();
+  const { activeEgitimYili, activeSube, activeKurum, initialized } = useKurum();
   const searchParams = useSearchParams();
   const prefilledPersonelRef = useRef(false);
   // Data states
@@ -125,20 +125,28 @@ export default function GorevlendirmelerClient() {
   const selectedYilId = activeEgitimYili?.id ?? null;
 
   // Fetch helper data (personeller, şubeler, roller)
+  const helperSeq = useRef(0);
+  const listSeq = useRef(0);
   const fetchHelperData = useCallback(async () => {
+    const seq = ++helperSeq.current;
+    setHelperData(null);
+    if (!initialized || !activeSube?.id) return;
     try {
       const result = await apiGet<HelperData>("/personel/api/gorevlendirme/helper-data/");
+      if (seq !== helperSeq.current) return;
       if (result.success && result.data) {
         setHelperData(result.data);
       }
     } catch (err) {
       console.error("Helper data yüklenemedi:", err);
     }
-  }, []);
+  }, [initialized, activeSube?.id, activeKurum?.id, selectedYilId]);
 
   // Fetch gorevlendirmeler — seçili eğitim yılına göre
   const fetchGorevlendirmeler = useCallback(async () => {
-    if (!selectedYilId) {
+    const seq = ++listSeq.current;
+    setGorevlendirmeler([]);
+    if (!initialized || !activeSube?.id || !selectedYilId) {
       setGorevlendirmeler([]);
       setLoading(false);
       return;
@@ -149,6 +157,7 @@ export default function GorevlendirmelerClient() {
       const result = await apiGet<{ gorevlendirmeler?: Gorevlendirme[] }>(
         `/personel/api/gorevlendirmeler/?egitim_yili_id=${selectedYilId}`,
       );
+      if (seq !== listSeq.current) return;
       if (result.success) {
         setGorevlendirmeler(
           (result.gorevlendirmeler ?? result.data?.gorevlendirmeler ?? []) as Gorevlendirme[],
@@ -162,7 +171,7 @@ export default function GorevlendirmelerClient() {
     } finally {
       setLoading(false);
     }
-  }, [selectedYilId]);
+  }, [selectedYilId, initialized, activeSube?.id, activeKurum?.id]);
 
   // Initial load
   useEffect(() => {

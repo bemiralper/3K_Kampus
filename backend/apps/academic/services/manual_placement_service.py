@@ -6,6 +6,7 @@ from __future__ import annotations
 from typing import Optional, Tuple
 
 from django.db import transaction
+from django.db.models import Q
 
 from apps.academic.domain.class_lesson_plan import ClassLessonPlan
 from apps.academic.domain.program_grid_cell import CellStatus, ProgramGridCell
@@ -66,19 +67,20 @@ def _resolve_teacher(plan: ClassLessonPlan, ogretmen_id: Optional[int]) -> Perso
 
 
 def _check_teacher_conflict(cell: ProgramGridCell, teacher: Personel) -> None:
-    """Aynı dönem + aynı programdaki öğretmen çakışması. Eski dönem hücreleri sayılmaz."""
+    """Aynı dönem takvimlerinde gerçek saat kesişimi; pasif revizyonlar hariç."""
     qs = ProgramGridCell.objects.filter(
-        weekly_day_id=cell.weekly_day_id,
-        timeslot_id=cell.timeslot_id,
+        weekly_day__day_of_week=cell.weekly_day.day_of_week,
+        timeslot__start_time__lt=cell.timeslot.end_time,
+        timeslot__end_time__gt=cell.timeslot.start_time,
         ogretmen_id=teacher.id,
         status=CellStatus.FILLED,
         is_active=True,
     ).exclude(pk=cell.pk)
     if cell.schedule_version_id:
-        qs = qs.filter(schedule_version_id=cell.schedule_version_id)
         term_id = getattr(cell.schedule_version, 'term_id', None)
         if term_id:
             qs = qs.filter(schedule_version__term_id=term_id)
+        qs = qs.filter(Q(schedule_version_id=cell.schedule_version_id) | Q(schedule_version__is_active=True))
     else:
         qs = qs.filter(schedule_version__isnull=True)
     conflict = qs.select_related('sinif').first()

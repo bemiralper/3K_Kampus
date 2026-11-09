@@ -14,8 +14,12 @@ def _same_person_identity(a: Personel, b: Personel) -> bool:
     """Aynı gerçek kişi mi (çift personel kaydı senaryosu)."""
     if a.kisi_id and b.kisi_id and a.kisi_id == b.kisi_id:
         return True
+    if a.kisi_id and b.kisi_id and a.kisi_id != b.kisi_id:
+        return False
     if a.tc_kimlik_no and b.tc_kimlik_no and a.tc_kimlik_no == b.tc_kimlik_no:
         return True
+    if a.tc_kimlik_no and b.tc_kimlik_no and a.tc_kimlik_no != b.tc_kimlik_no:
+        return False
     if (
         a.ad.strip().lower() == b.ad.strip().lower()
         and a.soyad.strip().lower() == b.soyad.strip().lower()
@@ -50,9 +54,9 @@ def _find_sibling_with_user(personel: Personel) -> Personel | None:
 
     if personel.email:
         email = personel.email.strip()
-        match = base.filter(email__iexact=email).first()
-        if match:
-            return match
+        for match in base.filter(email__iexact=email):
+            if _same_person_identity(personel, match):
+                return match
 
     phone = normalize_phone(personel.cep_telefon or personel.telefon or '')
     if phone:
@@ -112,6 +116,14 @@ def resolve_personel_user(personel: Personel, *, heal_link: bool = False) -> Use
             if _same_person_identity(personel, owner):
                 return user
             continue
+
+        if not owner and user.username != personel.tc_kimlik_no:
+            from apps.roller.models import UserRole
+            same_tenant=UserRole.objects.filter(user=user,kurum_id=personel.kurum_id).exists()
+            same_name=(user.first_name.strip().casefold()==personel.ad.strip().casefold()
+                       and user.last_name.strip().casefold()==personel.soyad.strip().casefold())
+            if not same_tenant or not same_name:
+                continue
 
         if heal_link and not owner:
             personel.user = user

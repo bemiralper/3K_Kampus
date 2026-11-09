@@ -7,8 +7,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
 from django.views.decorators.http import require_POST, require_http_methods
-from django.views.decorators.csrf import csrf_exempt
-from django.db import models
+from django.db import models, transaction
+from django.core.exceptions import PermissionDenied
+from django.utils.crypto import get_random_string
+from functools import wraps
 from datetime import datetime
 import json
 
@@ -17,6 +19,7 @@ from apps.personel.application.services import (
     PersonelService,
     assign_user_role_for_personel,
     resolve_system_role_for_personel,
+    assert_can_assign_role,
 )
 from apps.personel.domain.user_account import resolve_personel_user
 from apps.kimlik.exceptions import KimlikConflictError
@@ -27,7 +30,58 @@ from shared.permissions import require_module_permission
 
 def _personel_sube_gate(request, personel):
     from apps.personel.interfaces.sube_context import assert_personel_record_sube_access
-    return assert_personel_record_sube_access(request, personel)
+    denied=assert_personel_record_sube_access(request, personel)
+    if denied:return denied
+    if request.method not in ('GET','HEAD','OPTIONS') and personel.user_id:
+        from apps.roller.models import UserRole
+        target=UserRole.objects.filter(user_id=personel.user_id).select_related('role').first()
+        try:
+            assert_can_assign_role(request.user,target.role if target else None,personel.user)
+        except PermissionDenied as exc:
+            return JsonResponse({'success':False,'error':str(exc)},status=403)
+    return None
+
+
+def validated_assignment(view):
+    @wraps(view)
+    def wrapper(request, *args, **kwargs):
+        if request.method not in ('POST','PUT'):
+            return view(request,*args,**kwargs)
+        try:
+            from apps.personel.domain.models import PersonelGorevlendirme
+            from apps.personel.interfaces.sube_context import mandatory_personel_context
+            from apps.egitim_tanimlari.models import Brans
+            from apps.roller.models import Role
+            ctx,err=mandatory_personel_context(request)
+            if err:return err
+            data=json.loads(request.body)
+            if not isinstance(data,dict):raise ValueError('Geçersiz form verisi.')
+            existing=PersonelGorevlendirme.objects.filter(pk=kwargs.get('pk'),kurum_id=ctx['kurum_id']).first()
+            def value(key,default=None):
+                return data.get(key,getattr(existing,key,default) if existing else default)
+            person_id=value('personel_id')
+            if not Personel.objects.filter(pk=person_id,kurum_id=ctx['kurum_id']).exists():
+                raise ValueError('Personel bu kuruma ait değil.')
+            if value('aktif_mi',True) and not Personel.objects.filter(pk=person_id,aktif_mi=True).exists():
+                raise ValueError('Pasif personele aktif görevlendirme yapılamaz.')
+            role_id=value('rol_id')
+            if role_id:
+                role=Role.objects.filter(pk=role_id,silindi_mi=False).first()
+                if not role:raise ValueError('Rol bulunamadı.')
+                assert_can_assign_role(request.user,role)
+            if value('brans_id') and not Brans.objects.filter(pk=value('brans_id'),kurum_id=ctx['kurum_id'],sube_id=value('gorev_sube_id')).exists():
+                raise ValueError('Seçilen branş görev şubesine ait değil.')
+            def day(key):
+                val=value(key)
+                return datetime.strptime(val,'%Y-%m-%d').date() if isinstance(val,str) and val else val
+            start,end=day('gorev_baslangic'),day('gorev_bitis')
+            if start and end and start>end:raise ValueError('Başlangıç tarihi bitişten sonra olamaz.')
+        except PermissionDenied as exc:
+            return JsonResponse({'success':False,'error':str(exc)},status=403)
+        except (ValueError,TypeError) as exc:
+            return JsonResponse({'success':False,'error':str(exc)},status=400)
+        return view(request,*args,**kwargs)
+    return wrapper
 
 
 def get_current_context(request):
@@ -155,6 +209,7 @@ def personel_list_api(request):
                 'soyad': p.soyad,
                 'tam_ad': p.tam_ad,
                 'dogum_tarihi': format_date(p.dogum_tarihi),
+                'dogum_tarihi_iso': p.dogum_tarihi.isoformat() if p.dogum_tarihi else '',
                 'cinsiyet': p.cinsiyet or '',
                 'cinsiyet_display': p.get_cinsiyet_display() if p.cinsiyet else '',
                 'telefon': p.telefon or '',
@@ -235,7 +290,6 @@ def personel_detail_api(request, pk):
     })
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
 def personel_create_api(request):
@@ -337,6 +391,8 @@ def personel_create_api(request):
                 'tam_ad': personel.tam_ad,
             },
         }
+        if personel.user_id and getattr(personel.user, '_temporary_password', None):
+            response['user_account']={'username':personel.user.username,'temp_password':personel.user._temporary_password}
         return JsonResponse(response)
     except KimlikConflictError as e:
         return JsonResponse(e.as_dict(), status=409)
@@ -346,7 +402,6 @@ def personel_create_api(request):
         return JsonResponse({'success': False, 'error': f'Bir hata oluştu: {str(e)}'}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["PUT", "PATCH"])
 @require_module_permission("personel")
 def personel_update_api(request, pk):
@@ -387,6 +442,13 @@ def personel_update_api(request, pk):
                 value = None
             update_data[field] = value
     
+    if any(key in update_data and not update_data[key] for key in ('ad','soyad')):
+        return JsonResponse({'success':False,'error':'Ad ve soyad boş olamaz.'},status=400)
+    try:
+        if update_data.get('dogum_tarihi'):
+            datetime.strptime(update_data['dogum_tarihi'], '%Y-%m-%d')
+    except (TypeError,ValueError):
+        return JsonResponse({'success':False,'error':'Doğum tarihi geçersiz.'},status=400)
     try:
         personel = service.update(pk, update_data)
         log_personel_activity(
@@ -410,7 +472,6 @@ def personel_update_api(request, pk):
         return JsonResponse({'success': False, 'error': f'Bir hata oluştu: {str(e)}'}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["DELETE"])
 @require_module_permission("personel")
 def personel_delete_api(request, pk):
@@ -441,7 +502,6 @@ def personel_delete_api(request, pk):
         return JsonResponse({'success': False, 'error': f'Bir hata oluştu: {str(e)}'}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
 def personel_toggle_active_api(request, pk):
@@ -476,7 +536,6 @@ def personel_toggle_active_api(request, pk):
         return JsonResponse({'success': False, 'error': f'Bir hata oluştu: {str(e)}'}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
 def personel_create_user_account_api(request, pk):
@@ -498,7 +557,7 @@ def personel_create_user_account_api(request, pk):
     password = data.get('password')
     
     try:
-        personel = service.create_user_account_for_personel(pk, password)
+        personel = service.create_user_account_for_personel(pk, password, actor=request.user)
         log_personel_activity(
             personel=personel,
             eylem='DATA_CREATE',
@@ -511,6 +570,8 @@ def personel_create_user_account_api(request, pk):
             'message': f'{personel.tam_ad} için kullanıcı hesabı oluşturuldu',
             'user_email': personel.user.email
         })
+    except PermissionDenied as e:
+        return JsonResponse({'success':False,'error':str(e)}, status=403)
     except ValueError as e:
         return JsonResponse({'success': False, 'error': str(e)}, status=400)
     except Exception as e:
@@ -519,7 +580,6 @@ def personel_create_user_account_api(request, pk):
 
 # ==================== FOTOĞRAF UPLOAD API ====================
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
 def personel_upload_foto_api(request, pk):
@@ -578,7 +638,6 @@ def personel_upload_foto_api(request, pk):
         return JsonResponse({'success': False, 'error': f'Bir hata oluştu: {str(e)}'}, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["DELETE"])
 @require_module_permission("personel")
 def personel_delete_foto_api(request, pk):
@@ -731,7 +790,6 @@ def personel_export_api(request):
 
 # ==================== GÖREVLENDİRME API ====================
 
-@csrf_exempt
 @require_module_permission("personel")
 def gorevlendirme_list_api(request):
     """
@@ -830,9 +888,9 @@ def _duplicate_assignment_message(personel_id, egitim_yili_id, gorev_sube_id, ro
     return None
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
+@validated_assignment
 def gorevlendirme_create_api(request):
     """Yeni görevlendirme oluştur"""
     from apps.personel.domain.models import PersonelGorevlendirme, Personel
@@ -974,7 +1032,6 @@ def gorevlendirme_create_api(request):
         }, status=500)
 
 
-@csrf_exempt
 @require_module_permission("personel")
 def koc_listesi_api(request):
     """
@@ -1036,9 +1093,9 @@ def koc_listesi_api(request):
     })
 
 
-@csrf_exempt
 @require_http_methods(["GET", "PUT", "DELETE"])
 @require_module_permission("personel")
+@validated_assignment
 def gorevlendirme_detail_api(request, pk):
     """Görevlendirme detay/güncelle/sil API"""
     from apps.personel.domain.models import PersonelGorevlendirme
@@ -1164,7 +1221,6 @@ def gorevlendirme_detail_api(request, pk):
         })
 
 
-@csrf_exempt
 @require_module_permission("personel")
 def gorevlendirme_helper_data_api(request):
     """
@@ -1444,9 +1500,9 @@ def personel_full_detail_api(request, pk):
     })
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
+@transaction.atomic
 def personel_create_user_api(request, pk):
     """
     Personel için kullanıcı hesabı oluştur
@@ -1486,7 +1542,7 @@ def personel_create_user_api(request, pk):
         }, status=400)
     
     # Şifre: TC Kimlik No
-    password = personel.tc_kimlik_no
+    password = get_random_string(24)
     if not password:
         return JsonResponse({
             'success': False, 
@@ -1518,6 +1574,7 @@ def personel_create_user_api(request, pk):
             user,
             personel,
             role_code=requested_role_code,
+            actor=request.user,
             must_change_password=True,
         )
         log_personel_activity(
@@ -1537,14 +1594,17 @@ def personel_create_user_api(request, pk):
                 'role_code': assigned_role.role.code if assigned_role else None,
             }
         })
+    except PermissionDenied as e:
+        transaction.set_rollback(True)
+        return JsonResponse({'success':False,'error':str(e)}, status=403)
     except Exception as e:
+        transaction.set_rollback(True)
         return JsonResponse({
             'success': False, 
             'error': f'Kullanıcı oluşturulurken hata: {str(e)}'
         }, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
 def personel_sync_user_role_api(request, pk):
@@ -1573,7 +1633,8 @@ def personel_sync_user_role_api(request, pk):
         personel.user,
         personel,
         role_code=requested_role_code,
-        must_change_password=False,
+        actor=request.user,
+        must_change_password=None,
     )
     if not assigned_role:
         return JsonResponse({'success': False, 'error': 'Atanacak rol bulunamadı'}, status=400)
@@ -1588,7 +1649,6 @@ def personel_sync_user_role_api(request, pk):
     })
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
 def personel_reset_password_api(request, pk):
@@ -1608,12 +1668,10 @@ def personel_reset_password_api(request, pk):
     if not personel.user:
         return JsonResponse({'success': False, 'error': 'Bu personelin kullanıcı hesabı yok'}, status=400)
     
-    if not personel.tc_kimlik_no:
-        return JsonResponse({'success': False, 'error': 'TC Kimlik No olmadan şifre sıfırlanamaz'}, status=400)
-    
     try:
         # Şifreyi TC'ye çevir
-        personel.user.set_password(personel.tc_kimlik_no)
+        temporary_password = get_random_string(24)
+        personel.user.set_password(temporary_password)
         personel.user.save()
         
         # must_change_password'u True yap
@@ -1628,14 +1686,14 @@ def personel_reset_password_api(request, pk):
             personel=personel,
             eylem='PASSWORD_RESET',
             request=request,
-            detay='Şifre TC kimlik numarasına sıfırlandı',
+            detay='Rastgele geçici şifre oluşturuldu',
         )
         
         return JsonResponse({
             'success': True,
-            'message': 'Şifre sıfırlandı. Yeni şifre: TC Kimlik No',
+            'message': 'Yeni geçici şifre oluşturuldu; ilk girişte değiştirilmelidir.',
             'data': {
-                'temp_password': personel.tc_kimlik_no,
+                'temp_password': temporary_password,
                 'must_change_password': True
             }
         })
@@ -1646,7 +1704,6 @@ def personel_reset_password_api(request, pk):
         }, status=500)
 
 
-@csrf_exempt
 @require_http_methods(["POST"])
 @require_module_permission("personel")
 def personel_log_activity_api(request, pk):
@@ -1687,7 +1744,6 @@ def personel_log_activity_api(request, pk):
     })
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 def my_subeler_api(request):
     """
@@ -1742,7 +1798,6 @@ def my_subeler_api(request):
     })
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 def my_kurumlar_api(request):
     """
@@ -1769,7 +1824,6 @@ def my_kurumlar_api(request):
     })
 
 
-@csrf_exempt
 @require_http_methods(["GET"])
 def finans_yetkili_personel_api(request):
     """

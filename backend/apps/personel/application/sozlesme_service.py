@@ -9,7 +9,7 @@ from apps.personel.infrastructure.sozlesme_repository import (
     SozlesmeRepository, HakedisRepository, AvansRepository,
 )
 from apps.personel.domain.sozlesme_models import (
-    SozlesmeDurumu, HakedisDurumu, AylikHakedis,
+    SozlesmeDurumu, HakedisDurumu, AylikHakedis, PersonelSozlesme, AvansKaydi,
 )
 
 
@@ -35,6 +35,9 @@ class SozlesmeService:
 
     @transaction.atomic
     def delete(self, pk):
+        contract=PersonelSozlesme.objects.select_for_update().filter(pk=pk).first()
+        if contract and (AylikHakedis.objects.filter(sozlesme=contract).exists() or AvansKaydi.objects.filter(sozlesme=contract).exists()):
+            raise ValueError('Bordro veya avans geçmişi olan sözleşme silinemez; pasifleştirin veya feshedin.')
         return self.repo.delete(pk)
 
     @transaction.atomic
@@ -85,11 +88,12 @@ class HakedisService:
 
     @transaction.atomic
     def create(self, data):
+        PersonelSozlesme.objects.select_for_update().get(pk=data['sozlesme_id'])
         return self.repo.create(data)
 
     @transaction.atomic
     def update(self, pk, data):
-        hakedis = self.repo.get_by_id(pk)
+        hakedis = self.repo.get_by_id(pk, lock=True)
         if not hakedis:
             return None, 'Hakediş bulunamadı.'
         if hakedis.durum in [HakedisDurumu.ONAYLANDI, HakedisDurumu.ODENDI]:
@@ -98,7 +102,7 @@ class HakedisService:
 
     @transaction.atomic
     def onayla(self, pk):
-        hakedis = self.repo.get_by_id(pk)
+        hakedis = self.repo.get_by_id(pk, lock=True)
         if not hakedis:
             return None, 'Hakediş bulunamadı.'
         if hakedis.durum != HakedisDurumu.HESAPLANDI:
@@ -107,7 +111,7 @@ class HakedisService:
 
     @transaction.atomic
     def odendi_isaretle(self, pk, odeme_tarihi):
-        hakedis = self.repo.get_by_id(pk)
+        hakedis = self.repo.get_by_id(pk, lock=True)
         if not hakedis:
             return None, 'Hakediş bulunamadı.'
         if hakedis.durum != HakedisDurumu.ONAYLANDI:
@@ -130,7 +134,7 @@ class HakedisService:
 
     @transaction.atomic
     def delete(self, pk):
-        hakedis = self.repo.get_by_id(pk)
+        hakedis = self.repo.get_by_id(pk, lock=True)
         if not hakedis:
             return False, 'Hakediş bulunamadı.'
         if hakedis.durum in [HakedisDurumu.ODENDI]:
@@ -234,6 +238,12 @@ class AvansService:
         avans = self.repo.get_by_id(pk)
         if not avans:
             return None, 'Avans kaydı bulunamadı.'
+        try:
+            self._ensure_avans_month_open(avans.sozlesme_id,avans.mahsup_yil,avans.mahsup_ay)
+            self._ensure_avans_month_open(data.get('sozlesme_id',avans.sozlesme_id),data.get('mahsup_yil',avans.mahsup_yil),data.get('mahsup_ay',avans.mahsup_ay))
+            if 'tutar' in data and Decimal(str(data['tutar']))<=0:raise ValueError('Avans tutarı pozitif olmalıdır.')
+        except ValueError as exc:
+            return None,str(exc)
         old_sozlesme_id = avans.sozlesme_id
         old_yil = avans.mahsup_yil
         old_ay = avans.mahsup_ay
@@ -254,6 +264,10 @@ class AvansService:
         avans = self.repo.get_by_id(pk)
         if not avans:
             return False, 'Avans kaydı bulunamadı.'
+        try:
+            self._ensure_avans_month_open(avans.sozlesme_id,avans.mahsup_yil,avans.mahsup_ay)
+        except ValueError as exc:
+            return False,str(exc)
         sozlesme_id = avans.sozlesme_id
         yil = avans.mahsup_yil
         ay = avans.mahsup_ay
@@ -262,7 +276,9 @@ class AvansService:
         return True, None
 
     def _ensure_avans_month_open(self, sozlesme_id, yil, ay):
-        hakedis = AylikHakedis.objects.filter(
+        self.hakedis_repo.month_bounds(int(yil),int(ay))
+        PersonelSozlesme.objects.select_for_update().get(pk=sozlesme_id)
+        hakedis = AylikHakedis.objects.select_for_update().filter(
             sozlesme_id=sozlesme_id, yil=yil, ay=ay,
         ).first()
         if hakedis and hakedis.durum != HakedisDurumu.HESAPLANDI:

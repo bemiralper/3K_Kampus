@@ -1,5 +1,6 @@
 'use client';
 
+import dayjs from 'dayjs';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -88,8 +89,6 @@ export default function MaasBordrosuClient() {
   const [hakedisler, setHakedisler] = useState<Hakedis[]>([]);
   const [stats, setStats] = useState<HakedisStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [loaded, setLoaded] = useState(false);
-  const [autoCreated, setAutoCreated] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [arama, setArama] = useState('');
   const [durumFiltre, setDurumFiltre] = useState<'' | HakedisDurumu>('');
@@ -99,7 +98,7 @@ export default function MaasBordrosuClient() {
 
   const [editItem, setEditItem] = useState<Hakedis | null>(null);
   const [odemeIds, setOdemeIds] = useState<number[] | null>(null);
-  const [odemeTarih, setOdemeTarih] = useState(now.toISOString().slice(0, 10));
+  const [odemeTarih, setOdemeTarih] = useState(dayjs().format('YYYY-MM-DD'));
 
   const [avansOpen, setAvansOpen] = useState(false);
   const [avansHakedis, setAvansHakedis] = useState<Hakedis | null>(null);
@@ -115,26 +114,29 @@ export default function MaasBordrosuClient() {
     window.setTimeout(() => setToast(null), 3600);
   };
 
+  const loadSeq = useRef(0);
   const load = useCallback(async () => {
-    if (!initialized || !activeSube?.id) return;
-    setLoading(true);
-    setLoaded(false);
+    const seq = ++loadSeq.current;
+    setHakedisler([]);
+    setStats(null);
     setSelectedIds(new Set());
+    if (!initialized || !activeSube?.id) { setLoading(false); return; }
+    setLoading(true);
     try {
-      const [hRes, sRes] = await Promise.all([
-        fetchHakedisler(yil, ay),
-        fetchHakedisStats(yil, ay),
-      ]);
-      if (hRes.success && hRes.data) setHakedisler(hRes.data);
-      if (sRes.success && sRes.data) setStats(sRes.data);
-      setLoaded(true);
+      const [hRes, sRes] = await Promise.all([fetchHakedisler(yil, ay), fetchHakedisStats(yil, ay)]);
+      if (seq !== loadSeq.current) return;
+      if (!hRes.success || !hRes.data) throw new Error(hRes.error || 'Bordrolar yüklenemedi.');
+      if (!sRes.success || !sRes.data) throw new Error(sRes.error || 'Bordro özeti yüklenemedi.');
+      setHakedisler(hRes.data);
+      setStats(sRes.data);
     } catch (err) {
-      showToast('err', errMsg(err, 'Bordro yüklenemedi.'));
+      if (seq === loadSeq.current) showToast('err', errMsg(err, 'Bordro yüklenemedi.'));
+    } finally {
+      if (seq === loadSeq.current) setLoading(false);
     }
-    setLoading(false);
   }, [yil, ay, initialized, activeSube?.id]);
 
-  useEffect(() => { load(); setAutoCreated(false); }, [load]);
+  useEffect(() => { load(); }, [load]);
 
   const handleTopluOlustur = useCallback(async () => {
     setBusy(true);
@@ -152,12 +154,6 @@ export default function MaasBordrosuClient() {
     setBusy(false);
   }, [yil, ay, load]);
 
-  useEffect(() => {
-    if (loaded && !loading && hakedisler.length === 0 && !autoCreated && initialized && activeSube?.id) {
-      setAutoCreated(true);
-      handleTopluOlustur();
-    }
-  }, [loaded, loading, hakedisler.length, autoCreated, initialized, activeSube?.id, handleTopluOlustur]);
 
   const yilSecenek = useMemo(() => {
     const bu = new Date().getFullYear();
@@ -238,7 +234,7 @@ export default function MaasBordrosuClient() {
       showToast('err', 'Ödenecek kayıt yok. Yalnızca onaylanmış bordrolar işaretlenir.');
       return;
     }
-    setOdemeTarih(new Date().toISOString().slice(0, 10));
+    setOdemeTarih(dayjs().format('YYYY-MM-DD'));
     setOdemeIds(ids);
   }
 
@@ -711,7 +707,7 @@ function AvansDrawer({
   }) => Promise<boolean>;
   onDelete: (id: number) => void;
 }) {
-  const [tarih, setTarih] = useState(new Date().toISOString().slice(0, 10));
+  const [tarih, setTarih] = useState(dayjs().format('YYYY-MM-DD'));
   const [tutar, setTutar] = useState('');
   const [aciklama, setAciklama] = useState('');
   const [mod, setMod] = useState<'toplu' | 'bol'>('toplu');

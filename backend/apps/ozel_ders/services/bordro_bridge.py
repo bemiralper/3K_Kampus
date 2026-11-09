@@ -49,19 +49,21 @@ def apply_approved_to_bordro(
 
     updated = 0
     linked = 0
-    for teacher_id, items in by_teacher.items():
+    for teacher_id, items in sorted(by_teacher.items()):
         base = PersonelSozlesme.objects.filter(
             personel_id=teacher_id,
             kurum_id=kurum_id,
             durum=SozlesmeDurumu.AKTIF,
+            egitim_yili_id__in={h.oturum.egitim_yili_id for h in items},
         )
-        in_period = base.filter(baslangic_tarihi__lte=ay_sonu, bitis_tarihi__gte=ay_basi)
+        in_period = base.filter(
+            baslangic_tarihi__lte=min(h.tarih for h in items),
+            bitis_tarihi__gte=max(h.tarih for h in items),
+        )
         soz = None
         for candidate in (
             in_period.filter(sube_id=sube_id),
             in_period.filter(sube__isnull=True),
-            base.filter(sube_id=sube_id),
-            base,
         ):
             soz = candidate.order_by('-id').first()
             if soz:
@@ -73,15 +75,10 @@ def apply_approved_to_bordro(
             )
 
         toplam = sum((h.tutar for h in items), Decimal('0.00'))
-        bordro, _ = AylikHakedis.objects.get_or_create(
-            sozlesme=soz,
-            yil=yil,
-            ay=ay,
-            defaults={
-                'sabit_maas': soz.brut_maas or Decimal('0.00'),
-                'ders_basi_ucret': soz.ders_birim_ucret or Decimal('0.00'),
-            },
-        )
+        if any(h.oturum.egitim_yili_id != soz.egitim_yili_id for h in items):
+            raise OzelDersError('Hakediş ve sözleşme eğitim yılı farklı.', 'contract_year')
+        from apps.personel.infrastructure.sozlesme_repository import HakedisRepository
+        bordro, _ = HakedisRepository().prepare_month(soz, yil, ay)
         if bordro.durum in ('ONAYLANDI', 'ODENDI', 'IPTAL'):
             raise OzelDersError(
                 f'Bordro kilitli ({teacher_id} {ay}/{yil}).',

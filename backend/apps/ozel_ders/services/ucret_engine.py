@@ -67,19 +67,8 @@ def seed_default_rules(*, kurum_id: Optional[int] = None, sube_id: Optional[int]
 
 
 def _get_active_contract(ogretmen_id: int, day: date, kurum_id: int, sube_id: Optional[int]):
-    from apps.personel.domain.sozlesme_models import PersonelSozlesme, SozlesmeDurumu
-    from django.db.models import Q
-
-    qs = PersonelSozlesme.objects.filter(
-        personel_id=ogretmen_id,
-        kurum_id=kurum_id,
-        durum=SozlesmeDurumu.AKTIF,
-        baslangic_tarihi__lte=day,
-        bitis_tarihi__gte=day,
-    ).prefetch_related('mesai_saatleri', 'ders_ucretleri__brans')
-    if sube_id:
-        qs = qs.filter(Q(sube_id=sube_id) | Q(sube__isnull=True))
-    return qs.order_by('-id').first()
+    from apps.personel.application.lesson_pay_service import active_lesson_contract
+    return active_lesson_contract(ogretmen_id, day, kurum_id, sube_id)
 
 
 def _resolve_rule(
@@ -107,7 +96,7 @@ def _resolve_rule(
 
 
 def _is_outside_mesai(sozlesme, day: date, start: time) -> bool:
-    """Ders başlangıcı mesai bitişinden sonra (veya mesai günü değilse) True."""
+    """Ders başlangıcı mesai aralığının dışındaysa True."""
     weekday = day.isoweekday()
     mesai = None
     for row in sozlesme.mesai_saatleri.all():
@@ -120,7 +109,7 @@ def _is_outside_mesai(sozlesme, day: date, start: time) -> bool:
         return True
     if not mesai.bitis:
         return True
-    return start >= mesai.bitis
+    return (mesai.baslangic is not None and start < mesai.baslangic) or start >= mesai.bitis
 
 
 def _norm(value) -> str:

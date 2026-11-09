@@ -1,5 +1,4 @@
 from django.http import JsonResponse
-from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
 from apps.ozel_ders.interfaces.context import (
@@ -46,7 +45,6 @@ def _int_or_none(value):
 
 # ─── Meta (ders / öğretmen seçenekleri) ─────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def meta(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -63,7 +61,6 @@ def meta(request):
 
 # ─── Programs ───────────────────────────────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET', 'POST'])
 def program_list_create(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -106,7 +103,6 @@ def program_list_create(request):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET', 'PUT', 'PATCH'])
 def program_detail(request, program_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -131,7 +127,6 @@ def program_detail(request, program_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def program_sync(request):
     """Aktif özel ders / premium paket kayıtlarından birebir program senkronu."""
@@ -156,7 +151,6 @@ def program_sync(request):
 
 # ─── Slots ──────────────────────────────────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET', 'POST'])
 def slot_list_create(request, program_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -184,7 +178,6 @@ def slot_list_create(request, program_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['PUT', 'PATCH', 'DELETE'])
 def slot_detail(request, slot_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -209,7 +202,6 @@ def slot_detail(request, slot_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def slot_end_early(request, slot_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -229,7 +221,6 @@ def slot_end_early(request, slot_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def slot_swap(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -257,7 +248,6 @@ def slot_swap(request):
 
 # ─── Tatiller ───────────────────────────────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def tatil_list(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -286,7 +276,6 @@ def tatil_list(request):
 
 # ─── Öğrenci dashboard ───────────────────────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_ozet(request, ogrenci_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -306,7 +295,6 @@ def ogrenci_ozet(request, ogrenci_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_ozet_donem(request, ogrenci_id: int):
     """Dönem bazlı planlanan / işlenen / kalan özeti (şablon + tatil + oturum)."""
@@ -328,7 +316,6 @@ def ogrenci_ozet_donem(request, ogrenci_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_haftalik_program_pdf(request, ogrenci_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -347,7 +334,6 @@ def ogrenci_haftalik_program_pdf(request, ogrenci_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_haftalik_program_onizleme(request, ogrenci_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -364,7 +350,6 @@ def ogrenci_haftalik_program_onizleme(request, ogrenci_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def ogrenci_haftalik_program_gonder(request, ogrenci_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -412,7 +397,6 @@ def _parse_veli_ids(body: dict) -> list[int] | None:
     return ids
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_ders_ozeti_pdf(request, ogrenci_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -432,7 +416,6 @@ def ogrenci_ders_ozeti_pdf(request, ogrenci_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_ders_ozeti_onizleme(request, ogrenci_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -451,7 +434,6 @@ def ogrenci_ders_ozeti_onizleme(request, ogrenci_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def ogrenci_ders_ozeti_gonder(request, ogrenci_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -479,7 +461,6 @@ def ogrenci_ders_ozeti_gonder(request, ogrenci_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_ders_gecmis(request, ogrenci_id: int, ders_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -500,7 +481,6 @@ def ogrenci_ders_gecmis(request, ogrenci_id: int, ders_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_ders_gecmis_pdf(request, ogrenci_id: int, ders_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -521,7 +501,6 @@ def ogrenci_ders_gecmis_pdf(request, ogrenci_id: int, ders_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def ogrenci_ders_gecmis_onizleme(request, ogrenci_id: int, ders_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -541,7 +520,6 @@ def ogrenci_ders_gecmis_onizleme(request, ogrenci_id: int, ders_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def ogrenci_ders_gecmis_gonder(request, ogrenci_id: int, ders_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -570,7 +548,6 @@ def ogrenci_ders_gecmis_gonder(request, ogrenci_id: int, ders_id: int):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def ogrenci_ders_gecmis_tatil(request, ogrenci_id: int, ders_id: int):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -594,7 +571,6 @@ def ogrenci_ders_gecmis_tatil(request, ogrenci_id: int, ders_id: int):
 
 # ─── Resmi tatiller (katalog sync + karar) ───────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET', 'POST'])
 def resmi_tatil_list_sync(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -634,7 +610,6 @@ def resmi_tatil_list_sync(request):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['PATCH', 'POST'])
 def resmi_tatil_karar(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -668,7 +643,6 @@ def resmi_tatil_karar(request):
 
 # ─── Materialize ────────────────────────────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def materialize(request, program_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -691,7 +665,6 @@ def materialize(request, program_id):
 
 # ─── Oturumlar ──────────────────────────────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def oturum_ensure(request):
     """Görünen aralıkta eksik oturum varsa üretir. Liste isteğini bekletmez."""
@@ -720,7 +693,6 @@ def oturum_ensure(request):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET', 'POST'])
 def oturum_list_create(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -781,7 +753,6 @@ def oturum_list_create(request):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def oturum_detail(request, oturum_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -796,7 +767,6 @@ def oturum_detail(request, oturum_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def oturum_set_durum(request, oturum_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -825,7 +795,6 @@ def oturum_set_durum(request, oturum_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def oturum_telafi_vazgec(request, oturum_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -843,7 +812,6 @@ def oturum_telafi_vazgec(request, oturum_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def oturum_telafi_vazgec_toplu(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -865,7 +833,6 @@ def oturum_telafi_vazgec_toplu(request):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def oturum_telafi(request, oturum_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -886,7 +853,6 @@ def oturum_telafi(request, oturum_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['POST'])
 def oturum_change_teacher(request, oturum_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -911,7 +877,6 @@ def oturum_change_teacher(request, oturum_id):
 
 # ─── Hakediş ────────────────────────────────────────────────
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def hakedis_list(request):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -930,7 +895,6 @@ def hakedis_list(request):
     return JsonResponse({'success': True, 'data': data})
 
 
-@csrf_exempt
 @require_module_permission('ozel_ders')
 @require_http_methods(['POST'])
 @guard_bad_input
@@ -952,7 +916,6 @@ def hakedis_approve(request, hakedis_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @require_module_permission('ozel_ders')
 @require_http_methods(['POST'])
 @guard_bad_input
@@ -975,7 +938,6 @@ def hakedis_cancel(request, hakedis_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @require_module_permission('ozel_ders', manage_only=True)
 @require_http_methods(['POST'])
 @guard_bad_input
@@ -999,7 +961,6 @@ def hakedis_bordro_aktar(request):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def hakedis_for_bordro(request, aylik_hakedis_id):
     from apps.personel.domain.sozlesme_models import AylikHakedis
@@ -1035,7 +996,6 @@ def _gate_premium_paket(ctx, premium_paket_id):
     return None
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET', 'PUT'])
 def premium_kota(request, premium_paket_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -1070,7 +1030,6 @@ def premium_kota(request, premium_paket_id):
         return error_response(exc)
 
 
-@csrf_exempt
 @ozel_ders_api(methods=['GET'])
 def premium_kota_suggest(request, premium_paket_id):
     ctx, err = mandatory_ozel_ders_context(request)
@@ -1087,7 +1046,6 @@ def premium_kota_suggest(request, premium_paket_id):
 
 # ─── Ücret kuralları seed ───────────────────────────────────
 
-@csrf_exempt
 @require_module_permission('ozel_ders', manage_only=True)
 @require_http_methods(['POST'])
 def seed_ucret_kurallari(request):

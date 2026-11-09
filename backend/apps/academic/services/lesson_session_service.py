@@ -212,6 +212,9 @@ def materialize_sessions_for_date(
     except Term.DoesNotExist:
         raise LessonSessionError('Dönem bulunamadı.', 'term_id')
 
+    if not term.start_date <= session_date <= term.end_date:
+        raise LessonSessionError('Ders tarihi dönem aralığında olmalıdır.', 'session_date')
+
     versions_qs = ScheduleVersion.objects.select_related(
         'weekly_cycle', 'schedule_template', 'term',
     )
@@ -598,6 +601,7 @@ def create_session(*, data: dict[str, Any], user=None) -> LessonSession:
     return session
 
 
+@transaction.atomic
 def transition_session(
     *,
     session_id: int,
@@ -606,13 +610,15 @@ def transition_session(
     cancel_reason: str = '',
 ) -> LessonSession:
     try:
-        session = LessonSession.objects.select_related(
+        session = LessonSession.objects.select_for_update(of=('self',)).select_related(
             'ders', 'ogretmen', 'sinif', 'timeslot', 'term', 'schedule_version',
         ).get(pk=session_id, is_active=True)
     except LessonSession.DoesNotExist:
         raise LessonSessionError('Oturum bulunamadı.')
 
     action = action.lower()
+    if action in ('start', 'complete', 'no_show') and session.session_date > timezone.localdate():
+        raise LessonSessionError('Gelecek tarihli derse gerçekleşme/yoklama girilemez.', 'session_date')
     if action == 'start':
         if session.status != SessionStatus.SCHEDULED:
             raise LessonSessionError('Yalnızca planlı oturum başlatılabilir.')
@@ -662,6 +668,7 @@ def transition_session(
     return session
 
 
+@transaction.atomic
 def set_teacher_attendance(
     *,
     session_id: int,
@@ -670,7 +677,7 @@ def set_teacher_attendance(
     user=None,
 ) -> LessonSession:
     try:
-        session = LessonSession.objects.select_related(
+        session = LessonSession.objects.select_for_update(of=('self',)).select_related(
             'ders', 'ogretmen', 'sinif', 'timeslot', 'substitute_ogretmen', 'term',
         ).get(pk=session_id, is_active=True)
     except LessonSession.DoesNotExist:
@@ -678,6 +685,8 @@ def set_teacher_attendance(
 
     if status not in TeacherAttendanceStatus.values:
         raise LessonSessionError('Geçersiz öğretmen yoklama durumu.', 'status')
+    if session.session_date > timezone.localdate():
+        raise LessonSessionError('Gelecek tarihli derse yoklama girilemez.', 'session_date')
 
     if status == TeacherAttendanceStatus.SUBSTITUTE:
         if not substitute_ogretmen_id:
@@ -730,6 +739,7 @@ def get_or_build_student_roster(session: LessonSession) -> list[dict[str, Any]]:
         placements = active_student_placements(
             classroom_id=session.sinif_id,
             term_id=session.term_id,
+            on_date=session.session_date,
         ).select_related('student').order_by('student__ad', 'student__soyad')
         students = [p.student for p in placements if p.student_id]
     else:
@@ -768,6 +778,7 @@ def _session_roster_student_ids(session: LessonSession) -> set[int]:
             active_student_placements(
                 classroom_id=session.sinif_id,
                 term_id=session.term_id,
+                on_date=session.session_date,
             ).values_list('student_id', flat=True)
         )
     return set()
@@ -845,7 +856,8 @@ def pay_summary(
         session_date__lte=date_to,
         status=SessionStatus.COMPLETED,
         payable=True,
-    ).select_related('ogretmen', 'substitute_ogretmen', 'ders', 'sinif')
+        teacher_attendance__in=[TeacherAttendanceStatus.PRESENT, TeacherAttendanceStatus.SUBSTITUTE],
+    ).select_related('ogretmen', 'substitute_ogretmen', 'ders', 'sinif', 'term')
 
     if teacher_id:
         qs = qs.filter(
@@ -872,11 +884,25 @@ def pay_summary(
             'total_minutes': 0,
             'by_kind': defaultdict(int),
             'sessions': [],
+            '_rates': set(),
+            '_amount': Decimal('0'),
+            'unpriced_session_count': 0,
         })
         mins = s.resolved_duration_minutes()
         bucket['session_count'] += 1
         bucket['total_minutes'] += mins
         bucket['by_kind'][s.session_kind] += 1
+        from apps.personel.application.lesson_pay_service import active_lesson_contract
+        from apps.ozel_ders.services.ucret_engine import _unit_rate, _calc_amount
+        contract = active_lesson_contract(
+            teacher.id, s.session_date, s.term.kurum_id, s.term.sube_id, s.egitim_yili_id,
+        )
+        rate = _unit_rate(contract, s.ders) if contract else Decimal('0')
+        if rate > 0:
+            bucket['_rates'].add(rate)
+            bucket['_amount'] += _calc_amount(contract, rate, mins, s.ders)
+        else:
+            bucket['unpriced_session_count'] += 1
         bucket['sessions'].append({
             'id': s.id,
             'date': s.session_date.isoformat(),
@@ -890,26 +916,10 @@ def pay_summary(
     for b in by_teacher.values():
         b['by_kind'] = dict(b['by_kind'])
         b['total_hours'] = round(b['total_minutes'] / 60, 2)
-        # Sözleşme ücreti varsa bağla
-        rate = None
-        try:
-            from apps.personel.domain.sozlesme_models import DersUcretTanim, PersonelSozlesme
-            soz = (
-                PersonelSozlesme.objects.filter(personel_id=b['teacher_id'])
-                .order_by('-id')
-                .first()
-            )
-            if soz:
-                tanim = DersUcretTanim.objects.filter(sozlesme=soz).order_by('-id').first()
-                if tanim is not None:
-                    rate = float(tanim.birim_ucret)
-        except Exception:
-            rate = None
-        b['unit_rate'] = rate
-        b['estimated_amount'] = (
-            float(round(Decimal(str(b['total_hours'])) * Decimal(str(rate)), 2))
-            if rate is not None else None
-        )
+        rates = b.pop('_rates')
+        amount = b.pop('_amount')
+        b['unit_rate'] = float(next(iter(rates))) if len(rates) == 1 else None
+        b['estimated_amount'] = float(amount) if not b['unpriced_session_count'] else None
         teachers.append(b)
 
     teachers.sort(key=lambda x: x['teacher_name'])

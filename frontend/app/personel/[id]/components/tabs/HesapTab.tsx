@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/lib/contexts/AuthContext";
 import { useState } from "react";
 import { PersonelDetay } from "../../types";
 import { formatDateTime } from "../../utils";
@@ -11,6 +12,8 @@ interface HesapTabProps {
 }
 
 export default function HesapTab({ data, onRefresh }: HesapTabProps) {
+  const { user } = useAuth();
+  const canManage = Boolean(user?.is_superuser || user?.permissions?.some(p => ["sistem.admin","personel.write","personel.manage"].includes(p)));
   const hasAccount = Boolean(data.has_user_account || data.user?.username);
   const isSharedAccount = Boolean(data.user_account_shared);
   const [loading, setLoading] = useState(false);
@@ -50,7 +53,7 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
   };
 
   const handleResetPassword = async () => {
-    if (!confirm('Şifre TC Kimlik numarasına sıfırlanacak. Devam etmek istiyor musunuz?')) {
+    if (!confirm('Rastgele geçici şifre oluşturulacak. İlk girişte değiştirilmesi gerekecek. Devam etmek istiyor musunuz?')) {
       return;
     }
 
@@ -137,7 +140,7 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
               </div>
             </div>
             <div className="credential-item">
-              <label>Geçici Şifre (TC Kimlik No)</label>
+              <label>Geçici Şifre</label>
               <div className="credential-value password">
                 <span>{credentials.password}</span>
                 <button onClick={() => copyToClipboard(credentials.password)} title="Kopyala">
@@ -253,7 +256,7 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
             <button 
               className="btn-modern btn-primary"
               onClick={handleCreateUser}
-              disabled={loading || !data.tc_kimlik_no}
+              disabled={loading || !canManage || (!data.email && !data.tc_kimlik_no)}
             >
               {loading ? (
                 <span className="loading-spinner-sm"></span>
@@ -271,7 +274,7 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
             <button 
               className="btn-modern btn-warning"
               onClick={handleResetPassword}
-              disabled={loading || !data.tc_kimlik_no}
+              disabled={loading || !canManage}
             >
               {loading ? (
                 <span className="loading-spinner-sm"></span>
@@ -285,14 +288,14 @@ export default function HesapTab({ data, onRefresh }: HesapTabProps) {
             </button>
           )}
 
-          {!data.tc_kimlik_no && (
+          {!data.tc_kimlik_no && !data.email && (
             <p className="warning-text">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
                 <line x1="12" y1="9" x2="12" y2="13"/>
                 <line x1="12" y1="17" x2="12.01" y2="17"/>
               </svg>
-              Kullanıcı hesabı oluşturmak için TC Kimlik No gereklidir.
+              Kullanıcı adı için e-posta veya TC Kimlik No gereklidir; geçici şifre rastgele üretilir.
             </p>
           )}
         </div>

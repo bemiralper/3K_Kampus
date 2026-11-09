@@ -158,8 +158,10 @@ class Personel(models.Model):
             user.save(update_fields=['is_active'])
 
     def save(self, *args, **kwargs):
+        previous = type(self).objects.filter(pk=self.pk).values('aktif_mi','user_id').first() if self.pk else None
         super().save(*args, **kwargs)
-        self.sync_user_login_access()
+        if not self.aktif_mi or not previous or previous['aktif_mi'] != self.aktif_mi or previous['user_id'] != self.user_id:
+            self.sync_user_login_access()
 
 
 # NOT: PersonelRol ve Birim modelleri kaldırıldı (Migration 0003)

@@ -8,7 +8,7 @@ Varlıklar:
 """
 from django.db import models
 from django.core.validators import MaxValueValidator, MinValueValidator
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -521,9 +521,13 @@ class AylikHakedis(models.Model):
 
     sozlesme = models.ForeignKey(
         PersonelSozlesme,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name='hakedisler',
         verbose_name='Sözleşme',
+    )
+    finans_gider = models.OneToOneField(
+        'finans.GiderKaydi', on_delete=models.PROTECT, null=True, blank=True,
+        related_name='personel_bordrosu',
     )
 
     # ─── Dönem ───
@@ -643,7 +647,7 @@ class AylikHakedis(models.Model):
         brüt = maaş + ders_ücreti + prim + fazla_mesai + ek_ödeme
         net  = brüt - avans - kesintiler
         """
-        self.ders_ucreti_toplam = self.ders_basi_ucret * self.toplam_ders_saati
+        self.ders_ucreti_toplam = (self.ders_basi_ucret * self.toplam_ders_saati).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         self.brut_toplam = (
             self.sabit_maas
             + self.ders_ucreti_toplam
@@ -652,7 +656,8 @@ class AylikHakedis(models.Model):
             + self.ek_odeme
             + self.ozel_ders_hakedis_toplam
         )
-        self.net_hakedis = self.brut_toplam - self.avans - self.kesintiler
+        self.brut_toplam = self.brut_toplam.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+        self.net_hakedis = (self.brut_toplam - self.avans - self.kesintiler).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         return self
 
 
@@ -668,7 +673,7 @@ class AvansKaydi(models.Model):
 
     sozlesme = models.ForeignKey(
         PersonelSozlesme,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name='avans_kayitlari',
         verbose_name='Sözleşme',
     )

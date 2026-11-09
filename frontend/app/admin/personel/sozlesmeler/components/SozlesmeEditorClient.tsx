@@ -582,7 +582,7 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
     };
   }, [form]);
 
-  const { setDirty, markClean } = useSozlesmeForm(form, {
+  const { setDirty, markClean, dirty, saveState, saveError, retrySave } = useSozlesmeForm(form, {
     isEdit,
     sozlesmeId,
     buildPayload,
@@ -779,6 +779,10 @@ export default function SozlesmeEditorClient({ mode, sozlesmeId }: SozlesmeEdito
         <div className={`se-toast se-toast--${toast.type}`}>{toast.msg}</div>
       )}
 
+      {isEdit && <div role="status" aria-live="polite" className="se-save-state">
+        {saveState === 'saving' ? 'Kaydediliyor…' : saveState === 'error' ? saveError : dirty ? 'Kaydedilmemiş değişiklikler var.' : saveState === 'saved' ? 'Değişiklikler kaydedildi.' : ''}
+        {saveState === 'error' && <button type="button" onClick={retrySave}>Tekrar dene</button>}
+      </div>}
       {/* Header */}
       <header className="sozlesme-editor__header">
         <div className="sozlesme-editor__header-left">

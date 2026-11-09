@@ -193,7 +193,19 @@ class Sozlesme(models.Model):
 
     @property
     def toplam_odenen(self):
-        """Tüm aktif tahsilatların toplamı"""
+        """Tüm aktif tahsilatlar; tek deneme için gerçek gelir tahsilatı."""
+        from apps.odeme_takip.domain.contract_scope import DENEME_SATIS_MARKER
+
+        if DENEME_SATIS_MARKER in (self.notlar or ''):
+            from apps.ogrenci_kayit.application.deneme_ucret import (
+                _gelir_id, deneme_gelir_tahsilatlari,
+            )
+
+            # Gelir yolu kullanılmışsa sözleşme tahsilatını tekrar sayma.
+            if _gelir_id(self.notlar):
+                return deneme_gelir_tahsilatlari(self).aggregate(
+                    toplam=models.Sum('tutar')
+                )['toplam'] or 0
         return self.tahsilatlar.filter(
             durum=TahsilatDurum.AKTIF
         ).exclude(

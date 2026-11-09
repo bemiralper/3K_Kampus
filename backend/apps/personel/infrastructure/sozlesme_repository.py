@@ -3,6 +3,9 @@ Personel Sözleşmeleri — Repository
 DDD Pattern — Infrastructure Layer
 """
 from datetime import date, time as dt_time
+import calendar
+
+from django.db import transaction
 
 from django.db.models import Q, Sum, Count, Prefetch
 from decimal import Decimal
@@ -241,15 +244,18 @@ class HakedisRepository:
                 qs = qs.filter(sozlesme__sube_id=filters['sube_id'])
         return qs
 
-    def get_by_id(self, pk):
+    def get_by_id(self, pk, *, lock=False):
         try:
-            return self._base_qs.get(pk=pk)
+            return (self._base_qs.select_for_update(of=('self',)) if lock else self._base_qs).get(pk=pk)
         except AylikHakedis.DoesNotExist:
             return None
 
     def create(self, data):
         hakedis = AylikHakedis(**data)
+        self.month_bounds(hakedis.yil,hakedis.ay)
+        hakedis.toplam_ders_saati=hakedis.toplam_ders_saati.normalize()
         hakedis.hesapla()
+        hakedis.full_clean()
         hakedis.save()
         return self.get_by_id(hakedis.pk)
 
@@ -271,10 +277,13 @@ class HakedisRepository:
         return False
 
     def bulk_create_for_month(self, kurum_id, egitim_yili_id, yil, ay, sube_id=None):
+        month_start, month_end = self.month_bounds(yil, ay)
         aktif_sozlesmeler = PersonelSozlesme.objects.filter(
             kurum_id=kurum_id,
             egitim_yili_id=egitim_yili_id,
             durum=SozlesmeDurumu.AKTIF,
+            baslangic_tarihi__lte=month_end,
+            bitis_tarihi__gte=month_start,
         )
         if sube_id:
             aktif_sozlesmeler = aktif_sozlesmeler.filter(sube_id=sube_id)
@@ -283,44 +292,42 @@ class HakedisRepository:
         )
         created = []
         for s in aktif_sozlesmeler:
-            ders_ucret_tanim = s.ders_ucretleri.first()
-            ders_basi_ucret = (
-                s.ders_birim_ucret
-                if s.ders_birim_ucret and s.ders_birim_ucret > 0
-                else (ders_ucret_tanim.birim_ucret if ders_ucret_tanim else Decimal('0.00'))
-            )
-            maas = self._get_donemsel_maas(s, yil, ay)
-
-            existing = AylikHakedis.objects.filter(sozlesme=s, yil=yil, ay=ay).first()
-            if existing:
-                h = existing
-                updated = False
-                if h.sabit_maas != maas:
-                    h.sabit_maas = maas
-                    updated = True
-                if h.ders_basi_ucret != ders_basi_ucret:
-                    h.ders_basi_ucret = ders_basi_ucret
-                    updated = True
-                if updated:
-                    h.hesapla()
-                    h.save()
-            else:
-                h = AylikHakedis(
-                    sozlesme=s,
-                    yil=yil,
-                    ay=ay,
-                    sabit_maas=maas,
-                    ders_basi_ucret=ders_basi_ucret,
-                )
-                h.hesapla()
-                h.save()
-                updated = True
-
-            if self._apply_recorded_avans(h):
-                updated = True
+            h, updated = self.prepare_month(s, yil, ay)
             if updated:
                 created.append(h)
         return created
+
+    @staticmethod
+    def month_bounds(yil, ay):
+        if not 2000 <= yil <= 9999 or not 1 <= ay <= 12:
+            raise ValueError('Geçersiz yıl / ay.')
+        return date(yil, ay, 1), date(yil, ay, calendar.monthrange(yil, ay)[1])
+
+    @transaction.atomic
+    def prepare_month(self, sozlesme, yil, ay):
+        """Tek hesap yolu. Sözleşme kilidi, ilk bordro oluşumunu da serileştirir."""
+        start, end = self.month_bounds(yil, ay)
+        s = PersonelSozlesme.objects.select_for_update().get(pk=sozlesme.pk)
+        if s.baslangic_tarihi > end or s.bitis_tarihi < start or s.durum != SozlesmeDurumu.AKTIF:
+            raise ValueError('Sözleşme bu ay için aktif değil.')
+        h = AylikHakedis.objects.select_for_update().filter(sozlesme=s, yil=yil, ay=ay).first()
+        if h and h.durum != HakedisDurumu.HESAPLANDI:
+            return h, False
+        row = s.ders_ucretleri.first()
+        rate = s.ders_birim_ucret if s.ders_birim_ucret > 0 else (row.birim_ucret if row else Decimal('0'))
+        salary = self._get_donemsel_maas(s, yil, ay)
+        changed = h is None
+        if h is None:
+            h = AylikHakedis(sozlesme=s, yil=yil, ay=ay)
+        for key, value in [('sabit_maas', salary), ('ders_basi_ucret', rate)]:
+            if getattr(h, key) != value:
+                setattr(h, key, value)
+                changed = True
+        if changed:
+            h.hesapla()
+            h.save()
+        changed = self._apply_recorded_avans(h) or changed
+        return h, changed
 
     def _apply_recorded_avans(self, hakedis) -> bool:
         """İleri tarihli avans kayıtlarını, bordro satırı oluşunca nete yazar."""

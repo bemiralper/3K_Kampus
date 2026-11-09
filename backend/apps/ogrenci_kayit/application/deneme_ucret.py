@@ -1,6 +1,7 @@
 """Günü birlik kayıttaki deneme ücreti.
 
-Tutar, öğrencinin finansında deneme sözleşmesi olarak durur. Para alındığında
+Tutar, öğrencinin deneme geçmişinde teknik satış izi olarak durur; eğitim
+sözleşmesi listesi ve alacak raporlarına girmez. Para alındığında
 normal gelir kaydıyla aynı yol izlenir: ödeme şekli ve mali hesap seçilir,
 GelirKaydi + GelirTahsilat kasaya tek hareket yazar. Sözleşme tahsilatı
 ayrıca açılmaz; gün sonu ve kasa aynı parayı iki kez saymasın.
@@ -13,7 +14,9 @@ from decimal import Decimal
 from django.db import transaction
 from django.utils import timezone
 
-MARKER = 'gunu_birlik_deneme_ucreti'
+from apps.odeme_takip.domain.contract_scope import DENEME_SATIS_MARKER
+
+MARKER = DENEME_SATIS_MARKER
 _GELIR_REF = re.compile(r'gelir:(\d+)')
 
 
@@ -372,3 +375,17 @@ def _iptal_deneme_geliri(sozlesme) -> None:
     if 'zaten iptal' in mesaj:
         return
     raise ValueError(mesaj or 'Deneme geliri iptal edilemedi.')
+
+
+def deneme_gelir_tahsilatlari(sozlesme):
+    """Ödeme var sayılmaz; bağlı gelirdeki gerçek aktif tahsilatlar okunur."""
+    from apps.finans.constants.gider_types import OdemeDurum
+    from apps.finans.domain.gelir_tahsilat import GelirTahsilat
+
+    gelir_id = _gelir_id(sozlesme.notlar)
+    return GelirTahsilat.objects.filter(
+        gelir_kaydi_id=gelir_id,
+        gelir_kaydi__kurum_id=sozlesme.kurum_id,
+        gelir_kaydi__sube_id=sozlesme.sube_id,
+        durum=OdemeDurum.TAMAMLANDI,
+    ).select_related('odeme_yontemi')

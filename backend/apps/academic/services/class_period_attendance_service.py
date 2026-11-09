@@ -344,6 +344,7 @@ def get_or_build_period_roster(session: ClassPeriodAttendanceSession) -> list[di
     placements = active_student_placements(
         classroom_id=session.sinif_id,
         term_id=session.term_id,
+        on_date=session.session_date,
     ).select_related('student').order_by('student__ad', 'student__soyad')
 
     from apps.academic.services.kutuphane_izin import virtual_izin_status
@@ -435,6 +436,7 @@ def save_period_attendance(
         active_student_placements(
             classroom_id=session.sinif_id,
             term_id=session.term_id,
+            on_date=session.session_date,
         ).values_list('student_id', flat=True)
     )
     for item in records:
