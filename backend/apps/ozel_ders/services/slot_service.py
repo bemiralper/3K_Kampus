@@ -8,6 +8,7 @@ from django.db import transaction
 from apps.ozel_ders.domain.models import BirebirHaftalikSlot, BirebirOgrenciProgrami, ProgramDurumu
 from apps.ozel_ders.services.conflict_service import validate_slot_window
 from apps.ozel_ders.services.errors import OzelDersError
+from apps.ozel_ders.services.ogrenci_ozel_ders_dashboard import GUN_LABELS
 from apps.ozel_ders.services.program_service import get_program
 from apps.ozel_ders.services.scope_guard import ensure_ders, ensure_oda, ensure_ogretmen
 from apps.ozel_ders.services.quota_service import (
@@ -109,6 +110,20 @@ def _slot_window(s: BirebirHaftalikSlot) -> tuple[Optional[date], Optional[date]
     )
 
 
+def _conflict_detail(slot: BirebirHaftalikSlot) -> str:
+    """Çakışan dersin bulunacağı program: öğrenci, ders, gün-saat ve şube."""
+    program = slot.program
+    student = program.ogrenci
+    name = f'{student.ad} {student.soyad}'.strip()
+    ders = (getattr(slot.ders, 'kisa_ad', None) or getattr(slot.ders, 'ad', None) or '').strip()
+    when = (
+        f"{GUN_LABELS.get(slot.gun, str(slot.gun))} "
+        f"{slot.baslangic.strftime('%H:%M')}–{slot.bitis.strftime('%H:%M')}"
+    )
+    branch = (getattr(program.sube, 'ad', None) or '').strip()
+    return ', '.join(part for part in (name, ders, when, branch) if part)
+
+
 def _windows_overlap(
     a: tuple[Optional[date], Optional[date]],
     b: tuple[Optional[date], Optional[date]],
@@ -154,29 +169,30 @@ def _check_template_conflicts(
         )
 
     # Aynı öğrencinin diğer program slotları
+    slot_with = ('program', 'program__ogrenci', 'program__sube', 'ders')
     other_slots = BirebirHaftalikSlot.objects.filter(
         aktif=True,
         gun=gun,
         program__ogrenci_id=program.ogrenci_id,
         program__durum='AKTIF',
-    ).exclude(program_id=program.id).select_related('program')
+    ).exclude(program_id=program.id).select_related(*slot_with)
     if excluded:
         other_slots = other_slots.exclude(pk__in=excluded)
     for s in other_slots:
         if clashes(s):
             raise OzelDersError(
-                f'Öğrenci şablon çakışması (slot #{s.pk}).',
+                f'Öğrenci şablon çakışması: {_conflict_detail(s)}.',
                 'student_template_conflict',
             )
 
     # Aynı program içi
-    same = program.slots.filter(aktif=True, gun=gun).select_related('program')
+    same = program.slots.filter(aktif=True, gun=gun).select_related(*slot_with)
     if excluded:
         same = same.exclude(pk__in=excluded)
     for s in same:
         if clashes(s):
             raise OzelDersError(
-                f'Program içi saat çakışması (slot #{s.pk}).',
+                f'Program içi saat çakışması: {_conflict_detail(s)}.',
                 'program_slot_conflict',
             )
 
@@ -187,7 +203,7 @@ def _check_template_conflicts(
         ogretmen_id=ogretmen_id,
         program__durum='AKTIF',
         program__kurum_id=program.kurum_id,
-    ).select_related('program')
+    ).select_related(*slot_with)
     if excluded:
         teacher_slots = teacher_slots.exclude(pk__in=excluded)
     for s in teacher_slots:
@@ -195,7 +211,7 @@ def _check_template_conflicts(
             continue
         if clashes(s):
             raise OzelDersError(
-                f'Öğretmen şablon çakışması (slot #{s.pk}).',
+                f'Öğretmen şablon çakışması: {_conflict_detail(s)}.',
                 'teacher_template_conflict',
             )
 
@@ -206,7 +222,7 @@ def _check_template_conflicts(
             oda_id=oda_id,
             program__durum='AKTIF',
             program__kurum_id=program.kurum_id,
-        ).select_related('program')
+        ).select_related(*slot_with)
         if excluded:
             room_slots = room_slots.exclude(pk__in=excluded)
         for s in room_slots:
@@ -214,7 +230,7 @@ def _check_template_conflicts(
                 continue
             if clashes(s):
                 raise OzelDersError(
-                    f'Derslik şablon çakışması (slot #{s.pk}).',
+                    f'Derslik şablon çakışması: {_conflict_detail(s)}.',
                     'room_template_conflict',
                 )
 

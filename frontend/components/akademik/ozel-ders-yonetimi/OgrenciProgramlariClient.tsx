@@ -11,6 +11,7 @@ import {
   fetchProgramlar,
   resolveDersLabel,
   syncProgramlar,
+  updateProgram,
   type BirebirOturum,
   type BirebirProgram,
   type PaketDersi,
@@ -229,6 +230,7 @@ export default function OgrenciProgramlariClient() {
   const [search, setSearch] = useState('');
   const [durumFilter, setDurumFilter] = useState<'AKTIF' | 'PASIF' | ''>('AKTIF');
   const [onlyNeedsSablon, setOnlyNeedsSablon] = useState(false);
+  const [closingId, setClosingId] = useState<number | null>(null);
   const [stats, setStats] = useState<DashboardStats | null>(null);
 
   // Yeni Program Drawer
@@ -395,6 +397,35 @@ export default function OgrenciProgramlariClient() {
     router.push(
       `${akademikTabHref('ozel-ders-yonetimi', 'ogrenci-ozel-ders')}?ogrenci_id=${ogrenciId}`,
     );
+  }
+
+  async function closeStudentPrograms(group: StudentProgramGroup) {
+    const active = group.programs.filter((p) => p.durum === 'AKTIF');
+    if (!active.length || closingId != null) return;
+    const name = group.ogrenci_ad || 'Bu öğrenci';
+    const message = group.slotCount
+      ? `${name} aktif listeden kapatılacak. İşlenmiş dersler durur; bugünden sonraki planlı dersler kapanır.`
+      : `${name} için açılmış boş program kapatılacak ve aktif listeden çıkacak.`;
+    if (!window.confirm(message)) return;
+    const today = dayjs().format('YYYY-MM-DD');
+    setClosingId(group.ogrenci);
+    try {
+      await Promise.all(
+        active.map((p) =>
+          updateProgram(p.id, {
+            durum: 'PASIF',
+            bitis_tarihi: p.bitis_tarihi && p.bitis_tarihi < today ? p.bitis_tarihi : today,
+          }),
+        ),
+      );
+      show(`${name} kapatıldı. Pasif sekmesinden görülebilir.`);
+      await load();
+      await loadStats();
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Program kapatılamadı', 'error');
+    } finally {
+      setClosingId(null);
+    }
   }
 
   async function onCreate(e: React.FormEvent) {
@@ -617,11 +648,15 @@ export default function OgrenciProgramlariClient() {
               const visibleTags = tags.slice(0, 4);
               const extraCount = tags.length - visibleTags.length;
               return (
-                <button
+                <div
                   key={g.ogrenci}
-                  type="button"
+                  role="link"
+                  tabIndex={0}
                   className={`op-student-card${g.needsSablon ? ' is-gap' : ''}`}
                   onClick={() => openStudentProgram(g.ogrenci)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') openStudentProgram(g.ogrenci);
+                  }}
                 >
                   <div className="op-card-head">
                     <div className="op-card-who">
@@ -667,11 +702,26 @@ export default function OgrenciProgramlariClient() {
                           ? `${g.eksikAtama} ders ataması eksik`
                           : 'Haftalık program hazır'}
                     </span>
-                    <span className="op-card-cta">
-                      Programı Aç <IconChevronRight size={15} />
+                    <span className="op-card-actions">
+                      {g.durum === 'AKTIF' && (
+                        <button
+                          type="button"
+                          className="op-card-close"
+                          disabled={closingId === g.ogrenci}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            void closeStudentPrograms(g);
+                          }}
+                        >
+                          {closingId === g.ogrenci ? 'Kapatılıyor…' : 'Kapat'}
+                        </button>
+                      )}
+                      <span className="op-card-cta">
+                        Programı Aç <IconChevronRight size={15} />
+                      </span>
                     </span>
                   </div>
-                </button>
+                </div>
               );
             })}
           </div>

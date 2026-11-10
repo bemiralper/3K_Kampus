@@ -62,6 +62,26 @@ class CoachAccessLifecycleTests(TestCase):
         self.assignment.refresh_from_db()
         self.assertIsNone(self.assignment.end_date)
 
+    def test_coach_on_assignment_at_student_branch_can_be_assigned(self):
+        from apps.egitim_yili.domain.models import EgitimYili
+        from apps.personel.domain.models import PersonelGorevlendirme
+
+        branch = Sube.objects.create(kurum=self.kurum, ad='Keşif', kod='KSF')
+        self.ogrenci.sube = branch
+        self.ogrenci.save(update_fields=['sube'])
+        year, _ = EgitimYili.objects.get_or_create(
+            baslangic_yil=2026, bitis_yil=2027, defaults={'aktif_mi': False},
+        )
+        PersonelGorevlendirme.objects.create(
+            personel=self.new_personel,
+            egitim_yili=year,
+            gorev_sube=branch,
+            kurum=self.kurum,
+            aktif_mi=True,
+        )
+        result = change_primary_coach(student_id=self.ogrenci.pk, new_coach_id=self.new_coach.pk)
+        self.assertEqual(result.new_assignment.coach_id, self.new_coach.pk)
+
     def test_inactive_student_and_non_coach_are_rejected(self):
         self.ogrenci.aktif_mi = False
         self.ogrenci.save(update_fields=['aktif_mi'])

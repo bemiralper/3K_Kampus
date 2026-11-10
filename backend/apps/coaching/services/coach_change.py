@@ -187,13 +187,28 @@ def get_student_assignment_history(student_id: int):
     )
 
 
+def _coach_covers_student_branch(teacher, student) -> bool:
+    """Kayıt şubesi ya da aktif görevlendirme öğrencinin şubesiyle örtüşmeli."""
+    if teacher.kurum_id != student.kurum_id:
+        return False
+    if teacher.sube_id == student.sube_id:
+        return True
+    from apps.personel.domain.models import PersonelGorevlendirme
+    return PersonelGorevlendirme.objects.filter(
+        personel_id=teacher.pk,
+        kurum_id=student.kurum_id,
+        gorev_sube_id=student.sube_id,
+        aktif_mi=True,
+    ).exists()
+
+
 def validate_coach_student(coach, student):
     """Shared invariant for single, bulk, transfer and reopened assignments."""
     teacher = coach.teacher
     if (not coach.is_active or not coach.is_coach or not teacher.aktif_mi
             or not teacher.user_id or not teacher.user.is_active):
         raise CoachChangeError('Koç aktif olmalı ve kullanıcı hesabı bulunmalı.', code='coach_not_found')
-    if (teacher.kurum_id, teacher.sube_id) != (student.kurum_id, student.sube_id):
+    if not _coach_covers_student_branch(teacher, student):
         raise CoachChangeError('Koç ve öğrenci aynı kurum ve şubede olmalı.', code='scope_mismatch')
     if not student.aktif_mi:
         raise CoachChangeError('Pasif öğrenciye koç atanamaz.', code='student_inactive')

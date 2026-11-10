@@ -262,6 +262,7 @@ export default function OgrenciOzelDersClient() {
   const [error, setError] = useState('');
   const [donem, setDonem] = useState({ baslangic: '', bitis: '' });
   const [savingDonem, setSavingDonem] = useState(false);
+  const [closingProgram, setClosingProgram] = useState(false);
   const [config, setConfig] = useState({
     startTime: '09:00',
     sureDk: 50,
@@ -628,6 +629,34 @@ export default function OgrenciOzelDersClient() {
       show(e instanceof Error ? e.message : 'Dönem kaydedilemedi', 'error');
     } finally {
       setSavingDonem(false);
+    }
+  }
+
+  async function closePrograms() {
+    const active = programs.filter((p) => p.durum === 'AKTIF');
+    if (!active.length || closingProgram) return;
+    const hasLessons = active.some((p) => (p.slot_count || 0) > 0) || lessons.length > 0;
+    const message = hasLessons
+      ? 'Program kapatılacak. İşlenmiş dersler durur; bugünden sonraki planlı dersler kapanır.'
+      : 'Bu boş program kapatılacak ve öğrenci aktif listeden çıkacak.';
+    if (!window.confirm(message)) return;
+    const today = dayjs().format('YYYY-MM-DD');
+    setClosingProgram(true);
+    try {
+      await Promise.all(
+        active.map((p) =>
+          updateProgram(p.id, {
+            durum: 'PASIF',
+            bitis_tarihi: p.bitis_tarihi && p.bitis_tarihi < today ? p.bitis_tarihi : today,
+          }),
+        ),
+      );
+      show('Program kapatıldı.');
+      router.push(listHref);
+    } catch (e) {
+      show(e instanceof Error ? e.message : 'Program kapatılamadı', 'error');
+    } finally {
+      setClosingProgram(false);
     }
   }
 
@@ -1898,6 +1927,24 @@ export default function OgrenciOzelDersClient() {
               <dt>Ders adedi</dt>
               <dd>{config.dersAdet}</dd>
             </dl>
+          </section>
+
+          <section className="od-ops-ayar-card">
+            <h3>
+              <IconTrash size={15} /> Programı kapat
+            </h3>
+            <p className="od-cell-muted">
+              Vazgeçilen veya biten program aktif listeden çıkar. İşlenmiş dersler silinmez.
+              Sözleşmede özel ders paketi duruyorsa Senkronize et programı yeniden açabilir.
+            </p>
+            <button
+              type="button"
+              className="od-btn od-btn-secondary od-btn-sm"
+              disabled={closingProgram || !programs.some((p) => p.durum === 'AKTIF')}
+              onClick={() => void closePrograms()}
+            >
+              {closingProgram ? 'Kapatılıyor…' : 'Programı kapat'}
+            </button>
           </section>
 
           <section className="od-ops-ayar-card">
