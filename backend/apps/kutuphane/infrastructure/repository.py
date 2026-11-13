@@ -50,26 +50,48 @@ class LibraryRepository:
     @staticmethod
     def get_with_stats(kurum_id: int, sube_id: int) -> QuerySet:
         """İstatistiklerle beraber listele"""
+        # distinct: masa sayımı, atama geçmişiyle aynı join'de şişmesin.
+        # Bir masanın eski atamaları satırı çoğaltır; distinct her masayı bir kez sayar.
         return Library.objects.filter(
             kurum_id=kurum_id, sube_id=sube_id, is_deleted=False
         ).annotate(
-            toplam_masa=Count('masalar', filter=Q(masalar__is_deleted=False)),
-            dolu_masa=Count('masalar', filter=Q(
-                masalar__is_deleted=False,
-                masalar__durum=SeatStatus.OCCUPIED
-            )),
-            bos_masa=Count('masalar', filter=Q(
-                masalar__is_deleted=False,
-                masalar__durum=SeatStatus.AVAILABLE
-            )),
-            arizali_masa=Count('masalar', filter=Q(
-                masalar__is_deleted=False,
-                masalar__durum=SeatStatus.OUT_OF_SERVICE
-            )),
-            aktif_atama=Count('masalar__atamalar', filter=Q(
-                masalar__atamalar__durum=AssignmentStatus.ACTIVE,
-                masalar__is_deleted=False
-            )),
+            toplam_masa=Count(
+                'masalar',
+                filter=Q(masalar__is_deleted=False),
+                distinct=True,
+            ),
+            dolu_masa=Count(
+                'masalar',
+                filter=Q(
+                    masalar__is_deleted=False,
+                    masalar__durum=SeatStatus.OCCUPIED,
+                ),
+                distinct=True,
+            ),
+            bos_masa=Count(
+                'masalar',
+                filter=Q(
+                    masalar__is_deleted=False,
+                    masalar__durum=SeatStatus.AVAILABLE,
+                ),
+                distinct=True,
+            ),
+            arizali_masa=Count(
+                'masalar',
+                filter=Q(
+                    masalar__is_deleted=False,
+                    masalar__durum=SeatStatus.OUT_OF_SERVICE,
+                ),
+                distinct=True,
+            ),
+            aktif_atama=Count(
+                'masalar__atamalar',
+                filter=Q(
+                    masalar__atamalar__durum=AssignmentStatus.ACTIVE,
+                    masalar__is_deleted=False,
+                ),
+                distinct=True,
+            ),
         )
 
     @staticmethod
