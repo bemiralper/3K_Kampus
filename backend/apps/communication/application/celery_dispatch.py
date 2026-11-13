@@ -30,6 +30,36 @@ def schedule_outbound_after_commit() -> None:
     transaction.on_commit(submit)
 
 
+def in_open_transaction() -> bool:
+    """Gerçek (test sarmalayıcısı olmayan) bir atomic blok açık mı?"""
+    from django.db import transaction
+
+    connection = transaction.get_connection()
+    if not connection.in_atomic_block:
+        return False
+    return any(not getattr(block, '_from_testcase', False) for block in connection.atomic_blocks)
+
+
+def _defer_outbound_until_commit() -> None:
+    """Açık işlem bitince kuyruğu bir kez, arka planda boşalt.
+
+    İşlem içindeki kuyruk satırları commit'e kadar kilitlidir. Paralel gönderim
+    işçileri ayrı bağlantı açar ve bu kilidi bekler; açık işlem de işçileri
+    bekler. Gönderim işlem içinde başlarsa ikisi birbirini sonsuza dek bekler.
+    """
+    from django.db import transaction
+
+    connection = transaction.get_connection()
+    if any(getattr(entry[1], '_outbound_after_commit', False) for entry in connection.run_on_commit):
+        return
+
+    def run() -> None:
+        dispatch_process_outbound_queue(drain=True, background=True)
+
+    run._outbound_after_commit = True
+    transaction.on_commit(run)
+
+
 def dispatch_process_outbound_queue(
     limit: int | None = None,
     *,
@@ -44,11 +74,16 @@ def dispatch_process_outbound_queue(
     (toplu gönderim sonrası kalan yüzlerce mesaj cron'u beklemesin diye).
     `background=True`: Celery yoksa işlemi HTTP isteğinin dışına, arka plan
     thread'ine alır.
+    Açık bir işlem içinden çağrılırsa gönderim commit sonrasına ertelenir.
     """
     from apps.communication.application.outbound_processor import (
         drain_pending_queue,
         process_pending_batch,
     )
+
+    if in_open_transaction():
+        _defer_outbound_until_commit()
+        return True
 
     if is_celery_enabled():
         try:
@@ -86,13 +121,10 @@ def dispatch_outbound_queue_after_commit() -> None:
     """
     from django.db import transaction
 
-    def _run() -> None:
-        dispatch_process_outbound_queue(drain=True, background=True)
-
     if transaction.get_connection().in_atomic_block:
-        transaction.on_commit(_run)
+        _defer_outbound_until_commit()
     else:
-        _run()
+        dispatch_process_outbound_queue(drain=True, background=True)
 
 
 def _run_in_thread(func, *, name: str) -> None:

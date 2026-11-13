@@ -857,8 +857,13 @@ def process_pending_batch(limit: int | None = None) -> dict[str, int]:
     Tek işçi eski seri yolu kullanır. Birden fazla işçi Meta çağrılarını
     yan yana yapar; hız `SendGate` ile sınırlıdır.
     """
+    from apps.communication.application.celery_dispatch import in_open_transaction
+
     batch_size = limit or int(getattr(settings, 'COMMUNICATION_QUEUE_BATCH_SIZE', 20))
     workers = _queue_workers()
+    if workers > 1 and in_open_transaction():
+        # Ayrı bağlantılı işçiler açık işlemin satır kilidini bekler, işlem de işçileri.
+        workers = 1
     OutboundQueueRepository.sweep_cancelled_items()
     pending = list(OutboundQueueRepository.get_pending_batch(limit=batch_size))
     sent = 0

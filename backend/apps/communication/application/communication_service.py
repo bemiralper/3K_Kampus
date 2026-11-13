@@ -373,12 +373,14 @@ class CommunicationService:
         elif queue_item:
             from apps.communication.application.celery_dispatch import (
                 dispatch_process_outbound_queue,
+                in_open_transaction,
                 is_celery_enabled,
             )
 
+            deferred = in_open_transaction()
             dispatch_process_outbound_queue()
             message.refresh_from_db()
-            if is_celery_enabled():
+            if deferred or is_celery_enabled():
                 # Task asenkron çalışır; sonuç kuyruk ekranında izlenir (B-11)
                 return SendResult(
                     success=True,
