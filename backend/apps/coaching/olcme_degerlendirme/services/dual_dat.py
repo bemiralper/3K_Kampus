@@ -3,7 +3,13 @@ from collections import defaultdict
 from dataclasses import dataclass
 
 from .lgs_dat_columns import correct_lgs_social_columns
-from .student_matching import DatIdentity, normalize_name, pick_auto_match
+from .student_matching import (
+    DatIdentity,
+    normalize_id,
+    normalize_name,
+    normalize_student_no,
+    pick_auto_match,
+)
 
 BOOKLETS = ('A', 'B', 'C', 'D')
 PARTS = {'verbal': (1, 50), 'numeric': (51, 90)}
@@ -148,6 +154,18 @@ def _row_issue(verbal, numeric, *, student_id, student_issue, reference, keyed_b
     return student_issue
 
 
+def _identity_conflict(left, right):
+    left_tc = normalize_id(left.tc)
+    right_tc = normalize_id(right.tc)
+    if left_tc and right_tc and left_tc != right_tc:
+        return True
+    left_no = normalize_student_no(left.school_no)
+    right_no = normalize_student_no(right.school_no)
+    if left_no and right_no and left_no != right_no:
+        return True
+    return False
+
+
 def prepare_pairs(lines_by_part, sections, config, pool, taken_ids, *, reference=None, keyed_booklets=()):
     validate_layout(sections)
     if not isinstance(config, dict) or not isinstance(config.get('overrides', {}), dict):
@@ -223,9 +241,38 @@ def prepare_pairs(lines_by_part, sections, config, pool, taken_ids, *, reference
                 if not row.excluded:
                     row_issue[(part, row.number)] = issue
 
+    registered_names = {normalize_name(student.full_name) for student in pool}
+    registered_names.discard('')
+    guest_rows = set()
+    for name, part_rows in by_name.items():
+        if name in registered_names:
+            continue
+        free = {
+            part: [row for row in part_rows[part] if not row.student_id]
+            for part in PARTS
+        }
+        if len(free['verbal']) != 1 or len(free['numeric']) != 1:
+            continue
+        left, right = free['verbal'][0], free['numeric'][0]
+        if _identity_conflict(left, right):
+            row_issue[('verbal', left.number)] = 'TC veya öğrenci no iki optikte farklı.'
+            row_issue[('numeric', right.number)] = 'TC veya öğrenci no iki optikte farklı.'
+            continue
+        issue = _row_issue(
+            [left], [right], student_id=None, student_issue=None,
+            reference=reference, keyed_booklets=keyed,
+        )
+        if issue:
+            row_issue[('verbal', left.number)] = issue
+            row_issue[('numeric', right.number)] = issue
+            continue
+        pairs.append((None, left, right))
+        guest_rows.add(('verbal', left.number))
+        guest_rows.add(('numeric', right.number))
+
     for part, items in rows.items():
         for row in items:
-            if row.excluded or row.student_id or (part, row.number) in row_issue:
+            if row.excluded or row.student_id or (part, row.number) in row_issue or (part, row.number) in guest_rows:
                 continue
             row_issue[(part, row.number)] = 'Öğrenci doğrulanamadı.' if normalize_name(row.name) or row.tc or row.school_no else 'Diğer optikte bu öğrenciye ait satır bulunamadı.'
 
@@ -240,6 +287,7 @@ def prepare_pairs(lines_by_part, sections, config, pool, taken_ids, *, reference
             'automatic_student_id': row.automatic_student_id,
             'student_id': row.student_id,
             'student_name': pool_by_id[row.student_id].full_name if row.student_id else '',
+            'unregistered': (part, row.number) in guest_rows,
             'excluded': row.excluded,
             'issue': None if row.excluded else row_issue.get((part, row.number)),
         } for row in items]

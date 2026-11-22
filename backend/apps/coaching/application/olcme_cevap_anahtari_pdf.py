@@ -76,11 +76,11 @@ def copies_covering_each(booklet_count: int) -> int:
 
 
 def resolve_download_copies(requested: int, *, booklet_count: int = 1, filtered: bool = False) -> int:
-    """Tümü indirilirken en az iki kart basılır; A ve B varsa ikisi de girer."""
+    """Tek kitapçık seçilmediyse sayfaya her kayıtlı kitapçık sığar. A, B, C ve D dördü birden basılır."""
     copies = requested if requested in ALLOWED_COPIES else 1
-    if filtered or copies > 1:
+    if filtered:
         return copies
-    return max(2, copies_covering_each(booklet_count))
+    return max(copies, 2, copies_covering_each(booklet_count))
 
 
 def _choice_label(item) -> str:
@@ -709,7 +709,7 @@ def answer_key_card_count(exam, booklets=None) -> int:
 
 
 def render_shared_cevap_anahtari_pdf(exam) -> bytes:
-    """Mesaj eki: her kitapçıktan bir tane, tek PDF. A ve B varsa yan yana."""
+    """Mesaj eki: kayıtlı her kitapçıktan bir kart, tek PDF. Dört kitapçık 2×2 basılır."""
     copies = copies_covering_each(answer_key_card_count(exam))
     return render_cevap_anahtari_pdf(exam, copies_per_page=copies)
 

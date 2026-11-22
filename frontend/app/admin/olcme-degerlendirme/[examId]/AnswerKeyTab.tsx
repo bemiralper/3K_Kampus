@@ -44,7 +44,8 @@ interface GridRow {
   item_id: number | null;
 }
 
-type Step = 'answers' | 'b_booklet' | 'outcomes' | 'preview';
+type Step = 'answers' | 'b_booklet' | 'c_booklet' | 'd_booklet' | 'outcomes' | 'preview';
+type ExtraBooklet = 'C' | 'D';
 type Filter = 'all' | 'blank' | 'no_outcome';
 
 const LETTERS: AnswerChoice[] = ['A', 'B', 'C', 'D', 'E'];
@@ -76,7 +77,7 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
   const [dirty, setDirty] = useState(false);
   const [pdfMeta, setPdfMeta] = useState<{ has_uploaded: boolean; can_generate: boolean; filename: string } | null>(null);
   const [pdfBusy, setPdfBusy] = useState(false);
-  const [pdfCopies, setPdfCopies] = useState<2 | 4 | 6>(2);
+  const [pdfCopies, setPdfCopies] = useState<2 | 4 | 6>(exam.booklet_type === 'ABCD' ? 4 : 2);
   const [pdfBooklet, setPdfBooklet] = useState('');
 
   const [rows, setRows] = useState<GridRow[]>([]);
@@ -88,6 +89,8 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
   const [bBookletText, setBBookletText] = useState('');
   const [bAnswerText, setBAnswerText] = useState('');
   const [bSavedText, setBSavedText] = useState('');
+  const [extraAnswers, setExtraAnswers] = useState<Record<ExtraBooklet, string>>({ C: '', D: '' });
+  const [extraSaved, setExtraSaved] = useState<Record<ExtraBooklet, string>>({ C: '', D: '' });
   const [outcomeText, setOutcomeText] = useState('');
 
   const [subjects, setSubjects] = useState<SubjectItem[]>([]);
@@ -97,6 +100,7 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
 
   const sections = useMemo(() => leafExamSections(exam.sections), [exam.sections]);
   const hasB = exam.booklet_type === 'AB' || exam.booklet_type === 'ABCD';
+  const hasCD = exam.booklet_type === 'ABCD';
   const allOutcomes = useMemo(() => flattenSubjectOutcomes(subjects), [subjects]);
 
   const buildEmptyGrid = useCallback((): GridRow[] => {
@@ -166,6 +170,14 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
       const bText = bByQ.size ? order.map(q => toText(bByQ.get(q) ?? '')).join('\n') : '';
       setBAnswerText(bText);
       setBSavedText(bText);
+      const bookletText: Record<ExtraBooklet, string> = { C: '', D: '' };
+      for (const letter of ['C', 'D'] as const) {
+        const key = keys.find(item => (item.booklet || '').toUpperCase() === letter);
+        const byQ = new Map((key?.items ?? []).map(item => [item.question_number, item.correct_answer as string]));
+        bookletText[letter] = byQ.size ? order.map(q => toText(byQ.get(q) ?? '')).join('\n') : '';
+      }
+      setExtraAnswers(bookletText);
+      setExtraSaved(bookletText);
 
       const has = Boolean(primary && primary.items.length > 0);
       setHasExistingData(has);
@@ -192,7 +204,9 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
     answerKeyApi.outcomes(exam.id).then(setSubjects).catch(() => {});
   }, [exam.id]);
 
-  const unsaved = dirty || bAnswerText !== bSavedText;
+  const unsaved = dirty || bAnswerText !== bSavedText
+    || (hasCD && (extraAnswers.C !== extraSaved.C || extraAnswers.D !== extraSaved.D));
+  const hasUploadedPdf = Boolean(pdfMeta?.has_uploaded);
 
   useEffect(() => {
     if (!unsaved) return;
@@ -245,7 +259,16 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
     if (bChoiceAudit && !bChoiceAudit.ok) { setMsg(formatChoiceAuditMessage(bChoiceAudit)); return; }
     if (bChoiceAudit?.ok) notes.push('şık dağılımı uyumlu');
     setMsg(notes.length ? `${notes.some(n => /tekrar|eşlenmedi/.test(n)) ? '⚠️' : '✅'} ${notes.join(' · ')}.` : '');
-    setStep('preview');
+    setStep(hasCD ? 'c_booklet' : 'preview');
+  };
+
+  const applyExtraBooklet = (letter: ExtraBooklet) => {
+    const text = extraAnswers[letter].trim();
+    if (!text) { setMsg(`⚠️ ${letter} kitapçığı cevabı yok.`); return; }
+    const parsed = parsePastedAnswers(text, order);
+    if (!parsed.filter(Boolean).length) { setMsg('⚠️ Tanınan cevap yok. A–E, İPTAL veya BOŞ yazın.'); return; }
+    setMsg(`✅ ${letter} kitapçığı yazıldı. Kaydedince PDF ve mesaja girer.`);
+    setStep(letter === 'C' ? 'd_booklet' : 'preview');
   };
 
   const applyOutcomes = () => {
@@ -349,13 +372,19 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
       b_question_number: r.b_question_number,
     }));
     const bChanged = hasB && bAnswerText.trim() && bAnswerText !== bSavedText;
-    const bItems = bChanged
-      ? parsePastedAnswers(bAnswerText, order).flatMap((answer, index) => {
-          const q = order[index];
-          if (q === undefined || !answer) return [];
-          return [{ question_number: q, correct_answer: answer as AnswerChoice, is_cancelled: answer === 'INVALID' }];
-        })
-      : [];
+    const pastedItems = (text: string) => parsePastedAnswers(text, order).flatMap((answer, index) => {
+      const q = order[index];
+      if (q === undefined || !answer) return [];
+      return [{ question_number: q, correct_answer: answer as AnswerChoice, is_cancelled: answer === 'INVALID' }];
+    });
+    const bItems = bChanged ? pastedItems(bAnswerText) : [];
+    const extraPayload = (letter: ExtraBooklet) => (
+      hasCD && extraAnswers[letter] !== extraSaved[letter]
+        ? pastedItems(extraAnswers[letter])
+        : null
+    );
+    const cItems = extraPayload('C');
+    const dItems = extraPayload('D');
 
     setSaving(true);
     setMsg('');
@@ -364,6 +393,8 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
         booklet: hasB ? 'A' : '',
         items,
         ...(bItems.length ? { b_items: bItems } : {}),
+        ...(cItems !== null ? { c_items: cItems } : {}),
+        ...(dItems !== null ? { d_items: dItems } : {}),
       });
       setMsg(`✅ ${result.message}`);
       await loadPdfMeta();
@@ -376,11 +407,12 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
   };
 
   const handleReset = async () => {
-    if (!confirm('Kayıtlı cevap anahtarı (A ve B) silinsin mi? Kazanım bağları da gider.')) return;
+    if (!confirm('Kayıtlı cevap anahtarı silinsin mi? Kazanım bağları da gider.')) return;
     try {
       for (const ak of answerKeys) await answerKeyApi.delete(exam.id, ak.id);
       setAnswerText('');
       setBBookletText('');
+      setExtraAnswers({ C: '', D: '' });
       setOutcomeText('');
       setMsg('Cevap anahtarı silindi.');
       await loadPdfMeta();
@@ -393,6 +425,7 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
     setMsg('');
     setAnswerText('');
     setBBookletText('');
+    setExtraAnswers({ C: '', D: '' });
     setOutcomeText('');
     void fetchData();
   };
@@ -409,13 +442,16 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
     () => [...new Set(answerKeys.map(item => (item.booklet || '').trim().toUpperCase()).filter(Boolean))],
     [answerKeys],
   );
-  const showsBothBooklets = !pdfBooklet && savedBooklets.includes('A') && savedBooklets.includes('B');
+  const showsBothBooklets = !pdfBooklet && savedBooklets.includes('A') && savedBooklets.includes('B') && !savedBooklets.includes('C');
+  const showsAllBooklets = ['A', 'B', 'C', 'D'].every(letter => savedBooklets.includes(letter));
   const canDownloadPdf = !unsaved && Boolean(hasExistingData || pdfMeta?.can_generate || pdfMeta?.has_uploaded);
 
   const downloadPdf = async () => {
     setPdfBusy(true);
     try {
-      await examApi.downloadAnswerKeyPdf(exam.id, { source: 'generated', copies: pdfCopies, booklet: pdfBooklet || undefined });
+      const covering: 2 | 4 | 6 = savedBooklets.length > 4 ? 6 : savedBooklets.length > 2 ? 4 : 2;
+      const copies = pdfBooklet || pdfCopies >= covering ? pdfCopies : covering;
+      await examApi.downloadAnswerKeyPdf(exam.id, { source: 'generated', copies, booklet: pdfBooklet || undefined });
     } catch (err: unknown) {
       setMsg(`❌ ${err instanceof Error ? err.message : 'PDF indirilemedi.'}`);
     } finally {
@@ -476,6 +512,10 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
   const steps: { key: Step; label: string; done: boolean }[] = [
     { key: 'answers', label: 'Cevaplar', done: filledCount > 0 },
     ...(hasB ? [{ key: 'b_booklet' as Step, label: 'B kitapçığı', done: bCount > 0 || Boolean(bAnswerText.trim()) }] : []),
+    ...(hasCD ? [
+      { key: 'c_booklet' as Step, label: 'C kitapçığı', done: Boolean(extraAnswers.C.trim()) },
+      { key: 'd_booklet' as Step, label: 'D kitapçığı', done: Boolean(extraAnswers.D.trim()) },
+    ] : []),
     { key: 'outcomes', label: 'Kazanımlar', done: outcomeCount > 0 },
     { key: 'preview', label: 'Liste', done: false },
   ];
@@ -615,6 +655,40 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
         </section>
       )}
 
+      {hasCD && (step === 'c_booklet' || step === 'd_booklet') && (() => {
+        const letter: ExtraBooklet = step === 'c_booklet' ? 'C' : 'D';
+        return (
+          <section className={k.panel}>
+            <header className={k.head}>
+              <h3>{letter} kitapçığı</h3>
+              <p>{letter} kitapçığının kendi soru sırasıyla cevapları. Kaydedilince PDF ve veli mesajına girer.</p>
+            </header>
+            <textarea
+              className={k.area}
+              value={extraAnswers[letter]}
+              onChange={event => setExtraAnswers(previous => ({ ...previous, [letter]: event.target.value }))}
+              placeholder={'ABCDEABCDE…'}
+              rows={9}
+              autoFocus
+            />
+            <PasteCount text={extraAnswers[letter]} order={order} />
+            <div className={k.panelBar}>
+              <button
+                type="button"
+                className={k.btn}
+                onClick={() => setExtraAnswers(previous => ({ ...previous, [letter]: '' }))}
+                disabled={!extraAnswers[letter].trim()}
+              >
+                {letter} anahtarını temizle
+              </button>
+              <button type="button" className={k.btnPrimary} onClick={() => applyExtraBooklet(letter)} disabled={!extraAnswers[letter].trim()}>
+                {letter} cevaplarına yaz
+              </button>
+            </div>
+          </section>
+        );
+      })()}
+
       {step === 'outcomes' && (
         <section className={k.panel}>
           <header className={k.head}>
@@ -704,11 +778,16 @@ export default function AnswerKeyTab({ exam }: { exam: ExamDetail }) {
       )}
 
       <section className={k.footer}>
+        {hasUploadedPdf && (
+          <p className={k.warn}>
+            Bu sınava yüklenmiş özel PDF var; mesajlarda o dosya gönderilir. C/D için üretilen PDF kullanılacaksa özel dosyayı kaldırın.
+          </p>
+        )}
         <div className={k.pdf}>
           <span className={k.footLabel}>Cevap anahtarı PDF</span>
           <select aria-label="Adet" value={pdfCopies} onChange={e => setPdfCopies(Number(e.target.value) as 2 | 4 | 6)}>
             <option value={2}>{showsBothBooklets ? '2 adet (A ve B)' : '2 adet'}</option>
-            <option value={4}>4 adet</option>
+            <option value={4}>{showsAllBooklets ? '4 adet (A, B, C, D)' : '4 adet'}</option>
             <option value={6}>6 adet</option>
           </select>
           {bookletOptions.length > 0 && (

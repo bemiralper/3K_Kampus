@@ -190,20 +190,30 @@ test('eşleşmeyen öğrenci iki optiğe birlikte bağlanır, hariç tut iki sat
       const excluded = (part: string, row: number) => Boolean(overrides[part]?.[String(row)]?.excluded);
       const linked = picked('verbal', 1) === student.id && picked('numeric', 2) === student.id;
       const guestOut = excluded('verbal', 2) && excluded('numeric', 1);
-      const make = (row: number, name: string, booklet: string, studentId: number | null, isExcluded: boolean) => ({
+      const guestSplit = excluded('verbal', 2) !== excluded('numeric', 1);
+      const make = (
+        row: number, name: string, booklet: string, studentId: number | null, isExcluded: boolean, unregistered: boolean,
+      ) => ({
         row, name, school_no: '', booklet, source_booklet: booklet, automatic_student_id: null,
         student_id: studentId, student_name: studentId ? student.name : '', excluded: isExcluded,
-        issue: isExcluded || studentId ? null : 'Öğrenci doğrulanamadı.',
+        unregistered: unregistered && !isExcluded && !studentId,
+        issue: isExcluded || studentId || unregistered ? null : 'Öğrenci doğrulanamadı.',
       });
       body = {
         rows: {
-          verbal: [make(1, 'Optik Hatalı', 'C', picked('verbal', 1), false), make(2, 'Misafir', 'A', null, excluded('verbal', 2))],
-          numeric: [make(1, 'Misafir', 'A', null, excluded('numeric', 1)), make(2, 'Optik Hatalı', 'C', picked('numeric', 2), false)],
+          verbal: [
+            make(1, 'Optik Hatalı', 'C', picked('verbal', 1), false, !linked),
+            make(2, 'Misafir', 'A', null, excluded('verbal', 2), !guestOut && !guestSplit),
+          ],
+          numeric: [
+            make(1, 'Misafir', 'A', null, excluded('numeric', 1), !guestOut && !guestSplit),
+            make(2, 'Optik Hatalı', 'C', picked('numeric', 2), false, !linked),
+          ],
         },
-        pair_count: linked ? 1 : 0,
-        unresolved_count: (linked ? 0 : 2) + (guestOut ? 0 : 2),
+        pair_count: 1 + (guestOut || guestSplit ? 0 : 1),
+        unresolved_count: guestSplit ? 2 : 0,
         students: [student], scoring_error: null,
-        preview_token: linked && guestOut ? 'ok' : null,
+        preview_token: guestSplit ? null : 'ok',
       };
     }
     await route.fulfill({ json: body });
@@ -218,7 +228,8 @@ test('eşleşmeyen öğrenci iki optiğe birlikte bağlanır, hariç tut iki sat
   await page.getByRole('button', { name: 'Sayısal şablon', exact: true }).click();
   await page.getByRole('button', { name: 'Eşleşmeleri önizle' }).click();
   const confirm = page.getByRole('button', { name: 'Birleşik sonuçları kaydet' });
-  await expect(confirm).toBeDisabled();
+  await expect(page.getByText('Sonuç listesine yazılır').first()).toBeVisible();
+  await expect(confirm).toBeEnabled();
 
   await page.getByRole('button', { name: 'Eşleştir' }).first().click();
   const dialog = page.getByRole('dialog', { name: 'Öğrenci eşleştir' });

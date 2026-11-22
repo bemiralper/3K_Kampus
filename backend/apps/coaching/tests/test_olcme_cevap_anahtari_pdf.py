@@ -78,6 +78,18 @@ class CevapAnahtariPdfTest(TestCase):
         self.assertTrue(data.startswith(b'%PDF'))
         self.assertGreater(len(data), 800)
 
+    def test_shared_pdf_includes_c_and_d_booklets(self):
+        for letter in ('A', 'B', 'C', 'D'):
+            key = AnswerKey.objects.create(exam=self.exam, booklet=letter, is_primary=letter == 'A')
+            AnswerKeyItem.objects.create(
+                answer_key=key, section=self.section, question_number=1, correct_answer=letter,
+            )
+        payloads = _key_payloads(self.exam, _collect_keys(self.exam))
+        self.assertEqual([key.booklet for key, _items in payloads], ['A', 'B', 'C', 'D'])
+        self.assertEqual(len(_copy_sequence(payloads, resolve_download_copies(2, booklet_count=4))), 4)
+        shared = render_shared_cevap_anahtari_pdf(self.exam)
+        self.assertTrue(shared.startswith(b'%PDF'))
+
     def test_cell_combines_number_and_letter(self):
         key = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
         item = AnswerKeyItem.objects.create(
@@ -246,6 +258,7 @@ class CevapAnahtariPdfTest(TestCase):
         self.assertEqual(resolve_download_copies(4, booklet_count=2), 4)
         self.assertEqual(resolve_download_copies(1, booklet_count=2, filtered=True), 1)
         self.assertEqual(resolve_download_copies(1, booklet_count=1), 2)
+        self.assertEqual(resolve_download_copies(2, booklet_count=4), 4)
         shared = render_shared_cevap_anahtari_pdf(self.exam)
         single = render_cevap_anahtari_pdf(self.exam, copies_per_page=1)
         self.assertTrue(shared.startswith(b'%PDF'))

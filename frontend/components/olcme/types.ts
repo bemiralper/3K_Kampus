@@ -438,6 +438,8 @@ export interface BulkAnswerKeyPayload {
   booklet: string;
   items: BulkAnswerKeyRow[];
   b_items?: BulkAnswerKeyRow[];
+  c_items?: BulkAnswerKeyRow[];
+  d_items?: BulkAnswerKeyRow[];
 }
 
 export interface SubOutcomeItem {
@@ -1358,6 +1360,7 @@ export interface DualDatPreviewRow {
   booklet: string;
   student_id: number | null;
   student_name: string;
+  unregistered?: boolean;
   source_booklet: string;
   automatic_student_id: number | null;
   excluded: boolean;

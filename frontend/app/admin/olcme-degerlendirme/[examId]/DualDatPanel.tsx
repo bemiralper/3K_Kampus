@@ -562,12 +562,12 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
                   </label>
                 </header>
                 <DatColumnPreview
-                  lines={upload.files[part].lines.slice(0, 8)}
+                  lines={upload.files[part].lines}
                   mappings={visibleMappings(part)}
                   getColorIndex={getColorIndex}
                   selStart={activePart === part ? selStart : null}
                   selEnd={activePart === part ? selEnd : null}
-                  maxHeight={220}
+                  maxHeight={560}
                   onContextMenu={event => {
                     if (activePart !== part || selStart === null || selEnd === null) return;
                     const pad = 8;
@@ -592,7 +592,12 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
       </>}
       {upload && phase === 'matches' && review && (() => {
         const lines = PARTS.flatMap(part => review.rows[part].map(row => ({ part, row })));
-        const matchedLines = lines.filter(item => item.row.student_id && !item.row.issue && !(overrides[item.part][item.row.row]?.excluded ?? item.row.excluded));
+        const readyRow = (part: DualDatPart, row: DualDatPreviewRow) => {
+          const excluded = overrides[part][row.row]?.excluded ?? row.excluded;
+          return !excluded && !row.issue && (Boolean(row.student_id) || Boolean(row.unregistered));
+        };
+        const matchedLines = lines.filter(item => readyRow(item.part, item.row));
+        const guestCount = lines.filter(item => item.part === 'verbal' && item.row.unregistered && readyRow(item.part, item.row)).length;
         const openLines = lines.filter(item => !matchedLines.includes(item));
         const visible = matchFilter === 'open' ? openLines : lines;
         const matchPct = lines.length ? Math.round((matchedLines.length / lines.length) * 100) : 0;
@@ -653,6 +658,9 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
           </section>
           {review.scoring_error && <div className={u.alertErr} role="alert">{review.scoring_error}</div>}
           {stale && <p className={u.hint}>Düzeltmeler kayda geçsin diye önizlemeyi güncelleyin.</p>}
+          {guestCount > 0 && !stale && (
+            <p className={u.hint}>{guestCount} öğrencinin sistemde kaydı yok. İki optiği aynı adla durduğu için sonuç listesine adıyla yazılır.</p>
+          )}
           {openLines.length > 0 && !stale && (
             <p className={u.hint}>Eşleşmeyen satırlar karneye yazılmaz. Öğrenciyi eşleştirin ya da satırı hariç tutun.</p>
           )}
@@ -683,9 +691,10 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
                     const override = overrides[part][row.row];
                     const excluded = override?.excluded ?? row.excluded;
                     const matched = Boolean(row.student_id) && !row.issue && !excluded;
+                    const unregistered = Boolean(row.unregistered) && !row.issue && !excluded;
                     const booklet = override?.booklet ?? row.booklet ?? '';
                     return (
-                      <tr key={`${part}-${row.row}`} className={matched ? undefined : u.rowOpen}>
+                      <tr key={`${part}-${row.row}`} className={matched || unregistered ? undefined : u.rowOpen}>
                         <td className={u.dim}>{row.row}</td>
                         <td>
                           <div className={u.name}>{row.name || '—'}</div>
@@ -696,6 +705,11 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
                             <>
                               <div className={u.nameOk}>{row.student_name}</div>
                               <div className={u.meta}>İki optik eşleşti</div>
+                            </>
+                          ) : unregistered ? (
+                            <>
+                              <div className={u.nameOk}>{row.name}</div>
+                              <div className={u.meta}>Kayıtsız · sonuç listesine yazılır</div>
                             </>
                           ) : (
                             <>

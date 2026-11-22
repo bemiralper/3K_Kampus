@@ -91,16 +91,16 @@ def rebuild_booklet_b_from_primary(exam) -> int:
     return len(unique)
 
 
-def replace_booklet_b_answers(exam, rows) -> int:
-    """Yapıştırılan B kitapçığı cevaplarını ayrı anahtar olarak kaydeder."""
+def replace_booklet_answers(exam, booklet, rows) -> int:
+    """Yapıştırılan kitapçık cevaplarını ayrı anahtar olarak kaydeder."""
     section_map = AnswerKeyViewSet._build_section_map(exam)
-    b_key, _ = AnswerKey.objects.get_or_create(
-        exam=exam, booklet='B', defaults={'is_primary': False},
+    booklet_key, _ = AnswerKey.objects.get_or_create(
+        exam=exam, booklet=booklet, defaults={'is_primary': False},
     )
-    if b_key.is_primary:
-        b_key.is_primary = False
-        b_key.save(update_fields=['is_primary'])
-    b_key.items.all().delete()
+    if booklet_key.is_primary:
+        booklet_key.is_primary = False
+        booklet_key.save(update_fields=['is_primary'])
+    booklet_key.items.all().delete()
 
     created = 0
     seen: set[int] = set()
@@ -116,7 +116,7 @@ def replace_booklet_b_answers(exam, rows) -> int:
             continue
         seen.add(q_num)
         AnswerKeyItem.objects.create(
-            answer_key=b_key,
+            answer_key=booklet_key,
             section=section,
             question_number=q_num,
             correct_answer=answer,
@@ -124,9 +124,13 @@ def replace_booklet_b_answers(exam, rows) -> int:
         )
         created += 1
     if created == 0:
-        b_key.delete()
+        booklet_key.delete()
         return 0
     return created
+
+
+def replace_booklet_b_answers(exam, rows) -> int:
+    return replace_booklet_answers(exam, 'B', rows)
 
 
 class AnswerKeyViewSet(viewsets.ModelViewSet):
@@ -199,6 +203,17 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
         booklet = ser.validated_data.get('booklet', '')
         items_data = ser.validated_data['items']
         explicit_b_items = ser.validated_data.get('b_items') or []
+        provided_keys = set(getattr(ser, 'initial_data', {}).keys())
+        extra_booklets = {
+            'C': {
+                'provided': 'c_items' in provided_keys,
+                'rows': ser.validated_data.get('c_items') or [],
+            },
+            'D': {
+                'provided': 'd_items' in provided_keys,
+                'rows': ser.validated_data.get('d_items') or [],
+            },
+        }
 
         # Soru numarası → bölüm eşlemesi
         section_map = self._build_section_map(exam)
@@ -266,6 +281,10 @@ class AnswerKeyViewSet(viewsets.ModelViewSet):
                 if stale_ids:
                     AnswerKeyItem.objects.filter(id__in=stale_ids).delete()
 
+                if booklet in ('', 'A'):
+                    for letter, payload in extra_booklets.items():
+                        if payload['provided']:
+                            replace_booklet_answers(exam, letter, payload['rows'])
                 if explicit_b_items and booklet in ('', 'A'):
                     replace_booklet_b_answers(exam, explicit_b_items)
                     # Numara elle girilmediyse eşleşme B anahtarının şıklarından kurulur.

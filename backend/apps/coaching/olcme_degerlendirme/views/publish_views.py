@@ -191,11 +191,10 @@ def exam_answer_key_pdf(request, exam_pk):
         )
         booklet = (request.query_params.get('booklet') or '').strip().upper()
         booklets = [booklet] if booklet in ('A', 'B', 'C', 'D') else None
-        # Eski istemci "1 adet" + Tümü gönderirse yalnız A inmesin; A ve B birlikte basılsın.
-        need_pair = booklets is None and requested <= 1
+        # Kitapçık seçilmediyse kayıtlı A, B, C ve D kartlarının hepsi basılır.
         copies = resolve_download_copies(
             requested,
-            booklet_count=answer_key_card_count(exam) if need_pair else 1,
+            booklet_count=answer_key_card_count(exam) if booklets is None else 1,
             filtered=booklets is not None,
         )
         if booklets:

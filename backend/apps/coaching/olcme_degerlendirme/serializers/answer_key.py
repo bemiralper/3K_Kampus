@@ -165,9 +165,10 @@ class BulkAnswerKeyImportSerializer(serializers.Serializer):
         required=False,
     )
     items = BulkAnswerKeyItemRow(many=True)
-    # B kitapçığının kendi cevapları. Soru numarası eşlemesinden ayrı kaydedilir
-    # ve PDF indirmede B kitapçığı olarak listelenir.
+    # Kitapçığın kendi sırasıyla cevapları. PDF ve mesaj eki bu anahtarları basar.
     b_items = BulkAnswerKeyItemRow(many=True, required=False, default=list)
+    c_items = BulkAnswerKeyItemRow(many=True, required=False, default=list)
+    d_items = BulkAnswerKeyItemRow(many=True, required=False, default=list)
 
     def validate_items(self, value):
         if not value:

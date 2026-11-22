@@ -97,6 +97,51 @@ class AnswerKeyBulkImportTest(OlcmeModulFixture):
         self.assertEqual(again.status_code, 200, again.content[:400])
         self.assertTrue(AnswerKey.objects.filter(exam=self.exam, booklet='B').exists())
 
+    def test_c_and_d_answers_are_stored_as_their_own_keys(self):
+        res = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',
+            {
+                'booklet': 'A',
+                'items': [{'question_number': n, 'correct_answer': 'A'} for n in range(1, 11)],
+                'c_items': [{'question_number': n, 'correct_answer': 'C'} for n in range(1, 11)],
+                'd_items': [{'question_number': n, 'correct_answer': 'D'} for n in range(1, 11)],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        for letter in ('C', 'D'):
+            key = AnswerKey.objects.get(exam=self.exam, booklet=letter)
+            self.assertFalse(key.is_primary)
+            self.assertEqual(
+                list(key.items.order_by('question_number').values_list('correct_answer', flat=True)),
+                [letter] * 10,
+            )
+
+    def test_c_and_d_can_be_cleared_without_resetting_all_keys(self):
+        first = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',
+            {
+                'booklet': 'A',
+                'items': [{'question_number': n, 'correct_answer': 'A'} for n in range(1, 11)],
+                'c_items': [{'question_number': n, 'correct_answer': 'C'} for n in range(1, 11)],
+                'd_items': [{'question_number': n, 'correct_answer': 'D'} for n in range(1, 11)],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(first.status_code, 200, first.content[:400])
+        clear_c = self.client.post(
+            f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',
+            {
+                'booklet': 'A',
+                'items': [{'question_number': n, 'correct_answer': 'A'} for n in range(1, 11)],
+                'c_items': [],
+            },
+            format='json', **self.headers,
+        )
+        self.assertEqual(clear_c.status_code, 200, clear_c.content[:400])
+        self.assertFalse(AnswerKey.objects.filter(exam=self.exam, booklet='C').exists())
+        self.assertTrue(AnswerKey.objects.filter(exam=self.exam, booklet='D').exists())
+
     def test_editing_a_does_not_rewrite_existing_b_answers(self):
         first = self.client.post(
             f'{EXAMS_URL}{self.exam.id}/answer-keys/bulk-import/',

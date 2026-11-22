@@ -328,9 +328,8 @@ class DualDatTests(TestCase):
             [self.line('Optik Hatalı', 'A', 'A' * 50)], [self.line('Optik Hatalı', 'A', 'A' * 40)],
         )
         first = self.preview(url)
-        self.assertEqual(first['pair_count'], 0)
-        self.assertEqual([row['issue'] for part in ('verbal', 'numeric') for row in first['rows'][part]],
-                         ['Öğrenci doğrulanamadı.'] * 2)
+        self.assertEqual((first['pair_count'], first['unresolved_count']), (1, 0))
+        self.assertTrue(all(row['unregistered'] and row['student_id'] is None for part in ('verbal', 'numeric') for row in first['rows'][part]))
         self.settings['overrides'] = {'verbal': {'1': {'student_id': self.ada.pk}}}
         preview = self.preview(url)
         self.assertEqual(preview['pair_count'], 1)
@@ -344,7 +343,9 @@ class DualDatTests(TestCase):
             [self.line('Ada Güneş', 'A', 'A' * 50), self.line('Misafir Öğrenci', 'A', 'A' * 50)],
             [self.line('Misafir Öğrenci', 'A', 'A' * 40), self.line('Ada Güneş', 'A', 'A' * 40)],
         )
-        self.assertEqual(self.preview(url)['unresolved_count'], 2)
+        ready = self.preview(url)
+        self.assertEqual((ready['pair_count'], ready['unresolved_count']), (2, 0))
+        self.assertTrue(ready['rows']['verbal'][1]['unregistered'])
         self.settings['overrides'] = {'verbal': {'2': {'excluded': True}}}
         one_side = self.preview(url)
         self.assertIsNone(one_side['preview_token'])
@@ -355,6 +356,48 @@ class DualDatTests(TestCase):
         self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
         self.assertEqual(list(session.student_answers.values_list('student_id', flat=True)), [self.ada.pk])
 
+    def test_unregistered_student_with_both_optics_is_listed(self):
+        self.key('A')
+        answers = ('ABCD' * 23)[:90]
+        session, url = self.upload(
+            [self.line('Ada Güneş', 'A', answers[:50]), self.line('Yusuf Ali Elgaz', 'A', answers[:50])],
+            [self.line('Yusuf Ali Elgaz', 'A', answers[50:]), self.line('Ada Güneş', 'A', answers[50:])],
+        )
+        preview = self.preview(url)
+        self.assertEqual((preview['pair_count'], preview['unresolved_count']), (2, 0))
+        self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
+        guest = session.student_answers.get(student__isnull=True)
+        self.assertEqual(guest.raw_student_name.strip(), 'Yusuf Ali Elgaz')
+        self.assertEqual(guest.total_correct, 90)
+        rescore_exam_results(self.exam)
+        self.assertEqual(session.student_answers.get(student__isnull=True).total_correct, 90)
+        rankings = self.client.get(
+            f'/api/coaching/olcme-degerlendirme/exams/{self.exam.pk}/analysis/rankings/',
+        )
+        self.assertEqual(rankings.status_code, 200, rankings.data)
+        names = {row['student_name'].strip() for row in rankings.data['rankings']}
+        self.assertIn('Yusuf Ali Elgaz', names)
+        self.assertIn('Ada Güneş', names)
+
+    def test_unregistered_pair_with_conflicting_tc_or_number_stays_unresolved(self):
+        self.key('A')
+        self.settings['verbal']['field_mappings'] = self.layout(
+            self.sections[:4], [('ad_soyad', 20), ('tc_kimlik', 11), ('ogrenci_no', 5)],
+        )
+        self.settings['numeric']['field_mappings'] = self.layout(
+            self.sections[4:], [('ad_soyad', 20), ('tc_kimlik', 11), ('ogrenci_no', 5)],
+        )
+        session, url = self.upload(
+            [f'{"Yusuf Ali Elgaz":20}12345678901{"00012"}A{"A" * 50}'],
+            [f'{"Yusuf Ali Elgaz":20}12345678902{"00013"}A{"A" * 40}'],
+        )
+        preview = self.preview(url)
+        self.assertEqual((preview['pair_count'], preview['unresolved_count']), (0, 2))
+        self.assertEqual(preview['rows']['verbal'][0]['issue'], 'TC veya öğrenci no iki optikte farklı.')
+        self.assertEqual(preview['rows']['numeric'][0]['issue'], 'TC veya öğrenci no iki optikte farklı.')
+        self.assertIsNone(preview['preview_token'])
+        self.assertFalse(session.student_answers.exists())
+
     def test_other_branch_and_inactive_students_are_not_candidates(self):
         self.key('A')
         other = self.student('Can Demir', sube=Sube.objects.create(kurum=self.kurum, ad='Diğer', kod='CO-X'))
@@ -364,8 +407,8 @@ class DualDatTests(TestCase):
             [self.line('Can Demir', 'A', 'A' * 40), self.line('Deniz Ak', 'A', 'A' * 40)],
         )
         preview = self.preview(url)
-        self.assertEqual(preview['pair_count'], 0)
-        self.assertTrue(all(row['issue'] == 'Öğrenci doğrulanamadı.' for row in preview['rows']['verbal']))
+        self.assertEqual((preview['pair_count'], preview['unresolved_count']), (2, 0))
+        self.assertTrue(all(row['unregistered'] and row['student_id'] is None for row in preview['rows']['verbal']))
         self.assertEqual({student['id'] for student in preview['students']}, {self.ada.pk, self.efe.pk})
         for student in (other, inactive):
             self.settings['overrides'] = {'verbal': {'1': {'student_id': student.pk}}}
