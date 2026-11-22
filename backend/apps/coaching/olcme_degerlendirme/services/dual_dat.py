@@ -2,7 +2,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from .student_matching import normalize_id, normalize_name, normalize_student_no
+from .student_matching import DatIdentity, normalize_name, pick_auto_match
 
 BOOKLETS = ('A', 'B', 'C', 'D')
 PARTS = {'verbal': (1, 50), 'numeric': (51, 90)}
@@ -77,34 +77,7 @@ def _mapping(config, sections):
     return ranges
 
 
-def _student_indexes(pool):
-    indexes = {field: defaultdict(set) for field in IDENTITY_FIELDS}
-    for student in pool:
-        for field, key in (
-            ('tc_kimlik', normalize_id(student.tc)),
-            ('ogrenci_no', normalize_student_no(student.okul_no)),
-            ('ad_soyad', normalize_name(student.full_name)),
-        ):
-            if key:
-                indexes[field][key].add(student.pk)
-    return indexes
-
-
-def _automatic_student(indexes, tc, school_no, name):
-    tc_ids = indexes['tc_kimlik'].get(normalize_id(tc), set())
-    school_ids = indexes['ogrenci_no'].get(normalize_student_no(school_no), set())
-    name_ids = indexes['ad_soyad'].get(normalize_name(name), set())
-    candidates = [ids for ids in (tc_ids, school_ids, name_ids) if ids]
-    if not candidates:
-        return None
-    # Girilmiş ancak doğrulanamayan bir TC numarası manuel inceleme gerektirir.
-    if tc and not tc_ids:
-        return None
-    common = set.intersection(*candidates)
-    return next(iter(common)) if len(common) == 1 else None
-
-
-def _read_rows(lines, part, sections, config, pool_by_id, indexes, overrides):
+def _read_rows(lines, part, sections, config, pool_by_id, overrides):
     mapping = _mapping(config, sections)
     header = config.get('first_line_is_header', False)
     if not isinstance(header, bool) or not isinstance(overrides, dict):
@@ -126,7 +99,7 @@ def _read_rows(lines, part, sections, config, pool_by_id, indexes, overrides):
         booklet = dict(zip('1234', BOOKLETS)).get(booklet, booklet)
         answers = ''.join(field(f'ders_{sec.pk}') for sec in sections)
         source_booklet = booklet
-        automatic_student_id = student_id = _automatic_student(indexes, tc, school_no, name)
+        automatic_student_id = student_id = None
         override = overrides.get(str(number), {})
         if not isinstance(override, dict):
             raise ValueError('Satır düzeltmesi geçersiz.')
@@ -155,45 +128,99 @@ def part_label(part):
     return 'Sözel' if part == 'verbal' else 'Sayısal'
 
 
-def prepare_pairs(lines_by_part, sections, config, pool, taken_ids, *, reference=None):
+def _row_issue(verbal, numeric, *, student_id, student_issue, reference, keyed_booklets):
+    active_verbal = [row for row in verbal if not row.excluded]
+    active_numeric = [row for row in numeric if not row.excluded]
+    if not active_verbal and not active_numeric:
+        return None
+    if len(active_verbal) > 1 or len(active_numeric) > 1:
+        return 'Aynı optikte öğrenci için birden fazla satır var.'
+    if not active_verbal or not active_numeric:
+        return 'Diğer optikte bu öğrenciye ait satır bulunamadı.'
+    left, right = active_verbal[0], active_numeric[0]
+    if left.booklet not in BOOKLETS or right.booklet not in BOOKLETS:
+        return 'Her iki satırın kitapçık kodunu kontrol edin.'
+    if left.booklet != right.booklet:
+        return 'İki optikteki kitapçık kodu farklı.'
+    if left.booklet in ('C', 'D') and left.booklet not in keyed_booklets and not reference:
+        return f'{left.booklet} kitapçığı için sınavda cevap anahtarı ya da Excel karşılığı yok.'
+    return student_issue
+
+
+def prepare_pairs(lines_by_part, sections, config, pool, taken_ids, *, reference=None, keyed_booklets=()):
     validate_layout(sections)
     if not isinstance(config, dict) or not isinstance(config.get('overrides', {}), dict):
         raise ValueError('İki DAT ayarları geçersiz.')
     pool_by_id = {student.pk: student for student in pool}
-    indexes = _student_indexes(pool)
+    keyed = set(keyed_booklets)
     rows = {
         part: _read_rows(
             lines_by_part[part], part, part_sections(sections, part),
-            config.get(part), pool_by_id, indexes, config.get('overrides', {}).get(part, {}),
+            config.get(part), pool_by_id, config.get('overrides', {}).get(part, {}),
         )
         for part in PARTS
     }
-    by_student = defaultdict(lambda: defaultdict(list))
+    blocked: set[int] = set()
     for part, items in rows.items():
         for row in items:
-            if row.student_id and not row.excluded:
+            if row.excluded or row.student_id:
+                continue
+            hit = pick_auto_match(DatIdentity(
+                name=row.name, tc=row.tc, ogrenci_no=row.school_no,
+            ), pool, blocked)
+            if hit:
+                row.student_id = row.automatic_student_id = hit.student.pk
+
+    by_student = defaultdict(lambda: {part: [] for part in PARTS})
+    by_name = defaultdict(lambda: {part: [] for part in PARTS})
+    for part, items in rows.items():
+        for row in items:
+            if row.excluded:
+                continue
+            if row.student_id:
                 by_student[row.student_id][part].append(row)
+            key = normalize_name(row.name)
+            if key:
+                by_name[key][part].append(row)
+
+    for name, part_rows in by_name.items():
+        verbal, numeric = part_rows['verbal'], part_rows['numeric']
+        if len(verbal) != 1 or len(numeric) != 1:
+            continue
+        left, right = verbal[0], numeric[0]
+        if left.student_id and not right.student_id:
+            right.student_id = left.student_id
+            by_student[left.student_id]['numeric'].append(right)
+        elif right.student_id and not left.student_id:
+            left.student_id = right.student_id
+            by_student[right.student_id]['verbal'].append(left)
 
     pairs = []
-    issues = {}
-    for student_id, parts in by_student.items():
-        verbal, numeric = parts['verbal'], parts['numeric']
-        if student_id in taken_ids:
-            issue = 'Bu öğrenci için başka bir yüklemede sonuç var.'
-        elif len(verbal) > 1 or len(numeric) > 1:
-            issue = 'Aynı optikte öğrenci için birden fazla satır var.'
-        elif not verbal or not numeric:
-            issue = 'Diğer optikte bu öğrenciye ait satır bulunamadı.'
-        elif verbal[0].booklet not in BOOKLETS or numeric[0].booklet not in BOOKLETS:
-            issue = 'Her iki satırın kitapçık kodunu kontrol edin.'
-        elif verbal[0].booklet != numeric[0].booklet:
-            issue = 'İki optikteki kitapçık kodu farklı.'
-        elif verbal[0].booklet in ('C', 'D') and not reference:
-            issue = 'C/D soru karşılıklarını içeren sınav Excel dosyası gerekli.'
-        else:
-            pairs.append((student_id, verbal[0], numeric[0]))
+    row_issue = {}
+    for student_id, part_rows in by_student.items():
+        student_issue = 'Bu öğrenci için başka bir yüklemede sonuç var.' if student_id in taken_ids else None
+        issue = _row_issue(
+            part_rows['verbal'], part_rows['numeric'],
+            student_id=student_id, student_issue=student_issue,
+            reference=reference, keyed_booklets=keyed,
+        )
+        if issue is None:
+            pairs.append((
+                student_id,
+                next(row for row in part_rows['verbal'] if not row.excluded),
+                next(row for row in part_rows['numeric'] if not row.excluded),
+            ))
             continue
-        issues[student_id] = issue
+        for part, items in part_rows.items():
+            for row in items:
+                if not row.excluded:
+                    row_issue[(part, row.number)] = issue
+
+    for part, items in rows.items():
+        for row in items:
+            if row.excluded or row.student_id or (part, row.number) in row_issue:
+                continue
+            row_issue[(part, row.number)] = 'Öğrenci doğrulanamadı.' if normalize_name(row.name) or row.tc or row.school_no else 'Diğer optikte bu öğrenciye ait satır bulunamadı.'
 
     preview = {}
     for part, items in rows.items():
@@ -207,8 +234,6 @@ def prepare_pairs(lines_by_part, sections, config, pool, taken_ids, *, reference
             'student_id': row.student_id,
             'student_name': pool_by_id[row.student_id].full_name if row.student_id else '',
             'excluded': row.excluded,
-            'issue': None if row.excluded else (
-                issues.get(row.student_id) if row.student_id else 'Öğrenci doğrulanamadı.'
-            ),
+            'issue': None if row.excluded else row_issue.get((part, row.number)),
         } for row in items]
     return pairs, preview

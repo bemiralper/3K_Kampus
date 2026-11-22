@@ -228,6 +228,29 @@ class DualDatTests(TestCase):
         self.assertEqual(parsed.data['results'][0]['total_correct'], 90)
         self.assertFalse(parsed.data['session']['is_dual_dat'])
 
+    def test_c_and_d_answer_keys_score_without_excel(self):
+        self.key('C')
+        self.key('D')
+        pattern = ('ABCD' * 23)[:90]
+        session, url = self.upload(
+            [self.line('Ada Güneş', 'C', pattern[:50]), self.line('Efe Yıldız', 'D', pattern[:50])],
+            [self.line('Ada Güneş', 'C', pattern[50:]), self.line('Efe Yıldız', 'D', pattern[50:])],
+        )
+        preview = self.preview(url)
+        self.assertEqual(preview['pair_count'], 2, preview)
+        self.assertEqual(preview['unresolved_count'], 0)
+        self.assertIsNone(preview['scoring_error'])
+        self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
+        self.assertEqual(list(session.student_answers.order_by('booklet').values_list('booklet', 'total_correct')), [
+            ('C', 90), ('D', 90),
+        ])
+        rescore_exam_results(self.exam)
+        self.assertEqual(list(session.student_answers.values_list('total_correct', flat=True)), [90, 90])
+        AnswerKeyItem.objects.filter(answer_key__booklet='C', question_number=12).delete()
+        incomplete = self.preview(url)
+        self.assertIsNone(incomplete['preview_token'])
+        self.assertIn('C kitapçığında 12. soru anahtarı eksik.', incomplete['scoring_error'])
+
     def test_booklets_c_and_d_are_scored_in_canonical_question_order(self):
         key = self.key('A')
         wb = Workbook()
@@ -266,3 +289,154 @@ class DualDatTests(TestCase):
         )
         rescore_exam_results(self.exam)
         self.assertEqual(list(session.student_answers.values_list('total_correct', flat=True)), [90, 90])
+
+    def layout(self, sections, identity):
+        fields, column = [], 0
+        for field, width in [*identity, ('kitapcik_turu', 1)]:
+            fields.append({'field': field, 'start': column, 'end': column + width})
+            column += width
+        for section in sections:
+            end = column + section.question_end - section.question_start + 1
+            fields.append({'field': f'ders_{section.pk}', 'start': column, 'end': end})
+            column = end
+        return fields
+
+    def student(self, name, **extra):
+        first, last = name.rsplit(' ', 1)
+        return Ogrenci.objects.create(kurum=self.kurum, sube=extra.pop('sube', self.sube), ad=first, soyad=last, **extra)
+
+    def test_tc_on_verbal_and_differently_written_name_on_numeric(self):
+        self.key('A')
+        self.ada.tc_kimlik_no = '12345678901'
+        self.ada.save(update_fields=['tc_kimlik_no'])
+        self.settings['verbal']['field_mappings'] = self.layout(
+            self.sections[:4], [('ad_soyad', 20), ('tc_kimlik', 11)],
+        )
+        session, url = self.upload(
+            [f'{"Optikte yanlış ad":20}12345678901A{"A" * 50}', f'{"Efe Yildiz":20}{" " * 11}A{"A" * 50}'],
+            [self.line('ADA GÜNEŞ', 'A', 'A' * 40), self.line('EFE YILDIZ', 'A', 'A' * 40)],
+        )
+        preview = self.preview(url)
+        self.assertEqual(preview['pair_count'], 2, preview['rows'])
+        self.assertEqual(preview['unresolved_count'], 0)
+        self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
+        self.assertEqual(set(session.student_answers.values_list('student_id', flat=True)), {self.ada.pk, self.efe.pk})
+
+    def test_manual_match_on_one_file_links_same_name_on_other_file(self):
+        self.key('A')
+        session, url = self.upload(
+            [self.line('Optik Hatalı', 'A', 'A' * 50)], [self.line('Optik Hatalı', 'A', 'A' * 40)],
+        )
+        first = self.preview(url)
+        self.assertEqual(first['pair_count'], 0)
+        self.assertEqual([row['issue'] for part in ('verbal', 'numeric') for row in first['rows'][part]],
+                         ['Öğrenci doğrulanamadı.'] * 2)
+        self.settings['overrides'] = {'verbal': {'1': {'student_id': self.ada.pk}}}
+        preview = self.preview(url)
+        self.assertEqual(preview['pair_count'], 1)
+        self.assertEqual(preview['rows']['numeric'][0]['student_id'], self.ada.pk)
+        self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
+        self.assertEqual(session.student_answers.get().match_method, 'manual')
+
+    def test_excluding_both_rows_lets_remaining_students_save(self):
+        self.key('A')
+        session, url = self.upload(
+            [self.line('Ada Güneş', 'A', 'A' * 50), self.line('Misafir Öğrenci', 'A', 'A' * 50)],
+            [self.line('Misafir Öğrenci', 'A', 'A' * 40), self.line('Ada Güneş', 'A', 'A' * 40)],
+        )
+        self.assertEqual(self.preview(url)['unresolved_count'], 2)
+        self.settings['overrides'] = {'verbal': {'2': {'excluded': True}}}
+        one_side = self.preview(url)
+        self.assertIsNone(one_side['preview_token'])
+        self.assertEqual(one_side['rows']['numeric'][0]['issue'], 'Öğrenci doğrulanamadı.')
+        self.settings['overrides']['numeric'] = {'1': {'excluded': True}}
+        preview = self.preview(url)
+        self.assertEqual((preview['pair_count'], preview['unresolved_count']), (1, 0))
+        self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
+        self.assertEqual(list(session.student_answers.values_list('student_id', flat=True)), [self.ada.pk])
+
+    def test_other_branch_and_inactive_students_are_not_candidates(self):
+        self.key('A')
+        other = self.student('Can Demir', sube=Sube.objects.create(kurum=self.kurum, ad='Diğer', kod='CO-X'))
+        inactive = self.student('Deniz Ak', aktif_mi=False)
+        _, url = self.upload(
+            [self.line('Can Demir', 'A', 'A' * 50), self.line('Deniz Ak', 'A', 'A' * 50)],
+            [self.line('Can Demir', 'A', 'A' * 40), self.line('Deniz Ak', 'A', 'A' * 40)],
+        )
+        preview = self.preview(url)
+        self.assertEqual(preview['pair_count'], 0)
+        self.assertTrue(all(row['issue'] == 'Öğrenci doğrulanamadı.' for row in preview['rows']['verbal']))
+        self.assertEqual({student['id'] for student in preview['students']}, {self.ada.pk, self.efe.pk})
+        for student in (other, inactive):
+            self.settings['overrides'] = {'verbal': {'1': {'student_id': student.pk}}}
+            response = self.client.post(url, {'settings': self.settings}, format='json')
+            self.assertEqual(response.status_code, 400)
+
+    def test_participant_list_does_not_hide_branch_students(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+        self.key('A')
+        ExamParticipant.objects.create(exam=self.exam, student=self.ada)
+        _, url = self.upload(
+            [self.line('Ada Güneş', 'A', 'A' * 50), self.line('Efe Yıldız', 'A', 'A' * 50)],
+            [self.line('Ada Güneş', 'A', 'A' * 40), self.line('Efe Yıldız', 'A', 'A' * 40)],
+        )
+        self.assertEqual(self.preview(url)['pair_count'], 2)
+
+    def test_mixed_a_b_c_d_booklets_with_numeric_codes(self):
+        patterns = {'A': 'ABCD', 'B': 'DCBA', 'C': 'BADC', 'D': 'CDAB'}
+        for booklet, pattern in patterns.items():
+            self.key(booklet, pattern)
+        cem, dila = self.student('Cem Kaya'), self.student('Dila Er')
+        people = [(self.ada, 'A', '1'), (self.efe, 'B', 'B'), (cem, 'C', '3'), (dila, 'D', '4')]
+        full = {booklet: (pattern * 23)[:90] for booklet, pattern in patterns.items()}
+        session, url = self.upload(
+            [self.line(f'{s.ad} {s.soyad}', code, full[booklet][:50]) for s, booklet, code in people],
+            [self.line(f'{s.ad} {s.soyad}', booklet, full[booklet][50:]) for s, booklet, _ in people],
+        )
+        preview = self.preview(url)
+        self.assertEqual((preview['pair_count'], preview['unresolved_count']), (4, 0), preview['rows'])
+        self.assertIsNone(preview['scoring_error'])
+        self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
+        expected = {s.pk: (booklet, 90) for s, booklet, _ in people}
+        actual = {row[0]: row[1:] for row in session.student_answers.values_list('student_id', 'booklet', 'total_correct')}
+        self.assertEqual(actual, expected)
+        rescore_exam_results(self.exam)
+        self.assertEqual(set(session.student_answers.values_list('total_correct', flat=True)), {90})
+
+    def test_same_named_students_need_manual_choice(self):
+        self.key('A')
+        first, second = self.student('Ali Kaya'), self.student('Ali Kaya')
+        session, url = self.upload(
+            [self.line('Ali Kaya', 'A', 'A' * 50)], [self.line('Ali Kaya', 'A', 'A' * 40)],
+        )
+        preview = self.preview(url)
+        self.assertEqual(preview['pair_count'], 0)
+        self.assertIsNone(preview['rows']['verbal'][0]['student_id'])
+        self.settings['overrides'] = {'numeric': {'1': {'student_id': second.pk}}}
+        preview = self.preview(url)
+        self.assertEqual(preview['pair_count'], 1)
+        self.assertEqual(self.confirm(url, preview['preview_token']).status_code, 200)
+        self.assertEqual(session.student_answers.get().student_id, second.pk)
+        self.assertNotEqual(first.pk, second.pk)
+
+    def test_short_line_is_reported(self):
+        self.key('A')
+        _, url = self.upload([self.line('Ada Güneş', 'A', 'A' * 30)], [self.line('Ada Güneş', 'A', 'A' * 40)])
+        response = self.client.post(url, {'settings': self.settings}, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('kısa', response.data['error'])
+
+    def test_single_dat_c_booklet_keeps_a_key_scoring(self):
+        self.key('A')
+        self.key('C', 'DCBA')
+        response = self.client.post(self.base_url + 'upload/', {
+            'dat_file': self.dat('tek.dat', [self.line('Ada Güneş', 'C', ('ABCD' * 23)[:90])]),
+        }, format='multipart')
+        session_id = response.data['session_id']
+        parsed = self.client.post(f'{self.base_url}{session_id}/parse/', {
+            'field_mappings': self.mapping(self.sections),
+        }, format='json')
+        self.assertEqual(parsed.status_code, 200, parsed.data)
+        before = parsed.data['results'][0]['total_correct']
+        rescore_exam_results(self.exam)
+        self.assertEqual(StudentAnswer.objects.get(session_id=session_id).total_correct, before)

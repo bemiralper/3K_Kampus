@@ -180,9 +180,15 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
     setOverrides({ verbal: {}, numeric: {} });
   };
 
-  const previewMatches = async () => {
+  const previewMatches = async (nextOverrides = overrides) => {
     if (!upload) return;
-    setReview(await dualDatApi.preview(examId, upload.session.id, payload()));
+    setOverrides(nextOverrides);
+    setStale(true);
+    setReview(await dualDatApi.preview(examId, upload.session.id, {
+      verbal: mappingPayload('verbal'),
+      numeric: mappingPayload('numeric'),
+      overrides: nextOverrides,
+    }));
     setStale(false);
     setPhase('matches');
   };
@@ -590,9 +596,31 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
         const openLines = lines.filter(item => !matchedLines.includes(item));
         const visible = matchFilter === 'open' ? openLines : lines;
         const matchPct = lines.length ? Math.round((matchedLines.length / lines.length) * 100) : 0;
-        const patch = (part: DualDatPart, row: number, override: DualDatOverride) => {
-          setOverrides(previous => ({ ...previous, [part]: { ...previous[part], [row]: override } }));
-          setStale(true);
+        const sameName = (left: string, right: string) =>
+          left.trim().toLocaleLowerCase('tr') !== '' && left.trim().toLocaleLowerCase('tr') === right.trim().toLocaleLowerCase('tr');
+        const patch = (part: DualDatPart, rowNumber: number, override: DualDatOverride, also?: { part: DualDatPart; row: number; override: DualDatOverride }) => {
+          const next = {
+            ...overrides,
+            [part]: { ...overrides[part], [rowNumber]: override },
+            ...(also ? { [also.part]: { ...overrides[also.part], [also.row]: also.override } } : {}),
+          };
+          void perform(() => previewMatches(next));
+        };
+        const mateOf = (part: DualDatPart, row: DualDatPreviewRow) => {
+          const otherPart: DualDatPart = part === 'verbal' ? 'numeric' : 'verbal';
+          const others = review.rows[otherPart];
+          const byStudent = row.student_id ? others.filter(item => item.student_id === row.student_id) : [];
+          const byName = others.filter(item => sameName(item.name, row.name));
+          const mate = byStudent.length === 1 ? byStudent[0] : byName.length === 1 ? byName[0] : undefined;
+          return mate ? { part: otherPart, row: mate } : undefined;
+        };
+        const patchPair = (part: DualDatPart, row: DualDatPreviewRow, change: DualDatOverride) => {
+          const mate = mateOf(part, row);
+          patch(part, row.row, { ...overrides[part][row.row], ...change }, mate ? {
+            part: mate.part,
+            row: mate.row.row,
+            override: { ...overrides[mate.part][mate.row.row], ...change },
+          } : undefined);
         };
         const dialogStudents = review.students.filter(student => {
           const query = matchQuery.trim().toLocaleLowerCase('tr');
@@ -684,7 +712,7 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
                               setPickedStudent(override?.student_id ?? row.student_id);
                             }}>{row.student_id ? 'Değiştir' : 'Eşleştir'}</button>
                             <button type="button" className={u.btnSmallDanger} disabled={busy} onClick={() =>
-                              patch(part, row.row, { ...override, excluded: !excluded })
+                              patchPair(part, row, { excluded: !excluded })
                             }>{excluded ? 'Geri al' : 'Hariç tut'}</button>
                           </div>
                         </td>
@@ -694,8 +722,7 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
                             aria-label={`${LABELS[part]} ${row.row}. satır kitapçık`}
                             value={booklet}
                             disabled={busy}
-                            onChange={event => patch(part, row.row, {
-                              ...override,
+                            onChange={event => patchPair(part, row, {
                               booklet: (event.target.value || undefined) as DualDatOverride['booklet'],
                             })}
                           >
@@ -739,11 +766,7 @@ export default function DualDatPanel({ examId, sessions, onSaved }: {
                   <button type="button" className={u.btnGhost} onClick={() => setMatchDialog(null)}>Vazgeç</button>
                   <button type="button" className={u.btnPrimary} disabled={!pickedStudent} onClick={() => {
                     if (!pickedStudent) return;
-                    patch(matchDialog.part, matchDialog.row.row, {
-                      ...overrides[matchDialog.part][matchDialog.row.row],
-                      student_id: pickedStudent,
-                      excluded: false,
-                    });
+                    patchPair(matchDialog.part, matchDialog.row, { student_id: pickedStudent, excluded: false });
                     setMatchDialog(null);
                   }}>Eşleştir</button>
                 </footer>

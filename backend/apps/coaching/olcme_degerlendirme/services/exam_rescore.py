@@ -48,9 +48,14 @@ def rescore_exam_results(exam) -> int:
     wrong_penalty = exam.wrong_answer_count
     updated = 0
 
+    from ..views.dual_dat_views import _booklet_map
+    cd_maps = {booklet: _booklet_map(exam, booklet) for booklet in ('C', 'D')}
+    cd_maps = {booklet: booklet_map for booklet, booklet_map in cd_maps.items() if booklet_map}
+
     answers = (
         StudentAnswer.objects
         .filter(session__exam=exam)
+        .select_related('session')
         .prefetch_related('section_scores')
     )
     for sa in answers.iterator():
@@ -59,9 +64,20 @@ def rescore_exam_results(exam) -> int:
             ch = (sa.answers or {}).get(str(q), '')
             answers_raw += ch if ch else ' '
 
+        booklet = sa.booklet or 'A'
+        active_maps = (correct_map_a, b_to_a_map, correct_map_b)
+        settings = sa.session.dual_dat_settings or {}
+        if (
+            sa.session.numeric_dat_file
+            and booklet in cd_maps
+            and not settings.get('booklet_reference')
+        ):
+            active_maps = (cd_maps[booklet], {}, {})
+            booklet = 'A'
+
         _, comparison_dict, section_scores_data, totals = _score_answers(
-            answers_raw, total_questions, sa.booklet or 'A',
-            correct_map_a, b_to_a_map, correct_map_b,
+            answers_raw, total_questions, booklet,
+            *active_maps,
             sections, wrong_penalty, sub_sections,
             exam.per_section_penalty,
         )
