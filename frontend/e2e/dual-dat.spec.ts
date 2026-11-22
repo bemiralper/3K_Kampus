@@ -108,12 +108,11 @@ test('LGS çift DAT için her iki şablonu uygular, kitapçığı düzeltir ve s
   await page.getByLabel('Sözel DAT', { exact: true }).setInputFiles({ name: 's.dat', mimeType: 'text/plain', buffer: Buffer.from('s') });
   await page.getByLabel('Sayısal DAT', { exact: true }).setInputFiles({ name: 'm.dat', mimeType: 'text/plain', buffer: Buffer.from('m') });
   await page.getByRole('button', { name: 'Dosyaları yükle' }).click();
-  await page.getByRole('combobox', { name: 'Sözel şablon seçimi' }).selectOption('1');
-  await page.getByRole('combobox', { name: 'Sayısal şablon seçimi' }).selectOption('2');
+  await page.getByRole('button', { name: 'Sözel şablon', exact: true }).click();
+  await page.getByRole('button', { name: 'Sayısal şablon', exact: true }).click();
   await page.getByRole('button', { name: 'Eşleşmeleri önizle' }).click();
   const confirm = page.getByRole('button', { name: 'Birleşik sonuçları kaydet' });
   await expect(confirm).toBeDisabled();
-  await page.getByRole('button', { name: 'Düzelt', exact: true }).nth(1).click();
   await page.getByLabel('Sayısal 1. satır kitapçık').selectOption('A');
   await page.getByRole('button', { name: 'Önizlemeyi güncelle' }).click();
   await expect(confirm).toBeEnabled();
