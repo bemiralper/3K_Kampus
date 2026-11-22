@@ -586,6 +586,7 @@ export interface DATSessionItem {
   id: number;
   exam: number;
   source_type?: 'DAT' | 'OMR';
+  is_dual_dat?: boolean;
   original_filename: string;
   status: string;
   status_display: string;
@@ -1320,4 +1321,54 @@ export interface StudyAgenda {
   items: StudyRecommendation[]; source_exam_id: number; source_answer_id: number;
   mapped_questions: number; total_questions: number; empty_reason: string | null;
   followups?: {id: number; name: string; subject: string; assignment_id: number | null; status: string; before: string; after: string | null}[];
+}
+
+export type DualDatPart = 'verbal' | 'numeric';
+
+export interface DualDatMapping {
+  field_mappings: FieldMapping[];
+  first_line_is_header: boolean;
+}
+
+export interface DualDatOverride {
+  student_id?: number;
+  booklet?: 'A' | 'B' | 'C' | 'D';
+  excluded?: boolean;
+}
+
+export interface DualDatSettings extends Record<DualDatPart, DualDatMapping> {
+  overrides: Record<DualDatPart, Record<string, DualDatOverride>>;
+}
+
+export interface DualDatUpload {
+  session: DATSessionItem;
+  files: Record<DualDatPart, {
+    lines: string[];
+    total_rows: number;
+    sections: { id: number; name: string; width: number }[];
+  }>;
+  settings: Partial<DualDatSettings>;
+  has_booklet_reference: boolean;
+}
+
+export interface DualDatPreviewRow {
+  row: number;
+  name: string;
+  school_no: string;
+  booklet: string;
+  student_id: number | null;
+  student_name: string;
+  source_booklet: string;
+  automatic_student_id: number | null;
+  excluded: boolean;
+  issue: string | null;
+}
+
+export interface DualDatPreview {
+  rows: Record<DualDatPart, DualDatPreviewRow[]>;
+  pair_count: number;
+  unresolved_count: number;
+  students: { id: number; name: string; school_no: string; class_name: string }[];
+  preview_token: string | null;
+  scoring_error: string | null;
 }

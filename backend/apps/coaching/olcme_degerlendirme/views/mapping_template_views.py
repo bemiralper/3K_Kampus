@@ -40,7 +40,8 @@ def list_mapping_templates(request):
     Sınav türüne göre filtrelenmiş şablonlar.
     """
     exam_type = request.query_params.get('exam_type', '')
-    qs = _visible_templates(request)
+    part = request.query_params.get('source_part', '')
+    qs = _visible_templates(request).filter(source_part=part)
     if exam_type:
         qs = qs.filter(exam_type=exam_type)
     data = MappingTemplateSerializer(qs, many=True).data

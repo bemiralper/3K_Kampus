@@ -40,6 +40,10 @@ class MappingTemplate(models.Model):
         'Sınav Türü', max_length=20,
         choices=EXAM_TYPE_CHOICES,
     )
+    source_part = models.CharField(
+        'Optik oturumu', max_length=10, blank=True, default='',
+        choices=[('', 'Tek DAT'), ('verbal', 'Sözel'), ('numeric', 'Sayısal')],
+    )
     mappings = models.JSONField(
         'Alan Eşleştirmeleri', default=list,
         help_text='FieldMapping dizisi: [{field, start, end, label}, ...]',

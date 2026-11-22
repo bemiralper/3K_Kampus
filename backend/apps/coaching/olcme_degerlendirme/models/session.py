@@ -42,6 +42,10 @@ class ExamSession(models.Model):
         'DAT Dosyası', upload_to=_session_upload_path,
         null=True, blank=True,
     )
+    numeric_dat_file = models.FileField(
+        'Sayısal DAT dosyası', upload_to=_session_upload_path, blank=True,
+    )
+    dual_dat_settings = models.JSONField(default=dict, blank=True)
     original_filename = models.CharField(
         'Orijinal Dosya Adı', max_length=255, blank=True,
     )

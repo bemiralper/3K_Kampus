@@ -13,6 +13,7 @@ import type {
   MatchSuggestion,
 } from '../../../../components/olcme/types';
 import Icon from '../../../../components/olcme/ui/Icon';
+import DualDatPanel from './DualDatPanel';
 import OmrUploadPanel from './OmrUploadPanel';
 import s from '../olcme.module.css';
 import u from './upload.module.css';
@@ -40,6 +41,7 @@ const matchMethodLabel = (method: string, score: number): string => {
     case 'id':         return 'Öğrenci numarası';
     case 'name_exact': return 'Tam ad soyad';
     case 'name':       return `İsim benzerliği %${Math.round(score * 100)}`;
+    case 'dual_dat':   return 'İki optik eşleşti';
     case 'manual':     return 'Elle eşleştirildi';
     default:           return '';
   }
@@ -262,7 +264,7 @@ export default function UploadTab({ exam, onExamChange }: Props) {
   const [parsing, setParsing]           = useState(false);
   const [error, setError]               = useState('');
   const [notice, setNotice]             = useState('');
-  const [sourceMode, setSourceMode]     = useState<'dat' | 'omr'>('dat');
+  const [sourceMode, setSourceMode]     = useState<'dat' | 'dual' | 'omr'>('dat');
 
   const [uploadResp, setUploadResp]     = useState<DATUploadResponse | null>(null);
   const [lines, setLines]               = useState<string[]>([]);
@@ -1000,11 +1002,11 @@ export default function UploadTab({ exam, onExamChange }: Props) {
     setResultsSessionId(null);
   };
 
-  const switchSource = (mode: 'dat' | 'omr') => {
+  const switchSource = (mode: 'dat' | 'dual' | 'omr') => {
     setSourceMode(mode);
     setError('');
     // Tarama onayı yeni bir yükleme oluşturur; listeye dönünce görünsün.
-    if (mode === 'dat') fetchSessions();
+    if (mode !== 'omr') fetchSessions();
   };
 
   /* ── Türetilmiş değerler ────────────────────────────────────────────────── */
@@ -1098,6 +1100,7 @@ export default function UploadTab({ exam, onExamChange }: Props) {
   };
 
   const currentStepIdx = STEPS.findIndex(st => st.key === step);
+  const dualResult = sessions.some(session => session.id === resultsSessionId && session.is_dual_dat);
   const doneSessions = sessions.filter(ses => ses.status === 'COMPLETED');
 
   /* ═══════════════════════════════════════════════════════════════════════ */
@@ -1111,6 +1114,11 @@ export default function UploadTab({ exam, onExamChange }: Props) {
           <button type="button" role="tab" aria-selected={sourceMode === 'dat'} className={sourceMode === 'dat' ? u.segOn : u.segBtn} onClick={() => switchSource('dat')}>
             Optik okuyucu dosyası
           </button>
+          {exam.exam_type === 'LGS' && (
+            <button type="button" role="tab" aria-selected={sourceMode === 'dual'} className={sourceMode === 'dual' ? u.segOn : u.segBtn} onClick={() => switchSource('dual')}>
+              İki DAT (Sözel + Sayısal)
+            </button>
+          )}
           <button type="button" role="tab" aria-selected={sourceMode === 'omr'} className={sourceMode === 'omr' ? u.segOn : u.segBtn} onClick={() => switchSource('omr')}>
             Tarama (PDF / görsel)
           </button>
@@ -1126,7 +1134,16 @@ export default function UploadTab({ exam, onExamChange }: Props) {
         )}
       </div>
 
-      {sourceMode === 'omr' ? <OmrUploadPanel examId={exam.id} onConfirmed={() => { fetchSessions(); onExamChange?.(); }} /> : (
+      {sourceMode === 'dual' ? (
+        <DualDatPanel examId={exam.id} sessions={sessions} onSaved={sessionId => {
+          fetchSessions();
+          if (sessionId) {
+            setSourceMode('dat');
+            void handleLoadSessionResults(sessionId);
+            onExamChange?.();
+          }
+        }} />
+      ) : sourceMode === 'omr' ? <OmrUploadPanel examId={exam.id} onConfirmed={() => { fetchSessions(); onExamChange?.(); }} /> : (
       <>
       {error && (
         <div className={u.alertErr} role="alert">
@@ -1490,7 +1507,7 @@ export default function UploadTab({ exam, onExamChange }: Props) {
                       <SortTh label="Optik kayıt" columnKey="student_name" {...thProps} />
                       <th>Öğrenci</th>
                       <th aria-label="İşlem" />
-                      {bookletChoices.length > 0 && <th style={{ textAlign: 'center' }}>Kitapçık</th>}
+                      {(bookletChoices.length > 0 || dualResult) && <th style={{ textAlign: 'center' }}>Kitapçık</th>}
                       <SortTh label="D" columnKey="total_correct" align="center" {...thProps} />
                       <SortTh label="Y" columnKey="total_wrong" align="center" {...thProps} />
                       <SortTh label="B" columnKey="total_empty" align="center" {...thProps} />
@@ -1553,9 +1570,9 @@ export default function UploadTab({ exam, onExamChange }: Props) {
                               </button>
                             </div>
                           </td>
-                          {bookletChoices.length > 0 && (
+                          {(bookletChoices.length > 0 || dualResult) && (
                             <td style={{ textAlign: 'center' }}>
-                              <select
+                              {dualResult ? r.booklet || '—' : <select
                                 className={r.booklet_auto_detected ? u.bookletAuto : u.booklet}
                                 value={r.booklet || ''}
                                 onChange={e => handleBookletChange(r.id, e.target.value)}
@@ -1564,7 +1581,7 @@ export default function UploadTab({ exam, onExamChange }: Props) {
                               >
                                 {!r.booklet && <option value="" disabled>—</option>}
                                 {bookletChoices.map(b => <option key={b} value={b}>{b}</option>)}
-                              </select>
+                              </select>}
                             </td>
                           )}
                           <td className={u.num}>{r.total_correct}</td>

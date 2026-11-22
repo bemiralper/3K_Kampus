@@ -18,6 +18,7 @@ from .views.publish_views import (
     exam_publish_reschedule, exam_answer_key_pdf,
 )
 from .views.answer_key_views import AnswerKeyViewSet
+from .views.dual_dat_views import dual_dat_session, upload_dual_dat
 from .views.result_views import (
     upload_dat, parse_dat,
     list_results, list_sessions, delete_session,
@@ -195,6 +196,8 @@ urlpatterns = [
     path('exams/<int:exam_pk>/answer-keys/<int:pk>/bulk-assign-outcomes/', answer_key_bulk_assign_outcomes, name='answer-key-bulk-assign-outcomes'),
 
     path('exams/<int:exam_pk>/results/', list_results, name='result-list'),
+    path('exams/<int:exam_pk>/results/dual-dat/', upload_dual_dat, name='dual-dat-upload'),
+    path('exams/<int:exam_pk>/results/dual-dat/<int:session_pk>/', dual_dat_session, name='dual-dat-session'),
     path('exams/<int:exam_pk>/results/upload/', upload_dat, name='result-upload'),
     path('exams/<int:exam_pk>/results/sessions/', list_sessions, name='result-sessions'),
     path('exams/<int:exam_pk>/results/sessions/<int:session_pk>/', delete_session, name='result-session-delete'),

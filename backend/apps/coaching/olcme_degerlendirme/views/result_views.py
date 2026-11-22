@@ -538,6 +538,9 @@ def parse_dat(request, exam_pk, session_pk):
     except ExamSession.DoesNotExist:
         return Response({'error': 'Yükleme oturumu bulunamadı.'}, status=404)
 
+    if session.numeric_dat_file:
+        return Response({'error': 'Bu yükleme İki DAT ekranından işlenmelidir.'}, status=400)
+
     # A (primary) anahtar esastır; boşsa dolu olan herhangi bir anahtara düş.
     answer_key = AnswerKey.primary_for(exam)
     if answer_key is None or not answer_key.items.exists():
@@ -942,6 +945,9 @@ def update_student_booklet(request, exam_pk, answer_pk):
         sa = StudentAnswer.objects.get(pk=answer_pk, session__exam=exam)
     except StudentAnswer.DoesNotExist:
         return Response({'error': 'Öğrenci cevabı bulunamadı.'}, status=404)
+
+    if sa.session.numeric_dat_file:
+        return Response({'error': 'Kitapçığı İki DAT yüklemesini yeniden açarak düzeltin.'}, status=400)
 
     new_booklet = request.data.get('booklet', '').upper().strip()
     if new_booklet not in ('A', 'B', 'C', 'D'):

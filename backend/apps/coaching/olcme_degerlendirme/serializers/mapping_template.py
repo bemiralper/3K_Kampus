@@ -9,7 +9,7 @@ class MappingTemplateSerializer(serializers.ModelSerializer):
     class Meta:
         model = MappingTemplate
         fields = [
-            'id', 'name', 'exam_type', 'mappings',
+            'id', 'name', 'exam_type', 'source_part', 'mappings',
             'first_line_is_header', 'student_id_field',
             'created_at', 'updated_at',
         ]

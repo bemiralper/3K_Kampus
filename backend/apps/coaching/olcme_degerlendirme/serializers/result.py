@@ -9,13 +9,18 @@ class ExamSessionListSerializer(serializers.ModelSerializer):
     """DAT yükleme oturumu (liste)."""
     status_display = serializers.CharField(source='get_status_display', read_only=True)
 
+    is_dual_dat = serializers.SerializerMethodField()
+
+    def get_is_dual_dat(self, obj):
+        return bool(obj.numeric_dat_file)
+
     class Meta:
         model = ExamSession
         fields = [
             'id', 'exam', 'source_type', 'original_filename', 'status', 'status_display',
             'total_rows', 'matched_count', 'unmatched_count', 'error_count',
             'field_mappings', 'student_id_field',
-            'created_at', 'updated_at',
+            'created_at', 'updated_at', 'is_dual_dat',
         ]
 
 

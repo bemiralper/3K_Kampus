@@ -23,6 +23,10 @@ import type {
   SubjectItem,
   AnswerKeyItem,
   DATUploadResponse,
+  DualDatUpload,
+  DualDatPart,
+  DualDatSettings,
+  DualDatPreview,
   DATParsePayload,
   DATParseResponse,
   DATSessionItem,
@@ -646,6 +650,28 @@ export const answerKeyApi = {
 
 // ── Sonuç Yükleme (DAT Upload) API ─────────────────────────────────────────
 
+export const dualDatApi = {
+  upload: (examId: number, verbal: File, numeric: File, reference?: File) => {
+    const body = new FormData();
+    body.append('verbal', verbal);
+    body.append('numeric', numeric);
+    if (reference) body.append('booklet_reference', reference);
+    return request<DualDatUpload>(`${BASE}/${examId}/results/dual-dat/`, {
+      method: 'POST', body, headers: getContextHeaders(),
+    });
+  },
+  open: (examId: number, sessionId: number) =>
+    request<DualDatUpload>(`${BASE}/${examId}/results/dual-dat/${sessionId}/`),
+  preview: (examId: number, sessionId: number, settings: DualDatSettings) =>
+    request<DualDatPreview>(`${BASE}/${examId}/results/dual-dat/${sessionId}/`, {
+      method: 'POST', body: JSON.stringify({ settings }),
+    }),
+  confirm: (examId: number, sessionId: number, settings: DualDatSettings, previewToken: string) =>
+    request<{ session: DATSessionItem }>(`${BASE}/${examId}/results/dual-dat/${sessionId}/`, {
+      method: 'POST', body: JSON.stringify({ settings, preview_token: previewToken }),
+    }),
+};
+
 export const uploadApi = {
   /** DAT dosyasını yükle */
   upload: async (examId: number, file: File): Promise<DATUploadResponse> => {
@@ -756,15 +782,18 @@ export const uploadApi = {
 
 export const mappingTemplateApi = {
   /** Şablonları listele (sınav türüne göre filtreli) */
-  list: (examType?: string) => {
-    const qs = examType ? `?exam_type=${encodeURIComponent(examType)}` : '';
-    return request<MappingTemplate[]>(`${BASE}/mapping-templates/${qs}`);
+  list: (examType?: string, sourcePart?: DualDatPart) => {
+    const params = new URLSearchParams();
+    if (examType) params.set('exam_type', examType);
+    if (sourcePart) params.set('source_part', sourcePart);
+    return request<MappingTemplate[]>(`${BASE}/mapping-templates/${params.size ? `?${params}` : ''}`);
   },
 
   /** Yeni şablon oluştur */
   create: (data: {
     name: string;
     exam_type: string;
+    source_part?: DualDatPart;
     mappings: { field: string; start: number; end: number; label: string }[];
     first_line_is_header: boolean;
     student_id_field: string;

@@ -557,3 +557,21 @@
   .modal { place-items: end center; padding: 0; }
   .sheet { border-radius: 18px 18px 0 0; max-height: 88vh; }
 }
+
+.dualPanel { display: grid; gap: 1rem; min-width: 0; }
+.dualCard { min-width: 0; margin: 0; padding: 1rem; border: 1px solid var(--olcme-border, #dce4ed); border-radius: 12px; }
+.dualCard legend { padding: 0 .4rem; font-weight: 600; }
+.dualCard p { margin: .5rem 0; }
+.dualActions { display: flex; align-items: end; flex-wrap: wrap; gap: .65rem; }
+.dualActions label { display: grid; gap: .25rem; }
+.dualActions + label { display: block; margin-top: .75rem; }
+.dualSample { overflow: auto; margin: .75rem 0; padding: .75rem; background: var(--olcme-surface-subtle, #f2f6fa); color: #17324f; border-radius: 8px; }
+.dualScroll { overflow-x: auto; margin: .5rem 0; }
+.dualTable { width: 100%; border-collapse: collapse; text-align: left; }
+.dualTable th, .dualTable td { padding: .35rem .55rem; border-bottom: 1px solid var(--olcme-border, #dce4ed); }
+.dualTable input[type='number'] { width: 5.5rem; }
+.dualTable input[readonly] { opacity: .7; }
+.dualTable select { max-width: min(16rem, 60vw); }
+.dualTable code { white-space: pre; }
+.dualSessions { padding: 0; list-style: none; }
+.dualSessions li { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; margin: .4rem 0; overflow-wrap: anywhere; }

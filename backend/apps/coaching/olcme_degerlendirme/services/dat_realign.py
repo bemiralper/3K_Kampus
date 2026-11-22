@@ -39,8 +39,8 @@ def _read_dat_lines(session):
     return [ln for ln in _normalize_lines(lines) if ln.strip()]
 
 
-def _correct_maps(exam):
-    answer_key = AnswerKey.primary_for(exam)
+def _correct_maps(exam, *, answer_key=None, align=True):
+    answer_key = answer_key or AnswerKey.primary_for(exam)
     if answer_key is None or not answer_key.items.exists():
         answer_key = max(
             AnswerKey.objects.filter(exam=exam).prefetch_related('items'),
@@ -51,8 +51,9 @@ def _correct_maps(exam):
         return None
 
     from .booklet_align import align_b_question_numbers, forget_prefetched_items
-    align_b_question_numbers(exam)
-    forget_prefetched_items(answer_key)
+    if align:
+        align_b_question_numbers(exam)
+        forget_prefetched_items(answer_key)
 
     correct_map_a = {}
     parent_offset = {
@@ -129,6 +130,8 @@ def realign_session(session) -> int:
 
     Dönüş: güncellenen öğrenci sayısı. DAT/mapping yoksa 0 (sürüm yine işaretlenir).
     """
+    if session.numeric_dat_file:
+        return 0
     exam = session.exam
     maps = _correct_maps(exam)
     lines = _read_dat_lines(session)
