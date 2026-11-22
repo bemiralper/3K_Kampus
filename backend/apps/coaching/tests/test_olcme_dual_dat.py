@@ -440,3 +440,32 @@ class DualDatTests(TestCase):
         before = parsed.data['results'][0]['total_correct']
         rescore_exam_results(self.exam)
         self.assertEqual(StudentAnswer.objects.get(session_id=session_id).total_correct, before)
+
+    def test_gapped_inkilap_and_din_columns_are_read_in_form_order(self):
+        key = self.key('A', 'AAAA')
+        key.items.filter(question_number__gte=21, question_number__lte=30).update(correct_answer='C')
+        key.items.filter(question_number__gte=31, question_number__lte=40).update(correct_answer='B')
+        verbal = self.sections[:4]
+        inkilap, din = verbal[1], verbal[2]
+        self.settings['verbal']['field_mappings'] = [
+            {'field': 'ad_soyad', 'start': 0, 'end': 20},
+            {'field': 'kitapcik_turu', 'start': 20, 'end': 21},
+            {'field': f'ders_{verbal[0].pk}', 'start': 21, 'end': 41},
+            {'field': f'ders_{inkilap.pk}', 'start': 41, 'end': 51},
+            {'field': f'ders_{din.pk}', 'start': 61, 'end': 71},
+            {'field': f'ders_{verbal[3].pk}', 'start': 81, 'end': 91},
+        ]
+        line = f'{"Ada Güneş":20}A{"A" * 20}{"B" * 10}{" " * 10}{"C" * 10}{" " * 10}{"A" * 10}'
+        session, url = self.upload([line], [self.line('Ada Güneş', 'A', 'A' * 40)])
+        confirmed = self.confirm(url, self.preview(url)['preview_token'])
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        scores = {
+            score.section_id: score.correct
+            for score in session.student_answers.get().section_scores.all()
+        }
+        self.assertEqual(scores[inkilap.pk], 10)
+        self.assertEqual(scores[din.pk], 10)
+        session.refresh_from_db()
+        saved = session.dual_dat_settings['verbal']['field_mappings']
+        by_field = {item['field']: item for item in saved}
+        self.assertEqual((by_field[f'ders_{inkilap.pk}']['start'], by_field[f'ders_{din.pk}']['start']), (61, 41))

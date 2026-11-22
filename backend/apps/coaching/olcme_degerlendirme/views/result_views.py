@@ -675,6 +675,22 @@ def parse_dat(request, exam_pk, session_pk):
         section_fields = new_section_fields
         mapping = new_mapping
 
+    from ..services.lgs_dat_columns import correct_lgs_social_columns, correct_lgs_social_ranges
+    names = {f'ders_{section.pk}': section.name for section in sections + sub_sections}
+    same_exam = all(
+        not str(item.get('field', '')).startswith('ders_') or item.get('field') in names
+        for item in field_mappings if isinstance(item, dict)
+    )
+    if same_exam and correct_lgs_social_columns(field_mappings, lambda field: names.get(field, '')):
+        for item in field_mappings:
+            field = item.get('field')
+            if field in mapping and type(item.get('start')) is int and type(item.get('end')) is int:
+                mapping[field] = (item['start'], item['end'])
+    elif not same_exam:
+        correct_lgs_social_ranges(mapping, lambda field: names.get(field, ''))
+        correct_lgs_social_columns(field_mappings, lambda field: '')
+    section_fields = {key: value for key, value in mapping.items() if key.startswith('ders_')}
+
     # Section field'ların ana mı alt mı olduğunu belirle
     # Alt bölüm ID'leri → parent bölüm ID'leri haritası
     sub_section_to_parent = {sec.id: sec.parent_section_id for sec in sub_sections}

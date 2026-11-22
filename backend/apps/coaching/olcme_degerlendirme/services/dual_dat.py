@@ -2,6 +2,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
+from .lgs_dat_columns import correct_lgs_social_columns
 from .student_matching import DatIdentity, normalize_name, pick_auto_match
 
 BOOKLETS = ('A', 'B', 'C', 'D')
@@ -152,6 +153,12 @@ def prepare_pairs(lines_by_part, sections, config, pool, taken_ids, *, reference
     if not isinstance(config, dict) or not isinstance(config.get('overrides', {}), dict):
         raise ValueError('İki DAT ayarları geçersiz.')
     pool_by_id = {student.pk: student for student in pool}
+    verbal = config.get('verbal')
+    if isinstance(verbal, dict):
+        names = {f'ders_{section.pk}': section.name for section in sections}
+        correct_lgs_social_columns(
+            verbal.get('field_mappings'), lambda field: names.get(field, ''),
+        )
     keyed = set(keyed_booklets)
     rows = {
         part: _read_rows(
