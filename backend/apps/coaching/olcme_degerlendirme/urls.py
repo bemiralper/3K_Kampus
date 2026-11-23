@@ -53,6 +53,11 @@ from .views.mapping_template_views import (
     list_mapping_templates, create_mapping_template, delete_mapping_template,
 )
 from .views.student_exam_views import student_exam_development, student_exam_results, student_exam_study_action
+from .views.parent_report_views import (
+    student_parent_report_pdf,
+    student_parent_report_preview,
+    student_parent_report_send,
+)
 from .views.scoring_settings_views import (
     puan_ayarlari, puan_ayarlari_katsayilar, puan_ayarlari_reset,
 )
@@ -211,6 +216,9 @@ urlpatterns = [
     path('exams/<int:exam_pk>/results/rematch/', rematch_unmatched, name='result-rematch'),
 
     path('exams/<int:exam_pk>/analysis/summary/', exam_analysis_summary, name='analysis-summary'),
+    path('student-exams/<int:student_id>/parent-report/preview/', student_parent_report_preview, name='student-parent-report-preview'),
+    path('student-exams/<int:student_id>/parent-report/pdf/', student_parent_report_pdf, name='student-parent-report-pdf'),
+    path('student-exams/<int:student_id>/parent-report/send/', student_parent_report_send, name='student-parent-report-send'),
     path('student-exams/<int:student_id>/study-action/', student_exam_study_action, name='student-exam-study-action'),
     path('student-exams/<int:student_id>/development/', student_exam_development, name='student-exam-development'),
     path('student-exams/<int:student_id>/', student_exam_results, name='student-exam-results'),

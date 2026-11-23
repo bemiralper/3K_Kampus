@@ -1309,6 +1309,7 @@ export interface OptikFormDetay extends OptikFormOzet {
 
 export interface StudyRecommendation {
   key: string; revision: string; kind: 'current' | 'recurring' | 'recheck' | 'academic';
+  subject_id?: number | null; topic_id?: number | null; outcome_id?: number | null; sub_outcome_id?: number | null;
   subject: string; topic: string; name: string; reason: string;
   exam_id: number; answer_id: number; exam_name: string; exam_date: string | null;
   correct: number; wrong: number; empty: number; question_count: number;

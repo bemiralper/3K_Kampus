@@ -1147,7 +1147,146 @@ function filenameFromDisposition(header: string | null, fallback: string): strin
 
 const STUDENT_EXAM_BASE = '/api/coaching/olcme-degerlendirme/student-exams';
 
+export type ParentReportTheme = 'midnight' | 'brand' | 'print';
+export type ParentReportTone = 'supportive' | 'balanced' | 'focused';
+
+export interface ParentExamReportOptions {
+  scope?: 'both' | 'TYT' | 'AYT' | 'LGS' | 'CLASS';
+  window?: 'last_3' | 'last_5' | 'last_10' | 'all';
+  date_from?: string;
+  date_to?: string;
+  theme?: ParentReportTheme;
+  tone?: ParentReportTone;
+  custom_title?: string;
+  recipient_greeting?: string;
+  excluded_exam_ids?: number[];
+  include_kurum_avg?: boolean;
+  include_progress_bridge?: boolean;
+  include_net_breakdown?: boolean;
+  include_exam_table?: boolean;
+  include_error_profile?: boolean;
+  include_strengths?: boolean;
+  include_study_focus?: boolean;
+  include_assignments?: boolean;
+  include_attendance?: boolean;
+  include_ranking?: boolean;
+  coach_note?: string;
+}
+
+export interface ParentExamReportCandidateExam {
+  exam_id: number;
+  group: string;
+  group_label: string;
+  name: string;
+  date: string | null;
+  date_label: string;
+  net: number;
+  excluded: boolean;
+}
+
+export interface ParentExamReportRecipient {
+  veli_id: number;
+  display_name: string;
+  relation: string;
+  phone: string;
+  masked_phone: string;
+  is_default: boolean;
+  can_send: boolean;
+  skip_reason: string | null;
+}
+
+export interface ParentExamReportPreviewData {
+  meta: {
+    student_id: number;
+    student_name: string;
+    student_no: string;
+    sinif_ad: string;
+    alan_ad: string;
+    kurum_ad: string;
+    sube_ad: string;
+    egitim_yili: string;
+    coach_name: string;
+    period_label: string;
+    generated_at: string;
+    generated_date_label: string;
+    available_groups: string[];
+    included_groups: string[];
+  };
+  options: Required<Omit<ParentExamReportOptions, 'date_from' | 'date_to'>> & {
+    date_from: string | null;
+    date_to: string | null;
+  };
+  tracks: Array<{
+    group: string;
+    label: string;
+    short_label: string;
+    kpi: {
+      exam_count: number;
+      latest_net: number;
+      avg_net: number;
+      max_net: number;
+      min_net: number;
+      trend_delta: number | null;
+      prev_delta: number | null;
+      kurum_avg_net: number | null;
+      vs_kurum_delta: number | null;
+    };
+  }>;
+  available_exams: ParentExamReportCandidateExam[];
+  assignments: { total: number; completed: number; overdue: number; avg_completion_pct: number } | null;
+  coach_note: string;
+  note_templates: Array<{ id: string; label: string; text: string }>;
+  recipients: ParentExamReportRecipient[];
+  default_whatsapp_caption: string;
+  html: string;
+  filename: string;
+}
+
 export const studentExamApi = {
+  parentReportPreview: (studentId: number, body: ParentExamReportOptions, signal?: AbortSignal) =>
+    request<{ success: boolean; data: ParentExamReportPreviewData }>(
+      `${STUDENT_EXAM_BASE}/${studentId}/parent-report/preview/`,
+      { method: 'POST', body: JSON.stringify(body), signal }
+    ),
+
+  parentReportPdf: async (studentId: number, body: ParentExamReportOptions) => {
+    const res = await fetch(`${STUDENT_EXAM_BASE}/${studentId}/parent-report/pdf/`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...getContextHeaders() },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err?.error || 'Veli raporu PDF indirilemedi');
+    }
+    const blob = await res.blob();
+    const name = filenameFromDisposition(
+      res.headers.get('content-disposition'),
+      `veli-sinav-raporu-${studentId}.pdf`
+    );
+    await downloadPdfBlob(blob, name);
+    return name;
+  },
+
+  parentReportSend: (
+    studentId: number,
+    body: ParentExamReportOptions & { veli_ids: number[]; whatsapp_caption?: string }
+  ) =>
+    request<{
+      success: boolean;
+      data: {
+        sent: number;
+        skipped: number;
+        errors: string[];
+        sent_details: Array<{ veli_id: number; display_name: string; phone: string; message_status: string }>;
+        filename: string;
+      };
+    }>(`${STUDENT_EXAM_BASE}/${studentId}/parent-report/send/`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
   studyAction: (studentId: number, body: {key: string; revision: string; status: string; note?: string; filters: unknown}) =>
     request<{id: number; status: string; assignment_id: number | null}>(`${STUDENT_EXAM_BASE}/${studentId}/study-action/`, {method: 'POST', body: JSON.stringify(body)}),
   studyActionDetail: (studentId: number, actionId: number) =>

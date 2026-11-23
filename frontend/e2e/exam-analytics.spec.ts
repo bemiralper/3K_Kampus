@@ -63,7 +63,7 @@ for(const width of [390,768,1440]) test(`compact and distinct analytics at ${wid
  await expect(page.getByRole('region',{name:'Sınav performansı'})).toBeVisible();
  await expect(page.getByRole('heading',{name:'Derslerin görünümü'})).toBeVisible();
  await expect(page.getByRole('region',{name:'Kayıp analizi'})).toHaveCount(0);
- await expect(page.getByText('Kanıt ve dönem kıyası')).toHaveCount(0);
+ await expect(page.getByText('Sınav özeti ve dönem karşılaştırması')).toHaveCount(0);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
  await page.waitForTimeout(1300);
  await page.screenshot({path:`/tmp/compact-overview-${width}.png`,fullPage:true});
@@ -73,7 +73,7 @@ for(const width of [390,768,1440]) test(`compact and distinct analytics at ${wid
  await expect(page.getByRole('heading',{name:'Derslerin görünümü'})).toHaveCount(0);
  await page.getByRole('button',{name:/01.*Fonksiyonlar/}).click();
  await expect(page.getByRole('button',{name:/İşlem yapar/})).toBeVisible();
- await expect(page.getByText('Her iki dönemde en az 2 ölçüm',{exact:false})).toHaveCount(0);
+ await expect(page.getByText('Sağlıklı bir karşılaştırma için',{exact:false})).toHaveCount(0);
  await page.screenshot({path:`/tmp/compact-deep-${width}.png`,fullPage:true});
  if(width<651){await page.getByRole('button',{name:'Konulara dön',exact:true}).click();await expect(page.getByRole('button',{name:/01.*Fonksiyonlar/})).toBeVisible();}
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBeTruthy();
@@ -87,8 +87,8 @@ test('zero loss topics, outcomes and courses are excluded from deep analysis',as
  await expect(page.getByText('Kayıpsız konu',{exact:true})).toHaveCount(0);
  await expect(page.getByText('Kayıpsız kazanım',{exact:true})).toHaveCount(0);
  await expect(page.getByRole('button',{name:/Kayıpsız ders/})).toHaveCount(0);
- await expect(page.getByText('Kanıt ve dönem kıyası',{exact:true})).toBeVisible();
- await expect(page.getByText('sınavda kayıp.',{exact:false})).not.toBeVisible();
+ await expect(page.getByText('Sınav özeti ve dönem karşılaştırması',{exact:true})).toBeVisible();
+ await expect(page.getByText('sınavda hata yapıldı',{exact:false})).not.toBeVisible();
 });
 
 test('evidence and outcome history expand only on request',async({page})=>{
@@ -97,10 +97,10 @@ test('evidence and outcome history expand only on request',async({page})=>{
  await page.getByRole('button',{name:'Derin Analiz',exact:true}).click();
  await page.getByRole('button',{name:/01.*Fonksiyonlar/}).click();
  await expect(page.getByRole('region',{name:'Dönem karşılaştırması'})).not.toBeVisible();
- await page.getByText('Kanıt ve dönem kıyası',{exact:true}).click();
- await expect(page.getByRole('region',{name:'Dönem karşılaştırması'})).toContainText('+50 yüzde puan');
+ await page.getByText('Sınav özeti ve dönem karşılaştırması',{exact:true}).click();
+ await expect(page.getByRole('region',{name:'Dönem karşılaştırması'})).toContainText('+50 puan arttı');
  await page.getByRole('button',{name:/Grafik okur/}).click();
- await expect(page.getByText('30 gözlem',{exact:true})).toBeVisible();
+ await expect(page.getByText('Toplam 30 soru',{exact:true})).toBeVisible();
  await page.getByText('Sınav geçmişi',{exact:true}).click();
  await expect(page.getByRole('columnheader',{name:'Yanlış',exact:true})).toBeVisible();
 });
@@ -123,9 +123,9 @@ test('focused exam opens its report and drills into only that exam',async({page}
  await page.getByRole('button',{name:/11 Eki.*TYT Kanıt 2/}).click();
  const dialog=page.getByRole('dialog',{name:'TYT Kanıt 2',exact:true});
  await expect(dialog).toBeVisible();
- await expect(dialog.getByRole('alert')).toContainText('Karne karşılaştırması alınamadı');
+ await expect(dialog.getByRole('alert')).toContainText('Karne özeti alınamadı');
  options.karneFail=false;
- await dialog.getByRole('button',{name:'Karne bağlamını yeniden dene'}).click();
+ await dialog.getByRole('button',{name:'Karne özetini yeniden dene'}).click();
  await expect(dialog.getByText('Kurum sırası',{exact:false})).toBeVisible();
  await dialog.getByRole('button',{name:'Bu sınavın kayıplarını incele'}).click();
  await expect(page.getByRole('dialog')).toHaveCount(0);
