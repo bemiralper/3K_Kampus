@@ -6,7 +6,7 @@
       <div>
         <div class="ln">{{ l.name }}</div>
         <div class="lv"><b>{{ l.net }}</b> net <small>/ {{ l.soru }} soru</small></div>
-        <div class="cmp {% if l.diff.pos %}pos{% else %}neg{% endif %}">Kurum ort. {{ l.diff.text }}</div>
+        <div class="cmp {% if l.diff.pos %}pos{% else %}neg{% endif %}">Kurum ortalamasına göre {{ l.diff.text }}</div>
         {% if l.out %}<div class="out">Puana girmez</div>{% endif %}
       </div>
     </div>

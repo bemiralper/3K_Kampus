@@ -773,6 +773,26 @@ class StrongWeakUsesSuccessRateTest(SimpleTestCase):
         self.assertEqual([r['section_name'] for r in strong], ['Din Kültürü', 'Türkçe'])
         self.assertEqual([r['section_name'] for r in weak], ['Felsefe', 'Coğrafya'])
 
+    def test_rounded_nets_with_same_shown_rate_are_all_strong(self):
+        from apps.coaching.olcme_degerlendirme.views.analysis_views import _pick_strong_weak_areas
+
+        def sec(sid, name, net, count):
+            return {'section_id': sid, 'section_name': name, 'net': net, 'question_count': count,
+                    'correct': count, 'wrong': 0, 'is_sub_section': False}
+
+        strong, weak = _pick_strong_weak_areas([
+            sec(1, 'Türkçe', 10.67, 20),
+            sec(2, 'İnkılap Tarihi', 4.67, 10),
+            sec(3, 'Din Kültürü', 8.67, 10),
+            sec(4, 'Yabancı Dil', 8.67, 10),
+            sec(5, 'Matematik', 3.0, 20),
+            sec(6, 'Fen Bilimleri', 17.33, 20),
+        ], 'LGS', None)
+        self.assertEqual(
+            [r['section_name'] for r in strong], ['Fen Bilimleri', 'Din Kültürü', 'Yabancı Dil'],
+        )
+        self.assertEqual([r['section_name'] for r in weak], ['Matematik', 'İnkılap Tarihi'])
+
 
 class KarneSummaryVisualsTest(SimpleTestCase):
     """Özet grafikleri, değerlendirme, gelişim ve tekrar edilecek sorular."""
@@ -844,6 +864,17 @@ class KarneSummaryVisualsTest(SimpleTestCase):
         self.assertIn('en yüksek', text)
         self.assertIn('Fen Bilimleri (%22)', text)
         self.assertIn('2 kolay soruyu', text)
+
+    def test_comment_names_the_section_furthest_above_kurum(self):
+        from apps.coaching.application.olcme_karne_pdf import _comment_lines
+
+        # Türkçe güçlü derslerde de geçiyor; en büyük fark onda olduğu için cümle onu anmalı.
+        payload = self._payload()
+        payload['section_details'][0].update(diff_kurum=3.25)
+        payload['section_details'][1].update(net=6.75, diff_kurum=2.75)
+        text = ' '.join(_comment_lines(payload))
+        self.assertIn('Kurum ortalamasını en çok geçtiği ders Türkçe: 3,25 net önde.', text)
+        self.assertNotIn('Matematik: 2,75', text)
 
     @override_settings(OLCME_KARNE_HTML=False)
     def test_pdf_has_new_summary_blocks(self):

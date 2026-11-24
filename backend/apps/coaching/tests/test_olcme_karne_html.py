@@ -92,6 +92,9 @@ class TurkishSuffixTest(SimpleTestCase):
     def test_number_format(self):
         self.assertEqual(karne.tr(79.75), '79,75')
         self.assertEqual(karne.tr(5.0), '5')
+        self.assertEqual(karne.tr_net(3.0), '3,00')
+        self.assertEqual(karne._signed(0)['text'], '+0,00')
+        self.assertEqual(karne._signed(-4)['text'], '−4,00')
         self.assertEqual(karne.tr_int(105409), '105.409')
         self.assertEqual(karne.tr_date('2026-09-24'), '24 Eylül 2026')
 
@@ -105,6 +108,16 @@ class KarneContextTest(SimpleTestCase):
         self.assertNotIn('Seçmeli Konu', [p['name'] for p in ctx['priorities']])
         self.assertNotIn('Felsefe (Seçmeli)', [g['name'] for g in ctx['answers']])
         self.assertNotIn('Felsefe (Seçmeli)', [t['title'] for b in ctx['outcomes'] for t in b['tables']])
+
+    def test_whole_nets_keep_decimals_next_to_fractional_ones(self):
+        sections = [
+            _section(1, 'Türkçe', c=11, w=1, q=20, net=10.67, avg=13.44),
+            _section(2, 'Matematik', c=6, w=9, e=5, q=20, net=3.0, avg=5.52),
+        ]
+        ctx = karne.build_karne_context(_tyt_payload(section_details=sections, toplam_net=53.0))
+        self.assertEqual([l['net'] for l in ctx['lessons']], ['10,67', '3,00'])
+        self.assertEqual([r['net'] for r in ctx['table_rows']], ['10,67', '3,00'])
+        self.assertEqual(ctx['net'], '53,00')
 
     def test_priorities_rank_by_recoverable_net(self):
         ctx = karne.build_karne_context(_tyt_payload())
@@ -276,6 +289,17 @@ class KarneHtmlRenderTest(TestCase):
         self.assertEqual(html.count('class="page cover"'), 1)
         self.assertIn('data-fit="4"', html)
         self.assertNotIn('Beşinci yorum', html)
+
+    def test_lesson_card_labels_difference_not_average(self):
+        html = unescape(karne.render_karne_html([_tyt_payload()]))
+        self.assertIn('Kurum ortalamasına göre +4,00', html)
+        self.assertNotIn('Kurum ort. +', html)
+
+    def test_long_outcome_names_are_not_cut_by_css(self):
+        css = karne.render_karne_html([_tyt_payload()])
+        on_rule = re.search(r'\.on \{([^}]*)\}', css).group(1)
+        self.assertNotIn('ellipsis', on_rule)
+        self.assertNotIn('nowrap', on_rule)
 
     def test_many_students_in_one_document(self):
         html = karne.render_karne_html([_tyt_payload(), _tyt_payload(student_name='Ali Veli')])

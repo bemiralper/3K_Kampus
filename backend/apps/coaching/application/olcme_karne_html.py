@@ -48,13 +48,18 @@ def _num(value) -> float:
         return 0.0
 
 
-def tr(value, digits: int = 2) -> str:
+def tr(value, digits: int = 2, *, trim: bool = True) -> str:
     if value is None:
         return '–'
     text = f'{_num(value):,.{digits}f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
-    if digits and text.endswith(',' + '0' * digits):
+    if trim and digits and text.endswith(',' + '0' * digits):
         text = text[: -(digits + 1)]
     return text
+
+
+def tr_net(value) -> str:
+    """Net ve net farkı: yan yana duran değerler aynı basamakla yazılır (3,00 · 10,67)."""
+    return tr(value, trim=False)
 
 
 def tr_int(value) -> str:
@@ -117,7 +122,7 @@ def poss_gen(n: int) -> str:
 
 def _signed(value) -> dict:
     value = _num(value)
-    return {'pos': value >= 0, 'text': f"{'+' if value >= 0 else '−'}{tr(abs(value))}"}
+    return {'pos': value >= 0, 'text': f"{'+' if value >= 0 else '−'}{tr_net(abs(value))}"}
 
 
 # ── Gömülü varlıklar ───────────────────────────────────────────────────────
@@ -473,8 +478,8 @@ def _section_history(data: dict, mains: list[dict], history: list[dict]) -> list
         cards.append({
             'name': name,
             'svg': mark_safe(_sparkline(values, _num(m.get('question_count')))),
-            'first': tr(first),
-            'last': tr(last),
+            'first': tr_net(first),
+            'last': tr_net(last),
             'soru': int(_num(m.get('question_count'))),
             'delta': _signed(last - first),
         })
@@ -581,7 +586,7 @@ def _lessons(scope: dict) -> list[dict]:
             r = _ratio(s.get('net'), sq)
             subs.append({
                 'name': s.get('section_name') or '',
-                'net': tr(s.get('net')),
+                'net': tr_net(s.get('net')),
                 'soru': int(sq),
                 'w': f'{r * 100:.0f}',
                 'kw': f"{_ratio(s.get('kurum_avg_net'), sq) * 100:.0f}",
@@ -590,7 +595,7 @@ def _lessons(scope: dict) -> list[dict]:
         out.append({
             'name': m.get('section_name') or '',
             'ring': mark_safe(_ring(ratio, size=48)),
-            'net': tr(m.get('net')),
+            'net': tr_net(m.get('net')),
             'soru': int(q),
             'diff': _signed(m.get('diff_kurum')),
             'subs': subs,
@@ -611,9 +616,9 @@ def _table_rows(scope: dict, *, group: str = '') -> list[dict]:
             'note': 'Puana girmez' if s.get('alana_dahil') is False and not s.get('is_sub_section') else '',
             'soru': int(q),
             'd': s.get('correct'), 'y': s.get('wrong'), 'b': s.get('empty'),
-            'net': tr(s.get('net')),
+            'net': tr_net(s.get('net')),
             'w': f'{r * 100:.0f}', 'pct': round(r * 100), 'tone': _tone(r),
-            'avg': tr(s.get('kurum_avg_net')),
+            'avg': tr_net(s.get('kurum_avg_net')),
             'diff': _signed(s.get('diff_kurum')),
         }
 
@@ -679,8 +684,8 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         kurum_scale = {
             'student': f'{_ratio(net, soru) * 100:.1f}',
             'avg': f"{_ratio(data.get('kurum_avg_net'), soru) * 100:.1f}",
-            'net': tr(net),
-            'avg_net': tr(data.get('kurum_avg_net')),
+            'net': tr_net(net),
+            'avg_net': tr_net(data.get('kurum_avg_net')),
             'soru': soru,
             'diff': _signed(_num(net) - _num(data.get('kurum_avg_net'))),
         }
@@ -702,7 +707,7 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'date': tr_date(data.get('session_date')),
         'donut': mark_safe(_donut(correct, wrong, empty)),
         'correct': correct, 'wrong': wrong, 'empty': empty, 'soru': soru,
-        'net': tr(net),
+        'net': tr_net(net),
         'net_label': net_label,
         'puan_label': f'{alan_pt} puanı' if alan_pt else 'Puan',
         'puan': tr(data.get('puan')) if data.get('puan') is not None else '–',

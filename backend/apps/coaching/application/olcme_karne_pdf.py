@@ -1723,7 +1723,6 @@ def _comment_lines(data: dict) -> list[str]:
         lines.append(f"En başarılı olduğu dersler {' ve '.join(parts)}.")
 
     weak_names = {item.get('name') for item in data.get('weak_areas') or []}
-    strong_names = {item.get('name') for item in strong}
     best = None
     for sd in _leaf_sections(data):
         try:
@@ -1731,10 +1730,10 @@ def _comment_lines(data: dict) -> list[str]:
         except (TypeError, ValueError):
             continue
         name = sd.get('section_name')
-        if diff >= 1 and name not in weak_names | strong_names and (best is None or diff > best[0]):
+        if diff >= 1 and name not in weak_names and (best is None or diff > best[0]):
             best = (diff, name)
     if best:
-        lines.append(f'Kurum ortalamasını en çok geçtiği ders {best[1]}: {_fmt(best[0], 1)} net önde.')
+        lines.append(f'Kurum ortalamasını en çok geçtiği ders {best[1]}: {_fmt(best[0], 2)} net önde.')
 
     weak = [item for item in data.get('weak_areas') or [] if item.get('name')]
     if weak:

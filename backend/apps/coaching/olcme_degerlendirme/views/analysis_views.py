@@ -360,21 +360,35 @@ def _pick_strong_weak_areas(
         if not is_unattempted_optional_section(row)
     ]
 
-    def score(row):
-        net = float(row.get('net') or 0)
-        return (net / int(row['question_count']), net)
+    by_rate = bool(candidates) and all(int(row.get('question_count') or 0) > 0 for row in candidates)
 
-    if candidates and all(int(row.get('question_count') or 0) > 0 for row in candidates):
-        ranked = sorted(candidates, key=score, reverse=True)
-    else:
-        ranked = sorted(candidates, key=lambda x: x.get('net') or 0, reverse=True)
+    def level(row):
+        # Karnede görünen tam yüzde. Yuvarlanmış netler (8,67/10 ile 17,33/20)
+        # aynı başarıyı binde bir farkla ayırmasın.
+        net = float(row.get('net') or 0)
+        if by_rate:
+            return math.floor(net / int(row['question_count']) * 100 + 0.5)
+        return net
+
+    def score(row):
+        return (level(row), float(row.get('net') or 0))
+
+    ranked = sorted(candidates, key=score, reverse=True)
     if not ranked:
         return [], []
     if len(ranked) == 1:
         return ranked, []
-    strong = ranked[:limit]
+
+    def take_with_ties(rows):
+        picked = rows[:limit]
+        if picked:
+            edge = level(picked[-1])
+            picked += [row for row in rows[limit:] if level(row) == edge]
+        return picked
+
+    strong = take_with_ties(ranked)
     strong_ids = {row.get('section_id') for row in strong}
-    weak = [row for row in reversed(ranked) if row.get('section_id') not in strong_ids][:limit]
+    weak = take_with_ties([row for row in reversed(ranked) if row.get('section_id') not in strong_ids])
     return strong, weak
 
 

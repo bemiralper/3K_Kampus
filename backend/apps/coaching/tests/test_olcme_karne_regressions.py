@@ -151,7 +151,7 @@ class KarneDataRegressionTests(TestCase):
         self.assertEqual(data['kurum_avg_puan'], data['puan_turleri_avgs']['EA'])
         self.assertEqual(data['kurum_avg_net'], data['puan_turleri']['EA']['ayt_net'])
         ctx = build_karne_context(data)
-        self.assertEqual(ctx['kurum_scale']['diff']['text'], '+0')
+        self.assertEqual(ctx['kurum_scale']['diff']['text'], '+0,00')
 
     def test_history_excludes_later_same_day_and_uses_latest_upload(self):
         previous = self.exam(day=date(2026, 3, 1))
