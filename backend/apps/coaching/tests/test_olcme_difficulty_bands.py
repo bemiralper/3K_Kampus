@@ -7,6 +7,7 @@ from apps.coaching.olcme_degerlendirme.services.difficulty_bands import (
     MIN_PARTICIPANTS,
     difficulty_note,
     question_bands,
+    question_correct_counts,
     summarize_difficulty,
 )
 
@@ -152,6 +153,42 @@ class DifficultyBandTest(SimpleTestCase):
         self.assertEqual(by['zor']['dogru'], 1)
         self.assertEqual(by['zor']['scope'], 'alan')
         self.assertIn('Alanındaki orta sorularda 1 yanlış var.', summary['note'])
+
+    def test_question_map_uses_own_booklet_number_and_hard_correct_is_rarest_first(self):
+        answers = (
+            [('A', {'5': {'result': 'correct'}, '6': {'result': 'correct'}, '7': {'result': 'correct'}})] * 2
+            + [('A', {'5': {'result': 'correct'}, '6': {'result': 'wrong'}, '7': {'result': 'correct'}})] * 4
+            + [('A', {'5': {'result': 'wrong'}, '6': {'result': 'wrong'}, '7': {'result': 'correct'}})] * 13
+            + [('B', {'1': {'result': 'correct'}, '2': {'result': 'correct'}, '3': {'result': 'wrong'}})]
+        )
+        counts = question_correct_counts(answers, participant_count=20, cancelled_questions=set(),
+                                         b_to_a={1: 5, 2: 6, 3: 7})
+        self.assertEqual(counts, {'5': 7, '6': 3, '7': 19})
+        bands = question_bands(answers, participant_count=20, cancelled_questions=set(),
+                               b_to_a={1: 5, 2: 6, 3: 7})
+        summary = summarize_difficulty(
+            booklet='B',
+            comparison={'1': {'result': 'correct'}, '2': {'result': 'correct'}, '3': {'result': 'wrong'}},
+            participant_count=20, bands=bands, b_to_a={1: 5, 2: 6, 3: 7}, correct_counts=counts,
+        )
+        self.assertEqual(summary['questions'], {
+            '1': {'band': 'zor', 'kurum_dogru': 7},
+            '2': {'band': 'zor', 'kurum_dogru': 3},
+            '3': {'band': 'kolay', 'kurum_dogru': 19},
+        })
+        self.assertEqual(summary['hard_correct'], [{'q': '2', 'kurum_dogru': 3}, {'q': '1', 'kurum_dogru': 7}])
+
+    def test_hard_correct_outside_ayt_field_is_not_praised(self):
+        summary = summarize_difficulty(
+            booklet='',
+            comparison={'4': {'result': 'correct'}, '5': {'result': 'correct'}},
+            participant_count=20,
+            bands={'4': 'zor', '5': 'zor'},
+            field_questions={'5'},
+            correct_counts={'4': 2, '5': 6},
+        )
+        self.assertEqual(summary['hard_correct'], [{'q': '5', 'kurum_dogru': 6}])
+        self.assertEqual(summary['questions']['4'], {'band': 'zor', 'kurum_dogru': 2})
 
     def test_only_hard_wrongs_do_not_call_them_the_main_gap(self):
         note = difficulty_note([

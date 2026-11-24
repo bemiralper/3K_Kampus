@@ -75,6 +75,39 @@ def _tyt_payload(**extra):
     return payload
 
 
+def _banded_payload():
+    """Türkçe 1–9: Karekök hep zor, Fiilimsi kolay+orta, EBOB kolay+zor yanlış ve orta boş."""
+    rows = [
+        {'name': 'Karekök', 'soru': 3, 'dogru': 0, 'yanlis': 3, 'bos': 0, 'basari': 0, 'questions': [
+            {'n': 1, 'result': 'wrong'}, {'n': 2, 'result': 'wrong'}, {'n': 3, 'result': 'wrong'}]},
+        {'name': 'Fiilimsi', 'soru': 2, 'dogru': 0, 'yanlis': 2, 'bos': 0, 'basari': 0, 'questions': [
+            {'n': 4, 'result': 'wrong'}, {'n': 5, 'result': 'wrong'}]},
+        {'name': 'EBOB', 'soru': 4, 'dogru': 1, 'yanlis': 2, 'bos': 1, 'basari': 25, 'questions': [
+            {'n': 6, 'result': 'wrong'}, {'n': 7, 'result': 'wrong'}, {'n': 8, 'result': 'correct'},
+            {'n': 9, 'result': 'empty'}]},
+    ]
+    bands = {'1': 'zor', '2': 'zor', '3': 'zor', '4': 'kolay', '5': 'orta',
+             '6': 'kolay', '7': 'zor', '8': 'zor', '9': 'orta'}
+    payload = _tyt_payload(
+        topic_blocks=[{'heading': 'Türkçe', 'tables': [{'title': 'Türkçe', 'rows': rows}]}],
+        answer_grids=[{'section_id': 1, 'section_name': 'Türkçe', 'questions': [
+            {'q': n, 'n': n, 'given': '', 'correct': 'A', 'result': 'correct'} for n in range(1, 10)]}],
+    )
+    payload['difficulty'] = {
+        'participant_count': 28,
+        'bands': [
+            {'key': 'kolay', 'label': 'Kolay', 'soru': 2, 'dogru': 0, 'yanlis': 2, 'bos': 0},
+            {'key': 'orta', 'label': 'Orta', 'soru': 2, 'dogru': 0, 'yanlis': 1, 'bos': 1},
+            {'key': 'zor', 'label': 'Zor', 'soru': 5, 'dogru': 1, 'yanlis': 4, 'bos': 0},
+        ],
+        'note': '',
+        'questions': {q: {'band': band, 'kurum_dogru': 20 if band == 'kolay' else 14 if band == 'orta' else 5}
+                      for q, band in bands.items()},
+        'hard_correct': [{'q': '8', 'kurum_dogru': 3}, {'q': '1', 'kurum_dogru': 6}],
+    }
+    return payload
+
+
 class TurkishSuffixTest(SimpleTestCase):
     def test_possessive_follows_pronunciation(self):
         cases = {1: "1'i", 2: "2'si", 3: "3'ü", 6: "6'sı", 9: "9'u", 10: "10'u", 20: "20'si",
@@ -123,6 +156,49 @@ class KarneContextTest(SimpleTestCase):
         ctx = karne.build_karne_context(_tyt_payload())
         self.assertEqual(ctx['priorities'][0]['name'], 'Paragraf')
         self.assertEqual(ctx['priorities'][0]['gain'], '4,75')
+
+    def test_priorities_follow_difficulty_and_match_target_units(self):
+        ctx = karne.build_karne_context(_banded_payload())
+        names = [p['name'] for p in ctx['priorities']]
+        self.assertEqual(names, ['Fiilimsi', 'EBOB'])
+        self.assertEqual(ctx['priorities'][0]['gain'], '2,50')
+        self.assertEqual(ctx['priorities'][1]['gain'], '2,25')
+        self.assertEqual(ctx['priorities'][1]['tags'], [
+            {'key': 'kolay', 'text': '1 kolay'}, {'key': 'orta', 'text': '1 orta'}, {'key': 'zor', 'text': '1 zor'},
+        ])
+        self.assertEqual(ctx['priority_note'],
+                         'Kazanç kolay ve orta sorulardan hesaplanır. Zor sorular kazanca katılmaz.')
+        self.assertEqual((ctx['target']['count'], ctx['target']['gain']), (4, '4,75'))
+        self.assertEqual((ctx['target']['from'], ctx['target']['to']), ('37,50', '42,25'))
+        shown = sum(float(p['gain'].replace(',', '.')) for p in ctx['priorities'])
+        self.assertLessEqual(shown, float(ctx['target']['gain'].replace(',', '.')))
+
+    def test_only_hard_losses_still_list_topics_with_full_gain(self):
+        payload = _banded_payload()
+        for q in payload['difficulty']['questions'].values():
+            q['band'] = 'zor'
+        ctx = karne.build_karne_context(payload)
+        self.assertEqual([p['name'] for p in ctx['priorities']], ['Karekök', 'EBOB', 'Fiilimsi'])
+        self.assertEqual(ctx['priorities'][0]['gain'], '3,75')
+        self.assertIn('zor sorularda', ctx['priority_note'])
+
+    def test_praise_names_the_rarest_hard_question(self):
+        ctx = karne.build_karne_context(_banded_payload())
+        self.assertEqual(ctx['praise']['title'], 'Kurumun çoğunun yapamadığı 2 zor soruyu doğru yaptı.')
+        self.assertEqual(ctx['praise']['detail'], "Türkçe 8. soru: kurumda 28 öğrenciden yalnız 3'ü doğru yaptı.")
+
+    def test_praise_when_only_the_student_solved_it(self):
+        payload = _banded_payload()
+        payload['difficulty']['hard_correct'] = [{'q': '8', 'kurum_dogru': 1}]
+        ctx = karne.build_karne_context(payload)
+        self.assertEqual(ctx['praise']['title'], 'Kurumun çoğunun yapamadığı 1 zor soruyu doğru yaptı.')
+        self.assertEqual(ctx['praise']['detail'], 'Türkçe 8. soru: kurumda bu soruyu yalnız Ayşe doğru yaptı.')
+
+    def test_no_bands_keeps_previous_ranking_and_no_praise(self):
+        ctx = karne.build_karne_context(_tyt_payload())
+        self.assertEqual(ctx['priority_note'], '')
+        self.assertIsNone(ctx['praise'])
+        self.assertEqual(ctx['priorities'][0]['tags'], [])
 
     def test_no_history_shows_kurum_comparison_and_five_priorities(self):
         ctx = karne.build_karne_context(_tyt_payload())
@@ -289,6 +365,16 @@ class KarneHtmlRenderTest(TestCase):
         self.assertEqual(html.count('class="page cover"'), 1)
         self.assertIn('data-fit="4"', html)
         self.assertNotIn('Beşinci yorum', html)
+
+    def test_banded_priorities_target_and_praise_are_rendered(self):
+        html = unescape(karne.render_karne_html([_banded_payload()]))
+        self.assertIn('<span class="bt kolay">1 kolay</span>', html)
+        self.assertIn('<span class="bt zor">1 zor</span>', html)
+        self.assertIn('≈ +4,75 net', html)
+        self.assertIn('37,50 → 42,25', html)
+        self.assertIn('Kurumun çoğunun yapamadığı 2 zor soruyu doğru yaptı.', html)
+        self.assertIn("kurumda 28 öğrenciden yalnız 3'ü doğru yaptı.", html)
+        self.assertNotIn('★', html)
 
     def test_lesson_card_labels_difference_not_average(self):
         html = unescape(karne.render_karne_html([_tyt_payload()]))

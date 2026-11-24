@@ -45,6 +45,24 @@ def question_bands(
     b_to_a: dict | None = None,
 ) -> dict[str, str]:
     """A soru no → bant. `answers` öğeleri (booklet, comparison)."""
+    correct = question_correct_counts(
+        answers, participant_count=participant_count,
+        cancelled_questions=cancelled_questions, b_to_a=b_to_a,
+    )
+    return {
+        key: band_for_correct_pct((count / participant_count) * 100)
+        for key, count in correct.items()
+    }
+
+
+def question_correct_counts(
+    answers,
+    *,
+    participant_count: int,
+    cancelled_questions,
+    b_to_a: dict | None = None,
+) -> dict[str, int]:
+    """A soru no → kurumda doğru yapan sayısı. İptal soru girmez."""
     if participant_count < MIN_PARTICIPANTS:
         return {}
     b_to_a = b_to_a or {}
@@ -65,10 +83,7 @@ def question_bands(
             if result == 'correct':
                 correct[key] += 1
 
-    return {
-        key: band_for_correct_pct((correct[key] / participant_count) * 100)
-        for key in seen
-    }
+    return {key: correct[key] for key in seen}
 
 
 def difficulty_note(bands: list[dict]) -> str:
@@ -113,29 +128,41 @@ def summarize_difficulty(
     b_to_a: dict | None = None,
     field_questions: set[str] | None = None,
     field_only: bool = False,
+    correct_counts: dict[str, int] | None = None,
 ) -> dict | None:
     """`field_questions` doluysa orta ve zor yalnız o sorulardan sayılır.
 
     AYT'de bu küme öğrencinin alanıdır. Kolay tüm kitapçıkta kalır.
     None ise (TYT, LGS) üç bant da tüm sorulardandır.
+
+    `questions` öğrencinin kitapçık numarasıyla her sorunun bandını ve kurumda
+    kaç kişinin doğru yaptığını taşır; `hard_correct` bantta sayılan, doğru
+    yapılmış zor sorulardır (en az kişinin yaptığı önce).
     """
     if participant_count < MIN_PARTICIPANTS or not bands:
         return None
     b_to_a = b_to_a or {}
+    correct_counts = correct_counts or {}
     counts = {
         key: {'soru': 0, 'dogru': 0, 'yanlis': 0, 'bos': 0}
         for key in BAND_ORDER
     }
-    for key, result in _iter_results(booklet, comparison, b_to_a):
+    questions: dict[str, dict] = {}
+    hard_correct: list[dict] = []
+    for raw, key, result in _iter_raw_results(booklet, comparison, b_to_a):
         band = bands.get(key)
         if not band or band not in counts:
             continue
+        kurum_dogru = correct_counts.get(key)
+        questions[raw] = {'band': band, 'kurum_dogru': kurum_dogru}
         if field_questions is not None and (field_only or band in ('orta', 'zor')) and key not in field_questions:
             continue
         slot = counts[band]
         slot['soru'] += 1
         if result == 'correct':
             slot['dogru'] += 1
+            if band == 'zor' and kurum_dogru is not None:
+                hard_correct.append({'q': raw, 'kurum_dogru': kurum_dogru})
         elif result == 'wrong':
             slot['yanlis'] += 1
         else:
@@ -152,10 +179,13 @@ def summarize_difficulty(
         rows.append(row)
     if not rows:
         return None
+    hard_correct.sort(key=lambda item: (item['kurum_dogru'], _as_int(item['q'])))
     return {
         'participant_count': participant_count,
         'bands': rows,
         'note': difficulty_note(rows),
+        'questions': questions,
+        'hard_correct': hard_correct,
     }
 
 
@@ -163,7 +193,7 @@ def build_difficulty_index(all_answers, exam) -> dict:
     """Paylaşılan karne bağlamı. Soru → bant bir kez kurulur."""
     b_to_a, cancelled = _answer_key_maps(exam)
     participant_count = len(all_answers)
-    bands = question_bands(
+    correct_counts = question_correct_counts(
         ((getattr(a, 'booklet', '') or '', getattr(a, 'comparison', None) or {}) for a in all_answers),
         participant_count=participant_count,
         cancelled_questions=cancelled,
@@ -172,7 +202,11 @@ def build_difficulty_index(all_answers, exam) -> dict:
     return {
         'participant_count': participant_count,
         'b_to_a': b_to_a,
-        'bands': bands,
+        'bands': {
+            key: band_for_correct_pct((count / participant_count) * 100)
+            for key, count in correct_counts.items()
+        },
+        'correct_counts': correct_counts,
         'section_spans': _section_spans(exam),
     }
 
@@ -188,16 +222,29 @@ def student_difficulty_summary(answer, index: dict | None, *, field_questions: s
         b_to_a=index.get('b_to_a') or {},
         field_questions=field_questions,
         field_only=field_only,
+        correct_counts=index.get('correct_counts') or {},
     )
 
 
 def _iter_results(booklet: str, comparison: dict, b_to_a: dict):
+    for _raw, key, result in _iter_raw_results(booklet, comparison, b_to_a):
+        yield key, result
+
+
+def _iter_raw_results(booklet: str, comparison: dict, b_to_a: dict):
     for raw, row in (comparison or {}).items():
         key = canonical_question(booklet, raw, b_to_a)
         if not key:
             continue
         result = (row or {}).get('result') or 'empty'
-        yield key, result
+        yield str(raw), key, result
+
+
+def _as_int(value) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return 0
 
 
 def _section_spans(exam) -> list[tuple[str, int, int]]:

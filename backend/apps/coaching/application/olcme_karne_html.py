@@ -390,14 +390,96 @@ def _topic_tables(data: dict, scope: dict) -> list[dict]:
     return blocks
 
 
-def _priorities(blocks: list[dict], scope: dict, penalty: float, limit: int = 3) -> list[dict]:
-    """Konular, puana giren testlerden seçilir. Alan dışı boş test sahte öncelik üretmesin."""
+_RECOVERABLE = ('kolay', 'orta')
+
+
+def _priorities(blocks: list[dict], scope: dict, penalty: float, limit: int = 3,
+                bands: dict | None = None) -> list[dict]:
+    return _ranked_priorities(blocks, scope, penalty, limit, bands)[0]
+
+
+def _ranked_priorities(blocks: list[dict], scope: dict, penalty: float, limit: int,
+                       bands: dict | None) -> tuple[list[dict], str]:
+    """Konular, puana giren testlerden seçilir. Alan dışı boş test sahte öncelik üretmesin.
+
+    Soru bandı varsa kazanç yalnız kolay ve orta sorulardan sayılır; zorluk
+    kartındaki "geri alınırsa" hedefiyle aynı ölçüdür. Zor soru konuda kalır ama
+    sıralamayı öne çekmez. Yalnız zor kaybı olan öğrencide zor konular gösterilir.
+    """
     from apps.coaching.olcme_degerlendirme.services.study_recommendations import current_losses
     rows = current_losses(blocks, scope['score_names'], scope['score_leaves'], penalty)
-    return [{'name': r['name'], 'gain': tr(r['gain']),
-             'detail': ' · '.join(str(b) for b in [r.get('subject') if not r.get('section_fallback') else '',
-                         f"{r['wrong']} yanlış" if r['wrong'] else '',
-                         f"{r['empty']} boş" if r['empty'] else ''] if b)} for r in rows[:limit]]
+    if not bands or any(r.get('section_fallback') for r in rows):
+        return [{'name': r['name'], 'gain': tr_net(r['gain']), 'tags': [],
+                 'detail': ' · '.join(str(b) for b in [r.get('subject') if not r.get('section_fallback') else '',
+                             f"{r['wrong']} yanlış" if r['wrong'] else '',
+                             f"{r['empty']} boş" if r['empty'] else ''] if b)} for r in rows[:limit]], ''
+
+    ranked = []
+    for r in rows:
+        per_band = {'kolay': 0, 'orta': 0, 'zor': 0}
+        gain = full = 0.0
+        ease = 0
+        for q in r.get('questions') or []:
+            result = q.get('result')
+            if result not in ('wrong', 'empty'):
+                continue
+            info = bands.get(str(q.get('n'))) or {}
+            band = info.get('band')
+            value = (1 + penalty) if result == 'wrong' else 1.0
+            full += value
+            if band not in per_band:
+                continue
+            per_band[band] += 1
+            if band in _RECOVERABLE:
+                gain += value
+                ease += int(info.get('kurum_dogru') or 0)
+        ranked.append({**r, 'per_band': per_band, 'recoverable': round(gain, 2), 'full': round(full, 2), 'ease': ease})
+
+    easy_first = [r for r in ranked if r['recoverable'] > 0]
+    picked = sorted(easy_first, key=lambda r: (-r['recoverable'], -r['per_band']['kolay'], -r['ease'],
+                                              _num(r.get('basari')), r['name']))
+    shown_gain = 'recoverable'
+    note = 'Kazanç kolay ve orta sorulardan hesaplanır.'
+    if any(r['per_band']['zor'] for r in picked[:limit]):
+        note += ' Zor sorular kazanca katılmaz.'
+    if not picked:
+        picked = sorted(ranked, key=lambda r: (-r['full'], _num(r.get('basari')), r['name']))
+        shown_gain = 'full'
+        note = 'Kayıpların tamamı zor sorularda; sıradaki adım bu konular.'
+    out = [{
+        'name': r['name'],
+        'gain': tr_net(r[shown_gain]),
+        'detail': r.get('subject') or '',
+        'tags': [{'key': key, 'text': f"{r['per_band'][key]} {key}"}
+                 for key in ('kolay', 'orta', 'zor') if r['per_band'][key]],
+    } for r in picked[:limit]]
+    return out, (note if out else '')
+
+
+def _praise(data: dict, difficulty: dict | None) -> dict | None:
+    """Kurumun çoğunun yapamadığı (zor) sorulardan doğru yapılanlar. En az kişinin yaptığı öne çıkar."""
+    raw = (data.get('difficulty') or {}) if difficulty else {}
+    hard = raw.get('hard_correct') or []
+    total = int(_num(raw.get('participant_count')))
+    if not hard or not total:
+        return None
+    where = {}
+    for g in data.get('answer_grids') or []:
+        for q in g.get('questions') or []:
+            where[str(q.get('q'))] = (g.get('section_name') or '', q.get('n'))
+    top = hard[0]
+    section, number = where.get(str(top.get('q')), ('', None))
+    solvers = int(_num(top.get('kurum_dogru')))
+    first = (data.get('student_name') or '').split()[0] if (data.get('student_name') or '').strip() else ''
+    question = f'{section} {number}. soru' if section and number else 'En ayırt edici soru'
+    if solvers <= 1:
+        detail = f'{question}: kurumda bu soruyu yalnız {first or "kendisi"} doğru yaptı.'
+    else:
+        detail = f'{question}: kurumda {total} öğrenciden yalnız {poss(solvers)} doğru yaptı.'
+    return {
+        'title': f'Kurumun çoğunun yapamadığı {len(hard)} zor soruyu doğru yaptı.',
+        'detail': detail,
+    }
 
 
 def _difficulty(data: dict, penalty: float) -> dict | None:
@@ -434,6 +516,21 @@ def _difficulty(data: dict, penalty: float) -> dict | None:
         'recover_count': lost_w + lost_e,
         'recover_net': lost_w * (1 + penalty) + lost_e,
         'has_kolay': 'kolay' in bands,
+    }
+
+
+def _target(difficulty: dict | None, net, soru) -> dict | None:
+    """Konu kazançlarıyla aynı birim: artış ve ulaşılacak net."""
+    if not difficulty or not difficulty['recover_count']:
+        return None
+    start = _num(net)
+    end = min(soru, start + difficulty['recover_net']) if soru else start + difficulty['recover_net']
+    return {
+        'count': difficulty['recover_count'],
+        'gain': tr_net(end - start),
+        'from': tr_net(start),
+        'to': tr_net(end),
+        'label': 'Kolay ve orta' if difficulty['has_kolay'] else 'Orta',
     }
 
 
@@ -690,6 +787,11 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
             'diff': _signed(_num(net) - _num(data.get('kurum_avg_net'))),
         }
 
+    priorities, priority_note = _ranked_priorities(
+        blocks, scope, score_penalty, 3 if has_trend else 5,
+        (data.get('difficulty') or {}).get('questions') if difficulty else None,
+    )
+
     meta = [data.get('sinif') or '', f"No {data['raw_student_id']}" if data.get('raw_student_id') else '', data.get('kurum_ad') or '']
     photo = _photo_uri(data.get('profil_foto_path')) if data.get('profil_foto_path') else ''
 
@@ -730,16 +832,14 @@ def build_karne_context(data: dict, branding: dict | None = None, uid: str = '0'
         'trend_svg': mark_safe(_line_chart(history, data.get('kurum_avg_net'), branding['theme'], uid)),
         'kurum_scale': kurum_scale,
         'cmp_rows': cmp_rows if len(cmp_rows) > 1 else [],
-        'priorities': _priorities(blocks, scope, score_penalty, limit=3 if has_trend else 5),
-        'target': (
-            {'count': target_difficulty['recover_count'], 'net': tr(min(soru, _num(net) + target_difficulty['recover_net'])),
-             'label': 'Kolay ve orta' if target_difficulty['has_kolay'] else 'Orta'}
-            if target_difficulty and target_difficulty['recover_count'] else None
-        ),
+        'priorities': priorities,
+        'priority_note': priority_note,
+        'target': _target(target_difficulty, net, soru),
         'table_rows': _table_rows(scope) + _table_rows(
             scope['tyt'], group=f"Bağlı TYT · {data.get('linked_tyt_exam_name') or 'TYT'}",
         ),
         'difficulty': difficulty,
+        'praise': _praise(data, difficulty),
         'accuracy_ring': mark_safe(_ring(accuracy / 100, size=64, stroke=7)),
         'accuracy': poss(round(accuracy)),
         'lost_net': tr(wrong * loss_penalty),

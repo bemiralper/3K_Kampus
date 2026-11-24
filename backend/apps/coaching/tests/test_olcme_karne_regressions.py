@@ -61,7 +61,8 @@ class KarneScopeRegressionTests(SimpleTestCase):
             section_details=[_section(1, 'Matematik', c=16, e=64, q=80)],
             target_difficulty=summary))
         self.assertEqual(ctx['target']['count'], 2)
-        self.assertEqual(ctx['target']['net'], '18')
+        self.assertEqual((ctx['target']['gain'], ctx['target']['from'], ctx['target']['to']),
+                         ('2,00', '16,00', '18,00'))
 
     def test_ayt11_priorities_exclude_subjects_outside_score(self):
         sections = [_section(1, 'Matematik', c=30, q=30), _section(2, 'Felsefe', e=5, q=5)]
