@@ -3,7 +3,7 @@
 """
 from django.db import transaction
 from rest_framework import serializers
-from ..models import Exam, ExamSection, ExamSessionModel
+from ..models import Exam, ExamSection, ExamSessionModel, StudentAnswer
 from ..services.exam_templates import (
     create_sections_from_payload,
     create_sections_from_template,
@@ -430,6 +430,9 @@ class ExamCreateSerializer(serializers.ModelSerializer):
 #  UPDATE
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
+_AYT_EXAM_TYPES = frozenset({'YKS_AYT', 'AYT_11'})
+
+
 class ExamUpdateSerializer(serializers.ModelSerializer):
     sinif_ids = serializers.ListField(
         child=serializers.IntegerField(), write_only=True, required=False,
@@ -444,7 +447,7 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Exam
         fields = [
-            'name', 'description', 'status',
+            'name', 'exam_type', 'description', 'status',
             'exam_date', 'duration_minutes',
             'result_publish_date', 'answer_key_publish_date',
             'wrong_answer_count', 'per_section_penalty', 'score_coefficients',
@@ -476,21 +479,57 @@ class ExamUpdateSerializer(serializers.ModelSerializer):
                         {f: 'Sınav kilitli — bu alan değiştirilemez.'},
                     )
         exam_type = attrs.get('exam_type') or (self.instance.exam_type if self.instance else None)
-        if 'curriculum_band' in attrs:
+        if 'curriculum_band' in attrs or (
+            self.instance and exam_type != self.instance.exam_type
+        ):
             attrs['curriculum_band'] = normalize_band(attrs.get('curriculum_band'), exam_type)
+        if (
+            self.instance
+            and exam_type != self.instance.exam_type
+            and StudentAnswer.objects.filter(session__exam=self.instance).exists()
+        ):
+            raise serializers.ValidationError({
+                'exam_type': 'Sonuç yüklenmiş sınavın türü değiştirilemez.',
+            })
         _validate_publish_order(attrs, self.instance)
         return attrs
 
+    def _apply_exam_type_change(self, exam):
+        """Tür değişince müfredat bandını hizala; şablonlu türde bölümleri yeniden kur."""
+        if exam.exam_type not in _AYT_EXAM_TYPES and exam.linked_tyt_exam_id:
+            exam.linked_tyt_exam = None
+        if exam.exam_type != 'YKS_TYT':
+            Exam.objects.filter(linked_tyt_exam=exam).update(linked_tyt_exam=None)
+
+        has_template = bool(get_template_sections(
+            exam.exam_type, exam.include_optional_philosophy,
+        ))
+        update_fields = ['curriculum_band', 'linked_tyt_exam']
+        if has_template:
+            exam.answer_keys.all().delete()
+            exam.sections.all().delete()
+            create_sections_from_template(exam)
+            if exam.status == Exam.Status.ANSWER_KEY_READY:
+                exam.status = Exam.Status.DRAFT
+                update_fields.append('status')
+        exam.save(update_fields=update_fields)
+        return has_template
+
+    @transaction.atomic
     def update(self, instance, validated_data):
         sinif_ids = validated_data.pop('sinif_ids', None)
         validated_data.pop('sinif_seviyesi_ids', None)
         validated_data.pop('deneme_paketi_ids', None)
         philosophy_changed = 'include_optional_philosophy' in validated_data
+        previous_type = instance.exam_type
         instance = super().update(instance, validated_data)
         if sinif_ids is not None:
             sinif_ids = _tenant_sinif_ids(instance, sinif_ids)
             instance.siniflar.set(sinif_ids)
-        if philosophy_changed:
+        rebuilt = False
+        if instance.exam_type != previous_type:
+            rebuilt = self._apply_exam_type_change(instance)
+        if philosophy_changed and not rebuilt:
             sync_optional_philosophy_section(instance)
         request = self.context.get('request')
         extra = request.data if request is not None and hasattr(request, 'data') else {}

@@ -10,11 +10,14 @@ import {
   BOOKLET_TYPES,
   SCHEDULE_PREFERENCES,
   defaultWrongAnswerCount,
+  defaultExamDuration,
   examSupportsOptionalPhilosophy,
   optionalPhilosophyHint,
 } from '../../../../components/olcme/types';
+import { isManualSectionExamType } from '../../../../components/olcme/manual-sections';
 import type {
   ExamDetail,
+  ExamTypeValue,
   ExamSection,
   ExamSessionItem,
   LookupItem,
@@ -270,6 +273,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
   /* ── düzenleme formu state ─── */
   const buildEditForm = () => ({
     name: exam.name,
+    exam_type: exam.exam_type,
     description: exam.description || '',
     duration_minutes: exam.duration_minutes?.toString() || '',
     wrong_answer_count: exam.wrong_answer_count?.toString() || defaultWrongAnswerCount(exam.exam_type),
@@ -352,6 +356,15 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
       setTabError('Sınav adı boş olamaz.');
       return;
     }
+    const typeChanged = editForm.exam_type !== exam.exam_type;
+    const rebuildsSections = typeChanged && !isManualSectionExamType(editForm.exam_type);
+    if (rebuildsSections && ((exam.section_count ?? 0) > 0 || exam.status === 'ANSWER_KEY_READY')) {
+      const ok = confirm(
+        'Sınav türü değişince ders bölümleri yeni türe göre silinip yeniden kurulur. ' +
+        'Kayıtlı cevap anahtarı ve kazanım eşlemesi de silinir. Devam edilsin mi?',
+      );
+      if (!ok) return;
+    }
     setSaving(true);
     setTabError('');
     try {
@@ -361,6 +374,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
         !sameIdSet(editForm.deneme_paketi_ids, exam.deneme_paketi_ids ?? []);
       await examApi.update(exam.id, {
         name: editForm.name.trim(),
+        exam_type: editForm.exam_type,
         description: editForm.description,
         duration_minutes: editForm.duration_minutes ? Number(editForm.duration_minutes) : null,
         wrong_answer_count: Number(editForm.wrong_answer_count),
@@ -427,6 +441,18 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
 
   const ef = editForm;
   const setEf = (patch: Partial<typeof editForm>) => setEditForm(p => ({ ...p, ...patch }));
+  const typeLocked = exam.is_locked || exam.status === 'RESULTS_UPLOADED' || (exam.answer_count ?? 0) > 0;
+
+  const handleExamTypeChange = (next: ExamTypeValue) => {
+    const patch: Partial<typeof editForm> = { exam_type: next };
+    if (ef.wrong_answer_count === defaultWrongAnswerCount(ef.exam_type)) {
+      patch.wrong_answer_count = defaultWrongAnswerCount(next);
+    }
+    if (ef.duration_minutes === String(defaultExamDuration(ef.exam_type))) {
+      patch.duration_minutes = String(defaultExamDuration(next));
+    }
+    setEf(patch);
+  };
 
   const audienceReq = useRef(0);
   const [audienceCount, setAudienceCount] = useState<number | null>(null);
@@ -567,6 +593,32 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                   <input value={ef.name} onChange={e => setEf({ name: e.target.value })} />
                 </div>
                 <div className={s.formGroup}>
+                  <label>Sınav Türü</label>
+                  <select
+                    aria-label="Sınav türü"
+                    value={ef.exam_type}
+                    disabled={typeLocked}
+                    onChange={e => handleExamTypeChange(e.target.value as ExamTypeValue)}
+                  >
+                    {EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                  {typeLocked ? (
+                    <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0', lineHeight: 1.45 }}>
+                      {exam.is_locked
+                        ? 'Kilitli sınavın türü değiştirilemez. Önce kilidi açın.'
+                        : 'Sonuç yüklenmiş sınavın türü değiştirilemez.'}
+                    </p>
+                  ) : ef.exam_type !== exam.exam_type && !isManualSectionExamType(ef.exam_type) ? (
+                    <p style={{ fontSize: 11, color: '#b45309', margin: '6px 0 0', lineHeight: 1.45 }}>
+                      Kaydedince ders bölümleri bu türe göre yeniden kurulur. Cevap anahtarı varsa silinir.
+                    </p>
+                  ) : ef.exam_type !== exam.exam_type ? (
+                    <p style={{ fontSize: 11, color: '#94a3b8', margin: '6px 0 0', lineHeight: 1.45 }}>
+                      Bu türde hazır şablon yok. Mevcut ders bölümleri korunur.
+                    </p>
+                  ) : null}
+                </div>
+                <div className={s.formGroup}>
                   <label>Süre (dk)</label>
                   <input type="number" value={ef.duration_minutes}
                     onChange={e => setEf({ duration_minutes: e.target.value })} placeholder="165" />
@@ -631,7 +683,7 @@ function GeneralTab({ exam, onRefresh, onExamUpdate }: { exam: ExamDetail; onRef
                           onChange={e => setEf({ booklet_auto_detect: e.target.checked })} />
                         Kitapçık oto-algıla
                       </label>
-                      {examSupportsOptionalPhilosophy(exam.exam_type) && (
+                      {examSupportsOptionalPhilosophy(ef.exam_type) && (
                         <label className={s.checkRow}>
                           <input
                             type="checkbox"

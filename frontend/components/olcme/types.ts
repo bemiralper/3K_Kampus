@@ -26,6 +26,25 @@ export function defaultWrongAnswerCount(examType: string): string {
   return examType === 'LGS' || examType === 'LGS_7' ? '3' : '4';
 }
 
+/** Şablon süreleri — backend exam_templates._DEFAULT_DURATIONS ile aynı. */
+const DEFAULT_EXAM_DURATIONS: Record<string, number> = {
+  YKS_TYT: 165,
+  TYT_11: 165,
+  YKS_AYT: 180,
+  AYT_11: 165,
+  LGS: 155,
+  LGS_7: 155,
+  DENEME: 165,
+  KURUM_ICI: 90,
+  KONU_TARAMA: 45,
+  KAZANIM: 30,
+  OZEL: 60,
+};
+
+export function defaultExamDuration(examType: string): number {
+  return DEFAULT_EXAM_DURATIONS[examType] ?? 60;
+}
+
 export const OPTIONAL_PHILOSOPHY_EXAM_TYPES = ['YKS_TYT', 'TYT_11', 'YKS_AYT', 'DENEME'] as const;
 
 export function examSupportsOptionalPhilosophy(examType: string): boolean {

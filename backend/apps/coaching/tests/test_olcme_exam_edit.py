@@ -350,6 +350,73 @@ class OlcmeExamEditAPITest(TestCase):
 
     # ── Kilit ───────────────────────────────────────────────────────────────
 
+    def test_exam_type_can_be_changed_and_rebuilds_template_sections(self):
+        """Taslak sınavın türü düzenlenebilmeli; şablonlu tür bölümleri yeniden kurar."""
+        from apps.coaching.olcme_degerlendirme.models import AnswerKey, AnswerKeyItem
+
+        self.exam.status = Exam.Status.ANSWER_KEY_READY
+        self.exam.save(update_fields=['status'])
+        key = AnswerKey.objects.create(exam=self.exam, booklet='A', is_primary=True)
+        AnswerKeyItem.objects.create(
+            answer_key=key, section=self.section, question_number=1, correct_answer='A',
+        )
+
+        res = self._patch({'exam_type': 'YKS_AYT'})
+        self.assertEqual(res.status_code, 200, res.content[:500])
+        self.exam.refresh_from_db()
+        self.assertEqual(self.exam.exam_type, 'YKS_AYT')
+        self.assertEqual(self.exam.curriculum_band, 'YKS')
+        self.assertEqual(self.exam.status, Exam.Status.DRAFT)
+        mains = set(self.exam.sections.filter(is_sub_section=False).values_list('name', flat=True))
+        self.assertIn('TDE-Sosyal Bilimler-1', mains)
+        self.assertNotIn('Türkçe', mains)
+        self.assertFalse(AnswerKey.objects.filter(exam=self.exam).exists())
+
+    def test_same_exam_type_keeps_existing_sections(self):
+        res = self._patch({'exam_type': 'DENEME', 'name': 'Deneme 1'})
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.assertTrue(self.exam.sections.filter(name='Türkçe', is_sub_section=False).exists())
+
+    def test_manual_exam_type_keeps_existing_sections(self):
+        res = self._patch({'exam_type': 'KURUM_ICI'})
+        self.assertEqual(res.status_code, 200, res.content[:400])
+        self.exam.refresh_from_db()
+        self.assertEqual(self.exam.exam_type, 'KURUM_ICI')
+        self.assertTrue(self.exam.sections.filter(name='Türkçe').exists())
+
+    def test_exam_type_rejected_when_results_exist(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamSession, StudentAnswer
+
+        session = ExamSession.objects.create(exam=self.exam)
+        StudentAnswer.objects.create(session=session, raw_student_id='1', answers={'1': 'A'})
+        res = self._patch({'exam_type': 'YKS_TYT'})
+        self.assertEqual(res.status_code, 400, res.content[:400])
+        self.exam.refresh_from_db()
+        self.assertEqual(self.exam.exam_type, 'DENEME')
+        self.assertTrue(self.exam.sections.filter(name='Türkçe').exists())
+
+    def test_locked_exam_rejects_exam_type_change(self):
+        self.client.post(f'{EXAMS_URL}{self.exam.id}/lock/', **self.headers)
+        res = self._patch({'exam_type': 'YKS_TYT'})
+        self.assertEqual(res.status_code, 400)
+        self.exam.refresh_from_db()
+        self.assertEqual(self.exam.exam_type, 'DENEME')
+
+    def test_leaving_ayt_clears_linked_tyt(self):
+        tyt = Exam.objects.create(
+            name='Bağlı TYT', exam_type='YKS_TYT',
+            kurum=self.kurum, sube=self.sube, egitim_yili=self.egitim_yili,
+        )
+        self.exam.exam_type = 'YKS_AYT'
+        self.exam.linked_tyt_exam = tyt
+        self.exam.save(update_fields=['exam_type', 'linked_tyt_exam'])
+        res = self._patch({'exam_type': 'LGS'})
+        self.assertEqual(res.status_code, 200, res.content[:500])
+        self.exam.refresh_from_db()
+        self.assertEqual(self.exam.exam_type, 'LGS')
+        self.assertIsNone(self.exam.linked_tyt_exam_id)
+        self.assertEqual(self.exam.curriculum_band, 'LGS')
+
     def test_locked_exam_rejects_scoring_change(self):
         self.client.post(f'{EXAMS_URL}{self.exam.id}/lock/', **self.headers)
         res = self._patch({'wrong_answer_count': 3})
