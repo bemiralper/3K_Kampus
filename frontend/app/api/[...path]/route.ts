@@ -16,7 +16,7 @@ const STREAM_MULTIPART_BYTES = 32 * 1024 * 1024;
 const API_PREFIXED_PATHS = new Set([
   'coaching', 'terms', 'academic', 'resources', 'student-resources',
   'legacy', 'ogrenci-kayit', 'communication', 'kimlik', 'admin',
-  'ozel-ders', 'teacher', 'mobile', 'board',
+  'ozel-ders', 'teacher', 'mobile', 'board', 'student',
 ]);
 
 function isTransientSocketError(error: unknown): boolean {

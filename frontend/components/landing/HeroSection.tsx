@@ -91,7 +91,7 @@ export default function HeroSection({ settings, heroSlides, onLoginClick }: Hero
       />
       <div className="absolute inset-0 opacity-10" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, white 1px, transparent 0)', backgroundSize: '24px 24px' }} />
       <div className="relative mx-auto grid max-w-7xl gap-8 px-4 py-10 sm:gap-10 sm:py-14 lg:grid-cols-2 lg:items-center lg:gap-10 lg:px-8 lg:py-20">
-        <motion.div className="text-white" variants={container} initial="hidden" animate="show">
+        <motion.div className="text-white" variants={container} initial="show" animate="show">
           <motion.p variants={item} className="mb-2 text-xs font-medium uppercase tracking-widest text-white/70 sm:text-sm">Eğitim Merkezi</motion.p>
           <motion.div variants={item} className="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
             <span className="text-2xl font-extrabold uppercase tracking-tight text-white sm:text-3xl md:text-4xl">3K</span>
@@ -135,7 +135,7 @@ export default function HeroSection({ settings, heroSlides, onLoginClick }: Hero
         </motion.div>
         <motion.div
           className="relative w-full min-w-0"
-          initial={reduce ? { opacity: 0 } : { opacity: 0, scale: 0.96, y: 16 }}
+          initial={false}
           animate={{ opacity: 1, scale: 1, y: 0 }}
           transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1], delay: 0.15 }}
         >

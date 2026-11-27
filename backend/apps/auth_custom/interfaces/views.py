@@ -58,6 +58,15 @@ def _resolve_login_username(raw: str) -> str:
         pass
 
     try:
+        from apps.student_portal.auth import resolve_student_login_username
+
+        student_username = resolve_student_login_username(identifier)
+        if student_username:
+            return student_username
+    except Exception:
+        pass
+
+    try:
         from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
 
         ogrenci = Ogrenci.objects.filter(tc_kimlik_no=identifier).first()
@@ -94,6 +103,8 @@ def login_api(request):
                 'error': 'Kullanıcı adı ve şifre gereklidir'
             }, status=400)
 
+        from apps.student_portal.auth import student_user_login_allowed
+
         candidate = User.objects.filter(username=username).first()
         if candidate is not None and candidate.check_password(password):
             if not personel_user_login_allowed(candidate):
@@ -106,6 +117,12 @@ def login_api(request):
                 return JsonResponse({
                     'success': False,
                     'error': INACTIVE_PERSONEL_LOGIN_ERROR,
+                }, status=403)
+            student_ok, student_err = student_user_login_allowed(candidate)
+            if not student_ok:
+                return JsonResponse({
+                    'success': False,
+                    'error': student_err or INACTIVE_ACCOUNT_LOGIN_ERROR,
                 }, status=403)
             if not candidate.is_active:
                 log_personel_activity(
@@ -132,6 +149,12 @@ def login_api(request):
                 return JsonResponse({
                     'success': False,
                     'error': INACTIVE_PERSONEL_LOGIN_ERROR,
+                }, status=403)
+            student_ok, student_err = student_user_login_allowed(user)
+            if not student_ok:
+                return JsonResponse({
+                    'success': False,
+                    'error': student_err or INACTIVE_ACCOUNT_LOGIN_ERROR,
                 }, status=403)
             if user.is_active:
                 login(request, user)
@@ -269,6 +292,12 @@ def _build_user_data(user, request=None):
     data['portals'] = portals_payload(user)
     data['teacher_portal'] = has_teacher_assignment(user)
     data['active_portal'] = session_portal(request)
+    try:
+        spa = user.student_portal_account
+        if spa:
+            data['ogrenci_id'] = spa.ogrenci_id
+    except Exception:
+        pass
 
     return data
 
@@ -310,7 +339,10 @@ def me_api(request):
             'user': None
         })
 
-    if not personel_user_login_allowed(request.user) or not request.user.is_active:
+    from apps.student_portal.auth import student_user_login_allowed
+
+    student_ok, _ = student_user_login_allowed(request.user)
+    if not personel_user_login_allowed(request.user) or not student_ok or not request.user.is_active:
         logout(request)
         return JsonResponse({
             'success': True,

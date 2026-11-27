@@ -34,7 +34,7 @@ export default function RotatingWords({ words, interval = 2200, className }: Rot
         <motion.span
           key={current}
           style={{ gridArea: '1 / 1', display: 'inline-block' }}
-          initial={reduce ? { opacity: 0 } : { y: '0.9em', opacity: 0 }}
+          initial={false}
           animate={{ y: 0, opacity: 1 }}
           exit={reduce ? { opacity: 0 } : { y: '-0.9em', opacity: 0 }}
           transition={{ duration: 0.45, ease: [0.22, 1, 0.36, 1] }}

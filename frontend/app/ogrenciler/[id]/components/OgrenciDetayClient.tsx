@@ -9,7 +9,7 @@ import { ModulePermissions, PermissionChecks } from "@/app/roles/role.permission
 import { OgrenciDetay, TabType, TabConfig } from "../types";
 import OgrenciProfilKart from "./OgrenciProfilKart";
 import OgrenciBilgiDrawer from "./OgrenciBilgiDrawer";
-import { VeliTab, AkademikTab, SinavTab, FinansTab, RehberlikTab, IletisimTab, NotlarTab } from "./tabs";
+import { VeliTab, AkademikTab, SinavTab, FinansTab, RehberlikTab, IletisimTab, NotlarTab, PortalHesabiTab } from "./tabs";
 
 const GUEST_TAB_IDS = new Set(['veli', 'sinav', 'finans', 'notlar']);
 
@@ -86,6 +86,16 @@ const ALL_TABS: TabConfig[] = [
         <line x1="16" y1="13" x2="8" y2="13" />
         <line x1="16" y1="17" x2="8" y2="17" />
         <line x1="10" y1="9" x2="8" y2="9" />
+      </svg>
+    ),
+  },
+  {
+    id: 'portal',
+    label: 'Portal Hesabı',
+    icon: (
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
       </svg>
     ),
   },
@@ -182,6 +192,8 @@ export default function OgrenciDetayClient({ data: initialData }: { data: Ogrenc
         return <IletisimTab ogrenciId={data.id} ogrenciAd={data.tam_ad} />;
       case 'notlar':
         return canViewNotes ? <NotlarTab ogrenciId={data.id} /> : null;
+      case 'portal':
+        return <PortalHesabiTab data={data} />;
       default:
         return null;
     }

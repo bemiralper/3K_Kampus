@@ -71,7 +71,7 @@ export default function LandingHeader({ branding, onLoginClick }: LandingHeaderP
   return (
     <>
       <motion.header
-        initial={{ y: -24, opacity: 0 }}
+        initial={false}
         animate={{ y: 0, opacity: 1 }}
         transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         className={`landing-header ${scrolled ? 'is-scrolled' : ''}`}

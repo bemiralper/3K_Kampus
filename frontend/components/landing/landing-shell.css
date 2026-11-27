@@ -1,0 +1,123 @@
+/* Üst şerit ve başlık, styled-jsx JS çalışmadan önce de düzgün dursun.
+   Telefonda geliştirme paketi geç gelince logo 200px boşluk açıp metinler
+   üst üste biniyordu. */
+
+.topbar-desktop {
+  display: none;
+  color: #fff;
+}
+
+.topbar-mobile {
+  display: block;
+  color: #fff;
+  overflow: hidden;
+}
+
+@media (min-width: 768px) {
+  .topbar-desktop {
+    display: block;
+  }
+
+  .topbar-mobile {
+    display: none;
+  }
+}
+
+.topbar-phones a,
+.topbar-chip,
+.topbar-mobile-chip {
+  color: #fff;
+  text-decoration: none;
+}
+
+.topbar-mobile-track {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.topbar-mobile-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-shrink: 0;
+  padding: 0.3rem 0.65rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.landing-header {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.landing-header__inner {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  max-width: 80rem;
+  height: 4.5rem;
+  margin: 0 auto;
+  padding: 0 1rem;
+}
+
+.landing-header__logo {
+  height: 2.4rem;
+  width: auto;
+  max-width: 8.75rem;
+  object-fit: contain;
+}
+
+.landing-header__brand-text,
+.landing-header__nav,
+.landing-header__login {
+  display: none;
+}
+
+.landing-header__actions {
+  display: flex;
+  align-items: center;
+  margin-left: auto;
+}
+
+.landing-header__burger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.6rem;
+  height: 2.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  background: #fff;
+  color: #0f2744;
+}
+
+@media (min-width: 640px) {
+  .landing-header__brand-text,
+  .landing-header__login {
+    display: inline-flex;
+  }
+}
+
+@media (min-width: 1024px) {
+  .landing-header__nav {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    justify-content: center;
+    gap: 0.25rem;
+  }
+
+  .landing-header__burger {
+    display: none;
+  }
+}

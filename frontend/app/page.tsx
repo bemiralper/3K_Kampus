@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import { cache } from 'react';
 import LandingPageClient from '@/components/landing/LandingPageClient';
+import '@/components/landing/landing-shell.css';
 import { fetchLandingData as fetchLandingDataRaw } from '@/lib/website-api';
 import { buildLandingMetadata } from '@/lib/landing-seo';
 import { LANDING_KURUM_KOD } from '@/lib/landing-theme';

@@ -1,0 +1,18 @@
+{
+  "name": "3K Kampüs — Öğrenci Portalı",
+  "short_name": "3K Öğrenci",
+  "description": "3K Kampüs Öğrenci Portalı: Ders programı, odak sayacı, sınav analizi ve koçluk.",
+  "start_url": "/ogrenci",
+  "scope": "/ogrenci",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1120",
+  "theme_color": "#4f46e5",
+  "icons": [
+    {
+      "src": "/favicon.ico",
+      "sizes": "48x48 64x64",
+      "type": "image/x-icon"
+    }
+  ]
+}

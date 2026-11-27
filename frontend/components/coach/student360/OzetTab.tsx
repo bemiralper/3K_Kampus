@@ -13,6 +13,7 @@ import {
 import Student360Icon, {
   type Student360IconName,
 } from '@/components/coach/Student360Icon';
+import StudentAchievementsStrip from '@/components/coach/student360/StudentAchievementsStrip';
 
 type PanelId = Exclude<Student360TabId, 'genel'>;
 
@@ -296,6 +297,8 @@ export default function OzetTab({ profile, onNavigateTab, onAction }: OzetTabPro
           )}
         </aside>
       </div>
+
+      <StudentAchievementsStrip studentId={profile.student?.id} />
 
       {recentMeetings.length > 0 && (
         <section className="s360-surface-card s360-ozet-timeline">

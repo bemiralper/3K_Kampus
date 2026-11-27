@@ -54,6 +54,7 @@ interface AssignmentTask {
   actual_duration_minutes: number | null;
   completed_at: string | null;
   student_feedback: string | null;
+  student_prepared?: boolean;
   is_completion_task: boolean;
   previous_task_completion_percent: number | null;
   previous_assignment_title: string;
@@ -1182,6 +1183,28 @@ export default function OdevKontrolDetailClient({
             </div>
           )}
 
+          {/* Öğrencinin Portal Üzerinden Bıraktığı Genel Ödev Notu (Salt Okunur) */}
+          {assignment.student_notes && (
+            <div style={{
+              background: "#f0f9ff",
+              border: "1px solid #bae6fd",
+              borderRadius: 12,
+              padding: "12px 16px",
+              marginBottom: 14,
+              fontSize: 13,
+              color: "#0c4a6e",
+              display: "flex",
+              alignItems: "flex-start",
+              gap: 10,
+            }}>
+              <span style={{ fontSize: 16, lineHeight: 1.2 }}>💬</span>
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 12, marginBottom: 2 }}>Öğrencinin Ödev Notu</div>
+                <div style={{ whiteSpace: "pre-wrap" }}>{assignment.student_notes}</div>
+              </div>
+            </div>
+          )}
+
           {/* Ders & Görev Listesi */}
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {assignment.lessons.length === 0 ? (
@@ -1394,6 +1417,38 @@ export default function OdevKontrolDetailClient({
                                       {badge.label}{task.completion_status === "PARTIAL" ? ` %${task.task_completion_percent}` : ""}
                                     </span>
                                     {metaBits.map((m) => <span key={m}>{m}</span>)}
+                                    {task.student_prepared && (
+                                      <span
+                                        style={{
+                                          padding: "1px 7px",
+                                          borderRadius: 10,
+                                          fontSize: 10,
+                                          fontWeight: 700,
+                                          background: "#eff6ff",
+                                          color: "#1d4ed8",
+                                          border: "1px solid #bfdbfe",
+                                        }}
+                                        title="Öğrenci portal üzerinden bu görevi çözdüğünü işaretledi (resmi kontrol yerine geçmez)"
+                                      >
+                                        ✓ Öğrenci çözdüm işaretledi
+                                      </span>
+                                    )}
+                                    {task.actual_duration_minutes != null && task.actual_duration_minutes > 0 && (
+                                      <span
+                                        style={{
+                                          padding: "1px 7px",
+                                          borderRadius: 10,
+                                          fontSize: 10,
+                                          fontWeight: 700,
+                                          background: "#f5f3ff",
+                                          color: "#6d28d9",
+                                          border: "1px solid #ddd6fe",
+                                        }}
+                                        title="Öğrencinin portal odak sayacıyla bu görevde çalıştığı süre"
+                                      >
+                                        ⏱ {task.actual_duration_minutes} dk odaklandı
+                                      </span>
+                                    )}
                                     {task.description && (
                                       <span className="ok-task-compact-desc">
                                         <NoteHtml html={task.description} />

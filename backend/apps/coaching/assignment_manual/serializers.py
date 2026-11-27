@@ -27,6 +27,7 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
     content_unit_id = serializers.SerializerMethodField()
     content_sira = serializers.SerializerMethodField()
     remaining_question_count = serializers.SerializerMethodField()
+    student_prepared = serializers.SerializerMethodField()
 
     class Meta:
         model = AssignmentTask
@@ -42,7 +43,7 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
             'completion_status', 'completion_status_display',
             'task_completion_percent', 'completed_question_count', 'completed_page_count',
             'coach_evaluation_note', 'evaluated_at',
-            'actual_duration_minutes', 'completed_at', 'student_feedback',
+            'actual_duration_minutes', 'completed_at', 'student_feedback', 'student_prepared',
             'is_completion_task', 'previous_task_completion_percent', 'previous_assignment_title',
             'created_at', 'updated_at'
         ]
@@ -82,6 +83,12 @@ class AssignmentTaskSerializer(serializers.ModelSerializer):
             return obj.question_count
         completed = obj.completed_question_count or 0
         return max(0, obj.question_count - completed)
+
+    def get_student_prepared(self, obj):
+        prepared_ids = self.context.get('_student_prepared_task_ids')
+        if not prepared_ids:
+            return False
+        return obj.id in prepared_ids
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
@@ -336,6 +343,17 @@ class ManualAssignmentDetailSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at', 'assigned_date', 'completed_date']
 
     def to_representation(self, instance):
+        if instance.student_id and '_student_prepared_task_ids' not in self.context:
+            try:
+                from apps.student_portal.services.homework_service import (
+                    get_prepared_task_ids_for_student_id,
+                )
+
+                self.context['_student_prepared_task_ids'] = get_prepared_task_ids_for_student_id(
+                    instance.student_id
+                )
+            except Exception:
+                self.context['_student_prepared_task_ids'] = set()
         data = super().to_representation(instance)
         data['title'] = strip_completion_title_suffix(data.get('title'))
         return data

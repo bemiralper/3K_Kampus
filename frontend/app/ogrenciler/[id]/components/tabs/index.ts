@@ -6,3 +6,4 @@ export { default as FinansTab } from './FinansTab';
 export { default as RehberlikTab } from './RehberlikTab';
 export { default as IletisimTab } from './IletisimTab';
 export { default as NotlarTab } from './NotlarTab';
+export { default as PortalHesabiTab } from './PortalHesabiTab';

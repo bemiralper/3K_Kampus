@@ -6,6 +6,7 @@ import {
   Student360TabId,
 } from '@/lib/coach-api';
 import { normalizeCoachRiskLevel } from '@/lib/coach-constants';
+import StudentAchievementsStrip from '@/components/coach/student360/StudentAchievementsStrip';
 
 const ACCENT_MAP: Record<string, string> = {
   blue: '#2563eb',
@@ -216,6 +217,8 @@ export default function GenelBakisTab({ profile, onNavigateTab }: GenelBakisTabP
           ))}
         </div>
       </section>
+
+      <StudentAchievementsStrip studentId={profile.student?.id} />
 
       {recentMeetings.length > 0 && (
         <section className="student360-overview-section" style={{ marginTop: 20 }}>

@@ -1,6 +1,7 @@
 """Ogrenci API URL Configuration"""
 from django.urls import path
 from apps.ogrenci.interfaces import views
+from apps.student_portal.views import staff_student_portal_account_api
 
 app_name = "ogrenci_api"
 
@@ -9,6 +10,7 @@ urlpatterns = [
     path("export/", views.ogrenci_list_export_api, name="ogrenci_list_export_api"),
     path("filter-options/", views.ogrenci_filter_options_api, name="ogrenci_filter_options_api"),
     path("<int:pk>/", views.ogrenci_api, name="ogrenci_api"),
+    path("<int:pk>/portal-account/", staff_student_portal_account_api, name="ogrenci_portal_account_api"),
     path("<int:pk>/akademik/", views.ogrenci_akademik_api, name="ogrenci_akademik_api"),
     path("<int:pk>/delete/", views.ogrenci_delete_api, name="ogrenci_delete_api"),
     path("<int:pk>/finans-ozet/", views.ogrenci_finans_ozet_api, name="ogrenci_finans_ozet_api"),

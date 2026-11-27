@@ -84,7 +84,7 @@ export type OgrenciDetay = {
   ek_hizmetler?: OgrenciEkHizmet[];
 };
 
-export type TabType = 'veli' | 'akademik' | 'sinav' | 'finans' | 'rehberlik' | 'iletisim' | 'notlar';
+export type TabType = 'veli' | 'akademik' | 'sinav' | 'finans' | 'rehberlik' | 'iletisim' | 'notlar' | 'portal';
 
 export interface TabConfig {
   id: TabType;

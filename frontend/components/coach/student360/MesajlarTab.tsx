@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import WhatsAppChatButton from '@/components/communication/WhatsAppChatButton';
+import StudentPortalChatPanel from '@/components/coach/student360/StudentPortalChatPanel';
 import {
   ConversationListItem,
   fetchConversations,
@@ -160,6 +161,8 @@ export default function MesajlarTab({
           })}
         </ul>
       )}
+
+      <StudentPortalChatPanel studentId={studentId} studentName={studentName} />
     </div>
   );
 }

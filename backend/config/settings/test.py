@@ -16,6 +16,7 @@ os.environ.setdefault('LMS_BACKUP_HEARTBEAT', str(_guard_dir / 'backup.heartbeat
 DEBUG = True
 
 MOBILE_IDENTITY_ENABLED = True
+STUDENT_PORTAL_ENABLED = True
 
 # `apps` namespace paketi nedeniyle keşif kökü backend/ olmalı (bkz. config/test_runner.py)
 TEST_RUNNER = 'config.test_runner.LmsTestRunner'

@@ -60,6 +60,7 @@ INSTALLED_APPS = [
     'apps.sistem_yonetimi.apps.SistemYonetimiConfig',  # Sistem Yönetimi (System Center)
     'apps.dashboard.apps.DashboardConfig',
     'apps.mobile_identity.apps.MobileIdentityConfig',
+    'apps.student_portal.apps.StudentPortalConfig',
 ]
 
 # WhatsApp Business Cloud API (dev: empty defaults)
@@ -258,6 +259,11 @@ REST_FRAMEWORK = {
 # Açmak: MOBILE_IDENTITY_ENABLED=1. Geliştirme ve test ayarları ayrıca açar.
 MOBILE_IDENTITY_ENABLED = os.environ.get('MOBILE_IDENTITY_ENABLED', '0').lower() in (
     '1', 'true', 'yes',
+)
+
+# Öğrenci portalı izole API bayrağı. STUDENT_PORTAL_ENABLED=0 ile anında kapatılabilir.
+STUDENT_PORTAL_ENABLED = os.environ.get('STUDENT_PORTAL_ENABLED', '1').lower() not in (
+    '0', 'false', 'no',
 )
 
 # Önizleme ve PDF varsayılan olarak aynı HTML belgesini kullanır.
