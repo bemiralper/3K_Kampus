@@ -153,6 +153,7 @@ _LISTE_FILTER_KEYS = (
     'gelir_kaynagi_id', 'maliyet_merkezi_id', 'proje_id', 'odeme_yontemi_id',
     'olusturan_id', 'etiket_id', 'belge_no', 'baslangic', 'bitis',
     'tutar_min', 'tutar_max', 'kdv_var', 'kdv_orani', 'tahsil_durumu', 'odeme_durumu',
+    'vade_baslangic', 'vade_bitis',
 )
 
 

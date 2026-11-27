@@ -231,14 +231,17 @@ class CariHesapRaporListView(APIView):
         baslangic = request.query_params.get('baslangic') or None
         bitis = request.query_params.get('bitis') or None
 
-        rows = selector.cari_rapor_listesi(
-            kurum_id,
-            sube_id=sube_id,
-            hesap_turu=hesap_turu,
-            arama=arama,
-            baslangic=baslangic,
-            bitis=bitis,
-        )
+        try:
+            rows = selector.cari_rapor_listesi(
+                kurum_id,
+                sube_id=sube_id,
+                hesap_turu=hesap_turu,
+                arama=arama,
+                baslangic=baslangic,
+                bitis=bitis,
+            )
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(rows)
 
 
@@ -362,13 +365,19 @@ class CariDosyaListCreateView(APIView):
         dosyalar = CariDosya.objects.filter(cari_hesap_id=pk)
         data = []
         for d in dosyalar:
+            aciklama_gorunen = d.aciklama or ''
+            if aciklama_gorunen.startswith('[GELIR:') and ']' in aciklama_gorunen:
+                head, rest = aciklama_gorunen.split(']', 1)
+                gid = head.replace('[GELIR:', '').strip()
+                rest = rest.strip()
+                aciklama_gorunen = f'Gelir #{gid} eki — {rest}' if rest else f'Gelir #{gid} eki'
             data.append({
                 'id': d.id,
                 'dosya_adi': d.dosya_adi,
                 'dosya_turu': d.dosya_turu,
                 'dosya_turu_display': d.get_dosya_turu_display(),
                 'dosya_url': d.dosya_url,
-                'aciklama': d.aciklama,
+                'aciklama': aciklama_gorunen,
                 'dosya_boyutu': d.dosya_boyutu,
                 'dosya_boyutu_fmt': d.dosya_boyutu_fmt,
                 'yukleyen_adi': d.yukleyen.get_full_name() if d.yukleyen else None,

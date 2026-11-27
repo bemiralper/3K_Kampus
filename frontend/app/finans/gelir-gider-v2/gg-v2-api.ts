@@ -5,6 +5,7 @@ import {
   GGDropdown,
   GGEkliBelge,
   GGFilters,
+  GGGelirDetay,
   GGGiderDetay,
   GGListItem,
   GGListResponse,
@@ -202,6 +203,37 @@ export const ggService = {
 
   gelirTahsilatIptal(tahsilatId: number): Promise<{ detail: string; durum: string }> {
     return request(`/gelir-tahsilatlar/${tahsilatId}/iptal/`, { method: "POST" });
+  },
+
+  gelirDetay(gelirId: number): Promise<GGGelirDetay> {
+    return request<GGGelirDetay>(`/gelir/v2/kayitlar/${gelirId}/detay/`);
+  },
+
+  gelirBelge(
+    gelirId: number,
+    fmt: "pdf" | "html" = "pdf",
+  ): Promise<{ blob: Blob; filename: string }> {
+    return finansDownload(`/gelir/v2/kayitlar/${gelirId}/belgeler/gelir/?fmt=${fmt}`);
+  },
+
+  tahsilatBelge(
+    gelirId: number,
+    tahsilatId: number,
+    fmt: "pdf" | "html" = "pdf",
+  ): Promise<{ blob: Blob; filename: string }> {
+    return finansDownload(`/gelir/v2/kayitlar/${gelirId}/belgeler/tahsilat/${tahsilatId}/?fmt=${fmt}`);
+  },
+
+  gelirEkYukle(gelirId: number, file: File, aciklama = ""): Promise<GGEkliBelge> {
+    const fd = new FormData();
+    fd.append("dosya", file);
+    fd.append("dosya_turu", "fatura");
+    if (aciklama) fd.append("aciklama", aciklama);
+    return finansFormUpload<GGEkliBelge>(`/gelir/v2/kayitlar/${gelirId}/ekler/`, fd);
+  },
+
+  gelirEkSil(gelirId: number, ekId: number): Promise<{ detail: string }> {
+    return request(`/gelir/v2/kayitlar/${gelirId}/ekler/${ekId}/`, { method: "DELETE" });
   },
 
   // ─── Ortak ────────────────────────────────────────────────────

@@ -46,6 +46,7 @@ export interface GGListItem {
   maliyet_merkezi?: Ref;
   proje: Ref;
   odeme_yontemi: Ref;
+  kdv_mod?: "haric" | "dahil" | "muaf";
   brut_tutar: string;
   kdv_orani: number;
   kdv_tutar: string;
@@ -54,6 +55,9 @@ export interface GGListItem {
   tahsil_edilen?: string;
   kalan_tutar: string;
   tahsilat_yuzdesi?: string;
+  tahsil_durumu?: string;
+  tahsil_durumu_label?: string;
+  has_tahsilat?: boolean;
   // gider tarafı
   odenen_toplam?: string;
   odeme_yuzdesi?: string;
@@ -96,6 +100,7 @@ export interface GGOdeme {
 export interface GGTahsilat {
   id: number;
   gelir_kaydi_id: number;
+  makbuz_no?: string;
   cari_hesap_adi: string;
   fatura_no: string | null;
   odeme_yontemi_id: number | null;
@@ -107,6 +112,7 @@ export interface GGTahsilat {
   aciklama: string;
   durum: string;
   durum_display: string;
+  bakiyeden_mahsup?: boolean;
   islem_yapan_adi: string | null;
   created_at: string | null;
 }
@@ -136,8 +142,18 @@ export interface GGTaksitPlanSatir {
   aciklama?: string;
 }
 
+export interface GGListTotals {
+  toplam_brut: string;
+  toplam_kdv: string;
+  toplam_net: string;
+  toplam_tahsil?: string;
+  toplam_odenen?: string;
+  toplam_kalan: string;
+}
+
 export interface GGListResponse {
   results: GGListItem[];
+  totals?: GGListTotals;
   page: number;
   page_size: number;
   total: number;
@@ -164,6 +180,8 @@ export interface GGFilters {
   belge_no?: string;
   baslangic?: string;
   bitis?: string;
+  vade_baslangic?: string;
+  vade_bitis?: string;
   tutar_min?: number | string;
   tutar_max?: number | string;
   kdv_var?: string;
@@ -273,6 +291,13 @@ export interface GGGiderDetay extends GGListItem {
   mali_hesap?: Ref;
   taksitler: GGTaksit[];
   odemeler: GGOdeme[];
+  ekli_belgeler: GGEkliBelge[];
+}
+
+export interface GGGelirDetay extends GGListItem {
+  sube?: Ref;
+  mali_hesap?: Ref;
+  tahsilatlar: GGTahsilat[];
   ekli_belgeler: GGEkliBelge[];
 }
 

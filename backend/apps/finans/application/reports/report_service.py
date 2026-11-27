@@ -282,12 +282,13 @@ class ReportService:
             toplam=Sum('tutar'), adet=Count('id'),
         )
 
+        from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
         gelir_q = Q(
             gelir_kaydi__kurum_id=kurum_id,
             durum=OdemeDurum.TAMAMLANDI,
             tahsilat_tarihi__gte=baslangic,
             tahsilat_tarihi__lte=bitis,
-        )
+        ) & gelir_gercek_tahsilat_q()
         if sube_id:
             gelir_q &= Q(gelir_kaydi__sube_id=sube_id)
         if egitim_yili_id:

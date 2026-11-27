@@ -13,11 +13,11 @@ from apps.finans.application.cari_v2.cari_dashboard_service import CariDashboard
 from apps.finans.application.cari_v2.cari_panel_service import CariPanelService
 from apps.finans.application.cari_v2.cari_query_service import CariQueryService
 from apps.finans.application.cari_v2.cari_report_service import SLUGS, CariReportService
-from apps.finans.application.cari_v2.cari_risk_service import hesapla_risk
 from apps.finans.application.cari_v2.etiket_service import CariEtiketService
 from apps.finans.application.cari_v2.gorunum_service import CariGorunumService
 from apps.finans.application.cari_v2.permissions import cari_effective_permissions
 from apps.finans.application.cari_hareket_enrichment import build_cari_hareket_meta
+from apps.finans.application.ekstre_balance import cari_donem_bakiyesi, tarih_parametresi
 from apps.finans.application.selectors.cari_hesap_selector import CariHesapSelector
 from apps.finans.interfaces.serializers.cari_hesap_serializer import (
     CariHareketListSerializer,
@@ -208,18 +208,26 @@ class CariV2HareketlerView(APIView):
         selector = CariHesapSelector()
         filtreler = {}
         qp = request.query_params
+        islem_turleri = None
         if qp.get('islem_turu'):
             val = qp['islem_turu']
             if ',' in val:
-                filtreler['islem_turu__in'] = [t.strip() for t in val.split(',')]
+                islem_turleri = [t.strip() for t in val.split(',') if t.strip()]
+                filtreler['islem_turu__in'] = islem_turleri
             else:
+                islem_turleri = [val]
                 filtreler['islem_turu'] = val
         if qp.get('yon'):
             filtreler['yon'] = qp['yon']
-        if qp.get('baslangic'):
-            filtreler['baslangic'] = qp['baslangic']
-        if qp.get('bitis'):
-            filtreler['bitis'] = qp['bitis']
+        try:
+            baslangic = tarih_parametresi(qp.get('baslangic'))
+            bitis = tarih_parametresi(qp.get('bitis'))
+        except ValueError as exc:
+            return Response({'error': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        if baslangic:
+            filtreler['baslangic'] = baslangic
+        if bitis:
+            filtreler['bitis'] = bitis
 
         qs = selector.hareketler(pk, filtreler=filtreler or None)
         try:
@@ -232,18 +240,56 @@ class CariV2HareketlerView(APIView):
             page_size = 50
 
         count = qs.count()
+        from apps.finans.domain.cari_hareket import CariHareket
+
+        donem = cari_donem_bakiyesi(
+            pk,
+            baslangic=baslangic,
+            bitis=bitis,
+            islem_turleri=islem_turleri,
+            yon=qp.get('yon') or None,
+        )
+
         start = (page - 1) * page_size
         hareket_list = list(qs[start:start + page_size])
+        serbest_ids = [
+            h.pk for h in hareket_list
+            if h.kaynak_tip in ('SerbestOdeme', 'SerbestTahsilat')
+        ]
+        iptal_edilen_ids = set()
+        if serbest_ids:
+            iptal_edilen_ids = set(
+                CariHareket.objects.filter(
+                    kaynak_tip__in=['SerbestOdemeIptal', 'SerbestTahsilatIptal'],
+                    kaynak_id__in=serbest_ids,
+                ).values_list('kaynak_id', flat=True)
+            )
+
+        kaynak_meta = build_cari_hareket_meta(hareket_list)
         serializer = CariHareketListSerializer(
             hareket_list, many=True,
-            context={'kaynak_meta': build_cari_hareket_meta(hareket_list)},
+            context={
+                'kaynak_meta': kaynak_meta,
+                'iptal_edilen_ids': iptal_edilen_ids,
+            },
         )
+        results = serializer.data
+        for row in results:
+            row['yuruyen_bakiye'] = round(float(donem.satir_bakiyeleri.get(row['id'], 0)), 2)
+            row['kaynak_belge'] = kaynak_meta.get((row['kaynak_tip'], row['kaynak_id']), {}).get('belge')
         return Response({
-            'results': serializer.data,
+            'results': results,
             'count': count,
             'page': page,
             'page_size': page_size,
             'total_pages': (count + page_size - 1) // page_size if page_size else 1,
+            'ozet': {
+                'devreden_bakiye': round(float(donem.devreden), 2),
+                'toplam_borc': round(float(donem.toplam_borc), 2),
+                'toplam_alacak': round(float(donem.toplam_alacak), 2),
+                'kapanis_bakiye': round(float(donem.kapanis), 2),
+                'filtreli': bool(islem_turleri or qp.get('yon')),
+            },
         })
 
 
@@ -256,6 +302,7 @@ class CariV2TabView(APIView):
         if err:
             return err
         handler = {
+            'acik-kalemler': self._acik_kalemler,
             'gelirler': self._gelirler,
             'giderler': self._giderler,
             'tahsilatlar': self._tahsilatlar,
@@ -266,6 +313,9 @@ class CariV2TabView(APIView):
         if not handler:
             return Response({'error': 'Geçersiz sekme.'}, status=400)
         return Response(handler(hesap))
+
+    def _acik_kalemler(self, hesap):
+        return CariHesapSelector().acik_kalemler(hesap.pk)
 
     def _gelirler(self, hesap):
         from apps.finans.domain.gelir_kaydi import GelirKaydi
@@ -285,6 +335,7 @@ class CariV2TabView(APIView):
                 'tahsil_edilen': float(g.tahsil_edilen),
                 'kalan': float(g.kalan_tutar),
                 'durum': g.durum,
+                'durum_label': g.get_durum_display(),
                 'aciklama': g.aciklama,
             }
             for g in rows
@@ -308,6 +359,7 @@ class CariV2TabView(APIView):
                 'odenen_toplam': float(g.odenen_toplam),
                 'kalan': float(g.kalan_tutar),
                 'durum': g.durum,
+                'durum_label': g.get_durum_display(),
                 'aciklama': g.aciklama,
             }
             for g in rows

@@ -54,17 +54,10 @@ export const MUHASEBE_FINANS_CHILDREN: MuhasebeNavChildDef[] = [
     matchPrefix: MUHASEBE_FINANS_BASE,
   },
   {
-    id: "virman",
-    href: `${MUHASEBE_FINANS_BASE}/virman`,
-    label: "Virman",
-    matchPrefix: `${MUHASEBE_FINANS_BASE}/virman`,
-  },
-  {
-    id: "tahsilat-raporlar",
-    href: `${MUHASEBE_FINANS_BASE}/tahsilat-raporlar`,
-    label: "Raporlar",
-    matchPrefix: `${MUHASEBE_FINANS_BASE}/tahsilat-raporlar`,
-    hardNav: true,
+    id: "cari-hesaplar-v2",
+    href: `${MUHASEBE_FINANS_BASE}/cari-hesaplar-v2`,
+    label: "Cari Hesaplar",
+    matchPrefix: `${MUHASEBE_FINANS_BASE}/cari-hesaplar-v2`,
   },
   {
     id: "gelir-v2",
@@ -79,16 +72,23 @@ export const MUHASEBE_FINANS_CHILDREN: MuhasebeNavChildDef[] = [
     matchPrefix: `${MUHASEBE_FINANS_BASE}/gider-v2`,
   },
   {
-    id: "cari-hesaplar-v2",
-    href: `${MUHASEBE_FINANS_BASE}/cari-hesaplar-v2`,
-    label: "Cari Hesaplar",
-    matchPrefix: `${MUHASEBE_FINANS_BASE}/cari-hesaplar-v2`,
-  },
-  {
     id: "cek-senet",
     href: `${MUHASEBE_FINANS_BASE}/cek-senet-v2`,
     label: "Çek / Senet",
     matchPrefix: `${MUHASEBE_FINANS_BASE}/cek-senet`,
+  },
+  {
+    id: "virman",
+    href: `${MUHASEBE_FINANS_BASE}/virman`,
+    label: "Virman",
+    matchPrefix: `${MUHASEBE_FINANS_BASE}/virman`,
+  },
+  {
+    id: "tahsilat-raporlar",
+    href: `${MUHASEBE_FINANS_BASE}/tahsilat-raporlar`,
+    label: "Raporlar",
+    matchPrefix: `${MUHASEBE_FINANS_BASE}/tahsilat-raporlar`,
+    hardNav: true,
   },
   {
     id: "gelir-gider-v2-tanimlar",

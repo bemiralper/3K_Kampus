@@ -61,13 +61,17 @@ class FinansV2RaporService:
         return method(kurum_id, sube_id, params)
     # ─── Yardımcılar ──────────────────────────────
     def _gelir_qs(self, kurum_id, sube_id, params):
-        qs = GelirKaydi.objects.filter(kurum_id=kurum_id).exclude(durum=GelirDurum.IPTAL)
+        qs = GelirKaydi.objects.filter(kurum_id=kurum_id).exclude(
+            durum__in=[GelirDurum.IPTAL, GelirDurum.TASLAK],
+        )
         if sube_id:
             qs = qs.filter(sube_id=sube_id)
         return self._tarih(qs, params, 'fatura_tarihi')
 
     def _gider_qs(self, kurum_id, sube_id, params):
-        qs = GiderKaydi.objects.filter(kurum_id=kurum_id).exclude(durum=GiderDurum.IPTAL)
+        qs = GiderKaydi.objects.filter(kurum_id=kurum_id).exclude(
+            durum__in=[GiderDurum.IPTAL, GiderDurum.TASLAK, GiderDurum.ONAY_BEKLIYOR],
+        )
         if sube_id:
             qs = qs.filter(sube_id=sube_id)
         return self._tarih(qs, params, 'fatura_tarihi')

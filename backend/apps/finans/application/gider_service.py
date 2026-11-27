@@ -67,6 +67,7 @@ class GiderService:
         data['brut_tutar'], data['kdv_tutar'], data['net_tutar'] = kdv_hesapla_mod(
             girilen, kdv_orani, kdv_mod,
         )
+        taslak_olarak_kaydet = bool(data.pop('taslak_olarak_kaydet', False))
         data['durum'] = GiderDurum.TASLAK
 
         # Özel taksit planı varsa doğrula ve JSON olarak sakla
@@ -80,6 +81,9 @@ class GiderService:
         onaylayan_user = data.get('olusturan')
 
         gider = self.gider_repo.create(data)
+
+        if taslak_olarak_kaydet:
+            return gider, None
 
         update_data = {
             'durum': GiderDurum.ONAYLANDI,
@@ -290,6 +294,7 @@ class GiderService:
         # Taksit planı oluştur (özel plan varsa kullan)
         taksit_plani = getattr(gider, 'taksit_plani_json', None)
         self.taksit_repo.toplu_olustur(gider, taksit_plani=taksit_plani)
+        self._sync_gider_cek_senet(gider)
 
         # Cari hesapta ALACAK hareketi (biz tedarikçiye borçlanıyoruz)
         self.cari_hareket_service.hareket_olustur(

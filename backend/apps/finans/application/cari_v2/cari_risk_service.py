@@ -29,29 +29,42 @@ def hesapla_risk(
     acik_borc: float,
     risk_limiti: float = 0.0,
     vadesi_gecmis: float = 0.0,
+    *,
+    acik_alacak: float = 0.0,
+    hesap_turu: str | None = None,
 ) -> dict:
     """
     Args:
         acik_borc: Ödenecek açık tutar (net bakiye negatifse mutlak değeri).
         risk_limiti: Tanımlı risk limiti (0 = limit yok).
         vadesi_gecmis: Vadesi geçmiş açık tutar.
+        acik_alacak: Tahsil edilecek açık tutar (net bakiye pozitifse).
+        hesap_turu: Cari türü ('musteri', 'tedarikci', 'karma', 'gelir_hesabi', 'gider_hesabi', 'diger').
 
     Returns:
         {risk_durumu, risk_durumu_display, risk_skoru, kullanim_orani,
-         limit_asim, vadesi_gecmis}
+         limit_asim, vadesi_gecmis, risk_limiti, risk_maruziyeti}
     """
     acik_borc = float(acik_borc or 0)
+    acik_alacak = float(acik_alacak or 0)
     risk_limiti = float(risk_limiti or 0)
     vadesi_gecmis = float(vadesi_gecmis or 0)
+
+    if hesap_turu in ('musteri', 'gelir_hesabi'):
+        maruziyet = acik_alacak
+    elif hesap_turu in ('tedarikci', 'gider_hesabi'):
+        maruziyet = acik_borc
+    else:
+        maruziyet = max(acik_borc, acik_alacak)
 
     kullanim_orani = 0.0
     limit_asim = 0.0
     if risk_limiti > 0:
-        kullanim_orani = round(acik_borc / risk_limiti * 100, 2)
-        if acik_borc > risk_limiti:
-            limit_asim = round(acik_borc - risk_limiti, 2)
+        kullanim_orani = round(maruziyet / risk_limiti * 100, 2)
+        if maruziyet > risk_limiti:
+            limit_asim = round(maruziyet - risk_limiti, 2)
 
-    limit_asildi = risk_limiti > 0 and acik_borc > risk_limiti
+    limit_asildi = risk_limiti > 0 and maruziyet > risk_limiti
 
     if vadesi_gecmis > 0 and limit_asildi:
         durum = RISK_KRITIK
@@ -83,6 +96,7 @@ def hesapla_risk(
         'limit_asim': limit_asim,
         'vadesi_gecmis': round(vadesi_gecmis, 2),
         'risk_limiti': round(risk_limiti, 2),
+        'risk_maruziyeti': round(maruziyet, 2),
     }
 
 

@@ -238,7 +238,9 @@ def odeme_kirilimi_topla(kurum_id: int, gun: date, sube_id: int | None) -> dict[
         kova[b]['toplam'] += as_money(row['toplam'] or 0)
         kova[b]['adet'] += row['adet'] or 0
 
+    from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
     g_qs = GelirTahsilat.objects.filter(
+        gelir_gercek_tahsilat_q(),
         gelir_kaydi__kurum_id=kurum_id,
         durum=OdemeDurum.TAMAMLANDI,
     ).filter(bugun_islem_q('tahsilat_tarihi', gun))
@@ -272,7 +274,9 @@ def nakit_tahsilat_toplam(kurum_id: int, gun: date, sube_id: int | None) -> int:
 
 
 def nakit_gelir_toplam(kurum_id: int, gun: date, sube_id: int | None) -> int:
+    from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
     qs = GelirTahsilat.objects.filter(
+        gelir_gercek_tahsilat_q(),
         gelir_kaydi__kurum_id=kurum_id,
         tahsilat_tarihi=gun,
         durum=OdemeDurum.TAMAMLANDI,
@@ -444,7 +448,7 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     Günlük alınan toplam (sözleşme + gelir + cari) — dashboard ile aynı iş günü mantığı,
     strict şube filtresi (yalnızca aktif şube kayıtları).
     """
-    from apps.finans.application.cari_balance import cari_bagimsiz_tahsilat_q
+    from apps.finans.application.cari_balance import cari_bagimsiz_tahsilat_q, gelir_gercek_tahsilat_q
     from apps.finans.constants.cari_types import CariHareketTuru
     from apps.finans.domain.cari_hareket import CariHareket
     from apps.odeme_takip.domain.models import Tahsilat
@@ -460,6 +464,7 @@ def bugun_alinan_toplam(kurum_id: int, gun: date, sube_id: int | None = None) ->
     toplam += as_money(t_qs.aggregate(t=Sum('tutar'))['t'] or 0)
 
     gt_qs = GelirTahsilat.objects.filter(
+        gelir_gercek_tahsilat_q(),
         gelir_kaydi__kurum_id=kurum_id,
         durum=OdemeDurum.TAMAMLANDI,
     ).filter(bugun_islem_q('tahsilat_tarihi', gun))

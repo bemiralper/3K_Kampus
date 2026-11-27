@@ -1,12 +1,14 @@
 """
 Cari Ödeme Views — Serbest ödeme (gider bağımsız) API endpoint'leri
 """
+from decimal import Decimal
 from apps.finans.interfaces.views.base import FinansAPIView as APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework import serializers
 
 from apps.finans.application.cari_odeme_service import CariOdemeService
+from apps.finans.application.cari_tahsilat_service import CariTahsilatService
 from apps.finans.interfaces.serializers.islem_masrafi_serializer import IslemMasrafiInputSerializer
 from apps.finans.interfaces.views.sube_context import resolve_mandatory_finans_sube
 
@@ -76,6 +78,76 @@ class CariSerbestOdemeIptalView(APIView):
             return err
         service = CariOdemeService()
         result, errors = service.serbest_odeme_iptal(cari_hareket_id)
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result)
+
+
+class CariSerbestTahsilatSerializer(IslemMasrafiInputSerializer):
+    """Serbest cari tahsilat oluşturma validasyonu."""
+    cari_hesap_id = serializers.IntegerField()
+    kurum_id = serializers.IntegerField()
+    tutar = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal('0.01'))
+    tahsilat_tarihi = serializers.DateField()
+    mali_hesap_id = serializers.IntegerField(required=False, allow_null=True)
+    odeme_yontemi_id = serializers.IntegerField(required=False, allow_null=True)
+    aciklama = serializers.CharField(required=False, allow_blank=True, max_length=500)
+    vade_tarihi = serializers.DateField(required=False, allow_null=True)
+    cek_senet_no = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    seri_no = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    banka_adi = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    sube_adi = serializers.CharField(required=False, allow_blank=True, max_length=100)
+    hesap_no = serializers.CharField(required=False, allow_blank=True, max_length=50)
+    keside_eden = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    keside_tarihi = serializers.DateField(required=False, allow_null=True)
+
+
+class CariSerbestTahsilatView(APIView):
+    """
+    POST → Gelir faturasına bağlı olmadan doğrudan cari hesaptan tahsilat alır.
+    Açılış bakiyesi tahsilatı, cari tahsilat, müşteri avansı gibi durumlarda kullanılır.
+    """
+
+    def post(self, request):
+        serializer = CariSerbestTahsilatSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+        data = dict(serializer.validated_data)
+        kurum_id = data['kurum_id']
+        sube_id, err = resolve_mandatory_finans_sube(request, kurum_id)
+        if err:
+            return err
+
+        data['sube_id'] = sube_id
+        data['islem_yapan'] = request.user if request.user.is_authenticated else None
+
+        service = CariTahsilatService()
+        result, errors = service.serbest_tahsilat_yap(data)
+
+        if errors:
+            return Response(errors, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(result, status=status.HTTP_201_CREATED)
+
+
+class CariSerbestTahsilatIptalView(APIView):
+    """POST → Serbest tahsilatı iptal eder (ters kayıtlar oluşturur)."""
+
+    def post(self, request, cari_hareket_id):
+        from apps.finans.domain.cari_hareket import CariHareket
+        from apps.finans.interfaces.views.sube_context import assert_record_sube_access
+
+        hareket = CariHareket.objects.filter(pk=cari_hareket_id).first()
+        if hareket is None:
+            return Response({'error': 'Cari hareket bulunamadı.'}, status=status.HTTP_404_NOT_FOUND)
+        err = assert_record_sube_access(request, hareket.kurum_id, hareket.sube_id)
+        if err is not None:
+            return err
+        service = CariTahsilatService()
+        result, errors = service.serbest_tahsilat_iptal(cari_hareket_id)
 
         if errors:
             return Response(errors, status=status.HTTP_400_BAD_REQUEST)

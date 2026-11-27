@@ -1,59 +1,84 @@
 """
-Cari ekstre bakiye hesapları — frontend ile aynı mantık (test / doğrulama).
+Cari dönem bakiyesi — Cari Ekstre raporu ve Hareketler sekmesinin ortak hesabı.
+
+Bakiye, satırlardaki anlık görüntüden (bakiye_oncesi / bakiye_sonrasi) değil,
+hareketlerin işlem tarihine göre sıralı toplamından hesaplanır. Geriye tarihli
+girilen bir hareket görüntü alanlarını o anki toplamla yazar; dönem bakiyesi
+yine de doğru kalır.
 """
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
-from typing import Any
+
+from django.utils.dateparse import parse_date
+
+from apps.finans.constants.cari_types import CariHareketYonu
+from apps.finans.domain.cari_hareket import CariHareket
+
+KRONOLOJIK_SIRA = ('islem_tarihi', 'created_at', 'id')
 
 
-def _dec(value: Any) -> Decimal:
-    if value is None or value == "":
-        return Decimal("0")
-    return Decimal(str(value))
+@dataclass
+class CariDonemBakiyesi:
+    devreden: Decimal = Decimal('0')
+    toplam_borc: Decimal = Decimal('0')
+    toplam_alacak: Decimal = Decimal('0')
+    kapanis: Decimal = Decimal('0')
+    satir_bakiyeleri: dict[int, Decimal] = field(default_factory=dict)
 
 
-def compare_hareket_chronological(a: dict, b: dict) -> int:
-    date_a = str(a.get("islem_tarihi") or "")[:10]
-    date_b = str(b.get("islem_tarihi") or "")[:10]
-    if date_a != date_b:
-        return -1 if date_a < date_b else 1
-    created_a = str(a.get("created_at") or "")
-    created_b = str(b.get("created_at") or "")
-    if created_a and created_b and created_a != created_b:
-        return -1 if created_a < created_b else 1
-    return int(a.get("id") or 0) - int(b.get("id") or 0)
+def tarih_parametresi(value) -> date | None:
+    """'YYYY-MM-DD' / date → date. Boş değer None; hatalı değer ValueError."""
+    if value in (None, ''):
+        return None
+    if isinstance(value, date):
+        return value
+    parsed = parse_date(str(value)[:10])
+    if parsed is None:
+        raise ValueError(f'Geçersiz tarih: {value}')
+    return parsed
 
 
-def get_bakiye_sonrasi(h: dict) -> Decimal:
-    if h.get("bakiye_sonrasi") is not None:
-        return _dec(h["bakiye_sonrasi"])
-    return _dec(h.get("borc_sonrasi")) - _dec(h.get("alacak_sonrasi"))
+def cari_donem_bakiyesi(
+    cari_hesap_id,
+    *,
+    baslangic: date | None = None,
+    bitis: date | None = None,
+    islem_turleri=None,
+    yon: str | None = None,
+) -> CariDonemBakiyesi:
+    """
+    devreden  = başlangıçtan önceki tüm hareketlerin borç − alacak toplamı
+    kapanış   = bitişe kadar tüm hareketlerin borç − alacak toplamı
+    satır bakiyesi = o satır dahil kronolojik yürüyen bakiye
 
+    `islem_turleri` / `yon` yalnızca dönem borç/alacak toplamlarını daraltır;
+    devreden, kapanış ve satır bakiyeleri hesabın tüm hareketlerinden gelir.
+    Dönemde hareket yoksa kapanış devredene eşittir.
+    """
+    qs = CariHareket.objects.filter(cari_hesap_id=cari_hesap_id)
+    if bitis:
+        qs = qs.filter(islem_tarihi__lte=bitis)
+    turler = set(islem_turleri) if islem_turleri else None
 
-def get_bakiye_oncesi(h: dict) -> Decimal:
-    if h.get("bakiye_oncesi") is not None:
-        return _dec(h["bakiye_oncesi"])
-    return _dec(h.get("borc_oncesi")) - _dec(h.get("alacak_oncesi"))
-
-
-def compute_devreden_bakiye(hareketler: list[dict]) -> Decimal:
-    if not hareketler:
-        return Decimal("0")
-    sorted_rows = sorted(hareketler, key=lambda h: (
-        str(h.get("islem_tarihi") or "")[:10],
-        str(h.get("created_at") or ""),
-        int(h.get("id") or 0),
-    ))
-    return get_bakiye_oncesi(sorted_rows[0])
-
-
-def compute_kapanis_bakiye(hareketler: list[dict]) -> Decimal:
-    if not hareketler:
-        return compute_devreden_bakiye(hareketler)
-    sorted_rows = sorted(hareketler, key=lambda h: (
-        str(h.get("islem_tarihi") or "")[:10],
-        str(h.get("created_at") or ""),
-        int(h.get("id") or 0),
-    ))
-    return get_bakiye_sonrasi(sorted_rows[-1])
+    sonuc = CariDonemBakiyesi()
+    bakiye = Decimal('0')
+    for hid, tarih, satir_yon, tur, tutar in qs.order_by(*KRONOLOJIK_SIRA).values_list(
+        'id', 'islem_tarihi', 'yon', 'islem_turu', 'tutar',
+    ):
+        tutar = Decimal(tutar or 0)
+        borc_mu = satir_yon == CariHareketYonu.BORC
+        bakiye += tutar if borc_mu else -tutar
+        if baslangic and tarih < baslangic:
+            sonuc.devreden = bakiye
+            continue
+        sonuc.satir_bakiyeleri[hid] = bakiye
+        if (turler is None or tur in turler) and (not yon or satir_yon == yon):
+            if borc_mu:
+                sonuc.toplam_borc += tutar
+            else:
+                sonuc.toplam_alacak += tutar
+    sonuc.kapanis = bakiye
+    return sonuc

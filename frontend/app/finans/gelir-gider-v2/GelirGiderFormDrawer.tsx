@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Drawer,
   Form,
@@ -15,17 +15,22 @@ import {
   Divider,
   Alert,
   Radio,
+  Switch,
   Typography,
   App as AntApp,
 } from "antd";
+import { PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import {
   buildGiderTaksitPlanRows,
   spreadGiderAmountFromIndex,
 } from "@/app/odeme-takip/utils/taksitPlan";
 import { ggService } from "./gg-v2-api";
-import { GGDropdown, GGListItem } from "./gg-v2-types";
+import { GGDropdown, GGListItem, TL } from "./gg-v2-types";
 import { ModulConfig } from "./gg-config";
+import { cariV2Service } from "../services/cari-v2-api";
+import CariV2FormDrawer from "../cari-hesaplar-v2/CariV2FormDrawer";
+import "../cari-hesaplar-v2/cari-v2.css";
 import { FinansHttpError } from "../services/finans-http";
 import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
 import Link from "next/link";
@@ -45,6 +50,10 @@ interface Props {
   subeId: number | null;
   dropdown: GGDropdown | null;
   editing: GGListItem | null;
+  copyingFrom?: GGListItem | null;
+  lockedCariId?: number;
+  lockedCariUnvan?: string;
+  onDropdownRefresh?: () => Promise<void> | void;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -56,6 +65,10 @@ export default function GelirGiderFormDrawer({
   subeId,
   dropdown,
   editing,
+  copyingFrom,
+  lockedCariId,
+  lockedCariUnvan,
+  onDropdownRefresh,
   onClose,
   onSaved,
 }: Props) {
@@ -64,10 +77,33 @@ export default function GelirGiderFormDrawer({
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [taksitFirstAmountEdited, setTaksitFirstAmountEdited] = useState(false);
+  const [quickCariOpen, setQuickCariOpen] = useState(false);
+  const [extraCariler, setExtraCariler] = useState<{ id: number; unvan: string; hesap_turu: string }[]>([]);
+  const [cariSerbestBakiye, setCariSerbestBakiye] = useState(0);
   const planSyncKeyRef = useRef("");
   const odemeYontemiId = Form.useWatch("odeme_yontemi_id", form) as number | undefined;
   const seciliOdemeYontemi = (dropdown?.odeme_yontemleri ?? []).find((o) => o.id === odemeYontemiId);
   const cekSenetSecili = cfg.modul === "gider" && isCekSenetTip(seciliOdemeYontemi?.tip);
+  const taslakSecili = Boolean(Form.useWatch("taslak_olarak_kaydet", form));
+  const hemenIslem = Boolean(Form.useWatch("hemen_islem", form));
+  const mahsupSecili = Boolean(Form.useWatch("bakiyeden_mahsup", form));
+  const maliHesapId = Form.useWatch("mali_hesap_id", form) as number | undefined;
+
+  const hesapOdemeYontemleri = useMemo(() => {
+    const ops = dropdown?.odeme_yontemleri_operasyon;
+    const source = ops?.length
+      ? ops
+      : (dropdown?.odeme_yontemleri ?? []).map((o) => ({
+          ...o,
+          mali_hesap_id: (o as { mali_hesap_id?: number | null }).mali_hesap_id ?? null,
+        }));
+    if (!maliHesapId) return [];
+    return source.filter(
+      (o) =>
+        !isCekSenetTip(o.tip) &&
+        (o.mali_hesap_id === maliHesapId || o.mali_hesap_id == null),
+    );
+  }, [dropdown, maliHesapId]);
 
   const hesaplaNet = (girilen: number, oran: number, mod: string): number => {
     const t = Number(girilen) || 0;
@@ -121,7 +157,7 @@ export default function GelirGiderFormDrawer({
     planSyncKeyRef.current = "";
 
     if (editing) {
-      const editKdvMod = (editing as unknown as { kdv_mod?: string }).kdv_mod || "haric";
+      const editKdvMod = editing.kdv_mod || "haric";
       const girilenTutar =
         editKdvMod === "dahil" ? Number(editing.net_tutar) : Number(editing.brut_tutar);
       const taksitli = (editing.taksit_sayisi ?? 1) > 1;
@@ -146,9 +182,40 @@ export default function GelirGiderFormDrawer({
         taksit_periyodu: "aylik",
         taksit_plani: [],
       });
+    } else if (copyingFrom) {
+      const copyKdvMod = copyingFrom.kdv_mod || "haric";
+      const girilenTutar =
+        copyKdvMod === "dahil" ? Number(copyingFrom.net_tutar) : Number(copyingFrom.brut_tutar);
+      form.resetFields();
+      form.setFieldsValue({
+        cari_hesap_id: lockedCariId ?? copyingFrom.cari_hesap?.id ?? undefined,
+        [cfg.kategoriFormKey]:
+          (cfg.modul === "gider" ? copyingFrom.gider_kategorisi : copyingFrom.gelir_kategorisi)?.id ?? undefined,
+        [cfg.ikinciTanimFormKey]:
+          (cfg.modul === "gider" ? copyingFrom.maliyet_merkezi : copyingFrom.gelir_kaynagi)?.id ?? undefined,
+        proje_id: copyingFrom.proje?.id ?? undefined,
+        odeme_yontemi_id: copyingFrom.odeme_yontemi?.id ?? undefined,
+        brut_tutar: girilenTutar,
+        kdv_orani: copyingFrom.kdv_orani,
+        kdv_mod: copyKdvMod,
+        fatura_no: "",
+        fatura_tarihi: dayjs(),
+        vade_tarihi: dayjs(),
+        aciklama: copyingFrom.aciklama ?? undefined,
+        etiket_ids: copyingFrom.etiketler?.map((e) => e.id) ?? [],
+        taksit_mod: "pesin",
+        taksit_sayisi: 2,
+        taksit_periyodu: "aylik",
+        taksit_plani: [],
+        taslak_olarak_kaydet: false,
+        hemen_islem: false,
+        bakiyeden_mahsup: false,
+        islem_odeme_tarihi: dayjs(),
+      });
     } else {
       form.resetFields();
       form.setFieldsValue({
+        cari_hesap_id: lockedCariId ?? undefined,
         kdv_orani: 20,
         kdv_mod: "haric",
         fatura_tarihi: dayjs(),
@@ -156,9 +223,13 @@ export default function GelirGiderFormDrawer({
         taksit_sayisi: 2,
         taksit_periyodu: "aylik",
         taksit_plani: [],
+        taslak_olarak_kaydet: false,
+        hemen_islem: false,
+        bakiyeden_mahsup: false,
+        islem_odeme_tarihi: dayjs(),
       });
     }
-  }, [open, editing, cfg, form]);
+  }, [open, editing, copyingFrom, lockedCariId, cfg, form]);
 
   const taksitMod = Form.useWatch("taksit_mod", form);
   const taksitSayisi = Form.useWatch("taksit_sayisi", form);
@@ -281,6 +352,21 @@ export default function GelirGiderFormDrawer({
       }
     }
 
+    if (!editing) {
+      if (values.taslak_olarak_kaydet) {
+        payload.taslak_olarak_kaydet = true;
+      } else if (values.hemen_islem && values.taksit_mod !== "taksitli" && !cekSenetSecili) {
+        if (cfg.modul === "gelir") payload.hemen_tahsil_et = true;
+        else payload.hemen_ode = true;
+        payload.bakiyeden_mahsup = !!values.bakiyeden_mahsup;
+        payload.islem_odeme_tarihi = (values.islem_odeme_tarihi ?? values.fatura_tarihi)?.format("YYYY-MM-DD");
+        if (!values.bakiyeden_mahsup) {
+          payload.mali_hesap_id = values.mali_hesap_id ?? null;
+          payload.odeme_yontemi_id = values.islem_odeme_yontemi_id ?? values.odeme_yontemi_id ?? null;
+        }
+      }
+    }
+
     setSaving(true);
     try {
       if (editing) {
@@ -304,7 +390,39 @@ export default function GelirGiderFormDrawer({
     (cfg.modul === "gider" ? dropdown?.maliyet_merkezleri : dropdown?.gelir_kaynaklari) ?? [];
 
   const cariId = Form.useWatch("cari_hesap_id", form);
-  const selectedCari = (dropdown?.cariler ?? []).find((c) => c.id === cariId);
+  const allCariler = useMemo(() => {
+    const base = dropdown?.cariler ?? [];
+    const seen = new Set(base.map((c) => c.id));
+    const merged = [...base];
+    for (const ec of extraCariler) {
+      if (!seen.has(ec.id)) {
+        merged.push(ec);
+        seen.add(ec.id);
+      }
+    }
+    if (lockedCariId && lockedCariUnvan && !seen.has(lockedCariId)) {
+      merged.push({ id: lockedCariId, unvan: lockedCariUnvan, hesap_turu: cfg.modul === "gider" ? "tedarikci" : "musteri" });
+    }
+    return merged;
+  }, [dropdown?.cariler, extraCariler, lockedCariId, lockedCariUnvan, cfg.modul]);
+  const selectedCari = allCariler.find((c) => c.id === cariId);
+
+  useEffect(() => {
+    if (!open || editing || !cariId) {
+      setCariSerbestBakiye(0);
+      return;
+    }
+    cariV2Service
+      .get(cariId)
+      .then((det) => {
+        const sb =
+          cfg.modul === "gelir"
+            ? Number(det.serbest_tahsilat_bakiye ?? 0)
+            : Number(det.serbest_bakiye ?? 0);
+        setCariSerbestBakiye(sb);
+      })
+      .catch(() => setCariSerbestBakiye(0));
+  }, [open, editing, cariId, cfg.modul]);
 
   const cariKategoriIdSet = (() => {
     if (!selectedCari) return null;
@@ -341,10 +459,12 @@ export default function GelirGiderFormDrawer({
   })();
 
   const handleCariChange = (id: number) => {
-    const cari = (dropdown?.cariler ?? []).find((c) => c.id === id);
+    const cari = allCariler.find((c) => c.id === id);
     if (!cari) return;
     const ids =
-      cfg.modul === "gider" ? cari.gider_kategorileri : cari.gelir_kategorileri;
+      cfg.modul === "gider"
+        ? (cari as { gider_kategorileri?: number[] }).gider_kategorileri
+        : (cari as { gelir_kategorileri?: number[] }).gelir_kategorileri;
     const allowed =
       ids && ids.length > 0
         ? kategoriler.filter((k) => ids.includes(k.id))
@@ -359,8 +479,15 @@ export default function GelirGiderFormDrawer({
   };
 
   return (
+    <>
     <Drawer
-      title={editing ? `${cfg.modul === "gider" ? "Gider" : "Gelir"} Kaydını Düzenle` : `Yeni ${cfg.modul === "gider" ? "Gider" : "Gelir"} Kaydı`}
+      title={
+        editing
+          ? `${cfg.modul === "gider" ? "Gider" : "Gelir"} Kaydını Düzenle`
+          : copyingFrom
+          ? `Kaydı Kopyala — Yeni ${cfg.modul === "gider" ? "Gider" : "Gelir"}`
+          : `Yeni ${cfg.modul === "gider" ? "Gider" : "Gelir"} Kaydı`
+      }
       width={560}
       open={open}
       onClose={onClose}
@@ -377,14 +504,30 @@ export default function GelirGiderFormDrawer({
       <Form form={form} layout="vertical" requiredMark="optional">
         <Form.Item
           name="cari_hesap_id"
-          label={cfg.cariLabel}
+          label={
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", width: "100%", gap: 12 }}>
+              <span>{cfg.cariLabel}</span>
+              {!lockedCariId && (
+                <Button
+                  type="link"
+                  size="small"
+                  icon={<PlusOutlined />}
+                  style={{ padding: 0, height: "auto" }}
+                  onClick={() => setQuickCariOpen(true)}
+                >
+                  Yeni Cari Ekle
+                </Button>
+              )}
+            </div>
+          }
           rules={[{ required: true, message: "Cari hesap seçin." }]}
         >
           <Select
             showSearch
+            disabled={!!lockedCariId}
             optionFilterProp="label"
             placeholder="Cari hesap seçin"
-            options={(dropdown?.cariler ?? []).map((c) => ({ value: c.id, label: c.unvan }))}
+            options={allCariler.map((c) => ({ value: c.id, label: c.unvan }))}
             onChange={handleCariChange}
           />
         </Form.Item>
@@ -450,10 +593,13 @@ export default function GelirGiderFormDrawer({
             </Form.Item>
           </Col>
           <Col span={12}>
-            <Form.Item name="odeme_yontemi_id" label="Ödeme Şekli">
+            <Form.Item
+              name="odeme_yontemi_id"
+              label={cfg.modul === "gider" ? "Planlanan Ödeme Yöntemi" : "Planlanan Tahsilat Yöntemi"}
+            >
               <Select
                 allowClear
-                placeholder="Ödeme şekli"
+                placeholder={cfg.modul === "gider" ? "Planlanan ödeme yöntemi" : "Planlanan tahsilat yöntemi"}
                 options={(dropdown?.odeme_yontemleri ?? []).map((o) => ({
                   value: o.id,
                   label: isCekSenetTip(o.tip) ? `${o.ad} (çek/senet)` : o.ad,
@@ -501,10 +647,10 @@ export default function GelirGiderFormDrawer({
                 const mod = form.getFieldValue("kdv_mod") || "haric";
                 const label =
                   mod === "dahil"
-                    ? "Net Tutar (KDV Dahil)"
+                    ? "Genel Toplam (KDV Dahil)"
                     : mod === "muaf"
                     ? "Tutar (KDV Muaf)"
-                    : "Brüt Tutar (KDV Hariç)";
+                    : "KDV Hariç Tutar (Matrah)";
                 return (
                   <Form.Item
                     name="brut_tutar"
@@ -551,13 +697,13 @@ export default function GelirGiderFormDrawer({
             return (
               <div
                 style={{
-                  display: "flex", gap: 12, marginBottom: 16, padding: "8px 12px",
+                  display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 16, padding: "8px 12px",
                   background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8,
                 }}
               >
-                <Typography.Text type="secondary">Brüt: <b>{f(brut)} ₺</b></Typography.Text>
+                <Typography.Text type="secondary">KDV Hariç (Matrah): <b>{f(brut)} ₺</b></Typography.Text>
                 <Typography.Text type="secondary">KDV: <b>{f(kdv)} ₺</b></Typography.Text>
-                <Typography.Text>Net: <b style={{ color: "#1F3C88" }}>{f(net)} ₺</b></Typography.Text>
+                <Typography.Text>Genel Toplam (KDV Dahil): <b style={{ color: "#1F3C88" }}>{f(net)} ₺</b></Typography.Text>
               </div>
             );
           }}
@@ -591,7 +737,7 @@ export default function GelirGiderFormDrawer({
         {cfg.modul === "gider" && (
           <>
             <Divider style={{ margin: "4px 0 12px" }} orientation="left" plain>
-              Ödeme Şekli
+              Vade Yapısı (Peşin / Taksitli)
             </Divider>
             <Form.Item name="taksit_mod">
               <Radio.Group
@@ -716,6 +862,139 @@ export default function GelirGiderFormDrawer({
           </>
         )}
 
+        {!editing && (
+          <>
+            <Divider style={{ margin: "4px 0 12px" }} orientation="left" plain>
+              Kayıt & Tahsilat / Ödeme Seçenekleri
+            </Divider>
+            <div
+              style={{
+                background: "#f8fafc",
+                border: "1px solid #e2e8f0",
+                borderRadius: 10,
+                padding: "10px 12px",
+                marginBottom: 12,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                gap: 12,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 600, fontSize: 13 }}>Taslak olarak kaydet</div>
+                <div style={{ fontSize: 12, color: "#64748b" }}>
+                  Onaylanana kadar cari bakiyeyi ve finans raporlarını etkilemez.
+                </div>
+              </div>
+              <Form.Item name="taslak_olarak_kaydet" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch
+                  onChange={(checked) => {
+                    if (checked) form.setFieldsValue({ hemen_islem: false });
+                  }}
+                />
+              </Form.Item>
+            </div>
+
+            {!taslakSecili && taksitMod !== "taksitli" && !cekSenetSecili && (
+              <div
+                style={{
+                  background: hemenIslem ? "#f0fdf4" : "#f8fafc",
+                  border: `1px solid ${hemenIslem ? "#bbf7d0" : "#e2e8f0"}`,
+                  borderRadius: 10,
+                  padding: "10px 12px",
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>
+                      {cfg.modul === "gider"
+                        ? "Ödemesi yapıldı (Tek adımda peşin ödeme işle)"
+                        : "Tahsilatı yapıldı (Tek adımda peşin tahsilat işle)"}
+                    </div>
+                    <div style={{ fontSize: 12, color: "#64748b" }}>
+                      Kayıt oluşturulurken kasa/banka veya cari serbest bakiyeden otomatik kapatılır.
+                    </div>
+                  </div>
+                  <Form.Item name="hemen_islem" valuePropName="checked" style={{ marginBottom: 0 }}>
+                    <Switch />
+                  </Form.Item>
+                </div>
+
+                {hemenIslem && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px dashed #cbd5e1" }}>
+                    {cariSerbestBakiye > 0 && (
+                      <div
+                        style={{
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          gap: 10,
+                          marginBottom: 10,
+                          padding: "8px 10px",
+                          background: "#eff6ff",
+                          borderRadius: 8,
+                          border: "1px solid #bfdbfe",
+                        }}
+                      >
+                        <span style={{ fontSize: 12.5, color: "#1e3a8a" }}>
+                          Cari serbest bakiyeden mahsup et (Kullanılabilir: <strong>{TL(cariSerbestBakiye)}</strong>)
+                        </span>
+                        <Form.Item name="bakiyeden_mahsup" valuePropName="checked" style={{ marginBottom: 0 }}>
+                          <Switch size="small" />
+                        </Form.Item>
+                      </div>
+                    )}
+
+                    {!mahsupSecili && (
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Item
+                            name="mali_hesap_id"
+                            label="Mali Hesap (Kasa/Banka)"
+                            rules={[{ required: true, message: "Mali hesap seçin." }]}
+                          >
+                            <Select
+                              showSearch
+                              optionFilterProp="label"
+                              placeholder="Kasa/Banka seçin"
+                              options={(dropdown?.mali_hesaplar ?? []).map((m) => ({ value: m.id, label: m.ad }))}
+                              onChange={() => form.setFieldsValue({ islem_odeme_yontemi_id: undefined })}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item
+                            name="islem_odeme_yontemi_id"
+                            label={cfg.modul === "gider" ? "Ödeme Yöntemi" : "Tahsilat Yöntemi"}
+                            rules={[{ required: true, message: "Yöntem seçin." }]}
+                          >
+                            <Select
+                              showSearch
+                              optionFilterProp="label"
+                              placeholder={maliHesapId ? "Seçin" : "Önce hesap seçin"}
+                              disabled={!maliHesapId}
+                              options={hesapOdemeYontemleri.map((o) => ({ value: o.id, label: o.ad }))}
+                            />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                    )}
+
+                    <Form.Item
+                      name="islem_odeme_tarihi"
+                      label={cfg.modul === "gider" ? "Ödeme Tarihi" : "Tahsilat Tarihi"}
+                      style={{ marginBottom: 0 }}
+                    >
+                      <DatePicker style={{ width: "100%" }} format="DD.MM.YYYY" />
+                    </Form.Item>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
+        )}
+
         <Form.Item name="etiket_ids" label="Etiketler">
           <Select
             mode="multiple"
@@ -744,5 +1023,29 @@ export default function GelirGiderFormDrawer({
         </Form.Item>
       </Form>
     </Drawer>
+
+    {quickCariOpen && (
+      <CariV2FormDrawer
+        kurumId={kurumId}
+        subeId={subeId}
+        cariId={null}
+        etiketler={[]}
+        initialTur={cfg.modul === "gider" ? "tedarikci" : "musteri"}
+        onClose={() => setQuickCariOpen(false)}
+        onSaved={() => {
+          setQuickCariOpen(false);
+          void onDropdownRefresh?.();
+        }}
+        onCreatedCari={(created) => {
+          setExtraCariler((prev) => [...prev, { id: created.id, unvan: created.unvan, hesap_turu: created.hesap_turu }]);
+          form.setFieldsValue({ cari_hesap_id: created.id });
+        }}
+        onToast={(msg, type) => {
+          if (type === "error") message.error(msg);
+          else message.success(msg);
+        }}
+      />
+    )}
+    </>
   );
 }

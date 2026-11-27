@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { cariV2Service } from "../services/cari-v2-api";
 import { gelirKategoriService } from "../services/gelir-api";
 import { giderKategoriService } from "../services/gider-api";
@@ -49,19 +50,31 @@ const empty: FormState = {
   acilis_bakiye: "", acilis_yon: "borc",
 };
 
+function defaultAcilisYon(tur: CariV2Turu): "borc" | "alacak" {
+  return tur === "tedarikci" || tur === "gider_hesabi" ? "alacak" : "borc";
+}
+
 export default function CariV2FormDrawer({
-  kurumId, subeId, cariId, etiketler, onClose, onSaved, onToast,
+  kurumId, subeId, cariId, etiketler, initialTur, onClose, onSaved, onCreatedCari, onToast,
 }: {
   kurumId: number;
   subeId: number | null;
   cariId: number | null;
   etiketler: CariEtiket[];
+  initialTur?: CariV2Turu;
   onClose: () => void;
   onSaved: () => void;
+  onCreatedCari?: (cari: { id: number; unvan: string; hesap_turu: CariV2Turu }) => void;
   onToast: (msg: string, type: "success" | "error" | "info") => void;
 }) {
   const isEdit = cariId != null;
-  const [form, setForm] = useState<FormState>(empty);
+  const baslangicTur = initialTur ?? "musteri";
+  const [form, setForm] = useState<FormState>({
+    ...empty,
+    hesap_turu: baslangicTur,
+    acilis_yon: defaultAcilisYon(baslangicTur),
+  });
+  const [acilisYonTouched, setAcilisYonTouched] = useState(false);
   const [loading, setLoading] = useState(isEdit);
   const [saving, setSaving] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -124,6 +137,7 @@ export default function CariV2FormDrawer({
       hesap_turu: tur,
       gelir_kategorileri: GELIR_TURU.has(tur) ? f.gelir_kategorileri : [],
       gider_kategorileri: GIDER_TURU.has(tur) ? f.gider_kategorileri : [],
+      acilis_yon: acilisYonTouched ? f.acilis_yon : defaultAcilisYon(tur),
     }));
   };
 
@@ -158,8 +172,9 @@ export default function CariV2FormDrawer({
         await cariV2Service.update(cariId!, payload);
         onToast("Cari güncellendi.", "success");
       } else {
-        await cariV2Service.create(payload, kurumId, subeId);
+        const created = await cariV2Service.create(payload, kurumId, subeId);
         onToast("Cari oluşturuldu.", "success");
+        onCreatedCari?.({ id: created.id, unvan: created.unvan, hesap_turu: created.hesap_turu });
       }
       onSaved();
     } catch (e) {
@@ -172,7 +187,7 @@ export default function CariV2FormDrawer({
     } finally { setSaving(false); }
   };
 
-  return (
+  const drawer = (
     <div className="cv2-overlay" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="cv2-drawer">
         <div className="cv2-drawer__head">
@@ -196,6 +211,22 @@ export default function CariV2FormDrawer({
                     </button>
                   ))}
                 </div>
+                {yetenek && (
+                  <div
+                    style={{
+                      marginTop: 8,
+                      padding: "8px 10px",
+                      borderRadius: 8,
+                      background: `${yetenek.renk}10`,
+                      border: `1px solid ${yetenek.renk}30`,
+                      fontSize: 12,
+                      color: "#334155",
+                      lineHeight: 1.45,
+                    }}
+                  >
+                    <strong style={{ color: yetenek.renk }}>{yetenek.ikon} {yetenek.label}:</strong> {yetenek.aciklama}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -316,10 +347,16 @@ export default function CariV2FormDrawer({
                     <Field label="Tutar (₺)">
                       <input type="number" value={form.acilis_bakiye} onChange={(e) => set("acilis_bakiye", e.target.value)} />
                     </Field>
-                    <Field label="Yön">
-                      <select value={form.acilis_yon} onChange={(e) => set("acilis_yon", e.target.value as "borc" | "alacak")}>
-                        <option value="borc">Borç (bize borçlu / verecek)</option>
-                        <option value="alacak">Alacak (bizim borcumuz)</option>
+                    <Field label="Açılış Yönü">
+                      <select
+                        value={form.acilis_yon}
+                        onChange={(e) => {
+                          setAcilisYonTouched(true);
+                          set("acilis_yon", e.target.value as "borc" | "alacak");
+                        }}
+                      >
+                        <option value="borc">Alacağımız (Karşı taraf bize borçlu)</option>
+                        <option value="alacak">Borcumuz (Biz karşı tarafa borçluyuz)</option>
                       </select>
                     </Field>
                   </div>
@@ -342,6 +379,9 @@ export default function CariV2FormDrawer({
       </div>
     </div>
   );
+
+  if (typeof document === "undefined") return null;
+  return createPortal(drawer, document.body);
 }
 
 function Field({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {

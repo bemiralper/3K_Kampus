@@ -20,6 +20,7 @@ class GelirTahsilatListSerializer(serializers.ModelSerializer):
     durum_display = serializers.CharField(
         source='get_durum_display', read_only=True
     )
+    bakiyeden_mahsup = serializers.BooleanField(read_only=True)
     islem_yapan_adi = serializers.SerializerMethodField()
 
     class Meta:
@@ -31,15 +32,20 @@ class GelirTahsilatListSerializer(serializers.ModelSerializer):
             'mali_hesap_id', 'mali_hesap_adi',
             'tutar', 'tahsilat_tarihi', 'aciklama',
             'durum', 'durum_display',
+            'bakiyeden_mahsup',
             'islem_yapan_adi',
             'created_at',
         ]
 
     def get_odeme_yontemi_adi(self, obj):
-        return obj.odeme_yontemi.ad if obj.odeme_yontemi else None
+        if obj.odeme_yontemi:
+            return obj.odeme_yontemi.ad
+        return 'Bakiyeden Mahsup' if obj.bakiyeden_mahsup else None
 
     def get_mali_hesap_adi(self, obj):
-        return obj.mali_hesap.ad if obj.mali_hesap else None
+        if obj.mali_hesap:
+            return obj.mali_hesap.ad
+        return 'Cari Bakiye' if obj.bakiyeden_mahsup else None
 
     def get_islem_yapan_adi(self, obj):
         if obj.islem_yapan:
@@ -49,12 +55,13 @@ class GelirTahsilatListSerializer(serializers.ModelSerializer):
 
 class GelirTahsilatCreateSerializer(IslemMasrafiInputSerializer):
     """Tahsilat oluşturma serializer'ı."""
-    gelir_kaydi_id = serializers.IntegerField()
-    odeme_yontemi_id = serializers.IntegerField()
-    mali_hesap_id = serializers.IntegerField()
+    gelir_kaydi_id = serializers.IntegerField(required=False)
+    odeme_yontemi_id = serializers.IntegerField(required=False, allow_null=True)
+    mali_hesap_id = serializers.IntegerField(required=False, allow_null=True)
     tutar = serializers.DecimalField(max_digits=15, decimal_places=2)
     tahsilat_tarihi = serializers.DateField()
     aciklama = serializers.CharField(required=False, allow_blank=True, default='')
+    bakiyeden_mahsup = serializers.BooleanField(required=False, default=False)
 
 
 class GelirTahsilatDetailSerializer(GelirTahsilatListSerializer):

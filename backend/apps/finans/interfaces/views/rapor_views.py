@@ -147,10 +147,11 @@ class GelirGiderRaporView(ExportFormatMixin, APIView):
         # sözleşme tahsilatı + serbest gelir tahsilatı + bağımsız cari tahsilatı.
         # Önceki sürüm SADECE sözleşme tahsilatını sayıyordu (Vakıfbank/QNB gibi
         # sözleşme dışı gelirler rapordan tamamen düşüyordu).
+        from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
         gelir_tahsilat_q = Q(
             gelir_kaydi__kurum_id=kurum_id,
             durum=GiderOdemeDurum.TAMAMLANDI,
-        )
+        ) & gelir_gercek_tahsilat_q()
         if sube_id:
             gelir_tahsilat_q &= Q(gelir_kaydi__sube_id=sube_id)
         if egitim_yili_id:

@@ -17,18 +17,26 @@ from apps.finans.constants.gider_types import GiderDurum
 _ZERO = Decimal('0.00')
 
 
+ONAYSIZ_DURUMLAR = (GiderDurum.TASLAK, GiderDurum.ONAY_BEKLIYOR)
+
+
 class GiderDashboardService:
-    def _base(self, kurum_id, sube_id):
+    def _sube_kayitlari(self, kurum_id, sube_id):
         qs = GiderKaydi.objects.filter(kurum_id=kurum_id).exclude(durum=GiderDurum.IPTAL)
         if sube_id:
             qs = qs.filter(sube_id=sube_id)
         return qs
 
     def summary(self, kurum_id, sube_id=None):
+        """Şube özeti: taslak / onay bekleyen kayıtlar gerçekleşen toplamlara girmez, ayrı kartta döner."""
         bugun = timezone.localdate()
         ay_basi = bugun.replace(day=1)
 
-        base = self._base(kurum_id, sube_id)
+        sube_kayitlari = self._sube_kayitlari(kurum_id, sube_id)
+        base = sube_kayitlari.exclude(durum__in=ONAYSIZ_DURUMLAR)
+        taslak = sube_kayitlari.filter(durum__in=ONAYSIZ_DURUMLAR).aggregate(
+            t=Sum('net_tutar'), adet=Count('id'),
+        )
 
         bu_ay = base.filter(fatura_tarihi__gte=ay_basi, fatura_tarihi__lte=bugun)
         bugun_qs = base.filter(fatura_tarihi=bugun)
@@ -68,6 +76,8 @@ class GiderDashboardService:
                 'ortalama_gider': str((genel['ortalama'] or _ZERO).quantize(Decimal('0.01'))),
                 'toplam_gider': str(genel['toplam'] or _ZERO),
                 'toplam_adet': genel['adet'] or 0,
+                'taslak_toplam': str(taslak['t'] or _ZERO),
+                'taslak_adet': taslak['adet'] or 0,
             },
             'en_buyuk_kalemler': [
                 {

@@ -108,6 +108,10 @@ export interface CariV2Ozet {
   vadesi_gelen: number;
   vadesi_gecmis: number;
   gelecek_vadeli: number;
+  vadesi_gecmis_tahsilat: number;
+  vadesi_gecmis_odeme: number;
+  acik_alacak_belge: number;
+  acik_borc_belge: number;
   risk_durumu: RiskDurumu;
   risk_durumu_display: string;
   risk_skoru: number;
@@ -155,6 +159,7 @@ export interface CariV2Detail {
   acik_borc: number;
   acik_alacak: number;
   serbest_bakiye: number;
+  serbest_tahsilat_bakiye?: number;
   toplam_gider: number;
   toplam_gelir: number;
   gelir_alacagi: number;
@@ -238,13 +243,56 @@ export interface CariV2Hareket {
   yon_display: string;
   tutar: number;
   bakiye_sonrasi: number;
+  /** İşlem tarihine göre kronolojik bakiye (geriye tarihli kayıttan etkilenmez). */
+  yuruyen_bakiye: number;
   kaynak_tip: string;
+  kaynak_id: number | null;
+  /** Hareketin bağlı olduğu gelir/gider kaydı (tahsilat/ödeme satırlarında fatura). */
+  kaynak_belge: { tip: "gelir" | "gider"; id: number } | null;
   kategori_adi?: string | null;
   odeme_yontemi_adi?: string | null;
+  iptal_edildi_mi?: boolean;
   aciklama: string;
   belge_no: string;
   islem_tarihi: string;
   islem_yapan_adi: string | null;
+}
+
+export interface CariV2HareketOzet {
+  devreden_bakiye: number;
+  toplam_borc: number;
+  toplam_alacak: number;
+  kapanis_bakiye: number;
+  /** İşlem türü/yön filtresi varsa dönem toplamları yalnız o satırları kapsar. */
+  filtreli?: boolean;
+}
+
+export interface CariV2AcikKalem {
+  tip: "gelir" | "gider";
+  kaynak_id: number;
+  taksit_id: number | null;
+  belge_no: string;
+  aciklama: string;
+  belge_tarihi: string;
+  vade_tarihi: string;
+  tutar: number;
+  odenen: number;
+  kalan: number;
+  gecikme_gun: number;
+  durum: string;
+  durum_label: string;
+}
+
+export interface CariV2AcikKalemler {
+  kalemler: CariV2AcikKalem[];
+  ozet: {
+    acik_alacak_belge: number;
+    acik_borc_belge: number;
+    geciken_tahsilat: number;
+    geciken_odeme: number;
+    acik_tahsilat_adet: number;
+    acik_odeme_adet: number;
+  };
 }
 
 export interface CariV2HareketResponse {
@@ -253,6 +301,7 @@ export interface CariV2HareketResponse {
   page: number;
   page_size: number;
   total_pages: number;
+  ozet?: CariV2HareketOzet;
 }
 
 export interface CariV2ReportKpi {
@@ -323,13 +372,50 @@ export const CARI_V2_TURLERI: {
   label: string;
   renk: string;
   ikon: string;
+  aciklama: string;
 }[] = [
-  { value: "musteri", label: "Müşteri", renk: "#2563eb", ikon: "👤" },
-  { value: "tedarikci", label: "Tedarikçi", renk: "#7c3aed", ikon: "🏢" },
-  { value: "karma", label: "Karma", renk: "#d97706", ikon: "🔄" },
-  { value: "gelir_hesabi", label: "Gelir Hesabı", renk: "#059669", ikon: "📈" },
-  { value: "gider_hesabi", label: "Gider Hesabı", renk: "#dc2626", ikon: "📉" },
-  { value: "diger", label: "Diğer", renk: "#64748b", ikon: "📁" },
+  {
+    value: "musteri",
+    label: "Müşteri",
+    renk: "#2563eb",
+    ikon: "👤",
+    aciklama: "Kuruma hizmet/ürün satışı yapılan ve tahsilat beklenen kişi veya kurumlar (kurumsal müşteri, kantin/yayın alıcısı vb.).",
+  },
+  {
+    value: "tedarikci",
+    label: "Tedarikçi",
+    renk: "#7c3aed",
+    ikon: "🏢",
+    aciklama: "Mal veya hizmet satın alınan ve ödeme yapılan firmalar (kırtasiye, yemek, servis, yayın, temizlik vb.).",
+  },
+  {
+    value: "karma",
+    label: "Karma",
+    renk: "#d97706",
+    ikon: "🔄",
+    aciklama: "Hem gelir (satış/tahsilat) hem gider (alış/ödeme) işlemi yapılan çift yönlü iş ortakları.",
+  },
+  {
+    value: "gelir_hesabi",
+    label: "Gelir Hesabı",
+    renk: "#059669",
+    ikon: "📈",
+    aciklama: "Belirli bir kurumsal gelir kalemini (kira geliri, sponsorluk, devlet teşviki vb.) takip etmek için açılan cari kart.",
+  },
+  {
+    value: "gider_hesabi",
+    label: "Gider Hesabı",
+    renk: "#dc2626",
+    ikon: "📉",
+    aciklama: "Düzenli kurumsal gider merkezlerini (kira, elektrik/su/doğalgaz, vergi/SGK vb.) takip etmek için açılan cari kart.",
+  },
+  {
+    value: "diger",
+    label: "Diğer",
+    renk: "#64748b",
+    ikon: "📁",
+    aciklama: "Ortaklar cari, emanet veya yukarıdaki gruplara girmeyen özel hesaplar.",
+  },
 ];
 
 export const RISK_META: Record<RiskDurumu, { label: string; renk: string; bg: string }> = {

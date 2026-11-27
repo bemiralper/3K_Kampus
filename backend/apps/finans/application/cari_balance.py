@@ -33,6 +33,7 @@ IADE_NET_HEDEF = {
     'GiderOdeme': CariHareketTuru.ODEME,
     'GelirTahsilat': CariHareketTuru.TAHSILAT,
     'SerbestOdemeIptal': CariHareketTuru.ODEME,
+    'SerbestTahsilatIptal': CariHareketTuru.TAHSILAT,
 }
 
 
@@ -62,14 +63,98 @@ GELIR_TAHSILAT_KAYNAK_TIP = 'GelirTahsilat'
 
 
 def cari_bagimsiz_tahsilat_q():
-    """GelirTahsilat kaynaklı olmayan (bağımsız) cari TAHSILAT hareketleri filtresi.
+    """GelirTahsilat kaynaklı olmayan ve iptal edilmemiş bağımsız cari TAHSILAT hareketleri.
 
     Nakit/gün sonu toplamlarında GelirTahsilat kovasıyla çakışmayı (çift sayımı)
-    önler. `CariHareket.objects.filter(... & cari_bagimsiz_tahsilat_q())` şeklinde
-    kullanılır.
+    ve iptal edilmiş SerbestTahsilat satırlarının sayılmasını önler.
+    `CariHareket.objects.filter(... & cari_bagimsiz_tahsilat_q())` şeklinde kullanılır.
     """
+    from django.db.models import Exists, OuterRef, Q
+    from apps.finans.domain.cari_hareket import CariHareket
+
+    iptal_var = CariHareket.objects.filter(
+        kaynak_tip='SerbestTahsilatIptal',
+        kaynak_id=OuterRef('pk'),
+    )
+    return ~Q(kaynak_tip=GELIR_TAHSILAT_KAYNAK_TIP) & ~Exists(iptal_var)
+
+
+def gelir_gercek_tahsilat_q():
+    """Nakit/banka girişi olan gerçek GelirTahsilat satırları (bakiyeden mahsup hariç)."""
     from django.db.models import Q
-    return ~Q(kaynak_tip=GELIR_TAHSILAT_KAYNAK_TIP)
+    return Q(bakiye_hareketi_id__isnull=True) | Q(bakiye_hareketi_id__gt=0)
+
+
+def hesapla_serbest_odeme_bakiye(cari_hesap_id: int):
+    """Tedarikçi/gider carisinde faturaya henüz mahsup edilmemiş serbest ödeme bakiyesi."""
+    from decimal import Decimal
+    from django.db.models import Sum
+    from apps.finans.constants.gider_types import OdemeDurum
+    from apps.finans.domain.cari_hareket import CariHareket
+    from apps.finans.domain.gider_odeme import GiderOdeme
+
+    serbest = (
+        CariHareket.objects.filter(
+            cari_hesap_id=cari_hesap_id,
+            kaynak_tip='SerbestOdeme',
+            islem_turu=CariHareketTuru.ODEME,
+        ).aggregate(t=Sum('tutar'))['t']
+        or Decimal('0.00')
+    )
+    iptaller = (
+        CariHareket.objects.filter(
+            cari_hesap_id=cari_hesap_id,
+            kaynak_tip='SerbestOdemeIptal',
+        ).aggregate(t=Sum('tutar'))['t']
+        or Decimal('0.00')
+    )
+    aktif_mahsuplar = (
+        GiderOdeme.objects.filter(
+            gider_kaydi__cari_hesap_id=cari_hesap_id,
+            bakiyeden_mahsup=True,
+            durum=OdemeDurum.TAMAMLANDI,
+        ).aggregate(t=Sum('tutar'))['t']
+        or Decimal('0.00')
+    )
+    kalan = serbest - iptaller - aktif_mahsuplar
+    return kalan if kalan > Decimal('0.00') else Decimal('0.00')
+
+
+def hesapla_serbest_tahsilat_bakiye(cari_hesap_id: int):
+    """Müşteri/gelir carisinde faturaya henüz mahsup edilmemiş serbest tahsilat bakiyesi."""
+    from decimal import Decimal
+    from django.db.models import Sum
+    from apps.finans.constants.cari_types import CariHareketYonu
+    from apps.finans.constants.gider_types import OdemeDurum
+    from apps.finans.domain.cari_hareket import CariHareket
+    from apps.finans.domain.gelir_tahsilat import GelirTahsilat
+
+    serbest = (
+        CariHareket.objects.filter(
+            cari_hesap_id=cari_hesap_id,
+            kaynak_tip__in=('SerbestTahsilat', 'CekSenetDetay'),
+            yon=CariHareketYonu.ALACAK,
+            islem_turu=CariHareketTuru.TAHSILAT,
+        ).aggregate(t=Sum('tutar'))['t']
+        or Decimal('0.00')
+    )
+    iptaller = (
+        CariHareket.objects.filter(
+            cari_hesap_id=cari_hesap_id,
+            kaynak_tip='SerbestTahsilatIptal',
+        ).aggregate(t=Sum('tutar'))['t']
+        or Decimal('0.00')
+    )
+    aktif_mahsuplar = (
+        GelirTahsilat.objects.filter(
+            gelir_kaydi__cari_hesap_id=cari_hesap_id,
+            bakiye_hareketi_id=GelirTahsilat.MAHSUP_SENTINEL_BH_ID,
+            durum=OdemeDurum.TAMAMLANDI,
+        ).aggregate(t=Sum('tutar'))['t']
+        or Decimal('0.00')
+    )
+    kalan = serbest - iptaller - aktif_mahsuplar
+    return kalan if kalan > Decimal('0.00') else Decimal('0.00')
 
 
 def net_bakiye(toplam_borc: float, toplam_alacak: float) -> float:

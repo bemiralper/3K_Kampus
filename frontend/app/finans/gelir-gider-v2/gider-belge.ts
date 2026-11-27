@@ -49,3 +49,13 @@ export async function openOdemeBelgesi(giderId: number, odemeId: number, mode: B
   const { blob, filename } = await ggService.odemeBelge(giderId, odemeId);
   openBlob(blob, filename || "odeme-belgesi.pdf", mode);
 }
+
+export async function openGelirIslemBelgesi(gelirId: number, mode: BelgeMode = "view") {
+  const { blob, filename } = await ggService.gelirBelge(gelirId);
+  openBlob(blob, filename || "gelir-belgesi.pdf", mode);
+}
+
+export async function openTahsilatMakbuzu(gelirId: number, tahsilatId: number, mode: BelgeMode = "view") {
+  const { blob, filename } = await ggService.tahsilatBelge(gelirId, tahsilatId);
+  openBlob(blob, filename || "tahsilat-makbuzu.pdf", mode);
+}

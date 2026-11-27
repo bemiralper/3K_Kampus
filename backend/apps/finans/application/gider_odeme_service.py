@@ -4,7 +4,6 @@ Gider Ödeme Service — İş kuralları katmanı
 Bakiyeden mahsup: Cari hesaptaki artı bakiyeden gider ödemesi yapılabilir.
 """
 from decimal import Decimal
-from django.db import transaction
 from apps.finans.application.transaction_utils import atomic_result
 
 from apps.finans.infrastructure.gider_odeme_repository import GiderOdemeRepository
@@ -14,8 +13,9 @@ from apps.finans.application.gider_service import GiderService
 from apps.finans.application.bakiye_hareketi_service import BakiyeHareketiService
 from apps.finans.application.cari_hareket_service import CariHareketService
 from apps.finans.application.islem_masrafi_service import IslemMasrafiService
+from apps.finans.application.legacy_mahsup import mahsup_ters_kaydi_yaz
 from apps.finans.domain.islem_masrafi import IslemMasrafiKaynakTipi
-from apps.finans.constants.gider_types import OdemeDurum, GiderDurum
+from apps.finans.constants.gider_types import OdemeDurum
 from apps.finans.constants.hareket_types import HareketYonu, HareketKaynagi
 from apps.finans.constants.cari_types import CariHareketTuru, CariHareketYonu
 
@@ -60,13 +60,27 @@ class GiderOdemeService:
         Returns: (GiderOdeme, None) veya (None, error_dict)
         """
         bakiyeden_mahsup = data.get('bakiyeden_mahsup', False)
+        raw_gider = data.get('gider_kaydi_id') or data.get('gider_kaydi')
+        gider_pk = raw_gider if isinstance(raw_gider, int) or raw_gider is None else raw_gider.pk
+        if gider_pk:
+            from apps.finans.domain.gider_kaydi import GiderKaydi
+            from apps.finans.domain.gider_taksit import GiderTaksit
+            cari_id = (
+                GiderKaydi.objects.filter(pk=gider_pk)
+                .values_list('cari_hesap_id', flat=True)
+                .first()
+            )
+            if cari_id:
+                self.cari_hesap_repo.get_by_id(cari_id, for_update=True)
+            GiderKaydi.objects.select_for_update().filter(pk=gider_pk).first()
+            if data.get('gider_taksit_id'):
+                GiderTaksit.objects.select_for_update().filter(pk=data['gider_taksit_id']).first()
 
         errors = self._validate_odeme(data, bakiyeden_mahsup=bakiyeden_mahsup)
         if errors:
             return None, errors
 
-        gider_id = data.get('gider_kaydi_id') or data.get('gider_kaydi')
-        gider = self.gider_repo.get_by_id(gider_id if isinstance(gider_id, int) else gider_id.pk)
+        gider = self.gider_repo.get_by_id(gider_pk)
 
         tutar = data['tutar']
 
@@ -167,12 +181,11 @@ class GiderOdemeService:
 
     def _bakiyeden_mahsup_yap(self, gider, tutar, data):
         """
-        Cari bakiyeden mahsup: Mali hesaptan para çıkmaz.
-        Cari hesapta biriken artı bakiye (önceki serbest ödemeler, avanslar vb.)
-        bu giderin borcu ile netleştirilir.
+        Cari bakiyeden mahsup: Mali hesaptan para çıkmaz ve mükerrer CariHareket oluşmaz.
+        Neden: SerbestOdeme sırasında cariye BORÇ, GiderKaydi onayında cariye ALACAK
+        zaten işlenmiştir (net cari bakiye zaten doğrudur). Mahsup işlemi yalnızca
+        mevcut serbest avans ödemesini bu gider faturasının açık borcuna eşleştirir.
         """
-        # Bakiye yeterliliği zaten _validate_odeme'de kontrol edildi
-
         # 1. GiderOdeme kaydı oluştur (mali_hesap & odeme_yontemi null)
         odeme_data = {
             'gider_kaydi_id': gider.pk,
@@ -181,7 +194,7 @@ class GiderOdemeService:
             'mali_hesap_id': None,
             'tutar': tutar,
             'odeme_tarihi': data['odeme_tarihi'],
-            'aciklama': data.get('aciklama', '') or f'Cari bakiyeden mahsup edildi',
+            'aciklama': data.get('aciklama', '') or 'Cari bakiyeden mahsup edildi',
             'islem_yapan': data.get('islem_yapan'),
             'durum': OdemeDurum.TAMAMLANDI,
             'bakiyeden_mahsup': True,
@@ -200,24 +213,6 @@ class GiderOdemeService:
         # 4. GiderKaydi durumunu güncelle
         self.gider_service.durum_guncelle(gider)
 
-        # 5. Cari hesapta ALACAK hareketi (mahsup — artı bakiyeyi düşürüyoruz)
-        #    Serbest ödeme ile BORÇ yönünde bakiye artmıştı.
-        #    Mahsup = o bakiyeyi tüketmek → ALACAK yönünde olmalı.
-        #    bakiye = toplam_borc - toplam_alacak → ALACAK artınca bakiye düşer.
-        self.cari_hareket_service.hareket_olustur(
-            cari_hesap_id=gider.cari_hesap_id,
-            kurum_id=gider.kurum_id,
-            tutar=tutar,
-            yon=CariHareketYonu.ALACAK,
-            islem_turu=CariHareketTuru.MAHSUP,
-            islem_tarihi=data['odeme_tarihi'],
-            sube_id=gider.sube_id,
-            egitim_yili_id=gider.egitim_yili_id,
-            kaynak_tip='GiderOdeme',
-            kaynak_id=odeme.pk,
-            aciklama=f'Bakiyeden mahsup: {gider.fatura_no or "Belgesiz"} — {tutar} ₺',
-        )
-
         return odeme, None
 
     @atomic_result
@@ -227,8 +222,15 @@ class GiderOdemeService:
         Bakiyeden mahsup ödemelerde BakiyeHareketi oluşturulmaz, sadece cari hareket yapılır.
         Returns: (GiderOdeme, None) veya (None, error_dict)
         """
-        # Eşzamanlı çift iptal koruması — kaydı kilitle.
+        # Eşzamanlı işlem/iptal koruması — kilit sırası: CariHesap → GiderOdeme.
         from apps.finans.domain.gider_odeme import GiderOdeme as _GiderOdeme
+        cari_id = (
+            _GiderOdeme.objects.filter(pk=odeme_id)
+            .values_list('gider_kaydi__cari_hesap_id', flat=True)
+            .first()
+        )
+        if cari_id:
+            self.cari_hesap_repo.get_by_id(cari_id, for_update=True)
         _GiderOdeme.objects.select_for_update().filter(pk=odeme_id).first()
 
         odeme = self.odeme_repo.get_by_id(odeme_id)
@@ -278,28 +280,29 @@ class GiderOdemeService:
         self.gider_service.durum_guncelle(gider)
 
         # 5. Cari hesapta ters hareket (iptal)
-        #    Normal ödeme: BORÇ yapılmıştı → iptalinde ALACAK
-        #    Mahsup: ALACAK yapılmıştı → iptalinde BORÇ (bakiye geri yüklenir)
+        #    Normal ödeme: BORÇ yapılmıştı → iptalinde ALACAK/İADE.
+        #    Yeni mahsuplarda mükerrer CariHareket yazılmaz; eski veride
+        #    dengelenmemiş ALACAK/MAHSUP kalmışsa yalnızca kalan net kapatılır.
         if is_mahsup:
-            iptal_yon = CariHareketYonu.BORC
+            mahsup_ters_kaydi_yaz(
+                odeme,
+                cari_hareket_service=self.cari_hareket_service,
+                aciklama=f'Mahsup iptali: {gider.fatura_no or "Belgesiz"} — {tutar} ₺',
+            )
         else:
-            iptal_yon = CariHareketYonu.ALACAK
-
-        islem_turu = CariHareketTuru.MAHSUP if is_mahsup else CariHareketTuru.IADE
-        aciklama_cari = f'{"Mahsup" if is_mahsup else "Gider ödeme"} iptali: {gider.fatura_no or "Belgesiz"} — {tutar} ₺'
-        self.cari_hareket_service.hareket_olustur(
-            cari_hesap_id=gider.cari_hesap_id,
-            kurum_id=gider.kurum_id,
-            tutar=tutar,
-            yon=iptal_yon,
-            islem_turu=islem_turu,
-            islem_tarihi=odeme.odeme_tarihi,
-            sube_id=gider.sube_id,
-            egitim_yili_id=gider.egitim_yili_id,
-            kaynak_tip='GiderOdeme',
-            kaynak_id=odeme.pk,
-            aciklama=aciklama_cari,
-        )
+            self.cari_hareket_service.hareket_olustur(
+                cari_hesap_id=gider.cari_hesap_id,
+                kurum_id=gider.kurum_id,
+                tutar=tutar,
+                yon=CariHareketYonu.ALACAK,
+                islem_turu=CariHareketTuru.IADE,
+                islem_tarihi=odeme.odeme_tarihi,
+                sube_id=gider.sube_id,
+                egitim_yili_id=gider.egitim_yili_id,
+                kaynak_tip='GiderOdeme',
+                kaynak_id=odeme.pk,
+                aciklama=f'Gider ödeme iptali: {gider.fatura_no or "Belgesiz"} — {tutar} ₺',
+            )
 
         self.masraf_service.iptal(
             IslemMasrafiKaynakTipi.GIDER_ODEME,
@@ -355,31 +358,17 @@ class GiderOdemeService:
             errors['tutar'] = f'Ödeme tutarı kalan borçtan ({gider.kalan_tutar} ₺) fazla olamaz.'
 
         if bakiyeden_mahsup:
-            # Serbest bakiye yeterliliği kontrol et
-            # Serbest bakiye = serbest_ödemeler - serbest_iptaller - mahsuplar
+            from apps.finans.application.cari_balance import hesapla_serbest_odeme_bakiye
             cari_hesap = self.cari_hesap_repo.get_by_id(gider.cari_hesap_id)
             if cari_hesap:
-                from django.db.models import Sum
-                qs = cari_hesap.hareketler.all()
-                serbest = qs.filter(
-                    kaynak_tip='SerbestOdeme', islem_turu='odeme'
-                ).aggregate(t=Sum('tutar'))['t'] or Decimal('0')
-                iptaller = qs.filter(
-                    kaynak_tip='SerbestOdemeIptal'
-                ).aggregate(t=Sum('tutar'))['t'] or Decimal('0')
-                mahsuplar = qs.filter(
-                    islem_turu='mahsup', yon=CariHareketYonu.ALACAK,
-                ).aggregate(t=Sum('tutar'))['t'] or Decimal('0')
-                mahsup_iptaller = qs.filter(
-                    islem_turu='mahsup', yon=CariHareketYonu.BORC,
-                ).aggregate(t=Sum('tutar'))['t'] or Decimal('0')
-                mahsuplar -= mahsup_iptaller
-                serbest_bakiye = serbest - iptaller - mahsuplar
-
-                if tutar and serbest_bakiye <= 0:
-                    errors['tutar'] = f'Cari hesapta mahsup edilecek serbest bakiye bulunmuyor. Serbest bakiye: {serbest_bakiye} ₺'
+                serbest_bakiye = hesapla_serbest_odeme_bakiye(gider.cari_hesap_id)
+                if tutar and serbest_bakiye <= Decimal('0'):
+                    errors['tutar'] = (
+                        f'Cari hesapta mahsup edilecek serbest ödeme bakiyesi bulunmuyor. '
+                        f'Kullanılabilir bakiye: {serbest_bakiye} ₺'
+                    )
                 elif tutar and tutar > serbest_bakiye:
-                    errors['tutar'] = f'Mahsup tutarı serbest bakiyeden ({serbest_bakiye} ₺) fazla olamaz.'
+                    errors['tutar'] = f'Mahsup tutarı kullanılabilir serbest bakiyeden ({serbest_bakiye} ₺) fazla olamaz.'
         else:
             # Normal ödeme — mali hesap ve ödeme yöntemi zorunlu
             if not data.get('odeme_yontemi_id'):

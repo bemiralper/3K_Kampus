@@ -15,7 +15,8 @@ from django.utils import timezone
 
 from apps.finans.application.selectors.cari_hesap_selector import CariHesapSelector
 from apps.finans.application.cari_v2.cari_risk_service import hesapla_risk
-from apps.finans.constants.cari_types import CariHareketTuru, CariHesapTuru
+from apps.finans.constants.cari_types import CariHareketTuru, CariHesapTuru, GelirDurum
+from apps.finans.constants.gider_types import GiderDurum
 from apps.finans.domain.cari_hesap import CariHesap
 from apps.finans.domain.gelir_kaydi import GelirKaydi
 from apps.finans.domain.gider_kaydi import GiderKaydi
@@ -78,12 +79,17 @@ class CariPanelService:
             return None
         hesap = self.repo.get_by_id(hesap_id)
         acik_borc = float(hesap.acik_borc)
+        acik_alacak = float(hesap.acik_alacak)
         risk = hesapla_risk(
-            acik_borc, float(hesap.risk_limiti or 0), float(ozet['vadesi_gecmis']),
+            acik_borc,
+            float(hesap.risk_limiti or 0),
+            float(ozet['vadesi_gecmis']),
+            acik_alacak=acik_alacak,
+            hesap_turu=hesap.hesap_turu,
         )
         ozet.update({
             'acik_borc': acik_borc,
-            'acik_alacak': float(hesap.acik_alacak),
+            'acik_alacak': acik_alacak,
             'risk_limiti': float(hesap.risk_limiti or 0),
             'kategori': hesap.kategori,
             'aktif_mi': hesap.aktif_mi,
@@ -108,9 +114,9 @@ class CariPanelService:
             'panel_tipi': tur,
         }
 
-        if tur in (CariHesapTuru.MUSTERI, CariHesapTuru.KARMA, CariHesapTuru.GELIR_HESABI):
+        if tur in (CariHesapTuru.MUSTERI, CariHesapTuru.KARMA):
             base['musteri'] = self._musteri_panel(hesap, islem)
-        if tur in (CariHesapTuru.TEDARIKCI, CariHesapTuru.KARMA, CariHesapTuru.GIDER_HESABI):
+        if tur in (CariHesapTuru.TEDARIKCI, CariHesapTuru.KARMA):
             base['tedarikci'] = self._tedarikci_panel(hesap, islem)
         if tur == CariHesapTuru.GELIR_HESABI:
             base['gelir'] = self._gelir_panel(hesap)
@@ -118,10 +124,10 @@ class CariPanelService:
             base['gider'] = self._gider_panel(hesap)
         if tur == CariHesapTuru.KARMA:
             gelir_agg = GelirKaydi.objects.filter(cari_hesap=hesap).exclude(
-                durum='iptal',
+                durum__in=[GelirDurum.IPTAL, GelirDurum.TASLAK],
             ).aggregate(t=Sum('net_tutar'))
             gider_agg = GiderKaydi.objects.filter(cari_hesap=hesap).exclude(
-                durum='iptal',
+                durum__in=[GiderDurum.IPTAL, GiderDurum.TASLAK, GiderDurum.ONAY_BEKLIYOR],
             ).aggregate(t=Sum('net_tutar'))
             toplam_gelir = float(gelir_agg['t'] or 0)
             toplam_gider = float(gider_agg['t'] or 0)
@@ -170,7 +176,9 @@ class CariPanelService:
         }
 
     def _gelir_panel(self, hesap):
-        gelir_qs = GelirKaydi.objects.filter(cari_hesap=hesap).exclude(durum='iptal')
+        gelir_qs = GelirKaydi.objects.filter(cari_hesap=hesap).exclude(
+            durum__in=[GelirDurum.IPTAL, GelirDurum.TASLAK],
+        )
         agg = gelir_qs.aggregate(
             toplam=Sum('net_tutar'),
             tahsil=Sum('tahsil_edilen'),
@@ -189,7 +197,9 @@ class CariPanelService:
         }
 
     def _gider_panel(self, hesap):
-        gider_qs = GiderKaydi.objects.filter(cari_hesap=hesap).exclude(durum='iptal')
+        tum_qs = GiderKaydi.objects.filter(cari_hesap=hesap).exclude(durum=GiderDurum.IPTAL)
+        onaysiz_durumlar = [GiderDurum.TASLAK, GiderDurum.ONAY_BEKLIYOR]
+        gider_qs = tum_qs.exclude(durum__in=onaysiz_durumlar)
         agg = gider_qs.aggregate(
             toplam=Sum('net_tutar'),
             odenen=Sum('odenen_toplam'),
@@ -197,7 +207,7 @@ class CariPanelService:
         toplam = float(agg['toplam'] or 0)
         odenen = float(agg['odenen'] or 0)
         onay_bekleyen = float(
-            gider_qs.filter(durum='onay_bekliyor').aggregate(t=Sum('net_tutar'))['t'] or 0
+            tum_qs.filter(durum__in=onaysiz_durumlar).aggregate(t=Sum('net_tutar'))['t'] or 0
         )
         return {
             'toplam_gider': toplam,

@@ -35,8 +35,8 @@ const ALL_COLUMNS: { key: string; label: string; num?: boolean }[] = [
   { key: "hesap_kodu", label: "Kod" },
   { key: "kategori", label: "Kategori" },
   { key: "il", label: "İl" },
-  { key: "acik_borc", label: "Verecek", num: true },
-  { key: "acik_alacak", label: "Alacak", num: true },
+  { key: "acik_borc", label: "Net Borcumuz", num: true },
+  { key: "acik_alacak", label: "Net Alacağımız", num: true },
   { key: "bakiye", label: "Net Bakiye", num: true },
   { key: "vadesi_gecmis", label: "Vadesi Geçmiş", num: true },
   { key: "risk", label: "Risk" },
@@ -243,12 +243,13 @@ export default function CariV2ListClient() {
         <div className="cv2-cards">
           <Card label="Toplam Cari" value={dashboard.toplam_cari} />
           <Card label="Aktif Cari" value={dashboard.aktif_cari} accent />
-          <Card label="Borçlu Cari" value={dashboard.borclu_cari} tone="danger" />
-          <Card label="Alacaklı Cari" value={dashboard.alacakli_cari} tone="success" />
+          <Card label="Ödeme Yapılacak Cari" value={dashboard.borclu_cari} tone="danger" />
+          <Card label="Tahsilat Bekleyen Cari" value={dashboard.alacakli_cari} tone="success" />
           <Card label="Riskli Cari" value={dashboard.riskli_cari} tone="warning" />
           <Card label="Bu Ay Tahsilat" value={TL(dashboard.bu_ay_tahsilat)} tone="success" tl />
           <Card label="Bu Ay Ödeme" value={TL(dashboard.bu_ay_odeme)} tone="danger" tl />
-          <Card label="Bekleyen Tahsilat" value={TL(dashboard.bekleyen_tahsilat)} tl />
+          <Card label="Bekleyen Tahsilat" value={TL(dashboard.bekleyen_tahsilat)} tone="success" tl />
+          <Card label="Bekleyen Ödeme" value={TL(dashboard.bekleyen_odeme)} tone="danger" tl />
         </div>
       )}
 
@@ -312,6 +313,43 @@ export default function CariV2ListClient() {
         <div className="cv2-toolbar" style={{ background: "#f0f8ff", padding: 10, borderRadius: 10 }}>
           <strong style={{ fontSize: 13 }}>{selected.size} cari seçildi</strong>
           <button className="cv2-btn cv2-btn--sm" onClick={() => setSelected(new Set())}>Seçimi Temizle</button>
+        </div>
+      )}
+
+      {/* Filtrelenen tüm kayıtların özet toplamları */}
+      {data?.totals && data.count > 0 && (
+        <div
+          style={{
+            display: "flex",
+            flexWrap: "wrap",
+            gap: 16,
+            alignItems: "center",
+            justifyContent: "space-between",
+            background: "#f8fafc",
+            border: "1px solid #e2e8f0",
+            borderRadius: 10,
+            padding: "8px 14px",
+            marginBottom: 10,
+            fontSize: 13,
+          }}
+        >
+          <span style={{ color: "#64748b", fontWeight: 600 }}>
+            Filtrelenen Toplam ({data.count} cari)
+          </span>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 18 }}>
+            <span>
+              Alacağımız: <strong style={{ color: "#059669" }}>{TL(data.totals.toplam_alacak)}</strong>
+            </span>
+            <span>
+              Borcumuz (Verecek): <strong style={{ color: "#dc2626" }}>{TL(data.totals.toplam_borc)}</strong>
+            </span>
+            <span>
+              Net Bakiye:{" "}
+              <strong style={{ color: data.totals.net_bakiye >= 0 ? "#059669" : "#dc2626" }}>
+                {TL(data.totals.net_bakiye)}
+              </strong>
+            </span>
+          </div>
         </div>
       )}
 
@@ -433,8 +471,8 @@ function GridCard({ row, onClick }: { row: CariV2ListItem; onClick: () => void }
         <span className="cv2-badge" style={{ background: risk.bg, color: risk.renk }}>{row.risk_durumu_display}</span>
       </div>
       <div className="cv2-gcard__stats">
-        <div className="cv2-gcard__stat"><span>Verecek</span><strong className="cv2-neg">{TL(row.acik_borc)}</strong></div>
-        <div className="cv2-gcard__stat"><span>Alacak</span><strong className="cv2-pos">{TL(row.acik_alacak)}</strong></div>
+        <div className="cv2-gcard__stat"><span>Net Borcumuz</span><strong className="cv2-neg">{TL(row.acik_borc)}</strong></div>
+        <div className="cv2-gcard__stat"><span>Net Alacağımız</span><strong className="cv2-pos">{TL(row.acik_alacak)}</strong></div>
         <div className="cv2-gcard__stat" style={{ textAlign: "right" }}><span>Net</span>
           <strong className={row.bakiye < 0 ? "cv2-neg" : row.bakiye > 0 ? "cv2-pos" : ""}>{TL(row.bakiye)}</strong>
         </div>

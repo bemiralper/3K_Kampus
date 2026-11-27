@@ -2,6 +2,7 @@
 import {
   CariEffectivePermissions,
   CariEtiket,
+  CariV2AcikKalemler,
   CariV2Dashboard,
   CariV2Detail,
   CariV2Filters,
@@ -100,6 +101,10 @@ export const cariV2Service = {
 
   tab(id: number, tab: string): Promise<unknown> {
     return request(`/cari/v2/hesaplar/${id}/tab/${tab}/`);
+  },
+
+  acikKalemler(id: number): Promise<CariV2AcikKalemler> {
+    return request<CariV2AcikKalemler>(`/cari/v2/hesaplar/${id}/tab/acik-kalemler/`);
   },
 
   report(slug: string, kurum_id: number, sube_id?: number | null, params?: Record<string, string>): Promise<CariV2Report> {

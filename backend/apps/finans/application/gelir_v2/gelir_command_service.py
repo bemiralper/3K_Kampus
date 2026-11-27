@@ -31,15 +31,44 @@ class GelirCommandService:
     @transaction.atomic
     def create(self, data, *, islem_yapan=None, ip_adresi=None):
         etiket_ids = data.pop('etiket_ids', None)
+        hemen_tahsil_et = bool(data.pop('hemen_tahsil_et', False))
+        islem_odeme_tarihi = data.pop('islem_odeme_tarihi', None)
+        bakiyeden_mahsup = bool(data.pop('bakiyeden_mahsup', False))
+        taslak = bool(data.get('taslak_olarak_kaydet', False))
+
+        if taslak and hemen_tahsil_et:
+            return None, {
+                'taslak_olarak_kaydet': 'Taslak olarak kaydedilen gelire aynı anda tahsilat işlenemez.',
+            }
+
         payload = dict(data)
         payload['olusturan'] = islem_yapan
 
         gelir, errors = self.base.create(payload)
         if errors:
+            transaction.set_rollback(True)
             return None, errors
 
         if etiket_ids:
             gelir.etiketler.set(_valid_etiket_ids(gelir.kurum_id, etiket_ids))
+
+        if hemen_tahsil_et:
+            from apps.finans.application.gelir_tahsilat_service import GelirTahsilatService
+            tahsilat_payload = {
+                'gelir_kaydi_id': gelir.pk,
+                'tutar': gelir.net_tutar,
+                'tahsilat_tarihi': islem_odeme_tarihi or gelir.fatura_tarihi,
+                'mali_hesap_id': gelir.mali_hesap_id,
+                'odeme_yontemi_id': gelir.odeme_yontemi_id,
+                'aciklama': gelir.aciklama or 'Peşin gelir tahsilatı',
+                'bakiyeden_mahsup': bakiyeden_mahsup,
+                'islem_yapan': islem_yapan,
+            }
+            _, th_err = GelirTahsilatService().tahsilat_yap(tahsilat_payload)
+            if th_err:
+                transaction.set_rollback(True)
+                return None, th_err
+            gelir.refresh_from_db()
 
         FinansAuditService.log(
             kurum_id=gelir.kurum_id, sube_id=gelir.sube_id,

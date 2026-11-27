@@ -100,6 +100,11 @@
 .cv2-btn--ghost { border-color: transparent; background: transparent; }
 .cv2-btn--sm { padding: 6px 10px; font-size: 12px; }
 .cv2-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.cv2-linkbtn {
+  background: none; border: 0; padding: 0; font: inherit; color: #2563eb;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 2px;
+}
+.cv2-linkbtn:hover { color: #1d4ed8; }
 
 .cv2-viewswitch {
   display: inline-flex;
@@ -239,7 +244,9 @@
 /* Drawer */
 .cv2-overlay {
   position: fixed; inset: 0; background: rgba(15,23,42,0.4);
-  z-index: 1000; display: flex; justify-content: flex-end;
+  /* Ant Design çekmecesi (Gider/Gelir formu) z-index 1000 ile body'ye portal olur.
+     Yeni cari aynı seviyede kalınca formun arkasında açılıyordu. */
+  z-index: 1200; display: flex; justify-content: flex-end;
   animation: cv2-fade 0.15s ease;
 }
 @keyframes cv2-fade { from { opacity: 0; } to { opacity: 1; } }

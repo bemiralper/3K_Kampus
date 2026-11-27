@@ -31,6 +31,10 @@ class GelirV2CreateSerializer(_EtiketMixin):
     brut_tutar = serializers.DecimalField(max_digits=15, decimal_places=2, min_value=0)
     kdv_orani = serializers.ChoiceField(choices=KdvOrani.CHOICES, default=KdvOrani.YIRMI)
     kdv_mod = serializers.ChoiceField(choices=KDV_MOD_CHOICES, default='haric', required=False)
+    taslak_olarak_kaydet = serializers.BooleanField(required=False, default=False)
+    hemen_tahsil_et = serializers.BooleanField(required=False, default=False)
+    islem_odeme_tarihi = serializers.DateField(required=False, allow_null=True)
+    bakiyeden_mahsup = serializers.BooleanField(required=False, default=False)
 
 
 class GelirV2UpdateSerializer(_EtiketMixin):
@@ -66,6 +70,10 @@ class GiderV2CreateSerializer(_EtiketMixin):
     kdv_mod = serializers.ChoiceField(choices=KDV_MOD_CHOICES, default='haric', required=False)
     taksit_sayisi = serializers.IntegerField(required=False, min_value=1, max_value=60, default=1)
     taksit_plani = serializers.JSONField(required=False, allow_null=True)
+    taslak_olarak_kaydet = serializers.BooleanField(required=False, default=False)
+    hemen_ode = serializers.BooleanField(required=False, default=False)
+    islem_odeme_tarihi = serializers.DateField(required=False, allow_null=True)
+    bakiyeden_mahsup = serializers.BooleanField(required=False, default=False)
 
 
 class GiderV2UpdateSerializer(_EtiketMixin):

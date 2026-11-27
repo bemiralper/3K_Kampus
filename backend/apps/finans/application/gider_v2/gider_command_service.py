@@ -30,15 +30,50 @@ class GiderCommandService:
     @transaction.atomic
     def create(self, data, *, islem_yapan=None, ip_adresi=None):
         etiket_ids = data.pop('etiket_ids', None)
+        hemen_ode = bool(data.pop('hemen_ode', False))
+        islem_odeme_tarihi = data.pop('islem_odeme_tarihi', None)
+        bakiyeden_mahsup = bool(data.pop('bakiyeden_mahsup', False))
+        taslak = bool(data.get('taslak_olarak_kaydet', False))
+
+        if taslak and hemen_ode:
+            return None, {
+                'taslak_olarak_kaydet': 'Taslak olarak kaydedilen gidere aynı anda ödeme işlenemez.',
+            }
+        if hemen_ode and int(data.get('taksit_sayisi') or 1) > 1:
+            return None, {
+                'hemen_ode': 'Taksitli gider kaydında tek adımda peşin ödeme yapılamaz; taksitleri Ödeme Yap ekranından ödeyebilirsiniz.',
+            }
+
         payload = dict(data)
         payload['olusturan'] = islem_yapan
 
         gider, errors = self.base.create(payload)
         if errors:
+            transaction.set_rollback(True)
             return None, errors
 
         if etiket_ids:
             gider.etiketler.set(_valid_etiket_ids(gider.kurum_id, etiket_ids))
+
+        if hemen_ode:
+            from apps.finans.application.gider_odeme_service import GiderOdemeService
+            ilk_taksit = gider.taksitler.order_by('taksit_no').first()
+            odeme_payload = {
+                'gider_kaydi_id': gider.pk,
+                'gider_taksit_id': ilk_taksit.pk if ilk_taksit else None,
+                'tutar': gider.net_tutar,
+                'odeme_tarihi': islem_odeme_tarihi or gider.fatura_tarihi,
+                'mali_hesap_id': gider.mali_hesap_id,
+                'odeme_yontemi_id': gider.odeme_yontemi_id,
+                'aciklama': gider.aciklama or 'Peşin gider ödemesi',
+                'bakiyeden_mahsup': bakiyeden_mahsup,
+                'islem_yapan': islem_yapan,
+            }
+            _, od_err = GiderOdemeService().odeme_yap(odeme_payload)
+            if od_err:
+                transaction.set_rollback(True)
+                return None, od_err
+            gider.refresh_from_db()
 
         FinansAuditService.log(
             kurum_id=gider.kurum_id, sube_id=gider.sube_id,

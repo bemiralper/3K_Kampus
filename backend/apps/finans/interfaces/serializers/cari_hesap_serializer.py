@@ -75,6 +75,7 @@ class CariHesapDetailSerializer(serializers.ModelSerializer):
     toplam_gelir = serializers.SerializerMethodField()
     gelir_alacagi = serializers.SerializerMethodField()
     tahsil_edilen_gelir = serializers.SerializerMethodField()
+    serbest_tahsilat_bakiye = serializers.SerializerMethodField()
     gider_kayit_sayisi = serializers.SerializerMethodField()
     gelir_kayit_sayisi = serializers.SerializerMethodField()
 
@@ -90,7 +91,8 @@ class CariHesapDetailSerializer(serializers.ModelSerializer):
             'yetkili_kisi', 'yetkili_telefon',
             'banka_adi', 'iban', 'hesap_sahibi',
             'toplam_borc', 'toplam_alacak', 'bakiye', 'bakiye_durumu',
-            'serbest_bakiye', 'gider_borcu', 'toplam_gider',
+            'serbest_bakiye', 'serbest_tahsilat_bakiye',
+            'gider_borcu', 'toplam_gider',
             'toplam_gelir', 'gelir_alacagi', 'tahsil_edilen_gelir',
             'gider_kayit_sayisi', 'gelir_kayit_sayisi',
             'notlar', 'aktif_mi',
@@ -104,22 +106,14 @@ class CariHesapDetailSerializer(serializers.ModelSerializer):
         return list(obj.gelir_kategorileri.values('id', 'ad'))
 
     def get_serbest_bakiye(self, obj):
-        """
-        Serbest bakiye = serbest ödemeler - serbest iptal - mahsuplar.
-        Mahsup için kullanılabilir tutar.
-        """
-        from django.db.models import Sum
-        qs = obj.hareketler.all()
-        serbest = qs.filter(
-            kaynak_tip='SerbestOdeme', islem_turu='odeme'
-        ).aggregate(t=Sum('tutar'))['t'] or 0
-        iptaller = qs.filter(
-            kaynak_tip='SerbestOdemeIptal'
-        ).aggregate(t=Sum('tutar'))['t'] or 0
-        mahsuplar = qs.filter(
-            islem_turu='mahsup'
-        ).aggregate(t=Sum('tutar'))['t'] or 0
-        return float(serbest - iptaller - mahsuplar)
+        """Gider faturasına mahsup edilebilir serbest ödeme bakiyesi."""
+        from apps.finans.application.cari_balance import hesapla_serbest_odeme_bakiye
+        return float(hesapla_serbest_odeme_bakiye(obj.pk))
+
+    def get_serbest_tahsilat_bakiye(self, obj):
+        """Gelir faturasına mahsup edilebilir serbest tahsilat bakiyesi."""
+        from apps.finans.application.cari_balance import hesapla_serbest_tahsilat_bakiye
+        return float(hesapla_serbest_tahsilat_bakiye(obj.pk))
 
     def get_gider_borcu(self, obj):
         """Ödenmemiş gider toplamı (net_tutar - odenen_toplam)."""
@@ -294,6 +288,7 @@ class CariHareketListSerializer(serializers.ModelSerializer):
     kategori_adi = serializers.SerializerMethodField()
     odeme_yontemi_adi = serializers.SerializerMethodField()
     odeme_yontemi_tip = serializers.SerializerMethodField()
+    iptal_edildi_mi = serializers.SerializerMethodField()
 
     class Meta:
         model = CariHareket
@@ -306,10 +301,14 @@ class CariHareketListSerializer(serializers.ModelSerializer):
             'bakiye_oncesi', 'bakiye_sonrasi',
             'kaynak_tip', 'kaynak_id',
             'kategori_adi', 'odeme_yontemi_adi', 'odeme_yontemi_tip',
+            'iptal_edildi_mi',
             'aciklama', 'belge_no', 'islem_tarihi',
             'islem_yapan_adi',
             'created_at',
         ]
+
+    def get_iptal_edildi_mi(self, obj):
+        return obj.pk in self.context.get('iptal_edilen_ids', set())
 
     def _kaynak_meta(self, obj):
         return self.context.get('kaynak_meta', {}).get((obj.kaynak_tip, obj.kaynak_id), {})

@@ -112,6 +112,14 @@ class GelirTahsilat(models.Model):
     def __str__(self):
         return f"{self.gelir_kaydi.cari_hesap} - {self.tutar} ₺ ({self.tahsilat_tarihi})"
 
+    # Cari serbest tahsilat bakiyesinden mahsup edildiğinde bakiye_hareketi_id = 0
+    # olarak işaretlenir (gerçek PK'ler >= 1; None ise henüz bağlanmamış/hatalı kayıt).
+    MAHSUP_SENTINEL_BH_ID = 0
+
     @property
     def iptal_mi(self):
         return self.durum == OdemeDurum.IPTAL
+
+    @property
+    def bakiyeden_mahsup(self) -> bool:
+        return self.bakiye_hareketi_id == self.MAHSUP_SENTINEL_BH_ID

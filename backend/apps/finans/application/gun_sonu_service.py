@@ -98,7 +98,9 @@ class GunSonuService:
             kova[b]['adet'] += row['adet']
 
         # Diğer gelir tahsilatları
+        from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
         gqs = GelirTahsilat.objects.filter(
+            gelir_gercek_tahsilat_q(),
             gelir_kaydi__kurum_id=kurum_id,
             durum=OdemeDurum.TAMAMLANDI,
         ).filter(bugun_islem_q('tahsilat_tarihi', gun))

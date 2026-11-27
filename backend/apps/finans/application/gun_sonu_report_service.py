@@ -196,7 +196,9 @@ class GunSonuReportService:
         return as_money(agg['toplam'] or 0), agg['adet'] or 0
 
     def _gelir_tahsilat(self, kurum_id, gun, sube_id):
+        from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
         qs = GelirTahsilat.objects.filter(
+            gelir_gercek_tahsilat_q(),
             gelir_kaydi__kurum_id=kurum_id,
             durum=OdemeDurum.TAMAMLANDI,
         ).filter(bugun_islem_q('tahsilat_tarihi', gun))
@@ -327,7 +329,9 @@ class GunSonuReportService:
             key = str(uid) if uid else '__sistem__'
             totals[key]['tahsilat'] += as_money(row['toplam'] or 0)
 
+        from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
         gt_qs = GelirTahsilat.objects.filter(
+            gelir_gercek_tahsilat_q(),
             gelir_kaydi__kurum_id=kurum_id,
             durum=OdemeDurum.TAMAMLANDI,
         ).filter(bugun_islem_q('tahsilat_tarihi', gun)).select_related('islem_yapan')

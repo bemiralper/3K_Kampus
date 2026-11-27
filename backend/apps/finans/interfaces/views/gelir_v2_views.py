@@ -52,7 +52,7 @@ _FILTER_KEYS = [
     'arama', 'durum', 'cari_hesap_id', 'gelir_kategorisi_id', 'gelir_kaynagi_id',
     'proje_id', 'odeme_yontemi_id', 'olusturan_id', 'etiket_id', 'belge_no',
     'baslangic', 'bitis', 'tutar_min', 'tutar_max', 'kdv_var', 'kdv_orani',
-    'tahsil_durumu',
+    'tahsil_durumu', 'vade_baslangic', 'vade_bitis',
 ]
 
 

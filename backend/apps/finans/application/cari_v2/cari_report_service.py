@@ -11,19 +11,18 @@ columns/rows dışa aktarma (PDF/Excel/CSV) için kullanılır.
 """
 from __future__ import annotations
 
-from django.db.models import Count, F, Sum
+from django.db.models import Count, Sum
 from django.db.models.functions import TruncMonth
-from django.utils import timezone
 
-from apps.finans.application.cari_balance import net_bakiye
 from apps.finans.application.cari_hareket_enrichment import build_cari_hareket_meta
 from apps.finans.application.ekstre_balance import (
-    compute_devreden_bakiye,
-    compute_kapanis_bakiye,
+    cari_donem_bakiyesi,
+    tarih_parametresi,
 )
 from apps.finans.application.cari_v2.cari_risk_service import hesapla_risk
 from apps.finans.application.selectors.cari_hesap_selector import CariHesapSelector
-from apps.finans.constants.cari_types import CariHareketTuru
+from apps.finans.constants.cari_types import CariHareketTuru, GelirDurum
+from apps.finans.constants.gider_types import GiderDurum
 from apps.finans.domain.cari_hareket import CariHareket
 from apps.finans.domain.cari_hesap import CariHesap
 from apps.finans.domain.gelir_kaydi import GelirKaydi
@@ -63,11 +62,14 @@ class CariReportService:
         }.get(slug)
         if not method:
             return None
-        return method(kurum_id, sube_id, params)
+        try:
+            return method(kurum_id, sube_id, params)
+        except ValueError as exc:
+            return {'error': str(exc)}
 
     # ─── Yardımcılar ─────────────────────────────
     def _rapor_rows(self, kurum_id, sube_id, params):
-        return self.selector.cari_rapor_listesi(
+        rows = self.selector.cari_rapor_listesi(
             kurum_id,
             sube_id=sube_id,
             hesap_turu=params.get('hesap_turu'),
@@ -75,23 +77,48 @@ class CariReportService:
             baslangic=params.get('baslangic'),
             bitis=params.get('bitis'),
         )
+        cari_id = params.get('cari_hesap_id')
+        if cari_id not in (None, ''):
+            try:
+                cid = int(cari_id)
+                rows = [r for r in rows if r['id'] == cid]
+            except (TypeError, ValueError):
+                pass
+        return rows
 
     # ─── 1. Ekstre ───────────────────────────────
+    def _kapsamdaki_hesap(self, cari_id, kurum_id, sube_id):
+        """Cari hesabı yalnızca istenen kurum/şubeye aitse döndürür."""
+        try:
+            hesap = self.repo.get_by_id(int(cari_id))
+        except (TypeError, ValueError):
+            return None
+        if not hesap or int(hesap.kurum_id) != int(kurum_id):
+            return None
+        if sube_id not in (None, '') and int(hesap.sube_id) != int(sube_id):
+            return None
+        return hesap
+
     def ekstre(self, kurum_id, sube_id, params):
         cari_id = params.get('cari_hesap_id')
         if not cari_id:
             return {'error': 'cari_hesap_id zorunludur.'}
-        hesap = self.repo.get_by_id(cari_id)
+        hesap = self._kapsamdaki_hesap(cari_id, kurum_id, sube_id)
         if not hesap:
             return {'error': 'Cari hesap bulunamadı.'}
 
+        baslangic = tarih_parametresi(params.get('baslangic'))
+        bitis = tarih_parametresi(params.get('bitis'))
+        if baslangic and bitis and baslangic > bitis:
+            return {'error': 'Başlangıç tarihi bitiş tarihinden büyük olamaz.'}
         filtreler = {}
-        if params.get('baslangic'):
-            filtreler['baslangic'] = params['baslangic']
-        if params.get('bitis'):
-            filtreler['bitis'] = params['bitis']
-        hareketler = list(self.selector.hareketler(cari_id, filtreler=filtreler or None))
+        if baslangic:
+            filtreler['baslangic'] = baslangic
+        if bitis:
+            filtreler['bitis'] = bitis
+        hareketler = list(self.selector.hareketler(hesap.pk, filtreler=filtreler or None))
         meta = build_cari_hareket_meta(hareketler)
+        donem = cari_donem_bakiyesi(hesap.pk, baslangic=baslangic, bitis=bitis)
 
         rows = []
         for h in hareketler:
@@ -103,28 +130,14 @@ class CariReportService:
                 'belge_no': h.belge_no,
                 'borc': _tl(h.tutar) if h.yon == 'borc' else 0,
                 'alacak': _tl(h.tutar) if h.yon == 'alacak' else 0,
-                'bakiye': _tl(h.bakiye_sonrasi),
+                'bakiye': _tl(donem.satir_bakiyeleri.get(h.pk)),
                 'kategori': km.get('kategori_adi') or '',
             })
 
-        row_dicts = [
-            {
-                'islem_tarihi': h.islem_tarihi.isoformat(),
-                'created_at': h.created_at.isoformat() if h.created_at else '',
-                'id': h.id,
-                'bakiye_oncesi': _tl(h.bakiye_oncesi),
-                'bakiye_sonrasi': _tl(h.bakiye_sonrasi),
-                'borc_oncesi': _tl(h.borc_oncesi),
-                'alacak_oncesi': _tl(h.alacak_oncesi),
-                'borc_sonrasi': _tl(h.borc_sonrasi),
-                'alacak_sonrasi': _tl(h.alacak_sonrasi),
-            }
-            for h in hareketler
-        ]
-        devreden = float(compute_devreden_bakiye(row_dicts))
-        kapanis = float(compute_kapanis_bakiye(row_dicts))
-        toplam_borc = sum(r['borc'] for r in rows)
-        toplam_alacak = sum(r['alacak'] for r in rows)
+        devreden = round(_tl(donem.devreden), 2)
+        kapanis = round(_tl(donem.kapanis), 2)
+        toplam_borc = _tl(donem.toplam_borc)
+        toplam_alacak = _tl(donem.toplam_alacak)
 
         return {
             'baslik': f'Cari Ekstre — {hesap.gorunen_ad}',
@@ -174,21 +187,26 @@ class CariReportService:
 
     # ─── 3. Borç Listesi ─────────────────────────
     def borc_listesi(self, kurum_id, sube_id, params):
-        rows = [r for r in self._rapor_rows(kurum_id, sube_id, params) if r['bakiye'] < 0]
-        rows.sort(key=lambda r: r['bakiye'])
+        rows = [r for r in self._rapor_rows(kurum_id, sube_id, params) if r['acik_borc_belge'] > 0]
+        rows.sort(
+            key=lambda r: (r['acik_borc_belge'], r['vadesi_gecmis_odeme']),
+            reverse=True,
+        )
         for r in rows:
-            r['acik_borc'] = -r['bakiye']
+            r['acik_borc'] = round(max(-r['bakiye'], 0.0), 2)
         return {
             'baslik': 'Borç Listesi (Verecekler)',
             'kpis': [
                 {'label': 'Borçlu Cari', 'value': len(rows), 'format': 'int'},
-                {'label': 'Toplam Borç', 'value': sum(r['acik_borc'] for r in rows), 'format': 'tl'},
+                {'label': 'Toplam Borç', 'value': round(sum(r['acik_borc_belge'] for r in rows), 2), 'format': 'tl'},
+                {'label': 'Geciken Ödeme', 'value': round(sum(r['vadesi_gecmis_odeme'] for r in rows), 2), 'format': 'tl'},
             ],
             'columns': [
                 {'key': 'hesap_kodu', 'label': 'Kod'},
                 {'key': 'gorunen_ad', 'label': 'Cari'},
-                {'key': 'acik_borc', 'label': 'Açık Borç', 'format': 'tl'},
-                {'key': 'vadesi_gecmis', 'label': 'Vadesi Geçmiş', 'format': 'tl'},
+                {'key': 'acik_borc_belge', 'label': 'Açık Borç (Belge)', 'format': 'tl'},
+                {'key': 'vadesi_gecmis_odeme', 'label': 'Geciken Ödeme', 'format': 'tl'},
+                {'key': 'bakiye', 'label': 'Net Bakiye', 'format': 'tl'},
                 {'key': 'son_islem_tarihi', 'label': 'Son İşlem'},
             ],
             'rows': rows,
@@ -196,21 +214,26 @@ class CariReportService:
 
     # ─── 4. Alacak Listesi ───────────────────────
     def alacak_listesi(self, kurum_id, sube_id, params):
-        rows = [r for r in self._rapor_rows(kurum_id, sube_id, params) if r['bakiye'] > 0]
-        rows.sort(key=lambda r: r['bakiye'], reverse=True)
+        rows = [r for r in self._rapor_rows(kurum_id, sube_id, params) if r['acik_alacak_belge'] > 0]
+        rows.sort(
+            key=lambda r: (r['acik_alacak_belge'], r['vadesi_gecmis_tahsilat']),
+            reverse=True,
+        )
         for r in rows:
-            r['acik_alacak'] = r['bakiye']
+            r['acik_alacak'] = round(max(r['bakiye'], 0.0), 2)
         return {
             'baslik': 'Alacak Listesi (Tahsil Edilecekler)',
             'kpis': [
                 {'label': 'Alacaklı Cari', 'value': len(rows), 'format': 'int'},
-                {'label': 'Toplam Alacak', 'value': sum(r['acik_alacak'] for r in rows), 'format': 'tl'},
+                {'label': 'Toplam Alacak', 'value': round(sum(r['acik_alacak_belge'] for r in rows), 2), 'format': 'tl'},
+                {'label': 'Geciken Tahsilat', 'value': round(sum(r['vadesi_gecmis_tahsilat'] for r in rows), 2), 'format': 'tl'},
             ],
             'columns': [
                 {'key': 'hesap_kodu', 'label': 'Kod'},
                 {'key': 'gorunen_ad', 'label': 'Cari'},
-                {'key': 'acik_alacak', 'label': 'Açık Alacak', 'format': 'tl'},
-                {'key': 'vadesi_gecmis', 'label': 'Vadesi Geçmiş', 'format': 'tl'},
+                {'key': 'acik_alacak_belge', 'label': 'Açık Alacak (Belge)', 'format': 'tl'},
+                {'key': 'vadesi_gecmis_tahsilat', 'label': 'Geciken Tahsilat', 'format': 'tl'},
+                {'key': 'bakiye', 'label': 'Net Bakiye', 'format': 'tl'},
                 {'key': 'son_islem_tarihi', 'label': 'Son İşlem'},
             ],
             'rows': rows,
@@ -218,9 +241,13 @@ class CariReportService:
 
     # ─── 5. Gelir Analizi ────────────────────────
     def gelir_analizi(self, kurum_id, sube_id, params):
-        qs = GelirKaydi.objects.filter(kurum_id=kurum_id).exclude(durum='iptal')
+        qs = GelirKaydi.objects.filter(kurum_id=kurum_id).exclude(
+            durum__in=[GelirDurum.IPTAL, GelirDurum.TASLAK],
+        )
         if sube_id:
             qs = qs.filter(sube_id=sube_id)
+        if params.get('cari_hesap_id'):
+            qs = qs.filter(cari_hesap_id=params['cari_hesap_id'])
         qs = self._tarih_filtre(qs, params, 'fatura_tarihi')
 
         agg = qs.aggregate(toplam=Sum('net_tutar'), tahsil=Sum('tahsil_edilen'))
@@ -254,9 +281,13 @@ class CariReportService:
 
     # ─── 6. Gider Analizi ────────────────────────
     def gider_analizi(self, kurum_id, sube_id, params):
-        qs = GiderKaydi.objects.filter(kurum_id=kurum_id).exclude(durum='iptal')
+        qs = GiderKaydi.objects.filter(kurum_id=kurum_id).exclude(
+            durum__in=[GiderDurum.IPTAL, GiderDurum.TASLAK, GiderDurum.ONAY_BEKLIYOR],
+        )
         if sube_id:
             qs = qs.filter(sube_id=sube_id)
+        if params.get('cari_hesap_id'):
+            qs = qs.filter(cari_hesap_id=params['cari_hesap_id'])
         qs = self._tarih_filtre(qs, params, 'fatura_tarihi')
 
         agg = qs.aggregate(toplam=Sum('net_tutar'), odenen=Sum('odenen_toplam'))
@@ -336,23 +367,50 @@ class CariReportService:
 
     # ─── 8. Yaşlandırma ──────────────────────────
     def yaslandirma(self, kurum_id, sube_id, params):
-        rows = self._rapor_rows(kurum_id, sube_id, params)
-        rows = [r for r in rows if r['vadesi_gelen'] or r['vadesi_gecmis'] or r['gelecek_vadeli']]
-        toplam_gecmis = sum(r['vadesi_gecmis'] for r in rows)
-        toplam_gelen = sum(r['vadesi_gelen'] for r in rows)
-        toplam_gelecek = sum(r['gelecek_vadeli'] for r in rows)
+        base = self._rapor_rows(kurum_id, sube_id, params)
+        kesim_tarihi = tarih_parametresi(params.get('bitis'))
+        kovalar = self.selector.vade_yaslandirma(
+            [r['id'] for r in base],
+            kesim_tarihi=kesim_tarihi,
+        )
+        gecikme_kovalari = ('g1_30', 'g31_60', 'g61_90', 'g90_ustu')
+        yon_etiketi = {'tahsilat': 'Tahsil Edilecek', 'odeme': 'Ödenecek'}
+
+        rows = []
+        geciken = {'tahsilat': 0.0, 'odeme': 0.0}
+        g90_toplam = 0.0
+        for r in base:
+            for yon in ('tahsilat', 'odeme'):
+                k = (kovalar.get(r['id']) or {}).get(yon)
+                toplam = round(sum(k.values()), 2) if k else 0.0
+                if not toplam:
+                    continue
+                geciken[yon] += sum(k[g] for g in gecikme_kovalari)
+                g90_toplam += k['g90_ustu']
+                rows.append({
+                    'gorunen_ad': r['gorunen_ad'],
+                    'hesap_kodu': r['hesap_kodu'],
+                    'yon': yon_etiketi[yon],
+                    **k,
+                    'toplam': toplam,
+                })
         return {
-            'baslik': 'Yaşlandırma Raporu',
+            'baslik': 'Vade Yaşlandırma Raporu',
             'kpis': [
-                {'label': 'Vadesi Geçmiş', 'value': toplam_gecmis, 'format': 'tl'},
-                {'label': 'Vadesi Gelen', 'value': toplam_gelen, 'format': 'tl'},
-                {'label': 'Gelecek Vadeli', 'value': toplam_gelecek, 'format': 'tl'},
+                {'label': 'Geciken Tahsilat', 'value': round(geciken['tahsilat'], 2), 'format': 'tl'},
+                {'label': 'Geciken Ödeme', 'value': round(geciken['odeme'], 2), 'format': 'tl'},
+                {'label': '90+ Gün Geciken', 'value': round(g90_toplam, 2), 'format': 'tl'},
             ],
             'columns': [
                 {'key': 'gorunen_ad', 'label': 'Cari'},
-                {'key': 'vadesi_gecmis', 'label': 'Vadesi Geçmiş', 'format': 'tl'},
-                {'key': 'vadesi_gelen', 'label': 'Vadesi Gelen', 'format': 'tl'},
-                {'key': 'gelecek_vadeli', 'label': 'Gelecek Vadeli', 'format': 'tl'},
+                {'key': 'yon', 'label': 'Yön'},
+                {'key': 'gelecek', 'label': 'Vadesi Gelmemiş', 'format': 'tl'},
+                {'key': 'bugun', 'label': 'Bugün', 'format': 'tl'},
+                {'key': 'g1_30', 'label': '1–30 Gün', 'format': 'tl'},
+                {'key': 'g31_60', 'label': '31–60 Gün', 'format': 'tl'},
+                {'key': 'g61_90', 'label': '61–90 Gün', 'format': 'tl'},
+                {'key': 'g90_ustu', 'label': '90+ Gün', 'format': 'tl'},
+                {'key': 'toplam', 'label': 'Toplam Açık', 'format': 'tl'},
             ],
             'rows': rows,
         }
@@ -361,21 +419,33 @@ class CariReportService:
     def risk_analizi(self, kurum_id, sube_id, params):
         base = self._rapor_rows(kurum_id, sube_id, params)
         ids = [r['id'] for r in base]
-        limit_map = dict(
-            CariHesap.objects.filter(id__in=ids).values_list('id', 'risk_limiti')
-        )
+        meta_map = {
+            c['id']: c
+            for c in CariHesap.objects.filter(id__in=ids).values('id', 'risk_limiti', 'hesap_turu')
+        }
         rows = []
         dagitim = {}
         for r in base:
             acik_borc = -r['bakiye'] if r['bakiye'] < 0 else 0
+            acik_alacak = r['bakiye'] if r['bakiye'] > 0 else 0
+            cmeta = meta_map.get(r['id']) or {}
             risk = hesapla_risk(
-                acik_borc, float(limit_map.get(r['id'], 0) or 0), r['vadesi_gecmis'],
+                acik_borc,
+                float(cmeta.get('risk_limiti') or 0),
+                r['vadesi_gecmis'],
+                acik_alacak=acik_alacak,
+                hesap_turu=cmeta.get('hesap_turu') or r.get('hesap_turu'),
             )
             dagitim[risk['risk_durumu']] = dagitim.get(risk['risk_durumu'], 0) + 1
             rows.append({
                 'gorunen_ad': r['gorunen_ad'],
                 'hesap_kodu': r['hesap_kodu'],
+                'hesap_turu_display': r.get('hesap_turu_display') or '',
                 'acik_borc': acik_borc,
+                'acik_alacak': acik_alacak,
+                'acik_alacak_belge': r['acik_alacak_belge'],
+                'acik_borc_belge': r['acik_borc_belge'],
+                'risk_maruziyeti': risk['risk_maruziyeti'],
                 'risk_limiti': risk['risk_limiti'],
                 'kullanim_orani': risk['kullanim_orani'],
                 'vadesi_gecmis': r['vadesi_gecmis'],
@@ -394,7 +464,11 @@ class CariReportService:
             'seriler': {'dagitim': dagitim},
             'columns': [
                 {'key': 'gorunen_ad', 'label': 'Cari'},
-                {'key': 'acik_borc', 'label': 'Açık Borç', 'format': 'tl'},
+                {'key': 'hesap_turu_display', 'label': 'Tür'},
+                {'key': 'acik_alacak', 'label': 'Net Alacağımız', 'format': 'tl'},
+                {'key': 'acik_borc', 'label': 'Net Borcumuz', 'format': 'tl'},
+                {'key': 'acik_alacak_belge', 'label': 'Açık Alacak (Belge)', 'format': 'tl'},
+                {'key': 'acik_borc_belge', 'label': 'Açık Borç (Belge)', 'format': 'tl'},
                 {'key': 'risk_limiti', 'label': 'Risk Limiti', 'format': 'tl'},
                 {'key': 'kullanim_orani', 'label': 'Kullanım %', 'format': 'percent'},
                 {'key': 'vadesi_gecmis', 'label': 'Vadesi Geçmiş', 'format': 'tl'},
@@ -419,6 +493,8 @@ class CariReportService:
         qs = CariHareket.objects.filter(kurum_id=kurum_id, islem_turu=islem_turu)
         if sube_id:
             qs = qs.filter(sube_id=sube_id)
+        if params.get('cari_hesap_id'):
+            qs = qs.filter(cari_hesap_id=params['cari_hesap_id'])
         qs = self._tarih_filtre(qs, params, 'islem_tarihi')
         toplam = _tl(qs.aggregate(t=Sum('tutar'))['t'])
         adet = qs.count()
@@ -451,10 +527,14 @@ class CariReportService:
         ]
 
     def _tarih_filtre(self, qs, params, alan):
-        if params.get('baslangic'):
-            qs = qs.filter(**{f'{alan}__gte': params['baslangic']})
-        if params.get('bitis'):
-            qs = qs.filter(**{f'{alan}__lte': params['bitis']})
+        baslangic = tarih_parametresi(params.get('baslangic'))
+        bitis = tarih_parametresi(params.get('bitis'))
+        if baslangic and bitis and baslangic > bitis:
+            raise ValueError('Başlangıç tarihi bitiş tarihinden büyük olamaz.')
+        if baslangic:
+            qs = qs.filter(**{f'{alan}__gte': baslangic})
+        if bitis:
+            qs = qs.filter(**{f'{alan}__lte': bitis})
         return qs
 
     def _aylik(self, qs, tarih_alani, tutar_alani):

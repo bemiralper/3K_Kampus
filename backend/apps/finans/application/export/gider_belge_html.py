@@ -220,8 +220,10 @@ def build_gider_islem_belgesi_html(gider) -> str:
     ]) + '</table>'
     right = '<table class="info">' + ''.join([
         _kv_row('Mali Hesap', _esc(getattr(gider.mali_hesap, 'ad', None) or '—')),
-        _kv_row('Ödeme Yöntemi', _esc(getattr(gider.odeme_yontemi, 'ad', None) or '—')),
-        _kv_row('Toplam Gider', _fmt_tl(gider.net_tutar), num=True),
+        _kv_row('Planlanan Ödeme Yöntemi', _esc(getattr(gider.odeme_yontemi, 'ad', None) or '—')),
+        _kv_row('KDV Hariç (Matrah)', _fmt_tl(gider.brut_tutar), num=True),
+        _kv_row(f'KDV (%{gider.kdv_orani})', _fmt_tl(gider.kdv_tutar), num=True),
+        _kv_row('Genel Toplam (KDV Dahil)', _fmt_tl(gider.net_tutar), num=True),
         _kv_row('Ödenen', _fmt_tl(gider.odenen_toplam), num=True),
         _kv_row('Kalan', _fmt_tl(gider.kalan_tutar), num=True),
         _kv_row('Ödeme Durumu', _odeme_badge(odeme_durum)),

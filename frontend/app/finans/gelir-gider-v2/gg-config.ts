@@ -6,6 +6,8 @@ export interface CardDef {
   label: string;
   tone?: "success" | "danger" | "warning" | "neutral";
   tl?: boolean;
+  /** Etiketin yanında "(n kayıt)" olarak gösterilecek adet alanı. */
+  adetKey?: string;
 }
 
 export interface ModulConfig {
@@ -32,9 +34,9 @@ export interface ModulConfig {
 export const GELIR_CONFIG: ModulConfig = {
   modul: "gelir",
   baslik: "Gelir İşlemleri",
-  altBaslik: "Gelir kayıtları, tahsilat takibi ve gelir analizi",
+  altBaslik: "Kurumsal/faturalı gelir kayıtları, ek gelirler ve cari tahsilat takibi",
   renk: "#059669",
-  cariLabel: "Cari Hesap (Müşteri)",
+  cariLabel: "Cari Hesap (Müşteri / Gelir Hesabı)",
   kategoriLabel: "Gelir Kategorisi",
   kategoriFilterKey: "gelir_kategorisi_id",
   kategoriFormKey: "gelir_kategorisi_id",
@@ -54,6 +56,7 @@ export const GELIR_CONFIG: ModulConfig = {
     { key: "tahsil_edilen", label: "Tahsil Edilen", tone: "success", tl: true },
     { key: "ortalama_gelir", label: "Ortalama Gelir", tone: "neutral", tl: true },
     { key: "toplam_gelir", label: "Toplam Gelir", tone: "neutral", tl: true },
+    { key: "taslak_toplam", label: "Taslak", tone: "neutral", tl: true, adetKey: "taslak_adet" },
   ],
 };
 
@@ -62,7 +65,7 @@ export const GIDER_CONFIG: ModulConfig = {
   baslik: "Gider İşlemleri",
   altBaslik: "Gider kayıtları, ödeme takibi ve gider analizi",
   renk: "#dc2626",
-  cariLabel: "Cari Hesap (Tedarikçi)",
+  cariLabel: "Cari Hesap (Tedarikçi / Gider Hesabı)",
   kategoriLabel: "Gider Kategorisi",
   kategoriFilterKey: "gider_kategorisi_id",
   kategoriFormKey: "gider_kategorisi_id",
@@ -82,6 +85,7 @@ export const GIDER_CONFIG: ModulConfig = {
     { key: "odenen_tutar", label: "Ödenen Tutar", tone: "success", tl: true },
     { key: "ortalama_gider", label: "Ortalama Gider", tone: "neutral", tl: true },
     { key: "toplam_gider", label: "Toplam Gider", tone: "neutral", tl: true },
+    { key: "taslak_toplam", label: "Taslak / Onay Bekleyen", tone: "neutral", tl: true, adetKey: "taslak_adet" },
   ],
 };
 

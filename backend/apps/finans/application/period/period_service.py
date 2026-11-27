@@ -386,12 +386,13 @@ class PeriodService:
                 detail_rows.append({'tarih': th.tahsilat_tarihi.isoformat(), 'tutar': th.tutar})
 
         if not kaynak or kaynak == 'gelir':
+            from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
             gt_q = Q(
                 gelir_kaydi__kurum_id=kurum_id,
                 durum=OdemeDurum.TAMAMLANDI,
                 tahsilat_tarihi__gte=baslangic,
                 tahsilat_tarihi__lte=bitis,
-            ) & yontem_q
+            ) & gelir_gercek_tahsilat_q() & yontem_q
             if sube_id:
                 gt_q &= Q(gelir_kaydi__sube_id=sube_id)
             if egitim_yili_id:
@@ -611,10 +612,11 @@ class PeriodService:
                 gq &= Q(egitim_yili_id=egitim_yili_id)
             gelir_ids = list(GelirKaydi.objects.filter(gq).values_list('id', flat=True))
             if gelir_ids:
+                from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
                 gt_q = Q(
                     gelir_kaydi_id__in=gelir_ids,
                     durum=OdemeDurum.TAMAMLANDI,
-                )
+                ) & gelir_gercek_tahsilat_q()
                 if selected_tips:
                     gt_q &= Q(odeme_yontemi__tip__in=selected_tips)
                 yontem_rows.extend(
@@ -838,12 +840,13 @@ class PeriodService:
                 })
 
         if not kaynak or kaynak == 'gelir':
+            from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
             gt_q = Q(
                 gelir_kaydi__kurum_id=kurum_id,
                 durum=OdemeDurum.TAMAMLANDI,
                 tahsilat_tarihi__gte=baslangic,
                 tahsilat_tarihi__lte=bitis,
-            ) & yontem_q
+            ) & gelir_gercek_tahsilat_q() & yontem_q
             if sube_id:
                 gt_q &= Q(gelir_kaydi__sube_id=sube_id)
             if egitim_yili_id:

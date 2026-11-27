@@ -19,11 +19,13 @@ interface Props {
   row: GGListItem | null;
   dropdown: GGDropdown | null;
   initialTaksitId?: number | null;
+  /** Açılışta "cari bakiyeden mahsup" seçili gelsin. */
+  initialMahsup?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function GiderOdemeDrawer({ open, row, dropdown, initialTaksitId, onClose, onSaved }: Props) {
+export default function GiderOdemeDrawer({ open, row, dropdown, initialTaksitId, initialMahsup, onClose, onSaved }: Props) {
   const { message } = AntApp.useApp();
   const { homeHref } = useFinansPath();
   const [form] = Form.useForm();
@@ -78,12 +80,12 @@ export default function GiderOdemeDrawer({ open, row, dropdown, initialTaksitId,
 
   useEffect(() => {
     if (!open || !row) return;
-    setMahsup(false);
+    setMahsup(!!initialMahsup);
     setSelectedTaksit(null);
     form.resetFields();
-    form.setFieldsValue({ tutar: kalan, odeme_tarihi: dayjs(), bakiyeden_mahsup: false });
+    form.setFieldsValue({ tutar: kalan, odeme_tarihi: dayjs(), bakiyeden_mahsup: !!initialMahsup });
     loadData();
-  }, [open, row, form, kalan, loadData]);
+  }, [open, row, form, kalan, loadData, initialMahsup]);
 
   useEffect(() => {
     if (!open || !initialTaksitId || taksitler.length === 0) return;

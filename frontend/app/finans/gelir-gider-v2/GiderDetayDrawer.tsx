@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
 import {
   Drawer, Button, Space, Row, Col, Statistic, Table, Tag, Upload, Empty,
   Popconfirm, Alert, App as AntApp, Divider, Typography,
@@ -10,6 +11,7 @@ import {
   FileTextOutlined, PrinterOutlined, DownloadOutlined, EyeOutlined,
   PaperClipOutlined, DollarOutlined,
 } from "@ant-design/icons";
+import { useFinansPath } from "@/components/finans/FinansPathProvider";
 import { ggService } from "./gg-v2-api";
 import {
   DATE, GGGiderDetay, GGListItem, GGOdeme, GGTaksit, TL, odemeDurumRenk,
@@ -30,6 +32,7 @@ interface Props {
 
 export default function GiderDetayDrawer({ open, row, highlightTaksitId, onClose, onOde, onReload }: Props) {
   const { message } = AntApp.useApp();
+  const { href } = useFinansPath();
   const [detay, setDetay] = useState<GGGiderDetay | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
@@ -135,16 +138,22 @@ export default function GiderDetayDrawer({ open, row, highlightTaksitId, onClose
       {d && (
         <>
           <div style={{ marginBottom: 12, color: "#334155", fontWeight: 600 }}>
-            {d.cari_hesap?.unvan || "—"}
+            {d.cari_hesap?.id ? (
+              <Link href={href(`cari-hesaplar-v2/${d.cari_hesap.id}`)} style={{ color: "#1d4ed8", fontWeight: 700 }}>
+                {d.cari_hesap.unvan || "—"} ↗
+              </Link>
+            ) : (
+              d.cari_hesap?.unvan || "—"
+            )}
             <span style={{ color: "#94a3b8", fontWeight: 400, marginLeft: 8 }}>
               {d.gider_kategorisi?.ad || "—"}
             </span>
           </div>
 
-          <Row gutter={[10, 10]} style={{ marginBottom: 16 }}>
+          <Row gutter={[10, 10]} style={{ marginBottom: 12 }}>
             <Col xs={12} sm={6}>
               <div style={cardBox}>
-                <Statistic title="Toplam Gider" value={TL(d.net_tutar)} valueStyle={valStyle("#0f172a")} />
+                <Statistic title="Genel Toplam (KDV Dahil)" value={TL(d.net_tutar)} valueStyle={valStyle("#0f172a")} />
               </div>
             </Col>
             <Col xs={12} sm={6}>
@@ -154,7 +163,7 @@ export default function GiderDetayDrawer({ open, row, highlightTaksitId, onClose
             </Col>
             <Col xs={12} sm={6}>
               <div style={cardBox}>
-                <Statistic title="Kalan" value={TL(d.kalan_tutar)} valueStyle={valStyle(Number(d.kalan_tutar) > 0 ? "#991b1b" : "#64748b")} />
+                <Statistic title="Kalan Borç" value={TL(d.kalan_tutar)} valueStyle={valStyle(Number(d.kalan_tutar) > 0 ? "#991b1b" : "#64748b")} />
               </div>
             </Col>
             <Col xs={12} sm={6}>
@@ -166,6 +175,27 @@ export default function GiderDetayDrawer({ open, row, highlightTaksitId, onClose
               </div>
             </Col>
           </Row>
+
+          <div
+            style={{
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 16,
+              marginBottom: 14,
+              padding: "8px 12px",
+              background: "#f8fafc",
+              border: "1px solid #e2e8f0",
+              borderRadius: 10,
+              fontSize: 12.5,
+              color: "#475569",
+            }}
+          >
+            <span>KDV Hariç (Matrah): <strong>{TL(d.brut_tutar)}</strong></span>
+            <span>KDV (%{d.kdv_orani ?? 0}): <strong>{TL(d.kdv_tutar)}</strong></span>
+            <span>Tarih: <strong>{DATE(d.fatura_tarihi)}</strong></span>
+            <span>Vade: <strong>{DATE(d.vade_tarihi)}</strong></span>
+            {d.fatura_no ? <span>Tedarikçi Belge No: <strong>{d.fatura_no}</strong></span> : null}
+          </div>
 
           {d.aciklama?.trim() ? (
             <div style={aciklamaBox}>

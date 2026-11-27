@@ -8,7 +8,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from django.db.models import Q
+from django.db.models import F, Q, Sum
+from django.utils import timezone
 
 from apps.finans.domain.gelir_kaydi import GelirKaydi
 from apps.finans.constants.cari_types import GelirDurum
@@ -21,6 +22,33 @@ from apps.finans.application.finans_v2.filters import (
 )
 
 _DURUM_LABEL = dict(GelirDurum.CHOICES)
+
+_TAHSIL_DURUMU_LABEL = {
+    'tahsil_edildi': 'Tahsil Edildi',
+    'kismi_tahsil': 'Kısmi Tahsil Edildi',
+    'gecikti': 'Vadesi Geçti',
+    'ileri_tarihli': 'İleri Tarihli',
+    'bekliyor': 'Tahsilat Bekliyor',
+    'taslak': 'Taslak',
+    'iptal': 'İptal',
+}
+
+
+def compute_tahsil_durumu(g: GelirKaydi, bugun=None) -> str:
+    if g.durum == GelirDurum.IPTAL:
+        return 'iptal'
+    if g.durum == GelirDurum.TASLAK:
+        return 'taslak'
+    if g.durum == GelirDurum.TAHSIL_EDILDI or g.kalan_tutar <= Decimal('0'):
+        return 'tahsil_edildi'
+    bugun = bugun or timezone.localdate()
+    if g.vade_tarihi and g.vade_tarihi < bugun:
+        return 'gecikti'
+    if g.durum == GelirDurum.KISMI_TAHSIL or (g.tahsil_edilen or Decimal('0')) > Decimal('0'):
+        return 'kismi_tahsil'
+    if g.vade_tarihi and g.vade_tarihi > bugun:
+        return 'ileri_tarihli'
+    return 'bekliyor'
 
 _SORT_MAP = {
     'fatura_tarihi': 'fatura_tarihi',
@@ -90,6 +118,12 @@ class GelirQueryService:
         bit = parse_date_safe(f.get('bitis'))
         if bit:
             qs = qs.filter(fatura_tarihi__lte=bit)
+        vade_bas = parse_date_safe(f.get('vade_baslangic'))
+        if vade_bas:
+            qs = qs.filter(vade_tarihi__gte=vade_bas)
+        vade_bit = parse_date_safe(f.get('vade_bitis'))
+        if vade_bit:
+            qs = qs.filter(vade_tarihi__lte=vade_bit)
 
         tmin = parse_decimal(f.get('tutar_min'))
         if tmin is not None:
@@ -106,33 +140,66 @@ class GelirQueryService:
         if f.get('kdv_orani') not in (None, ''):
             qs = qs.filter(kdv_orani=f['kdv_orani'])
 
-        # tahsil durumu: bekleyen / tahsil / kismi
+        # tahsil durumu: bekleyen / tamamlanan / kismi / ileri_tarihli / gecikti
         tahsil = f.get('tahsil_durumu')
+        bugun = timezone.localdate()
         if tahsil == 'bekleyen':
             qs = qs.filter(durum__in=[GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL])
         elif tahsil == 'tamamlanan':
             qs = qs.filter(durum=GelirDurum.TAHSIL_EDILDI)
         elif tahsil == 'kismi':
             qs = qs.filter(durum=GelirDurum.KISMI_TAHSIL)
+        elif tahsil == 'ileri_tarihli':
+            qs = qs.filter(
+                durum=GelirDurum.ONAYLANDI,
+                tahsil_edilen=0,
+                vade_tarihi__gt=bugun,
+            )
+        elif tahsil == 'gecikti':
+            qs = qs.filter(
+                durum__in=[GelirDurum.ONAYLANDI, GelirDurum.KISMI_TAHSIL],
+                vade_tarihi__lt=bugun,
+            )
 
         return qs.distinct()
 
     def list_paginated(self, kurum_id, sube_id, *, filters=None, sort=None,
                        page=1, page_size=25):
         qs = self._apply_filters(self._base_qs(kurum_id, sube_id), filters)
+        agg = qs.aggregate(
+            toplam_brut=Sum('brut_tutar'),
+            toplam_kdv=Sum('kdv_tutar'),
+            toplam_net=Sum('net_tutar'),
+            toplam_tahsil=Sum('tahsil_edilen'),
+        )
+        t_brut = agg['toplam_brut'] or Decimal('0.00')
+        t_kdv = agg['toplam_kdv'] or Decimal('0.00')
+        t_net = agg['toplam_net'] or Decimal('0.00')
+        t_tahsil = agg['toplam_tahsil'] or Decimal('0.00')
+        totals = {
+            'toplam_brut': str(t_brut),
+            'toplam_kdv': str(t_kdv),
+            'toplam_net': str(t_net),
+            'toplam_tahsil': str(t_tahsil),
+            'toplam_kalan': str(max(Decimal('0.00'), t_net - t_tahsil)),
+        }
         order = resolve_sort(sort, _SORT_MAP, '-fatura_tarihi')
         qs = qs.order_by(order, '-created_at')
         items, meta = paginate(qs, page, page_size)
         return {
             'results': [self.serialize(g) for g in items],
+            'totals': totals,
             **meta,
         }
 
     @staticmethod
     def serialize(g: GelirKaydi):
+        tahsil_durumu = compute_tahsil_durumu(g)
+        has_tahsilat = (g.tahsil_edilen or Decimal('0')) > Decimal('0')
         return {
             'id': g.id,
             'fatura_no': g.fatura_no,
+            'belge_no': g.fatura_no or f'GL-{g.id}',
             'fatura_tarihi': g.fatura_tarihi.isoformat() if g.fatura_tarihi else None,
             'vade_tarihi': g.vade_tarihi.isoformat() if g.vade_tarihi else None,
             'aciklama': g.aciklama,
@@ -156,6 +223,7 @@ class GelirQueryService:
                 'id': g.odeme_yontemi_id,
                 'ad': g.odeme_yontemi.ad if g.odeme_yontemi_id else None,
             },
+            'kdv_mod': getattr(g, 'kdv_mod', 'haric') or 'haric',
             'brut_tutar': str(g.brut_tutar),
             'kdv_orani': g.kdv_orani,
             'kdv_tutar': str(g.kdv_tutar),
@@ -165,6 +233,9 @@ class GelirQueryService:
             'tahsilat_yuzdesi': str(g.tahsilat_yuzdesi),
             'durum': g.durum,
             'durum_label': _DURUM_LABEL.get(g.durum, g.durum),
+            'tahsil_durumu': tahsil_durumu,
+            'tahsil_durumu_label': _TAHSIL_DURUMU_LABEL.get(tahsil_durumu, tahsil_durumu),
+            'has_tahsilat': has_tahsilat,
             'etiketler': [
                 {'id': e.id, 'ad': e.ad, 'renk': e.renk}
                 for e in g.etiketler.all()
@@ -179,3 +250,24 @@ class GelirQueryService:
             'iptal_edilebilir_mi': g.iptal_edilebilir_mi,
             'created_at': g.created_at.isoformat() if g.created_at else None,
         }
+
+    @classmethod
+    def serialize_detail(cls, g: GelirKaydi):
+        from apps.finans.application.gelir_belge_service import list_gelir_ekler
+        from apps.finans.constants.gider_types import OdemeDurum
+        from apps.finans.interfaces.serializers.gelir_tahsilat_serializer import GelirTahsilatListSerializer
+
+        data = cls.serialize(g)
+        tahsilatlar = list(
+            g.tahsilatlar.filter(durum=OdemeDurum.TAMAMLANDI).order_by('-tahsilat_tarihi', '-id')
+        )
+        data.update({
+            'sube': {'id': g.sube_id, 'ad': g.sube.ad if g.sube_id else None},
+            'mali_hesap': {
+                'id': g.mali_hesap_id,
+                'ad': g.mali_hesap.ad if g.mali_hesap_id else None,
+            },
+            'tahsilatlar': GelirTahsilatListSerializer(tahsilatlar, many=True).data,
+            'ekli_belgeler': list_gelir_ekler(g),
+        })
+        return data

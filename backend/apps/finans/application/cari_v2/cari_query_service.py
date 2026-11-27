@@ -180,7 +180,7 @@ class CariQueryService:
         if not risk_filter and not vade_filter:
             return qs
 
-        rows = list(qs.values('id', 'f_acik_borc', 'risk_limiti'))
+        rows = list(qs.values('id', 'f_acik_borc', 'f_acik_alacak', 'hesap_turu', 'risk_limiti'))
         ids = [r['id'] for r in rows]
         if not ids:
             return qs.none()
@@ -201,6 +201,8 @@ class CariQueryService:
                     float(r['f_acik_borc'] or 0),
                     float(r['risk_limiti'] or 0),
                     vadesi_gecmis,
+                    acik_alacak=float(r['f_acik_alacak'] or 0),
+                    hesap_turu=r['hesap_turu'],
                 )
                 ok = ok and (risk['risk_durumu'] == risk_filter)
             if vade_filter == 'gecmis':
@@ -238,7 +240,14 @@ class CariQueryService:
         gelecek = float(gv_o.get(hid, 0)) + float(gv_t.get(hid, 0))
 
         acik_borc = float(hesap.acik_borc)
-        risk = hesapla_risk(acik_borc, float(hesap.risk_limiti or 0), vadesi_gecmis)
+        acik_alacak = float(hesap.acik_alacak)
+        risk = hesapla_risk(
+            acik_borc,
+            float(hesap.risk_limiti or 0),
+            vadesi_gecmis,
+            acik_alacak=acik_alacak,
+            hesap_turu=hesap.hesap_turu,
+        )
 
         return {
             'id': hid,
@@ -321,7 +330,32 @@ class CariQueryService:
         aging = self.selector._vade_aging_maps(hesap_ids, timezone.localdate())
 
         results = [self._row(h, islem_map, son_map, aging) for h in hesap_list]
-        totals = aggregate_list_totals(results)
+
+        # Filtrelenmiş tüm kayıtlar üzerinden özet toplamlar (yalnızca mevcut sayfa değil)
+        if count <= len(results):
+            totals = aggregate_list_totals(results)
+        else:
+            all_rows = list(qs.values('id', 'toplam_borc', 'toplam_alacak'))
+            all_ids = [r['id'] for r in all_rows]
+            all_islem_map = self.selector._islem_totals_map(all_ids)
+            summary_items = []
+            for r in all_rows:
+                ism = all_islem_map.get(r['id'], empty_islem_totals())
+                tb = float(r['toplam_borc'] or 0)
+                ta = float(r['toplam_alacak'] or 0)
+                summary_items.append({
+                    'toplam_borc': tb,
+                    'toplam_alacak': ta,
+                    'bakiye': tb - ta,
+                    'toplam_satis': ism[CariHareketTuru.SATIS],
+                    'toplam_alis': ism[CariHareketTuru.ALIS],
+                    'toplam_tahsilat': ism[CariHareketTuru.TAHSILAT],
+                    'toplam_odeme': ism[CariHareketTuru.ODEME],
+                    'toplam_iade': ism[CariHareketTuru.IADE],
+                    'toplam_mahsup': ism[CariHareketTuru.MAHSUP],
+                })
+            totals = aggregate_list_totals(summary_items)
+
         total_pages = (count + page_size - 1) // page_size if page_size else 1
 
         return {

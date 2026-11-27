@@ -101,7 +101,12 @@ from apps.finans.interfaces.views.gelir_tahsilat_views import (
     GelirTahsilatListCreateView,
     GelirTahsilatIptalView,
 )
-from apps.finans.interfaces.views.cari_odeme_views import CariSerbestOdemeView, CariSerbestOdemeIptalView
+from apps.finans.interfaces.views.cari_odeme_views import (
+    CariSerbestOdemeView,
+    CariSerbestOdemeIptalView,
+    CariSerbestTahsilatView,
+    CariSerbestTahsilatIptalView,
+)
 from apps.finans.interfaces.views.hesap_transferi_views import (
     HesapTransferiListCreateView,
     HesapTransferiIptalView,
@@ -197,6 +202,13 @@ from apps.finans.interfaces.views.gider_belge_views import (
     GiderV2OdemeBelgesiView,
     GiderV2EklerView,
     GiderV2EkSilView,
+)
+from apps.finans.interfaces.views.gelir_belge_views import (
+    GelirV2DetayView,
+    GelirV2IslemBelgesiView,
+    GelirV2TahsilatBelgesiView,
+    GelirV2EklerView,
+    GelirV2EkSilView,
 )
 from apps.finans.interfaces.views.gelir_gider_v2_common_views import (
     GelirGiderV2ReportView,
@@ -491,6 +503,11 @@ urlpatterns = [
     path('gelir/v2/kayitlar/', GelirV2ListCreateView.as_view(), name='gelir-v2-list-create'),
     path('gelir/v2/dashboard/', GelirV2DashboardView.as_view(), name='gelir-v2-dashboard'),
     path('gelir/v2/kayitlar/<int:pk>/', GelirV2DetailView.as_view(), name='gelir-v2-detail'),
+    path('gelir/v2/kayitlar/<int:pk>/detay/', GelirV2DetayView.as_view(), name='gelir-v2-detay'),
+    path('gelir/v2/kayitlar/<int:pk>/belgeler/gelir/', GelirV2IslemBelgesiView.as_view(), name='gelir-v2-belge-gelir'),
+    path('gelir/v2/kayitlar/<int:pk>/belgeler/tahsilat/<int:tahsilat_id>/', GelirV2TahsilatBelgesiView.as_view(), name='gelir-v2-belge-tahsilat'),
+    path('gelir/v2/kayitlar/<int:pk>/ekler/', GelirV2EklerView.as_view(), name='gelir-v2-ekler'),
+    path('gelir/v2/kayitlar/<int:pk>/ekler/<int:ek_id>/', GelirV2EkSilView.as_view(), name='gelir-v2-ek-sil'),
     path('gelir/v2/kayitlar/<int:pk>/onayla/', GelirV2OnaylaView.as_view(), name='gelir-v2-onayla'),
     path('gelir/v2/kayitlar/<int:pk>/onay-kaldir/', GelirV2OnayKaldirView.as_view(), name='gelir-v2-onay-kaldir'),
     path('gelir/v2/kayitlar/<int:pk>/iptal/', GelirV2IptalView.as_view(), name='gelir-v2-iptal'),
@@ -648,7 +665,7 @@ urlpatterns = [
         name='gider-odeme-son',
     ),
 
-    # ═══ Cari Serbest Ödeme ═════════════════════
+    # ═══ Cari Serbest Ödeme & Tahsilat ══════════
     path(
         'cari-odemeler/serbest/',
         CariSerbestOdemeView.as_view(),
@@ -658,6 +675,16 @@ urlpatterns = [
         'cari-odemeler/<int:cari_hareket_id>/iptal/',
         CariSerbestOdemeIptalView.as_view(),
         name='cari-serbest-odeme-iptal',
+    ),
+    path(
+        'cari-tahsilatlar/serbest/',
+        CariSerbestTahsilatView.as_view(),
+        name='cari-serbest-tahsilat',
+    ),
+    path(
+        'cari-tahsilatlar/<int:cari_hareket_id>/iptal/',
+        CariSerbestTahsilatIptalView.as_view(),
+        name='cari-serbest-tahsilat-iptal',
     ),
 
     # ═══ Hesap Transferi (Virman / Bankaya-Kasaya) ═══

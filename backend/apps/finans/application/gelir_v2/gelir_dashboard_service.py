@@ -18,17 +18,22 @@ _ZERO = Decimal('0.00')
 
 
 class GelirDashboardService:
-    def _base(self, kurum_id, sube_id):
+    def _sube_kayitlari(self, kurum_id, sube_id):
         qs = GelirKaydi.objects.filter(kurum_id=kurum_id).exclude(durum=GelirDurum.IPTAL)
         if sube_id:
             qs = qs.filter(sube_id=sube_id)
         return qs
 
     def summary(self, kurum_id, sube_id=None):
+        """Şube özeti: taslaklar gerçekleşen toplamlara girmez, ayrı kartta döner."""
         bugun = timezone.localdate()
         ay_basi = bugun.replace(day=1)
 
-        base = self._base(kurum_id, sube_id)
+        sube_kayitlari = self._sube_kayitlari(kurum_id, sube_id)
+        base = sube_kayitlari.exclude(durum=GelirDurum.TASLAK)
+        taslak = sube_kayitlari.filter(durum=GelirDurum.TASLAK).aggregate(
+            t=Sum('net_tutar'), adet=Count('id'),
+        )
 
         bu_ay = base.filter(fatura_tarihi__gte=ay_basi, fatura_tarihi__lte=bugun)
         bugun_qs = base.filter(fatura_tarihi=bugun)
@@ -71,6 +76,8 @@ class GelirDashboardService:
                 'ortalama_gelir': str((genel['ortalama'] or _ZERO).quantize(Decimal('0.01'))),
                 'toplam_gelir': str(genel['toplam'] or _ZERO),
                 'toplam_adet': genel['adet'] or 0,
+                'taslak_toplam': str(taslak['t'] or _ZERO),
+                'taslak_adet': taslak['adet'] or 0,
             },
             'en_buyuk_kalemler': [
                 {

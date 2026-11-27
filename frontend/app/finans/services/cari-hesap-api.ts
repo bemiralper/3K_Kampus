@@ -98,6 +98,41 @@ export const cariHesapService = {
     });
   },
 
+  /** Serbest tahsilat — gelir faturasına bağlı olmadan direkt cari hesaptan tahsilat */
+  serbestTahsilat(payload: {
+    cari_hesap_id: number;
+    kurum_id: number;
+    tutar: number;
+    tahsilat_tarihi: string;
+    mali_hesap_id?: number;
+    odeme_yontemi_id?: number;
+    aciklama?: string;
+    vade_tarihi?: string;
+    cek_senet_no?: string;
+    banka_adi?: string;
+    seri_no?: string;
+    keside_eden?: string;
+    keside_tarihi?: string;
+  }): Promise<{
+    detail: string;
+    tutar: string;
+    yeni_bakiye: string;
+    cek_senet_id?: number;
+    cari_hareket_id?: number | null;
+  }> {
+    return request(`/cari-tahsilatlar/serbest/`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  /** Serbest tahsilat iptali — cari hareket ID üzerinden */
+  serbestTahsilatIptal(cariHareketId: number): Promise<{ detail: string; tutar: string; yeni_bakiye: string }> {
+    return request(`/cari-tahsilatlar/${cariHareketId}/iptal/`, {
+      method: "POST",
+    });
+  },
+
   /** Gider ödemesi iptali — gider ödeme ID üzerinden */
   giderOdemeIptal(odemeId: number): Promise<{ detail: string; durum: string }> {
     return request(`/gider-odemeler/${odemeId}/iptal/`, {

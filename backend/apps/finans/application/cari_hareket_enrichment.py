@@ -4,11 +4,13 @@ Cari hareket listesi için kaynak kayıtlardan kategori / ödeme yöntemi zengin
 from collections import defaultdict
 
 
-def _meta(kategori='', odeme_adi='', odeme_tip=''):
+def _meta(kategori='', odeme_adi='', odeme_tip='', belge=None):
     return {
         'kategori_adi': kategori or '',
         'odeme_yontemi_adi': odeme_adi or '',
         'odeme_yontemi_tip': odeme_tip or '',
+        # Kaynak belge: {'tip': 'gelir'|'gider', 'id': kayıt id} — tahsilat/ödeme satırında bağlı fatura.
+        'belge': belge,
     }
 
 
@@ -33,6 +35,7 @@ def build_cari_hareket_meta(hareketler):
                 row.gelir_kategorisi.ad if row.gelir_kategorisi else '',
                 row.odeme_yontemi.ad if row.odeme_yontemi else '',
                 row.odeme_yontemi.tip if row.odeme_yontemi else '',
+                belge={'tip': 'gelir', 'id': row.pk},
             )
 
     tahsilat_ids = by_tip.get('GelirTahsilat')
@@ -46,6 +49,7 @@ def build_cari_hareket_meta(hareketler):
                 gk.gelir_kategorisi.ad if gk and gk.gelir_kategorisi else '',
                 row.odeme_yontemi.ad if row.odeme_yontemi else '',
                 row.odeme_yontemi.tip if row.odeme_yontemi else '',
+                belge={'tip': 'gelir', 'id': gk.pk} if gk else None,
             )
 
     gider_ids = by_tip.get('GiderKaydi')
@@ -58,6 +62,7 @@ def build_cari_hareket_meta(hareketler):
                 row.gider_kategorisi.ad if row.gider_kategorisi else '',
                 row.odeme_yontemi.ad if row.odeme_yontemi else '',
                 row.odeme_yontemi.tip if row.odeme_yontemi else '',
+                belge={'tip': 'gider', 'id': row.pk},
             )
 
     odeme_ids = by_tip.get('GiderOdeme')
@@ -71,6 +76,7 @@ def build_cari_hareket_meta(hareketler):
                 gider.gider_kategorisi.ad if gider and gider.gider_kategorisi else '',
                 row.odeme_yontemi.ad if row.odeme_yontemi else '',
                 row.odeme_yontemi.tip if row.odeme_yontemi else '',
+                belge={'tip': 'gider', 'id': gider.pk} if gider else None,
             )
 
     return meta

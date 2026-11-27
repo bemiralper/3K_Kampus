@@ -109,7 +109,12 @@ def _bugun_alinan_toplam(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> in
             ).exclude(tahsilat_turu=TahsilatTuru.IADE).filter(gun_q).aggregate(t=Sum('tutar'))['t'] or 0
         )
 
-    gt_q = Q(gelir_kaydi__kurum_id=kurum_id, durum=OdemeDurum.TAMAMLANDI) & _bugun_islem_q('tahsilat_tarihi', gun)
+    from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
+    gt_q = (
+        Q(gelir_kaydi__kurum_id=kurum_id, durum=OdemeDurum.TAMAMLANDI)
+        & gelir_gercek_tahsilat_q()
+        & _bugun_islem_q('tahsilat_tarihi', gun)
+    )
     gt_q &= _context_scope_q(
         sube_id=sube_id, egitim_yili_id=egitim_yili_id,
         sube_field='gelir_kaydi__sube_id', yil_field='gelir_kaydi__egitim_yili_id',
@@ -538,7 +543,12 @@ def _bugun_islem_satirlari(kurum_id, gun, sube_id=None, egitim_yili_id=None) -> 
                 'cari_hesap_id': None,
             })
 
-    gt_q = Q(gelir_kaydi__kurum_id=kurum_id, durum=OdemeDurum.TAMAMLANDI) & _bugun_islem_q('tahsilat_tarihi', gun)
+    from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
+    gt_q = (
+        Q(gelir_kaydi__kurum_id=kurum_id, durum=OdemeDurum.TAMAMLANDI)
+        & gelir_gercek_tahsilat_q()
+        & _bugun_islem_q('tahsilat_tarihi', gun)
+    )
     gt_q &= _context_scope_q(
         sube_id=sube_id, egitim_yili_id=egitim_yili_id,
         sube_field='gelir_kaydi__sube_id', yil_field='gelir_kaydi__egitim_yili_id',

@@ -131,12 +131,33 @@ class GiderQueryService:
 
     def list_paginated(self, kurum_id, sube_id, *, filters=None, sort=None,
                        page=1, page_size=25):
+        from decimal import Decimal
+        from django.db.models import Sum
+
         qs = self._apply_filters(self._base_qs(kurum_id, sube_id), filters)
+        agg = qs.aggregate(
+            toplam_brut=Sum('brut_tutar'),
+            toplam_kdv=Sum('kdv_tutar'),
+            toplam_net=Sum('net_tutar'),
+            toplam_odenen=Sum('odenen_toplam'),
+        )
+        t_brut = agg['toplam_brut'] or Decimal('0.00')
+        t_kdv = agg['toplam_kdv'] or Decimal('0.00')
+        t_net = agg['toplam_net'] or Decimal('0.00')
+        t_odenen = agg['toplam_odenen'] or Decimal('0.00')
+        totals = {
+            'toplam_brut': str(t_brut),
+            'toplam_kdv': str(t_kdv),
+            'toplam_net': str(t_net),
+            'toplam_odenen': str(t_odenen),
+            'toplam_kalan': str(max(Decimal('0.00'), t_net - t_odenen)),
+        }
         order = resolve_sort(sort, _SORT_MAP, '-fatura_tarihi')
         qs = qs.order_by(order, '-created_at')
         items, meta = paginate(qs, page, page_size)
         return {
             'results': [self.serialize(g) for g in items],
+            'totals': totals,
             **meta,
         }
 
@@ -172,6 +193,7 @@ class GiderQueryService:
                 'id': g.odeme_yontemi_id,
                 'ad': g.odeme_yontemi.ad if g.odeme_yontemi_id else None,
             },
+            'kdv_mod': getattr(g, 'kdv_mod', 'haric') or 'haric',
             'brut_tutar': str(g.brut_tutar),
             'kdv_orani': g.kdv_orani,
             'kdv_tutar': str(g.kdv_tutar),

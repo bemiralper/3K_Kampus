@@ -236,7 +236,9 @@ class GunSonuDetayReportService:
         return rows
 
     def _gelir_hareketleri(self, kurum_id, gun, sube_id) -> list[dict]:
+        from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
         qs = GelirTahsilat.objects.filter(
+            gelir_gercek_tahsilat_q(),
             gelir_kaydi__kurum_id=kurum_id,
             durum=OdemeDurum.TAMAMLANDI,
         ).filter(bugun_islem_q('tahsilat_tarihi', gun)).select_related(
@@ -505,7 +507,9 @@ class GunSonuDetayReportService:
         }
 
     def _kategori_gelirler(self, kurum_id, gun, sube_id) -> list[dict]:
+        from apps.finans.application.cari_balance import gelir_gercek_tahsilat_q
         qs = GelirTahsilat.objects.filter(
+            gelir_gercek_tahsilat_q(),
             gelir_kaydi__kurum_id=kurum_id,
             durum=OdemeDurum.TAMAMLANDI,
         ).filter(bugun_islem_q('tahsilat_tarihi', gun)).values('gelir_kaydi__gelir_kategorisi__ad').annotate(toplam=Sum('tutar'))

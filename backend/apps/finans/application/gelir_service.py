@@ -67,12 +67,16 @@ class GelirService:
         if kdv_mod not in KDV_MOD_VALUES:
             kdv_mod = KDV_HARIC
         data['kdv_mod'] = kdv_mod
+        taslak_olarak_kaydet = bool(data.pop('taslak_olarak_kaydet', False))
         data['brut_tutar'], data['kdv_tutar'], data['net_tutar'] = kdv_hesapla_mod(
             girilen, kdv_orani, kdv_mod,
         )
         data['durum'] = GelirDurum.TASLAK
 
         gelir = self.gelir_repo.create(data)
+
+        if taslak_olarak_kaydet:
+            return gelir, None
 
         islem_yapan = data.get('olusturan')
         gelir = self.gelir_repo.update(gelir, {'durum': GelirDurum.ONAYLANDI})

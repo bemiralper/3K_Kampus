@@ -282,8 +282,17 @@ class CariOdemeService:
         from apps.finans.application.cek_senet.cek_senet_service import CekSenetService
         from apps.odeme_takip.domain.cek_senet import CekSenetDetay, CekSenetDurum
 
+        cari_id = (
+            CariHareket.objects.filter(pk=cari_hareket_id)
+            .values_list('cari_hesap_id', flat=True)
+            .first()
+        )
+        if not cari_id:
+            return None, {'genel': 'Cari hareket bulunamadı.'}
+        self.hesap_repo.get_by_id(cari_id, for_update=True)
+
         try:
-            hareket = CariHareket.objects.get(pk=cari_hareket_id)
+            hareket = CariHareket.objects.select_for_update().get(pk=cari_hareket_id)
         except CariHareket.DoesNotExist:
             return None, {'genel': 'Cari hareket bulunamadı.'}
 
@@ -296,6 +305,29 @@ class CariOdemeService:
         ).exists()
         if iptal_hareket:
             return None, {'genel': 'Bu ödeme zaten iptal edilmiş.'}
+
+        from django.db.models import Sum
+        from apps.finans.application.cari_balance import hesapla_serbest_odeme_bakiye
+        from apps.finans.constants.gider_types import OdemeDurum
+        from apps.finans.domain.gider_odeme import GiderOdeme
+
+        aktif_mahsuplar = (
+            GiderOdeme.objects.filter(
+                gider_kaydi__cari_hesap_id=hareket.cari_hesap_id,
+                bakiyeden_mahsup=True,
+                durum=OdemeDurum.TAMAMLANDI,
+            ).aggregate(t=Sum('tutar'))['t']
+            or Decimal('0.00')
+        )
+        if aktif_mahsuplar > Decimal('0.00'):
+            kalan_serbest = hesapla_serbest_odeme_bakiye(hareket.cari_hesap_id)
+            if kalan_serbest < hareket.tutar:
+                return None, {
+                    'genel': (
+                        'Bu serbest ödemenin bir kısmı gider faturasına mahsup edilmiş; '
+                        'önce ilgili mahsup ödemesini iptal edin.'
+                    ),
+                }
 
         self.masraf_service.iptal(
             IslemMasrafiKaynakTipi.CARI_ODEME,

@@ -116,8 +116,13 @@ class CariDashboardService:
                     When(net_bakiye__lt=0, then=F('net_bakiye') * Value(-1)),
                     default=Value(0),
                     output_field=_DEC,
-                )
-            ).values('id', 'f_acik_borc', 'risk_limiti')
+                ),
+                f_acik_alacak=Case(
+                    When(net_bakiye__gt=0, then=F('net_bakiye')),
+                    default=Value(0),
+                    output_field=_DEC,
+                ),
+            ).values('id', 'f_acik_borc', 'f_acik_alacak', 'hesap_turu', 'risk_limiti')
         )
         ids = [r['id'] for r in rows]
         if not ids:
@@ -134,6 +139,8 @@ class CariDashboardService:
                 float(r['f_acik_borc'] or 0),
                 float(r['risk_limiti'] or 0),
                 vadesi_gecmis,
+                acik_alacak=float(r['f_acik_alacak'] or 0),
+                hesap_turu=r['hesap_turu'],
             )
             if riskli_mi(risk['risk_durumu']):
                 sayac += 1

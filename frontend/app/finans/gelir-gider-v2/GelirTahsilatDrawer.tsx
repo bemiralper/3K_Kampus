@@ -2,12 +2,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Drawer, Form, InputNumber, Select, DatePicker, Input, Button, Space,
+  Drawer, Form, InputNumber, Select, DatePicker, Input, Switch, Button, Space,
   Statistic, Row, Col, Divider, Table, Tag, Popconfirm, Alert, App as AntApp,
 } from "antd";
 import dayjs from "dayjs";
 import { ggService } from "./gg-v2-api";
 import { GGDropdown, GGListItem, GGTahsilat, TL } from "./gg-v2-types";
+import { openTahsilatMakbuzu } from "./gider-belge";
+import { cariV2Service } from "../services/cari-v2-api";
 import { FinansHttpError } from "../services/finans-http";
 import { isCekSenetTip } from "@/lib/finans/paymentMethodUtils";
 import Link from "next/link";
@@ -17,17 +19,21 @@ interface Props {
   open: boolean;
   row: GGListItem | null;
   dropdown: GGDropdown | null;
+  /** Açılışta "serbest tahsilat bakiyesinden mahsup" seçili gelsin (bakiye varsa). */
+  initialMahsup?: boolean;
   onClose: () => void;
   onSaved: () => void;
 }
 
-export default function GelirTahsilatDrawer({ open, row, dropdown, onClose, onSaved }: Props) {
+export default function GelirTahsilatDrawer({ open, row, dropdown, initialMahsup, onClose, onSaved }: Props) {
   const { message } = AntApp.useApp();
   const { homeHref } = useFinansPath();
   const [form] = Form.useForm();
   const [saving, setSaving] = useState(false);
   const [tahsilatlar, setTahsilatlar] = useState<GGTahsilat[]>([]);
   const [loading, setLoading] = useState(false);
+  const [mahsup, setMahsup] = useState(false);
+  const [serbestTahsilatBakiye, setSerbestTahsilatBakiye] = useState(0);
 
   const kalan = Number(row?.kalan_tutar ?? 0);
   const net = Number(row?.net_tutar ?? 0);
@@ -58,18 +64,33 @@ export default function GelirTahsilatDrawer({ open, row, dropdown, onClose, onSa
     if (!row) return;
     setLoading(true);
     try {
-      setTahsilatlar(await ggService.gelirTahsilatlar(row.id));
+      const [ths, cariDet] = await Promise.all([
+        ggService.gelirTahsilatlar(row.id),
+        row.cari_hesap?.id ? cariV2Service.get(row.cari_hesap.id).catch(() => null) : Promise.resolve(null),
+      ]);
+      setTahsilatlar(ths);
+      const serbest = Number(cariDet?.serbest_tahsilat_bakiye ?? 0);
+      setSerbestTahsilatBakiye(serbest);
+      if (initialMahsup && serbest > 0) {
+        setMahsup(true);
+        form.setFieldsValue({
+          bakiyeden_mahsup: true,
+          tutar: Math.min(Number(row.kalan_tutar ?? 0), serbest),
+        });
+      }
     } catch {
       setTahsilatlar([]);
+      setSerbestTahsilatBakiye(0);
     } finally {
       setLoading(false);
     }
-  }, [row]);
+  }, [row, initialMahsup, form]);
 
   useEffect(() => {
     if (!open || !row) return;
+    setMahsup(false);
     form.resetFields();
-    form.setFieldsValue({ tutar: kalan, tahsilat_tarihi: dayjs() });
+    form.setFieldsValue({ tutar: kalan, tahsilat_tarihi: dayjs(), bakiyeden_mahsup: false });
     loadData();
   }, [open, row, form, kalan, loadData]);
 
@@ -84,21 +105,24 @@ export default function GelirTahsilatDrawer({ open, row, dropdown, onClose, onSa
     const body: Record<string, unknown> = {
       gelir_kaydi_id: row.id,
       tutar: v.tutar,
-      mali_hesap_id: v.mali_hesap_id,
-      odeme_yontemi_id: v.odeme_yontemi_id,
       tahsilat_tarihi: v.tahsilat_tarihi?.format("YYYY-MM-DD"),
       aciklama: v.aciklama ?? "",
+      bakiyeden_mahsup: !!v.bakiyeden_mahsup,
     };
-    if (v.kesinti_tutar && Number(v.kesinti_tutar) > 0) {
-      if (!v.masraf_turu_id) {
-        message.error("Banka masrafı için masraf türü seçin.");
-        return;
+    if (!v.bakiyeden_mahsup) {
+      body.mali_hesap_id = v.mali_hesap_id;
+      body.odeme_yontemi_id = v.odeme_yontemi_id;
+      if (v.kesinti_tutar && Number(v.kesinti_tutar) > 0) {
+        if (!v.masraf_turu_id) {
+          message.error("Banka masrafı için masraf türü seçin.");
+          return;
+        }
+        body.masraf_turu_id = v.masraf_turu_id;
+        body.kesinti_tutar = v.kesinti_tutar;
+        body.kesinti_aciklama = v.kesinti_aciklama ?? "";
+        const mt = (dropdown?.masraf_turleri ?? []).find((m) => m.id === v.masraf_turu_id);
+        if (mt?.kesinti_turu) body.kesinti_turu = mt.kesinti_turu;
       }
-      body.masraf_turu_id = v.masraf_turu_id;
-      body.kesinti_tutar = v.kesinti_tutar;
-      body.kesinti_aciklama = v.kesinti_aciklama ?? "";
-      const mt = (dropdown?.masraf_turleri ?? []).find((m) => m.id === v.masraf_turu_id);
-      if (mt?.kesinti_turu) body.kesinti_turu = mt.kesinti_turu;
     }
     setSaving(true);
     try {
@@ -171,92 +195,141 @@ export default function GelirTahsilatDrawer({ open, row, dropdown, onClose, onSa
         <Alert type="success" showIcon message="Bu gelir tamamen tahsil edilmiş." style={{ marginBottom: 12 }} />
       ) : (
         <Form form={form} layout="vertical">
+          {serbestTahsilatBakiye > 0 && (
+            <div
+              style={{
+                background: "#eff6ff",
+                border: "1px solid #bfdbfe",
+                borderRadius: 10,
+                padding: "10px 12px",
+                marginBottom: 12,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+              }}
+            >
+              <div>
+                <div style={{ fontWeight: 700, fontSize: 13, color: "#1e3a8a" }}>
+                  Cari Serbest Tahsilat Bakiyesinden Mahsup Et
+                </div>
+                <div style={{ fontSize: 12, color: "#475569" }}>
+                  Kullanılabilir serbest tahsilat/avans: <strong>{TL(serbestTahsilatBakiye)}</strong> (kasa/bankaya mükerrer giriş yapılmaz)
+                </div>
+              </div>
+              <Form.Item name="bakiyeden_mahsup" valuePropName="checked" style={{ marginBottom: 0 }}>
+                <Switch
+                  onChange={(checked) => {
+                    setMahsup(checked);
+                    if (checked) {
+                      form.setFieldsValue({
+                        tutar: Math.min(kalan, serbestTahsilatBakiye),
+                      });
+                    } else {
+                      form.setFieldsValue({ tutar: kalan });
+                    }
+                  }}
+                />
+              </Form.Item>
+            </div>
+          )}
+
           <Form.Item name="tutar" label="Tahsilat Tutarı" rules={[{ required: true, message: "Tutar girin." }]}>
-            <InputNumber style={{ width: "100%" }} min={0.01} max={kalan} precision={2} addonAfter="₺" />
+            <InputNumber
+              style={{ width: "100%" }}
+              min={0.01}
+              max={mahsup ? Math.min(kalan, serbestTahsilatBakiye) : kalan}
+              precision={2}
+              addonAfter="₺"
+            />
           </Form.Item>
 
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item name="mali_hesap_id" label="Mali Hesap (Kasa/Banka)" rules={[{ required: true, message: "Mali hesap seçin." }]}>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder="Seçin"
-                  options={(dropdown?.mali_hesaplar ?? []).map((m) => ({ value: m.id, label: m.ad }))}
-                  onChange={() => form.setFieldsValue({ odeme_yontemi_id: undefined })}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="odeme_yontemi_id" label="Ödeme Yöntemi" rules={[{ required: true, message: "Ödeme yöntemi seçin." }]}>
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  placeholder={maliHesapId ? "Seçin" : "Önce mali hesap seçin"}
-                  disabled={!maliHesapId}
-                  options={hesapOdemeYontemleri.map((o) => ({ value: o.id, label: o.ad }))}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
-
-          <Form.Item
-            noStyle
-            shouldUpdate={(p, c) =>
-              p.mali_hesap_id !== c.mali_hesap_id || p.odeme_yontemi_id !== c.odeme_yontemi_id}
-          >
-            {() => {
-              const MASRAF_ODEME_TIPS = ["pos", "havale_eft", "online"];
-              const MASRAF_HESAP_TIPS = ["banka", "pos", "sanal_pos"];
-              const oyId = form.getFieldValue("odeme_yontemi_id");
-              const oy =
-                hesapOdemeYontemleri.find((o) => o.id === oyId)
-                || (dropdown?.odeme_yontemleri ?? []).find((o) => o.id === oyId);
-              const mh = (dropdown?.mali_hesaplar ?? []).find((m) => m.id === form.getFieldValue("mali_hesap_id"));
-              const eligible =
-                (oy && MASRAF_ODEME_TIPS.includes(oy.tip)) ||
-                (mh && MASRAF_HESAP_TIPS.includes(mh.tip));
-              if (!eligible) return null;
-              const tips = (dropdown?.masraf_turleri ?? []).filter(
-                (m) => !m.odeme_tipi || (oy && m.odeme_tipi === oy.tip),
-              );
-              return (
-                <>
-                  <Divider orientation="left" style={{ fontSize: 13 }}>Banka Masrafı (opsiyonel)</Divider>
-                  <Row gutter={12}>
-                    <Col span={12}>
-                      <Form.Item name="masraf_turu_id" label="Masraf Türü">
-                        <Select
-                          allowClear
-                          showSearch
-                          optionFilterProp="label"
-                          placeholder="Örn. EFT Masrafı"
-                          options={(tips.length ? tips : (dropdown?.masraf_turleri ?? [])).map((m) => ({
-                            value: m.id,
-                            label: m.ad,
-                          }))}
-                          onChange={(id) => {
-                            const sel = (dropdown?.masraf_turleri ?? []).find((m) => m.id === id);
-                            if (sel && Number(sel.varsayilan_tutar) > 0 && !form.getFieldValue("kesinti_tutar")) {
-                              form.setFieldsValue({ kesinti_tutar: Number(sel.varsayilan_tutar) });
-                            }
-                          }}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={12}>
-                      <Form.Item name="kesinti_tutar" label="Masraf Tutarı">
-                        <InputNumber style={{ width: "100%" }} min={0} step={0.01} precision={2} addonAfter="₺" placeholder="0,00" />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                  <Form.Item name="kesinti_aciklama" label="Masraf Açıklaması">
-                    <Input placeholder="Opsiyonel" />
+          {!mahsup && (
+            <>
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item name="mali_hesap_id" label="Mali Hesap (Kasa/Banka)" rules={[{ required: true, message: "Mali hesap seçin." }]}>
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder="Seçin"
+                      options={(dropdown?.mali_hesaplar ?? []).map((m) => ({ value: m.id, label: m.ad }))}
+                      onChange={() => form.setFieldsValue({ odeme_yontemi_id: undefined })}
+                    />
                   </Form.Item>
-                </>
-              );
-            }}
-          </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item name="odeme_yontemi_id" label="Tahsilat Yöntemi" rules={[{ required: true, message: "Tahsilat yöntemi seçin." }]}>
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      placeholder={maliHesapId ? "Seçin" : "Önce mali hesap seçin"}
+                      disabled={!maliHesapId}
+                      options={hesapOdemeYontemleri.map((o) => ({ value: o.id, label: o.ad }))}
+                    />
+                  </Form.Item>
+                </Col>
+              </Row>
+
+              <Form.Item
+                noStyle
+                shouldUpdate={(p, c) =>
+                  p.mali_hesap_id !== c.mali_hesap_id || p.odeme_yontemi_id !== c.odeme_yontemi_id}
+              >
+                {() => {
+                  const MASRAF_ODEME_TIPS = ["pos", "havale_eft", "online"];
+                  const MASRAF_HESAP_TIPS = ["banka", "pos", "sanal_pos"];
+                  const oyId = form.getFieldValue("odeme_yontemi_id");
+                  const oy =
+                    hesapOdemeYontemleri.find((o) => o.id === oyId)
+                    || (dropdown?.odeme_yontemleri ?? []).find((o) => o.id === oyId);
+                  const mh = (dropdown?.mali_hesaplar ?? []).find((m) => m.id === form.getFieldValue("mali_hesap_id"));
+                  const eligible =
+                    (oy && MASRAF_ODEME_TIPS.includes(oy.tip)) ||
+                    (mh && MASRAF_HESAP_TIPS.includes(mh.tip));
+                  if (!eligible) return null;
+                  const tips = (dropdown?.masraf_turleri ?? []).filter(
+                    (m) => !m.odeme_tipi || (oy && m.odeme_tipi === oy.tip),
+                  );
+                  return (
+                    <>
+                      <Divider orientation="left" style={{ fontSize: 13 }}>Banka Masrafı (opsiyonel)</Divider>
+                      <Row gutter={12}>
+                        <Col span={12}>
+                          <Form.Item name="masraf_turu_id" label="Masraf Türü">
+                            <Select
+                              allowClear
+                              showSearch
+                              optionFilterProp="label"
+                              placeholder="Örn. EFT Masrafı"
+                              options={(tips.length ? tips : (dropdown?.masraf_turleri ?? [])).map((m) => ({
+                                value: m.id,
+                                label: m.ad,
+                              }))}
+                              onChange={(id) => {
+                                const sel = (dropdown?.masraf_turleri ?? []).find((m) => m.id === id);
+                                if (sel && Number(sel.varsayilan_tutar) > 0 && !form.getFieldValue("kesinti_tutar")) {
+                                  form.setFieldsValue({ kesinti_tutar: Number(sel.varsayilan_tutar) });
+                                }
+                              }}
+                            />
+                          </Form.Item>
+                        </Col>
+                        <Col span={12}>
+                          <Form.Item name="kesinti_tutar" label="Masraf Tutarı">
+                            <InputNumber style={{ width: "100%" }} min={0} step={0.01} precision={2} addonAfter="₺" placeholder="0,00" />
+                          </Form.Item>
+                        </Col>
+                      </Row>
+                      <Form.Item name="kesinti_aciklama" label="Masraf Açıklaması">
+                        <Input placeholder="Opsiyonel" />
+                      </Form.Item>
+                    </>
+                  );
+                }}
+              </Form.Item>
+            </>
+          )}
 
           <Form.Item name="tahsilat_tarihi" label="Tahsilat Tarihi" rules={[{ required: true, message: "Tarih seçin." }]}>
             <DatePicker style={{ width: "100%" }} format="DD.MM.YYYY" />
@@ -291,7 +364,8 @@ export default function GelirTahsilatDrawer({ open, row, dropdown, onClose, onSa
           {
             title: "Yöntem",
             key: "yontem",
-            render: (_, r) => r.mali_hesap_adi || r.odeme_yontemi_adi || "—",
+            render: (_, r) =>
+              r.bakiyeden_mahsup ? "Mahsup" : r.mali_hesap_adi || r.odeme_yontemi_adi || "—",
           },
           {
             title: "Durum",
@@ -301,13 +375,29 @@ export default function GelirTahsilatDrawer({ open, row, dropdown, onClose, onSa
           {
             title: "",
             key: "islem",
-            width: 70,
-            render: (_, r) =>
-              r.durum !== "iptal" ? (
-                <Popconfirm title="Tahsilat iptal edilsin mi?" okText="İptal Et" cancelText="Vazgeç" onConfirm={() => iptal(r)}>
-                  <Button size="small" type="text" danger>İptal</Button>
-                </Popconfirm>
-              ) : null,
+            width: 140,
+            render: (_, r) => (
+              <Space size={0}>
+                {r.durum === "tamamlandi" && row ? (
+                  <Button
+                    size="small"
+                    type="link"
+                    onClick={() =>
+                      openTahsilatMakbuzu(row.id, r.id).catch((e) =>
+                        message.error(e instanceof Error ? e.message : "Makbuz açılamadı."),
+                      )
+                    }
+                  >
+                    Makbuz
+                  </Button>
+                ) : null}
+                {r.durum !== "iptal" ? (
+                  <Popconfirm title="Tahsilat iptal edilsin mi?" okText="İptal Et" cancelText="Vazgeç" onConfirm={() => iptal(r)}>
+                    <Button size="small" type="text" danger>İptal</Button>
+                  </Popconfirm>
+                ) : null}
+              </Space>
+            ),
           },
         ]}
       />

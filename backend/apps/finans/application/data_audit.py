@@ -4,6 +4,7 @@ from decimal import Decimal
 
 from django.db.models import Count, Sum
 
+from apps.finans.application.legacy_mahsup import dengelenmemis_mahsuplar
 from apps.finans.models import (
     BakiyeHareketi, CariHareket, CariHesap, GelirKaydi, GiderKaydi,
     GelirTahsilat, GiderOdeme, DonemBakiye,
@@ -129,6 +130,16 @@ def build_finans_audit(*, kurum_id=None, sube_id=None, sample_limit=100):
             add('cari_totals_mismatch', cari, kayitli_borc=str(cari.toplam_borc),
                 hesaplanan_borc=str(borc), kayitli_alacak=str(cari.toplam_alacak),
                 hesaplanan_alacak=str(alacak))
+
+    for aday in dengelenmemis_mahsuplar(kurum_id=kurum_id, sube_id=sube_id):
+        entry = findings.setdefault('legacy_mahsup_unbalanced', {'count': 0, 'samples': []})
+        entry['count'] += 1
+        if len(entry['samples']) < sample_limit:
+            entry['samples'].append({
+                'model': 'GiderOdeme', 'id': aday['odeme_id'],
+                'cari_hesap_id': aday['cari_hesap_id'], 'net': str(aday['net']),
+                'odeme_durum': aday['odeme_durum'],
+            })
 
     for obj in scope(CekSenetDetay.objects.all()).select_related(
             'sube', 'cari_hesap', 'ciro_edilen_cari', 'tahsilat_mali_hesap__sube',
