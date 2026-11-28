@@ -123,10 +123,13 @@ class AdminDashboardService:
         bugun = timezone.localdate()
         ay_basi = bugun.replace(day=1)
 
+        from apps.odeme_takip.domain.contract_scope import egitim_sozlesmeleri
+        from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
+
         kayit_qs = OgrenciKayit.objects.filter(
             kurum_id=kurum_id,
             sube_id=sube_id,
-        )
+        ).exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
         if egitim_yili_id:
             kayit_qs = kayit_qs.filter(egitim_yili_id=egitim_yili_id)
 
@@ -195,12 +198,12 @@ class AdminDashboardService:
 
         sozlesme_svc = SozlesmeService()
         ozet = sozlesme_svc.get_ozet(kurum_id, sube_id, egitim_yili_id) if egitim_yili_id else {}
-        aktif_sozlesme = Sozlesme.objects.filter(
+        aktif_sozlesme = egitim_sozlesmeleri(Sozlesme.objects.filter(
             kurum_id=kurum_id,
             sube_id=sube_id,
             egitim_yili_id=egitim_yili_id,
             durum=SozlesmeDurum.AKTIF,
-        ).count() if egitim_yili_id else 0
+        )).count() if egitim_yili_id else 0
 
         toplam_kayit = _int_val(ozet.get('toplam_hacim'))
         toplam_tahsil = _int_val(ozet.get('toplam_tahsilat'))
@@ -419,14 +422,14 @@ class AdminDashboardService:
             'sinif__sinif_seviyesi',
         )
         items: list[dict] = []
-        from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit
+        from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit, is_gunu_birlik_kayit
 
         for kayit in kayitlar.iterator():
             ogrenci = kayit.ogrenci
             dogum = ogrenci.dogum_tarihi
             if not dogum:
                 continue
-            if is_deneme_kulubu_kayit(ogrenci):
+            if is_deneme_kulubu_kayit(ogrenci) or is_gunu_birlik_kayit(ogrenci):
                 continue
             sonraki = _next_birthday(dogum, bugun)
             kalan = (sonraki - bugun).days

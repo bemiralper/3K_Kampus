@@ -4,7 +4,9 @@ ve Saate Duyarlı "Yaşayan Ana Ekran" (Living Home) Servisi.
 """
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
+import html
+import re
 
 from django.db import transaction
 from django.db.models import Q
@@ -12,6 +14,7 @@ from django.utils import timezone
 
 from apps.coaching.models import CoachStudentAssignment
 from apps.coaching.services.coach_access import get_coach_profile, user_can_access_student
+from apps.communication.domain.models import Message as CommMessage
 from apps.website.models import Duyuru
 
 from ..auth import ISTANBUL, StudentPortalError
@@ -22,11 +25,251 @@ from .study_service import build_study_workspace
 from .achievement_service import build_student_achievements
 
 
+EXCLUDED_COMM_MODULES = frozenset({
+    'odeme',
+    'finans',
+    'finans.gun_sonu',
+    'sozlesme',
+    'muhasebe',
+    'taksit',
+    'forward',
+})
+
+FINANCIAL_BODY_KEYWORDS = (
+    'tahsilat makbuzu',
+    'muhasebe birimi',
+    'taksit tutarı',
+    'gecikmiş taksit',
+    'ödeme hatırlatma',
+)
+
+ANNOUNCEMENT_CATEGORIES = (
+    ('duyuru', 'Duyuru & Ders Notu'),
+    ('sinav', 'Sınav & Sonuç'),
+    ('odev', 'Ödev & Ders Planı'),
+    ('yoklama', 'Yoklama & Kampüs'),
+)
+
+
+def _html_to_formatted_text(raw_text: str) -> str:
+    """
+    CMS duyurularındaki HTML etiketlerini (`<p>`, `<br>`, `<strong>`, `<li>` vb.)
+    temiz ve okunabilir portal biçimine dönüştürür; ekrana ham `<p>...</p>` sızmasını önler.
+    """
+    if not raw_text:
+        return ''
+    txt = str(raw_text)
+    if '<' not in txt and '&' not in txt:
+        return txt.strip()
+
+    # Script / style bloklarını tamamen kaldır
+    txt = re.sub(r'<(script|style)\b[^>]*>[\s\S]*?</\1>', '', txt, flags=re.IGNORECASE)
+    # Kalın ve italik etiketlerini WhatsApp/Portal işaretçilerine çevir
+    txt = re.sub(r'<(strong|b)\b[^>]*>([\s\S]*?)</\1>', r'*\2*', txt, flags=re.IGNORECASE)
+    txt = re.sub(r'<(em|i)\b[^>]*>([\s\S]*?)</\1>', r'_\2_', txt, flags=re.IGNORECASE)
+    # Liste maddeleri ve satır sonları
+    txt = re.sub(r'<li\b[^>]*>\s*', '\n• ', txt, flags=re.IGNORECASE)
+    txt = re.sub(r'<br\s*/?>', '\n', txt, flags=re.IGNORECASE)
+    txt = re.sub(r'</(p|div|h[1-6]|li|tr|blockquote)>', '\n', txt, flags=re.IGNORECASE)
+    # Kalan tüm HTML etiketlerini temizle
+    txt = re.sub(r'<[^>]+>', '', txt)
+    txt = html.unescape(txt)
+    # Satır içi fazla boşlukları ve ardışık boş satırları düzenle
+    lines = [re.sub(r'[ \t]+', ' ', ln).strip() for ln in txt.splitlines()]
+    cleaned = '\n'.join(lines)
+    cleaned = re.sub(r'\n{3,}', '\n\n', cleaned)
+    return cleaned.strip()
+
+
+def _plain_preview_text(raw_text: str, max_len: int = 200) -> str:
+    """Story kapsülleri ve kart özetleri için tüm HTML ve yıldız/altçizgi işaretlerini sadeleştirir."""
+    txt = _html_to_formatted_text(raw_text)
+    txt = re.sub(r'\*\*([^*]+)\*\*', r'\1', txt)
+    txt = re.sub(r'\*([^*\n]+)\*', r'\1', txt)
+    txt = re.sub(r'(?<!\w)_([^_\n]+)_(?!\w)', r'\1', txt)
+    txt = re.sub(r'~([^~\n]+)~', r'\1', txt)
+    txt = re.sub(r'`([^`\n]+)`', r'\1', txt)
+    txt = re.sub(r'\s+', ' ', txt).strip()
+    if len(txt) > max_len:
+        return txt[: max_len - 1].rstrip() + '…'
+    return txt
+
+
+def _comm_category_for_module(source_module: str) -> tuple[str, str]:
+    mod = (source_module or '').strip().lower()
+    if mod == 'sinav':
+        return 'sinav', 'Sınav & Sonuç'
+    if mod in ('odev', 'ozel_ders', 'akademik', 'koc', 'gorusme'):
+        return 'odev', 'Ödev & Ders Planı'
+    if mod in ('yoklama_bildirim', 'akademik_yoklama', 'devamsizlik'):
+        return 'yoklama', 'Yoklama & Kampüs'
+    return 'duyuru', 'Duyuru & Ders Notu'
+
+
+def _derive_comm_message_title(msg: CommMessage, body_clean: str, attachments: list[dict]) -> str:
+    mod = (msg.source_module or '').strip().lower()
+    camp_title = ((msg.campaign.title if msg.campaign_id and msg.campaign else '') or '').strip()
+
+    # Kampanya başlığı anlamlıysa (iç teknik kitle filtresi değilse) doğrudan değerlendir
+    if camp_title and not camp_title.startswith(('Öğrenciler ·', 'Veliler ·', 'Sınıf şubesi:')):
+        return camp_title[:140]
+
+    # Mesaj içinden sınav / ödev / başlık yakalama
+    exam_match = re.search(r'Sınav:\*?\s*([^\n*]+)', body_clean, flags=re.IGNORECASE)
+    if exam_match:
+        return f"{exam_match.group(1).strip()} — Sınav Bilgilendirmesi"[:140]
+
+    bold_matches = [
+        m.strip(' :—-*_')
+        for m in re.findall(r'\*{1,2}([^*\n]{3,90})\*{1,2}', body_clean)
+    ]
+    generic_headings = {
+        'duyuru', 'bilgilendirme', 'sınav bilgilendirmesi', 'sevgili öğrencimiz',
+        'sevgili öğrencimiz,', 'değerli velimiz', 'değerli velimiz,', 'gelmedi',
+    }
+    specific_bold = next(
+        (b for b in bold_matches if b.lower() not in generic_headings and not b.lower().endswith(':')),
+        None,
+    )
+
+    if mod == 'sinav':
+        if 'cevap anahtar' in body_clean.lower():
+            return f"{specific_bold or 'Deneme Sınavı'} — Cevap Anahtarı"[:140]
+        if 'sonuç belgesi' in body_clean.lower() or 'karne' in body_clean.lower():
+            return f"{specific_bold or 'Deneme Sınavı'} — Sınav Sonuç Belgesi"[:140]
+        if 'katılım sağlamadığı' in body_clean.lower():
+            return f"{specific_bold or 'Deneme Sınavı'} — Katılım Bilgilendirmesi"[:140]
+        return f"{specific_bold or 'Deneme Sınavı'} — Sınav Bilgilendirmesi"[:140]
+
+    if mod == 'odev':
+        if 'rapor' in body_clean.lower() or 'değerlendirme' in body_clean.lower():
+            return f"{specific_bold or 'Haftalık Ödev'} — Değerlendirme Raporu"[:140]
+        return f"{specific_bold or 'Haftalık Ödev'} — Ödev Planı"[:140]
+
+    if mod == 'ozel_ders':
+        return 'Özel Ders Program Bilgilendirmesi'
+
+    if mod in ('yoklama_bildirim', 'akademik_yoklama', 'devamsizlik'):
+        if 'çıkış' in body_clean.lower():
+            return 'Kütüphane / Kampüs Çıkış Bilgilendirmesi'
+        return 'Yoklama & Devam Bilgilendirmesi'
+
+    if attachments:
+        first_name = (attachments[0].get('name') or '').rsplit('.', 1)[0].replace('_', ' ').strip()
+        if first_name:
+            if 'ders notu' in body_clean.lower():
+                return f'Ders Notu — {first_name}'[:140]
+            return f'Paylaşılan Belge — {first_name}'[:140]
+
+    if specific_bold:
+        return specific_bold[:140]
+
+    first_line = next((ln.strip() for ln in body_clean.splitlines() if ln.strip()), '')
+    first_plain = _plain_preview_text(first_line, max_len=90)
+    if first_plain.lower() in ('duyuru:', 'duyuru', 'bilgilendirme', 'bilgilendirme:'):
+        second_line = next(
+            (ln.strip() for ln in body_clean.splitlines()[1:] if ln.strip()),
+            '',
+        )
+        second_plain = _plain_preview_text(second_line, max_len=90)
+        if second_plain:
+            return f'Kampüs Duyurusu — {second_plain}'[:140]
+        return 'Kampüs Duyurusu'
+    return first_plain or 'Kampüs Bilgilendirmesi'
+
+
+def _serialize_comm_attachments(msg: CommMessage) -> list[dict]:
+    items = []
+    for att in msg.attachments.all():
+        if not att.file:
+            continue
+        try:
+            url = att.file.url
+        except Exception:
+            continue
+        if url and not url.startswith('http') and not url.startswith('/'):
+            url = f'/media/{url.lstrip("/")}'
+        mime = (att.mime_type or '').lower()
+        name = att.original_name or 'Ek Dosya'
+        lower_name = name.lower()
+        items.append({
+            'id': str(att.id),
+            'name': name,
+            'mime_type': att.mime_type or 'application/octet-stream',
+            'file_size': int(att.file_size or 0),
+            'url': url,
+            'is_pdf': 'pdf' in mime or lower_name.endswith('.pdf'),
+            'is_image': mime.startswith('image/') or lower_name.endswith(('.png', '.jpg', '.jpeg', '.webp')),
+        })
+    return items
+
+
+def _collect_student_comm_messages(scope: dict) -> list[CommMessage]:
+    ogrenci = scope['ogrenci']
+    qs = (
+        CommMessage.objects.select_related('conversation', 'campaign', 'sender_user')
+        .prefetch_related('attachments')
+        .filter(
+            conversation__kurum_id=scope['kurum_id'],
+            conversation__ogrenci_id=ogrenci.id,
+            direction='OUTBOUND',
+        )
+        .filter(
+            Q(conversation__sube_id__isnull=True) | Q(conversation__sube_id=scope['sube_id'])
+        )
+        .exclude(status__in=('FAILED', 'CANCELLED'))
+        .exclude(source_module__in=EXCLUDED_COMM_MODULES)
+        .order_by('-created_at')[:120]
+    )
+
+    raw_msgs = list(qs)
+    # Öğrencinin kendi hattına (`veli_id is None`) giden mesajları öncele, aynı kampanya/olay
+    # veli hattına da gittiyse tekilleştir; finans/muhasebe içeriklerini kesinlikle dışla.
+    ordered = sorted(
+        raw_msgs,
+        key=lambda m: (0 if m.conversation.veli_id is None else 1, -m.created_at.timestamp()),
+    )
+
+    seen_dedupe_keys: set[str] = set()
+    kept: list[CommMessage] = []
+    for m in ordered:
+        body_raw = (m.body or '').strip()
+        if not body_raw and not m.attachments.all():
+            continue
+        body_lower = body_raw.lower()
+        if any(kw in body_lower for kw in FINANCIAL_BODY_KEYWORDS):
+            continue
+
+        dedupe_key = None
+        if m.campaign_id:
+            dedupe_key = f'camp:{m.campaign_id}'
+        elif m.source_module and m.source_ref_id:
+            base_ref = str(m.source_ref_id).split(':veli')[0].split(':ogrenci')[0]
+            dedupe_key = f'src:{m.source_module}:{base_ref}'
+
+        if dedupe_key and dedupe_key in seen_dedupe_keys:
+            continue
+        if dedupe_key:
+            seen_dedupe_keys.add(dedupe_key)
+        kept.append(m)
+
+    kept.sort(key=lambda m: m.created_at, reverse=True)
+    return kept[:60]
+
+
 def list_student_announcements(scope: dict) -> dict:
-    """Kurum duyurularını okunma durumuyla birlikte döndürür."""
-    today = timezone.localtime(timezone.now(), ISTANBUL).date()
+    """
+    Kurum web duyurularını (`website.Duyuru`) VE öğrenciye gönderilen kurumsal
+    iletişim mesajlarını (`communication.Message`: duyuru, ders notu PDF, sınav bilgisi,
+    karne/cevap anahtarı, ödev planı/raporu, yoklama) tek bir temiz akışta birleştirir.
+    """
+    now_dt = timezone.localtime(timezone.now(), ISTANBUL)
+    today = now_dt.date()
+    recent_unread_cutoff = now_dt - timedelta(days=14)
+
     account = scope['account']
-    read_ids = set(account.read_announcement_ids or []) if isinstance(account.read_announcement_ids, list) else set()
+    raw_read = account.read_announcement_ids if isinstance(account.read_announcement_ids, list) else []
+    read_keys = {str(x) for x in raw_read}
 
     rows = (
         Duyuru.objects.filter(
@@ -34,50 +277,143 @@ def list_student_announcements(scope: dict) -> dict:
             aktif=True,
         )
         .filter(Q(yayin_tarihi__isnull=True) | Q(yayin_tarihi__lte=today))
-        .order_by('-yayin_tarihi', '-created_at', '-id')[:50]
+        .order_by('-yayin_tarihi', '-created_at', '-id')[:40]
     )
 
-    items = []
-    unread_count = 0
+    merged: list[dict] = []
+
     for row in rows:
-        is_read = row.id in read_ids
-        if not is_read:
-            unread_count += 1
+        item_key = f'web:{row.id}'
+        is_read = (item_key in read_keys) or (str(row.id) in read_keys)
         pub_date = row.yayin_tarihi or timezone.localtime(row.created_at, ISTANBUL).date()
-        items.append({
+        created_local = timezone.localtime(row.created_at, ISTANBUL)
+        sort_dt = (
+            datetime.combine(row.yayin_tarihi, created_local.timetz())
+            if row.yayin_tarihi
+            else created_local
+        )
+        formatted_body = _html_to_formatted_text(getattr(row, 'icerik', '') or row.ozet or '')
+        clean_summary = _plain_preview_text(row.ozet or formatted_body, max_len=200)
+
+        attachments = []
+        if getattr(row, 'kapak_gorseli', None):
+            try:
+                cover_url = row.kapak_gorseli.url
+                attachments.append({
+                    'id': f'cover-{row.id}',
+                    'name': row.baslik,
+                    'mime_type': 'image/jpeg',
+                    'file_size': 0,
+                    'url': cover_url,
+                    'is_pdf': False,
+                    'is_image': True,
+                })
+            except Exception:
+                pass
+
+        merged.append({
             'id': row.id,
+            'item_key': item_key,
+            'source_kind': 'website',
+            'category': 'duyuru',
+            'category_label': 'Kurum Duyurusu',
+            'recipient_channel': 'kampus',
             'title': row.baslik,
-            'summary': row.ozet or '',
-            'content': getattr(row, 'icerik', '') or row.ozet or '',
+            'summary': clean_summary,
+            'content': formatted_body,
             'published_date': pub_date.isoformat(),
+            'published_at': sort_dt.isoformat(timespec='minutes'),
             'is_read': is_read,
+            'attachments': attachments,
+            '_sort_ts': sort_dt.timestamp(),
         })
+
+    comm_msgs = _collect_student_comm_messages(scope)
+    for idx, msg in enumerate(comm_msgs):
+        item_key = f'msg:{msg.id}'
+        local_created = timezone.localtime(msg.sent_at or msg.created_at, ISTANBUL)
+        # 14 günden eski geçmiş mesajlar otomatik okunmuş kabul edilir; yeniler okundu işaretlenene dek yeni görünür
+        is_read = (item_key in read_keys) or (local_created < recent_unread_cutoff)
+        cat_code, cat_label = _comm_category_for_module(msg.source_module)
+        attachments = _serialize_comm_attachments(msg)
+        formatted_body = _html_to_formatted_text(msg.body or '')
+        title = _derive_comm_message_title(msg, formatted_body, attachments)
+        clean_summary = _plain_preview_text(formatted_body, max_len=200)
+        if not formatted_body and attachments:
+            formatted_body = f"Ek dosya paylaşıldı: {', '.join(a['name'] for a in attachments)}"
+            clean_summary = formatted_body
+
+        # Geriye dönük sayısal `id` bekleyen istemciler için negatif/benzersiz int + asıl `item_key`
+        synthetic_int_id = -(100000 + idx + 1)
+        merged.append({
+            'id': synthetic_int_id,
+            'item_key': item_key,
+            'source_kind': 'message',
+            'category': cat_code,
+            'category_label': cat_label,
+            'recipient_channel': 'ogrenci' if msg.conversation.veli_id is None else 'veli_hatti',
+            'title': title,
+            'summary': clean_summary,
+            'content': formatted_body,
+            'published_date': local_created.date().isoformat(),
+            'published_at': local_created.isoformat(timespec='minutes'),
+            'is_read': is_read,
+            'attachments': attachments,
+            '_sort_ts': local_created.timestamp(),
+        })
+
+    merged.sort(key=lambda it: it['_sort_ts'], reverse=True)
+
+    unread_count = 0
+    cat_counts: dict[str, int] = {code: 0 for code, _ in ANNOUNCEMENT_CATEGORIES}
+    items = []
+    for it in merged[:80]:
+        it.pop('_sort_ts', None)
+        if not it['is_read']:
+            unread_count += 1
+        cat_counts[it['category']] = cat_counts.get(it['category'], 0) + 1
+        items.append(it)
 
     return {
         'unread_count': unread_count,
+        'categories': [
+            {'code': code, 'label': label, 'count': cat_counts.get(code, 0)}
+            for code, label in ANNOUNCEMENT_CATEGORIES
+            if cat_counts.get(code, 0) > 0
+        ],
         'items': items,
     }
 
 
-def mark_announcements_read(scope: dict, ids: list[int] | None = None) -> dict:
+def mark_announcements_read(scope: dict, ids: list | None = None) -> dict:
     account = scope['account']
-    current = set(account.read_announcement_ids or []) if isinstance(account.read_announcement_ids, list) else set()
+    raw_current = account.read_announcement_ids if isinstance(account.read_announcement_ids, list) else []
+    current_ordered: list[str] = [str(x) for x in raw_current if x is not None]
+    current_set = set(current_ordered)
+
+    def _add_key(k: str) -> None:
+        if k and k not in current_set:
+            current_set.add(k)
+            current_ordered.append(k)
 
     if ids:
         for raw_id in ids:
-            try:
-                current.add(int(raw_id))
-            except (TypeError, ValueError):
+            if raw_id is None:
                 continue
+            s = str(raw_id).strip()
+            if not s:
+                continue
+            _add_key(s)
+            if s.isdigit():
+                _add_key(f'web:{s}')
     else:
-        today = timezone.localtime(timezone.now(), ISTANBUL).date()
-        all_ids = Duyuru.objects.filter(
-            kurum_id=scope['kurum_id'],
-            aktif=True,
-        ).filter(Q(yayin_tarihi__isnull=True) | Q(yayin_tarihi__lte=today)).values_list('id', flat=True)[:100]
-        current.update(all_ids)
+        feed = list_student_announcements(scope)
+        for item in feed['items']:
+            _add_key(str(item['item_key']))
+            if item.get('source_kind') == 'website' and isinstance(item.get('id'), int) and item['id'] > 0:
+                _add_key(str(item['id']))
 
-    account.read_announcement_ids = sorted(current)[-300:]
+    account.read_announcement_ids = current_ordered[-600:]
     account.save(update_fields=['read_announcement_ids', 'updated_at'])
     return list_student_announcements(scope)
 
@@ -399,12 +735,16 @@ def build_living_home(scope: dict) -> dict:
 
     for ann in announcements['items'][:2]:
         stories.append({
-            'id': f"story-ann-{ann['id']}",
-            'badge': 'Yeni Duyuru' if not ann['is_read'] else 'Kampüs Duyurusu',
+            'id': f"story-ann-{ann['item_key']}",
+            'badge': (
+                ('Yeni Mesaj' if ann.get('source_kind') == 'message' else 'Yeni Duyuru')
+                if not ann['is_read']
+                else (ann.get('category_label') or 'Kampüs Duyurusu')
+            ),
             'tone': 'emerald' if not ann['is_read'] else 'slate',
             'title': ann['title'],
-            'body': ann['summary'] or ann['content'][:220],
-            'cta_label': 'Duyuruları Gör',
+            'body': ann['summary'] or _plain_preview_text(ann['content'], max_len=200),
+            'cta_label': 'Mesaj & Duyurular',
             'cta_href': '/ogrenci/iletisim?tab=duyurular',
         })
 

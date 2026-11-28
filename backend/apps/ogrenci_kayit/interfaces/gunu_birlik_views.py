@@ -5,20 +5,25 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.kurum.services.kayit_tanimlari_service import seed_default_registration_types
-from apps.ogrenci_kayit.permissions import OgrenciKayitModulePermission
-from shared.permissions import OlcmeModulePermission
+from apps.ogrenci_kayit.permissions import (
+    GunuBirlikDurumPermission,
+    GunuBirlikReadPermission,
+    GunuBirlikWritePermission,
+    OgrenciKayitModulePermission,
+)
 
 from ..application.gunu_birlik import (
     cancel_deneme_kaydi,
     change_deneme_oturumu,
-    register_deneme_kaydi,
     classify_rows,
     commit_rows,
     exam_options,
     excel_template,
     list_misafirler,
     load_seviyeler,
+    misafir_durum_sayilari,
     parse_excel,
+    register_deneme_kaydi,
     summarize,
 )
 from ..application.services import get_active_context
@@ -91,7 +96,7 @@ def _session_id(data):
 class GunuBirlikView(APIView):
     """GET misafir listesi. POST önizleme (commit=false) veya kayıt."""
 
-    permission_classes = [IsAuthenticated, OlcmeModulePermission]
+    permission_classes = [IsAuthenticated, GunuBirlikWritePermission]
 
     def get_permissions(self):
         if self.request.method == 'GET':
@@ -104,8 +109,15 @@ class GunuBirlikView(APIView):
             return err
         kurum_id, sube_id, _yil = ctx
         q = request.query_params.get('q') or ''
-        rows = list_misafirler(kurum_id, sube_id, q=q, egitim_yili_id=_yil)
-        return Response({'ogrenciler': rows, 'count': len(rows)})
+        durum = request.query_params.get('durum') or 'aktif'
+        rows = list_misafirler(kurum_id, sube_id, q=q, egitim_yili_id=_yil, durum=durum)
+        sayilar = misafir_durum_sayilari(kurum_id, sube_id)
+        return Response({
+            'ogrenciler': rows,
+            'count': len(rows),
+            'aktif_count': sayilar['aktif_count'],
+            'pasif_count': sayilar['pasif_count'],
+        })
 
     def post(self, request):
         exam, ctx, err = _exam_or_error(request, request.data.get('exam_id'))
@@ -126,7 +138,7 @@ class GunuBirlikView(APIView):
 
 
 class GunuBirlikSeceneklerView(APIView):
-    permission_classes = [IsAuthenticated, OlcmeModulePermission]
+    permission_classes = [IsAuthenticated, GunuBirlikReadPermission]
 
     def get(self, request):
         seed_default_registration_types()
@@ -150,7 +162,7 @@ class GunuBirlikSeceneklerView(APIView):
 
 
 class GunuBirlikSablonView(APIView):
-    permission_classes = [IsAuthenticated, OlcmeModulePermission]
+    permission_classes = [IsAuthenticated, GunuBirlikReadPermission]
 
     def get(self, request):
         content = excel_template()
@@ -179,7 +191,11 @@ class GunuBirlikGirisBelgesiView(APIView):
             return err
         kurum_id, sube_id, _yil = ctx
         loaded, reason = load_giris_context(
-            kurum_id, sube_id, request.query_params.get('exam_id'), request.query_params.get('ogrenci_id'),
+            kurum_id,
+            sube_id,
+            request.query_params.get('exam_id'),
+            request.query_params.get('ogrenci_id'),
+            participant_id=request.query_params.get('participant_id'),
         )
         if reason:
             return Response({'detail': reason}, status=404 if 'bulunamadı' in reason or 'yok' in reason else 400)
@@ -202,7 +218,11 @@ class GunuBirlikGirisBelgesiWhatsappView(APIView):
             return err
         kurum_id, sube_id, _yil = ctx
         loaded, reason = load_giris_context(
-            kurum_id, sube_id, request.data.get('exam_id'), request.data.get('ogrenci_id'),
+            kurum_id,
+            sube_id,
+            request.data.get('exam_id'),
+            request.data.get('ogrenci_id'),
+            participant_id=request.data.get('participant_id'),
         )
         if reason:
             return Response({'detail': reason}, status=404 if 'bulunamadı' in reason or 'yok' in reason else 400)
@@ -251,6 +271,7 @@ class GunuBirlikSinavIslemView(APIView):
                     user=request.user,
                     odeme_yontemi_id=request.data.get('odeme_yontemi_id'),
                     mali_hesap_id=request.data.get('mali_hesap_id'),
+                    sinif_seviyesi_id=request.data.get('sinif_seviyesi_id'),
                 )
             else:
                 return Response({'detail': 'İşlem bulunamadı.'}, status=400)
@@ -278,7 +299,7 @@ class GunuBirlikUcretView(APIView):
 class GunuBirlikExcelView(APIView):
     """Excel'i okur ve önizleme döner. Kayıt yazmaz."""
 
-    permission_classes = [IsAuthenticated, OlcmeModulePermission]
+    permission_classes = [IsAuthenticated, GunuBirlikWritePermission]
 
     def post(self, request):
         exam, ctx, err = _exam_or_error(request, request.data.get('exam_id') or request.POST.get('exam_id'))
@@ -298,3 +319,58 @@ class GunuBirlikExcelView(APIView):
         session_id = _session_id(request.data)
         rows = classify_rows(exam, raw_rows, seviyeler, exam_session_id=session_id)
         return Response(_payload(exam, rows, committed=False))
+
+
+class GunuBirlikDurumView(APIView):
+    """Tek deneme öğrencisini güvenli biçimde pasife alır veya yeniden aktifleştirir."""
+
+    permission_classes = [IsAuthenticated, GunuBirlikDurumPermission]
+
+    def post(self, request):
+        from django.db import transaction
+
+        from apps.ogrenci.application.services import OgrenciService
+        from apps.ogrenci.domain.models import Ogrenci
+        from apps.ogrenci.infrastructure.repositories import OgrenciRepository
+        from apps.ogrenci.services.kayit_turu import is_gunu_birlik_kayit
+
+        ctx, err = _context(request)
+        if err:
+            return err
+        kurum_id, sube_id, yil_id = ctx
+        try:
+            ogrenci_id = int(request.data.get('ogrenci_id'))
+        except (TypeError, ValueError):
+            return Response({'detail': 'Öğrenci seçin.'}, status=400)
+        aktif_raw = request.data.get('aktif_mi')
+        hedef_aktif = aktif_raw is True or str(aktif_raw).lower() in ('true', '1')
+
+        with transaction.atomic():
+            ogrenci = (
+                Ogrenci.objects.select_for_update()
+                .filter(pk=ogrenci_id, kurum_id=kurum_id, sube_id=sube_id)
+                .first()
+            )
+            if ogrenci is None:
+                return Response({'detail': 'Öğrenci bulunamadı.'}, status=404)
+            if not is_gunu_birlik_kayit(ogrenci):
+                return Response(
+                    {
+                        'detail': 'Kuruma kayıtlı öğrenci bu ekrandan pasife alınamaz. Öğrenci Listesi veya öğrenci detay ekranını kullanın.'
+                    },
+                    status=400,
+                )
+            if hedef_aktif:
+                if not ogrenci.aktif_mi:
+                    ogrenci.aktif_mi = True
+                    ogrenci.save(update_fields=['aktif_mi', 'updated_at'])
+                    OgrenciRepository()._sync_kayit_aktif_mi(
+                        ogrenci.id, True, egitim_yili_id=yil_id
+                    )
+                return Response({'ok': True, 'aktif_mi': True})
+
+            success, errors = OgrenciService().delete(ogrenci.id)
+            if not success:
+                detail = (errors or {}).get('genel') or 'Pasife alma işlemi başarısız.'
+                return Response({'detail': detail}, status=400)
+            return Response({'ok': True, 'aktif_mi': False})

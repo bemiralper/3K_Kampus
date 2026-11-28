@@ -2,6 +2,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from .interfaces.gunu_birlik_views import (
+    GunuBirlikDurumView,
     GunuBirlikExcelView,
     GunuBirlikGirisBelgesiView,
     GunuBirlikGirisBelgesiWhatsappView,
@@ -34,6 +35,7 @@ urlpatterns = [
     path("veli-tc-check/", VeliTcCheckView.as_view(), name="veli-tc-check"),
     path("register/", DirectRegistrationView.as_view(), name="direct-registration"),
     path("gunu-birlik/", GunuBirlikView.as_view(), name="gunu-birlik"),
+    path("gunu-birlik/durum/", GunuBirlikDurumView.as_view(), name="gunu-birlik-durum"),
     path("gunu-birlik/secenekler/", GunuBirlikSeceneklerView.as_view(), name="gunu-birlik-secenekler"),
     path("gunu-birlik/ucret/", GunuBirlikUcretView.as_view(), name="gunu-birlik-ucret"),
     path("gunu-birlik/sinav/", GunuBirlikSinavIslemView.as_view(), name="gunu-birlik-sinav"),

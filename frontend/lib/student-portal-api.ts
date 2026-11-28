@@ -245,6 +245,7 @@ export interface ExamBoardingPass {
   days_left: number;
   is_today: boolean;
   start_time: string;
+  end_time?: string;
   duration_minutes: number;
   session_name: string;
   room_name: string;
@@ -542,6 +543,8 @@ export interface LivingHomeResponse {
   };
   latest_exam: {
     exam_count: number;
+    same_type_exam_count?: number;
+    kpi_type_label?: string;
     latest_exam_id: number;
     latest_exam_name: string;
     latest_net: number;
@@ -660,6 +663,7 @@ export interface ExamOverviewItem {
   exam_name: string;
   exam_type: string;
   exam_type_label: string;
+  exam_type_short?: string;
   exam_date: string | null;
   total_correct: number;
   total_wrong: number;
@@ -675,6 +679,13 @@ export interface ExamOverviewItem {
   sections: Array<{
     section_id: number;
     name: string;
+    display_name?: string;
+    metric_key?: string;
+    is_sub_section?: boolean;
+    is_parent_group?: boolean;
+    parent_id?: number | null;
+    alana_dahil?: boolean;
+    attempted?: boolean;
     color: string;
     correct: number;
     wrong: number;
@@ -685,7 +696,9 @@ export interface ExamOverviewItem {
 }
 
 export interface ExamsOverviewResponse {
-  available_types: Array<{ code: string; label: string }>;
+  available_types: Array<{ code: string; label: string; short_label?: string; count?: number }>;
+  recommended_type?: string;
+  student_alan?: string;
   selected_type: string;
   kpi: LivingHomeResponse['latest_exam'];
   trend: ExamOverviewItem[];
@@ -714,6 +727,7 @@ export interface ExamDetailResponse {
   exam_name: string;
   exam_type: string;
   exam_type_label: string;
+  exam_type_short?: string;
   exam_date: string | null;
   total_net: number;
   field_net: number;
@@ -733,6 +747,7 @@ export interface ExamDetailResponse {
   estimated_national_rank: number | null;
   percentile: number | null;
   section_details: Array<{
+    section_id?: number;
     section_name: string;
     color: string;
     question_count: number;
@@ -740,6 +755,12 @@ export interface ExamDetailResponse {
     wrong: number;
     empty: number;
     net: number;
+    is_sub_section?: boolean;
+    is_parent_group?: boolean;
+    parent_id?: number | null;
+    alana_dahil?: boolean;
+    is_optional_unattempted?: boolean;
+    source?: string;
     net_rate?: number;
     sinif_avg_net?: number | null;
     kurum_avg_net?: number | null;
@@ -793,16 +814,36 @@ export interface StudentMessagesResponse {
   messages: PortalMessageItem[];
 }
 
+export interface AnnouncementAttachmentItem {
+  id: string;
+  name: string;
+  mime_type: string;
+  file_size: number;
+  url: string;
+  is_pdf: boolean;
+  is_image: boolean;
+}
+
+export interface AnnouncementFeedItem {
+  id: number;
+  item_key?: string;
+  source_kind?: 'website' | 'message';
+  category?: 'duyuru' | 'sinav' | 'odev' | 'yoklama';
+  category_label?: string;
+  recipient_channel?: 'kampus' | 'ogrenci' | 'veli_hatti';
+  title: string;
+  summary: string;
+  content: string;
+  published_date: string;
+  published_at?: string;
+  is_read: boolean;
+  attachments?: AnnouncementAttachmentItem[];
+}
+
 export interface AnnouncementsResponse {
   unread_count: number;
-  items: Array<{
-    id: number;
-    title: string;
-    summary: string;
-    content: string;
-    published_date: string;
-    is_read: boolean;
-  }>;
+  categories?: Array<{ code: string; label: string; count: number }>;
+  items: AnnouncementFeedItem[];
 }
 
 export interface CommandPaletteItem {
@@ -1005,7 +1046,7 @@ export const studentPortalApi = {
       body: JSON.stringify({ body: bodyText }),
     }),
   announcements: () => spFetch<AnnouncementsResponse>('/api/student/announcements/'),
-  markAnnouncementsRead: (ids?: number[]) =>
+  markAnnouncementsRead: (ids?: Array<number | string>) =>
     spFetch<AnnouncementsResponse>('/api/student/announcements/read/', {
       method: 'POST',
       body: JSON.stringify(ids ? { ids } : {}),

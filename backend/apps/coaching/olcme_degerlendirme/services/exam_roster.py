@@ -1141,17 +1141,18 @@ def enrich_participants(exam, rows: list[dict]) -> list[dict]:
         for v in OgrenciVeli.objects.filter(ogrenci_id__in=ids).order_by('-varsayilan', 'id'):
             veli_by.setdefault(v.ogrenci_id, v)
 
-    # Günü birlik misafirin yıllık kaydı yoktur; onu pasif saymayalım.
-    no_kayit = {sid for sid in ids if sid not in by}
-    pasif_ids: set[int] = set()
-    if no_kayit:
-        from apps.ogrenci.domain.models import Ogrenci
-        from apps.ogrenci.services.kayit_turu import is_gunu_birlik_kayit
+    # Günü birlik misafirin yıllık kaydı olmayabilir; aktif olduğu sürece pasif saymayalım,
+    # ancak öğrenci satırı pasife alınmışsa (aktif_mi=False) her durumda pasif işaretlensin.
+    from apps.ogrenci.domain.models import Ogrenci
+    from apps.ogrenci.services.kayit_turu import is_gunu_birlik_kayit
 
-        pasif_ids = {
-            o.pk for o in Ogrenci.objects.filter(pk__in=no_kayit).only('id', 'kayit_turu')
-            if not is_gunu_birlik_kayit(o)
-        }
+    pasif_ids: set[int] = set()
+    if ids:
+        for o in Ogrenci.objects.filter(pk__in=ids).only('id', 'kayit_turu', 'aktif_mi'):
+            if not o.aktif_mi:
+                pasif_ids.add(o.pk)
+            elif o.pk not in by and not is_gunu_birlik_kayit(o):
+                pasif_ids.add(o.pk)
 
     for r in rows:
         r['kayit_pasif'] = r['student_id'] in pasif_ids

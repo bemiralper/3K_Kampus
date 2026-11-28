@@ -106,6 +106,7 @@ function formatDate(d: string | null): string {
 }
 
 function durumLabel(durum: string): string {
+  const key = (durum || "").toUpperCase();
   const map: Record<string, string> = {
     AKTIF: "Aktif",
     TASLAK: "Taslak",
@@ -120,11 +121,11 @@ function durumLabel(durum: string): string {
     AKTIF_TAHSILAT: "Aktif",
     IPTAL_EDILDI: "İptal Edildi",
   };
-  return map[durum] || durum;
+  return map[key] || durum;
 }
 
 function durumColor(durum: string): { bg: string; text: string } {
-  switch (durum) {
+  switch ((durum || "").toUpperCase()) {
     case "AKTIF":
     case "ODENDI":
     case "AKTIF_TAHSILAT":
@@ -252,7 +253,7 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
 
   // 🟡 Dondurulmuş sözleşmeler
   sozlesmeler.forEach((s) => {
-    if (s.durum === "DONDURULMUS") {
+    if ((s.durum || "").toUpperCase() === "DONDURULMUS") {
       uyarilar.push({ tip: "dondurulmus", mesaj: `Sözleşme dondurulmuş durumda`, detay: s.sozlesme_no });
     }
   });
@@ -519,7 +520,8 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
         </div>
       </div>
 
-      {/* ═══ BÖLÜM 3: TAKSİT PLANI ═══ */}
+      {/* ═══ BÖLÜM 3: TAKSİT PLANI (yalnız eğitim sözleşmeleri veya taksiti olan kayıtlar) ═══ */}
+      {(!aktifSozlesme.deneme_kaydi || aktifSozlesme.taksitler.length > 0) && (
       <div className="card-modern finans-card">
         <div className="card-modern-header finans-card-header">
           <h3>
@@ -527,9 +529,11 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
             Taksit Planı
             <span className="finans-taksit-count">{aktifSozlesme.taksitler.length} taksit</span>
           </h3>
-          <Link href={odemeTakipHref} className="finans-taksit-shortcut">
-            Ödeme Planı →
-          </Link>
+          {!aktifSozlesme.deneme_kaydi && (
+            <Link href={odemeTakipHref} className="finans-taksit-shortcut">
+              Ödeme Planı →
+            </Link>
+          )}
         </div>
         <div className="card-modern-body" style={{ padding: 0 }}>
           {aktifSozlesme.taksitler.length === 0 ? (
@@ -549,7 +553,7 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
                 </thead>
                 <tbody>
                   {aktifSozlesme.taksitler.map((t) => {
-                    const isGecikti = t.durum === "GECIKTI";
+                    const isGecikti = (t.durum || "").toUpperCase() === "GECIKTI";
                     return (
                       <tr key={t.id} className={isGecikti ? "finans-row-gecikti" : ""}>
                         <td>{t.taksit_no}</td>
@@ -574,6 +578,7 @@ export default function FinansTab({ ogrenciId }: FinansTabProps) {
           )}
         </div>
       </div>
+      )}
 
       {/* ═══ BÖLÜM 4: SON TAHSİLATLAR ═══ */}
       <div className="card-modern finans-card">

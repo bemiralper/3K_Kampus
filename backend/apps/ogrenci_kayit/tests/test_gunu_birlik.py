@@ -1171,3 +1171,426 @@ class GunuBirlikTamKayitTests(TestCase):
         out = StringIO()
         call_command('audit_deneme_satislari', kurum_id=self.kurum.id, sube_id=self.sube.id + 9999, stdout=out)
         self.assertEqual(json.loads(out.getvalue())['satis_izi_sayisi'], 0)
+
+    def test_f01_dashboard_dogum_gunu_kitle_arama_ve_liderlik_sizintisi_kapali(self):
+        from apps.communication.application.audience_query import AudienceQueryService, empty_query
+        from apps.communication.application.birthday_wish_service import (
+            _birthday_students,
+            list_staff_birthdays,
+        )
+        from apps.dashboard.application.admin_dashboard_service import AdminDashboardService
+        from apps.student_portal.services.achievement_service import build_weekly_focus_leaderboard
+
+        today = timezone.localdate()
+        sale, _ = self._paid_deneme_sale()
+        walk_student = sale.ogrenci
+        walk_student.dogum_tarihi = today.replace(year=today.year - 14)
+        walk_student.telefon = '05521234567'
+        walk_student.whatsapp_uygun = True
+        walk_student.save(update_fields=['dogum_tarihi', 'telefon', 'whatsapp_uygun'])
+
+        summary = AdminDashboardService.build(
+            kurum_id=self.kurum.id, sube_id=self.sube.id, egitim_yili_id=self.yil.id,
+        )
+        self.assertEqual(summary['ogrenci']['kpis']['aktif'], 0)
+        self.assertEqual(summary['ogrenci']['kpis']['yeni_kayit_bu_ay'], 0)
+        self.assertEqual(summary['ogrenci']['kpis']['aktif_sozlesme'], 0)
+        self.assertEqual(summary['ogrenci']['dogum_gunleri']['yaklasan'], [])
+
+        self.assertEqual(list(_birthday_students(self.kurum.id, today)), [])
+        self.assertEqual(
+            list_staff_birthdays(self.kurum.id, on_date=today),
+            [],
+        )
+
+        preview = AudienceQueryService.resolve(
+            self.kurum.id,
+            empty_query(['ogrenci']),
+            context_sube_id=self.sube.id,
+            context_egitim_yili_id=self.yil.id,
+        )
+        self.assertEqual(preview.total, 0)
+
+        self.client.force_login(self.user)
+        search_res = self.client.get(
+            f'/ogrenciler/api/search/?q={walk_student.ad}', **self.headers,
+        )
+        self.assertEqual(search_res.status_code, 200)
+        self.assertEqual(search_res.json()['ogrenciler'], [])
+
+        search_inc = self.client.get(
+            f'/ogrenciler/api/search/?q={walk_student.ad}&include_gunu_birlik=1',
+            **self.headers,
+        )
+        self.assertEqual([r['id'] for r in search_inc.json()['ogrenciler']], [walk_student.id])
+
+        normal_student = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube,
+            ad='Asil',
+            soyad='Öğrenci',
+            tc_kimlik_no='10000000148',
+            kayit_turu='asil',
+            aktif_mi=True,
+        )
+        normal_kayit = OgrenciKayit.objects.create(
+            ogrenci=normal_student,
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+            sinif_seviyesi=self.seviye,
+            okul_no='ASIL-1',
+            aktif_mi=True,
+        )
+        lb = build_weekly_focus_leaderboard(
+            {
+                'ogrenci': normal_student,
+                'kayit': normal_kayit,
+                'kurum_id': self.kurum.id,
+                'sube_id': self.sube.id,
+                'egitim_yili_id': self.yil.id,
+            },
+            today,
+        )
+        self.assertEqual(lb['active_competitors'], 1)
+
+    def test_f03_f11_excel_koltuk_atama_ve_farkli_yil_sinif_seviyesi_fallback(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamRoom
+        from apps.ogrenci_kayit.application.gunu_birlik import commit_rows, list_misafirler, load_seviyeler
+
+        exam_one = self._review_exam()
+        room = ExamRoom.objects.create(exam=exam_one, name='Salon 101', capacity=15, order=1)
+        seviyeler = load_seviyeler(self.kurum.id, self.sube.id)
+        committed = commit_rows(
+            exam_one,
+            [{
+                'ad': 'Excel',
+                'soyad': 'Aday',
+                'tc_kimlik_no': '10000000199',
+                'telefon': '05339998877',
+                'sinif_seviyesi_id': self.seviye.id,
+            }],
+            seviyeler,
+        )
+        self.assertEqual(committed[0].status, 'yeni')
+        excel_student = Ogrenci.objects.get(tc_kimlik_no='10000000199')
+        part_one = ExamParticipant.objects.get(exam=exam_one, student=excel_student)
+        self.assertEqual(part_one.room_id, room.id)
+        self.assertEqual(part_one.seat_no, 1)
+
+        # OgrenciKayit olmadan da (Excel sonrası veya başka yılda) sınıf seviyesi çözümlenir
+        yeni_yil = EgitimYili.objects.create(baslangic_yil=2026, bitis_yil=2027, aktif_mi=True)
+        rows = list_misafirler(self.kurum.id, self.sube.id, q='Excel', egitim_yili_id=yeni_yil.id)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]['sinif_seviyesi_id'], self.seviye.id)
+
+        exam_two = Exam.objects.create(
+            name='Yeni Yıl LGS',
+            exam_type='LGS',
+            exam_date=timezone.localdate() + timedelta(days=20),
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=yeni_yil,
+        )
+        res = self._review_action({
+            'islem': 'kayit',
+            'ogrenci_id': excel_student.id,
+            'exam_id': exam_two.id,
+        })
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertTrue(ExamParticipant.objects.filter(exam=exam_two, student=excel_student).exists())
+
+    def test_f04_pasife_alma_koltuk_ve_ucreti_iptal_eder_ve_aktife_alinir(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamRoom
+        from apps.coaching.olcme_degerlendirme.services.exam_roster import enrich_participants
+        from apps.finans.constants.gider_types import OdemeDurum
+        from apps.finans.domain.gelir_tahsilat import GelirTahsilat
+        from apps.roller.models import Permission
+
+        # Pasife alma izni ekle
+        perm, _ = Permission.objects.get_or_create(
+            code='ogrenci.delete',
+            defaults={'module': 'ogrenci', 'action': 'delete', 'description': 'Öğrenci silme'},
+        )
+        role = UserRole.objects.filter(user=self.user, kurum=self.kurum).first().role
+        role.permissions.add(perm)
+
+        hesap, yontem = self._nakit()
+        exam = self._review_exam()
+        room = ExamRoom.objects.create(exam=exam, name='Salon A', capacity=5, order=1)
+        self._review_kayit()
+        reg = self._review_action({
+            'islem': 'kayit',
+            'ogrenci_id': self.guest.id,
+            'exam_id': exam.id,
+            'deneme_ucreti': '300',
+            'odeme_yontemi_id': yontem.id,
+            'mali_hesap_id': hesap.id,
+        })
+        self.assertEqual(reg.status_code, 200, reg.content)
+        self.assertTrue(ExamParticipant.objects.filter(exam=exam, student=self.guest, room=room).exists())
+
+        # Geçmiş sınav kaydı ise korunmalı, ama kayit_pasif=True olmalı
+        past_exam = Exam.objects.create(
+            name='Geçmiş Deneme',
+            exam_type='LGS',
+            exam_date=timezone.localdate() - timedelta(days=5),
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+        )
+        past_part = ExamParticipant.objects.create(
+            exam=past_exam,
+            student=self.guest,
+            source=ExamParticipant.Source.MANUAL,
+            sinif_seviyesi=self.seviye,
+        )
+
+        res = self.client.post(
+            '/api/ogrenci-kayit/gunu-birlik/durum/',
+            {'ogrenci_id': self.guest.id, 'aktif_mi': False},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertFalse(ExamParticipant.objects.filter(exam=exam, student=self.guest).exists())
+        self.assertTrue(ExamParticipant.objects.filter(pk=past_part.id).exists())
+        self.assertEqual(GelirTahsilat.objects.get().durum, OdemeDurum.IPTAL)
+
+        enriched = enrich_participants(
+            past_exam, [{'student_id': past_part.student_id, 'sinif_seviyesi_id': self.seviye.id}],
+        )
+        self.assertTrue(enriched[0]['kayit_pasif'])
+
+        pasif_list = self.client.get('/api/ogrenci-kayit/gunu-birlik/?durum=pasif', **self.headers)
+        self.assertEqual(pasif_list.status_code, 200)
+        self.assertEqual([r['id'] for r in pasif_list.json()['ogrenciler']], [self.guest.id])
+        self.assertEqual(pasif_list.json()['pasif_count'], 1)
+
+        re_res = self.client.post(
+            '/api/ogrenci-kayit/gunu-birlik/durum/',
+            {'ogrenci_id': self.guest.id, 'aktif_mi': True},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(re_res.status_code, 200, re_res.content)
+        self.guest.refresh_from_db()
+        self.assertTrue(self.guest.aktif_mi)
+        self.assertTrue(OgrenciKayit.objects.get(ogrenci=self.guest).aktif_mi)
+
+    def test_f05_kurum_kayitli_ogrencide_deneme_silme_duzenleme_ve_pasife_alma_engellenir(self):
+        from apps.ogrenci_kayit.application.deneme_ucret import ensure_deneme_izi
+        from apps.roller.models import Permission
+
+        perm, _ = Permission.objects.get_or_create(
+            code='ogrenci.delete',
+            defaults={'module': 'ogrenci', 'action': 'delete', 'description': 'Öğrenci silme'},
+        )
+        role = UserRole.objects.filter(user=self.user, kurum=self.kurum).first().role
+        role.permissions.add(perm)
+
+        exam = self._review_exam()
+        kayit = self._review_kayit()
+        part = ExamParticipant.objects.create(
+            exam=exam,
+            student=self.guest,
+            source=ExamParticipant.Source.MANUAL,
+            sinif_seviyesi=self.seviye,
+        )
+        self.guest.kayit_turu = 'asil'
+        self.guest.save(update_fields=['kayit_turu'])
+        ensure_deneme_izi(ogrenci=self.guest, kayit=kayit)
+
+        cancel_res = self._review_action({
+            'islem': 'iptal',
+            'ogrenci_id': self.guest.id,
+            'exam_id': exam.id,
+            'participant_id': part.id,
+        })
+        self.assertEqual(cancel_res.status_code, 400)
+        self.assertTrue(ExamParticipant.objects.filter(pk=part.id).exists())
+
+        durum_res = self.client.post(
+            '/api/ogrenci-kayit/gunu-birlik/durum/',
+            {'ogrenci_id': self.guest.id, 'aktif_mi': False},
+            format='json',
+            **self.headers,
+        )
+        self.assertEqual(durum_res.status_code, 400)
+        self.guest.refresh_from_db()
+        self.assertTrue(self.guest.aktif_mi)
+
+    def test_f06_f08_f09_kasasiz_odeme_ayni_saniye_ucret_iptal_haric_ve_kurum_gecisi(self):
+        from apps.finans.models import OdemeYontemi
+        from apps.odeme_takip.domain.models import Sozlesme
+        from apps.ogrenci_kayit.application.deneme_ucret import (
+            deneme_odeme_secenekleri,
+            ensure_deneme_izi,
+            last_deneme_ucreti,
+            record_deneme_ucreti,
+            void_deneme_ucreti,
+        )
+
+        hesap, yontem = self._nakit()
+        kurumsal_pos = OdemeYontemi.objects.create(
+            kurum=self.kurum,
+            ad='Kurumsal Sanal POS',
+            tip='KREDI_KARTI',
+            mali_hesap=None,
+            aktif_mi=True,
+        )
+        secenek = deneme_odeme_secenekleri(self.kurum.id, self.sube.id)
+        yontem_ids = {item['id'] for item in secenek['odeme_yontemleri']}
+        self.assertIn(kurumsal_pos.id, yontem_ids)
+
+        kayit = self._review_kayit()
+        exam_1 = self._review_exam()
+        exam_2 = Exam.objects.create(
+            name='LGS Deneme 2',
+            exam_type='LGS',
+            exam_date=timezone.localdate() + timedelta(days=15),
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+        )
+        # Aynı saniye içinde art arda iki deneme ücreti + iz kaydı UniqueViolation üretmemeli
+        record_deneme_ucreti(
+            ogrenci=self.guest, kayit=kayit, exam=exam_1, tutar=250,
+            user=self.user, odeme_yontemi_id=kurumsal_pos.id, mali_hesap_id=hesap.id,
+        )
+        record_deneme_ucreti(
+            ogrenci=self.guest, kayit=kayit, exam=exam_2, tutar=400,
+            user=self.user, odeme_yontemi_id=yontem.id, mali_hesap_id=hesap.id,
+        )
+        void_deneme_ucreti(ogrenci=self.guest, exam=exam_2)
+        ensure_deneme_izi(ogrenci=self.guest, kayit=kayit)
+
+        # İptal edilen 400 TL ve 0 TL iz kaydı son ücreti ezmemeli
+        self.assertEqual(last_deneme_ucreti(self.kurum.id, self.guest.tc_kimlik_no), 250)
+
+        # Öğrenci finans özetinde 0 TL I... iz kaydı görünmemeli
+        self.client.force_login(self.user)
+        fin_res = self.client.get(f'/ogrenciler/api/{self.guest.id}/finans-ozet/', **self.headers)
+        self.assertEqual(fin_res.status_code, 200)
+        sozlesme_nolar = [s['sozlesme_no'] for s in fin_res.json()['sozlesmeler']]
+        self.assertTrue(all(not no.startswith('I') for no in sozlesme_nolar))
+
+        # TcCheckView: D.../I... son_sozlesme olarak dönmemeli ve sonraki_seviye başka kuruma sızmamalı
+        baska_kurum = Kurum.objects.create(ad='Başka', kod='BSK')
+        baska_sube = Sube.objects.create(kurum=baska_kurum, ad='Yan', kod='BSK-Y')
+        SinifSeviyesi.objects.create(kurum=baska_kurum, sube=baska_sube, ad='9. Sınıf (Yabancı)', kod='9')
+        tc_res = self.client.get(
+            f'/api/ogrenci-kayit/tc-check/?tc={self.guest.tc_kimlik_no}', **self.headers,
+        )
+        self.assertEqual(tc_res.status_code, 200)
+        tc_body = tc_res.json()
+        self.assertIsNone(tc_body['son_sozlesme'])
+        self.assertIsNone(tc_body['sonraki_seviye'])
+        self.assertEqual(tc_body['son_kayit']['egitim_yili_id'], self.yil.id)
+        self.assertEqual(tc_body['son_kayit']['okul_no'], 'GB-987')
+
+        # Öğrenci Bilgi Drawer (PUT /ogrenciler/api/<pk>/) üzerinden kurum kaydına geçişte iz bırakılmalı
+        Sozlesme.objects.filter(ogrenci=self.guest).delete()
+        ExamParticipant.objects.create(
+            exam=exam_1, student=self.guest, source=ExamParticipant.Source.MANUAL, sinif_seviyesi=self.seviye,
+        )
+        put_res = self.client.put(
+            f'/ogrenciler/api/{self.guest.id}/',
+            data=json.dumps({'ad': self.guest.ad, 'soyad': self.guest.soyad, 'kayit_turu': 'asil'}),
+            content_type='application/json',
+            **self.headers,
+        )
+        self.assertEqual(put_res.status_code, 200, put_res.content)
+        self.assertTrue(Sozlesme.objects.filter(ogrenci=self.guest, notlar__contains='kurum_kaydi_deneme_izi').exists())
+
+    def test_f07_optik_sonuc_girilmis_sinavda_iptal_ve_oturum_degisikligi_engellenir(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamSession, ExamSessionModel, StudentAnswer
+
+        exam = self._review_exam()
+        s1 = ExamSessionModel.objects.create(
+            exam=exam, name='Sabah', order=1, session_date=timezone.localdate() + timedelta(days=10),
+        )
+        s2 = ExamSessionModel.objects.create(
+            exam=exam, name='Öğle', order=2, session_date=timezone.localdate() + timedelta(days=10),
+        )
+        part = ExamParticipant.objects.create(
+            exam=exam, student=self.guest, exam_session=s1,
+            source=ExamParticipant.Source.MANUAL, sinif_seviyesi=self.seviye,
+        )
+        optik_session = ExamSession.objects.create(exam=exam)
+        StudentAnswer.objects.create(
+            session=optik_session, student=self.guest, booklet='A',
+        )
+
+        iptal_res = self._review_action({
+            'islem': 'iptal', 'ogrenci_id': self.guest.id, 'exam_id': exam.id, 'participant_id': part.id,
+        })
+        self.assertEqual(iptal_res.status_code, 400)
+        self.assertIn('sonuç girildiği için', iptal_res.json()['detail'].lower())
+
+        oturum_res = self._review_action({
+            'islem': 'oturum',
+            'ogrenci_id': self.guest.id,
+            'exam_id': exam.id,
+            'participant_id': part.id,
+            'exam_session_id': s2.id,
+        })
+        self.assertEqual(oturum_res.status_code, 400)
+        self.assertTrue(ExamParticipant.objects.filter(pk=part.id, exam_session=s1).exists())
+
+    def test_f10_f12_cok_oturumlu_giris_belgesi_arti90_arama_ve_olcme_yetkisi(self):
+        from apps.coaching.olcme_degerlendirme.models import ExamRoom, ExamSessionModel
+        from apps.ogrenci_kayit.application.giris_belgesi import build_giris_belgesi_html, load_giris_context
+        from apps.ogrenci_kayit.application.gunu_birlik import list_misafirler
+
+        self.guest.telefon = '05321112233'
+        self.guest.save(update_fields=['telefon'])
+        rows = list_misafirler(self.kurum.id, self.sube.id, q='+90 532 111 22 33')
+        self.assertEqual([r['id'] for r in rows], [self.guest.id])
+
+        exam = Exam.objects.create(
+            name='YKS Prova',
+            exam_type='YKS_TYT_AYT',
+            exam_date=timezone.localdate() + timedelta(days=7),
+            kurum=self.kurum,
+            sube=self.sube,
+            egitim_yili=self.yil,
+        )
+        s_tyt = ExamSessionModel.objects.create(
+            exam=exam, name='TYT Oturumu', order=1, session_date=timezone.localdate() + timedelta(days=7),
+        )
+        s_ayt = ExamSessionModel.objects.create(
+            exam=exam, name='AYT Oturumu', order=2, session_date=timezone.localdate() + timedelta(days=8),
+        )
+        r_a = ExamRoom.objects.create(exam=exam, exam_session=s_tyt, name='A-101', capacity=20, order=1)
+        r_b = ExamRoom.objects.create(exam=exam, exam_session=s_ayt, name='B-204', capacity=20, order=2)
+        ExamParticipant.objects.create(
+            exam=exam, student=self.guest, exam_session=s_tyt, room=r_a, seat_no=4,
+            source=ExamParticipant.Source.MANUAL, sinif_seviyesi=self.seviye,
+        )
+        p_ayt = ExamParticipant.objects.create(
+            exam=exam, student=self.guest, exam_session=s_ayt, room=r_b, seat_no=12,
+            source=ExamParticipant.Source.MANUAL, sinif_seviyesi=self.seviye,
+        )
+        ctx, err = load_giris_context(self.kurum.id, self.sube.id, exam.id, self.guest.id, participant_id=p_ayt.id)
+        self.assertEqual(err, '')
+        self.assertEqual(ctx.participants[0].id, p_ayt.id)
+        html = build_giris_belgesi_html(ctx)
+        self.assertIn('A-101', html)
+        self.assertIn('B-204', html)
+        self.assertIn('12', html)
+
+        # Yalnız olcme.write yetkisi olan personel şablon ve seçenek uçlarını kullanabilmeli
+        olcme_only = User.objects.create_user(username='olcme_uzman', password='x')
+        grant_olcme_write(olcme_only, self.kurum)
+        olcme_client = APIClient()
+        olcme_client.force_authenticate(user=olcme_only)
+        self.assertEqual(
+            olcme_client.get('/api/ogrenci-kayit/gunu-birlik/secenekler/', **self.headers).status_code,
+            200,
+        )
+        self.assertEqual(
+            olcme_client.get('/api/ogrenci-kayit/gunu-birlik/sablon/', **self.headers).status_code,
+            200,
+        )
+

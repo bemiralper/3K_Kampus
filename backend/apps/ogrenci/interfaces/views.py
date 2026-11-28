@@ -835,6 +835,7 @@ def ogrenci_api(request, pk):
                 if not qs.exists():
                     return JsonResponse({'success': False, 'errors': {field: 'Seçim bu kurum/şube/eğitim yılına ait değil.'}}, status=400)
 
+        was_gunu_birlik = (ogrenci.kayit_turu or '') == 'gunu_birlik'
         if 'aktif_mi' in update_data:
             update_data['aktif_mi'] = _parse_bool(update_data['aktif_mi'], default=ogrenci.aktif_mi)
         updated_ogrenci, errors = service.update(pk, update_data, egitim_yili_id=selected_year)
@@ -843,6 +844,10 @@ def ogrenci_api(request, pk):
             return JsonResponse({'success': False, 'errors': errors}, status=400)
         if 'adres' in update_data:
             sync_default_ogrenci_adres(updated_ogrenci, update_data['adres'])
+        if was_gunu_birlik and (updated_ogrenci.kayit_turu or '') != 'gunu_birlik':
+            from apps.ogrenci_kayit.application.deneme_ucret import ensure_deneme_izi
+
+            ensure_deneme_izi(ogrenci=updated_ogrenci, kayit=aktif_kayit)
 
         if kayit_updates:
             if aktif_kayit:
@@ -1087,12 +1092,16 @@ def ogrenci_search_api(request):
     if len(query) < 2:
         return JsonResponse({'ogrenciler': []})
 
+    from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
+
     qs = OgrenciKayit.objects.filter(
         kurum_id=ctx['kurum_id'],
         sube_id=ctx['sube_id'],
         aktif_mi=True,
         ogrenci__aktif_mi=True,
     ).select_related('ogrenci', 'sinif', 'sinif__sinif_seviyesi')
+    if request.GET.get('include_gunu_birlik') not in ('1', 'true', 'yes'):
+        qs = qs.exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
 
     if ctx.get('egitim_yili_id'):
         qs = qs.filter(egitim_yili_id=ctx['egitim_yili_id'])
@@ -1658,10 +1667,20 @@ def ogrenci_finans_ozet_api(request, pk):
         from django.db.models import Sum, Q
         from decimal import Decimal
         
-        # Tüm sözleşmeleri al
-        sozlesmeler = Sozlesme.objects.select_related(
-            'egitim_yili', 'odeme_yontemi', 'veli'
-        ).filter(ogrenci=ogrenci).order_by('-created_at')
+        # Tüm sözleşmeleri al (0 TL'lik kurum geçiş deneme izi satırları hariç)
+        from apps.ogrenci_kayit.application.deneme_ucret import IZI_MARKER
+
+        sozlesmeler = (
+            Sozlesme.objects.select_related('egitim_yili', 'odeme_yontemi', 'veli')
+            .filter(ogrenci=ogrenci)
+            .exclude(notlar__contains=IZI_MARKER)
+            .exclude(
+                sozlesme_no__startswith='I',
+                net_tutar=0,
+                notlar__contains='gunu_birlik_deneme_ucreti',
+            )
+            .order_by('-created_at')
+        )
         
         sozlesme_list = []
         toplam_net_tutar = Decimal('0')

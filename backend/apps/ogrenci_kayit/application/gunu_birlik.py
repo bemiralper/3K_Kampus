@@ -440,6 +440,8 @@ def _apply_row(exam, row: RowOutcome, *, exam_session_id=None):
         row.status = 'hata'
         row.message = 'Sınav listesine eklenemedi.'
         transaction.set_rollback(True)
+        return
+    assign_open_seat(participant)
 
 
 def summarize(rows: list[RowOutcome]) -> dict:
@@ -471,51 +473,129 @@ def _deneme_izi_var():
     )
 
 
-def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '', egitim_yili_id=None) -> list[dict]:
+def _phone_search_q(text: str):
     from django.db.models import Q
+
+    q_obj = Q(telefon__icontains=text)
+    if not all(c in '0123456789+()- . ' for c in text):
+        return q_obj
+    digits = ''.join(c for c in text if c.isdigit())
+    variants = {digits}
+    if len(digits) == 12 and digits.startswith('90'):
+        variants.add(digits[2:])
+        variants.add('0' + digits[2:])
+    elif len(digits) == 11 and digits.startswith('0'):
+        variants.add(digits[1:])
+    for v in variants:
+        if v:
+            q_obj |= Q(telefon__icontains=v)
+    return q_obj
+
+
+def misafir_durum_sayilari(kurum_id: int, sube_id: int) -> dict:
+    from django.db.models import Q
+
+    aktif_count = (
+        Ogrenci.objects.filter(kurum_id=kurum_id, sube_id=sube_id, aktif_mi=True)
+        .filter(Q(kayit_turu=GUNU_BIRLIK_CODE) | _deneme_izi_var())
+        .count()
+    )
+    pasif_count = Ogrenci.objects.filter(
+        kurum_id=kurum_id,
+        sube_id=sube_id,
+        aktif_mi=False,
+        kayit_turu=GUNU_BIRLIK_CODE,
+    ).count()
+    return {'aktif_count': aktif_count, 'pasif_count': pasif_count}
+
+
+def list_misafirler(
+    kurum_id: int,
+    sube_id: int,
+    *,
+    q: str = '',
+    egitim_yili_id=None,
+    durum: str = 'aktif',
+) -> list[dict]:
+    from django.db.models import Exists, OuterRef, Q
 
     from apps.coaching.olcme_degerlendirme.models import ExamParticipant
 
     from .sinav_uygunluk import upcoming_sessions
 
     today = timezone.localdate()
-    qs = Ogrenci.objects.filter(
-        kurum_id=kurum_id,
-        sube_id=sube_id,
-        aktif_mi=True,
-    ).filter(
-        Q(kayit_turu=GUNU_BIRLIK_CODE) | _deneme_izi_var()
-    ).order_by('-created_at', 'soyad', 'ad')
+    durum_norm = (durum or 'aktif').strip().lower()
+    if durum_norm == 'pasif':
+        qs = Ogrenci.objects.filter(
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            aktif_mi=False,
+            kayit_turu=GUNU_BIRLIK_CODE,
+        )
+    elif durum_norm in ('tumu', 'all'):
+        qs = Ogrenci.objects.filter(kurum_id=kurum_id, sube_id=sube_id).filter(
+            Q(aktif_mi=True) & (Q(kayit_turu=GUNU_BIRLIK_CODE) | _deneme_izi_var())
+            | Q(aktif_mi=False, kayit_turu=GUNU_BIRLIK_CODE)
+        )
+    else:
+        qs = Ogrenci.objects.filter(
+            kurum_id=kurum_id,
+            sube_id=sube_id,
+            aktif_mi=True,
+        ).filter(
+            Q(kayit_turu=GUNU_BIRLIK_CODE) | _deneme_izi_var()
+        )
+    qs = qs.order_by('-created_at', 'soyad', 'ad')
     text = (q or '').strip()
     if text:
-        from django.db.models import Exists, OuterRef
-        numbers = OgrenciKayit.objects.filter(ogrenci_id=OuterRef('pk'), okul_no__icontains=text, aktif_mi=True)
+        kayit_base = OgrenciKayit.objects.filter(ogrenci_id=OuterRef('pk'))
+        if durum_norm not in ('pasif', 'tumu', 'all'):
+            kayit_base = kayit_base.filter(aktif_mi=True)
         if egitim_yili_id:
-            numbers = numbers.filter(egitim_yili_id=egitim_yili_id)
+            has_year = Exists(kayit_base.filter(egitim_yili_id=egitim_yili_id))
+            in_year_num = Exists(
+                kayit_base.filter(egitim_yili_id=egitim_yili_id, okul_no__icontains=text)
+            )
+            any_year_num = Exists(kayit_base.filter(okul_no__icontains=text))
+            number_q = in_year_num | (~has_year & any_year_num)
+        else:
+            number_q = Exists(kayit_base.filter(okul_no__icontains=text))
         names = Q()
         for token in text.split():
             names &= Q(ad__icontains=token) | Q(soyad__icontains=token)
-        phone = normalize_tc(text) if all(c in '0123456789+()- . ' for c in text) else text
         qs = qs.filter(
             names | Q(tc_kimlik_no__icontains=text)
-            | Q(telefon__icontains=phone or text) | Exists(numbers)
+            | _phone_search_q(text) | number_q
         )
     ogrenciler = list(qs)
     ids = [o.id for o in ogrenciler]
-    numaralar = {}
-    seviye_ids = {}
-    seviye_adlari = {}
-    for kayit in (
-        OgrenciKayit.objects.filter(ogrenci_id__in=ids, aktif_mi=True, **(
-            {"egitim_yili_id": egitim_yili_id} if egitim_yili_id else {}
-        ))
-        .select_related('sinif_seviyesi')
-        .order_by('id')
-    ):
-        numaralar[kayit.ogrenci_id] = kayit.okul_no or ''
-        if kayit.sinif_seviyesi_id:
-            seviye_ids[kayit.ogrenci_id] = kayit.sinif_seviyesi_id
-            seviye_adlari[kayit.ogrenci_id] = kayit.sinif_seviyesi.ad if kayit.sinif_seviyesi_id else ''
+    numaralar: dict[int, str] = {}
+    seviye_ids: dict[int, int] = {}
+    seviye_adlari: dict[int, str] = {}
+    if ids:
+        kayit_qs = OgrenciKayit.objects.filter(ogrenci_id__in=ids).select_related(
+            'sinif_seviyesi', 'egitim_yili'
+        )
+        if durum_norm not in ('pasif', 'tumu', 'all'):
+            kayit_qs = kayit_qs.filter(aktif_mi=True)
+        if egitim_yili_id:
+            for kayit in kayit_qs.filter(egitim_yili_id=egitim_yili_id).order_by('id'):
+                numaralar[kayit.ogrenci_id] = kayit.okul_no or ''
+                if kayit.sinif_seviyesi_id:
+                    seviye_ids[kayit.ogrenci_id] = kayit.sinif_seviyesi_id
+                    seviye_adlari[kayit.ogrenci_id] = kayit.sinif_seviyesi.ad
+        missing_ids = [sid for sid in ids if sid not in seviye_ids or sid not in numaralar]
+        if missing_ids:
+            for kayit in (
+                OgrenciKayit.objects.filter(ogrenci_id__in=missing_ids)
+                .select_related('sinif_seviyesi')
+                .order_by('-aktif_mi', '-egitim_yili__baslangic_yil', '-id')
+            ):
+                if kayit.ogrenci_id not in numaralar and kayit.okul_no:
+                    numaralar[kayit.ogrenci_id] = kayit.okul_no
+                if kayit.ogrenci_id not in seviye_ids and kayit.sinif_seviyesi_id:
+                    seviye_ids[kayit.ogrenci_id] = kayit.sinif_seviyesi_id
+                    seviye_adlari[kayit.ogrenci_id] = kayit.sinif_seviyesi.ad
     sinavlar: dict[int, list] = {i: [] for i in ids}
     parts = (
         ExamParticipant.objects.filter(student_id__in=ids)
@@ -525,6 +605,9 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '', egitim_yili_id=
     )
     session_cache: dict[int, tuple] = {}
     for part in parts:
+        if part.student_id not in seviye_ids and part.sinif_seviyesi_id:
+            seviye_ids[part.student_id] = part.sinif_seviyesi_id
+            seviye_adlari[part.student_id] = part.sinif_seviyesi.ad
         exam = part.exam
         if exam.id not in session_cache:
             all_sessions = list(exam.exam_sessions.all())
@@ -567,6 +650,7 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '', egitim_yili_id=
             'sinif_seviyesi_id': seviye_ids.get(ogrenci.id),
             'sinif_seviyesi': seviye_adlari.get(ogrenci.id) or '',
             'kayit_turu': ogrenci.kayit_turu or '',
+            'aktif_mi': bool(ogrenci.aktif_mi),
             'kurum_kaydi': (ogrenci.kayit_turu or '') != GUNU_BIRLIK_CODE,
             'deneme_sayisi': len({item['id'] for item in sinavlar.get(ogrenci.id, [])}),
             'created_at': ogrenci.created_at.isoformat() if ogrenci.created_at else None,
@@ -576,8 +660,62 @@ def list_misafirler(kurum_id: int, sube_id: int, *, q: str = '', egitim_yili_id=
     ]
 
 
+def _student_has_exam_result(exam, ogrenci) -> bool:
+    from apps.coaching.olcme_degerlendirme.models import StudentAnswer
+
+    return StudentAnswer.objects.filter(session__exam=exam, student=ogrenci).exists()
+
+
+def _resolve_student_seviye(ogrenci, egitim_yili_id=None, sinif_seviyesi_id=None):
+    from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+    from apps.egitim_tanimlari.models import SinifSeviyesi
+
+    kayit = None
+    if egitim_yili_id:
+        kayit = (
+            OgrenciKayit.objects.filter(
+                ogrenci=ogrenci, egitim_yili_id=egitim_yili_id, aktif_mi=True,
+            )
+            .select_related('sinif_seviyesi')
+            .order_by('-id')
+            .first()
+        )
+    if sinif_seviyesi_id not in (None, ''):
+        try:
+            explicit = SinifSeviyesi.objects.filter(
+                id=int(sinif_seviyesi_id),
+                kurum_id=ogrenci.kurum_id,
+                sube_id=ogrenci.sube_id,
+                aktif_mi=True,
+            ).first()
+            if explicit is not None:
+                return kayit, explicit
+        except (TypeError, ValueError):
+            pass
+    if kayit is not None and kayit.sinif_seviyesi_id:
+        return kayit, kayit.sinif_seviyesi
+    fallback_kayit = (
+        OgrenciKayit.objects.filter(ogrenci=ogrenci, sinif_seviyesi__isnull=False)
+        .select_related('sinif_seviyesi')
+        .order_by('-aktif_mi', '-egitim_yili__baslangic_yil', '-id')
+        .first()
+    )
+    if fallback_kayit is not None and fallback_kayit.sinif_seviyesi_id:
+        return kayit or fallback_kayit, fallback_kayit.sinif_seviyesi
+    last_part = (
+        ExamParticipant.objects.filter(student=ogrenci, sinif_seviyesi__isnull=False)
+        .select_related('sinif_seviyesi')
+        .order_by('-exam__exam_date', '-id')
+        .first()
+    )
+    if last_part is not None and last_part.sinif_seviyesi_id:
+        return kayit, last_part.sinif_seviyesi
+    return kayit, None
+
+
 def _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id=None):
     from apps.coaching.olcme_degerlendirme.models import Exam, ExamParticipant
+    from apps.ogrenci.services.kayit_turu import is_gunu_birlik_kayit
 
     from .sinav_uygunluk import exam_is_open
 
@@ -591,6 +729,8 @@ def _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id=
     ).first()
     if ogrenci is None:
         raise ValueError('Öğrenci bulunamadı.')
+    if not is_gunu_birlik_kayit(ogrenci):
+        raise ValueError('Kuruma kayıtlı öğrencinin sınav işlemleri Ölçme & Değerlendirme ekranından yönetilir.')
     participants = ExamParticipant.objects.filter(exam=exam, student=ogrenci).select_related('exam_session')
     if participant_id is not None:
         participants = participants.filter(pk=participant_id)
@@ -614,9 +754,11 @@ def register_deneme_kaydi(
     user=None,
     odeme_yontemi_id=None,
     mali_hesap_id=None,
+    sinif_seviyesi_id=None,
 ) -> dict:
     """Listeden seçilen denemeye, kayıt sihirbazındaki gibi ekler."""
     from apps.coaching.olcme_degerlendirme.models import Exam
+    from apps.ogrenci.services.kayit_turu import is_gunu_birlik_kayit
 
     from .deneme_ucret import record_deneme_ucreti
     from .sinav_uygunluk import exam_registration_error
@@ -644,13 +786,11 @@ def register_deneme_kaydi(
     ).first()
     if ogrenci is None:
         raise ValueError('Öğrenci bulunamadı.')
-    kayit = (
-        OgrenciKayit.objects.filter(ogrenci=ogrenci, egitim_yili_id=exam.egitim_yili_id, aktif_mi=True)
-        .select_related('sinif_seviyesi')
-        .order_by('-id')
-        .first()
+    if not is_gunu_birlik_kayit(ogrenci):
+        raise ValueError('Kuruma kayıtlı öğrencinin sınav işlemleri Ölçme & Değerlendirme ekranından yönetilir.')
+    kayit, seviye = _resolve_student_seviye(
+        ogrenci, egitim_yili_id=exam.egitim_yili_id, sinif_seviyesi_id=sinif_seviyesi_id,
     )
-    seviye = kayit.sinif_seviyesi if kayit is not None and kayit.sinif_seviyesi_id else None
     if seviye is None:
         raise ValueError('Sınıf seviyesi bulunamadı.')
     registration_error = exam_registration_error(exam, seviye)
@@ -684,7 +824,9 @@ def register_deneme_kaydi(
 def change_deneme_oturumu(*, kurum_id, sube_id, ogrenci_id, exam_id, exam_session_id, participant_id=None) -> dict:
     from .sinav_uygunluk import upcoming_sessions
 
-    exam, _ogrenci, participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id)
+    exam, ogrenci, participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id)
+    if _student_has_exam_result(exam, ogrenci):
+        raise ValueError('Bu denemeye sonuç girildiği için oturum değiştirilemez.')
     try:
         session_id = int(exam_session_id)
     except (TypeError, ValueError):
@@ -725,6 +867,8 @@ def cancel_deneme_kaydi(*, kurum_id, sube_id, ogrenci_id, exam_id, participant_i
     from .deneme_ucret import void_deneme_ucreti
 
     exam, ogrenci, _participant = _deneme_exam_ogrenci(kurum_id, sube_id, exam_id, ogrenci_id, participant_id)
+    if _student_has_exam_result(exam, ogrenci):
+        raise ValueError('Bu denemeye sonuç girildiği için kayıt iptal edilemedi.')
     try:
         with transaction.atomic():
             _participant.delete()

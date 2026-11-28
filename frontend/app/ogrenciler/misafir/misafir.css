@@ -216,6 +216,138 @@
   font-weight: 700;
 }
 
+.deneme-chip--passive {
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.deneme-status-tabs {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--ogl-surface-2, #f6f8fb);
+  border: 1px solid var(--ogl-border, #e3e8ef);
+  flex-shrink: 0;
+}
+
+.deneme-status-tab {
+  border: 0;
+  background: transparent;
+  color: var(--ogl-text-2, #475569);
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  padding: 5px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.deneme-status-tab.is-active {
+  background: #fff;
+  color: var(--ogl-text, #0f172a);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.deneme-belge-seat {
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #065f46;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.deneme-belge-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.deneme-belge-whatsapp {
+  padding: 12px;
+  margin-bottom: 14px;
+  border-radius: 10px;
+  background: var(--ogl-surface-2, #f8fafc);
+  border: 1px solid var(--ogl-border, #e2e8f0);
+}
+
+.deneme-belge-whatsapp-title {
+  display: block;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ogl-text, #0f172a);
+  margin-bottom: 8px;
+}
+
+.deneme-belge-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  color: var(--ogl-text-2, #334155);
+}
+
+.deneme-belge-checks label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.deneme-belge-note {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: #334155;
+  font-size: 13px;
+}
+
+.deneme-excel-dialog {
+  width: min(760px, 100%);
+}
+
+.deneme-excel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.deneme-excel-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.deneme-file-input {
+  padding: 6px 8px;
+  height: auto;
+}
+
+.deneme-excel-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.deneme-excel-table-wrap {
+  max-height: 280px;
+  overflow: auto;
+  border: 1px solid var(--ogl-border, #e3e8ef);
+  border-radius: 10px;
+  margin-bottom: 14px;
+}
+
 .deneme-kayit-dialog {
   width: min(440px, 100%);
 }

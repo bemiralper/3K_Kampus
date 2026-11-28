@@ -218,7 +218,9 @@ export default function StudentLivingHomePage() {
               <span>
                 <CalendarClock size={14} style={{ verticalAlign: -2 }} /> {bp.exam_date} ·{' '}
                 {bp.start_time}
+                {bp.end_time ? `–${bp.end_time}` : ''}
               </span>
+              {bp.session_name ? <span>{bp.session_name}</span> : null}
               <span>
                 <Clock size={14} style={{ verticalAlign: -2 }} /> {bp.duration_minutes} dk
               </span>

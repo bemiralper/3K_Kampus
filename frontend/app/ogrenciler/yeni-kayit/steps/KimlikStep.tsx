@@ -161,11 +161,17 @@ export default function KimlikStep({
             </svg>
           </div>
           <div className="renewal-info">
-            <strong>Kayıt Yenileme Modu</strong>
+            <strong>{upgradeDeneme ? "Kurum Kaydına Geçiş Modu" : "Kayıt Yenileme Modu"}</strong>
             <span>
               Mevcut öğrenci bilgileri otomatik dolduruldu.
               {renewalState.previousEnrollment && (
-                <> Son kayıt: <b>{renewalState.previousEnrollment.egitim_yili}</b> — {renewalState.previousEnrollment.sinif_seviyesi}</>
+                <>
+                  {" "}Son kayıt:{" "}
+                  {renewalState.previousEnrollment.egitim_yili ? (
+                    <><b>{renewalState.previousEnrollment.egitim_yili}</b> — </>
+                  ) : null}
+                  {renewalState.previousEnrollment.sinif_seviyesi}
+                </>
               )}
             </span>
           </div>

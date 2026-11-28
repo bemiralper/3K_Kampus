@@ -73,19 +73,30 @@ def _active_media(kurum_id: int, sube_id: int | None) -> list[BirthdayMediaAsset
 
 def _birthday_students(kurum_id: int, today: date, *, sube_id: int | None = None):
     from apps.ogrenci.domain.models import OgrenciKayit
-    from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit
+    from apps.ogrenci.services.kayit_turu import (
+        GUNU_BIRLIK_CODE,
+        is_deneme_kulubu_kayit,
+        is_gunu_birlik_kayit,
+    )
 
-    qs = OgrenciKayit.objects.filter(
-        kurum_id=kurum_id,
-        aktif_mi=True,
-        ogrenci__aktif_mi=True,
-        ogrenci__dogum_tarihi__isnull=False,
-        ogrenci__dogum_tarihi__month=today.month,
-        ogrenci__dogum_tarihi__day=today.day,
-    ).select_related('ogrenci', 'sinif', 'sube')
+    qs = (
+        OgrenciKayit.objects.filter(
+            kurum_id=kurum_id,
+            aktif_mi=True,
+            ogrenci__aktif_mi=True,
+            ogrenci__dogum_tarihi__isnull=False,
+            ogrenci__dogum_tarihi__month=today.month,
+            ogrenci__dogum_tarihi__day=today.day,
+        )
+        .exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
+        .select_related('ogrenci', 'sinif', 'sube')
+    )
     if sube_id:
         qs = qs.filter(sube_id=sube_id)
-    return [k for k in qs if not is_deneme_kulubu_kayit(k.ogrenci)]
+    return [
+        k for k in qs
+        if not is_deneme_kulubu_kayit(k.ogrenci) and not is_gunu_birlik_kayit(k.ogrenci)
+    ]
 
 
 def _next_birthday(dogum: date, ref: date) -> date:
@@ -133,7 +144,11 @@ def list_staff_birthdays(
     focus_date, bildirimin işaret ettiği günü pencerenin dışındaysa da ekler.
     """
     from apps.ogrenci.domain.models import OgrenciKayit
-    from apps.ogrenci.services.kayit_turu import is_deneme_kulubu_kayit
+    from apps.ogrenci.services.kayit_turu import (
+        GUNU_BIRLIK_CODE,
+        is_deneme_kulubu_kayit,
+        is_gunu_birlik_kayit,
+    )
 
     today = on_date or timezone.localdate()
     kayitlar = (
@@ -143,13 +158,14 @@ def list_staff_birthdays(
             ogrenci__aktif_mi=True,
             ogrenci__dogum_tarihi__isnull=False,
         )
+        .exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
         .select_related('ogrenci', 'sinif')
         .order_by('ogrenci__ad', 'ogrenci__soyad')
     )
     by_student: dict[int, dict] = {}
     for kayit in kayitlar:
         ogrenci = kayit.ogrenci
-        if is_deneme_kulubu_kayit(ogrenci) or not ogrenci.dogum_tarihi:
+        if is_deneme_kulubu_kayit(ogrenci) or is_gunu_birlik_kayit(ogrenci) or not ogrenci.dogum_tarihi:
             continue
         sonraki = _next_birthday(ogrenci.dogum_tarihi, today)
         kalan = (sonraki - today).days

@@ -7,7 +7,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 
-from django.db.models import F, Max, Q
+from django.db.models import Exists, F, Max, OuterRef, Q
 from django.utils import timezone
 
 from apps.coaching.application.olcme_karne_pdf import karne_filename, render_karne_pdf
@@ -17,12 +17,20 @@ from apps.coaching.olcme_degerlendirme.services.stored_scores import blocks_for_
 from apps.coaching.olcme_degerlendirme.views.analysis_views import (
     _build_topic_blocks,
     _get_student_alan,
+    _mark_alan_inclusion,
+    _section_in_alan,
     build_student_detail_payload,
+    is_unattempted_optional_section,
 )
 from apps.coaching.olcme_degerlendirme.views.student_exam_views import _present_answer
 
 from ..auth import ISTANBUL, StudentPortalError
-from .schedule_service import resolve_student_classroom, subject_color
+from .schedule_service import (
+    resolve_student_classroom,
+    resolve_student_schedule_group_readonly,
+    session_matches_student_group,
+    subject_color,
+)
 
 PUBLISHED_EXAM_STATUSES = ('RESULTS_UPLOADED', 'COMPLETED')
 
@@ -72,61 +80,112 @@ def _student_published_answers(scope: dict) -> list[StudentAnswer]:
 def build_upcoming_exam_boarding_pass(scope: dict) -> dict | None:
     """
     Yaklaşan ilk sınav için uçak biniş kartı (Boarding Pass) verisi üretir:
-    Salon adı, sıra numarası, masa kodu, tarih/saat ve geri sayım.
+    Öğrencinin kendi oturum günü (`ExamParticipant.exam_session.session_date`),
+    salon adı, sıra numarası, masa kodu, saat ve geri sayım.
     """
-    today = timezone.localtime(timezone.now(), ISTANBUL).date()
+    now_dt = timezone.localtime(timezone.now(), ISTANBUL)
+    today = now_dt.date()
+    now_hm = now_dt.strftime('%H:%M')
     ogrenci = scope['ogrenci']
     kayit = scope['kayit']
     classroom, _ = resolve_student_classroom(scope)
 
-    part = (
+    parts = list(
         ExamParticipant.objects.select_related('exam', 'room', 'exam_session')
         .filter(
             student_id=ogrenci.id,
             exam__kurum_id=scope['kurum_id'],
             exam__is_active=True,
-            exam__exam_date__gte=today,
         )
         .filter(Q(exam__sube_id__isnull=True) | Q(exam__sube_id=scope['sube_id']))
-        .order_by('exam__exam_date', 'id')
-        .first()
+        .filter(
+            Q(exam_session__session_date__gte=today)
+            | Q(exam_session__session_date__isnull=True, exam__exam_date__gte=today)
+        )
     )
 
-    exam = part.exam if part else None
-    if exam is None and classroom is not None:
-        exam = (
-            Exam.objects.filter(
+    candidates: list[tuple[date, str, str, Exam, object | None, ExamParticipant | None]] = []
+    for p in parts:
+        ex = p.exam
+        sess = p.exam_session
+        eff_date = (sess.session_date if (sess and sess.session_date) else ex.exam_date)
+        if not eff_date or eff_date < today:
+            continue
+        start_s = sess.start_time.strftime('%H:%M') if (sess and getattr(sess, 'start_time', None)) else '09:30'
+        end_s = sess.end_time.strftime('%H:%M') if (sess and getattr(sess, 'end_time', None)) else ''
+        if not end_s:
+            eff_dur = (sess.duration_minutes if (sess and sess.duration_minutes) else ex.duration_minutes)
+            if eff_dur:
+                try:
+                    hh, mm = [int(x) for x in start_s.split(':')]
+                    end_s = (datetime.combine(eff_date, time(hh, mm)) + timedelta(minutes=int(eff_dur))).strftime('%H:%M')
+                except Exception:
+                    end_s = ''
+        candidates.append((eff_date, start_s, end_s, ex, sess, p))
+
+    # Katılımcı listesi henüz üretilmemiş sınıf sınavları için oturum grubuna göre yedek çözüm
+    if not candidates and classroom is not None:
+        has_any_participants = ExamParticipant.objects.filter(exam=OuterRef('pk'))
+        unrostered = (
+            Exam.objects.prefetch_related('exam_sessions')
+            .annotate(_has_roster=Exists(has_any_participants))
+            .filter(
                 kurum_id=scope['kurum_id'],
                 is_active=True,
-                exam_date__gte=today,
+                _has_roster=False,
                 siniflar=classroom,
             )
             .filter(Q(sube_id__isnull=True) | Q(sube_id=scope['sube_id']))
-            .order_by('exam_date', 'id')
-            .first()
+            .filter(Q(exam_sessions__session_date__gte=today) | Q(exam_date__gte=today))
+            .distinct()
         )
+        student_group = None
+        for ex in unrostered:
+            all_sessions = list(ex.exam_sessions.all())
+            if all_sessions:
+                if student_group is None:
+                    student_group = resolve_student_schedule_group_readonly(scope)
+                matched = [
+                    s for s in all_sessions
+                    if session_matches_student_group(student_group, s.schedule_preference)
+                ] or all_sessions
+                for sess in matched:
+                    eff_date = sess.session_date or ex.exam_date
+                    if eff_date and eff_date >= today:
+                        start_s = sess.start_time.strftime('%H:%M') if sess.start_time else '09:30'
+                        end_s = sess.end_time.strftime('%H:%M') if sess.end_time else ''
+                        candidates.append((eff_date, start_s, end_s, ex, sess, None))
+            elif ex.exam_date and ex.exam_date >= today:
+                candidates.append((ex.exam_date, '09:30', '', ex, None, None))
 
-    if exam is None or not exam.exam_date:
+    if not candidates:
         return None
 
-    sess = part.exam_session if part else None
-    start_time_str = ''
-    if sess and getattr(sess, 'start_time', None):
-        start_time_str = sess.start_time.strftime('%H:%M')
-    else:
-        start_time_str = '09:30'
+    candidates.sort(key=lambda c: (c[0], c[1], c[3].id))
 
-    days_left = (exam.exam_date - today).days
+    # Bugünkü oturum bittiyse ve sırada başka bir oturum/yarınki sınav varsa onu öne al
+    chosen = next(
+        (c for c in candidates if c[0] > today or not c[2] or c[2] > now_hm),
+        candidates[0],
+    )
+    eff_date, start_time_str, end_time_str, exam, sess, part = chosen
+    eff_duration = (
+        sess.duration_minutes
+        if (sess and getattr(sess, 'duration_minutes', None))
+        else exam.duration_minutes
+    )
+    days_left = (eff_date - today).days
     return {
         'exam_id': exam.id,
         'exam_name': exam.name,
         'exam_type': exam.exam_type,
         'exam_type_label': exam.get_exam_type_display(),
-        'exam_date': exam.exam_date.isoformat(),
+        'exam_date': eff_date.isoformat(),
         'days_left': days_left,
         'is_today': days_left == 0,
         'start_time': start_time_str,
-        'duration_minutes': exam.duration_minutes,
+        'end_time': end_time_str,
+        'duration_minutes': eff_duration,
         'session_name': getattr(sess, 'name', '') if sess else '',
         'room_name': part.room.name if (part and part.room) else 'Atama Bekleniyor',
         'seat_no': part.seat_no if part else None,
@@ -175,10 +234,32 @@ def _compute_exam_badges(exams_chronological: list[dict], index: int) -> list[di
     return badges
 
 
-def _build_mastery_heatmap(answers: list[StudentAnswer]) -> list[dict]:
+EXAM_TYPE_SHORT_LABELS = {
+    'YKS_TYT': 'TYT',
+    'YKS_AYT': 'AYT',
+    'AYT_11': '11. Sınıf AYT',
+    'LGS': 'LGS',
+    'STS': 'STS / Ara Sınıf',
+}
+
+
+def _short_exam_type_label(exam_type: str, fallback_label: str) -> str:
+    if exam_type in EXAM_TYPE_SHORT_LABELS:
+        return EXAM_TYPE_SHORT_LABELS[exam_type]
+    upper = (exam_type or '').upper()
+    if 'TYT' in upper:
+        return 'TYT'
+    if 'AYT' in upper:
+        return 'AYT'
+    if 'LGS' in upper:
+        return 'LGS'
+    return fallback_label
+
+
+def _build_mastery_heatmap(answers: list[StudentAnswer], alan_kodu: str | None = None) -> list[dict]:
     """
     Son sınavlardaki kazanım/konu performanslarını birleştirerek
-    ders bazlı Konu Hakimiyet Isı Haritası (Mastery Heatmap) üretir.
+    öğrencinin kendi alanına uygun ders bazlı Konu Hakimiyet Isı Haritası üretir.
     """
     recent = answers[-8:]
     agg: dict[tuple[str, str], dict] = {}
@@ -186,13 +267,25 @@ def _build_mastery_heatmap(answers: list[StudentAnswer]) -> list[dict]:
         comparison = ans.comparison or {}
         if not comparison:
             continue
+        exam = ans.session.exam
         try:
-            blocks = _build_topic_blocks(ans.session.exam, comparison, ans.booklet or '')
+            blocks = _build_topic_blocks(exam, comparison, ans.booklet or '')
         except Exception:
             blocks = []
         for tb in blocks or []:
             sec_name = tb.get('section_name') or 'Genel'
-            for topic in tb.get('topics') or []:
+            topics_raw = tb.get('topics') or []
+            sec_attempted = sum(int(t.get('correct') or 0) + int(t.get('wrong') or 0) for t in topics_raw)
+            if is_unattempted_optional_section({
+                'section_name': sec_name,
+                'correct': sec_attempted,
+                'wrong': 0,
+            }):
+                continue
+            if exam.exam_type in ('YKS_AYT', 'AYT_11') and not _section_in_alan(sec_name, alan_kodu) and sec_attempted == 0:
+                continue
+
+            for topic in topics_raw:
                 t_name = (topic.get('topic_name') or topic.get('name') or '').strip()
                 if not t_name:
                     continue
@@ -258,16 +351,30 @@ def build_student_exams_overview(scope: dict, exam_type: str | None = None) -> d
     kişisel rekor rozetleri ve dönemlik Konu Hakimiyet Isı Haritası.
     """
     all_answers = _student_published_answers(scope)
-    available_types = []
-    seen_types = set()
+    type_counts: dict[str, int] = defaultdict(int)
+    type_labels: dict[str, str] = {}
+    type_order: list[str] = []
     for ans in all_answers:
         ex = ans.session.exam
-        if ex.exam_type not in seen_types:
-            seen_types.add(ex.exam_type)
-            available_types.append({
-                'code': ex.exam_type,
-                'label': ex.get_exam_type_display(),
-            })
+        type_counts[ex.exam_type] += 1
+        if ex.exam_type not in type_labels:
+            type_labels[ex.exam_type] = ex.get_exam_type_display()
+            type_order.append(ex.exam_type)
+
+    available_types = [
+        {
+            'code': code,
+            'label': type_labels[code],
+            'short_label': _short_exam_type_label(code, type_labels[code]),
+            'count': type_counts[code],
+        }
+        for code in type_order
+    ]
+
+    recommended_type = ''
+    if all_answers:
+        # En son girilen sınavın türünü öner (farklı soru sayılı TYT ve AYT tek çizgide karışmasın)
+        recommended_type = all_answers[-1].session.exam.exam_type
 
     filtered_answers = [
         a for a in all_answers
@@ -275,21 +382,52 @@ def build_student_exams_overview(scope: dict, exam_type: str | None = None) -> d
     ]
 
     alan_kodu = _get_student_alan(scope['ogrenci'], scope['kayit'].egitim_yili)
+    student_session_dates = {
+        exam_id: sess_date
+        for exam_id, sess_date in ExamParticipant.objects.filter(
+            student_id=scope['ogrenci'].id,
+            exam_id__in=[a.session.exam_id for a in filtered_answers],
+            exam_session__session_date__isnull=False,
+        )
+        .order_by('exam_session__session_date')
+        .values_list('exam_id', 'exam_session__session_date')
+    }
     chronological: list[dict] = []
 
     for ans in filtered_answers:
         exam = ans.session.exam
+        fallback_created_date = (
+            timezone.localtime(exam.created_at, ISTANBUL).date()
+            if getattr(exam, 'created_at', None)
+            else None
+        )
+        eff_exam_date = student_session_dates.get(exam.id) or exam.exam_date or fallback_created_date
         year = resolve_puan_yili(exam)
         block = blocks_for_answers(exam, [ans], year).get(ans.id)
         score_data, ranking_data, _pt, kurum_ici_sira, toplam_ogrenci = _present_answer(
             exam, ans, year, block, alan_kodu=alan_kodu,
         )
-        sections = []
-        for ss in ans.section_scores.all():
-            q_cnt = int(ss.correct + ss.wrong + ss.empty)
-            sections.append({
+
+        raw_ss_list = list(ans.section_scores.all())
+        parent_ids_with_kids = {
+            ss.section.parent_section_id
+            for ss in raw_ss_list
+            if ss.section.is_sub_section and ss.section.parent_section_id
+        }
+        section_rows = []
+        for ss in raw_ss_list:
+            q_cnt = int(ss.correct + ss.wrong + ss.empty) or int(ss.section.question_count or 0)
+            is_sub = bool(ss.section.is_sub_section)
+            is_parent_group = (not is_sub) and (ss.section_id in parent_ids_with_kids)
+            section_rows.append({
                 'section_id': ss.section_id,
+                'section_name': ss.section.name,
                 'name': ss.section.name,
+                'display_name': f'{ss.section.name} (Toplam)' if is_parent_group else ss.section.name,
+                'metric_key': f'grup:{ss.section.name}' if is_parent_group else f'ders:{ss.section.name}',
+                'is_sub_section': is_sub,
+                'is_parent_group': is_parent_group,
+                'parent_id': ss.section.parent_section_id,
                 'color': subject_color(ss.section.name),
                 'correct': ss.correct,
                 'wrong': ss.wrong,
@@ -298,13 +436,24 @@ def build_student_exams_overview(scope: dict, exam_type: str | None = None) -> d
                 'net': round(float(ss.net), 2),
             })
 
+        _mark_alan_inclusion(section_rows, exam.exam_type, alan_kodu)
+        sections = []
+        for row in section_rows:
+            attempted = (row['correct'] + row['wrong']) > 0
+            if is_unattempted_optional_section(row):
+                row['alana_dahil'] = False
+            row['attempted'] = attempted
+            row.pop('section_name', None)
+            sections.append(row)
+
         chronological.append({
             'exam_id': exam.id,
             'answer_id': ans.id,
             'exam_name': exam.name,
             'exam_type': exam.exam_type,
             'exam_type_label': exam.get_exam_type_display(),
-            'exam_date': exam.exam_date.isoformat() if exam.exam_date else None,
+            'exam_type_short': _short_exam_type_label(exam.exam_type, exam.get_exam_type_display()),
+            'exam_date': eff_exam_date.isoformat() if eff_exam_date else None,
             'total_correct': ans.total_correct,
             'total_wrong': ans.total_wrong,
             'total_empty': ans.total_empty,
@@ -317,6 +466,8 @@ def build_student_exams_overview(scope: dict, exam_type: str | None = None) -> d
             'sections': sections,
         })
 
+    chronological.sort(key=lambda item: (item['exam_date'] or '', item['exam_id']))
+
     # Önceki aynı tür sınava göre değişim + rozetler
     prev_net_by_type: dict[str, float] = {}
     for idx, item in enumerate(chronological):
@@ -328,11 +479,15 @@ def build_student_exams_overview(scope: dict, exam_type: str | None = None) -> d
 
     kpi = None
     if chronological:
-        nets = [c['total_net'] for c in chronological]
-        scores = [c['score'] for c in chronological if c['score'] > 0]
         latest = chronological[-1]
+        # Birden fazla sınav türü bir aradaysa ortalama ve kişisel rekoru en son girilen sınav türü üzerinden hesapla
+        same_type_items = [c for c in chronological if c['exam_type'] == latest['exam_type']] or chronological
+        nets = [c['total_net'] for c in same_type_items]
+        scores = [c['score'] for c in same_type_items if c['score'] > 0]
         kpi = {
             'exam_count': len(chronological),
+            'same_type_exam_count': len(same_type_items),
+            'kpi_type_label': latest['exam_type_short'],
             'latest_exam_id': latest['exam_id'],
             'latest_exam_name': latest['exam_name'],
             'latest_net': latest['total_net'],
@@ -348,11 +503,13 @@ def build_student_exams_overview(scope: dict, exam_type: str | None = None) -> d
 
     return {
         'available_types': available_types,
+        'recommended_type': recommended_type,
+        'student_alan': alan_kodu or '',
         'selected_type': exam_type or '',
         'kpi': kpi,
         'trend': chronological,
         'exams': list(reversed(chronological)),
-        'mastery_heatmap': _build_mastery_heatmap(filtered_answers or all_answers),
+        'mastery_heatmap': _build_mastery_heatmap(filtered_answers or all_answers, alan_kodu=alan_kodu),
         'upcoming_boarding_pass': build_upcoming_exam_boarding_pass(scope),
     }
 
@@ -381,11 +538,16 @@ def _load_verified_student_answer(scope: dict, exam_id: int) -> tuple[Exam, Stud
     return exam, answer
 
 
-def _build_quick_net_gain_radar(detail_payload: dict) -> list[dict]:
+def _build_quick_net_gain_radar(
+    detail_payload: dict,
+    *,
+    exam_type: str = '',
+    alan_kodu: str | None = None,
+) -> list[dict]:
     """
     "En Kolay Net Artışı Radarı":
-    Öğrencinin bu sınavda yanlış/boş bıraktığı ama genel olarak erişilebilir olan
-    (veya küçük dokunuşla en çok net getirecek) öncelikli konuları puanlar.
+    Öğrencinin kendi sınav alanındaki yanlış/boş bıraktığı ama küçük dokunuşla
+    en çok net getirecek öncelikli konuları puanlar.
     """
     opportunities: list[dict] = []
     penalty = float(detail_payload.get('wrong_answer_count') or 4)
@@ -393,7 +555,18 @@ def _build_quick_net_gain_radar(detail_payload: dict) -> list[dict]:
 
     for tb in detail_payload.get('topic_blocks') or []:
         sec_name = tb.get('section_name') or 'Ders'
-        for t in tb.get('topics') or []:
+        topics_raw = tb.get('topics') or []
+        sec_attempted = sum(int(t.get('correct') or 0) + int(t.get('wrong') or 0) for t in topics_raw)
+        if is_unattempted_optional_section({
+            'section_name': sec_name,
+            'correct': sec_attempted,
+            'wrong': 0,
+        }):
+            continue
+        if exam_type in ('YKS_AYT', 'AYT_11') and not _section_in_alan(sec_name, alan_kodu) and sec_attempted == 0:
+            continue
+
+        for t in topics_raw:
             t_name = (t.get('topic_name') or t.get('name') or '').strip()
             if not t_name:
                 continue
@@ -425,14 +598,39 @@ def _build_quick_net_gain_radar(detail_payload: dict) -> list[dict]:
             })
 
     opportunities.sort(key=lambda item: (-item['potential_net_gain'], item['accuracy_percent']))
-    return opportunities[:6]
+    return opportunities[:8]
 
 
 def build_student_exam_detail(scope: dict, exam_id: int) -> dict:
     """Tek sınavın tam interaktif analizi."""
     exam, answer = _load_verified_student_answer(scope, exam_id)
     ranking_year = resolve_puan_yili(exam)
+    alan_kodu = _get_student_alan(scope['ogrenci'], scope['kayit'].egitim_yili)
     detail = build_student_detail_payload(exam, answer, ranking_year, include_trend=True)
+
+    raw_sections = detail.get('section_details') or []
+    parent_ids_with_kids = {
+        sec.get('parent_id')
+        for sec in raw_sections
+        if sec.get('is_sub_section') and sec.get('parent_id') and sec.get('source') != 'tyt'
+    }
+    enriched_sections = []
+    for sec in raw_sections:
+        is_opt_unattempted = is_unattempted_optional_section(sec)
+        is_parent_group = (not sec.get('is_sub_section')) and (sec.get('section_id') in parent_ids_with_kids)
+        enriched_sections.append({
+            **sec,
+            'color': subject_color(sec.get('section_name') or ''),
+            'is_parent_group': is_parent_group,
+            'is_optional_unattempted': is_opt_unattempted,
+            'alana_dahil': False if is_opt_unattempted else bool(sec.get('alana_dahil', True)),
+        })
+
+    fallback_created = (
+        timezone.localtime(exam.created_at, ISTANBUL).date().isoformat()
+        if getattr(exam, 'created_at', None)
+        else None
+    )
 
     return {
         'exam_id': exam.id,
@@ -440,7 +638,8 @@ def build_student_exam_detail(scope: dict, exam_id: int) -> dict:
         'exam_name': exam.name,
         'exam_type': exam.exam_type,
         'exam_type_label': detail.get('exam_type_label') or exam.get_exam_type_display(),
-        'exam_date': exam.exam_date.isoformat() if exam.exam_date else None,
+        'exam_type_short': _short_exam_type_label(exam.exam_type, exam.get_exam_type_display()),
+        'exam_date': detail.get('session_date') or (exam.exam_date.isoformat() if exam.exam_date else fallback_created),
         'total_net': detail.get('toplam_net', 0),
         'field_net': detail.get('alan_net', 0),
         'net_label': detail.get('net_etiket', 'NET'),
@@ -458,18 +657,14 @@ def build_student_exam_detail(scope: dict, exam_id: int) -> dict:
         'sinif_avg_net': detail.get('sinif_avg_net'),
         'estimated_national_rank': detail.get('tahmini_siralama'),
         'percentile': detail.get('yuzdelik_dilim'),
-        'section_details': [
-            {
-                **sec,
-                'color': subject_color(sec.get('section_name') or ''),
-            }
-            for sec in (detail.get('section_details') or [])
-        ],
+        'section_details': enriched_sections,
         'strong_areas': detail.get('strong_areas') or [],
         'weak_areas': detail.get('weak_areas') or [],
         'difficulty': detail.get('difficulty'),
         'topic_blocks': detail.get('topic_blocks') or [],
-        'quick_gain_radar': _build_quick_net_gain_radar(detail),
+        'quick_gain_radar': _build_quick_net_gain_radar(
+            detail, exam_type=exam.exam_type, alan_kodu=alan_kodu,
+        ),
     }
 
 

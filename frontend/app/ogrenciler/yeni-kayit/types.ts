@@ -254,9 +254,14 @@ export type TcCheckKayitGecmisi = {
 
 export type TcCheckSonKayit = {
   egitim_yili: string;
+  egitim_yili_id?: number | null;
   sinif_seviyesi: string;
   sinif_seviyesi_id: number | null;
   sinif_seviyesi_kod: string;
+  has_alan?: boolean;
+  alan_id?: number | null;
+  okul_no?: string;
+  school_id?: number | null;
   aktif_mi: boolean;
 };
 

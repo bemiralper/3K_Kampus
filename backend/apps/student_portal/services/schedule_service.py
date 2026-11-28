@@ -8,7 +8,7 @@ from datetime import date, datetime, time, timedelta
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from apps.academic.domain.class_lesson_plan import ClassLessonPlan
@@ -17,7 +17,15 @@ from apps.academic.domain.lesson_attendance import StudentAttendanceStatus
 from apps.academic.domain.program_grid_cell import CellStatus, ProgramGridCell
 from apps.academic.domain.schedule_version import ScheduleVersion
 from apps.academic.domain.student_class_placement import StudentClassPlacement
-from apps.coaching.olcme_degerlendirme.models import Exam, ExamParticipant
+from apps.coaching.olcme_degerlendirme.models import (
+    Exam,
+    ExamParticipant,
+    OlcmeOgrenciOturumTercihi,
+    OlcmeSeviyeOturumAyar,
+)
+from apps.coaching.olcme_degerlendirme.services.exam_schedule_groups import (
+    default_preference_for_seviye,
+)
 from apps.egitim_tanimlari.display import resolve_ders_display_name
 from apps.kutuphane.domain.models import (
     AssignmentStatus,
@@ -116,6 +124,67 @@ def _active_class_plans_qs(scope: dict):
     return qs
 
 
+def resolve_student_schedule_group_readonly(scope: dict) -> str:
+    """
+    Öğrencinin hafta içi / hafta sonu oturum grubunu (`HAFTA_ICI` | `HAFTA_SONU`)
+    veritabanına hiçbir yazma yapmadan çözer.
+    """
+    ogrenci = scope['ogrenci']
+    kayit = scope['kayit']
+    sube_id = scope['sube_id']
+    egitim_yili_id = scope['egitim_yili_id']
+
+    if sube_id and egitim_yili_id:
+        override = (
+            OlcmeOgrenciOturumTercihi.objects.filter(
+                sube_id=sube_id,
+                egitim_yili_id=egitim_yili_id,
+                ogrenci_id=ogrenci.id,
+            )
+            .values_list('preference', flat=True)
+            .first()
+        )
+        if override:
+            return override
+
+    seviye = getattr(kayit, 'sinif_seviyesi', None) or (
+        getattr(kayit.sinif, 'sinif_seviyesi', None) if getattr(kayit, 'sinif_id', None) else None
+    )
+    if sube_id and seviye is not None:
+        sev_pref = (
+            OlcmeSeviyeOturumAyar.objects.filter(
+                sube_id=sube_id,
+                sinif_seviyesi_id=seviye.id,
+            )
+            .values_list('preference', flat=True)
+            .first()
+        )
+        if sev_pref:
+            return sev_pref
+
+    return default_preference_for_seviye(seviye)
+
+
+def session_matches_student_group(student_group: str, session_pref: str | None) -> bool:
+    pref = (session_pref or '').strip()
+    if not pref or pref == 'FARKETMEZ':
+        return True
+    return pref == student_group
+
+
+def _compute_exam_end_time_str(ref_date: date, start_s: str, end_time_obj: time | None, duration_mins: int | None) -> str:
+    if end_time_obj is not None:
+        return _format_time(end_time_obj)
+    if duration_mins and start_s:
+        try:
+            hh, mm = [int(x) for x in start_s.split(':')]
+            end_dt = datetime.combine(ref_date, time(hh, mm)) + timedelta(minutes=int(duration_mins))
+            return end_dt.strftime('%H:%M')
+        except Exception:
+            return ''
+    return ''
+
+
 def _format_time(t: time | None) -> str:
     if t is None:
         return ''
@@ -205,6 +274,9 @@ def build_unified_schedule(scope: dict, start_date: date, end_date: date) -> dic
             grid_by_weekday.setdefault(wd, []).append(cell)
 
     # 3. Resmi Tatiller ve Etkinlikler (Takvim Event)
+    # Not: `olcme`, `odev`, `calisma`, `calisma_blok` senkron kayıtları öğrenci portalında
+    # kendi oturum/ödev tablolarından birebir üretildiği için burada tekrar edilmez;
+    # `gorev` ve `cek_senet` ise yalnızca personel/finans içindir.
     dt_start = datetime.combine(start_date, time.min, tzinfo=ISTANBUL)
     dt_end = datetime.combine(end_date, time.max, tzinfo=ISTANBUL)
     events_qs = (
@@ -216,18 +288,31 @@ def build_unified_schedule(scope: dict, start_date: date, end_date: date) -> dic
             bitis__gte=dt_start,
         )
         .exclude(durum=EventStatus.CANCELLED)
+        .exclude(
+            kaynak_modul__in=[
+                'olcme',
+                'odev',
+                'calisma',
+                'calisma_blok',
+                'gorev',
+                'cek_senet',
+            ]
+        )
         .filter(Q(sube_id__isnull=True) | Q(sube_id=scope['sube_id']))
     )
     holiday_dates: set[date] = set()
     for ev in events_qs:
         cat = ev.event_type.kategori if ev.event_type else ''
-        is_holiday = cat == EventCategory.TATIL
-        is_for_student = (
-            is_holiday
-            or not (ev.sinif_ids or ev.ogrenci_ids)
-            or (classroom and classroom.id in (ev.sinif_ids or []))
-            or (ogrenci.id in (ev.ogrenci_ids or []))
-        )
+        is_holiday = cat == EventCategory.TATIL or ev.kaynak_modul in ('resmi_tatil', 'ozel_ders_cevre')
+        if ev.kaynak_modul == 'gorusme':
+            is_for_student = ogrenci.id in (ev.ogrenci_ids or [])
+        else:
+            is_for_student = (
+                is_holiday
+                or not (ev.sinif_ids or ev.ogrenci_ids)
+                or (classroom and classroom.id in (ev.sinif_ids or []))
+                or (ogrenci.id in (ev.ogrenci_ids or []))
+            )
         if not is_for_student:
             continue
         ev_start_local = timezone.localtime(ev.baslangic, ISTANBUL)
@@ -373,66 +458,160 @@ def build_unified_schedule(scope: dict, start_date: date, end_date: date) -> dic
                 'topics': [],
             })
 
-    # 5. Deneme Sınavları (ExamParticipant veya sınıfa tanımlı Exam)
-    participations = {
-        p.exam_id: p
-        for p in ExamParticipant.objects.select_related('exam', 'room', 'exam_session').filter(
+    # 5. Deneme Sınavları — Önce öğrencinin kendi oturum kaydı (`ExamParticipant.exam_session.session_date`),
+    #    henüz katılımcı listesi üretilmemiş sınıf sınavlarında ise öğrencinin oturum grubuna uygun oturum tarihi.
+    student_parts = list(
+        ExamParticipant.objects.select_related('exam', 'room', 'exam_session')
+        .filter(
             student_id=ogrenci.id,
             exam__kurum_id=scope['kurum_id'],
             exam__is_active=True,
-            exam__exam_date__gte=start_date,
-            exam__exam_date__lte=end_date,
         )
-    }
-    exams_qs = Exam.objects.filter(
-        kurum_id=scope['kurum_id'],
-        is_active=True,
-        exam_date__gte=start_date,
-        exam_date__lte=end_date,
-    ).filter(Q(sube_id__isnull=True) | Q(sube_id=scope['sube_id']))
-    if classroom is not None:
-        exams_qs = exams_qs.filter(Q(id__in=participations.keys()) | Q(siniflar=classroom)).distinct()
-    else:
-        exams_qs = exams_qs.filter(id__in=participations.keys()).distinct()
+        .filter(Q(exam__sube_id__isnull=True) | Q(exam__sube_id=scope['sube_id']))
+        .filter(
+            Q(exam_session__session_date__gte=start_date, exam_session__session_date__lte=end_date)
+            | Q(
+                exam_session__session_date__isnull=True,
+                exam__exam_date__gte=start_date,
+                exam__exam_date__lte=end_date,
+            )
+        )
+        .order_by('exam_session__session_date', 'exam_session__start_time', 'exam__exam_date', 'id')
+    )
 
-    for ex in exams_qs:
-        if not ex.exam_date or ex.exam_date not in days_map:
+    seen_exam_ids_from_parts: set[int] = set()
+    for part in student_parts:
+        ex = part.exam
+        sess = part.exam_session
+        eff_date = (sess.session_date if (sess and sess.session_date) else ex.exam_date)
+        if not eff_date or eff_date not in days_map:
             continue
-        part = participations.get(ex.id)
-        sess = part.exam_session if part else None
+        seen_exam_ids_from_parts.add(ex.id)
+
         start_s = _format_time(getattr(sess, 'start_time', None)) or '09:30'
-        end_s = ''
-        if ex.duration_minutes and start_s:
-            try:
-                hh, mm = [int(x) for x in start_s.split(':')]
-                end_dt = datetime.combine(ex.exam_date, time(hh, mm)) + timedelta(minutes=ex.duration_minutes)
-                end_s = end_dt.strftime('%H:%M')
-            except Exception:
-                end_s = ''
+        eff_duration = (
+            sess.duration_minutes
+            if (sess and getattr(sess, 'duration_minutes', None))
+            else ex.duration_minutes
+        )
+        end_s = _compute_exam_end_time_str(
+            eff_date, start_s, getattr(sess, 'end_time', None) if sess else None, eff_duration,
+        )
+        sess_name = (sess.name or '').strip() if sess else ''
+        subtitle_str = (
+            f'{ex.get_exam_type_display()} · {sess_name}'
+            if sess_name
+            else ex.get_exam_type_display()
+        )
         loc_parts = []
-        if part and part.room:
+        if part.room:
             loc_parts.append(part.room.name)
-        if part and part.seat_no:
-            loc_parts.append(f'Sıra {part.seat_no}')
-        days_map[ex.exam_date].append({
-            'id': f'exam:{ex.id}',
+        if part.seat_no:
+            loc_parts.append(f'Sıra #{part.seat_no}')
+        if part.desk_no:
+            loc_parts.append(part.desk_no)
+
+        item_id = f'exam:{ex.id}:s{sess.id}' if sess else f'exam:{ex.id}'
+        days_map[eff_date].append({
+            'id': item_id,
             'kind': 'exam',
             'kind_label': 'Deneme Sınavı',
             'title': ex.name,
-            'subtitle': ex.get_exam_type_display(),
+            'subtitle': subtitle_str,
             'start_time': start_s,
             'end_time': end_s,
             'all_day': False,
             'teacher_name': '',
             'location': ' · '.join(loc_parts) if loc_parts else 'Sınav Salonu',
             'color': '#f97316',
-            'state': _live_state(ex.exam_date, start_s, end_s, now_dt),
+            'state': _live_state(eff_date, start_s, end_s, now_dt),
             'plan_id': None,
             'exam_id': ex.id,
-            'seat_no': part.seat_no if part else None,
-            'room_name': part.room.name if (part and part.room) else None,
+            'seat_no': part.seat_no,
+            'desk_no': part.desk_no or '',
+            'room_name': part.room.name if part.room else None,
             'topics': [],
         })
+
+    # Henüz hiçbir öğrenci için `ExamParticipant` oluşturulmamış ama öğrencinin sınıfına tanımlanmış sınavlar
+    if classroom is not None:
+        has_any_participants = ExamParticipant.objects.filter(exam=OuterRef('pk'))
+        unrostered_exams = (
+            Exam.objects.prefetch_related('exam_sessions')
+            .annotate(_has_roster=Exists(has_any_participants))
+            .filter(
+                kurum_id=scope['kurum_id'],
+                is_active=True,
+                _has_roster=False,
+                siniflar=classroom,
+            )
+            .exclude(id__in=seen_exam_ids_from_parts)
+            .filter(Q(sube_id__isnull=True) | Q(sube_id=scope['sube_id']))
+            .filter(
+                Q(exam_sessions__session_date__gte=start_date, exam_sessions__session_date__lte=end_date)
+                | Q(exam_date__gte=start_date, exam_date__lte=end_date)
+            )
+            .distinct()
+        )
+        student_group = None
+        for ex in unrostered_exams:
+            all_sessions = list(ex.exam_sessions.all())
+            if all_sessions:
+                if student_group is None:
+                    student_group = resolve_student_schedule_group_readonly(scope)
+                matched_sessions = [
+                    s for s in all_sessions
+                    if session_matches_student_group(student_group, s.schedule_preference)
+                ] or all_sessions
+                for sess in matched_sessions:
+                    eff_date = sess.session_date or ex.exam_date
+                    if not eff_date or eff_date not in days_map:
+                        continue
+                    start_s = _format_time(sess.start_time) or '09:30'
+                    eff_dur = sess.duration_minutes or ex.duration_minutes
+                    end_s = _compute_exam_end_time_str(eff_date, start_s, sess.end_time, eff_dur)
+                    sess_name = (sess.name or '').strip()
+                    days_map[eff_date].append({
+                        'id': f'exam:{ex.id}:s{sess.id}',
+                        'kind': 'exam',
+                        'kind_label': 'Deneme Sınavı',
+                        'title': ex.name,
+                        'subtitle': f'{ex.get_exam_type_display()} · {sess_name}' if sess_name else ex.get_exam_type_display(),
+                        'start_time': start_s,
+                        'end_time': end_s,
+                        'all_day': False,
+                        'teacher_name': '',
+                        'location': 'Atama Bekleniyor',
+                        'color': '#f97316',
+                        'state': _live_state(eff_date, start_s, end_s, now_dt),
+                        'plan_id': None,
+                        'exam_id': ex.id,
+                        'seat_no': None,
+                        'room_name': None,
+                        'topics': [],
+                    })
+            elif ex.exam_date and ex.exam_date in days_map:
+                start_s = '09:30'
+                end_s = _compute_exam_end_time_str(ex.exam_date, start_s, None, ex.duration_minutes)
+                days_map[ex.exam_date].append({
+                    'id': f'exam:{ex.id}',
+                    'kind': 'exam',
+                    'kind_label': 'Deneme Sınavı',
+                    'title': ex.name,
+                    'subtitle': ex.get_exam_type_display(),
+                    'start_time': start_s,
+                    'end_time': end_s,
+                    'all_day': False,
+                    'teacher_name': '',
+                    'location': 'Atama Bekleniyor',
+                    'color': '#f97316',
+                    'state': _live_state(ex.exam_date, start_s, end_s, now_dt),
+                    'plan_id': None,
+                    'exam_id': ex.id,
+                    'seat_no': None,
+                    'room_name': None,
+                    'topics': [],
+                })
 
     # 6. Koç Ödev Kontrol Günleri (ManualAssignment.due_date)
     from apps.coaching.assignment_manual.models import ManualAssignment

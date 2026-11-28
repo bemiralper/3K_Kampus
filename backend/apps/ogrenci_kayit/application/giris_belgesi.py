@@ -28,7 +28,7 @@ def _tr_time(value) -> str:
     return value.strftime('%H:%M')
 
 
-def load_giris_context(kurum_id: int, sube_id: int, exam_id, ogrenci_id):
+def load_giris_context(kurum_id: int, sube_id: int, exam_id, ogrenci_id, participant_id=None):
     from apps.coaching.olcme_degerlendirme.models import Exam, ExamParticipant
     from apps.ogrenci.domain.models import Ogrenci, OgrenciKayit
 
@@ -37,6 +37,13 @@ def load_giris_context(kurum_id: int, sube_id: int, exam_id, ogrenci_id):
         ogrenci_id = int(ogrenci_id)
     except (TypeError, ValueError):
         return None, 'Sınav ve öğrenci seçin.'
+
+    selected_pid = None
+    if participant_id not in (None, ''):
+        try:
+            selected_pid = int(participant_id)
+        except (TypeError, ValueError):
+            selected_pid = None
 
     exam = (
         Exam.objects.filter(pk=exam_id, kurum_id=kurum_id, sube_id=sube_id)
@@ -55,6 +62,11 @@ def load_giris_context(kurum_id: int, sube_id: int, exam_id, ogrenci_id):
     )
     if not participants:
         return None, 'Bu öğrenci seçilen sınavda yok.'
+    if selected_pid is not None:
+        chosen = [p for p in participants if p.id == selected_pid]
+        if chosen:
+            others = [p for p in participants if p.id != selected_pid]
+            participants = chosen + others
     kayit = (
         OgrenciKayit.objects.filter(ogrenci=ogrenci, kurum_id=kurum_id)
         .select_related('sinif_seviyesi', 'sinif__sinif_seviyesi')
@@ -448,15 +460,45 @@ def _instagram_label(kurum) -> str:
     return f'Instagram · @{handle}'
 
 
+def _participant_row_info(exam, participant) -> dict:
+    session = participant.exam_session
+    when = session.session_date if session is not None and session.session_date else exam.exam_date
+    clock = ''
+    if session is not None:
+        start = _tr_time(session.start_time)
+        end = _tr_time(session.end_time)
+        clock = f'{start} – {end}' if start and end else (start or end)
+    room_name = (
+        (participant.room.name or '')
+        if participant.room_id and participant.room
+        else ''
+    )
+    seat_val = str(participant.seat_no) if participant.seat_no else ''
+    return {
+        'label': (session.name if session is not None and session.name else 'Oturum'),
+        'date_long': _long_date(when) or '—',
+        'clock': clock or '—',
+        'room': room_name or 'Sınav günü duyurulacak',
+        'seat': seat_val or '—',
+    }
+
+
 def giris_belgesi_message(ctx) -> str:
     card = _card(ctx)
     ad = f'{ctx.ogrenci.ad} {ctx.ogrenci.soyad}'.strip()
     room = card['room'] or 'sınav günü duyurulacak'
     seat = card['seat'] or '—'
+    extra_parts = []
+    for participant in ctx.participants[1:]:
+        info = _participant_row_info(ctx.exam, participant)
+        extra_parts.append(
+            f'{info["label"]}: {info["date_long"]} {info["clock"]} (Salon: {info["room"]}, Sıra: {info["seat"]})'
+        )
+    extra_msg = f' Diğer oturumlar: {"; ".join(extra_parts)}.' if extra_parts else ''
     return (
         f'{ad} için {ctx.exam.name} sınav giriş belgesi ektedir. '
         f'Tarih: {card["date_long"] or "—"}. Saat: {card["clock"]}. '
-        f'Salon: {room}, sıra: {seat}. '
+        f'Salon: {room}, sıra: {seat}.{extra_msg} '
         f'Sınavdan {_ARRIVE_MINUTES} dakika önce ({card["arrive"]}) hazır bulunun.'
     )
 
@@ -510,22 +552,28 @@ def build_giris_belgesi_html(ctx) -> str:
     room = escape(card['room']) if card['room'] else 'Sınav günü duyurulacak'
     room_cls = 'room' if card['room'] else 'room soft'
     seat = escape(card['seat']) if card['seat'] else '—'
-    extra = []
-    for participant in ctx.participants[1:]:
-        session = participant.exam_session
-        label = escape(session.name if session is not None and session.name else 'Oturum')
-        when = _long_date(session.session_date) if session is not None else ''
-        clock = ''
-        if session is not None:
-            start = _tr_time(session.start_time)
-            end = _tr_time(session.end_time)
-            clock = f'{start} – {end}' if start and end else (start or end)
-        extra.append(
-            f'<li><strong>{label}</strong> {escape(when)} {escape(clock)}</li>'
-        )
     extra_html = ''
-    if extra:
-        extra_html = '<ul class="extra">' + ''.join(extra) + '</ul>'
+    if len(ctx.participants) > 1:
+        rows_html = []
+        for participant in ctx.participants:
+            info = _participant_row_info(exam, participant)
+            rows_html.append(
+                '<tr>'
+                f'<td class="name">{escape(info["label"])}</td>'
+                f'<td class="when">{escape(info["date_long"])} · {escape(info["clock"])}</td>'
+                f'<td>{escape(info["room"])}</td>'
+                f'<td class="mark"><span class="reg">Sıra {escape(info["seat"])}</span></td>'
+                '</tr>'
+            )
+        extra_html = (
+            '<section class="calendar" style="margin-top:14px">'
+            '<h2>OTURUM, SALON VE SIRA BİLGİLERİ</h2>'
+            '<table class="cal"><thead><tr>'
+            '<th>OTURUM</th><th class="when">TARİH / SAAT</th><th>SALON</th><th class="mark">SIRA NO</th>'
+            '</tr></thead><tbody>'
+            + ''.join(rows_html)
+            + '</tbody></table></section>'
+        )
     slogan_html = f'<div class="slogan">{slogan}</div>' if slogan else ''
     duration_html = f'<div class="sub">{escape(card["duration"])}</div>' if card['duration'] else ''
     web_html = escape(_web_host(web)) if web else ''

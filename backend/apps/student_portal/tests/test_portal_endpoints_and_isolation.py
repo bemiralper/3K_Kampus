@@ -6,7 +6,7 @@
 4. Öğrenci <-> Koç çift yönlü portal mesajlaşması ve koç kapsam kontrolü
 5. `STUDENT_PORTAL_ENABLED=False` acil geri dönüş (rollback) bayrağı
 """
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 
 from django.contrib.auth.models import User
 from django.test import Client, TestCase, override_settings
@@ -20,9 +20,11 @@ from apps.coaching.olcme_degerlendirme.models import (
     ExamRoom,
     ExamSection,
     ExamSession,
+    ExamSessionModel,
     StudentAnswer,
     StudentSectionScore,
 )
+from apps.takvim.domain.models import Event, EventType
 from apps.coaching.study_program.models import (
     Badge,
     BadgeCode,
@@ -848,6 +850,368 @@ class StudentPortalEndToEndAndIsolationTests(TestCase):
             season['month_key'],
             self.student_a.portal_account.preferences.get('monthly_season_medals', {}),
         )
+
+    def test_multi_day_exam_uses_student_session_date_in_schedule_and_boarding_pass(self):
+        """
+        Çok oturumlu sınavlarda `Exam.exam_date` ilk oturum gününe (örn. Cuma / dün) çekilmiş olsa bile,
+        öğrencinin atandığı `ExamParticipant.exam_session.session_date` (örn. Pazar / yarın) esas alınmalıdır.
+        Ayrıca takvim modülündeki genel `kaynak_modul='olcme'` yansıma satırı yanlış günde sızmamalıdır.
+        """
+        now_local = timezone.localtime(timezone.now())
+        today = now_local.date()
+        yesterday = today - timedelta(days=1)
+        tomorrow = today + timedelta(days=1)
+
+        exam = Exam.objects.create(
+            name='Yıldızlar Yarışıyor AYT Kulüp Denemesi',
+            exam_type='YKS_AYT',
+            status='SCHEDULED',
+            kurum=self.kurum,
+            sube=self.sube_a,
+            egitim_yili=self.yil,
+            exam_date=yesterday,  # İlk oturum dün (ör. Cuma)
+            duration_minutes=180,
+            is_active=True,
+        )
+        sess_weekday = ExamSessionModel.objects.create(
+            exam=exam,
+            name='1. Oturum / Cuma',
+            session_date=yesterday,
+            start_time=time(10, 15),
+            end_time=time(13, 15),
+            duration_minutes=180,
+            schedule_preference=ExamSessionModel.SchedulePreference.HAFTA_ICI,
+            order=1,
+        )
+        sess_weekend = ExamSessionModel.objects.create(
+            exam=exam,
+            name='2. Oturum / Pazar',
+            session_date=tomorrow,
+            start_time=time(10, 15),
+            end_time=time(13, 15),
+            duration_minutes=180,
+            schedule_preference=ExamSessionModel.SchedulePreference.HAFTA_SONU,
+            order=2,
+        )
+        self.assertNotEqual(sess_weekday.session_date, sess_weekend.session_date)
+
+        room = ExamRoom.objects.create(
+            exam=exam,
+            name='3K Vizyon',
+            capacity=100,
+        )
+        ExamParticipant.objects.create(
+            exam=exam,
+            student=self.student_a,
+            exam_session=sess_weekend,
+            room=room,
+            seat_no=76,
+            desk_no='VZ-76',
+        )
+
+        # Takvim entegrasyonunun ilk oturum gününe ürettiği genel `olcme` etkinliği sızmamalı
+        ev_type = EventType.objects.create(kurum_id=self.kurum.id, ad='Deneme Sınavı')
+        yesterday_start = timezone.make_aware(datetime.combine(yesterday, time(9, 0)))
+        Event.objects.create(
+            kurum_id=self.kurum.id,
+            sube_id=self.sube_a.id,
+            egitim_yili_id=self.yil.id,
+            event_type=ev_type,
+            baslik=f'[Deneme] {exam.name}',
+            baslangic=yesterday_start,
+            bitis=yesterday_start + timedelta(hours=3),
+            kaynak_modul='olcme',
+            kaynak_id=str(exam.id),
+        )
+
+        client_a = self._logged_in_client(self.user_a)
+
+        # 1) Biniş Kartı (Boarding Pass): `exam.exam_date` dün olsa bile öğrencinin yarınki oturumu görünür!
+        home_res = client_a.get('/api/student/home/')
+        self.assertEqual(home_res.status_code, 200)
+        bp = home_res.json()['data']['boarding_pass']
+        self.assertIsNotNone(bp)
+        self.assertEqual(bp['exam_id'], exam.id)
+        self.assertEqual(bp['exam_date'], tomorrow.isoformat())
+        self.assertEqual(bp['days_left'], 1)
+        self.assertEqual(bp['session_name'], '2. Oturum / Pazar')
+        self.assertEqual(bp['seat_no'], 76)
+
+        # 2) Birleşik Takvim: dün (`yesterday`) sınav kaydı YOK, yarın (`tomorrow`) sınav kaydı VAR!
+        sched_window = client_a.get(
+            f'/api/student/schedule/?start={yesterday.isoformat()}&end={tomorrow.isoformat()}'
+        ).json()['data']
+        day_yesterday = next(d for d in sched_window['days'] if d['date'] == yesterday.isoformat())
+        yesterday_titles = [it['title'] for it in day_yesterday['items']]
+        self.assertNotIn(exam.name, yesterday_titles)
+        self.assertNotIn(f'[Deneme] {exam.name}', yesterday_titles)
+
+        day_tomorrow = next(d for d in sched_window['days'] if d['date'] == tomorrow.isoformat())
+        exam_items = [it for it in day_tomorrow['items'] if it['kind'] == 'exam' and it['title'] == exam.name]
+        self.assertEqual(len(exam_items), 1)
+        self.assertEqual(exam_items[0]['start_time'], '10:15')
+        self.assertEqual(exam_items[0]['end_time'], '13:15')
+        self.assertIn('2. Oturum / Pazar', exam_items[0]['subtitle'])
+        self.assertIn('Sıra #76', exam_items[0]['location'])
+
+        # 3) Katılımcı listesinde olmayan aynı şubedeki başka bir öğrenci (`other_student`) bu sınava atanmadığı için takviminde görmemeli
+        other_student = Ogrenci.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            ad='Katılımsız',
+            soyad='Öğrenci',
+            tc_kimlik_no='99988877766',
+            aktif_mi=True,
+        )
+        OgrenciKayit.objects.create(
+            ogrenci=other_student,
+            egitim_yili=self.yil,
+            kurum=self.kurum,
+            sube=self.sube_a,
+            okul_no='2026999',
+            aktif_mi=True,
+        )
+        _, _ = create_portal_account_for_student(other_student)
+        other_user = other_student.portal_account.user
+        other_user.set_password('GuvenliSifre2026!')
+        other_user.save()
+        other_ur = other_user.user_role
+        other_ur.must_change_password = False
+        other_ur.save(update_fields=['must_change_password'])
+
+        sched_other = self._logged_in_client(other_user).get(
+            f'/api/student/schedule/?start={yesterday.isoformat()}&end={tomorrow.isoformat()}'
+        ).json()['data']
+        day_other = next(d for d in sched_other['days'] if d['date'] == tomorrow.isoformat())
+        self.assertEqual([it for it in day_other['items'] if it['kind'] == 'exam'], [])
+
+    def test_announcements_merge_comm_messages_strip_html_and_hide_finance(self):
+        """
+        1) CMS `Duyuru` içindeki `<p><strong>...</strong></p>` etiketleri ham HTML olarak sızmamalı.
+        2) İletişim modülünden öğrenciye/velisine giden sınav, ödev ve kampanya mesajları akışta görünmeli;
+           aynı kampanya hem öğrenci hem veli hattına gittiyse tekilleştirilmeli.
+        3) Muhasebe/ödeme (`odeme`, `Tahsilat Makbuzu`) mesajları öğrenci portalına kesinlikle sızmamalı.
+        """
+        import json
+        from apps.communication.domain.models import Conversation, Message as CommMessage, OutboundCampaign
+        from apps.ogrenci.domain.models import OgrenciVeli
+
+        Duyuru.objects.create(
+            kurum=self.kurum,
+            baslik='Veli Toplantısı Duyurusu',
+            ozet='<p>Veli bilgilendirme toplantısı yakında.</p>',
+            icerik='<p><strong>Önemli:</strong> Veli bilgilendirme toplantısı yakında.</p>',
+            yayin_tarihi=timezone.localtime(timezone.now()).date(),
+            aktif=True,
+        )
+
+        veli = OgrenciVeli.objects.create(
+            ogrenci=self.student_a,
+            ad='Rikap',
+            soyad='Kaya',
+            veli_turu='baba',
+            telefon='+905051112233',
+        )
+        conv_student = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            contact_phone='+905321112233',
+            contact_type='OGRENCI',
+            ogrenci=self.student_a,
+        )
+        conv_veli = Conversation.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            contact_phone='+905051112233',
+            contact_type='VELI',
+            ogrenci=self.student_a,
+            veli=veli,
+        )
+
+        camp = OutboundCampaign.objects.create(
+            kurum=self.kurum,
+            sube=self.sube_a,
+            title='Sınav bilgisi — 345 TYT Türkiye Geneli Denemesi',
+            status='COMPLETED',
+        )
+        # Aynı kampanya hem öğrenciye hem veliye gitmiş -> öğrenci kopyası kalmalı, tekilleşmeli
+        CommMessage.objects.create(
+            conversation=conv_student,
+            campaign=camp,
+            direction='OUTBOUND',
+            status='READ',
+            source_module='sinav',
+            body='*Sınav Bilgilendirmesi*\n\nSevgili Öğrencimiz,\n📝 *Sınav:* 345 TYT',
+        )
+        CommMessage.objects.create(
+            conversation=conv_veli,
+            campaign=camp,
+            direction='OUTBOUND',
+            status='READ',
+            source_module='sinav',
+            body='Değerli Velimiz,\n📝 *Sınav:* 345 TYT',
+        )
+        # Ödev bildirimi yalnızca veli hattına gitmiş (öğrenci telefonu olmayan senaryo) -> görünmeli
+        CommMessage.objects.create(
+            conversation=conv_veli,
+            direction='OUTBOUND',
+            status='DELIVERED',
+            source_module='odev',
+            source_ref_id='hw-42:veli',
+            body='📚 Değerli Velimiz,\n*Kasım 4. Hafta Ödevi* hazırlanmıştır.',
+        )
+        # Muhasebe / ödeme mesajı -> kesinlikle gizlenmeli!
+        CommMessage.objects.create(
+            conversation=conv_veli,
+            direction='OUTBOUND',
+            status='DELIVERED',
+            source_module='odeme',
+            body='Sayın Rikap Kaya, ödemenize ait Tahsilat Makbuzu ektedir.\n3K Kampüs/Muhasebe Birimi',
+        )
+
+        client_a = self._logged_in_client(self.user_a)
+        res = client_a.get('/api/student/announcements/')
+        self.assertEqual(res.status_code, 200)
+        data = res.json()['data']
+        items = data['items']
+
+        # Web duyurusu + tekilleştirilmiş sınav mesajı + ödev mesajı = 3 kayıt (ödeme mesajı yok!)
+        self.assertEqual(len(items), 3)
+        self.assertEqual(data['unread_count'], 3)
+
+        all_contents = ' '.join(it['content'] for it in items)
+        self.assertNotIn('<p>', all_contents)
+        self.assertNotIn('</p>', all_contents)
+        self.assertNotIn('Tahsilat Makbuzu', all_contents)
+
+        sinav_items = [it for it in items if it['category'] == 'sinav']
+        self.assertEqual(len(sinav_items), 1)
+        self.assertIn('Sevgili Öğrencimiz', sinav_items[0]['content'])
+
+        # Tek bir mesajı `item_key` ile okundu işaretleme
+        single_res = client_a.post(
+            '/api/student/announcements/read/',
+            data=json.dumps({'ids': [sinav_items[0]['item_key']]}),
+            content_type='application/json',
+        )
+        self.assertEqual(single_res.status_code, 200)
+        self.assertEqual(single_res.json()['data']['unread_count'], 2)
+
+        # Tümünü okundu işaretleme
+        all_res = client_a.post(
+            '/api/student/announcements/read/',
+            data='{}',
+            content_type='application/json',
+        )
+        self.assertEqual(all_res.json()['data']['unread_count'], 0)
+
+    def test_exam_overview_separates_parent_and_child_sections_and_filters_out_of_track(self):
+        """
+        Sayısal öğrencide TYT ve AYT birlikte bulunduğunda:
+        - `available_types` sınav sayılarını döndürmeli ve `recommended_type` son sınav türünü önermeli.
+        - AYT içinde üst bölüm `Matematik (40)` (`grup:Matematik`) ile alt branş `Matematik (30)` (`ders:Matematik`)
+          birbirinden ayrılmalı; alan dışı çözülmemiş `Türk Dili ve Edebiyatı` / `Felsefe (Seçmeli)` `alana_dahil=False` olmalı.
+        """
+        say_alan, _ = Alan.objects.get_or_create(
+            kurum=self.kurum, sube=self.sube_a, kod='SAYISAL', defaults={'ad': 'Sayısal'},
+        )
+        kayit = OgrenciKayit.objects.get(ogrenci=self.student_a, egitim_yili=self.yil)
+        kayit.alan = say_alan
+        kayit.save(update_fields=['alan'])
+
+        today = timezone.localtime(timezone.now()).date()
+        tyt_exam = Exam.objects.create(
+            name='345 TYT Deneme',
+            exam_type='YKS_TYT',
+            status='COMPLETED',
+            kurum=self.kurum,
+            sube=self.sube_a,
+            egitim_yili=self.yil,
+            exam_date=today - timedelta(days=5),
+            is_active=True,
+        )
+        tyt_sess = ExamSession.objects.create(exam=tyt_exam, status='COMPLETED')
+        StudentAnswer.objects.create(
+            session=tyt_sess,
+            student=self.student_a,
+            total_correct=102,
+            total_wrong=8,
+            total_empty=10,
+            total_net=100.0,
+            is_processed=True,
+        )
+
+        ayt_exam = Exam.objects.create(
+            name='Çap AYT Türkiye Geneli',
+            exam_type='YKS_AYT',
+            status='COMPLETED',
+            kurum=self.kurum,
+            sube=self.sube_a,
+            egitim_yili=self.yil,
+            exam_date=today - timedelta(days=1),
+            is_active=True,
+        )
+        sec_mat_group = ExamSection.objects.create(
+            exam=ayt_exam, name='Matematik', order=1,
+            question_start=1, question_end=40, question_count=40, is_sub_section=False,
+        )
+        sec_mat_sub = ExamSection.objects.create(
+            exam=ayt_exam, name='Matematik', order=2,
+            question_start=1, question_end=30, question_count=30,
+            is_sub_section=True, parent_section=sec_mat_group,
+        )
+        sec_geo_sub = ExamSection.objects.create(
+            exam=ayt_exam, name='Geometri', order=3,
+            question_start=31, question_end=40, question_count=10,
+            is_sub_section=True, parent_section=sec_mat_group,
+        )
+        sec_edeb = ExamSection.objects.create(
+            exam=ayt_exam, name='Türk Dili ve Edebiyatı', order=4,
+            question_start=41, question_end=64, question_count=24, is_sub_section=False,
+        )
+        sec_fel_opt = ExamSection.objects.create(
+            exam=ayt_exam, name='Felsefe (Seçmeli)', order=5,
+            question_start=65, question_end=70, question_count=6, is_sub_section=False,
+        )
+
+        ayt_sess = ExamSession.objects.create(exam=ayt_exam, status='COMPLETED')
+        ayt_ans = StudentAnswer.objects.create(
+            session=ayt_sess,
+            student=self.student_a,
+            total_correct=38,
+            total_wrong=4,
+            total_empty=38,
+            total_net=37.0,
+            is_processed=True,
+        )
+        StudentSectionScore.objects.bulk_create([
+            StudentSectionScore(student_answer=ayt_ans, section=sec_mat_group, correct=38, wrong=4, empty=0, net=37.0),
+            StudentSectionScore(student_answer=ayt_ans, section=sec_mat_sub, correct=29, wrong=4, empty=0, net=28.0),
+            StudentSectionScore(student_answer=ayt_ans, section=sec_geo_sub, correct=9, wrong=0, empty=1, net=9.0),
+            StudentSectionScore(student_answer=ayt_ans, section=sec_edeb, correct=0, wrong=0, empty=24, net=0.0),
+            StudentSectionScore(student_answer=ayt_ans, section=sec_fel_opt, correct=0, wrong=0, empty=6, net=0.0),
+        ])
+
+        client_a = self._logged_in_client(self.user_a)
+        overview = client_a.get('/api/student/exams/').json()['data']
+        self.assertEqual(overview['recommended_type'], 'YKS_AYT')
+        type_map = {t['code']: t for t in overview['available_types']}
+        self.assertEqual(type_map['YKS_TYT']['count'], 1)
+        self.assertEqual(type_map['YKS_AYT']['count'], 1)
+
+        # KPI rekor ve ortalama son sınav türü (`YKS_AYT` -> 37.0) bazında hesaplanmalı, TYT 100 ile karışmamalı
+        self.assertEqual(overview['kpi']['kpi_type_label'], 'AYT')
+        self.assertEqual(overview['kpi']['personal_best_net'], 37.0)
+
+        ayt_item = next(e for e in overview['exams'] if e['exam_id'] == ayt_exam.id)
+        by_key = {s['metric_key']: s for s in ayt_item['sections']}
+        self.assertEqual(by_key['grup:Matematik']['net'], 37.0)
+        self.assertEqual(by_key['ders:Matematik']['net'], 28.0)
+        self.assertEqual(by_key['ders:Geometri']['net'], 9.0)
+        self.assertFalse(by_key['ders:Türk Dili ve Edebiyatı']['alana_dahil'])
+        self.assertFalse(by_key['ders:Felsefe (Seçmeli)']['alana_dahil'])
+
+
 
 
 

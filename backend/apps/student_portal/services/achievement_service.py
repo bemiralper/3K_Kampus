@@ -25,7 +25,7 @@ from django.db.models import Max, Sum
 from django.utils import timezone
 
 from apps.coaching.assignment_manual.models import AssignmentLesson, AssignmentTask, ManualAssignment
-from apps.coaching.olcme_degerlendirme.models import StudentStoredScore
+from apps.coaching.olcme_degerlendirme.models import ExamParticipant, StudentStoredScore
 from apps.coaching.olcme_degerlendirme.services.scoring import (
     LGS_EXAM_TYPES,
     _normalize_section_name,
@@ -490,6 +490,14 @@ def _collect_raw_metrics(scope: dict, today: date) -> dict:
         row.student_answer_id: (row.by_year or {})
         for row in StudentStoredScore.objects.filter(student_answer_id__in=[a.id for a in answers])
     }
+    part_session_dates = {
+        exam_id: sess_date
+        for exam_id, sess_date in ExamParticipant.objects.filter(
+            student_id=ogrenci.id,
+            exam_id__in=[a.session.exam_id for a in answers],
+            exam_session__session_date__isnull=False,
+        ).values_list('exam_id', 'exam_session__session_date')
+    }
 
     exam_count = len(answers)
     month_exams_count = 0
@@ -535,7 +543,11 @@ def _collect_raw_metrics(scope: dict, today: date) -> dict:
     for ans in answers:
         exam = ans.session.exam
         ex_type = exam.exam_type
-        ex_date = _as_local_date(exam.exam_date) or _as_local_date(ans.created_at)
+        ex_date = (
+            _as_local_date(part_session_dates.get(exam.id))
+            or _as_local_date(exam.exam_date)
+            or _as_local_date(ans.created_at)
+        )
         if ex_date and month_start <= ex_date <= month_end:
             month_exams_count += 1
 
@@ -1787,6 +1799,8 @@ def build_weekly_focus_leaderboard(scope: dict, today: date) -> dict:
     sunday = monday + timedelta(days=6)
     me_id = scope['ogrenci'].id
 
+    from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
+
     active_student_rows = list(
         OgrenciKayit.objects.select_related('ogrenci', 'sinif')
         .filter(
@@ -1796,6 +1810,7 @@ def build_weekly_focus_leaderboard(scope: dict, today: date) -> dict:
             aktif_mi=True,
             ogrenci__aktif_mi=True,
         )
+        .exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
         .values(
             'ogrenci_id',
             'ogrenci__ad',

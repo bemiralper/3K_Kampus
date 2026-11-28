@@ -639,13 +639,18 @@ class AudienceResolver:
         allowed_student_ids,
     ) -> list[tuple]:
         from apps.ogrenci.domain.models import OgrenciKayit, OgrenciVeli
+        from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
 
-        qs = OgrenciKayit.objects.filter(
-            kurum_id=kurum_id,
-            sinif_id=sinif_id,
-            aktif_mi=True,
-            ogrenci__aktif_mi=True,
-        ).select_related('ogrenci')
+        qs = (
+            OgrenciKayit.objects.filter(
+                kurum_id=kurum_id,
+                sinif_id=sinif_id,
+                aktif_mi=True,
+                ogrenci__aktif_mi=True,
+            )
+            .exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
+            .select_related('ogrenci')
+        )
         if egitim_yili_id:
             qs = qs.filter(egitim_yili_id=int(egitim_yili_id))
         if allowed_student_ids is not None:
@@ -675,12 +680,17 @@ class AudienceResolver:
     @classmethod
     def _collect_by_sube(cls, kurum_id: int, sube_id: int, allowed_student_ids) -> list[tuple]:
         from apps.ogrenci.domain.models import Ogrenci, OgrenciVeli
+        from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
 
-        qs = Ogrenci.objects.filter(
-            kurum_id=kurum_id,
-            sube_id=sube_id,
-            aktif_mi=True,
-        ).exclude(telefon='')
+        qs = (
+            Ogrenci.objects.filter(
+                kurum_id=kurum_id,
+                sube_id=sube_id,
+                aktif_mi=True,
+            )
+            .exclude(kayit_turu=GUNU_BIRLIK_CODE)
+            .exclude(telefon='')
+        )
         if allowed_student_ids is not None:
             qs = qs.filter(id__in=allowed_student_ids)
         entries = [

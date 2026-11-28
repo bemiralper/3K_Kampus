@@ -42,3 +42,32 @@ def deactivate_student_links(ogrenci_id):
     Locker.objects.filter(pk__in=locker_ids, durum=LockerStatus.ASSIGNED).exclude(pk__in=occupied).update(durum=LockerStatus.AVAILABLE)
     # Depozito, iade ve geçmiş hakediş bilgileri değiştirilmez.
     deactivate_programs(BirebirOgrenciProgrami.objects.filter(ogrenci_id=ogrenci_id))
+
+    # Günü birlik deneme öğrencisi pasife alındığında gelecekteki açık sınav
+    # koltukları boşaltılır ve henüz girilmemiş açık sınavların ücreti kapatılır.
+    from apps.ogrenci.domain.models import Ogrenci
+    from apps.ogrenci.services.kayit_turu import is_gunu_birlik_kayit
+
+    ogrenci = Ogrenci.objects.filter(pk=ogrenci_id).first()
+    if ogrenci is not None and is_gunu_birlik_kayit(ogrenci):
+        from apps.coaching.olcme_degerlendirme.models import ExamParticipant, StudentAnswer
+        from apps.ogrenci_kayit.application.deneme_ucret import void_deneme_ucreti
+        from apps.ogrenci_kayit.application.sinav_uygunluk import exam_is_open
+
+        open_parts = list(
+            ExamParticipant.objects.filter(student_id=ogrenci_id)
+            .select_related('exam')
+            .prefetch_related('exam__exam_sessions')
+        )
+        touched_exams = {}
+        for part in open_parts:
+            exam = part.exam
+            if not exam_is_open(exam):
+                continue
+            if StudentAnswer.objects.filter(session__exam=exam, student_id=ogrenci_id).exists():
+                continue
+            touched_exams[exam.id] = exam
+            part.delete()
+        for exam in touched_exams.values():
+            if not ExamParticipant.objects.filter(exam=exam, student_id=ogrenci_id).exists():
+                void_deneme_ucreti(ogrenci=ogrenci, exam=exam)

@@ -27,7 +27,7 @@ import { ensureTelefonlar } from "@/components/ogrenci/VeliTelefonEditor";
 import { isKimlikConflictCode, useKimlikLookup } from "@/hooks/useKimlikLookup";
 import type { KimlikResolveResponse } from "@/lib/kimlik-api";
 import SinavStep from "./steps/SinavStep";
-import UcretStep from "./steps/UcretStep";
+import UcretStep, { WalkMaliHesap, WalkOdemeYontemi } from "./steps/UcretStep";
 import KimlikStep from "./steps/KimlikStep";
 import KurumsalStep from "./steps/KurumsalStep";
 import AdresStep from "./steps/AdresStep";
@@ -101,9 +101,33 @@ const STEPS: { id: StepType; label: string; icon: JSX.Element }[] = [
   },
 ];
 
-function wizardSteps(mode: "standard" | "gunu_birlik") {
+const WALK_EXAM_STEPS: { id: StepType; label: string; icon: JSX.Element }[] = [
+  {
+    id: "sinav",
+    label: "Sınav",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M9 11l3 3L22 4" />
+        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+      </svg>
+    ),
+  },
+  {
+    id: "ucret",
+    label: "Ücret",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="1" x2="12" y2="23" />
+        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+      </svg>
+    ),
+  },
+];
+
+function wizardSteps(mode: "standard" | "gunu_birlik", hasInitialExam = false) {
   if (mode !== "gunu_birlik") return STEPS;
-  return STEPS.filter((step) => step.id !== "paket" && step.id !== "ozet");
+  const base = STEPS.filter((step) => step.id !== "paket" && step.id !== "ozet");
+  return hasInitialExam ? [...base, ...WALK_EXAM_STEPS] : base;
 }
 
 const initialData: WizardData = {
@@ -166,7 +190,8 @@ export default function OgrenciKayitClient({
   initialExamId?: string;
 }) {
   const isWalkIn = mode === "gunu_birlik";
-  const steps = wizardSteps(mode);
+  const hasInitialExam = Boolean(initialExamId.trim());
+  const steps = wizardSteps(mode, hasInitialExam);
   const metadataUrl = isWalkIn
     ? "/api/ogrenci-kayit/metadata/?kapsam=gunu_birlik"
     : "/api/ogrenci-kayit/metadata/";
@@ -191,6 +216,10 @@ export default function OgrenciKayitClient({
   const [belgeVeli, setBelgeVeli] = useState(false);
   const [denemeUcreti, setDenemeUcreti] = useState("");
   const [ucretTouched, setUcretTouched] = useState(false);
+  const [odemeYontemiId, setOdemeYontemiId] = useState("");
+  const [maliHesapId, setMaliHesapId] = useState("");
+  const [walkOdemeYontemleri, setWalkOdemeYontemleri] = useState<WalkOdemeYontemi[]>([]);
+  const [walkMaliHesaplar, setWalkMaliHesaplar] = useState<WalkMaliHesap[]>([]);
   const [data, setData] = useState<WizardData>(initialData);
   const [metadata, setMetadata] = useState<MetadataResponse | null>(null);
   const [districts, setDistricts] = useState<DistrictOption[]>([]);
@@ -365,7 +394,13 @@ export default function OgrenciKayitClient({
     if (!isWalkIn || walkExamSeviye == null) return;
     if (walkExamSeviye !== data.enrollment.sinif_seviyesi) return;
     if (walkExamsLoading) return;
-    if (examId && walkExams.some((item) => String(item.id) === examId)) return;
+    if (examId && walkExams.some((item) => String(item.id) === examId)) {
+      const currentExam = walkExams.find((item) => String(item.id) === examId);
+      if (currentExam?.sessions.length === 1 && !sessionId) {
+        setSessionId(String(currentExam.sessions[0].id));
+      }
+      return;
+    }
     if (!examId && initialExamId && walkExams.some((item) => String(item.id) === initialExamId)) {
       const exam = walkExams.find((item) => String(item.id) === initialExamId);
       setExamId(initialExamId);
@@ -376,7 +411,35 @@ export default function OgrenciKayitClient({
       setExamId("");
       setSessionId("");
     }
-  }, [isWalkIn, walkExamSeviye, walkExams, walkExamsLoading, examId, initialExamId, data.enrollment.sinif_seviyesi]);
+  }, [isWalkIn, walkExamSeviye, walkExams, walkExamsLoading, examId, sessionId, initialExamId, data.enrollment.sinif_seviyesi]);
+
+  useEffect(() => {
+    if (!isWalkIn || !hasInitialExam) return;
+    let cancel = false;
+    apiFetch<{ odeme_yontemleri?: WalkOdemeYontemi[]; mali_hesaplar?: WalkMaliHesap[] }>(
+      "/api/ogrenci-kayit/gunu-birlik/secenekler/"
+    )
+      .then((result) => {
+        if (cancel || !result.success || !result.data) return;
+        const yontemler = result.data.odeme_yontemleri || [];
+        const hesaplar = result.data.mali_hesaplar || [];
+        setWalkOdemeYontemleri(yontemler);
+        setWalkMaliHesaplar(hesaplar);
+        const firstYontem = yontemler[0];
+        if (firstYontem) {
+          setOdemeYontemiId((prev) => prev || String(firstYontem.id));
+          setMaliHesapId((prev) =>
+            prev || String(firstYontem.mali_hesap_id || hesaplar[0]?.id || "")
+          );
+        } else if (hesaplar[0]) {
+          setMaliHesapId((prev) => prev || String(hesaplar[0].id));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancel = true;
+    };
+  }, [isWalkIn, hasInitialExam, activeSube?.id]);
 
   const ucretStepActive = isWalkIn && steps[currentStep]?.id === "ucret";
   useEffect(() => {
@@ -584,10 +647,21 @@ export default function OgrenciKayitClient({
       const ogr = tcResult.ogrenci;
       const cinsiyetOpt = metadata?.lookups.gender?.find((g) => g.code === ogr.cinsiyet);
       const reopenWalkIn = isWalkIn && ogr.aktif_mi === false;
-      const selectedSeviye = reopenWalkIn
+      const sameYearWalkInUpgrade =
+        !isWalkIn &&
+        ogr.kayit_turu === "gunu_birlik" &&
+        Boolean(tcResult.aktif_yilda_kayitli || !tcResult.son_kayit?.egitim_yili_id);
+      const keepCurrentSeviye = reopenWalkIn || sameYearWalkInUpgrade;
+      const selectedSeviye = keepCurrentSeviye
         ? metadata?.sinif_seviyeleri?.find((item) => item.id === tcResult.son_kayit?.sinif_seviyesi_id)
         : tcResult.sonraki_seviye;
-      const renewEntryType = metadata?.lookups.entry_type?.find((e) => e.code === "kayit_yenileme");
+      const targetEntryType = sameYearWalkInUpgrade
+        ? metadata?.lookups.entry_type?.find((e) => e.code === "yeni_kayit")
+        : metadata?.lookups.entry_type?.find((e) => e.code === "kayit_yenileme");
+      const existingSameYearNo =
+        sameYearWalkInUpgrade && tcResult.aktif_yilda_kayitli
+          ? (tcResult.son_kayit?.okul_no || "").trim()
+          : "";
 
       const guardians = (tcResult.veliler || []).map((v) => ({
         yakinlik_turu: metadata?.lookups.guardian_type?.find((g) => g.code === v.veli_turu)?.id,
@@ -643,8 +717,15 @@ export default function OgrenciKayitClient({
         },
         enrollment: {
           ...prev.enrollment,
-          giris_turu: renewEntryType?.id || prev.enrollment.giris_turu,
+          giris_turu: targetEntryType?.id || prev.enrollment.giris_turu,
           sinif_seviyesi: selectedSeviye?.id || prev.enrollment.sinif_seviyesi,
+          ...(sameYearWalkInUpgrade && tcResult.son_kayit?.alan_id
+            ? { alan: tcResult.son_kayit.alan_id }
+            : {}),
+          ...(sameYearWalkInUpgrade && tcResult.son_kayit?.school_id
+            ? { school_id: tcResult.son_kayit.school_id }
+            : {}),
+          ...(existingSameYearNo ? { ogrenci_no: existingSameYearNo } : {}),
         },
         guardians: guardians.length ? guardians : prev.guardians,
         veliSecimi: guardians.length ? "add" : prev.veliSecimi,
@@ -657,12 +738,12 @@ export default function OgrenciKayitClient({
         existingOgrenciId: ogr.id,
         existingKisiId: ogr.kisi_id ?? undefined,
         previousEnrollment: tcResult.son_kayit,
-        suggestedSeviye: tcResult.sonraki_seviye,
+        suggestedSeviye: keepCurrentSeviye ? selectedSeviye ?? null : tcResult.sonraki_seviye,
         existingVeliler: tcResult.veliler,
         existingAdres: tcResult.adres,
       });
 
-      if (selectedSeviye) {
+      if (selectedSeviye && !existingSameYearNo) {
         fetchStudentNumber(selectedSeviye.id);
       }
 
@@ -733,6 +814,12 @@ export default function OgrenciKayitClient({
           const fractionOk = parts.length === 1 || (parts.length === 2 && /^0+$/.test(parts[1] || ""));
           if (parts.length > 2 || !fractionOk || !/^\d+$/.test(whole)) {
             newErrors.ucret = "Deneme ücreti tam sayı olmalıdır";
+          } else if (Number(whole) > 0) {
+            if (!odemeYontemiId) {
+              newErrors.ucret = "Ücret girildiğinde ödeme şekli seçilmelidir";
+            } else if (!maliHesapId) {
+              newErrors.ucret = "Ücret girildiğinde mali hesap / kasa seçilmelidir";
+            }
           }
         }
         break;
@@ -866,7 +953,22 @@ export default function OgrenciKayitClient({
           ? { paketler: [], ek_hizmet_ids: [], deneme_paketi_id: null, yayin_paketi_ids: [] }
           : data.package,
         veliSecimi: data.veliSecimi,
-        ...(isWalkIn ? { gunu_birlik: { kayit: true } } : {}),
+        ...(isWalkIn
+          ? {
+              gunu_birlik: {
+                kayit: true,
+                ...(examId ? { exam_id: Number(examId) } : {}),
+                ...(examId && sessionId ? { exam_session_id: Number(sessionId) } : {}),
+                ...(examId && denemeUcreti.trim() ? { deneme_ucreti: denemeUcreti.trim() } : {}),
+                ...(examId && denemeUcreti.trim() && odemeYontemiId
+                  ? { odeme_yontemi_id: Number(odemeYontemiId) }
+                  : {}),
+                ...(examId && denemeUcreti.trim() && maliHesapId
+                  ? { mali_hesap_id: Number(maliHesapId) }
+                  : {}),
+              },
+            }
+          : {}),
       };
 
       const result = await apiFetch<Record<string, unknown>>("/api/ogrenci-kayit/register/", {
@@ -914,11 +1016,19 @@ export default function OgrenciKayitClient({
   const loadGirisBelgesi = async () => {
     const ogrenciId = registeredStudent?.id ?? registeredStudent?.ogrenci_id;
     const belgeExamId = registeredStudent?.exam_id;
+    const belgeParticipantId = registeredStudent?.participant_id;
     if (!ogrenciId || !belgeExamId) {
       throw new Error("Giriş belgesi için kayıt bilgisi eksik.");
     }
+    const qs = new URLSearchParams({
+      exam_id: String(belgeExamId),
+      ogrenci_id: String(ogrenciId),
+    });
+    if (belgeParticipantId) {
+      qs.set("participant_id", String(belgeParticipantId));
+    }
     const response = await fetch(
-      `/api/ogrenci-kayit/gunu-birlik/giris-belgesi/?exam_id=${belgeExamId}&ogrenci_id=${ogrenciId}`,
+      `/api/ogrenci-kayit/gunu-birlik/giris-belgesi/?${qs.toString()}`,
       { credentials: "include", headers: getContextHeaders() },
     );
     if (!response.ok) {
@@ -1002,6 +1112,9 @@ export default function OgrenciKayitClient({
           body: JSON.stringify({
             exam_id: Number(belgeExamId),
             ogrenci_id: Number(ogrenciId),
+            ...(registeredStudent?.participant_id
+              ? { participant_id: Number(registeredStudent.participant_id) }
+              : {}),
             alicilar,
           }),
         },
@@ -1098,10 +1211,24 @@ export default function OgrenciKayitClient({
         {steps[currentStep]?.id === "ucret" && (
           <UcretStep
             value={denemeUcreti}
+            odemeYontemiId={odemeYontemiId}
+            maliHesapId={maliHesapId}
+            odemeYontemleri={walkOdemeYontemleri}
+            maliHesaplar={walkMaliHesaplar}
             error={errors.ucret}
             onChange={(value) => {
               setUcretTouched(true);
               setDenemeUcreti(value);
+              setErrors((prev) => {
+                if (!prev.ucret) return prev;
+                const next = { ...prev };
+                delete next.ucret;
+                return next;
+              });
+            }}
+            onOdemeChange={(nextYontemId, nextHesapId) => {
+              setOdemeYontemiId(nextYontemId);
+              setMaliHesapId(nextHesapId);
               setErrors((prev) => {
                 if (!prev.ucret) return prev;
                 const next = { ...prev };

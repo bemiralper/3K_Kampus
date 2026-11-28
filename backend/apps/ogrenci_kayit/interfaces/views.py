@@ -100,10 +100,25 @@ class TcCheckView(APIView):
             'sinif_seviyesi', 'alan', 'egitim_yili',
         )
 
-        # Son kayıt bilgisi
-        son_kayit = OgrenciKayit.objects.filter(
-            ogrenci=ogrenci
-        ).select_related(*kayit_related).order_by('-egitim_yili__baslangic_yil').first()
+        # Son kayıt bilgisi (aktif eğitim yılı öncelikli)
+        from shared.context import get_secili_egitim_yili_id
+
+        yil_id = get_secili_egitim_yili_id(request)
+        son_kayit = None
+        if yil_id:
+            son_kayit = (
+                OgrenciKayit.objects.filter(ogrenci=ogrenci, egitim_yili_id=yil_id)
+                .select_related(*kayit_related)
+                .order_by('-aktif_mi', '-id')
+                .first()
+            )
+        if son_kayit is None:
+            son_kayit = (
+                OgrenciKayit.objects.filter(ogrenci=ogrenci)
+                .select_related(*kayit_related)
+                .order_by('-egitim_yili__baslangic_yil', '-id')
+                .first()
+            )
 
         # Tüm kayıtlar (geçmiş yıllar)
         kayitlar = OgrenciKayit.objects.filter(
@@ -134,9 +149,15 @@ class TcCheckView(APIView):
                 "giris_turu": k.giris_turu,
             })
 
-        # Son sözleşme durumu
+        # Son sözleşme durumu (teknik günü birlik deneme izleri hariç)
+        from apps.odeme_takip.domain.contract_scope import egitim_sozlesmeleri
         from apps.odeme_takip.domain.models import Sozlesme
-        son_sozlesme = Sozlesme.objects.filter(ogrenci=ogrenci).order_by('-created_at').first()
+
+        son_sozlesme = (
+            egitim_sozlesmeleri(Sozlesme.objects.filter(ogrenci=ogrenci))
+            .order_by('-created_at')
+            .first()
+        )
         sozlesme_info = None
         if son_sozlesme:
             sozlesme_info = {
@@ -186,7 +207,12 @@ class TcCheckView(APIView):
             }
             next_kod = SINIF_ARTIRIM.get(current_kod)
             if next_kod:
-                next_seviye = SinifSeviyesi.objects.filter(kod=next_kod, aktif_mi=True).first()
+                next_qs = SinifSeviyesi.objects.filter(
+                    kurum_id=kurum_id, kod=next_kod, aktif_mi=True
+                )
+                if sube_id:
+                    next_qs = next_qs.filter(sube_id=sube_id)
+                next_seviye = next_qs.first()
                 if next_seviye:
                     sonraki_seviye = {
                         "id": next_seviye.id,
@@ -197,17 +223,58 @@ class TcCheckView(APIView):
 
         # Liste ile aynı yıl: üst çubuktaki eğitim yılı. Eski «ilk aktif yıl»
         # kaydı başka yılda olan öğrenciyi de kilitliyordu.
-        from shared.context import get_secili_egitim_yili_id
-
-        yil_id = get_secili_egitim_yili_id(request)
         aktif_yilda_kayitli = False
         if yil_id:
             aktif_yilda_kayitli = OgrenciKayit.objects.filter(
                 ogrenci=ogrenci, egitim_yili_id=yil_id,
             ).exists()
 
+        deneme_seviye = None
+        if son_seviye is None and (ogrenci.kayit_turu or "") == GUNU_BIRLIK_CODE:
+            from apps.coaching.olcme_degerlendirme.models import ExamParticipant
+
+            last_part = (
+                ExamParticipant.objects.filter(student=ogrenci, sinif_seviyesi__isnull=False)
+                .select_related("sinif_seviyesi")
+                .order_by("-exam__exam_date", "-id")
+                .first()
+            )
+            if last_part and last_part.sinif_seviyesi_id:
+                deneme_seviye = last_part.sinif_seviyesi
+
         resolver = KimlikResolver(kurum_id=kurum_id, sube_id=sube_id)
         kimlik = resolver.resolve(tc=tc, context=KimlikResolver.CONTEXT_OGRENCI)
+
+        son_kayit_payload = None
+        if son_kayit:
+            son_alan_id = son_kayit.alan_id or (
+                son_kayit.sinif.alan_id if son_kayit.sinif_id and son_kayit.sinif else None
+            )
+            son_kayit_payload = {
+                "egitim_yili": f"{son_kayit.egitim_yili.baslangic_yil}-{son_kayit.egitim_yili.bitis_yil}",
+                "egitim_yili_id": son_kayit.egitim_yili_id,
+                "sinif_seviyesi": son_seviye.ad if son_seviye else "",
+                "sinif_seviyesi_id": son_seviye.id if son_seviye else None,
+                "sinif_seviyesi_kod": son_seviye.kod if son_seviye else "",
+                "has_alan": sinif_seviyesi_requires_alan(son_seviye) if son_seviye else False,
+                "alan_id": son_alan_id,
+                "okul_no": son_kayit.okul_no or "",
+                "school_id": son_kayit.school_id,
+                "aktif_mi": son_kayit.aktif_mi,
+            }
+        elif deneme_seviye:
+            son_kayit_payload = {
+                "egitim_yili": "",
+                "egitim_yili_id": None,
+                "sinif_seviyesi": deneme_seviye.ad,
+                "sinif_seviyesi_id": deneme_seviye.id,
+                "sinif_seviyesi_kod": deneme_seviye.kod,
+                "has_alan": sinif_seviyesi_requires_alan(deneme_seviye),
+                "alan_id": None,
+                "okul_no": "",
+                "school_id": None,
+                "aktif_mi": bool(ogrenci.aktif_mi),
+            }
 
         result = {
             "found": True,
@@ -225,13 +292,7 @@ class TcCheckView(APIView):
                 "kayit_turu": ogrenci.kayit_turu,
                 "aktif_mi": ogrenci.aktif_mi,
             },
-            "son_kayit": {
-                "egitim_yili": f"{son_kayit.egitim_yili.baslangic_yil}-{son_kayit.egitim_yili.bitis_yil}" if son_kayit else "",
-                "sinif_seviyesi": son_seviye.ad if son_seviye else "",
-                "sinif_seviyesi_id": son_seviye.id if son_seviye else None,
-                "sinif_seviyesi_kod": son_seviye.kod if son_seviye else "",
-                "aktif_mi": son_kayit.aktif_mi if son_kayit else False,
-            } if son_kayit else None,
+            "son_kayit": son_kayit_payload,
             "kayit_gecmisi": kayit_gecmisi,
             "son_sozlesme": sozlesme_info,
             "veliler": veliler,
@@ -608,9 +669,9 @@ class DirectRegistrationView(APIView):
                         was_walk_in = already_walk_in and not is_walk_in
                         if is_walk_in:
                             ogrenci.kayit_turu = GUNU_BIRLIK_CODE
-                            ogrenci.aktif_mi = True
                         else:
                             ogrenci.kayit_turu = kayit_turu_code or 'asil'
+                        ogrenci.aktif_mi = True
                         ogrenci.ad = student_data['ad']
                         ogrenci.soyad = student_data['soyad']
                         ogrenci.dogum_tarihi = student_data['dogum_tarihi']
@@ -618,11 +679,12 @@ class DirectRegistrationView(APIView):
                         ogrenci.telefon = normalize_phone(student_data.get('telefon') or '')
                         ogrenci.email = student_data.get('email') or ''
                         updates.extend([
-                            'kayit_turu', 'ad', 'soyad', 'dogum_tarihi',
+                            'kayit_turu', 'aktif_mi', 'ad', 'soyad', 'dogum_tarihi',
                             'cinsiyet', 'telefon', 'email',
                         ])
-                        if is_walk_in:
-                            updates.append('aktif_mi')
+                    elif not ogrenci.aktif_mi and not is_walk_in:
+                        ogrenci.aktif_mi = True
+                        updates.append('aktif_mi')
                     if 'whatsapp_uygun' in student_data:
                         ogrenci.whatsapp_uygun = _whatsapp_uygun_flag(student_data)
                         updates.append('whatsapp_uygun')
@@ -692,8 +754,7 @@ class DirectRegistrationView(APIView):
                         kayit.giris_turu = giris_turu_code
                         kayit.giris_tarihi = enrollment_data.get("giris_tarihi") or kayit.giris_tarihi
                         kayit.referans = enrollment_data.get("referans") or kayit.referans
-                        if is_walk_in:
-                            kayit.aktif_mi = True
+                        kayit.aktif_mi = True
                         kayit.save()
                     else:
                         skip_profile_writes = True

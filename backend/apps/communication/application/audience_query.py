@@ -412,6 +412,7 @@ class AudienceQueryService:
         context_egitim_yili_id: int | None,
     ) -> set[int]:
         from apps.ogrenci.domain.models import OgrenciKayit
+        from apps.ogrenci.services.kayit_turu import GUNU_BIRLIK_CODE
 
         groups = tree.get('groups') or []
         implicit_sube = context_sube_id if not _tree_has_field(tree, 'sube_id') else None
@@ -419,9 +420,12 @@ class AudienceQueryService:
             context_egitim_yili_id if not _tree_has_field(tree, 'egitim_yili_id') else None
         )
         default_aktif = not _tree_has_field(tree, 'ogrenci_durum')
+        explicit_kayit_turu = _tree_has_field(tree, 'kayit_turu')
 
         def base_qs():
             qs = OgrenciKayit.objects.filter(kurum_id=kurum_id)
+            if not explicit_kayit_turu:
+                qs = qs.exclude(ogrenci__kayit_turu=GUNU_BIRLIK_CODE)
             if implicit_sube:
                 qs = qs.filter(sube_id=implicit_sube)
             if implicit_year:

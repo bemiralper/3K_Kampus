@@ -9,15 +9,35 @@ ayrıca açılmaz; gün sonu ve kasa aynı parayı iki kez saymasın.
 from __future__ import annotations
 
 import re
+import secrets
 from decimal import Decimal
 
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from apps.odeme_takip.domain.contract_scope import DENEME_SATIS_MARKER
 
 MARKER = DENEME_SATIS_MARKER
+IZI_MARKER = 'kurum_kaydi_deneme_izi'
 _GELIR_REF = re.compile(r'gelir:(\d+)')
+
+
+def _unique_deneme_sozlesme_no(prefix: str, ogrenci_id: int) -> str:
+    """En fazla 20 karakter, aynı milisaniyede bile çarpışmayan sözleşme no."""
+    from apps.odeme_takip.domain.models import Sozlesme
+
+    sid_suffix = f'{int(ogrenci_id or 0) % 100:02d}'
+    for attempt in range(25):
+        now = timezone.now()
+        if attempt == 0:
+            mid = f'{now.microsecond // 100:04d}'
+        else:
+            mid = f'{secrets.randbelow(10000):04d}'
+        candidate = f'{prefix}{now.strftime("%y%m%d%H%M%S")}{mid}{sid_suffix}'[:20]
+        if not Sozlesme.objects.filter(sozlesme_no=candidate).exists():
+            return candidate
+    return f'{prefix}{secrets.token_hex(9).upper()}'[:20]
 
 
 def parse_deneme_ucreti(raw) -> int | None:
@@ -39,6 +59,7 @@ def parse_deneme_ucreti(raw) -> int | None:
 
 
 def last_deneme_ucreti(kurum_id: int, tc_kimlik_no: str) -> int | None:
+    from apps.odeme_takip.domain.enums import SozlesmeDurum
     from apps.odeme_takip.domain.models import Sozlesme
     from apps.ogrenci.domain.models import Ogrenci
 
@@ -53,6 +74,9 @@ def last_deneme_ucreti(kurum_id: int, tc_kimlik_no: str) -> int | None:
             ogrenci_id__in=student_ids,
             notlar__contains=MARKER,
         )
+        .exclude(durum=SozlesmeDurum.IPTAL)
+        .exclude(notlar__contains=IZI_MARKER)
+        .exclude(sozlesme_no__startswith='I', net_tutar=0)
         .order_by('-id')
         .values_list('net_tutar', flat=True)
         .first()
@@ -70,8 +94,10 @@ def deneme_odeme_secenekleri(kurum_id: int, sube_id: int) -> dict:
 
     yontemler = (
         OdemeYontemi.objects.filter(
-            kurum_id=kurum_id, aktif_mi=True, mali_hesap__sube_id=sube_id,
+            kurum_id=kurum_id,
+            aktif_mi=True,
         )
+        .filter(Q(mali_hesap__sube_id=sube_id) | Q(mali_hesap__isnull=True))
         .exclude(tip__in=[OdemeYontemiTipi.CEK, OdemeYontemiTipi.SENET])
         .select_related('mali_hesap')
         .order_by('ad')
@@ -206,19 +232,28 @@ def record_deneme_ucreti(
     today = timezone.localdate()
     veli = ogrenci.veliler.order_by('-varsayilan', 'id').first()
     actor = user if getattr(user, 'is_authenticated', False) else None
-    # sozlesme_no en fazla 20 karakter.
-    sozlesme_no = f'D{timezone.now().strftime("%y%m%d%H%M%S")}{ogrenci.id % 1000:03d}'
     yontem = None
     hesap = None
     if tutar > 0:
         yontem, hesap = _cozumle_odeme(ogrenci, odeme_yontemi_id, mali_hesap_id)
+    egitim_yili_id = (
+        getattr(exam, 'egitim_yili_id', None)
+        or (getattr(kayit, 'egitim_yili_id', None) if kayit is not None else None)
+    )
+    if not egitim_yili_id:
+        from apps.egitim_yili.domain.models import EgitimYili
+        aktif_yil = EgitimYili.objects.filter(aktif_mi=True).order_by('-baslangic_yil', '-id').first()
+        egitim_yili_id = aktif_yil.id if aktif_yil else None
+    if not egitim_yili_id:
+        raise ValueError('Aktif eğitim yılı bulunamadı.')
 
     with transaction.atomic():
+        sozlesme_no = _unique_deneme_sozlesme_no('D', ogrenci.id)
         sozlesme = Sozlesme.objects.create(
             sozlesme_no=sozlesme_no,
             ogrenci=ogrenci,
             ogrenci_kayit=kayit,
-            egitim_yili_id=kayit.egitim_yili_id,
+            egitim_yili_id=egitim_yili_id,
             kurum_id=ogrenci.kurum_id,
             sube_id=ogrenci.sube_id,
             veli=veli,
@@ -255,7 +290,7 @@ def record_deneme_ucreti(
         )
 
 
-def ensure_deneme_izi(*, ogrenci, kayit) -> None:
+def ensure_deneme_izi(*, ogrenci, kayit=None) -> None:
     """Kurum kaydına geçen deneme öğrencisinin deneme sayfasında kalması için iz.
 
     Ücret sözleşmesi varsa yeni satır açılmaz. Ücret yoksa finans toplamına
@@ -263,15 +298,29 @@ def ensure_deneme_izi(*, ogrenci, kayit) -> None:
     """
     from apps.odeme_takip.domain.enums import EgitimTuru, OdemeTuru, PaketTuru, SozlesmeDurum
     from apps.odeme_takip.domain.models import Sozlesme
+    from apps.ogrenci.domain.models import OgrenciKayit
 
     if Sozlesme.objects.filter(ogrenci=ogrenci, notlar__contains=MARKER).exists():
         return
+    if kayit is None:
+        kayit = (
+            OgrenciKayit.objects.filter(ogrenci=ogrenci)
+            .order_by('-aktif_mi', '-egitim_yili__baslangic_yil', '-id')
+            .first()
+        )
+    egitim_yili_id = getattr(kayit, 'egitim_yili_id', None) if kayit is not None else None
+    if not egitim_yili_id:
+        from apps.egitim_yili.domain.models import EgitimYili
+        aktif_yil = EgitimYili.objects.filter(aktif_mi=True).order_by('-baslangic_yil', '-id').first()
+        egitim_yili_id = aktif_yil.id if aktif_yil else None
+    if not egitim_yili_id:
+        return
     today = timezone.localdate()
     Sozlesme.objects.create(
-        sozlesme_no=f'I{timezone.now().strftime("%y%m%d%H%M%S")}{ogrenci.id % 1000:03d}',
+        sozlesme_no=_unique_deneme_sozlesme_no('I', ogrenci.id),
         ogrenci=ogrenci,
         ogrenci_kayit=kayit,
-        egitim_yili_id=kayit.egitim_yili_id,
+        egitim_yili_id=egitim_yili_id,
         kurum_id=ogrenci.kurum_id,
         sube_id=ogrenci.sube_id,
         baslangic_tarihi=today,
@@ -287,7 +336,7 @@ def ensure_deneme_izi(*, ogrenci, kayit) -> None:
         taksit_sayisi=1,
         durum=SozlesmeDurum.TAMAMLANDI,
         egitim_turu=EgitimTuru.DIGER,
-        notlar=MARKER,
+        notlar=f'{MARKER} {IZI_MARKER}',
     )
 
 

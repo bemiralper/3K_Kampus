@@ -20,6 +20,8 @@ import {
   type UnifiedScheduleResponse,
 } from '@/lib/student-portal-api';
 
+const SHORT_WEEKDAYS_TR = ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz'];
+
 function isoOf(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -367,7 +369,7 @@ export default function StudentScheduleAndAttendancePage() {
                       fontWeight: 600,
                     }}
                   >
-                    {day.day_label.slice(0, 3)}
+                    {SHORT_WEEKDAYS_TR[day.weekday] || day.day_label.slice(0, 3)}
                   </span>
                   <strong style={{ display: 'block', fontSize: 16, marginTop: 2 }}>
                     {day.date.slice(8)}
